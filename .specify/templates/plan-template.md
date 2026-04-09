@@ -30,8 +30,35 @@
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+*Source: `.specify/memory/constitution.md` v1.0.0*
 
-[Gates determined based on constitution file]
+**NON-NEGOTIABLE gates** (any FAIL blocks the plan; no waivers):
+
+- [ ] **I. Data Privacy & Security** — Lawful basis + purpose documented for any new PII
+      touched; RBAC checks on every new protected route; OWASP risks for touched surfaces
+      identified and mitigated; TLS 1.2+ and at-rest encryption confirmed for new data.
+- [ ] **II. Test-First Development** — Failing tests (contract / acceptance) planned BEFORE
+      implementation tasks; coverage targets (≥80% business, 100% security-critical) stated.
+- [ ] **III. Clean Architecture** — New code maps to Presentation / Application / Domain /
+      Infrastructure with the dependency rule preserved; no framework/ORM types leak out
+      of Infrastructure; module boundaries named.
+- [ ] **IV. Payment Security (PCI DSS)** — If payment is touched: no raw PAN/CVV stored or
+      logged; processor tokenization only; audit events listed; SAQ scope unchanged.
+
+**Core principle gates** (FAIL must be justified in Complexity Tracking):
+
+- [ ] **V. Internationalization (SV/EN)** — All new user-facing strings use i18n keys;
+      SV + EN resources planned; locale-aware formatting for dates/numbers/currency.
+- [ ] **VI. Inclusive UX (Mobile First + WCAG 2.1 AA)** — Designs start at 320px;
+      WCAG 2.1 AA conformance checklist attached; shared component library used.
+- [ ] **VII. Performance & Observability** — Performance budgets (LCP <2.5s, INP <200ms,
+      CLS <0.1; API p95 <400ms) stated; logging / metrics / traces plan listed.
+- [ ] **VIII. Reliability** — Error paths enumerated; transactional boundaries defined;
+      idempotency keys on money/state-changing endpoints; audit-log entries listed.
+- [ ] **IX. Code Quality Standards** — TypeScript strict, ESLint clean, Conventional
+      Commits, and review requirements (≥1 / ≥2 for sensitive code) acknowledged.
+- [ ] **X. Simplicity (YAGNI)** — No speculative abstractions; any added complexity
+      recorded in Complexity Tracking with rejected simpler alternative.
 
 ## Project Structure
 
