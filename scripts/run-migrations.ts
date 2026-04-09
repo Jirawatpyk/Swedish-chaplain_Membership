@@ -29,19 +29,26 @@ if (!url) {
   process.exit(1);
 }
 
-const client = postgres(url, {
-  max: 1,
-  ssl: 'require',
-  connection: { statement_timeout: 30_000 } as Record<string, string | number>,
-});
-const db = drizzle(client);
+async function main(): Promise<void> {
+  const client = postgres(url!, {
+    max: 1,
+    ssl: 'require',
+    connection: { statement_timeout: 30_000 } as Record<string, string | number>,
+  });
+  const db = drizzle(client);
 
-try {
-  await migrate(db, { migrationsFolder: './drizzle/migrations' });
-  console.log('✓ Migrations applied');
-} catch (error) {
-  console.error('✗ Migration failed:', error);
-  process.exitCode = 1;
-} finally {
-  await client.end();
+  try {
+    await migrate(db, { migrationsFolder: './drizzle/migrations' });
+    console.log('✓ Migrations applied');
+  } catch (error) {
+    console.error('✗ Migration failed:', error);
+    process.exitCode = 1;
+  } finally {
+    await client.end();
+  }
 }
+
+main().catch((error) => {
+  console.error('run-migrations: crashed:', error);
+  process.exit(1);
+});
