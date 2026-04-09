@@ -329,6 +329,23 @@ through any user-facing surface.
 - **Role change during active session**: the affected user's next protected action
   MUST trigger re-authentication so permissions take effect cleanly; stale sessions
   MUST NOT continue with the old role.
+- **Role change during a multi-step form**: if a user's role is changed while they
+  have unsaved data in a form (e.g., a member invitation being drafted by an
+  admin), the next protected action MUST trigger re-auth. After re-auth the
+  system MUST NOT attempt to restore the unsaved form data — the caller's previous
+  privileges are no longer valid, so the in-progress operation is discarded and
+  the user sees a localised message explaining that their permissions changed
+  and the in-progress action was not saved. This is a deliberate trade-off:
+  preserving draft data across a role change would require storing sensitive
+  in-flight content in a way that conflicts with least-privilege.
+- **Concurrent "last-admin" race**: if two admins simultaneously attempt to
+  disable or demote a third admin, AND that third admin is currently the
+  penultimate active admin (disabling either of the last two would leave zero),
+  the transaction-level `SELECT FOR UPDATE` on the admin count MUST ensure that
+  exactly ONE transaction succeeds and the OTHER is rejected with the
+  last-admin-protection error — even though neither caller is targeting
+  themselves. This extends FR-011 from "self-disable / self-demote" to "any
+  operation that would leave zero active admins, under concurrent load".
 - **User changes their email address (if supported)**: any active sessions MUST be
   invalidated and the user MUST re-authenticate.
 - **Email delivery failure during password reset or invitation**: the user MUST see
@@ -398,7 +415,13 @@ through any user-facing surface.
 - **FR-014**: All user-facing strings on authentication screens MUST be available
   in English, Thai, and Swedish at release. Missing English strings MUST fail the
   build; missing Thai or Swedish strings MUST produce a build warning and fall back
-  to English at runtime.
+  to English at runtime. **Precedence at release**:
+  [`docs/ux-standards.md`](../../docs/ux-standards.md) § 12 is the stricter rule
+  and takes precedence — all three locales (EN, TH, SV) MUST be complete at
+  release for user-facing strings. The fallback rule in this FR applies only to
+  non-release builds (dev / preview) to avoid blocking developer velocity. A
+  release build with missing TH or SV keys MUST fail the `pnpm check:i18n` script
+  in CI.
 - **FR-015**: All authentication screens MUST be fully usable on a 320px-wide
   mobile viewport and MUST conform to WCAG 2.1 Level AA (including keyboard
   navigation, focus indicators, screen reader announcements, and minimum colour
@@ -407,9 +430,17 @@ through any user-facing surface.
   address is registered (applies to sign-in and password-reset flows).
 - **FR-017**: System MUST preserve the user's original destination across a
   forced sign-in redirect and return them there after a successful sign-in.
-- **FR-018**: System MUST handle personal data (email addresses, names, sign-in
-  timestamps, source IPs) in accordance with Thailand PDPA and EU GDPR, supporting
-  data subject access and erasure requests without code changes after launch.
+- **FR-018**: System MUST handle personal data (email addresses, display names,
+  sign-in timestamps, source IPs) in accordance with Thailand PDPA and EU GDPR,
+  supporting **all six GDPR data subject rights** — (1) right of access,
+  (2) right to rectification, (3) right to erasure ("right to be forgotten"),
+  (4) right to data portability, (5) right to restriction of processing, and
+  (6) right to object to processing — without code changes after launch.
+  Equivalent PDPA rights (access, correction, deletion, suspension of use,
+  disclosure of recipients) MUST also be supported for Thai data subjects. The
+  data subject's request flow is out of F1 scope (to be built as an admin-facing
+  feature in a later phase), but the underlying data model and APIs MUST NOT
+  make those rights impossible to implement later.
 - **FR-019**: System MUST allow a signed-in user to change their own password by
   entering their current password and a new password meeting the policy. On
   successful change, all **other** active sessions for that user MUST be invalidated
@@ -453,11 +484,24 @@ through any user-facing surface.
   and MUST include a correlation `x-request-id` for support. See
   [`docs/ux-standards.md`](../../docs/ux-standards.md) § 3 and § 4.
 - **FR-024 (Enterprise UX — Keyboard & Focus)**: Every authentication screen
-  MUST be fully operable by keyboard alone. The primary input MUST receive
+  MUST be fully operable by keyboard alone. The **primary input** MUST receive
   focus on mount; Enter MUST submit the form; Escape MUST close any open
   modal; focus MUST return to the triggering element on modal close; a
   visible focus-ring MUST appear on every interactive element; a "Skip to
-  main content" link MUST be the first focusable element in the DOM. See
+  main content" link MUST be the first focusable element in the DOM.
+  **The "primary input" per screen is defined as follows**:
+
+  | Screen | Primary input (focus on mount) |
+  |---|---|
+  | Staff sign-in (`/admin/sign-in`) | email field |
+  | Member sign-in (`/portal/sign-in`) | email field |
+  | Forgot password (`/forgot-password`) | email field |
+  | Reset password (`/reset-password/[token]`) | new-password field |
+  | Change password (account settings) | current-password field |
+  | Invite redeem (`/invite/[token]`) | display-name field (email is pre-filled, read-only) |
+
+  **On form error**: focus MUST move to the first field that failed validation
+  (not stay on the submit button, not stay on the last-touched field). See
   [`docs/ux-standards.md`](../../docs/ux-standards.md) § 7.
 - **FR-025 (Email reliability — resend affordance)**: Every email-dependent
   flow (password reset, invitation, future account-recovery notifications)
@@ -566,6 +610,37 @@ through any user-facing surface.
   with a reset countdown, (d) clicks it, and (e) verifies a second email
   request is made. The test also verifies that a Resend webhook reporting
   a bounce triggers a visible inline warning on the waiting page.
+- **SC-018 (FR-006 + FR-007 — Password handling)**: 100% of password
+  verifications go through `@node-rs/argon2` (no plaintext comparison
+  anywhere). Verified by (a) an ESLint rule forbidding string-compare on
+  any variable named `password` / `password_hash`, and (b) an integration
+  test that enumerates every code path touching a password and asserts
+  argon2 was called.
+- **SC-019 (FR-016 — No enumeration)**: An automated test sends 100 sign-in
+  attempts — 50 with known-nonexistent emails and 50 with known-existent
+  emails + wrong passwords — and asserts (a) the response bodies are
+  byte-identical across both groups, and (b) the p95 response time differs
+  by ≤ 5 ms between the two groups (validates the timing-constant dummy-hash
+  path from `security.md` T-03).
+- **SC-020 (FR-017 — Return after sign-in)**: An automated test opens a
+  protected URL (e.g. `/admin/members`) while signed out, asserts the user
+  is redirected to the sign-in page, completes sign-in successfully, and
+  asserts the user is returned to the originally-requested URL and NOT to
+  the generic home page.
+- **SC-021 (FR-019 — Change password while signed in)**: An automated test
+  (a) signs in from two browser contexts using the same account, (b) changes
+  the password from the first context, (c) asserts the first context's
+  session CONTINUES to work without re-auth, (d) asserts the second context's
+  next request is rejected with a session-ended error, and (e) asserts the
+  audit log contains `password_changed` and `concurrent_sessions_revoked`
+  events.
+- **SC-022 (FR-024 — Keyboard-only operation)**: An automated Playwright
+  test walks through sign-in, sign-out, password reset, change password,
+  and invite-redeem flows using **only keyboard input** (no mouse clicks,
+  no programmatic focus calls). Assertions cover: primary input is focused
+  on mount per the FR-024 table, Enter submits forms, Escape closes modals,
+  focus returns to trigger after modal close, and focus moves to first
+  error field on validation failure.
 
 ## Assumptions
 
