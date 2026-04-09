@@ -69,6 +69,34 @@
     "denied": {
       "readOnly": "Din roll tillåter inte den här åtgärden.",
       "portalMismatch": "Det här kontot kan inte logga in här."
+    },
+    "memberPortal": {
+      "title": "Medlemsportal",
+      "welcome": "Välkommen, {name}",
+      "versionBadge": "v1.0 — fler funktioner kommer",
+      "intro": "Du är inloggad i SweCham medlemsportal. Den fullständiga upplevelsen rullas ut fas för fas.",
+      "roadmapHeading": "Det som kommer härnäst",
+      "roadmapDescription": "Din kommande medlemsupplevelse per fas.",
+      "roadmap": {
+        "profile": {
+          "title": "Din profil",
+          "description": "Visa och uppdatera dina medlemsuppgifter (kommer i F3)."
+        },
+        "invoices": {
+          "title": "Fakturor & kvitton",
+          "description": "Thailändska skattekvalificerade fakturor och betalningshistorik (F4)."
+        },
+        "events": {
+          "title": "Evenemang & anmälan",
+          "description": "Bläddra i handelskammarevenemang och anmäl dig online (F6)."
+        },
+        "renewal": {
+          "title": "Online-förnyelse",
+          "description": "Förnya ditt medlemskap och betala med kort (F5)."
+        }
+      },
+      "contactHeading": "Behöver du hjälp?",
+      "contactDescription": "Tills självbetjäning lanseras, mejla oss så hjälper vi dig direkt."
     }
   },
   "shell": {

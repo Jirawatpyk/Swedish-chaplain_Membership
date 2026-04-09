@@ -315,25 +315,20 @@ attempts to visit `/admin/members` and is denied.
 
 ### Tests for User Story 5
 
-- [ ] T138 [P] [US5] Integration test `tests/integration/auth/member-sign-in.test.ts` — member sign-in at `/api/auth/sign-in` with `portal: 'member'` redirects to `/portal`
-- [ ] T139 [P] [US5] Integration test `tests/integration/auth/portal-mismatch.test.ts` — member signing in at `/api/auth/sign-in` with `portal: 'staff'` is rejected with 401 `invalid-credentials` (same generic message as wrong password, spec FR-016)
-- [ ] T140 [P] [US5] E2E test `tests/e2e/member-sign-in.spec.ts` — member signs in, lands on placeholder, attempts to navigate to `/admin`, sees denied
-- [ ] T141 [P] [US5] E2E test `tests/e2e/member-sign-in-a11y.spec.ts` — axe scan on member sign-in and placeholder landing pages
+- [X] T138 [P] [US5] Integration test `tests/integration/auth/member-sign-in.test.ts` — **merged with T139**: 3 cases against live Neon — (a) member signing in via `portal='member'` creates a session and succeeds; (b) member signing in via `portal='staff'` is rejected with `invalid-credentials` (FR-016 no portal leak, no session row); (c) admin signing in via `portal='member'` is rejected with the same generic code (regression guard).
+- [X] T139 [P] [US5] Integration test `tests/integration/auth/portal-mismatch.test.ts` — **merged into T138 file** as the second and third cases.
+- [ ] T140 [P] [US5] E2E test `tests/e2e/member-sign-in.spec.ts` — member signs in, lands on placeholder, attempts `/admin`, sees denied — **deferred to Phase 10**: requires Playwright + a seeded member user; the `/admin` cross-portal guard is already verified at the layout level (staff layout redirects members to `/portal`, member layout redirects staff to `/admin`). Structural coverage is complete via integration.
+- [ ] T141 [P] [US5] E2E test `tests/e2e/member-sign-in-a11y.spec.ts` — axe scan on member sign-in + placeholder — **deferred to Phase 10** (same reason). The member sign-in page is a near-identical shell to the staff sign-in page which passed T064 axe scan in Phase 3.
 
 ### Implementation for User Story 5
 
-- [ ] T142 [US5] Extend `create-user` use case from T123 to accept `role: 'member'` (previously only admin/manager were invited) — member invitations use the same invitation token schema
-- [ ] T143 [US5] Implement member sign-in page `src/app/(member)/sign-in/page.tsx` reusing `<SignInForm portal="member">` from T072
-- [ ] T144 [US5] Implement member shell layout `src/app/(member)/portal/layout.tsx` with auth guard + `<UserMenu>` + `<ThemeToggle>` + `<SkipToContent>`
-- [ ] T145 [US5] Implement member portal placeholder landing `src/app/(member)/portal/page.tsx` with:
-  - Welcome heading + member display name
-  - "v1.0 — more features coming soon" badge
-  - 4-item roadmap card (profile / invoices / events / renewal — each with "coming in F3/F4/F6/F5–F8")
-  - Contact email `info@swecham.se`
-  - Per plan.md Project Structure comment block on member portal
-- [ ] T146 [P] [US5] Add member-portal localised strings (welcome, roadmap items, contact) to `en.json`, `th.json`, `sv.json`
+- [X] T142 [US5] Extend `create-user` use case from T123 to accept `role: 'member'` — **already done in Phase 6**: `createUser` input takes a `Role` enum which includes `'member'`; the invite API route schema (`src/app/api/auth/invite/route.ts`) validates `role: z.enum(['admin', 'manager', 'member'])`. Verified by building `/api/auth/invite` route and passing `role: 'member'` through Phase 6 contract test.
+- [X] T143 [US5] Implement member sign-in page — **deviation from tasks.md path**: lives at `src/app/(auth-public)/portal/sign-in/page.tsx` instead of `(member)/sign-in/` to mirror the staff pattern and to bypass the `(member)/portal/layout.tsx` auth guard. URL is `/portal/sign-in` per `PORTAL_FOR_ROLE['member'] === 'member'` → `buildSignInUrl('member')` builds `/portal/sign-in`. Reuses `<SignInForm portal="member">` + `safeReturnTo` from Phase 3. Already-signed-in members skip to the preserved returnTo or `/portal`; staff who accidentally land here are bounced to `/admin`.
+- [X] T144 [US5] Implement member shell layout `src/app/(member)/portal/layout.tsx` — mirrors the staff shell: `requireSession('member')` guard + `UserMenu` + `ThemeToggle`. Cross-portal defence: admins/managers who somehow land on `/portal/*` are redirected to `/admin` from the layout.
+- [X] T145 [US5] Implement member portal placeholder landing `src/app/(member)/portal/page.tsx` — Welcome heading with `user.displayName ?? user.email`, "v1.0 — more features coming soon" badge, 4-item roadmap card (F3 profile / F4 invoices / F6 events / F5 renewal) with per-item titles + descriptions, contact email `info@swecham.se`. All strings are localised via `auth.memberPortal.*` i18n keys.
+- [X] T146 [P] [US5] Add member-portal localised strings to `en.json`, `th.json`, `sv.json` — +16 keys under `auth.memberPortal.*` (title, welcome with `{name}` interpolation, versionBadge, intro, roadmapHeading + description, 4 roadmap items × {title, description}, contact heading + description). `pnpm check:i18n` passes: 110 keys × 3 locales (up from 94).
 
-**Checkpoint**: Member portal sign-in works end-to-end; placeholder landing displays correctly; cross-portal access denied.
+**Checkpoint**: Member portal sign-in works end-to-end; placeholder landing displays correctly; cross-portal access denied. ✅ **CODE COMPLETE 2026-04-10**: 133/133 unit+contract + 32/32 integration (29 prior + 3 new) pass against live Neon. `pnpm build` emits 2 new routes (`/portal`, `/portal/sign-in`) for a total of 17 routes. Live spot-checks: unauth `/portal` → 307 to `/portal/sign-in`; `/portal/sign-in` → 200 with full security headers.
 
 ---
 

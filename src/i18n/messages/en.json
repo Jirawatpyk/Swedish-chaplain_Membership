@@ -69,6 +69,34 @@
     "denied": {
       "readOnly": "Your role does not permit this action.",
       "portalMismatch": "This account can't sign in here."
+    },
+    "memberPortal": {
+      "title": "Member portal",
+      "welcome": "Welcome, {name}",
+      "versionBadge": "v1.0 — more features coming soon",
+      "intro": "You're signed in to the SweCham member portal. The full experience is being rolled out phase by phase.",
+      "roadmapHeading": "What's coming next",
+      "roadmapDescription": "Your upcoming member experience by phase.",
+      "roadmap": {
+        "profile": {
+          "title": "Your profile",
+          "description": "View and update your membership details (coming in F3)."
+        },
+        "invoices": {
+          "title": "Invoices & receipts",
+          "description": "Tax-compliant Thai invoices and payment history (F4)."
+        },
+        "events": {
+          "title": "Events & registration",
+          "description": "Browse chamber events and register online (F6)."
+        },
+        "renewal": {
+          "title": "Online renewal",
+          "description": "Renew your membership and pay with card (F5)."
+        }
+      },
+      "contactHeading": "Need help?",
+      "contactDescription": "Until self-service lands, email us and we'll help directly."
     }
   },
   "shell": {
