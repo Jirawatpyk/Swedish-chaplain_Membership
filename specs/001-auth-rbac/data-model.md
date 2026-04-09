@@ -20,8 +20,14 @@ The SQL (§ 7) lives in `src/modules/auth/infrastructure/db/schema.ts`.
 | `PasswordResetToken` | Short-lived single-use recovery artefact | 1 hour | Single-use, then consumed |
 | `Invitation` | Short-lived single-use account-creation artefact | 7 days | Single-use, then consumed |
 | `AuditEvent` | Append-only authentication event record | ≥ 5 years | **Immutable** |
+| `EmailDeliveryEvent` | Operational record of transactional email delivery status from Resend webhook | Kept as long as useful for ops (no hard retention) | Append-only from webhook, never updated |
 
 The `Role` concept is modelled as a string enum (not a table) — see § 2.
+
+`EmailDeliveryEvent` is an **operational** table, NOT a business-audit table —
+it is used for debugging email delivery issues and for the user-facing
+"delivery delayed" inline warning (spec FR-025). It is distinct from
+`AuditEvent` and does not carry compliance-retention requirements.
 
 ---
 
@@ -430,7 +436,7 @@ export const auditLog = pgTable(
     actorUserId: text('actor_user_id').notNull(),         // UUID or 'anonymous' or 'system:bootstrap'
     targetUserId: uuid('target_user_id'),                 // NULL allowed
     sourceIp: inet('source_ip'),
-    summary: text('summary').notNull(),
+    summary: text('summary').notNull(),                   // ≤ 500 chars (enforced at app layer, spec FR-012 U1)
     requestId: text('request_id').notNull(),              // correlation ID
   },
   (table) => ({
@@ -440,7 +446,60 @@ export const auditLog = pgTable(
     eventTypeIdx: index('audit_log_event_type_idx').on(table.eventType),
   }),
 );
+
+// email_delivery_events — operational tracking for Resend webhook events
+// (NOT part of the append-only compliance audit log — distinct table)
+export const emailDeliveryEventTypeEnum = pgEnum('email_delivery_event_type', [
+  'sent',
+  'delivered',
+  'delivery_delayed',
+  'bounced',
+  'complained',
+  'opened',
+  'clicked',
+]);
+
+export const emailDeliveryEvents = pgTable(
+  'email_delivery_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    eventType: emailDeliveryEventTypeEnum('event_type').notNull(),
+    // Resend message ID — the correlation key; unique per outbound email
+    messageId: text('message_id').notNull(),
+    // Recipient email (hashed for PII minimisation — store lower(email))
+    toEmail: text('to_email').notNull(),
+    // Svix de-dup ID so duplicate webhook deliveries are idempotent
+    svixId: text('svix_id').notNull(),
+    // Optional link to the originating reset/invitation token (for the
+    // user-facing "delivery delayed" warning per spec FR-025)
+    relatedTokenId: text('related_token_id'),
+    // Optional related user for querying "did this user's reset email arrive?"
+    relatedUserId: uuid('related_user_id').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (table) => ({
+    messageIdIdx: index('email_delivery_events_message_id_idx').on(table.messageId),
+    svixIdUniqueIdx: uniqueIndex('email_delivery_events_svix_unique').on(table.svixId),
+    toEmailIdx: index('email_delivery_events_to_email_idx').on(table.toEmail),
+    createdAtIdx: index('email_delivery_events_created_at_idx').on(sql`${table.createdAt} DESC`),
+  }),
+);
 ```
+
+**Semantics**:
+- `svixId` UNIQUE constraint makes webhook de-duplication trivial — inserting
+  a duplicate Svix event raises a unique-violation which the handler catches
+  and treats as a no-op.
+- `relatedTokenId` lets the "check your email" waiting screen query:
+  "has this reset token's message reported `bounced` or `delivery_delayed`?"
+  — if yes, the spec FR-025 inline warning is shown.
+- `toEmail` is stored lower-cased (case-insensitive matches) and MAY be
+  hashed in a future hardening pass; F1 stores it plaintext for debuggability
+  because the message ID + Svix ID provide sufficient correlation.
+- **NOT append-only** like `audit_log` — operators may delete old operational
+  events if the table grows. The `swecham_app_rw` role has full CRUD here.
+- **NOT subject to the 5-year retention** from Constitution § Audit Retention —
+  that rule applies to `audit_log` only.
 
 ### 7.1 Append-only enforcement for `audit_log`
 
@@ -454,12 +513,16 @@ a separate, read-only role used by the (future) audit log viewer UI.
 CREATE ROLE swecham_app_rw;
 CREATE ROLE swecham_app_ro;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON users, sessions, password_reset_tokens, invitations TO swecham_app_rw;
+GRANT SELECT, INSERT, UPDATE, DELETE ON users, sessions, password_reset_tokens, invitations, email_delivery_events TO swecham_app_rw;
 GRANT SELECT, INSERT                ON audit_log TO swecham_app_rw;  -- INSERT only, no UPDATE/DELETE
 GRANT SELECT                        ON audit_log TO swecham_app_ro;
 
 REVOKE UPDATE, DELETE ON audit_log FROM swecham_app_rw, swecham_app_ro;
 ```
+
+Note: `email_delivery_events` has full CRUD grants because it is an
+operational tracking table, not a compliance audit record. See § 1 for
+the distinction.
 
 ### 7.2 Retention
 

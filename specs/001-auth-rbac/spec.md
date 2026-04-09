@@ -372,6 +372,10 @@ through any user-facing surface.
 - **FR-001**: System MUST authenticate users via email address and password.
 - **FR-002**: System MUST support three roles: `admin`, `manager`, and `member`.
   Additional roles may be introduced in later features but are out of scope here.
+  Role definitions MUST be data-modelled (as a Postgres enum in the schema, not
+  as hard-coded literals in application code) so that future roles can be added
+  in later features without changes to the application layer or a disruptive
+  migration.
 - **FR-003**: System MUST enforce role-based authorisation on every protected
   resource. A user MUST NOT be able to access a resource for which their role lacks
   explicit permission.
@@ -402,8 +406,9 @@ through any user-facing surface.
   or demoting themselves. At least one active admin MUST always exist.
 - **FR-012**: System MUST record every authentication event (the 16 event types
   enumerated in User Story 7) in an append-only audit trail. Audit entries MUST
-  include timestamp (UTC), actor, event type, target, source IP, and a short
-  summary, and MUST be retained for at least five years. Idle-timeout and
+  include timestamp (UTC), actor, event type, target, source IP, a short
+  human-readable summary (**≤ 500 characters**), and a correlation request ID.
+  Entries MUST be retained for at least five years. Idle-timeout and
   absolute-timeout session expirations are explicitly out of scope for audit.
 - **FR-013**: System MUST resist brute force and enumeration attacks on the
   sign-in, password-reset, and invitation endpoints. After **5 failed sign-in
@@ -561,8 +566,12 @@ through any user-facing surface.
 
 ### Measurable Outcomes
 
-- **SC-001**: 95% of successful sign-ins complete in under 5 seconds on a mid-range
-  mobile device over a 4G connection.
+- **SC-001**: 95% of successful sign-ins complete in under 5 seconds on a
+  mid-range mobile device over a 4G connection. This end-to-end budget has two
+  components: the API p95 < 400 ms server-side target from Constitution
+  Principle VII (which is a sub-component), plus network round trip, page
+  render, and the user's entry time. The two budgets complement rather than
+  conflict.
 - **SC-002**: 99% of password reset emails arrive in the user's inbox within 60
   seconds of the request.
 - **SC-003**: Zero authorised-access violations occur in a suite of automated tests
@@ -582,9 +591,14 @@ through any user-facing surface.
 - **SC-009**: There is no state in which the system has zero active admins —
   verified by automated tests covering self-disable, self-demote, and last-admin
   deletion.
-- **SC-010**: Brute force attempts against the sign-in endpoint at a rate of 100
-  attempts per minute from a single source are effectively blocked (no successful
-  guess in a reasonable time window).
+- **SC-010**: Brute force attempts against the sign-in endpoint at a rate of
+  **100 attempts per minute from a single source** are blocked such that
+  **at most 10 attempts reach the argon2id verify code path** within any
+  60-minute rolling window, verified by an integration test that counts
+  `argon2.verify` invocations. The remaining 600+ attempts MUST be absorbed
+  by the rate limiter + lockout before reaching the password verifier, and
+  **no attempt MUST succeed with an incorrect password** within that
+  60-minute window regardless of how fast the attacker retries.
 - **SC-011**: Authentication audit entries are retained for at least five years
   and cannot be modified or deleted through any user-facing surface.
 - **SC-012 (Enterprise UX — CLS)**: Cumulative Layout Shift on every

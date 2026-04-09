@@ -151,13 +151,19 @@ src/
 │   │   │   └── page.tsx
 │   │   └── admin/
 │   │       ├── layout.tsx           # staff shell, auth guard
-│   │       └── page.tsx             # staff home
+│   │       ├── page.tsx             # staff home
+│   │       ├── account/
+│   │       │   └── page.tsx         # change own password (FR-019)
+│   │       └── users/
+│   │           └── page.tsx         # account lifecycle UI (US4)
 │   ├── (member)/                    # Member portal route group
 │   │   ├── sign-in/
 │   │   │   └── page.tsx
 │   │   └── portal/
 │   │       ├── layout.tsx           # member shell, auth guard
-│   │       └── page.tsx             # placeholder landing (Q1 resolution)
+│   │       ├── page.tsx             # placeholder landing (Q1 resolution)
+│   │       └── account/
+│   │           └── page.tsx         # change own password (FR-019, shared with staff)
 │   │                                #   - Welcome heading + member display name
 │   │                                #   - "v1.0 — more features coming soon" badge
 │   │                                #   - 4-item roadmap card:
