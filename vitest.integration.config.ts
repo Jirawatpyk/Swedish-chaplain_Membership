@@ -1,6 +1,13 @@
 import { defineConfig } from 'vitest/config';
 import { resolve } from 'node:path';
 
+// Load .env.local before defineConfig runs. Test files transitively
+// import src/lib/env.ts which validates process.env at module-load
+// time; by populating process.env here (in the config file's Node
+// runtime, which runs before any test file is loaded) we guarantee the
+// env.ts validation sees the secrets.
+process.loadEnvFile?.('.env.local');
+
 /**
  * Integration test configuration.
  *

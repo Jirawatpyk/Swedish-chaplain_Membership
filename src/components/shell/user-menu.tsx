@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -73,25 +74,36 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel>
-          <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium">{displayName ?? email}</span>
-            <span className="text-xs text-muted-foreground">{email}</span>
-            <Badge variant={roleBadgeVariant[role]} className="mt-1 w-fit">
-              {tBadge(role)}
-            </Badge>
-          </div>
-        </DropdownMenuLabel>
+        {/* Base UI requires <DropdownMenuLabel> to live inside a
+            <DropdownMenuGroup>, so we wrap each section in its own
+            group. */}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-medium">{displayName ?? email}</span>
+              <span className="text-xs text-muted-foreground">{email}</span>
+              <Badge variant={roleBadgeVariant[role]} className="mt-1 w-fit">
+                {tBadge(role)}
+              </Badge>
+            </div>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push(role === 'member' ? '/portal/account' : '/admin/account')}>
-          <UserIcon className="size-4" aria-hidden />
-          {t('account')}
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            onClick={() => router.push(role === 'member' ? '/portal/account' : '/admin/account')}
+          >
+            <UserIcon className="size-4" aria-hidden />
+            {t('account')}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleSignOut}>
-          <LogOutIcon className="size-4" aria-hidden />
-          {t('signOut')}
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={handleSignOut}>
+            <LogOutIcon className="size-4" aria-hidden />
+            {t('signOut')}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

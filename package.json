@@ -26,6 +26,7 @@
     "db:migrate": "node --env-file=.env.local --import tsx scripts/run-migrations.ts",
     "db:verify": "node --env-file=.env.local --import tsx scripts/verify-schema.ts",
     "db:seed-admin": "node --env-file=.env.local --import tsx scripts/seed-bootstrap-admin.ts",
+    "db:clear-ratelimit": "node --env-file=.env.local --import tsx scripts/clear-rate-limit.ts",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
     "prepare": "husky"
