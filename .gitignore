@@ -130,3 +130,15 @@ temp/
 *.tmp
 *.bak
 *.old
+
+# ============================================
+# Confidential source data (PII — per Constitution Principle I)
+# The SweCham Excel templates contain personal data of real members and contacts.
+# They MUST NOT be committed. Keep them locally for reference only.
+# ============================================
+docs/*.xlsx
+docs/*.xlsm
+docs/*.xls
+docs/~$*
+# Excel lock files anywhere in the repo
+~$*.xls*

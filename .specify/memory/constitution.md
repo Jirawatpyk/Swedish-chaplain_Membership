@@ -1,11 +1,13 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 → 1.1.0  (MINOR: Development Workflow materially expanded)
-Bump rationale: Development Workflow & Quality Gates expanded from 6 to 10 gates to
-                cover the full Spec Kit pipeline (adds Clarify, Checklist, Analyze,
-                and Verify phases). Existing gates retained and renumbered; no
-                principle removed or redefined — MINOR bump per Governance semver.
+Version change: 1.1.0 → 1.2.0  (MINOR: domain identity corrected + TH locale + TH hosting)
+Bump rationale: Correction of domain identity (project is the Thailand-Swedish Chamber
+                of Commerce, not a "chaplain" organisation) + material expansion of
+                Principle V (adds TH as a third mandatory locale, driven by Thai tax-
+                invoice legal requirements) + Compliance section updates for Thailand
+                primary hosting and Thailand PDPA alongside GDPR. No principle removed
+                or redefined — MINOR bump per Governance semver.
 
 History:
   - 1.0.0 (2026-04-09) — Initial ratification. Replaced template placeholders with
@@ -15,50 +17,68 @@ History:
                          (Spec → Clarify → Plan → Checklist → Tasks → Analyze →
                          Implement → Verify → Review → Release) to align with the
                          full Spec Kit command set.
+  - 1.2.0 (2026-04-09) — Domain identity corrected (SweCham / TSCC); Principle V
+                         expanded to SV + EN + TH; Principle I and Compliance section
+                         updated for Thailand primary hosting + PDPA + Thai tax-invoice
+                         requirements + Thai Buddhist calendar handling.
 
-Modified principles: None in 1.1.0.
-  (From 1.0.0: all 10 principles are in place — I. Data Privacy & Security,
-   II. Test-First Development, III. Clean Architecture, IV. Payment Security (PCI DSS),
-   V. Internationalization (SV/EN), VI. Inclusive UX (Mobile First + WCAG 2.1 AA),
-   VII. Performance & Observability, VIII. Reliability, IX. Code Quality Standards,
-   X. Simplicity (YAGNI).)
+Modified principles in 1.2.0:
+  - Title: "Swedish Chaplain Membership Constitution"
+           → "SweCham / TSCC Membership Constitution"
+  - I. Data Privacy & Security — rationale rewritten (not a "religious community"),
+                                  PDPA added alongside GDPR, residency updated.
+  - V. Internationalization    — SV/EN → SV + EN + TH; TH is mandatory for tax-compliant
+                                  invoices; adds Thai Buddhist calendar handling rule
+                                  (store ISO 8601 UTC, display locale-aware).
 
-Added sections in 1.1.0:
-  - Development Workflow & Quality Gates — expanded from 6 to 10 named gates; each
-    gate now references its concrete /speckit.* command.
+Added/changed sections in 1.2.0:
+  - Compliance & Technology Standards
+      * Localization: SV + EN + TH
+      * Hosting & Residency: Thailand primary (GDPR still applies to EU data subjects)
+      * Data Protection: GDPR + Thailand PDPA (both apply)
+      * Payment: Stripe recommended (see phases-plan.md Decision R2)
+      * Thai tax-invoice compliance noted
+      * Calendar handling: ISO 8601 UTC storage, locale-aware display
 
 Removed sections: None.
 
 Templates requiring updates:
-  ⚠ pending  .specify/templates/plan-template.md          — Constitution Check gates
-             aligned in 1.0.0; no change needed for 1.1.0 workflow expansion, but
-             confirm Phase ordering matches when /speckit.plan runs.
-  ✅ reviewed .specify/templates/spec-template.md          — Compatible; no change.
-  ⚠ pending  .specify/templates/tasks-template.md         — Consider explicit TDD
-             ordering, audit-trail tasks, a11y/i18n task categories when
-             /speckit.tasks runs.
-  ✅ reviewed .specify/templates/checklist-template.md     — Generic; no change.
-  ✅ reviewed .specify/templates/agent-file-template.md    — Generic; no change.
+  ✅ reviewed .specify/templates/plan-template.md   — Constitution Check still aligned.
+  ✅ reviewed .specify/templates/spec-template.md   — Compatible; no change.
+  ⚠ pending  .specify/templates/tasks-template.md   — Consider explicit TDD ordering,
+             audit-trail tasks, a11y/i18n task categories when /speckit.tasks runs.
+  ✅ reviewed .specify/templates/checklist-template.md  — Generic; no change.
+  ✅ reviewed .specify/templates/agent-file-template.md — Generic; no change.
 
 Runtime guidance docs:
-  - No README.md / docs/quickstart.md present yet; create on first feature.
+  - docs/database-analysis.md       — authoritative domain model (v1, 2026-04-09)
+  - docs/phases-plan.md             — 9-feature phase plan, decisions resolved
   - Global user guidance (C:\Users\Jirawat.p\.claude\CLAUDE.md) aligned.
 
-Follow-up TODOs: None.
+Follow-up TODOs:
+  - Repo folder rename `Swedish chaplain_membership` → `swecham-membership` (or
+    `swedish-chamber-membership`) is a manual action for the user — cannot be done
+    safely from within the active working directory. Tracked in phases-plan.md R6.
 -->
 
-# Swedish Chaplain Membership Constitution
+# SweCham / TSCC Membership Constitution
+<!-- Thailand-Swedish Chamber of Commerce — member, invoice, event, and renewal system -->
+
 
 ## Core Principles
 
 ### I. Data Privacy & Security (NON-NEGOTIABLE)
 
-Personal data MUST be handled under GDPR at every layer of the system.
+Personal data MUST be handled under **both Thailand PDPA and EU GDPR** at every layer
+of the system. Because SweCham has Thai-resident admins + Thai tax obligations AND
+Swedish/EU member data subjects, both regimes apply simultaneously — design for the
+stricter of the two on every field.
 
 - Every processing activity MUST have a documented lawful basis, explicit purpose, and
   retention policy. Data minimization and purpose limitation are mandatory.
 - Data subject rights (access, rectification, erasure, portability, restriction, objection)
-  MUST be implementable without code changes once the feature is live.
+  MUST be implementable without code changes once the feature is live. Rights apply
+  under **both** PDPA and GDPR — the union of the two is the effective rule.
 - All web code MUST defend against the current OWASP Top 10 (injection, broken access
   control, SSRF, insecure deserialization, etc.). Security tests MUST cover each class
   that applies to the touched code path.
@@ -66,12 +86,17 @@ Personal data MUST be handled under GDPR at every layer of the system.
   NO implicit permissions: every protected resource checks an explicit policy.
 - TLS 1.2+ is mandatory in transit. PII and credentials MUST be encrypted at rest
   (AES-256 or platform-equivalent). Secrets MUST NOT be committed to git.
-- EU/EEA data residency MUST be preserved where GDPR mandates it.
+- **Primary data residency is Thailand** (see Compliance & Technology Standards for
+  detail). Cross-border transfers of EU data subjects' personal data MUST rely on
+  a lawful GDPR transfer mechanism (adequacy decision, SCCs, or explicit consent) and
+  MUST be documented in the record of processing.
 
-**Rationale**: Members are a religious community with elevated privacy expectations; a
-single breach is both a legal and a trust catastrophe. This is non-negotiable because
-retrofit remediation for GDPR/OWASP violations is orders of magnitude more expensive
-and damaging than getting it right at design time.
+**Rationale**: SweCham / TSCC processes commercial member records (companies + named
+contact persons) with dual regulatory exposure (Thai PDPA for in-country processing,
+EU GDPR for Swedish and EU member data subjects). A breach is both a legal event in
+two jurisdictions and a trust catastrophe for a chamber whose primary asset is its
+network. Retrofit remediation for GDPR/PDPA/OWASP violations is orders of magnitude
+more expensive and damaging than getting it right at design time.
 
 ### II. Test-First Development (NON-NEGOTIABLE)
 
@@ -129,22 +154,36 @@ All payment processing MUST meet PCI DSS obligations.
 loss of payment capability. Outsourcing sensitive data to a certified processor keeps
 scope small and the risk manageable.
 
-### V. Internationalization (SV/EN)
+### V. Internationalization (SV / EN / TH)
 
-The product MUST ship Swedish (primary) and English (secondary) from day one.
+The product MUST ship **three locales** from day one: **English (default)**,
+**Thai**, and **Swedish**.
 
 - All user-facing strings MUST come from i18n resource keys. Hardcoded text is a merge
   blocker.
+- **Thai (TH) is mandatory** — not optional — because Thai tax-compliant invoices
+  and receipts MUST be renderable in Thai per Thai Revenue Department requirements.
+  A feature that omits a TH translation for any user-facing string is incomplete.
 - Dates, numbers, and currency MUST be formatted with locale-aware APIs (`Intl.*`).
-  Default currency is SEK; EUR/USD MUST be presentable where applicable.
-- A missing `sv` string MUST fall back to `en` with a build-time warning; a missing `en`
-  string fails the build.
-- Content length variance between SV and EN MUST be accommodated by layouts (no
-  truncation, no broken wrapping).
+  **Primary currency is THB**; SEK, EUR, and USD MUST be presentable where applicable.
+- **Calendar handling**: all timestamps MUST be stored in **ISO 8601 UTC** (Gregorian).
+  The `th-TH` locale MAY display dates using the Thai Buddhist Era (BE = CE + 543)
+  for user-facing surfaces where culturally expected (e.g. tax invoices); internal
+  storage, APIs, logs, and audit records MUST remain Gregorian UTC. Mixing BE and CE
+  in storage is forbidden — it is a source of off-by-543-years bugs and MUST NEVER
+  ship.
+- A missing `en` string fails the build. Missing `th` or `sv` strings MUST fall back
+  to `en` with a build-time warning. Invoices and receipts MUST NOT fall back — a
+  missing TH invoice string is a **blocker** for the Invoicing feature.
+- Content length variance between SV, EN, and TH MUST be accommodated by layouts
+  (no truncation, no broken wrapping). TH often needs different line-break rules
+  than Latin scripts — verify with real Thai content.
 
-**Rationale**: The community is Swedish-speaking with bilingual staff and visitors;
-locking language support to launch guarantees accessibility for both audiences and
-avoids costly retrofits.
+**Rationale**: SweCham operates in Bangkok serving Swedish, international, and
+Thai-speaking stakeholders. Thai tax law mandates Thai-language invoices; Swedish
+members prefer SV for day-to-day use; English is the lingua franca. Shipping all
+three from day one is cheaper than retrofitting, and TH is not negotiable for the
+invoicing use case.
 
 ### VI. Inclusive UX (Mobile First + WCAG 2.1 AA + UX Consistency)
 
@@ -240,17 +279,31 @@ The following stack-level and regulatory constraints apply to every feature:
 - **Language & Runtime**: TypeScript (strict). Node.js LTS.
 - **Quality Tooling**: ESLint, Prettier (or equivalent), Conventional Commits,
   TypeScript strict mode — all enforced in CI.
-- **Data Protection**: GDPR compliance at design time; Data Protection Impact
-  Assessment (DPIA) required for any feature touching sensitive categories (religion,
-  health, minors).
-- **Payment**: PCI-DSS-certified processor, tokenization only, no raw card data stored.
-  SAQ A / A-EP eligibility maintained.
+- **Data Protection**: **Thailand PDPA + EU GDPR** both apply — design for the
+  stricter rule on every field. Data Protection Impact Assessment (DPIA) required
+  for any feature touching sensitive categories, cross-border transfers of EU data
+  subjects' data, or automated decision-making.
+- **Payment**: PCI-DSS-certified processor, tokenization only, no raw card data
+  stored. **SAQ A eligibility MUST be preserved.** Recommended processor: **Stripe**
+  (native THB + PromptPay support, strongest DX, hosted fields preserve SAQ A). See
+  `docs/phases-plan.md` Decision R2 for rationale and alternatives.
+- **Thai Tax Compliance**: Invoices and receipts MUST meet Thai Revenue Department
+  requirements (TH language, VAT 7% calculation, tax ID on both parties, sequential
+  tax receipt numbering). Feature F4 (Membership Invoicing) is the primary surface.
 - **Accessibility**: WCAG 2.1 AA conformance verified on every release.
-- **Localization**: SV (primary) and EN (secondary) from day one; infrastructure ready
-  for additional locales.
-- **Hosting & Residency**: Production workloads and member data MUST reside in the
-  EU/EEA region.
-- **Audit Retention**: ≥5 years for finance, authentication, and PII access records.
+- **Localization**: **SV + EN + TH** from day one. EN is the fallback; TH is mandatory
+  for invoices/receipts per tax law; SV is mandatory for member-facing surfaces.
+- **Calendar & Time**: All stored timestamps in **ISO 8601 UTC (Gregorian)**. Thai
+  Buddhist Era (BE) is a **display-only** concern for the `th-TH` locale, not a
+  storage format. See Principle V.
+- **Hosting & Residency**: **Thailand primary.** Production workloads and operational
+  data MUST reside in a Thailand region (or nearest APAC if no TH region is available
+  from the chosen provider, with written justification). Cross-border transfers of
+  EU data subjects' personal data (e.g. Swedish member contact details) MUST rely on
+  a lawful GDPR transfer mechanism. **EU replication is NOT required** unless a
+  specific legal review concludes otherwise.
+- **Audit Retention**: ≥5 years for finance, authentication, and PII access records
+  (satisfies both Thai tax record retention and GDPR accountability).
 - **Secrets**: Managed via a secret store (e.g., platform env vars / vault); never
   committed to git; rotated on personnel changes and on any suspected compromise.
 
@@ -351,4 +404,4 @@ Swedish law).
 - Runtime development guidance for agents lives in `CLAUDE.md` (and equivalent agent
   files). Those files are subordinate to this constitution.
 
-**Version**: 1.1.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-04-09
+**Version**: 1.2.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-04-09
