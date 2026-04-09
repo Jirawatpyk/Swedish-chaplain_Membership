@@ -2,6 +2,7 @@
  * Quick schema verification against Neon. Lists tables + audit_log
  * triggers so the operator can confirm the migration landed.
  */
+// Loaded via `node --env-file=.env.local` from `pnpm db:verify`.
 process.loadEnvFile?.('.env.local');
 
 import postgres from 'postgres';

@@ -15,6 +15,8 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 
+// Loaded via `node --env-file=.env.local` from `pnpm db:migrate`.
+// The fallback below covers direct `tsx` invocations.
 process.loadEnvFile?.('.env.local');
 
 const url =

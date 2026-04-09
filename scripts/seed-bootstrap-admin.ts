@@ -21,14 +21,25 @@
  *
  * Usage:
  *
- *     pnpm exec tsx scripts/seed-bootstrap-admin.ts admin@swecham.se 'StrongPassword!23'
+ *     pnpm db:seed-admin admin@swecham.se 'StrongPassword!23'
  *
  * The email may also be supplied via the `BOOTSTRAP_ADMIN_EMAIL` env
  * var (in which case it becomes the first positional arg's default).
  *
+ * The `db:seed-admin` pnpm script loads `.env.local` via Node's
+ * `--env-file` flag BEFORE the static imports in this file evaluate,
+ * so the env validation in `src/lib/env.ts` sees the secrets. Don't
+ * invoke `tsx` directly — the static import of `src/lib/db.ts` will
+ * trigger env validation before `process.loadEnvFile()` runs.
+ *
  * Audits the action under actor `system:bootstrap` so the first admin
  * creation is visible in the audit trail.
  */
+// .env.local is loaded via `node --env-file=.env.local` from the
+// `db:seed-admin` pnpm script. The line below is a safety net for
+// anyone invoking tsx directly — it runs too late for the static
+// imports below, so we ALSO rely on --env-file in the package.json
+// script to cover the normal path.
 process.loadEnvFile?.('.env.local');
 
 import { sql } from 'drizzle-orm';
