@@ -71,39 +71,39 @@ strict, Tailwind CSS v4, ESLint, Vitest, Playwright, and shadcn/ui configured.
 
 ### Environment, logging, tracing, env validation
 
-- [ ] T017 Implement env validation in `src/lib/env.ts` using zod — exports a typed `env` object; throws at boot if any required var missing or malformed
-- [ ] T018 [P] Implement `pino` structured JSON logger in `src/lib/logger.ts` with the canonical field schema from `docs/observability.md` § 3 and redaction rules for `password*`, `token*`, `secret*`, `authorization`, `cookie`, `sessionId`
-- [ ] T019 [P] Implement OpenTelemetry setup in `instrumentation.ts` using `@vercel/otel` — exports spans for API routes with attributes for user id hash, auth event, outcome
-- [ ] T020 [P] Implement request ID middleware helper in `src/lib/request-id.ts` that generates a UUID v7 per request and attaches it to logger, traces, and response headers
-- [ ] T021 [P] Implement `Result<T, E>` type in `src/lib/result.ts` for explicit error handling in Application layer (no thrown exceptions across Application ↔ Infrastructure boundary)
+- [X] T017 Implement env validation in `src/lib/env.ts` using zod — exports a typed `env` object; throws at boot if any required var missing or malformed — also normalises Vercel KV (`KV_REST_API_URL`/`TOKEN`) to the canonical `upstash.url`/`upstash.token` shape so the rate-limit adapter doesn't have to know which integration provisioned them
+- [X] T018 [P] Implement `pino` structured JSON logger in `src/lib/logger.ts` with the canonical field schema from `docs/observability.md` § 3 and redaction rules for `password*`, `token*`, `secret*`, `authorization`, `cookie`, `sessionId` — also redacts `KV_REST_API_TOKEN`, `RESEND_API_KEY`, `AUTH_COOKIE_SIGNING_SECRET`. Dev mode pipes through `pino-pretty` for human-readable output.
+- [X] T019 [P] Implement OpenTelemetry setup in `instrumentation.ts` using `@vercel/otel` — exports spans for API routes with attributes for user id hash, auth event, outcome — minimal `registerOTel({ serviceName })` for now; per-span attributes are added by individual use cases in Phase 3
+- [X] T020 [P] Implement request ID middleware helper in `src/lib/request-id.ts` that generates a UUID v7 per request and attaches it to logger, traces, and response headers — UUIDv7 implemented manually (Node 20 doesn't expose `randomUUID({ version: 7 })`); also exports `requestIdFromHeaders()` reading `x-request-id` / `x-vercel-id`
+- [X] T021 [P] Implement `Result<T, E>` type in `src/lib/result.ts` for explicit error handling in Application layer (no thrown exceptions across Application ↔ Infrastructure boundary)
 
 ### Database schema + migrations
 
-- [ ] T022 [US7] Implement Drizzle schema in `src/modules/auth/infrastructure/db/schema.ts` with enums (`role`, `user_status`, `audit_event_type`) and tables (`users`, `sessions`, `password_reset_tokens`, `invitations`, `audit_log`, `email_delivery_events`) per data-model.md § 7
-- [ ] T023 [US7] Generate initial Drizzle migration via `pnpm db:generate` producing `drizzle/migrations/0000_initial.sql`
-- [ ] T024 [US7] Write append-only grants migration at `drizzle/migrations/0001_audit_log_grants.sql` creating roles `swecham_app_rw` + `swecham_app_ro` and revoking UPDATE/DELETE on `audit_log` per data-model.md § 7.1
-- [ ] T025 [US7] Implement Drizzle client singleton in `src/lib/db.ts` with 5-second query timeout, 3-second connection acquisition timeout per plan.md Constraints
-- [ ] T026 [US7] Write integration test `tests/integration/audit/append-only.test.ts` that attempts UPDATE and DELETE on `audit_log` via `swecham_app_rw` role and asserts Postgres rejects with "permission denied" (security.md T-13)
+- [X] T022 [US7] Implement Drizzle schema in `src/modules/auth/infrastructure/db/schema.ts` with enums (`role`, `user_status`, `audit_event_type`) and tables (`users`, `sessions`, `password_reset_tokens`, `invitations`, `audit_log`, `email_delivery_events`) per data-model.md § 7 — uses Drizzle 0.36+ array-form for indexes (data-model uses the older object-form which no longer compiles)
+- [X] T023 [US7] Generate initial Drizzle migration via `pnpm db:generate` producing `drizzle/migrations/0000_initial.sql` — generated as `drizzle/migrations/0000_high_firestar.sql` (drizzle's default name); 6 tables, 15 indexes, 5 FKs
+- [X] T024 [US7] Write append-only grants migration at `drizzle/migrations/0001_audit_log_grants.sql` creating roles `swecham_app_rw` + `swecham_app_ro` and revoking UPDATE/DELETE on `audit_log` per data-model.md § 7.1 — **deviation**: Neon does not support easy multi-role provisioning per project. Instead implemented as `BEFORE UPDATE / DELETE / TRUNCATE` triggers on `audit_log` that raise `42501` (`insufficient_privilege`). Works for ALL connections regardless of role and is independently testable. File: `drizzle/migrations/0001_audit_log_append_only.sql`. Generated via `drizzle-kit generate --custom`.
+- [X] T025 [US7] Implement Drizzle client singleton in `src/lib/db.ts` with 5-second query timeout, 3-second connection acquisition timeout per plan.md Constraints — also includes the HMR cache (`global.__dbClient`) so dev-mode file changes don't exhaust Neon connection pool. `scripts/run-migrations.ts` provides `pnpm db:migrate`.
+- [X] T026 [US7] Write integration test `tests/integration/audit/append-only.test.ts` that attempts UPDATE and DELETE on `audit_log` via `swecham_app_rw` role and asserts Postgres rejects with "permission denied" (security.md T-13) — adapted to assert the trigger fires (`42501` SQLSTATE + "append-only" message). Also covers TRUNCATE (separate trigger). Skipped automatically when DATABASE_URL is missing.
 
 ### Pure Domain layer (no framework imports)
 
-- [ ] T027 [P] Write unit test `tests/unit/auth/domain/role-policies.test.ts` for `canAccess(role, resource, action)` covering all 3 roles × {read, write, delete, admin-only} — MUST fail before T028
-- [ ] T028 [P] Implement Domain types in `src/modules/auth/domain/role.ts` (Role enum, ROLES, STAFF_ROLES, PORTAL_FOR_ROLE) per data-model.md § 2.1
-- [ ] T029 [P] Implement Domain types in `src/modules/auth/domain/user.ts` (UserStatus, UserAccount, status transitions) per data-model.md § 2.2–2.3
-- [ ] T030 [P] Implement Domain types in `src/modules/auth/domain/session.ts` (Session, IDLE_TIMEOUT_MS, ABSOLUTE_LIFETIME_MS, isSessionValid) per data-model.md § 2.4
-- [ ] T031 [P] Implement Domain types in `src/modules/auth/domain/token.ts` (PasswordResetToken, Invitation) per data-model.md § 2.5–2.6
-- [ ] T032 [P] Implement Domain types in `src/modules/auth/domain/audit-event.ts` (AUDIT_EVENT_TYPES with all 16 types, AuditEvent interface) per data-model.md § 2.7
-- [ ] T033 [P] Implement Domain policies in `src/modules/auth/domain/policies.ts` — `canAccess(role, resource, action)` function enforcing the CHK008 "manager read-only everywhere except self-service" rule from spec §Clarifications Q4
-- [ ] T034 Write unit test `tests/unit/auth/domain/session-ttl.test.ts` verifying `isSessionValid` for all edge cases (just-created, near-idle, just-over-idle, near-absolute, just-over-absolute)
+- [X] T027 [P] Write unit test `tests/unit/auth/domain/role-policies.test.ts` for `canAccess(role, resource, action)` covering all 3 roles × {read, write, delete, admin-only} — MUST fail before T028 — 39 test cases including exhaustive `it.each` over (role × resource × action). 100% branch coverage on policies.ts.
+- [X] T028 [P] Implement Domain types in `src/modules/auth/domain/role.ts` (Role enum, ROLES, STAFF_ROLES, PORTAL_FOR_ROLE) per data-model.md § 2.1
+- [X] T029 [P] Implement Domain types in `src/modules/auth/domain/user.ts` (UserStatus, UserAccount, status transitions) per data-model.md § 2.2–2.3 — `canTransition(from, to)` exposed for the application layer + `isLocked(user, now)` helper
+- [X] T030 [P] Implement Domain types in `src/modules/auth/domain/session.ts` (Session, IDLE_TIMEOUT_MS, ABSOLUTE_LIFETIME_MS, isSessionValid) per data-model.md § 2.4 — also `nextExpiryAt(session)` for the idle warning dialog (T163)
+- [X] T031 [P] Implement Domain types in `src/modules/auth/domain/token.ts` (PasswordResetToken, Invitation) per data-model.md § 2.5–2.6 — `isResetTokenValid` / `isInvitationValid` + TTL constants
+- [X] T032 [P] Implement Domain types in `src/modules/auth/domain/audit-event.ts` (AUDIT_EVENT_TYPES with all 16 types, AuditEvent interface) per data-model.md § 2.7 — `ActorRef` union covers `'anonymous' | 'system:bootstrap' | 'system:cron'`
+- [X] T033 [P] Implement Domain policies in `src/modules/auth/domain/policies.ts` — `canAccess(role, resource, action)` function enforcing the CHK008 "manager read-only everywhere except self-service" rule from spec §Clarifications Q4 — also `isReadOnlyRole(role)` shortcut + `SELF_RESOURCE` constant
+- [X] T034 Write unit test `tests/unit/auth/domain/session-ttl.test.ts` verifying `isSessionValid` for all edge cases (just-created, near-idle, just-over-idle, near-absolute, just-over-absolute) — 8 test cases including `nextExpiryAt` verification
 
 ### Infrastructure adapters
 
-- [ ] T035 [P] [US1] Implement argon2 password hasher in `src/modules/auth/infrastructure/password/argon2-hasher.ts` with parameters from research.md § 3 (memoryCost: 19456, timeCost: 2, parallelism: 1, hashLength: 32, algorithm: argon2id) and a pre-computed `DUMMY_HASH` for timing-constant sign-in per security.md T-03
-- [ ] T036 [P] [US1] Write unit test `tests/unit/auth/password/argon2-hasher.test.ts` — hash+verify round trip, wrong password rejected, dummy hash path constant-time
-- [ ] T037 [P] Implement Upstash rate limiter adapter in `src/modules/auth/infrastructure/rate-limit/upstash-rate-limiter.ts` with sliding-window algorithm per research.md § 5 and fail-open-to-in-memory fallback per research.md § 5
-- [ ] T038 [P] Implement Resend client in `src/modules/auth/infrastructure/email/resend-client.ts` with 3-retry exponential backoff (1s/2s/4s) per research.md § 6.1
-- [ ] T039 [P] Implement HaveIBeenPwned k-anonymity password check in `src/modules/auth/application/password-policy.ts` per security.md T-11 — fails-open on HIBP network errors
-- [ ] T040 [P] Write unit test `tests/unit/auth/password/password-policy.test.ts` with MSW-mocked HIBP API covering short / pwned / clean / HIBP-down scenarios
+- [X] T035 [P] [US1] Implement argon2 password hasher in `src/modules/auth/infrastructure/password/argon2-hasher.ts` with parameters from research.md § 3 (memoryCost: 19456, timeCost: 2, parallelism: 1, hashLength: 32, algorithm: argon2id) and a pre-computed `DUMMY_HASH` for timing-constant sign-in per security.md T-03 — `DUMMY_HASH` is generated lazily on first use (cached) instead of hardcoded; `verifyDummy()` exposed for the unknown-email path. **Note**: `Algorithm.Argon2id` is an ambient const enum that trips `isolatedModules`; replaced with the literal `2`.
+- [X] T036 [P] [US1] Write unit test `tests/unit/auth/password/argon2-hasher.test.ts` — hash+verify round trip, wrong password rejected, dummy hash path constant-time — 5 cases incl. salt randomness and malformed-hash recovery (returns false instead of throwing)
+- [X] T037 [P] Implement Upstash rate limiter adapter in `src/modules/auth/infrastructure/rate-limit/upstash-rate-limiter.ts` with sliding-window algorithm per research.md § 5 and fail-open-to-in-memory fallback per research.md § 5 — caches one `Ratelimit` instance per `(max, window)` tuple to avoid per-call construction cost
+- [X] T038 [P] Implement Resend client in `src/modules/auth/infrastructure/email/resend-client.ts` with 3-retry exponential backoff (1s/2s/4s) per research.md § 6.1 — returns `Result<{messageId}, EmailError>`; permanent failures (validation_error, invalid_to_address) bail without retry
+- [X] T039 [P] Implement HaveIBeenPwned k-anonymity password check in `src/modules/auth/application/password-policy.ts` per security.md T-11 — fails-open on HIBP network errors — composes `min length (12)` + `common-passwords` allow-list + HIBP, and exposes a `'weak' | 'acceptable' | 'strong'` strength score for the on-screen indicator (T105)
+- [X] T040 [P] Write unit test `tests/unit/auth/password/password-policy.test.ts` with MSW-mocked HIBP API covering short / pwned / clean / HIBP-down scenarios — 6 cases incl. HTTP 5xx fail-open path
 
 ### Middleware: session lookup, CSRF, rate-limit, request-id
 

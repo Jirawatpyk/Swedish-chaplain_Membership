@@ -1,5 +1,9 @@
 import { defineConfig } from 'drizzle-kit';
 
+// Load .env.local before reading process.env (Node 20.12+ built-in,
+// no dotenv dependency). drizzle-kit does NOT auto-load .env files.
+process.loadEnvFile?.('.env.local');
+
 /**
  * Drizzle Kit configuration.
  *
