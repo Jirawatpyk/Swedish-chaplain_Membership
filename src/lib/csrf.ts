@@ -32,6 +32,15 @@ export type CsrfDecision =
   | { readonly action: 'pass'; readonly reason: 'method-safe' | 'unprotected-path' | 'origin-allowed' }
   | { readonly action: 'reject'; readonly reason: 'missing-origin' | 'origin-not-allowed' };
 
+/**
+ * In development mode we accept any `http://localhost:<port>` or
+ * `http://127.0.0.1:<port>` origin so the dev workflow works across
+ * whatever port `pnpm dev` happens to use (3000 for normal dev, 3100
+ * for Playwright, etc.). Production still requires an explicit match
+ * against `APP_ALLOWED_ORIGINS`.
+ */
+const DEV_ORIGIN_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
 export function checkCsrf(method: string, pathname: string, origin: string | null): CsrfDecision {
   const upper = method.toUpperCase();
   if (!STATE_CHANGING_METHODS.has(upper)) {
@@ -43,8 +52,11 @@ export function checkCsrf(method: string, pathname: string, origin: string | nul
   if (!origin) {
     return { action: 'reject', reason: 'missing-origin' };
   }
-  if (!env.app.allowedOrigins.includes(origin)) {
-    return { action: 'reject', reason: 'origin-not-allowed' };
+  if (env.app.allowedOrigins.includes(origin)) {
+    return { action: 'pass', reason: 'origin-allowed' };
   }
-  return { action: 'pass', reason: 'origin-allowed' };
+  if (env.isDevelopment && DEV_ORIGIN_PATTERN.test(origin)) {
+    return { action: 'pass', reason: 'origin-allowed' };
+  }
+  return { action: 'reject', reason: 'origin-not-allowed' };
 }

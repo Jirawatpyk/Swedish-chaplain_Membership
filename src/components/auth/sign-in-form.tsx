@@ -28,6 +28,7 @@ import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { safeReturnTo } from '@/lib/return-url';
 
 const schema = z.object({
   email: z.string().email().max(254),
@@ -38,9 +39,15 @@ type FormValues = z.infer<typeof schema>;
 
 export interface SignInFormProps {
   readonly portal: 'staff' | 'member';
+  /**
+   * Optional validated return path from the sign-in page's server
+   * component. Server-side validation via `safeReturnTo()` has already
+   * run; we re-validate client-side as defense-in-depth.
+   */
+  readonly returnTo?: string | null;
 }
 
-export function SignInForm({ portal }: SignInFormProps) {
+export function SignInForm({ portal, returnTo }: SignInFormProps) {
   const t = useTranslations('auth.signIn');
   const tErrors = useTranslations('errors');
   const router = useRouter();
@@ -75,7 +82,13 @@ export function SignInForm({ portal }: SignInFormProps) {
 
       if (response.ok) {
         const data = (await response.json()) as { redirect: string };
-        router.push(data.redirect);
+        // Re-validate returnTo client-side before navigation (defense
+        // in depth — the server already validated via safeReturnTo in
+        // the sign-in page's server component, but we re-check here
+        // so any future refactor that forgets the guard still stays
+        // safe).
+        const safeReturn = returnTo ? safeReturnTo(returnTo, portal) : null;
+        router.push(safeReturn ?? data.redirect);
         router.refresh();
         return;
       }

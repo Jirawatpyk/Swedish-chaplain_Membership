@@ -117,11 +117,15 @@ test.describe('staff sign-in (happy path)', () => {
       .getByText(/sign out/i)
       .click();
 
-    // Should land back on sign-in
-    await page.waitForURL('**/admin/sign-in', { timeout: 10_000 });
+    // Should land back on sign-in. Use a regex so the assertion
+    // passes whether or not the URL has a `?returnTo=...` query,
+    // because T171 (return-URL preservation) may inject one when the
+    // sign-out navigation is triggered from a protected layout.
+    await page.waitForURL(/\/admin\/sign-in(\?|$)/, { timeout: 10_000 });
 
-    // Revisiting /admin should redirect to sign-in again (session cleared)
+    // Revisiting /admin should redirect to sign-in again (session cleared).
+    // With T171, requireSession() appends ?returnTo=%2Fadmin.
     await page.goto('/admin');
-    await page.waitForURL('**/admin/sign-in', { timeout: 10_000 });
+    await page.waitForURL(/\/admin\/sign-in(\?|$)/, { timeout: 10_000 });
   });
 });

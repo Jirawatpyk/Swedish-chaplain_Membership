@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { SignInForm } from '@/components/auth/sign-in-form';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { getCurrentSession } from '@/lib/auth-session';
+import { safeReturnTo } from '@/lib/return-url';
 
 /**
  * Staff portal sign-in page (T073) at URL `/admin/sign-in`.
@@ -14,7 +15,10 @@ import { getCurrentSession } from '@/lib/auth-session';
  * in the URL — Next.js resolves `/admin/sign-in` to this file because
  * it is the only `app/admin/sign-in/page.tsx` across all groups.
  *
- * Redirects already-signed-in staff to `/admin`.
+ * Reads the optional `returnTo` query param and, after validating it
+ * against the open-redirect guard in `safeReturnTo()`, forwards it to
+ * the sign-in form (T171, spec AS5). Already-signed-in staff are
+ * redirected to the preserved URL or `/admin` if none.
  */
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('auth.signIn');
@@ -23,10 +27,19 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default async function StaffSignInPage() {
+interface StaffSignInPageProps {
+  searchParams: Promise<{ returnTo?: string | string[] }>;
+}
+
+export default async function StaffSignInPage({ searchParams }: StaffSignInPageProps) {
+  const { returnTo: rawReturnTo } = await searchParams;
+  // searchParams can be string | string[] | undefined — coerce first.
+  const returnToCandidate = Array.isArray(rawReturnTo) ? rawReturnTo[0] : rawReturnTo;
+  const validatedReturnTo = safeReturnTo(returnToCandidate, 'staff');
+
   const current = await getCurrentSession();
   if (current && (current.user.role === 'admin' || current.user.role === 'manager')) {
-    redirect('/admin');
+    redirect(validatedReturnTo ?? '/admin');
   }
 
   const t = await getTranslations('auth.signIn');
@@ -46,7 +59,7 @@ export default async function StaffSignInPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SignInForm portal="staff" />
+            <SignInForm portal="staff" returnTo={validatedReturnTo} />
           </CardContent>
         </Card>
       </div>

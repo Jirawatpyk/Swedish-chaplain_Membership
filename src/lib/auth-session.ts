@@ -15,6 +15,7 @@
  * Doing the lookup in the page server component keeps the Node-only
  * code in the Node runtime.
  */
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { isSessionValid } from '@/modules/auth/domain/session';
 import type { Session } from '@/modules/auth/domain/session';
@@ -22,6 +23,7 @@ import type { UserAccount } from '@/modules/auth/domain/user';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { clearSessionCookie, getSessionIdFromCookie } from './auth-cookies';
+import { buildSignInUrl } from './return-url';
 
 export interface CurrentSession {
   readonly session: Session;
@@ -70,11 +72,19 @@ export async function getCurrentSession(): Promise<CurrentSession | null> {
 /**
  * Convenience wrapper for layouts: gets the current session OR
  * redirects to the appropriate sign-in page (staff vs member).
+ *
+ * Preserves the current URL as a `returnTo` query param so the
+ * sign-in form can navigate back after success (T171, spec AS5).
+ * The `x-pathname` header is set by middleware.ts on every request;
+ * `buildSignInUrl` validates the candidate against an open-redirect
+ * guard before embedding it.
  */
 export async function requireSession(portal: 'staff' | 'member'): Promise<CurrentSession> {
   const current = await getCurrentSession();
   if (!current) {
-    redirect(portal === 'staff' ? '/admin/sign-in' : '/portal/sign-in');
+    const h = await headers();
+    const fromPath = h.get('x-pathname');
+    redirect(buildSignInUrl(portal, fromPath));
   }
   return current;
 }
