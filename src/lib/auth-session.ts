@@ -4,12 +4,25 @@
  * Reads the cookie via `getSessionIdFromCookie()`, looks up the row in
  * Postgres via `sessionRepo`, validates idle + absolute TTLs against
  * the Domain `isSessionValid`, and either renews `last_seen_at` or
- * destroys the session.
+ * treats the session as invalid.
  *
  * Layouts call this in their server component to gate routes:
  *
  *   const session = await getCurrentSession();
  *   if (!session) redirect('/admin/sign-in');
+ *
+ * **Next.js 16 constraint**: cookies can only be MUTATED from a Route
+ * Handler or Server Action, NOT from a Server Component. This helper
+ * is called from both contexts (layouts = Server Component; sign-out
+ * API route = Route Handler). Therefore:
+ *   - We NEVER call `clearSessionCookie()` here. Orphaned cookies
+ *     are harmless (the next sign-in overwrites them, and an expired
+ *     cookie can't grant access because the session row is gone too).
+ *   - Expired session ROWS in the DB are still deleted as soon as we
+ *     notice them — that's a write to Postgres, which is always safe
+ *     from any context.
+ *   - The sign-out route handler explicitly calls `clearSessionCookie`
+ *     from its own handler body, which is allowed.
  *
  * Why not in middleware: Edge runtime cannot import `postgres-js`.
  * Doing the lookup in the page server component keeps the Node-only
@@ -22,7 +35,7 @@ import type { Session } from '@/modules/auth/domain/session';
 import type { UserAccount } from '@/modules/auth/domain/user';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
-import { clearSessionCookie, getSessionIdFromCookie } from './auth-cookies';
+import { getSessionIdFromCookie } from './auth-cookies';
 import { buildSignInUrl } from './return-url';
 
 export interface CurrentSession {
@@ -35,6 +48,10 @@ export interface CurrentSession {
  * session. Updates `last_seen_at` as a side effect when the session is
  * still within the idle window.
  *
+ * Does NOT mutate cookies — see file-level doc comment for why. If
+ * the caller is a Route Handler and wants to clear the orphan cookie,
+ * it can call `clearSessionCookie()` itself.
+ *
  * NEVER throws across the call boundary — caller decides what to do
  * with `null`.
  */
@@ -44,21 +61,23 @@ export async function getCurrentSession(): Promise<CurrentSession | null> {
 
   const session = await sessionRepo.findById(sessionId);
   if (!session) {
-    await clearSessionCookie();
+    // Orphan cookie (session row already gone). Harmless — next
+    // successful sign-in will overwrite the cookie with a fresh id.
     return null;
   }
 
   const now = new Date();
   if (!isSessionValid(session, now)) {
+    // Row exists but has expired — delete it (DB write is allowed
+    // from any server context) but do NOT touch the cookie.
     await sessionRepo.delete(sessionId);
-    await clearSessionCookie();
     return null;
   }
 
   const user = await userRepo.findById(session.userId);
   if (!user || user.status !== 'active') {
+    // User disappeared or was disabled — delete the session row.
     await sessionRepo.delete(sessionId);
-    await clearSessionCookie();
     return null;
   }
 

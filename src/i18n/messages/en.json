@@ -106,5 +106,45 @@
     "close": "Close",
     "back": "Back",
     "retry": "Try again"
+  },
+  "admin": {
+    "users": {
+      "title": "Users",
+      "subtitle": "{total} accounts total",
+      "viewingAs": "Viewing as {role}",
+      "listHeading": "All accounts",
+      "listDescription": "Invite, disable, enable, or change roles. Destructive actions require confirmation.",
+      "empty": "No users yet. Invite the first one to get started.",
+      "refreshHint": "Changes apply immediately after confirmation.",
+      "columns": {
+        "email": "Email",
+        "name": "Name",
+        "role": "Role",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "actions": {
+        "invite": "Invite user",
+        "disable": "Disable",
+        "enable": "Enable",
+        "changeRole": "Change role",
+        "self": "That's you"
+      },
+      "confirm": {
+        "cancel": "Cancel",
+        "disable": {
+          "title": "Disable this account?",
+          "description": "{email} will lose access immediately and all their active sessions will be signed out. You can re-enable the account later."
+        },
+        "enable": {
+          "title": "Re-enable this account?",
+          "description": "{email} will regain access and can sign in again."
+        }
+      },
+      "toast": {
+        "disabled": "{email} disabled.",
+        "enabled": "{email} re-enabled."
+      }
+    }
   }
 }

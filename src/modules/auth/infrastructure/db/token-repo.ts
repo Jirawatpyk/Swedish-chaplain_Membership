@@ -14,7 +14,9 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import {
+  invitations,
   passwordResetTokens,
+  type InvitationRow,
   type PasswordResetTokenRow,
 } from './schema';
 import {
@@ -22,8 +24,11 @@ import {
   type TokenId,
   type UserId,
 } from '@/modules/auth/domain/branded';
+import type { Role } from '@/modules/auth/domain/role';
 import {
+  INVITATION_TTL_MS,
   RESET_TOKEN_TTL_MS,
+  type Invitation,
   type PasswordResetToken,
 } from '@/modules/auth/domain/token';
 
@@ -31,6 +36,18 @@ function toDomainReset(row: PasswordResetTokenRow): PasswordResetToken {
   return {
     id: asTokenId(row.id),
     userId: row.userId as UserId,
+    createdAt: row.createdAt,
+    expiresAt: row.expiresAt,
+    consumedAt: row.consumedAt,
+  };
+}
+
+function toDomainInvitation(row: InvitationRow): Invitation {
+  return {
+    id: asTokenId(row.id),
+    userId: row.userId as UserId,
+    invitedByUserId: row.invitedByUserId as UserId,
+    intendedRole: row.intendedRole,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
     consumedAt: row.consumedAt,
@@ -62,6 +79,16 @@ export interface TokenRepo {
    * redemption.
    */
   invalidateAllUnconsumedForUser(userId: UserId, now: Date): Promise<number>;
+
+  // --- Invitation tokens (T121, Phase 6 US4) ---
+  createInvitation(args: {
+    userId: UserId;
+    invitedByUserId: UserId;
+    intendedRole: Role;
+    now: Date;
+  }): Promise<Invitation>;
+  findInvitationById(id: TokenId): Promise<Invitation | null>;
+  markInvitationConsumed(id: TokenId, now: Date): Promise<void>;
 }
 
 class DrizzleTokenRepo implements TokenRepo {
@@ -117,6 +144,47 @@ class DrizzleTokenRepo implements TokenRepo {
       )
       .returning({ id: passwordResetTokens.id });
     return result.length;
+  }
+
+  async createInvitation(args: {
+    userId: UserId;
+    invitedByUserId: UserId;
+    intendedRole: Role;
+    now: Date;
+  }): Promise<Invitation> {
+    const id = generateTokenId();
+    const expiresAt = new Date(args.now.getTime() + INVITATION_TTL_MS);
+    const rows = await db
+      .insert(invitations)
+      .values({
+        id,
+        userId: args.userId,
+        invitedByUserId: args.invitedByUserId,
+        intendedRole: args.intendedRole,
+        createdAt: args.now,
+        expiresAt,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) throw new Error('token-repo.createInvitation: no row returned');
+    return toDomainInvitation(row);
+  }
+
+  async findInvitationById(id: TokenId): Promise<Invitation | null> {
+    const rows = await db
+      .select()
+      .from(invitations)
+      .where(eq(invitations.id, id))
+      .limit(1);
+    const row = rows[0];
+    return row ? toDomainInvitation(row) : null;
+  }
+
+  async markInvitationConsumed(id: TokenId, now: Date): Promise<void> {
+    await db
+      .update(invitations)
+      .set({ consumedAt: now })
+      .where(eq(invitations.id, id));
   }
 }
 

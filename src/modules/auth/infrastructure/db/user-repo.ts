@@ -48,6 +48,16 @@ export interface UserRepo {
   }): Promise<UserAccount>;
   setPasswordHash(id: UserId, hash: string, now: Date): Promise<void>;
   activate(id: UserId, now: Date): Promise<void>;
+  /** Transition active → disabled. */
+  disable(id: UserId): Promise<void>;
+  /** Transition disabled → active. */
+  enable(id: UserId): Promise<void>;
+  /** Update role. No portal-boundary check — caller enforces that. */
+  setRole(id: UserId, role: Role): Promise<void>;
+  /** List all users (paginated) — used by the admin users list page. */
+  list(limit: number, offset: number): Promise<readonly UserAccount[]>;
+  /** Total user count for pagination header. */
+  countAll(): Promise<number>;
 }
 
 class DrizzleUserRepo implements UserRepo {
@@ -146,6 +156,38 @@ class DrizzleUserRepo implements UserRepo {
       .update(users)
       .set({ status: 'active', lastPasswordChangedAt: now })
       .where(eq(users.id, id));
+  }
+
+  async disable(id: UserId): Promise<void> {
+    await db.update(users).set({ status: 'disabled' }).where(eq(users.id, id));
+  }
+
+  async enable(id: UserId): Promise<void> {
+    await db
+      .update(users)
+      .set({ status: 'active', failedSignInCount: 0, lockedUntil: null })
+      .where(eq(users.id, id));
+  }
+
+  async setRole(id: UserId, role: Role): Promise<void> {
+    await db.update(users).set({ role }).where(eq(users.id, id));
+  }
+
+  async list(limit: number, offset: number): Promise<readonly UserAccount[]> {
+    const rows = await db
+      .select()
+      .from(users)
+      .orderBy(sql`${users.createdAt} DESC`)
+      .limit(limit)
+      .offset(offset);
+    return rows.map(toDomain);
+  }
+
+  async countAll(): Promise<number> {
+    const rows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(users);
+    return rows[0]?.count ?? 0;
   }
 }
 

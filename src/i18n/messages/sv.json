@@ -106,5 +106,45 @@
     "close": "Stäng",
     "back": "Tillbaka",
     "retry": "Försök igen"
+  },
+  "admin": {
+    "users": {
+      "title": "Användare",
+      "subtitle": "{total} konton totalt",
+      "viewingAs": "Visar som {role}",
+      "listHeading": "Alla konton",
+      "listDescription": "Bjud in, inaktivera, återaktivera eller byt roll. Destruktiva åtgärder kräver bekräftelse.",
+      "empty": "Inga användare ännu. Bjud in den första för att komma igång.",
+      "refreshHint": "Ändringar träder i kraft direkt efter bekräftelse.",
+      "columns": {
+        "email": "E-post",
+        "name": "Namn",
+        "role": "Roll",
+        "status": "Status",
+        "actions": "Åtgärder"
+      },
+      "actions": {
+        "invite": "Bjud in användare",
+        "disable": "Inaktivera",
+        "enable": "Aktivera",
+        "changeRole": "Byt roll",
+        "self": "Det är du"
+      },
+      "confirm": {
+        "cancel": "Avbryt",
+        "disable": {
+          "title": "Inaktivera det här kontot?",
+          "description": "{email} förlorar åtkomst direkt och alla aktiva sessioner loggas ut. Du kan återaktivera kontot senare."
+        },
+        "enable": {
+          "title": "Återaktivera det här kontot?",
+          "description": "{email} återfår åtkomst och kan logga in igen."
+        }
+      },
+      "toast": {
+        "disabled": "{email} inaktiverad.",
+        "enabled": "{email} återaktiverad."
+      }
+    }
   }
 }

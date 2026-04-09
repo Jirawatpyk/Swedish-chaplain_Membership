@@ -2,38 +2,52 @@
 > swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
 > vitest run --config vitest.integration.config.ts --passWithNoTests
 
-[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
 
 [1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
 
+{"level":"warn","time":1775763398699,"service":"swecham-membership","env":"test","requestId":"it-replay-1775763397605-second","reason":"token-used","msg":"reset_password.token_invalid"}
+{"level":"warn","time":1775763399116,"service":"swecham-membership","env":"test","requestId":"it-expired-1775763399053","reason":"token-expired","msg":"reset_password.token_invalid"}
+ [32m✓[39m tests/integration/auth/password-reset.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 4865[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: forgot-password → reset-password happy path[2m > [22mactive user receives a token and reset completes end-to-end [33m2933[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: forgot-password → reset-password happy path[2m > [22mreplay: consumed token cannot be reused [33m1383[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: forgot-password → reset-password happy path[2m > [22mexpired token is rejected as link-invalid [33m417[2mms[22m[39m
 [90mstdout[2m | tests/integration/auth/enumeration-timing.test.ts[2m > [22m[2mintegration: enumeration timing defense[2m > [22m[2mtiming: unknown-email and wrong-password medians stay within 2x of each other
-[22m[39m  enumeration-timing: n=30 per side, unknown median=154.2ms p95=160.5ms, wrong-pw median=117.2ms p95=211.3ms, median ratio=1.32x, |p95 delta|=50.8ms
+[22m[39m  enumeration-timing: n=30 per side, unknown median=163.2ms p95=170.2ms, wrong-pw median=126.7ms p95=225.0ms, median ratio=1.29x, |p95 delta|=54.8ms
 
- [32m✓[39m tests/integration/auth/enumeration-timing.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 10695[2mms[22m[39m
-   [33m[2m✓[22m[39m integration: enumeration timing defense[2m > [22mstructural: both unknown-email and wrong-password paths run argon2 exactly once [33m990[2mms[22m[39m
-   [33m[2m✓[22m[39m integration: enumeration timing defense[2m > [22mtiming: unknown-email and wrong-password medians stay within 2x of each other [33m9703[2mms[22m[39m
+ [32m✓[39m tests/integration/auth/enumeration-timing.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 10979[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: enumeration timing defense[2m > [22mstructural: both unknown-email and wrong-password paths run argon2 exactly once [33m599[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: enumeration timing defense[2m > [22mtiming: unknown-email and wrong-password medians stay within 2x of each other [33m10379[2mms[22m[39m
+{"level":"warn","time":1775763410798,"service":"swecham-membership","env":"test","role":"manager","resource":"auth:user","action":"write","userId":"9f5d28ec-f7c2-42f7-9327-423ab290ab4a","requestId":"rbac-mgr-write-1775763410735","msg":"rbac.denied"}
+{"level":"warn","time":1775763411282,"service":"swecham-membership","env":"test","role":"manager","resource":"invoices:invoice","action":"delete","userId":"2d1017e1-603f-447f-b225-8d92c9b2c961","requestId":"rbac-mgr-del-1775763411219","msg":"rbac.denied"}
+ [32m✓[39m tests/integration/auth/rbac-manager-readonly.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2573[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — manager denied write (US2, FR-003)[2m > [22mdenies manager write on auth:user AND emits manager_denied_write audit [33m483[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — manager denied write (US2, FR-003)[2m > [22mdenies manager delete on invoices:invoice AND emits audit [33m481[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — manager denied write (US2, FR-003)[2m > [22mpermits manager read on staff:dashboard WITHOUT emitting an audit [33m416[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — manager denied write (US2, FR-003)[2m > [22mpermits manager self-service write (own password change) [33m418[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — admin bypass (regression guard)[2m > [22madmin may write on auth:user WITHOUT emitting a denial audit [33m414[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — admin bypass (regression guard)[2m > [22madmin may delete on invoices:invoice [33m360[2mms[22m[39m
 [90mstdout[2m | tests/integration/auth/brute-force.test.ts[2m > [22m[2mintegration: brute-force rate limit[2m > [22m[2mblocks brute-force: ≤ 10 argon2 calls across 50 attempts
 [22m[39m  brute-force results: 50 attempts → invalid-credentials=5, account-locked=0, rate-limited=45, argon2 calls=5
 
- [32m✓[39m tests/integration/auth/brute-force.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2897[2mms[22m[39m
-   [33m[2m✓[22m[39m integration: brute-force rate limit[2m > [22mblocks brute-force: ≤ 10 argon2 calls across 50 attempts [33m2896[2mms[22m[39m
- [32m✓[39m tests/integration/auth/lockout.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1657[2mms[22m[39m
-   [33m[2m✓[22m[39m integration: lockout after 5 failed sign-ins[2m > [22mlocks the account on attempt #5 and rejects #6 with account-locked [33m1657[2mms[22m[39m
-{"level":"info","time":1775758165747,"service":"swecham-membership","env":"test","userIdHash":"d0212e42","role":"admin","portal":"staff","requestId":"it-signin-1775758165350","msg":"sign_in_success"}
- [32m✓[39m tests/integration/auth/sign-in.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1695[2mms[22m[39m
-   [33m[2m✓[22m[39m integration: sign-in happy path[2m > [22mcreates a session row, updates last_sign_in_at, emits sign_in_success [33m738[2mms[22m[39m
-   [33m[2m✓[22m[39m integration: sign-in happy path[2m > [22mwrong password returns invalid-credentials and increments failed count [33m493[2mms[22m[39m
-   [33m[2m✓[22m[39m integration: sign-in happy path[2m > [22munknown email returns invalid-credentials without creating any session [33m463[2mms[22m[39m
- [32m✓[39m tests/integration/auth/enumeration-message.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1088[2mms[22m[39m
-   [33m[2m✓[22m[39m integration: enumeration-safe failure responses[2m > [22mreturns identical error shape for unknown / wrong-password / pending [33m1088[2mms[22m[39m
- [32m✓[39m tests/integration/audit/append-only.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 341[2mms[22m[39m
-{"level":"info","time":1775758169009,"service":"swecham-membership","env":"test","userIdHash":"3f9fea8","role":"admin","portal":"staff","requestId":"it-rotate-1-1775758168607","msg":"sign_in_success"}
-{"level":"info","time":1775758169402,"service":"swecham-membership","env":"test","userIdHash":"3f9fea8","role":"admin","portal":"staff","requestId":"it-rotate-2-1775758169009","msg":"sign_in_success"}
- [32m✓[39m tests/integration/auth/session-rotation.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1007[2mms[22m[39m
-   [33m[2m✓[22m[39m integration: session id rotation on sign-in[2m > [22mproduces a fresh 64-hex id on every sign-in call [33m1007[2mms[22m[39m
+ [32m✓[39m tests/integration/auth/brute-force.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2958[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: brute-force rate limit[2m > [22mblocks brute-force: ≤ 10 argon2 calls across 50 attempts [33m2958[2mms[22m[39m
+ [32m✓[39m tests/integration/auth/lockout.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1676[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: lockout after 5 failed sign-ins[2m > [22mlocks the account on attempt #5 and rejects #6 with account-locked [33m1676[2mms[22m[39m
+{"level":"info","time":1775763418415,"service":"swecham-membership","env":"test","userIdHash":"525046ce","role":"admin","portal":"staff","requestId":"it-signin-1775763417991","msg":"sign_in_success"}
+ [32m✓[39m tests/integration/auth/sign-in.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1784[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in happy path[2m > [22mcreates a session row, updates last_sign_in_at, emits sign_in_success [33m781[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in happy path[2m > [22mwrong password returns invalid-credentials and increments failed count [33m516[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in happy path[2m > [22munknown email returns invalid-credentials without creating any session [33m487[2mms[22m[39m
+ [32m✓[39m tests/integration/auth/enumeration-message.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1160[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: enumeration-safe failure responses[2m > [22mreturns identical error shape for unknown / wrong-password / pending [33m1160[2mms[22m[39m
+ [32m✓[39m tests/integration/audit/append-only.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 372[2mms[22m[39m
+{"level":"info","time":1775763421880,"service":"swecham-membership","env":"test","userIdHash":"9992a38","role":"admin","portal":"staff","requestId":"it-rotate-1-1775763421465","msg":"sign_in_success"}
+{"level":"info","time":1775763422297,"service":"swecham-membership","env":"test","userIdHash":"9992a38","role":"admin","portal":"staff","requestId":"it-rotate-2-1775763421881","msg":"sign_in_success"}
+ [32m✓[39m tests/integration/auth/session-rotation.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1061[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: session id rotation on sign-in[2m > [22mproduces a fresh 64-hex id on every sign-in call [33m1061[2mms[22m[39m
 
-[2m Test Files [22m [1m[32m7 passed[39m[22m[90m (7)[39m
-[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
-[2m   Start at [22m 01:09:08
-[2m   Duration [22m 21.82s[2m (transform 280ms, setup 64ms, collect 946ms, tests 19.38s, environment 0ms, prepare 129ms)[22m
+[2m Test Files [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+[2m      Tests [22m [1m[32m23 passed[39m[22m[90m (23)[39m
+[2m   Start at [22m 02:36:32
+[2m   Duration [22m 30.21s[2m (transform 368ms, setup 54ms, collect 1.27s, tests 27.43s, environment 0ms, prepare 121ms)[22m
 
