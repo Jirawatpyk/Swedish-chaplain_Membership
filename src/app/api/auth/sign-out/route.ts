@@ -22,17 +22,18 @@ function clientIp(request: NextRequest): string {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
-  const sessionId = await getSessionIdFromCookie();
-
-  let userId: string | null = null;
-  if (sessionId) {
-    const session = await sessionRepo.findById(sessionId);
-    if (session) {
-      userId = session.userId;
-    }
-  }
 
   try {
+    const sessionId = await getSessionIdFromCookie();
+
+    let userId: string | null = null;
+    if (sessionId) {
+      const session = await sessionRepo.findById(sessionId);
+      if (session) {
+        userId = session.userId;
+      }
+    }
+
     await signOut({
       sessionId,
       // Cast — userId is the branded UserId at the use-case boundary
