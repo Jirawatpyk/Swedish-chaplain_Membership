@@ -1,41 +1,50 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: TEMPLATE (unversioned placeholder) → 1.0.0  (initial ratification)
-Bump rationale: First concrete ratification replacing template placeholders. Establishes
-                the full governance baseline; future edits will follow semver (MAJOR for
-                principle removal/redefinition, MINOR for additions, PATCH for clarifications).
+Version change: 1.0.0 → 1.1.0  (MINOR: Development Workflow materially expanded)
+Bump rationale: Development Workflow & Quality Gates expanded from 6 to 10 gates to
+                cover the full Spec Kit pipeline (adds Clarify, Checklist, Analyze,
+                and Verify phases). Existing gates retained and renumbered; no
+                principle removed or redefined — MINOR bump per Governance semver.
 
-Modified principles:
-  - [PRINCIPLE_1_NAME]  → I. Data Privacy & Security (NON-NEGOTIABLE)
-  - [PRINCIPLE_2_NAME]  → II. Test-First Development (NON-NEGOTIABLE)
-  - [PRINCIPLE_3_NAME]  → III. Clean Architecture (NON-NEGOTIABLE)
-  - [PRINCIPLE_4_NAME]  → IV. Payment Security — PCI DSS (NON-NEGOTIABLE)
-  - [PRINCIPLE_5_NAME]  → V. Internationalization (SV/EN)
-  - (new)               → VI. Inclusive UX (Mobile First + WCAG 2.1 AA)
-  - (new)               → VII. Performance & Observability
-  - (new)               → VIII. Reliability (Error Handling + Data Integrity + Audit Trail)
-  - (new)               → IX. Code Quality Standards
-  - (new)               → X. Simplicity (YAGNI)
+History:
+  - 1.0.0 (2026-04-09) — Initial ratification. Replaced template placeholders with
+                         10 principles (4 NON-NEGOTIABLE + 6 Core) and full governance
+                         baseline.
+  - 1.1.0 (2026-04-09) — Expanded Development Workflow & Quality Gates to 10 phases
+                         (Spec → Clarify → Plan → Checklist → Tasks → Analyze →
+                         Implement → Verify → Review → Release) to align with the
+                         full Spec Kit command set.
 
-Added sections:
-  - Compliance & Technology Standards      (replaces [SECTION_2_*])
-  - Development Workflow & Quality Gates   (replaces [SECTION_3_*])
+Modified principles: None in 1.1.0.
+  (From 1.0.0: all 10 principles are in place — I. Data Privacy & Security,
+   II. Test-First Development, III. Clean Architecture, IV. Payment Security (PCI DSS),
+   V. Internationalization (SV/EN), VI. Inclusive UX (Mobile First + WCAG 2.1 AA),
+   VII. Performance & Observability, VIII. Reliability, IX. Code Quality Standards,
+   X. Simplicity (YAGNI).)
 
-Removed sections: None (template placeholders replaced in place)
+Added sections in 1.1.0:
+  - Development Workflow & Quality Gates — expanded from 6 to 10 named gates; each
+    gate now references its concrete /speckit.* command.
+
+Removed sections: None.
 
 Templates requiring updates:
-  ⚠ pending  .specify/templates/plan-template.md          — Constitution Check gates are generic; concrete per-principle gate items should be injected when /speckit.plan runs.
-  ✅ reviewed .specify/templates/spec-template.md          — Requirement/scope structure compatible; no change needed.
-  ⚠ pending  .specify/templates/tasks-template.md         — Consider explicit TDD ordering, audit-trail tasks, a11y/i18n task categories when /speckit.tasks runs.
-  ✅ reviewed .specify/templates/checklist-template.md     — Generic; no change needed.
-  ✅ reviewed .specify/templates/agent-file-template.md    — Generic; no change needed.
+  ⚠ pending  .specify/templates/plan-template.md          — Constitution Check gates
+             aligned in 1.0.0; no change needed for 1.1.0 workflow expansion, but
+             confirm Phase ordering matches when /speckit.plan runs.
+  ✅ reviewed .specify/templates/spec-template.md          — Compatible; no change.
+  ⚠ pending  .specify/templates/tasks-template.md         — Consider explicit TDD
+             ordering, audit-trail tasks, a11y/i18n task categories when
+             /speckit.tasks runs.
+  ✅ reviewed .specify/templates/checklist-template.md     — Generic; no change.
+  ✅ reviewed .specify/templates/agent-file-template.md    — Generic; no change.
 
 Runtime guidance docs:
   - No README.md / docs/quickstart.md present yet; create on first feature.
-  - Global user guidance (C:\Users\Jirawat.p\.claude\CLAUDE.md) is aligned with this constitution.
+  - Global user guidance (C:\Users\Jirawat.p\.claude\CLAUDE.md) aligned.
 
-Follow-up TODOs: None. Ratification date set to today (2026-04-09) per project start.
+Follow-up TODOs: None.
 -->
 
 # Swedish Chaplain Membership Constitution
@@ -247,34 +256,63 @@ The following stack-level and regulatory constraints apply to every feature:
 
 ## Development Workflow & Quality Gates
 
-All work MUST flow through the Spec-Kit pipeline:
+All work MUST flow through the full Spec Kit pipeline:
 
-**Spec → Plan → Tasks → Implement → Verify → Ship**
+**Spec → Clarify → Plan → Checklist → Tasks → Analyze → Implement → Verify → Review → Release**
 
-Mandatory gates at each stage:
+Each gate MUST pass before the next begins. Skipping a gate requires explicit
+justification in `plan.md` Complexity Tracking and ≥2 maintainer approvals.
 
-1. **Spec Gate** (`/speckit.specify`): user stories prioritized (P1/P2/P3), acceptance
-   scenarios present, measurable success criteria, edge cases listed.
-2. **Plan Gate** (`/speckit.plan`): Constitution Check MUST be executed and pass.
-   Any violation goes into Complexity Tracking with justification and a rejected
-   simpler alternative. An unjustified violation blocks progress.
-3. **Tasks Gate** (`/speckit.tasks`): tasks ordered by user story, TDD ordering
-   enforced (test tasks precede implementation tasks for the same unit), cross-story
-   dependencies called out.
-4. **Implementation Gate** (`/speckit.implement`): CI green, ESLint clean, TypeScript
-   compiles under strict, test coverage thresholds met, conventional commit messages.
-5. **Review Gate**: ≥1 reviewer on normal code, **≥2 reviewers** on security-sensitive
-   changes (auth, RBAC, payment, PII, audit log, GDPR surfaces). Security reviewer
-   signs the security checklist.
-6. **Release Gate**: rollback plan documented, feature flags in place for risky
-   rollouts, observability dashboards updated, on-call informed.
+1. **Spec Gate** (`/speckit.specify`): user stories prioritized (P1/P2/P3),
+   acceptance scenarios present, measurable success criteria, edge cases listed,
+   assumptions and dependencies surfaced.
+2. **Clarify Gate** (`/speckit.clarify`): every `[NEEDS CLARIFICATION]` marker in
+   the spec MUST be resolved with the product/domain owner before planning. Open
+   questions MUST NOT leak into Plan phase.
+3. **Plan Gate** (`/speckit.plan`): Constitution Check MUST be executed and pass
+   against all 10 principles. Any violation goes into Complexity Tracking with
+   justification and a rejected simpler alternative. Technical Context, project
+   structure, and Phase 0/1 outputs (research, data-model, contracts, quickstart)
+   MUST be filled in. An unjustified violation blocks progress.
+4. **Checklist Gate** (`/speckit.checklist`): domain-specific quality checklists
+   produced (security, a11y, i18n, privacy, performance, payment where applicable).
+   Each item is binary (pass/fail) and traceable to a principle or requirement.
+5. **Tasks Gate** (`/speckit.tasks`): tasks grouped by user story so each story
+   is independently deliverable. **TDD ordering enforced** — test tasks precede
+   implementation tasks for the same unit. Cross-story dependencies called out.
+   Parallelizable `[P]` tasks marked.
+6. **Analyze Gate** (`/speckit.analyze`): static and cross-artifact analysis
+   performed — spec ↔ plan ↔ tasks consistency check, missing coverage flagged,
+   risks and Constitution drift highlighted. Findings MUST be addressed or
+   accepted with rationale before implementation starts.
+7. **Implementation Gate** (`/speckit.implement`): CI green, ESLint clean,
+   TypeScript compiles under `strict`, test coverage thresholds met
+   (≥80% business logic, 100% security-critical paths), Conventional Commit
+   messages on every commit. No work on `main` directly.
+8. **Verify Gate** (`/speckit.verify`): implementation validated against the
+   spec's acceptance scenarios and success criteria end-to-end. Automated QA
+   (`/speckit.qa`) run where applicable. Any gap against the spec is either
+   fixed or explicitly deferred with a tracked follow-up.
+9. **Review Gate** (`/speckit.review` / `/speckit.staff-review`): ≥1 reviewer on
+   normal code; **≥2 reviewers** on security-sensitive changes (auth, RBAC,
+   payment, PII, audit log, GDPR surfaces). A security reviewer MUST sign the
+   security checklist from Gate 4 for sensitive areas. Review covers correctness,
+   security, performance, a11y, and constitutional compliance.
+10. **Release Gate** (`/speckit.ship`): rollback plan documented, feature flags
+    in place for risky rollouts, observability dashboards and alerts updated,
+    on-call informed, changelog generated, PR merged, deployment executed.
+    Post-release smoke tests MUST pass; a retrospective
+    (`/speckit.retrospective`) is strongly encouraged after each release.
 
-Additional rules:
+Additional rules (apply across all gates):
 
 - No direct commits to `main`.
 - PRs MUST reference the spec/feature branch they implement.
 - A failing test on `main` stops all other work until resolved.
-- Secrets or PII accidentally committed MUST trigger immediate rotation and a postmortem.
+- Secrets or PII accidentally committed MUST trigger immediate rotation and a
+  postmortem, regardless of which gate detected the leak.
+- Amendments to this constitution itself MUST also pass the Review Gate
+  (≥2 maintainers) per Governance.
 
 ## Governance
 
@@ -313,4 +351,4 @@ Swedish law).
 - Runtime development guidance for agents lives in `CLAUDE.md` (and equivalent agent
   files). Those files are subordinate to this constitution.
 
-**Version**: 1.0.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-04-09
+**Version**: 1.1.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-04-09
