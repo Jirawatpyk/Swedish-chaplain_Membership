@@ -415,6 +415,62 @@ through any user-facing surface.
   successful change, all **other** active sessions for that user MUST be invalidated
   while the current session continues uninterrupted. The change MUST be recorded
   in the authentication audit trail (FR-012).
+- **FR-020 (Enterprise UX — Loading States)**: Every authentication screen that
+  waits on a data source (session lookup, user profile fetch) MUST display a
+  **skeleton shimmer** placeholder rather than a blank screen or a generic
+  spinner. The skeleton MUST match the final content layout so that no layout
+  shift occurs when data arrives (CLS contribution MUST remain 0). Buttons
+  performing async actions (sign-in submit, save password) MUST display an
+  in-button spinner and MUST be disabled while the action is in flight. Users
+  with `prefers-reduced-motion: reduce` MUST see a gentle pulse fallback
+  instead of a moving shimmer. See [`docs/ux-standards.md`](../../docs/ux-standards.md)
+  § 2 for the canonical implementation pattern.
+- **FR-021 (Enterprise UX — Feedback & Confirmation)**: The system MUST use
+  non-blocking **toast notifications** (top-right on desktop, top-centre on
+  mobile) for success and non-critical error feedback (e.g., "password
+  changed", "invitation sent"). Every **destructive** action (disable account,
+  re-enable account, change role) MUST require explicit confirmation through
+  a **modal dialog** that states the action, describes the consequence in
+  plain localised language (EN/TH/SV), defaults focus to Cancel, and honours
+  the Escape key. See [`docs/ux-standards.md`](../../docs/ux-standards.md)
+  § 5 and § 6.
+- **FR-022 (Enterprise UX — Session Indicator & Idle Warning)**: Authenticated
+  shells (both staff portal and member portal) MUST show a persistent user
+  menu with the signed-in user's display name, role badge, and a sign-out
+  action. Before the 30-minute idle timeout fires (FR-008), the system MUST
+  display an **idle-warning modal** one minute ahead of the timeout, showing
+  a live countdown and two actions: "Stay signed in" (which refreshes the
+  session heartbeat) and "Sign out now". On timeout, the session ends, the
+  user is redirected to the appropriate sign-in page, and a non-blocking
+  toast explains "Signed out due to inactivity". See
+  [`docs/ux-standards.md`](../../docs/ux-standards.md) § 8.
+- **FR-023 (Enterprise UX — Empty & Error States)**: Every authentication
+  surface MUST have designed **empty states** (member portal placeholder
+  landing, zero pending invitations, etc.) and **error states** (inline
+  validation, toast for async errors, full-page error card for unrecoverable
+  failures). Error copy MUST be specific and actionable in all three
+  locales, MUST NEVER leak stack traces or raw server messages to users,
+  and MUST include a correlation `x-request-id` for support. See
+  [`docs/ux-standards.md`](../../docs/ux-standards.md) § 3 and § 4.
+- **FR-024 (Enterprise UX — Keyboard & Focus)**: Every authentication screen
+  MUST be fully operable by keyboard alone. The primary input MUST receive
+  focus on mount; Enter MUST submit the form; Escape MUST close any open
+  modal; focus MUST return to the triggering element on modal close; a
+  visible focus-ring MUST appear on every interactive element; a "Skip to
+  main content" link MUST be the first focusable element in the DOM. See
+  [`docs/ux-standards.md`](../../docs/ux-standards.md) § 7.
+- **FR-025 (Email reliability — resend affordance)**: Every email-dependent
+  flow (password reset, invitation, future account-recovery notifications)
+  MUST provide a **"resend email" affordance** that the user can invoke
+  **after 60 seconds** of waiting. The resend action goes through the same
+  rate limiter as the original request and emits a toast confirming that a
+  new email was sent. The UI MUST show a visible countdown ("You can resend
+  in 45 seconds…") that counts down in real time. If the first email
+  delivery has failed at the provider (detected via the Resend webhook —
+  see contracts/auth-api.md § 12), an operational alert MUST fire to the
+  on-call team and the user MUST see an inline message explaining that
+  there may be a delay and suggesting they check their spam folder or
+  contact support.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -487,6 +543,29 @@ through any user-facing surface.
   guess in a reasonable time window).
 - **SC-011**: Authentication audit entries are retained for at least five years
   and cannot be modified or deleted through any user-facing surface.
+- **SC-012 (Enterprise UX — CLS)**: Cumulative Layout Shift on every
+  authentication screen remains **0.00** during the transition from skeleton
+  shimmer to loaded content, verified by Lighthouse CI on every PR.
+- **SC-013 (Enterprise UX — Idle warning reliability)**: In an automated test
+  that idles a session for 30 minutes, the idle-warning modal appears exactly
+  once, exactly one minute before the hard timeout, and the "Stay signed in"
+  action successfully extends the session without a page reload.
+- **SC-014 (Enterprise UX — Destructive action safety)**: In an automated test
+  that attempts every destructive action (disable, re-enable, change role)
+  without confirming the modal, zero state changes occur in the database.
+- **SC-015 (Enterprise UX — Toast coverage)**: Every success and async error
+  path on auth screens surfaces exactly one toast (not zero, not multiple),
+  verified by Playwright tests that assert toast presence.
+- **SC-016 (Enterprise UX — Reduced motion)**: With
+  `prefers-reduced-motion: reduce` set, the skeleton shimmer animation is
+  replaced by a static pulse and no slide / scale transition exceeds 200 ms,
+  verified by a Playwright test that toggles the media query.
+- **SC-017 (Email reliability — resend affordance)**: Password reset and
+  invitation flows each have an automated test that (a) requests the
+  email, (b) waits 60 seconds, (c) verifies a "resend" button has appeared
+  with a reset countdown, (d) clicks it, and (e) verifies a second email
+  request is made. The test also verifies that a Resend webhook reporting
+  a bounce triggers a visible inline warning on the waiting page.
 
 ## Assumptions
 
