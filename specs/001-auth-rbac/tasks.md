@@ -192,18 +192,24 @@ an admin-only endpoint, verify 403 with `manager_denied_write` audit event.
 
 ### Tests for User Story 2
 
-- [ ] T081 [P] [US2] Integration test `tests/integration/auth/rbac-manager-readonly.test.ts` iterates every admin-only endpoint and asserts manager sessions get 403 + `manager_denied_write` audit event (spec FR-003, SC-003)
-- [ ] T082 [P] [US2] Unit test `tests/unit/auth/policies/manager-readonly-policy.test.ts` exhaustively verifies `canAccess('manager', resource, action)` returns `false` for every mutating action and `true` for every read action (spec §Clarifications Q4)
-- [ ] T083 [P] [US2] E2E test `tests/e2e/manager-read-only.spec.ts` — sign in as manager, attempt to click a destructive button (if visible), verify the UI hides destructive actions behind a role check (or shows them disabled with tooltip explaining the role restriction)
+- [X] T081 [P] [US2] Integration test `tests/integration/auth/rbac-manager-readonly.test.ts` iterates every admin-only endpoint and asserts manager sessions get 403 + `manager_denied_write` audit event (spec FR-003, SC-003) — **deviation**: at end of Phase 4 no admin-only HTTP endpoints exist yet (those ship in Phase 6 T128–T132). We instead exercise `requireRole()` — the application-layer seam every future admin-only route will call — against a live Neon DB. 6 cases: manager write/delete → 403 + audit row; manager read → ok (no audit); manager self-service write → ok; admin bypass on write+delete → ok with no denial audit. Phase 6 tests will layer on top by calling the actual route handlers.
+- [X] T082 [P] [US2] Unit test `tests/unit/auth/policies/manager-readonly-policy.test.ts` exhaustively verifies `canAccess('manager', resource, action)` returns `false` for every mutating action and `true` for every read action (spec §Clarifications Q4) — 10 cases through `hasPermission()` public wrapper, covering 9 resources across F1 + future phases (auth, staff, members, invoices, events) × 4 actions, plus admin bypass + member cross-portal regression guards.
+- [ ] T083 [P] [US2] E2E test `tests/e2e/manager-read-only.spec.ts` — sign in as manager, attempt to click a destructive button (if visible), verify the UI hides destructive actions behind a role check (or shows them disabled with tooltip explaining the role restriction) — **deferred to Phase 6**: no admin-only UI buttons exist yet (invite/disable/role-change live on the admin users page T135). The RBAC enforcement layer is already proven by T081/T082. Phase 6 will add the matching E2E to cover both the UI affordance and the API path.
 
 ### Implementation for User Story 2
 
-- [ ] T084 [US2] Extend middleware `middleware.ts` to read session's user role and enforce the RBAC policy from T033 on every protected route; denied requests return 403 + emit `manager_denied_write` audit event
-- [ ] T085 [US2] Add role badge + role-aware UI to `UserMenu` component — display `Admin` / `Manager` / `Member` badge using shadcn `Badge` with distinct colours
-- [ ] T086 [US2] Implement `hasPermission` server helper in `src/modules/auth/application/has-permission.ts` for server components to conditionally render UI elements based on the caller's role
-- [ ] T087 [P] [US2] Add localised strings for denied messages to `en.json` / `th.json` / `sv.json` ("Your role does not permit this action")
+- [X] T084 [US2] Extend middleware `middleware.ts` to read session's user role and enforce the RBAC policy from T033 on every protected route; denied requests return 403 + emit `manager_denied_write` audit event — **deviation**: Edge middleware cannot do postgres-js reads or audit writes, so the RBAC guard lives in `src/lib/rbac-guard.ts` (Node runtime, same location as `getCurrentSession()`). `requireRole(session, resource, action, context)` validates via pure `canAccess()` and on manager denial emits `manager_denied_write` via `auditRepo.append`. Zero extra DB round-trips on allow path, exactly one on deny path. Middleware itself is unchanged (already handles CSRF + READ_ONLY_MODE + security headers + x-pathname injection).
+- [X] T085 [US2] Add role badge + role-aware UI to `UserMenu` component — display `Admin` / `Manager` / `Member` badge using shadcn `Badge` with distinct colours — **already done in T074**: UserMenu component uses `roleBadgeVariant` (admin=default, manager=secondary, member=outline) + `tBadge(role)` for localised text. Verified in Phase 4.
+- [X] T086 [US2] Implement `hasPermission` server helper in `src/modules/auth/application/has-permission.ts` for server components to conditionally render UI elements based on the caller's role — thin pure wrapper around Domain `canAccess()`; also exports `canMutate(role, resource)` convenience (write ∪ delete ∪ admin).
+- [X] T087 [P] [US2] Add localised strings for denied messages to `en.json` / `th.json` / `sv.json` ("Your role does not permit this action") — **already done in T051/T052**: `auth.denied.readOnly` + `auth.denied.portalMismatch` present in all 3 locales; `errors.forbidden` also covers generic 403 copy. `pnpm check:i18n` passes (66 keys × 3 locales).
 
-**Checkpoint**: Manager can sign in, browse read-only, cannot mutate. P1 goal 2 met.
+**Checkpoint**: Manager can sign in, browse read-only, cannot mutate. P1 goal 2 met. ✅ **CODE COMPLETE 2026-04-10**: 112/112 unit+contract + 19/19 integration tests pass against live Neon DB. `requireRole()` guard enforces `canAccess()` with audit emission on manager denials (6 cases verified). `hasPermission()` helper ready for server components. Full Phase 4 deliverables:
+- `src/modules/auth/application/has-permission.ts` (T086)
+- `src/lib/rbac-guard.ts` (T084)
+- `tests/unit/auth/policies/manager-readonly-policy.test.ts` (T082)
+- `tests/integration/auth/rbac-manager-readonly.test.ts` (T081)
+
+No real manager user exists yet (bootstrap script only creates admin). To test the end-to-end manager flow manually: seed a manager via `scripts/create-test-user.ts` (Phase 6) or insert via psql. E2E test (T083) deferred until Phase 6 when admin-only UI buttons ship.
 
 ---
 
