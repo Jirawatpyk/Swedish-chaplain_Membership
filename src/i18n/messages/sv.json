@@ -30,12 +30,18 @@
       "newPasswordLabel": "Nytt lösenord",
       "confirmPasswordLabel": "Bekräfta nytt lösenord",
       "submit": "Uppdatera lösenord",
+      "success": "Lösenordet uppdaterat. Du kan nu logga in.",
       "errors": {
         "tokenExpired": "Den här återställningslänken har gått ut. Begär en ny.",
         "tokenUsed": "Den här återställningslänken har redan använts.",
         "weakPassword": "Välj ett starkare lösenord.",
         "passwordBreached": "Det här lösenordet har förekommit i ett känt dataläckage. Välj ett annat."
       }
+    },
+    "passwordStrength": {
+      "weak": "Svagt — minst 12 tecken krävs.",
+      "acceptable": "Godtagbar styrka.",
+      "strong": "Starkt lösenord."
     },
     "changePassword": {
       "title": "Byt lösenord",

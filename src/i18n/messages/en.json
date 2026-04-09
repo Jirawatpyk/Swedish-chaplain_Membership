@@ -30,12 +30,18 @@
       "newPasswordLabel": "New password",
       "confirmPasswordLabel": "Confirm new password",
       "submit": "Update password",
+      "success": "Password updated. You can now sign in.",
       "errors": {
         "tokenExpired": "This reset link has expired. Request a new one.",
         "tokenUsed": "This reset link has already been used.",
         "weakPassword": "Choose a stronger password.",
         "passwordBreached": "This password appears in a known data breach. Choose a different one."
       }
+    },
+    "passwordStrength": {
+      "weak": "Weak — at least 12 characters required.",
+      "acceptable": "Acceptable strength.",
+      "strong": "Strong password."
     },
     "changePassword": {
       "title": "Change password",
