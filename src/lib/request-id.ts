@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto';
-
 /**
  * UUIDv7 generator (T020).
  *
@@ -13,15 +11,17 @@ import { randomBytes } from 'node:crypto';
  *   - Sortable correlation IDs in logs.
  *   - Still globally unique with 74 bits of entropy.
  *
- * We implement it manually instead of pulling another dependency
- * because the algorithm fits in ~30 lines and Node 20 does not yet
- * expose `crypto.randomUUID({ version: 7 })`.
+ * Implemented with Web Crypto (`crypto.getRandomValues`) instead of
+ * `node:crypto.randomBytes` so this module is safe to import from
+ * Edge middleware as well as Node.js routes. Node 19+ exposes the
+ * Web Crypto global natively.
  */
 export function uuidv7(): string {
   const now = BigInt(Date.now());
 
   // 16 bytes total
-  const bytes = randomBytes(16);
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
 
   // First 6 bytes = 48-bit unix-ms big-endian
   bytes[0] = Number((now >> 40n) & 0xffn);

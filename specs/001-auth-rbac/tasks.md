@@ -107,22 +107,22 @@ strict, Tailwind CSS v4, ESLint, Vitest, Playwright, and shadcn/ui configured.
 
 ### Middleware: session lookup, CSRF, rate-limit, request-id
 
-- [ ] T041 Implement CSRF Origin-header middleware in `src/lib/csrf.ts` per research.md § 4.1 reading `APP_ALLOWED_ORIGINS` env var
-- [ ] T042 [P] Write contract test `tests/contract/csrf.test.ts` that sends requests with missing / wrong / correct Origin header and asserts 403 vs pass (security.md T-07)
-- [ ] T043 Implement main Next.js middleware in `middleware.ts` that: reads session cookie, validates via session repo, checks idle/absolute expiry, runs CSRF check on state-changing POSTs, runs rate-limit per endpoint, injects request ID header, enforces `READ_ONLY_MODE` (503 on writes), enforces HSTS + CSP security headers
-- [ ] T044 [P] Write integration test `tests/integration/middleware/readonly-mode.test.ts` verifying that with `READ_ONLY_MODE=true`, every POST returns 503 `read-only-mode` but GETs still work
+- [X] T041 Implement CSRF Origin-header middleware in `src/lib/csrf.ts` per research.md § 4.1 reading `APP_ALLOWED_ORIGINS` env var — pure function `checkCsrf(method, pathname, origin)` returning `{ action: 'pass' | 'reject', reason }` so it's easy to unit-test (T042 deferred to Phase 2 cleanup)
+- [ ] T042 [P] Write contract test `tests/contract/csrf.test.ts` that sends requests with missing / wrong / correct Origin header and asserts 403 vs pass (security.md T-07) — **deferred**: contract test depends on the API route handlers (Phase 3); will land alongside T070/T071
+- [X] T043 Implement main Next.js middleware in `middleware.ts` that: reads session cookie, validates via session repo, checks idle/absolute expiry, runs CSRF check on state-changing POSTs, runs rate-limit per endpoint, injects request ID header, enforces `READ_ONLY_MODE` (503 on writes), enforces HSTS + CSP security headers — **deviation**: session lookup is performed inside Route Handlers / page server components via `getSession()` in Phase 3 because Edge middleware cannot import `postgres-js` (Node.js APIs). Middleware handles CSRF, READ_ONLY_MODE, request-id injection, and security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy). Rate-limiting is also deferred to per-route adapters (T037 already wired to use the same `rateLimiter` instance).
+- [ ] T044 [P] Write integration test `tests/integration/middleware/readonly-mode.test.ts` verifying that with `READ_ONLY_MODE=true`, every POST returns 503 `read-only-mode` but GETs still work — **deferred**: requires running the dev server end-to-end; will land alongside Phase 10 polish
 
 ### Shared UI primitives (Enterprise UX foundation)
 
-- [ ] T045 [P] Implement extended `Skeleton` component in `src/components/ui/skeleton.tsx` with `motion-safe:` shimmer animation and `motion-reduce:` pulse fallback per docs/ux-standards.md § 2.1
-- [ ] T046 [P] Implement `SkipToContent` component in `src/components/shell/skip-to-content.tsx` per docs/ux-standards.md § 7.1
-- [ ] T047 [P] Implement `ThemeToggle` component in `src/components/shell/theme-toggle.tsx` using next-themes per docs/ux-standards.md § 1.7
-- [ ] T048 [P] Implement `EmptyState` component in `src/components/shell/empty-state.tsx` per docs/ux-standards.md § 3.1
-- [ ] T049 [P] Implement `ErrorState` component in `src/components/shell/error-state.tsx` (full-page error card) per docs/ux-standards.md § 4.3
-- [ ] T050 Implement root layout in `src/app/layout.tsx` with next-intl provider, theme provider, `<SkipToContent />`, Sonner `<Toaster />` root, and request-id meta per docs/ux-standards.md
-- [ ] T051 Create empty i18n keyspace in `src/i18n/messages/en.json` with sections `auth.*`, `errors.*`, `buttons.*`, `shell.*` — used as the canonical source of truth
-- [ ] T052 [P] Mirror all keys from `en.json` to `th.json` and `sv.json` with placeholder translations — sets up CI `check:i18n` baseline
-- [ ] T053 [P] Implement `scripts/check-i18n-coverage.ts` that validates every key used in source exists in `en.json`, warns on missing `th.json`/`sv.json`, fails CI in release mode per spec FR-014 precedence rule
+- [X] T045 [P] Implement extended `Skeleton` component in `src/components/ui/skeleton.tsx` with `motion-safe:` shimmer animation and `motion-reduce:` pulse fallback per docs/ux-standards.md § 2.1 — shadcn-installed `skeleton.tsx` already in place; the shimmer + reduced-motion CSS lives in `src/app/globals.css` `.skeleton-shimmer` class so any component can opt in
+- [X] T046 [P] Implement `SkipToContent` component in `src/components/shell/skip-to-content.tsx` per docs/ux-standards.md § 7.1
+- [X] T047 [P] Implement `ThemeToggle` component in `src/components/shell/theme-toggle.tsx` using next-themes per docs/ux-standards.md § 1.7 — DropdownMenu with light / dark / system options
+- [X] T048 [P] Implement `EmptyState` component in `src/components/shell/empty-state.tsx` per docs/ux-standards.md § 3.1
+- [X] T049 [P] Implement `ErrorState` component in `src/components/shell/error-state.tsx` (full-page error card) per docs/ux-standards.md § 4.3 — `'use client'` so it can wire `onRetry`
+- [X] T050 Implement root layout in `src/app/layout.tsx` with next-intl provider, theme provider, `<SkipToContent />`, Sonner `<Toaster />` root, and request-id meta per docs/ux-standards.md — uses `getLocale()` + `getMessages()` from next-intl/server; `next-themes` provider with `attribute="class"` and `defaultTheme="system"`
+- [X] T051 Create empty i18n keyspace in `src/i18n/messages/en.json` with sections `auth.*`, `errors.*`, `buttons.*`, `shell.*` — used as the canonical source of truth (66 keys present)
+- [X] T052 [P] Mirror all keys from `en.json` to `th.json` and `sv.json` with placeholder translations — sets up CI `check:i18n` baseline — Thai placeholders are real translations (not key echoes); Swedish placeholders are real translations; check-i18n confirms 66 keys × 3 locales
+- [X] T053 [P] Implement `scripts/check-i18n-coverage.ts` that validates every key used in source exists in `en.json`, warns on missing `th.json`/`sv.json`, fails CI in release mode per spec FR-014 precedence rule — release mode detected via `GITHUB_REF_NAME` matching `^(main|release/.+)$`
 
 **Checkpoint**: Foundation ready — `pnpm test` green, middleware guards routes, skeleton shimmer renders, i18n works in dev, no user stories yet
 
