@@ -25,7 +25,7 @@ async function main(): Promise<void> {
 
   const redis = new Redis({ url, token });
 
-  let cursor: string | number = '0';
+  let cursor = '0';
   let totalDeleted = 0;
   const PATTERN = 'swecham*';
 
@@ -39,7 +39,7 @@ async function main(): Promise<void> {
       await redis.del(...keys);
       totalDeleted += keys.length;
     }
-  } while (cursor !== '0' && cursor !== 0);
+  } while (cursor !== '0');
 
   console.log(`cleared ${totalDeleted} rate-limit keys under prefix 'swecham'`);
 }

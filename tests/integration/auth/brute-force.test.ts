@@ -62,7 +62,7 @@ class CountingHasher implements PasswordHasher {
 
 async function clearSwechamKeys(): Promise<void> {
   const redis = new Redis({ url: env.upstash.url, token: env.upstash.token });
-  let cursor: string | number = '0';
+  let cursor = '0';
   do {
     const [nextCursor, keys] = (await redis.scan(cursor, { match: 'swecham*', count: 200 })) as [
       string,
@@ -72,7 +72,7 @@ async function clearSwechamKeys(): Promise<void> {
     if (keys.length > 0) {
       await redis.del(...keys);
     }
-  } while (cursor !== '0' && cursor !== 0);
+  } while (cursor !== '0');
 }
 
 describe('integration: brute-force rate limit', () => {
