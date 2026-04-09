@@ -24,18 +24,39 @@ import { REQUEST_ID_HEADER, requestIdFromHeaders } from '@/lib/request-id';
  */
 
 const HSTS_VALUE = 'max-age=63072000; includeSubDomains; preload';
-const CSP_VALUE = [
-  "default-src 'self'",
-  // Next.js inlines small scripts and uses unsafe-inline for hydration
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https:",
-  "font-src 'self' data:",
-  "connect-src 'self' https:",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-].join('; ');
+
+// script-src: `'unsafe-inline'` is kept because Next.js inlines small
+// bootstrap scripts for hydration. In DEV we ALSO add `'unsafe-eval'`
+// because React DevTools + HMR + the error-overlay stack reconstruction
+// all call `eval()` under the hood — with strict CSP the browser blocks
+// them and the dev overlay shows a console error. Production has eval
+// disabled (React production bundles never call it).
+//
+// A future hardening pass in Phase 10 should switch the prod policy to
+// nonce-based script-src and drop unsafe-inline too.
+function buildCsp(isDevelopment: boolean): string {
+  const scriptSrc = isDevelopment
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+    : "script-src 'self' 'unsafe-inline'";
+  // Dev needs ws:// for HMR socket; prod only allows https:.
+  const connectSrc = isDevelopment
+    ? "connect-src 'self' https: ws: wss:"
+    : "connect-src 'self' https:";
+
+  return [
+    "default-src 'self'",
+    scriptSrc,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "font-src 'self' data:",
+    connectSrc,
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ');
+}
+
+const CSP_VALUE = buildCsp(env.isDevelopment);
 
 function applySecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set('Strict-Transport-Security', HSTS_VALUE);
