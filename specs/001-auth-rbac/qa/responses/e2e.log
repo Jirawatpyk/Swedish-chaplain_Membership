@@ -1,0 +1,9 @@
+
+Running 4 tests using 4 workers
+
+  ✓  1 [chromium] › tests\e2e\staff-sign-in.spec.ts:80:7 › staff sign-in (happy path) › wrong password keeps the user on the sign-in page with an error banner (9.1s)
+  ✓  2 [chromium] › tests\e2e\staff-sign-in.spec.ts:35:7 › staff sign-in (happy path) › admin can sign in and lands on /admin with user menu visible (10.2s)
+  ✓  3 [chromium] › tests\e2e\staff-sign-in-a11y.spec.ts:15:7 › staff sign-in a11y › has zero WCAG 2.1 AA violations (10.8s)
+  ✓  4 [chromium] › tests\e2e\staff-sign-in.spec.ts:100:7 › staff sign-in (happy path) › sign-out clears the session and redirects back to sign-in (11.2s)
+
+  4 passed (15.9s)
