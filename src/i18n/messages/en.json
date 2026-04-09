@@ -1,0 +1,104 @@
+{
+  "auth": {
+    "signIn": {
+      "title": "Sign in",
+      "emailLabel": "Email",
+      "passwordLabel": "Password",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "forgotPassword": "Forgot your password?",
+      "errors": {
+        "invalidCredentials": "Email or password is incorrect.",
+        "accountDisabled": "Your account has been disabled. Contact an administrator.",
+        "accountLocked": "Too many failed attempts. Try again later.",
+        "rateLimited": "Too many requests. Please wait and try again."
+      }
+    },
+    "signOut": {
+      "label": "Sign out"
+    },
+    "forgotPassword": {
+      "title": "Reset your password",
+      "description": "Enter your email and we'll send you a reset link.",
+      "emailLabel": "Email",
+      "submit": "Send reset link",
+      "submitted": "If that email matches an account, a reset link is on the way.",
+      "resend": "Didn't get the email? Resend"
+    },
+    "resetPassword": {
+      "title": "Choose a new password",
+      "newPasswordLabel": "New password",
+      "confirmPasswordLabel": "Confirm new password",
+      "submit": "Update password",
+      "errors": {
+        "tokenExpired": "This reset link has expired. Request a new one.",
+        "tokenUsed": "This reset link has already been used.",
+        "weakPassword": "Choose a stronger password.",
+        "passwordBreached": "This password appears in a known data breach. Choose a different one."
+      }
+    },
+    "changePassword": {
+      "title": "Change password",
+      "currentPasswordLabel": "Current password",
+      "newPasswordLabel": "New password",
+      "submit": "Change password",
+      "success": "Password updated. Other sessions have been signed out."
+    },
+    "invite": {
+      "title": "Finish setting up your account",
+      "displayNameLabel": "Your name",
+      "passwordLabel": "Choose a password",
+      "submit": "Activate account",
+      "errors": {
+        "tokenExpired": "This invitation has expired. Ask an administrator to send a new one.",
+        "tokenUsed": "This invitation has already been used."
+      }
+    },
+    "idleWarning": {
+      "title": "Still there?",
+      "description": "You'll be signed out in {seconds} seconds.",
+      "stay": "Stay signed in",
+      "signOut": "Sign out now"
+    },
+    "denied": {
+      "readOnly": "Your role does not permit this action.",
+      "portalMismatch": "This account can't sign in here."
+    }
+  },
+  "shell": {
+    "skipToContent": "Skip to main content",
+    "userMenu": {
+      "label": "Account menu",
+      "account": "Account settings",
+      "signOut": "Sign out"
+    },
+    "theme": {
+      "label": "Toggle theme",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "roleBadge": {
+      "admin": "Admin",
+      "manager": "Manager",
+      "member": "Member"
+    }
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "network": "Network error. Check your connection and try again.",
+    "notFound": "We couldn't find what you were looking for.",
+    "unauthorized": "You need to sign in to see this.",
+    "forbidden": "You don't have permission to see this.",
+    "readOnlyMode": "The system is currently in read-only mode for maintenance."
+  },
+  "buttons": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "close": "Close",
+    "back": "Back",
+    "retry": "Try again"
+  }
+}
