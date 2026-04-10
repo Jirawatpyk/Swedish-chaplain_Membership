@@ -61,7 +61,15 @@ export default defineConfig({
   // admin sign-in still occur. Retries mask these cleanly — a real
   // regression fails on both attempts.
   retries: process.env.CI ? 2 : 2,
-  ...(process.env.CI ? { workers: 1 } : {}),
+  // Workers: CI uses 1 (deterministic). Locally we cap at 3 workers
+  // because the Turbopack dev server on port 3100 runs all compiles
+  // on-demand — 6 concurrent workers hammering /admin/sign-in +
+  // /portal/sign-in + /admin/account for the first time triggers
+  // Turbopack cold-compile queues that take >45 s per route. Three
+  // workers gives each Chromium/WebKit/Mobile-Chrome project its
+  // own worker so specs run roughly in parallel across projects
+  // but the dev server isn't swamped.
+  workers: process.env.CI ? 1 : 3,
   reporter: [
     ['html', { open: 'never' }],
     ['list'],
