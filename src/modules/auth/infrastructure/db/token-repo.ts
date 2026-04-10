@@ -21,6 +21,7 @@ import {
 } from './schema';
 import {
   asTokenId,
+  asUserId,
   type TokenId,
   type UserId,
 } from '@/modules/auth/domain/branded';
@@ -35,7 +36,7 @@ import {
 function toDomainReset(row: PasswordResetTokenRow): PasswordResetToken {
   return {
     id: asTokenId(row.id),
-    userId: row.userId as UserId,
+    userId: asUserId(row.userId),
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
     consumedAt: row.consumedAt,
@@ -45,8 +46,8 @@ function toDomainReset(row: PasswordResetTokenRow): PasswordResetToken {
 function toDomainInvitation(row: InvitationRow): Invitation {
   return {
     id: asTokenId(row.id),
-    userId: row.userId as UserId,
-    invitedByUserId: row.invitedByUserId as UserId,
+    userId: asUserId(row.userId),
+    invitedByUserId: asUserId(row.invitedByUserId),
     intendedRole: row.intendedRole,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,

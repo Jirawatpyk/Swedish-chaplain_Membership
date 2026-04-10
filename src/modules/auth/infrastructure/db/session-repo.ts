@@ -7,9 +7,9 @@
  *
  * Uses Web Crypto (`crypto.getRandomValues`) so the same module is
  * importable from Edge runtimes if we ever expose a session-aware
- * helper from middleware.
+ * helper from proxy.ts (the Next.js 16 proxy layer).
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { sessions, type SessionRow } from './schema';
 import {
@@ -97,15 +97,15 @@ class DrizzleSessionRepo implements SessionRepo {
   }
 
   async deleteByUserIdExcept(userId: UserId, keepId: SessionId): Promise<number> {
+    // Delete every session for this user EXCEPT keepId. The row filter
+    // must live in the SQL `where` clause — previously this method
+    // deleted keepId too and filtered the return value post-hoc, which
+    // silently revoked the session the caller asked us to preserve.
     const result = await db
       .delete(sessions)
-      .where(eq(sessions.userId, userId))
+      .where(and(eq(sessions.userId, userId), ne(sessions.id, keepId)))
       .returning({ id: sessions.id });
-    // Caller never wants to delete keepId — but the simplest way to keep
-    // the contract is to delete all and recreate keepId. We keep this
-    // tracking-only for now and let the caller handle the reinsert. The
-    // change-password use case (T151) does the rotation, not this repo.
-    return result.filter((r) => r.id !== keepId).length;
+    return result.length;
   }
 }
 

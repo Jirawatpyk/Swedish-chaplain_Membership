@@ -37,6 +37,7 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 import { type EmailAddress, asEmailAddress } from '@/modules/auth/domain/branded';
 import {
@@ -46,11 +47,15 @@ import {
 import type { UserAccount } from '@/modules/auth/domain/user';
 import { isLocked } from '@/modules/auth/domain/user';
 import type { Session } from '@/modules/auth/domain/session';
-import { argon2Hasher, type PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
-import { rateLimiter, type RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
-import { userRepo, type UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
-import { sessionRepo, type SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
-import { auditRepo, type AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+// Type-only imports — Clean Architecture: Application never pulls
+// concrete Infrastructure singletons into its own module graph.
+// Default wiring lives in the composition root (@/lib/auth-deps).
+import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
+import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+import { defaultSignInDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
 
@@ -95,14 +100,11 @@ export interface SignInDeps {
   readonly now: () => Date;
 }
 
-const defaultDeps: SignInDeps = {
-  users: userRepo,
-  sessions: sessionRepo,
-  audit: auditRepo,
-  hasher: argon2Hasher,
-  limiter: rateLimiter,
-  now: () => new Date(),
-};
+// Default deps live in the composition root — see `@/lib/auth-deps`.
+// Re-export for callers (tests, other use cases) that still import
+// from the use case file. This is a pure re-export; no extra runtime
+// dependency beyond the single edge to auth-deps above.
+export { defaultSignInDeps };
 
 // --- Use case ----------------------------------------------------------------
 
@@ -128,7 +130,7 @@ function outcomeLabel(
 
 export async function signIn(
   input: SignInInput,
-  deps: SignInDeps = defaultDeps,
+  deps: SignInDeps = defaultSignInDeps,
 ): Promise<Result<SignInSuccess, SignInError>> {
   const start = performance.now();
   const result = await signInImpl(input, deps);
@@ -219,9 +221,10 @@ async function signInImpl(
     return err({ code: 'invalid-credentials' });
   }
 
-  // 4. Lockout check
+  // 4. Lockout check — `isLocked` narrows the type so `lockedUntil` is
+  //    `Date`, not `Date | null`. No non-null assertion needed.
   if (isLocked(user, now)) {
-    const retryAfter = Math.ceil((user.lockedUntil!.getTime() - now.getTime()) / 1000);
+    const retryAfter = Math.ceil((user.lockedUntil.getTime() - now.getTime()) / 1000);
     await deps.audit.append({
       eventType: 'sign_in_failure',
       actorUserId: user.id,
@@ -298,19 +301,6 @@ async function signInImpl(
   );
 
   return ok({ session, user });
-}
-
-/**
- * Hash a user id for log output (privacy minimisation per
- * docs/observability.md § 3 — never log raw user ids).
- */
-function hashId(id: string): string {
-  // Inline djb2 hash — fast, non-cryptographic, just for log correlation.
-  let hash = 5381;
-  for (let i = 0; i < id.length; i += 1) {
-    hash = (hash * 33) ^ id.charCodeAt(i);
-  }
-  return (hash >>> 0).toString(16);
 }
 
 /** Helper exposed so the role-portal validation matches the use case. */

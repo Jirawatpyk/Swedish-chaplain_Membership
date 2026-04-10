@@ -9,21 +9,13 @@ import { changeRole } from '@/modules/auth/application/change-role';
 import { asUserId } from '@/modules/auth/domain/branded';
 import { getCurrentSession } from '@/lib/auth-session';
 import { requireRole } from '@/lib/rbac-guard';
+import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 const inputSchema = z.object({
   newRole: z.enum(['admin', 'manager', 'member']),
 });
-
-function clientIp(request: NextRequest): string {
-  const xff = request.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return request.headers.get('x-real-ip') ?? '0.0.0.0';
-}
 
 export async function POST(
   request: NextRequest,
@@ -37,7 +29,7 @@ export async function POST(
   }
 
   const guard = await requireRole(current, 'auth:user', 'write', {
-    sourceIp: clientIp(request),
+    sourceIp: getClientIp(request),
     requestId,
   });
   if (!guard.ok) {
@@ -67,7 +59,7 @@ export async function POST(
     targetUserId: asUserId(id),
     newRole: parsed.data.newRole,
     actorUserId: current.user.id,
-    sourceIp: clientIp(request),
+    sourceIp: getClientIp(request),
     requestId,
   });
 

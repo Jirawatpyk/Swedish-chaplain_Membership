@@ -41,6 +41,7 @@ import {
   type PasswordHasher,
 } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import { rateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import type { PasswordHash } from '@/modules/auth/domain/branded';
 import { env } from '@/lib/env';
 
 const BURST_SIZE = 1000;
@@ -50,10 +51,10 @@ const TOLERANCE_ABOVE = 5; // accept a bit of slop from sliding-window accountin
 class CountingHasher implements PasswordHasher {
   verifyCalls = 0;
   verifyDummyCalls = 0;
-  async hash(pw: string): Promise<string> {
+  async hash(pw: string): Promise<PasswordHash> {
     return argon2Hasher.hash(pw);
   }
-  async verify(hashed: string, pw: string): Promise<boolean> {
+  async verify(hashed: PasswordHash, pw: string): Promise<boolean> {
     this.verifyCalls += 1;
     return argon2Hasher.verify(hashed, pw);
   }

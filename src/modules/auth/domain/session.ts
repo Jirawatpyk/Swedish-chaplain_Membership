@@ -6,9 +6,13 @@
  *   - Idle timeout: 30 minutes since `lastSeenAt`
  *   - Absolute lifetime: 12 hours since `createdAt`
  *
- * The earlier of the two ends the session. The middleware (T043) reads
- * the session row, calls `isSessionValid`, and either renews
- * `lastSeenAt` (if still valid) or destroys the session.
+ * The earlier of the two ends the session. `getCurrentSession()` in
+ * `src/lib/auth-session.ts` reads the session row, calls
+ * `isSessionValid`, and either renews `lastSeenAt` (if still valid)
+ * or destroys the session. `proxy.ts` (the Next.js 16 request proxy)
+ * is stateless and does NOT touch the DB — Edge runtime can't run
+ * `postgres-js` — so the validation work lives in the Node-runtime
+ * page/layout path instead.
  *
  * Pure types — Domain layer; no framework imports.
  */
@@ -31,8 +35,8 @@ export const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 export const ABSOLUTE_LIFETIME_MS = 12 * 60 * 60 * 1000;
 
 /**
- * Decide whether a session is still valid at `now`. Used by middleware
- * before every protected request.
+ * Decide whether a session is still valid at `now`. Called by
+ * `getCurrentSession()` before serving any protected request.
  */
 export function isSessionValid(session: Session, now: Date): boolean {
   // Absolute cap: createdAt + 12 h

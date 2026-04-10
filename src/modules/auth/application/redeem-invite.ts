@@ -16,9 +16,12 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { asTokenId } from '@/modules/auth/domain/branded';
+import { authMetrics } from '@/lib/metrics';
+import type { TokenId } from '@/modules/auth/domain/branded';
 import {
+  classifyTokenFailure,
   isInvitationValid,
+  type TokenFailureReason,
 } from '@/modules/auth/domain/token';
 import type { Session } from '@/modules/auth/domain/session';
 import type { UserAccount } from '@/modules/auth/domain/user';
@@ -27,35 +30,23 @@ import {
   checkPasswordPolicy,
   type PasswordPolicyError,
 } from '@/modules/auth/application/password-policy';
-import {
-  userRepo,
-  type UserRepo,
-} from '@/modules/auth/infrastructure/db/user-repo';
-import {
-  tokenRepo,
-  type TokenRepo,
-} from '@/modules/auth/infrastructure/db/token-repo';
-import {
-  sessionRepo,
-  type SessionRepo,
-} from '@/modules/auth/infrastructure/db/session-repo';
-import {
-  auditRepo,
-  type AuditRepo,
-} from '@/modules/auth/infrastructure/db/audit-repo';
-import {
-  argon2Hasher,
-  type PasswordHasher,
-} from '@/modules/auth/infrastructure/password/argon2-hasher';
-import {
-  rateLimiter,
-  type RateLimiter,
-} from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+// Type-only — see sign-in.ts for the Clean Architecture rationale.
+import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
+import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
+import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { defaultRedeemInviteDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
 
 export interface RedeemInviteInput {
-  readonly token: string;
+  /**
+   * Branded token id. Route handler applies `asTokenId()` after
+   * zod parsing, so the use case never sees a raw string.
+   */
+  readonly token: TokenId;
   readonly password: string;
   readonly displayName?: string | null;
   readonly sourceIp: string;
@@ -69,7 +60,15 @@ export interface RedeemInviteSuccess {
 }
 
 export type RedeemInviteError =
-  | { readonly code: 'link-invalid' }
+  | {
+      /**
+       * Public body stays uniform (`link-invalid`). The `reason`
+       * discriminant is internal-only — it drives the 404 vs 410
+       * split in the route handler + the audit summary.
+       */
+      readonly code: 'link-invalid';
+      readonly reason: TokenFailureReason;
+    }
   | {
       readonly code: 'weak-password';
       readonly errors: readonly PasswordPolicyError[];
@@ -93,16 +92,7 @@ export interface RedeemInviteDeps {
   readonly now: () => Date;
 }
 
-export const defaultRedeemInviteDeps: RedeemInviteDeps = {
-  users: userRepo,
-  tokens: tokenRepo,
-  sessions: sessionRepo,
-  audit: auditRepo,
-  hasher: argon2Hasher,
-  limiter: rateLimiter,
-  checkPolicy: checkPasswordPolicy,
-  now: () => new Date(),
-};
+export { defaultRedeemInviteDeps };
 
 // --- Use case ----------------------------------------------------------------
 
@@ -126,26 +116,14 @@ export async function redeemInvite(
     });
   }
 
-  // 2. Token lookup
-  let tokenId;
-  try {
-    tokenId = asTokenId(input.token);
-  } catch {
-    return err({ code: 'link-invalid' });
-  }
-
+  // 2. Token lookup. `input.token` is already branded (route handler
+  //    applied `asTokenId` after zod parsing).
   const now = deps.now();
-  const invitation = await deps.tokens.findInvitationById(tokenId);
+  const invitation = await deps.tokens.findInvitationById(input.token);
   if (!invitation || !isInvitationValid(invitation, now)) {
+    const reason = classifyTokenFailure(invitation);
     logger.warn(
-      {
-        requestId: input.requestId,
-        reason: !invitation
-          ? 'token-not-found'
-          : invitation.consumedAt
-            ? 'token-used'
-            : 'token-expired',
-      },
+      { requestId: input.requestId, reason },
       'redeem_invite.token_invalid',
     );
     // Emit audit event for expired / used (but not for missing — no
@@ -156,19 +134,26 @@ export async function redeemInvite(
         actorUserId: 'anonymous',
         targetUserId: invitation.userId,
         sourceIp: input.sourceIp,
-        summary: invitation.consumedAt
-          ? 'invitation already used'
-          : 'invitation expired',
+        summary:
+          reason === 'used' ? 'invitation already used' : 'invitation expired',
         requestId: input.requestId,
       });
+      // observability.md § 4.3 — failure breakdown. Only report the
+      // two reasons the audit event covers (used / expired); the
+      // `not-found` branch has no invitation row and emits no audit.
+      if (reason === 'used' || reason === 'expired') {
+        authMetrics.invitationRedemptionFailed(reason);
+      }
     }
-    return err({ code: 'link-invalid' });
+    return err({ code: 'link-invalid', reason });
   }
 
   // 3. User lookup + role tamper detection
   const user = await deps.users.findById(invitation.userId);
   if (!user || user.status !== 'pending' || user.role !== invitation.intendedRole) {
-    return err({ code: 'link-invalid' });
+    // Row existed but the account state diverged — closer to 410
+    // than 404 because the link itself was once valid.
+    return err({ code: 'link-invalid', reason: 'used' });
   }
 
   // 4. Password policy
@@ -181,7 +166,7 @@ export async function redeemInvite(
   const hashed = await deps.hasher.hash(input.password);
   await deps.users.setPasswordHash(user.id, hashed, now);
   await deps.users.activate(user.id, now);
-  await deps.tokens.markInvitationConsumed(tokenId, now);
+  await deps.tokens.markInvitationConsumed(input.token, now);
 
   // 6. Initial session (auto sign-in)
   const session = await deps.sessions.create({
@@ -203,11 +188,15 @@ export async function redeemInvite(
   // Re-read the user to get the updated status
   const activated = await deps.users.findById(user.id);
   if (!activated) {
-    return err({ code: 'link-invalid' });
+    // Shouldn't happen — we just activated the row. Treat as used.
+    return err({ code: 'link-invalid', reason: 'used' });
   }
 
   const portal = PORTAL_FOR_ROLE[activated.role];
   const redirectTo = portal === 'staff' ? '/admin' : '/portal';
+
+  // observability.md § 4.3 — invitation → account conversion.
+  authMetrics.invitationRedeemed(activated.role);
 
   return ok({ user: activated, session, redirectTo });
 }

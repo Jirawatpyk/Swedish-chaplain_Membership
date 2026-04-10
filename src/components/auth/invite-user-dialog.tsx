@@ -37,8 +37,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-
-type Role = 'admin' | 'manager' | 'member';
+import { isRole, ROLES, type Role } from '@/modules/auth/domain/role';
 
 export interface InviteUserDialogProps {
   readonly disabled?: boolean;
@@ -137,12 +136,21 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
                 id="invite-role"
                 value={role}
                 disabled={submitting}
-                onChange={(e) => setRole(e.target.value as Role)}
+                onChange={(e) => {
+                  // Narrow via the domain type guard rather than a raw
+                  // `as Role` cast. ROLES is the single source of truth,
+                  // so if someone adds a fourth role the <select> gains
+                  // a new <option> and `isRole` still accepts it.
+                  const next = e.target.value;
+                  if (isRole(next)) setRole(next);
+                }}
                 className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <option value="admin">{t('roles.admin')}</option>
-                <option value="manager">{t('roles.manager')}</option>
-                <option value="member">{t('roles.member')}</option>
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {t(`roles.${r}`)}
+                  </option>
+                ))}
               </select>
             </div>
             {errorCode ? (

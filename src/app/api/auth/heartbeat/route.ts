@@ -17,6 +17,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getCurrentSession } from '@/lib/auth-session';
 import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
@@ -38,8 +39,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     60,
   );
   if (!rl.success) {
+    // Never log raw session IDs (observability.md § 3, CLAUDE.md § Secrets).
+    // `sessionIdHash` gives the same correlation power without the
+    // PII — pino's redact list catches accidental top-level `sessionId`
+    // fields too, but defence-in-depth: don't put it in the log object.
     logger.warn(
-      { requestId, sessionId: current.session.id },
+      { requestId, sessionIdHash: hashId(current.session.id) },
       'heartbeat.rate-limited',
     );
     return NextResponse.json(

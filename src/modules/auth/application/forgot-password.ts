@@ -27,31 +27,19 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { authMetrics } from '@/lib/metrics';
 import { asEmailAddress } from '@/modules/auth/domain/branded';
-import {
-  userRepo,
-  type UserRepo,
-} from '@/modules/auth/infrastructure/db/user-repo';
-import {
-  tokenRepo,
-  type TokenRepo,
-} from '@/modules/auth/infrastructure/db/token-repo';
-import {
-  auditRepo,
-  type AuditRepo,
-} from '@/modules/auth/infrastructure/db/audit-repo';
-import {
-  rateLimiter,
-  type RateLimiter,
-} from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
-import {
-  emailSender,
-  type EmailSender,
-} from '@/modules/auth/infrastructure/email/resend-client';
+// Type-only — see sign-in.ts for the Clean Architecture rationale.
+import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
+import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import type { EmailSender } from '@/modules/auth/infrastructure/email/resend-client';
 import {
   buildResetPasswordEmail,
   type EmailLocale,
 } from '@/modules/auth/infrastructure/email/reset-password-email';
+import { defaultForgotPasswordDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
 
@@ -85,14 +73,7 @@ export interface ForgotPasswordDeps {
   readonly now: () => Date;
 }
 
-export const defaultForgotPasswordDeps: ForgotPasswordDeps = {
-  users: userRepo,
-  tokens: tokenRepo,
-  audit: auditRepo,
-  limiter: rateLimiter,
-  email: emailSender,
-  now: () => new Date(),
-};
+export { defaultForgotPasswordDeps };
 
 // --- Use case ----------------------------------------------------------------
 
@@ -130,13 +111,21 @@ export async function forgotPassword(
 
   // 3. Look up user
   const found = await deps.users.findByEmail(normalisedEmail);
-  if (!found) return ok({ ok: true });
+  if (!found) {
+    // `email_known=false` — the metric is server-side-only so a raw
+    // boolean is safe; the label is never exposed to the client.
+    authMetrics.passwordResetRequested(false);
+    return ok({ ok: true });
+  }
 
   const { user } = found;
   if (user.status !== 'active') {
-    // Pending or disabled — no email sent, no audit event.
+    // Pending or disabled — no email sent, no audit event, but still
+    // a metric (the attempt is server-side observable).
+    authMetrics.passwordResetRequested(false);
     return ok({ ok: true });
   }
+  authMetrics.passwordResetRequested(true);
 
   const now = deps.now();
 

@@ -26,6 +26,7 @@ import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import { asUserId } from '@/modules/auth/domain/branded';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       cleared += 1;
     } catch (error) {
       logger.error(
-        { requestId, err: error, userId: row.id },
+        { requestId, err: error, userIdHash: hashId(row.id) },
         'cron.lockout_cleanup.row_failed',
       );
       // Continue with remaining rows — idempotent retry will catch this

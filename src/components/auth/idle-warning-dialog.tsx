@@ -166,6 +166,22 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     };
   }, [open]);
 
+  // Test hook: the a11y E2E spec can dispatch
+  // `swecham:open-idle-warning` to force the modal open without
+  // simulating 29 minutes of inactivity. Intentionally narrow — no
+  // query params, no args, no state leaked out. Same-origin only
+  // because the listener lives inside a client component.
+  useEffect(() => {
+    const onOpen = () => {
+      setOpen(true);
+      setRemaining(WARNING_WINDOW_MS / 1000);
+    };
+    window.addEventListener('swecham:open-idle-warning', onOpen);
+    return () => {
+      window.removeEventListener('swecham:open-idle-warning', onOpen);
+    };
+  }, []);
+
   // Countdown — while the modal is open, tick once per second. Reaching
   // zero triggers the involuntary sign-out path.
   useEffect(() => {

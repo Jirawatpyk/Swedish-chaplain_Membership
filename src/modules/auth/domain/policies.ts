@@ -2,8 +2,12 @@
  * RBAC policy: `canAccess(role, resource, action)` (T033, spec Q4 / FR-003).
  *
  * Encodes the three-role permission matrix as pure data. Used by:
- *   - Application use cases (T086 has-permission helper)
- *   - Middleware (T084 enforces 403 + emits `manager_denied_write`)
+ *   - Application use cases (`has-permission` helper)
+ *   - `src/lib/rbac-guard.ts` (API routes: enforces 403 + emits
+ *     `manager_denied_write`). NOTE: the original plan put this in
+ *     `middleware.ts` / `proxy.ts`, but Edge runtime can't read
+ *     Postgres or write audit rows — see `rbac-guard.ts` file header
+ *     for the deviation rationale.
  *   - UI (server components conditionally render destructive actions)
  *
  * The single hard rule (spec Q4):
@@ -76,8 +80,8 @@ export function canAccess(role: Role, resource: Resource, action: Action): boole
 
 /**
  * Convenience: is this role allowed to mutate ANY resource other than
- * their own account? Used by the middleware to decide whether to bother
- * checking individual policy rules on a write request.
+ * their own account? Used by `rbac-guard.ts` to short-circuit the
+ * policy check for read-only roles on write paths.
  */
 export function isReadOnlyRole(role: Role): boolean {
   return role === 'manager' || role === 'member';

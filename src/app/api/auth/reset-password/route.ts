@@ -11,22 +11,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { resetPassword } from '@/modules/auth/application/reset-password';
+import { asTokenId } from '@/modules/auth/domain/branded';
+import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 const inputSchema = z.object({
   token: z.string().min(32).max(128),
-  newPassword: z.string().min(1).max(1000),
+  newPassword: z.string().min(1).max(256),
 });
-
-function clientIp(request: NextRequest): string {
-  const xff = request.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return request.headers.get('x-real-ip') ?? '0.0.0.0';
-}
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -50,9 +43,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const result = await resetPassword({
-    token: parsed.data.token,
+    token: asTokenId(parsed.data.token),
     newPassword: parsed.data.newPassword,
-    sourceIp: clientIp(request),
+    sourceIp: getClientIp(request),
     requestId,
   });
 
@@ -65,9 +58,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const { error } = result;
   switch (error.code) {
-    case 'link-invalid':
-      // Single public slug; status 410 Gone is semantically closest.
-      return NextResponse.json({ error: 'link-invalid' }, { status: 410 });
+    case 'link-invalid': {
+      // The public body is intentionally uniform across the three
+      // reasons (missing / expired / used) — the route MUST NOT leak
+      // which bucket a given token fell into, so the JSON body carries
+      // only `link-invalid`. HTTP status, however, does distinguish:
+      //   - 404 when the token id is simply not in the DB
+      //   - 410 Gone when a token that DID exist is now expired or used
+      // auth-api.md § 4 documents this split for clients / crawlers
+      // that want a machine-readable hint about retryability.
+      const status = error.reason === 'not-found' ? 404 : 410;
+      return NextResponse.json({ error: 'link-invalid' }, { status });
+    }
     case 'weak-password':
       return NextResponse.json(
         {

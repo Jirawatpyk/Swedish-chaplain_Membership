@@ -6,19 +6,10 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { clearSessionCookie, getSessionIdFromCookie } from '@/lib/auth-cookies';
-import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import { signOut } from '@/modules/auth/application/sign-out';
+import { getClientIp } from '@/lib/client-ip';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
-
-function clientIp(request: NextRequest): string {
-  const xff = request.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return request.headers.get('x-real-ip') ?? '0.0.0.0';
-}
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -26,20 +17,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const sessionId = await getSessionIdFromCookie();
 
-    let userId: string | null = null;
-    if (sessionId) {
-      const session = await sessionRepo.findById(sessionId);
-      if (session) {
-        userId = session.userId;
-      }
-    }
-
+    // The use case owns the session lookup + audit attribution —
+    // the route handler just forwards the cookie value it has.
     await signOut({
       sessionId,
-      // Cast — userId is the branded UserId at the use-case boundary
-      // (see Application layer types). The repo returns the same brand.
-      userId: userId as never,
-      sourceIp: clientIp(request),
+      sourceIp: getClientIp(request),
       requestId,
     });
 

@@ -9,6 +9,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { argon2Hasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import { asPasswordHash } from '@/modules/auth/domain/branded';
 
 // Stop the global setup from faking timers for this file — argon2 calls
 // run inside native code that the fake clock can't drive.
@@ -27,7 +28,9 @@ describe('argon2Hasher', () => {
   });
 
   it('verify returns false (does not throw) on a malformed hash string', async () => {
-    await expect(argon2Hasher.verify('not-a-real-hash', 'anything')).resolves.toBe(false);
+    await expect(
+      argon2Hasher.verify(asPasswordHash('not-a-real-hash'), 'anything'),
+    ).resolves.toBe(false);
   });
 
   it('verifyDummy resolves without throwing for any input', async () => {

@@ -8,6 +8,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { forgotPassword } from '@/modules/auth/application/forgot-password';
+import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import type { EmailLocale } from '@/modules/auth/infrastructure/email/reset-password-email';
@@ -19,15 +20,6 @@ const inputSchema = z.object({
 
 const NEUTRAL_MESSAGE =
   'If an account exists for that email, a reset link has been sent.';
-
-function clientIp(request: NextRequest): string {
-  const xff = request.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return request.headers.get('x-real-ip') ?? '0.0.0.0';
-}
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -56,7 +48,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const locale: EmailLocale | undefined = parsed.data.locale;
   const result = await forgotPassword({
     email: parsed.data.email,
-    sourceIp: clientIp(request),
+    sourceIp: getClientIp(request),
     requestId,
     locale,
   });

@@ -10,8 +10,10 @@ import { db } from '@/lib/db';
 import { users, type UserRow } from './schema';
 import {
   asEmailAddress,
+  asPasswordHash,
   asUserId,
   type EmailAddress,
+  type PasswordHash,
   type UserId,
 } from '@/modules/auth/domain/branded';
 import type { UserAccount } from '@/modules/auth/domain/user';
@@ -33,7 +35,7 @@ function toDomain(row: UserRow): UserAccount {
 }
 
 export interface UserRepo {
-  findByEmail(email: EmailAddress): Promise<{ user: UserAccount; passwordHash: string | null } | null>;
+  findByEmail(email: EmailAddress): Promise<{ user: UserAccount; passwordHash: PasswordHash | null } | null>;
   findById(id: UserId): Promise<UserAccount | null>;
   updateLastSignIn(id: UserId, at: Date): Promise<void>;
   incrementFailedCount(id: UserId): Promise<number>;
@@ -46,7 +48,7 @@ export interface UserRepo {
     role: Role;
     displayName?: string | null;
   }): Promise<UserAccount>;
-  setPasswordHash(id: UserId, hash: string, now: Date): Promise<void>;
+  setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void>;
   activate(id: UserId, now: Date): Promise<void>;
   /** Transition active → disabled. */
   disable(id: UserId): Promise<void>;
@@ -63,7 +65,7 @@ export interface UserRepo {
 class DrizzleUserRepo implements UserRepo {
   async findByEmail(
     email: EmailAddress,
-  ): Promise<{ user: UserAccount; passwordHash: string | null } | null> {
+  ): Promise<{ user: UserAccount; passwordHash: PasswordHash | null } | null> {
     const rows = await db
       .select()
       .from(users)
@@ -71,7 +73,10 @@ class DrizzleUserRepo implements UserRepo {
       .limit(1);
     const row = rows[0];
     if (!row) return null;
-    return { user: toDomain(row), passwordHash: row.passwordHash };
+    return {
+      user: toDomain(row),
+      passwordHash: row.passwordHash ? asPasswordHash(row.passwordHash) : null,
+    };
   }
 
   async findById(id: UserId): Promise<UserAccount | null> {
@@ -144,7 +149,7 @@ class DrizzleUserRepo implements UserRepo {
     return toDomain(row);
   }
 
-  async setPasswordHash(id: UserId, hash: string, now: Date): Promise<void> {
+  async setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void> {
     await db
       .update(users)
       .set({ passwordHash: hash, lastPasswordChangedAt: now })

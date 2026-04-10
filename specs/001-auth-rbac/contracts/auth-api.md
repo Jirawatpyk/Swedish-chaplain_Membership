@@ -93,11 +93,19 @@ Content-Type: application/json
 | Status | `type` slug | When | Notes |
 |---|---|---|---|
 | 400 | `invalid-input` | Body fails zod schema | Only field names leaked, never values |
-| 401 | `invalid-credentials` | Email not found, wrong password, wrong portal for role | Same message in all 3 cases to prevent enumeration (FR-016) |
+| 401 | `invalid-credentials` | Email not found, wrong password, wrong portal for role, **account in `pending` state** | Same message in ALL four cases to prevent enumeration (FR-016, T-03). Pending accounts collapse into this bucket so an attacker cannot discover which invites are still outstanding. |
 | 403 | `account-disabled` | Account status is `disabled` | Reveals that the account exists, but only to someone who has the correct credentials — acceptable trade-off |
 | 403 | `account-locked` | `locked_until > now()` due to FR-013 lockout | Response includes `Retry-After: <seconds>` header |
-| 403 | `account-pending` | Status is `pending` — user hasn't redeemed invitation yet | Tell them to check their invitation email |
 | 429 | `rate-limited` | Exceeded rate limit per email or per IP | `Retry-After` header set |
+
+> **Deviation from original design**: an earlier draft reserved a
+> `403 account-pending` row so the UI could tell an invitee "check
+> your email". That row was collapsed into `401 invalid-credentials`
+> during the verify gate (2026-04-10) because the distinction was a
+> T-03 enumeration leak: an attacker who knows an email address could
+> confirm "this invitation is still outstanding" just by watching the
+> HTTP status. The sign-in use case still pays the dummy-hash cost on
+> the pending branch (sign-in.ts Step 3c) so timing stays uniform.
 
 ### Audit events emitted
 

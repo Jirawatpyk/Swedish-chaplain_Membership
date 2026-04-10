@@ -8,14 +8,10 @@
 import { Result, err, ok } from '@/lib/result';
 import type { UserId } from '@/modules/auth/domain/branded';
 import type { UserAccount } from '@/modules/auth/domain/user';
-import {
-  userRepo,
-  type UserRepo,
-} from '@/modules/auth/infrastructure/db/user-repo';
-import {
-  auditRepo,
-  type AuditRepo,
-} from '@/modules/auth/infrastructure/db/audit-repo';
+// Type-only — see sign-in.ts for the Clean Architecture rationale.
+import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+import { defaultEnableUserDeps } from '@/lib/auth-deps';
 
 export interface EnableUserInput {
   readonly targetUserId: UserId;
@@ -37,10 +33,7 @@ export interface EnableUserDeps {
   readonly audit: AuditRepo;
 }
 
-export const defaultEnableUserDeps: EnableUserDeps = {
-  users: userRepo,
-  audit: auditRepo,
-};
+export { defaultEnableUserDeps };
 
 export async function enableUser(
   input: EnableUserInput,

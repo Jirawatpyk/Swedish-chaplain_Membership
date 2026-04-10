@@ -27,6 +27,7 @@ import {
 } from '@/modules/auth/application/change-password';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import { argon2Hasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import { asPasswordHash } from '@/modules/auth/domain/branded';
 import {
   createActiveTestUser,
   deleteTestUser,
@@ -117,7 +118,7 @@ describe('integration: change-password (US6)', () => {
       .where(eq(users.id, user.userId));
     expect(userRows[0]?.hash).toBeTruthy();
     const verifyNew = await argon2Hasher.verify(
-      userRows[0]!.hash!,
+      asPasswordHash(userRows[0]!.hash!),
       newPassword,
     );
     expect(verifyNew).toBe(true);

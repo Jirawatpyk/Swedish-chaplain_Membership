@@ -36,6 +36,7 @@ import {
 } from '@/modules/auth/application/reset-password';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import { argon2Hasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import { asPasswordHash, asTokenId } from '@/modules/auth/domain/branded';
 import { ok } from '@/lib/result';
 import {
   createActiveTestUser,
@@ -125,7 +126,7 @@ describe('integration: forgot-password → reset-password happy path', () => {
     const newPassword = `Reset-${Date.now()}-Xq!2026`;
     const resetRes = await resetPassword(
       {
-        token: freshToken.id,
+        token: asTokenId(freshToken.id),
         newPassword,
         sourceIp: '203.0.113.9',
         requestId: `${requestId}-redeem`,
@@ -150,7 +151,7 @@ describe('integration: forgot-password → reset-password happy path', () => {
       .from(users)
       .where(eq(users.id, user.userId));
     expect(userRows[0]?.hash).toBeTruthy();
-    const ok2 = await argon2Hasher.verify(userRows[0]!.hash!, newPassword);
+    const ok2 = await argon2Hasher.verify(asPasswordHash(userRows[0]!.hash!), newPassword);
     expect(ok2).toBe(true);
 
     // 7. All sessions deleted
@@ -211,7 +212,7 @@ describe('integration: forgot-password → reset-password happy path', () => {
 
     const first = await resetPassword(
       {
-        token: freshest.id,
+        token: asTokenId(freshest.id),
         newPassword: `First-${Date.now()}-Xy!2026`,
         sourceIp: '203.0.113.9',
         requestId: `${requestId}-first`,
@@ -222,7 +223,7 @@ describe('integration: forgot-password → reset-password happy path', () => {
 
     const second = await resetPassword(
       {
-        token: freshest.id,
+        token: asTokenId(freshest.id),
         newPassword: `Second-${Date.now()}-Xy!2026`,
         sourceIp: '203.0.113.9',
         requestId: `${requestId}-second`,
@@ -247,7 +248,7 @@ describe('integration: forgot-password → reset-password happy path', () => {
 
     const result = await resetPassword(
       {
-        token: expiredId,
+        token: asTokenId(expiredId),
         newPassword: `Expired-${Date.now()}-Xy!2026`,
         sourceIp: '203.0.113.9',
         requestId: `it-expired-${Date.now()}`,

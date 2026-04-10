@@ -42,7 +42,7 @@ import {
 import { disableUser } from '@/modules/auth/application/disable-user';
 import { changeRole } from '@/modules/auth/application/change-role';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
-import { asUserId } from '@/modules/auth/domain/branded';
+import { asTokenId, asUserId } from '@/modules/auth/domain/branded';
 import { ok } from '@/lib/result';
 import {
   createActiveTestUser,
@@ -115,7 +115,7 @@ describe('integration: invitation flow (happy path + replay)', () => {
     const newPassword = `Redeem-${Date.now()}-Xy!2026`;
     const redeemResult = await redeemInvite(
       {
-        token: invitationId,
+        token: asTokenId(invitationId),
         password: newPassword,
         displayName: 'Activated Manager',
         sourceIp: '203.0.113.12',
@@ -159,7 +159,7 @@ describe('integration: invitation flow (happy path + replay)', () => {
     // 7. Replay: consumed invitation cannot be re-redeemed
     const replayResult = await redeemInvite(
       {
-        token: invitationId,
+        token: asTokenId(invitationId),
         password: `Another-${Date.now()}-Xy!2026`,
         sourceIp: '203.0.113.12',
         requestId: `${redeemRequestId}-replay`,

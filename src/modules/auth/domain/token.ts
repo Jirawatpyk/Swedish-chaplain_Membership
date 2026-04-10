@@ -34,6 +34,26 @@ export function isResetTokenValid(token: PasswordResetToken, now: Date): boolean
   return true;
 }
 
+/**
+ * Why did a token fail to validate? Used by the reset-password +
+ * redeem-invite route handlers to map a single "link-invalid"
+ * application error onto HTTP 404 (not-found) vs 410 Gone
+ * (expired/used) — the public JSON body remains uniform.
+ *
+ * `null` input means "no row found in the DB". Otherwise the token
+ * is inspected to decide between `used` (consumedAt set) and
+ * `expired` (default).
+ */
+export type TokenFailureReason = 'not-found' | 'used' | 'expired';
+
+export function classifyTokenFailure(
+  token: { consumedAt: Date | null } | null,
+): TokenFailureReason {
+  if (!token) return 'not-found';
+  if (token.consumedAt !== null) return 'used';
+  return 'expired';
+}
+
 // --- Invitation ---------------------------------------------------------------
 
 export interface Invitation {

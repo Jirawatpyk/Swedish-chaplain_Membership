@@ -29,16 +29,3 @@ import type { Role } from '@/modules/auth/domain/role';
 export function hasPermission(role: Role, resource: Resource, action: Action): boolean {
   return canAccess(role, resource, action);
 }
-
-/**
- * Convenience: is this role allowed to mutate the given resource in
- * ANY way (write / delete / admin)? Useful for a single "show mutating
- * toolbar?" decision in a server component.
- */
-export function canMutate(role: Role, resource: Resource): boolean {
-  return (
-    canAccess(role, resource, 'write') ||
-    canAccess(role, resource, 'delete') ||
-    canAccess(role, resource, 'admin')
-  );
-}

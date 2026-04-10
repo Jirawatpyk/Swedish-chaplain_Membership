@@ -10,23 +10,16 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { redeemInvite } from '@/modules/auth/application/redeem-invite';
 import { setSessionCookie } from '@/lib/auth-cookies';
+import { asTokenId } from '@/modules/auth/domain/branded';
+import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 const inputSchema = z.object({
   token: z.string().min(32).max(128),
-  password: z.string().min(1).max(1000),
+  password: z.string().min(1).max(256),
   displayName: z.string().min(1).max(120).optional(),
 });
-
-function clientIp(request: NextRequest): string {
-  const xff = request.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return request.headers.get('x-real-ip') ?? '0.0.0.0';
-}
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -50,10 +43,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const result = await redeemInvite({
-    token: parsed.data.token,
+    token: asTokenId(parsed.data.token),
     password: parsed.data.password,
     displayName: parsed.data.displayName ?? null,
-    sourceIp: clientIp(request),
+    sourceIp: getClientIp(request),
     requestId,
   });
 
@@ -77,8 +70,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const { error } = result;
   switch (error.code) {
-    case 'link-invalid':
-      return NextResponse.json({ error: 'link-invalid' }, { status: 410 });
+    case 'link-invalid': {
+      // 404 for unknown token, 410 Gone for expired/used. Public body
+      // stays uniform to prevent enumeration. See reset-password route
+      // for the same pattern + rationale.
+      const status = error.reason === 'not-found' ? 404 : 410;
+      return NextResponse.json({ error: 'link-invalid' }, { status });
+    }
     case 'weak-password':
       return NextResponse.json(
         { error: 'weak-password', issues: error.errors.map((e) => e.code) },

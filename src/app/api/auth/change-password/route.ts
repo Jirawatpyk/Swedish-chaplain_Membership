@@ -11,22 +11,18 @@ import { z } from 'zod';
 import { changePassword } from '@/modules/auth/application/change-password';
 import { getCurrentSession } from '@/lib/auth-session';
 import { setSessionCookie } from '@/lib/auth-cookies';
+import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
+// Password fields cap at 256 — same as the sign-in cap. T-16 argon2
+// DoS defence: the upstream rate limiter is the primary control, but
+// a cap at the schema boundary prevents a single request from
+// allocating a 1 MB hash input.
 const inputSchema = z.object({
-  currentPassword: z.string().min(1).max(1000),
-  newPassword: z.string().min(1).max(1000),
+  currentPassword: z.string().min(1).max(256),
+  newPassword: z.string().min(1).max(256),
 });
-
-function clientIp(request: NextRequest): string {
-  const xff = request.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return request.headers.get('x-real-ip') ?? '0.0.0.0';
-}
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -59,7 +55,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     currentSessionId: current.session.id,
     currentPassword: parsed.data.currentPassword,
     newPassword: parsed.data.newPassword,
-    sourceIp: clientIp(request),
+    sourceIp: getClientIp(request),
     requestId,
   });
 

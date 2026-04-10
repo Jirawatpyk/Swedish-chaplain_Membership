@@ -76,7 +76,8 @@ const schema = z.object({
 
   // Application URLs
   APP_BASE_URL: z.string().url(),
-  // Comma-separated allow-list — used by middleware CSRF Origin check
+  // Comma-separated allow-list — used by proxy.ts CSRF Origin check
+  // (delegated to `src/lib/csrf.ts`'s `checkCsrf()` decision function).
   APP_ALLOWED_ORIGINS: csvList,
 
   // Operational flags

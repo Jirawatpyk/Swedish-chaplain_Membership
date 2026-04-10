@@ -26,18 +26,11 @@
 import { Result, err, ok } from '@/lib/result';
 import type { UserId } from '@/modules/auth/domain/branded';
 import type { UserAccount } from '@/modules/auth/domain/user';
-import {
-  userRepo,
-  type UserRepo,
-} from '@/modules/auth/infrastructure/db/user-repo';
-import {
-  sessionRepo,
-  type SessionRepo,
-} from '@/modules/auth/infrastructure/db/session-repo';
-import {
-  auditRepo,
-  type AuditRepo,
-} from '@/modules/auth/infrastructure/db/audit-repo';
+// Type-only — see sign-in.ts for the Clean Architecture rationale.
+import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
+import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+import { defaultDisableUserDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
 
@@ -67,12 +60,7 @@ export interface DisableUserDeps {
   readonly now: () => Date;
 }
 
-export const defaultDisableUserDeps: DisableUserDeps = {
-  users: userRepo,
-  sessions: sessionRepo,
-  audit: auditRepo,
-  now: () => new Date(),
-};
+export { defaultDisableUserDeps };
 
 // --- Use case ----------------------------------------------------------------
 

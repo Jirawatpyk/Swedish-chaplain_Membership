@@ -15,6 +15,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { signIn } from '@/modules/auth/application/sign-in';
 import { setSessionCookie } from '@/lib/auth-cookies';
+import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
@@ -23,16 +24,6 @@ const inputSchema = z.object({
   password: z.string().min(1).max(256),
   portal: z.enum(['staff', 'member']),
 });
-
-function clientIp(request: NextRequest): string {
-  // Vercel proxies set x-forwarded-for; fall back to a sentinel for tests.
-  const xff = request.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return request.headers.get('x-real-ip') ?? '0.0.0.0';
-}
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -66,7 +57,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     email: parsed.data.email,
     password: parsed.data.password,
     portal: parsed.data.portal,
-    sourceIp: clientIp(request),
+    sourceIp: getClientIp(request),
     requestId,
   });
 

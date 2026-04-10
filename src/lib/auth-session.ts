@@ -24,9 +24,9 @@
  *   - The sign-out route handler explicitly calls `clearSessionCookie`
  *     from its own handler body, which is allowed.
  *
- * Why not in middleware: Edge runtime cannot import `postgres-js`.
- * Doing the lookup in the page server component keeps the Node-only
- * code in the Node runtime.
+ * Why not in proxy.ts (the Next.js 16 request proxy): Edge runtime
+ * cannot import `postgres-js`. Doing the lookup in the page server
+ * component keeps the Node-only code in the Node runtime.
  */
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';

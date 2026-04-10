@@ -17,7 +17,7 @@
  *     (or the email if the failure is "invalid-credentials")
  *   - All toasts are routed through `sonner` (see RootLayout)
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -51,7 +51,6 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
   const t = useTranslations('auth.signIn');
   const tErrors = useTranslations('errors');
   const router = useRouter();
-  const emailRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const {
@@ -137,10 +136,6 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
           spellCheck={false}
           aria-invalid={errors.email ? 'true' : undefined}
           {...register('email')}
-          ref={(node) => {
-            emailRef.current = node;
-            register('email').ref(node);
-          }}
         />
         {errors.email ? (
           <p className="text-sm text-destructive">{errors.email.message}</p>

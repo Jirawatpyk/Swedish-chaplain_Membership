@@ -25,45 +25,38 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { asTokenId } from '@/modules/auth/domain/branded';
+import { authMetrics } from '@/lib/metrics';
+import type { TokenId } from '@/modules/auth/domain/branded';
 import {
+  classifyTokenFailure,
   isResetTokenValid,
+  type TokenFailureReason,
 } from '@/modules/auth/domain/token';
 import {
   checkPasswordPolicy,
   type PasswordPolicyError,
 } from '@/modules/auth/application/password-policy';
-import {
-  userRepo,
-  type UserRepo,
-} from '@/modules/auth/infrastructure/db/user-repo';
-import {
-  tokenRepo,
-  type TokenRepo,
-} from '@/modules/auth/infrastructure/db/token-repo';
-import {
-  sessionRepo,
-  type SessionRepo,
-} from '@/modules/auth/infrastructure/db/session-repo';
-import {
-  auditRepo,
-  type AuditRepo,
-} from '@/modules/auth/infrastructure/db/audit-repo';
-import {
-  argon2Hasher,
-  type PasswordHasher,
-} from '@/modules/auth/infrastructure/password/argon2-hasher';
-import {
-  rateLimiter,
-  type RateLimiter,
-} from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+// Type-only — see sign-in.ts for the Clean Architecture rationale.
+import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
+import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
+import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import type { Role } from '@/modules/auth/domain/role';
 import { PORTAL_FOR_ROLE } from '@/modules/auth/domain/role';
+import { defaultResetPasswordDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
 
 export interface ResetPasswordInput {
-  readonly token: string;
+  /**
+   * Branded token id. The route handler applies the brand via
+   * `asTokenId()` right after the zod-validated body is parsed, so
+   * the use case never sees a raw `string` and does not need to
+   * re-wrap it.
+   */
+  readonly token: TokenId;
   readonly newPassword: string;
   readonly sourceIp: string;
   readonly requestId: string;
@@ -75,7 +68,16 @@ export interface ResetPasswordSuccess {
 }
 
 export type ResetPasswordError =
-  | { readonly code: 'link-invalid' }
+  | {
+      /**
+       * Public body stays uniform (`link-invalid`) to prevent token
+       * enumeration. The `reason` discriminant is internal-only — it
+       * drives the route handler's HTTP status split (404 vs 410)
+       * and the audit summary.
+       */
+      readonly code: 'link-invalid';
+      readonly reason: TokenFailureReason;
+    }
   | {
       readonly code: 'weak-password';
       readonly errors: readonly PasswordPolicyError[];
@@ -99,16 +101,7 @@ export interface ResetPasswordDeps {
   readonly now: () => Date;
 }
 
-export const defaultResetPasswordDeps: ResetPasswordDeps = {
-  users: userRepo,
-  tokens: tokenRepo,
-  sessions: sessionRepo,
-  audit: auditRepo,
-  hasher: argon2Hasher,
-  limiter: rateLimiter,
-  checkPolicy: checkPasswordPolicy,
-  now: () => new Date(),
-};
+export { defaultResetPasswordDeps };
 
 // --- Use case ----------------------------------------------------------------
 
@@ -130,22 +123,13 @@ export async function resetPassword(
     return err({ code: 'rate-limited', retryAfterSeconds: retryAfter });
   }
 
-  // 2. Token lookup + validity check
-  let tokenId;
-  try {
-    tokenId = asTokenId(input.token);
-  } catch {
-    return err({ code: 'link-invalid' });
-  }
-
+  // 2. Token lookup + validity check. `input.token` is already branded
+  //    (the route handler applied `asTokenId` after zod parsing), so
+  //    there is no try/catch here.
   const now = deps.now();
-  const token = await deps.tokens.findResetById(tokenId);
+  const token = await deps.tokens.findResetById(input.token);
   if (!token || !isResetTokenValid(token, now)) {
-    const reason = !token
-      ? 'token-not-found'
-      : token.consumedAt
-        ? 'token-used'
-        : 'token-expired';
+    const reason = classifyTokenFailure(token);
     logger.warn(
       { requestId: input.requestId, reason },
       'reset_password.token_invalid',
@@ -155,6 +139,8 @@ export async function resetPassword(
     // here — it's the only "redemption failed" event in the audit
     // enum and the summary string disambiguates reset vs invitation
     // on the query side. Missing tokens don't have a user to audit.
+    // TODO(F9): once a dedicated `password_reset_failed` event type
+    // is added to AUDIT_EVENT_TYPES, swap the reuse below for it.
     if (token) {
       await deps.audit.append({
         eventType: 'invitation_redemption_failed',
@@ -165,7 +151,7 @@ export async function resetPassword(
         requestId: input.requestId,
       });
     }
-    return err({ code: 'link-invalid' });
+    return err({ code: 'link-invalid', reason });
   }
 
   // 3. User lookup
@@ -173,12 +159,26 @@ export async function resetPassword(
   if (!user || user.status !== 'active') {
     // Shouldn't happen in practice because the token was minted for a
     // live account, but guard against race with disable/delete.
-    return err({ code: 'link-invalid' });
+    // Treat as 'used' — the link is no longer actionable but the row
+    // existed, which is closer to 410 than 404.
+    return err({ code: 'link-invalid', reason: 'used' });
   }
 
   // 4. Password policy
   const policy = await deps.checkPolicy(input.newPassword);
   if (!policy.ok) {
+    // Tag the metric with the first failing rule — observability.md
+    // § 4.5 uses this to break down weak-password rejections by cause.
+    // Both `common-password` and `breached` map to the `pwned` bucket
+    // because they share the same remediation (pick a different
+    // password) and we don't want to leak HIBP presence via metric
+    // dashboards.
+    const firstReason = policy.errors[0]?.code;
+    if (firstReason === 'too-short') {
+      authMetrics.passwordWeakRejected('short');
+    } else if (firstReason === 'common-password' || firstReason === 'breached') {
+      authMetrics.passwordWeakRejected('pwned');
+    }
     return err({ code: 'weak-password', errors: policy.errors });
   }
 
@@ -189,7 +189,7 @@ export async function resetPassword(
   await deps.users.clearFailedCount(user.id);
 
   // 6. Consume token + invalidate siblings (belt & braces)
-  await deps.tokens.markResetConsumed(tokenId, now);
+  await deps.tokens.markResetConsumed(input.token, now);
   await deps.tokens.invalidateAllUnconsumedForUser(user.id, now);
 
   // 7. Delete all existing sessions
@@ -217,6 +217,11 @@ export async function resetPassword(
 
   const portal = PORTAL_FOR_ROLE[user.role];
   const signInUrl = portal === 'staff' ? '/admin/sign-in' : '/portal/sign-in';
+
+  // observability.md § 4.2: successful reset completion counter + § 4.5
+  // trigger breakdown (self vs reset).
+  authMetrics.passwordResetCompleted();
+  authMetrics.passwordChanged('reset');
 
   return ok({ signInUrl, role: user.role });
 }

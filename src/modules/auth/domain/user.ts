@@ -48,9 +48,22 @@ export function canTransition(from: UserStatus, to: UserStatus): boolean {
 }
 
 /**
+ * A user account that is currently in the locked state — `lockedUntil`
+ * is guaranteed non-null and in the future relative to the now the
+ * `isLocked` type guard was called with. Returned by `isLocked` so
+ * callers can access `lockedUntil` without a non-null assertion.
+ */
+export type LockedUser = UserAccount & { readonly lockedUntil: Date };
+
+/**
  * Lockout helpers — based on `failedSignInCount` + `lockedUntil` rather
  * than a status change (data-model.md § 2.2 "Lockout is NOT a status").
+ *
+ * Acts as a type guard: after `isLocked(user, now)` returns true, the
+ * narrowed type is `LockedUser`, so `user.lockedUntil` is `Date`, not
+ * `Date | null`. This eliminates the non-null assertion that the
+ * sign-in use case previously needed to compute `retryAfterSeconds`.
  */
-export function isLocked(user: UserAccount, now: Date): boolean {
+export function isLocked(user: UserAccount, now: Date): user is LockedUser {
   return user.lockedUntil !== null && user.lockedUntil.getTime() > now.getTime();
 }

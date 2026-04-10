@@ -27,32 +27,21 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
+import { authMetrics } from '@/lib/metrics';
 import type { UserAccount } from '@/modules/auth/domain/user';
 import type { Session } from '@/modules/auth/domain/session';
 import {
   checkPasswordPolicy,
   type PasswordPolicyError,
 } from '@/modules/auth/application/password-policy';
-import {
-  userRepo,
-  type UserRepo,
-} from '@/modules/auth/infrastructure/db/user-repo';
-import {
-  sessionRepo,
-  type SessionRepo,
-} from '@/modules/auth/infrastructure/db/session-repo';
-import {
-  auditRepo,
-  type AuditRepo,
-} from '@/modules/auth/infrastructure/db/audit-repo';
-import {
-  argon2Hasher,
-  type PasswordHasher,
-} from '@/modules/auth/infrastructure/password/argon2-hasher';
-import {
-  rateLimiter,
-  type RateLimiter,
-} from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+// Type-only — see sign-in.ts for the Clean Architecture rationale.
+import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
+import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { defaultChangePasswordDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
 
@@ -94,15 +83,7 @@ export interface ChangePasswordDeps {
   readonly now: () => Date;
 }
 
-export const defaultChangePasswordDeps: ChangePasswordDeps = {
-  users: userRepo,
-  sessions: sessionRepo,
-  audit: auditRepo,
-  hasher: argon2Hasher,
-  limiter: rateLimiter,
-  checkPolicy: checkPasswordPolicy,
-  now: () => new Date(),
-};
+export { defaultChangePasswordDeps };
 
 // --- Use case ----------------------------------------------------------------
 
@@ -142,7 +123,7 @@ export async function changePassword(
   );
   if (!currentOk) {
     logger.warn(
-      { userId: input.user.id, requestId: input.requestId },
+      { userIdHash: hashId(input.user.id), requestId: input.requestId },
       'change_password.wrong_current',
     );
     return err({ code: 'wrong-current-password' });
@@ -150,12 +131,19 @@ export async function changePassword(
 
   // 4. Same-password guard (short-circuits before HIBP)
   if (input.newPassword === input.currentPassword) {
+    authMetrics.passwordWeakRejected('same');
     return err({ code: 'same-password' });
   }
 
   // 5. Policy check
   const policy = await deps.checkPolicy(input.newPassword);
   if (!policy.ok) {
+    const firstReason = policy.errors[0]?.code;
+    if (firstReason === 'too-short') {
+      authMetrics.passwordWeakRejected('short');
+    } else if (firstReason === 'common-password' || firstReason === 'breached') {
+      authMetrics.passwordWeakRejected('pwned');
+    }
     return err({ code: 'weak-password', errors: policy.errors });
   }
 
@@ -199,6 +187,9 @@ export async function changePassword(
       requestId: input.requestId,
     });
   }
+
+  // observability.md § 4.5 — trigger breakdown (self vs reset).
+  authMetrics.passwordChanged('self');
 
   return ok({ newSession });
 }

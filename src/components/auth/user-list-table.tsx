@@ -128,7 +128,18 @@ export function UserListTable({
               const canEnable = isAdmin && user.status === 'disabled';
               const busy = busyId === user.id;
               return (
-                <tr key={user.id} className="border-b last:border-none">
+                <tr
+                  key={user.id}
+                  className="border-b last:border-none"
+                  // Data attrs for deterministic E2E selectors — the
+                  // session-revocation spec (T-05) needs to find a
+                  // specific user's id by email without scraping the
+                  // visible text. Safe to ship to production: the
+                  // page is admin-only and these are the same values
+                  // already in the visible table.
+                  data-user-id={user.id}
+                  data-user-email={user.email.toLowerCase()}
+                >
                   <td className="py-3 pr-4">{user.email}</td>
                   <td className="py-3 pr-4 text-muted-foreground">
                     {user.displayName ?? '—'}

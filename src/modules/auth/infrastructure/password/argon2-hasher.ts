@@ -25,6 +25,10 @@
  *      after a cold start; every subsequent attempt reuses the cache.
  */
 import { hash, verify } from '@node-rs/argon2';
+import {
+  asPasswordHash,
+  type PasswordHash,
+} from '@/modules/auth/domain/branded';
 
 // `@node-rs/argon2` exports `Algorithm` as an ambient const enum which
 // trips Next.js' `isolatedModules: true`. We use the literal value:
@@ -51,8 +55,15 @@ async function getDummyHash(): Promise<string> {
 }
 
 export interface PasswordHasher {
-  hash(plaintext: string): Promise<string>;
-  verify(hashed: string, plaintext: string): Promise<boolean>;
+  /**
+   * Compute an argon2id hash of the supplied plaintext. The returned
+   * value is branded as `PasswordHash` so callers can't accidentally
+   * swap the (hashed, plaintext) arguments in `verify()` — that
+   * mistake would authenticate every wrong password, so the type
+   * system enforces the ordering.
+   */
+  hash(plaintext: string): Promise<PasswordHash>;
+  verify(hashed: PasswordHash, plaintext: string): Promise<boolean>;
   /**
    * Run a verify against a dummy hash. Used by the sign-in use case
    * when no user matches the supplied email so the response time is
@@ -62,17 +73,20 @@ export interface PasswordHasher {
 }
 
 class Argon2Hasher implements PasswordHasher {
-  async hash(plaintext: string): Promise<string> {
-    return hash(plaintext, ARGON2_OPTIONS);
+  async hash(plaintext: string): Promise<PasswordHash> {
+    return asPasswordHash(await hash(plaintext, ARGON2_OPTIONS));
   }
 
-  async verify(hashed: string, plaintext: string): Promise<boolean> {
+  async verify(hashed: PasswordHash, plaintext: string): Promise<boolean> {
     try {
       return await verify(hashed, plaintext);
-    } catch {
+    } catch (error) {
       // verify throws if the hash string is malformed (corrupted DB row,
-      // legacy format). Treat that as authentication failure rather than
-      // crashing the server.
+      // legacy format). Log at WARN so ops has a diagnostic trail for
+      // "user can't sign in even with right password" incidents, then
+      // treat as authentication failure rather than crashing the server.
+      const { logger } = await import('@/lib/logger');
+      logger.warn({ err: error }, 'argon2.verify.malformed_hash');
       return false;
     }
   }

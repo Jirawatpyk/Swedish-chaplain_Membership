@@ -383,10 +383,15 @@ redeems the token before the legitimate user.
   them. Out of F1 scope but worth noting.
 
 **Tests**:
-- `tests/integration/auth/reset-replay.test.ts` — verifies a consumed
-  token cannot be reused
-- `tests/integration/auth/reset-expired.test.ts` — verifies an expired
-  token is rejected
+- `tests/integration/auth/password-reset.test.ts` — happy path + replay
+  guard (consumed token cannot be reused) + expired-token guard are all
+  covered inline in this single spec. The replay and expiry cases were
+  originally scoped as standalone files during planning; they were
+  consolidated into `password-reset.test.ts` during implementation
+  (verify gate, 2026-04-10) because the setup cost was identical and
+  splitting them produced no additional coverage.
+- `tests/integration/auth/account-lifecycle.test.ts` — invitation
+  redemption replay (a consumed `invitations` row cannot be re-redeemed).
 
 ### T-16. Denial of Service via expensive operations
 
@@ -426,7 +431,7 @@ the argon2id verify capacity of the function instances.
 | T-12 Token predictability | 32-byte CSPRNG | token-generation.test |
 | T-13 Audit log tampering | DB role grants (INSERT only) | append-only.test |
 | T-14 Secret leakage in logs | pino redaction + ESLint + CI grep | redaction.test |
-| T-15 Invitation link interception | Single-use + short TTL | reset-replay.test, reset-expired.test |
+| T-15 Invitation link interception | Single-use + short TTL | password-reset.test (happy+replay+expired), account-lifecycle.test (invite replay) |
 | T-16 DoS via argon2 | Rate limit + fail-open cap | dos-rate-limit.test |
 
 **All 16 threats have at least one test.** The Review Gate security reviewer

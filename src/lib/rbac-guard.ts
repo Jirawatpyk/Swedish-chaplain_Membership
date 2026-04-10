@@ -29,6 +29,7 @@
  */
 import type { CurrentSession } from './auth-session';
 import { logger } from './logger';
+import { hashId } from './log-id';
 import { authMetrics } from './metrics';
 import {
   canAccess,
@@ -100,10 +101,17 @@ export async function requireRole(
         requestId: context.requestId,
       });
     } catch (error) {
+      // Governance-critical event failed to land. Log AND bump the
+      // `auth_audit_missing_total` counter so the observability.md § 6
+      // "Audit completeness failed" alert fires on any burn. The
+      // denial still stands (we don't flip ok back to true on audit
+      // failure), but the ops team gets paged so the gap can be
+      // reconciled from log evidence.
       logger.error(
         { err: error, requestId: context.requestId },
         'rbac.audit-append-failed',
       );
+      authMetrics.auditMissing('manager_denied_write');
     }
     authMetrics.managerDeniedWrite(`${resource}:${action}`);
   }
@@ -115,7 +123,7 @@ export async function requireRole(
       role,
       resource,
       action,
-      userId: current.user.id,
+      userIdHash: hashId(current.user.id),
       requestId: context.requestId,
     },
     'rbac.denied',

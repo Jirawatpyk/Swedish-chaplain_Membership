@@ -17,6 +17,16 @@ export type TokenId = Brand<string, 'TokenId'>;
 export type AuditEventId = Brand<string, 'AuditEventId'>;
 export type EmailAddress = Brand<string, 'EmailAddress'>;
 
+/**
+ * An argon2id hash string, as emitted by `PasswordHasher.hash()` and
+ * persisted in `users.password_hash`. The brand exists purely to
+ * prevent accidental argument swapping in `verify(hashed, plaintext)`
+ * — at the wire level both are `string`, and a refactor that flipped
+ * the order would authenticate every wrong password. The brand
+ * makes that error a compile-time failure (T-11 defence-in-depth).
+ */
+export type PasswordHash = Brand<string, 'PasswordHash'>;
+
 // --- Constructors -------------------------------------------------------------
 
 export function asUserId(value: string): UserId {
@@ -33,6 +43,10 @@ export function asTokenId(value: string): TokenId {
 
 export function asAuditEventId(value: string): AuditEventId {
   return value as AuditEventId;
+}
+
+export function asPasswordHash(value: string): PasswordHash {
+  return value as PasswordHash;
 }
 
 /**

@@ -23,29 +23,21 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { asEmailAddress, type UserId } from '@/modules/auth/domain/branded';
+import { hashId } from '@/lib/log-id';
+import { authMetrics } from '@/lib/metrics';
+import { asEmailAddress, type TokenId, type UserId } from '@/modules/auth/domain/branded';
 import type { Role } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
-import {
-  userRepo,
-  type UserRepo,
-} from '@/modules/auth/infrastructure/db/user-repo';
-import {
-  tokenRepo,
-  type TokenRepo,
-} from '@/modules/auth/infrastructure/db/token-repo';
-import {
-  auditRepo,
-  type AuditRepo,
-} from '@/modules/auth/infrastructure/db/audit-repo';
-import {
-  emailSender,
-  type EmailSender,
-} from '@/modules/auth/infrastructure/email/resend-client';
+// Type-only — see sign-in.ts for the Clean Architecture rationale.
+import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
+import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+import type { EmailSender } from '@/modules/auth/infrastructure/email/resend-client';
 import {
   buildInvitationEmail,
 } from '@/modules/auth/infrastructure/email/invitation-email';
 import type { EmailLocale } from '@/modules/auth/infrastructure/email/reset-password-email';
+import { defaultCreateUserDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
 
@@ -61,7 +53,9 @@ export interface CreateUserInput {
 
 export interface CreateUserSuccess {
   readonly user: UserAccount;
-  readonly invitationId: string;
+  /** Branded token id — carry the type across the module boundary
+   * so callers can't accidentally log or compare it as a raw string. */
+  readonly invitationId: TokenId;
 }
 
 export type CreateUserError =
@@ -78,13 +72,7 @@ export interface CreateUserDeps {
   readonly now: () => Date;
 }
 
-export const defaultCreateUserDeps: CreateUserDeps = {
-  users: userRepo,
-  tokens: tokenRepo,
-  audit: auditRepo,
-  email: emailSender,
-  now: () => new Date(),
-};
+export { defaultCreateUserDeps };
 
 // --- Use case ----------------------------------------------------------------
 
@@ -155,13 +143,8 @@ export async function createUser(
     requestId: input.requestId,
   });
 
-  return ok({ user, invitationId: invitation.id });
-}
+  // observability.md § 4.3 — invitation volume by role.
+  authMetrics.invitationSent(input.role);
 
-function hashId(id: string): string {
-  let hash = 5381;
-  for (let i = 0; i < id.length; i += 1) {
-    hash = (hash * 33) ^ id.charCodeAt(i);
-  }
-  return (hash >>> 0).toString(16);
+  return ok({ user, invitationId: invitation.id });
 }

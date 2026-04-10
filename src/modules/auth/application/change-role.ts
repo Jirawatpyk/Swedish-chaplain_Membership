@@ -18,18 +18,11 @@ import { Result, err, ok } from '@/lib/result';
 import type { UserId } from '@/modules/auth/domain/branded';
 import type { Role } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
-import {
-  userRepo,
-  type UserRepo,
-} from '@/modules/auth/infrastructure/db/user-repo';
-import {
-  sessionRepo,
-  type SessionRepo,
-} from '@/modules/auth/infrastructure/db/session-repo';
-import {
-  auditRepo,
-  type AuditRepo,
-} from '@/modules/auth/infrastructure/db/audit-repo';
+// Type-only — see sign-in.ts for the Clean Architecture rationale.
+import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
+import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
+import { defaultChangeRoleDeps } from '@/lib/auth-deps';
 
 export interface ChangeRoleInput {
   readonly targetUserId: UserId;
@@ -56,11 +49,7 @@ export interface ChangeRoleDeps {
   readonly audit: AuditRepo;
 }
 
-export const defaultChangeRoleDeps: ChangeRoleDeps = {
-  users: userRepo,
-  sessions: sessionRepo,
-  audit: auditRepo,
-};
+export { defaultChangeRoleDeps };
 
 function isStaffRole(role: Role): boolean {
   return role === 'admin' || role === 'manager';
@@ -113,6 +102,13 @@ export async function changeRole(
     });
   }
 
+  // Read-after-write: must exist (we just UPDATE'd it). If it
+  // doesn't, something is seriously wrong — don't silently return
+  // the pre-update row (that would claim the new role took effect
+  // while actually returning the old role, breaking the contract).
   const updated = await deps.users.findById(target.id);
-  return ok({ user: updated ?? target, sessionsRevoked });
+  if (!updated) {
+    return err({ code: 'not-found' });
+  }
+  return ok({ user: updated, sessionsRevoked });
 }
