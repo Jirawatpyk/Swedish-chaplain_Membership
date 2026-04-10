@@ -141,17 +141,30 @@ export async function resetPassword(
   const now = deps.now();
   const token = await deps.tokens.findResetById(tokenId);
   if (!token || !isResetTokenValid(token, now)) {
+    const reason = !token
+      ? 'token-not-found'
+      : token.consumedAt
+        ? 'token-used'
+        : 'token-expired';
     logger.warn(
-      {
-        requestId: input.requestId,
-        reason: !token
-          ? 'token-not-found'
-          : token.consumedAt
-            ? 'token-used'
-            : 'token-expired',
-      },
+      { requestId: input.requestId, reason },
       'reset_password.token_invalid',
     );
+    // Emit audit event when we have a target user to correlate against
+    // (T161). The `invitation_redemption_failed` event type is reused
+    // here — it's the only "redemption failed" event in the audit
+    // enum and the summary string disambiguates reset vs invitation
+    // on the query side. Missing tokens don't have a user to audit.
+    if (token) {
+      await deps.audit.append({
+        eventType: 'invitation_redemption_failed',
+        actorUserId: 'anonymous',
+        targetUserId: token.userId,
+        sourceIp: input.sourceIp,
+        summary: `reset token ${reason}`,
+        requestId: input.requestId,
+      });
+    }
     return err({ code: 'link-invalid' });
   }
 
