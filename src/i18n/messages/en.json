@@ -45,10 +45,16 @@
     },
     "changePassword": {
       "title": "Change password",
+      "description": "Change your account password. Your current device stays signed in; every other active session is signed out.",
       "currentPasswordLabel": "Current password",
       "newPasswordLabel": "New password",
       "submit": "Change password",
-      "success": "Password updated. Other sessions have been signed out."
+      "success": "Password updated. Other sessions have been signed out.",
+      "errors": {
+        "wrongCurrent": "Current password is incorrect.",
+        "samePassword": "Pick a different password — the new one cannot equal the current one.",
+        "rateLimited": "Too many attempts. Please wait a few minutes and try again."
+      }
     },
     "invite": {
       "title": "Finish setting up your account",

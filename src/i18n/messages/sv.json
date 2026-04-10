@@ -45,10 +45,16 @@
     },
     "changePassword": {
       "title": "Byt lösenord",
+      "description": "Byt ditt kontos lösenord. Din nuvarande enhet förblir inloggad; alla andra aktiva sessioner loggas ut.",
       "currentPasswordLabel": "Nuvarande lösenord",
       "newPasswordLabel": "Nytt lösenord",
       "submit": "Byt lösenord",
-      "success": "Lösenordet uppdaterat. Andra sessioner har loggats ut."
+      "success": "Lösenordet uppdaterat. Andra sessioner har loggats ut.",
+      "errors": {
+        "wrongCurrent": "Nuvarande lösenord är felaktigt.",
+        "samePassword": "Välj ett annat lösenord — det nya får inte vara samma som det nuvarande.",
+        "rateLimited": "För många försök. Vänta några minuter och försök igen."
+      }
     },
     "invite": {
       "title": "Slutför ditt konto",

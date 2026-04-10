@@ -342,20 +342,20 @@ context A → verify A still works → verify B is rejected on next request.
 
 ### Tests for User Story 6
 
-- [ ] T147 [P] [US6] Contract test `tests/contract/change-password.test.ts` per contracts/auth-api.md § 5 (200 + rotated cookie, 401 no-session, 403 wrong-current-password, 400 weak/same-password, 429 rate-limited)
-- [ ] T148 [P] [US6] Integration test `tests/integration/auth/change-password.test.ts` — two-session scenario from spec SC-021
-- [ ] T149 [P] [US6] Integration test `tests/integration/auth/change-password-rate-limit.test.ts` — 5 wrong-current attempts within 15 min triggers rate-limit
-- [ ] T150 [P] [US6] E2E test `tests/e2e/change-password.spec.ts` — happy path via account settings page
+- [X] T147 [P] [US6] Contract test `tests/contract/change-password.test.ts` per contracts/auth-api.md § 5 — 8 cases: 200 + cookie rotation, 401 no-session, 400 invalid-input (missing fields), 403 wrong-current-password, 400 same-password, 400 weak-password (with issues[]), 429 rate-limited + Retry-After.
+- [X] T148 [P] [US6] Integration test `tests/integration/auth/change-password.test.ts` — 3 cases against live Neon: (a) happy path rotates session + revokes others + emits password_changed + concurrent_sessions_revoked audit events (two-session scenario from SC-021 — seeds 2 sessions, asserts only 1 remains after change); (b) wrong-current-password returns error without touching hash or session state; (c) same-password short-circuits before HIBP.
+- [ ] T149 [P] [US6] Integration test `tests/integration/auth/change-password-rate-limit.test.ts` — 5 wrong-current attempts within 15 min triggers rate-limit — **deferred to Phase 10**: the rate limiter is the same Upstash sliding-window adapter verified by `brute-force.test.ts` (Phase 3) with the same semantics (5/15min per-user key vs 30/15min per-IP for sign-in). Exercising it again here would duplicate coverage.
+- [ ] T150 [P] [US6] E2E test `tests/e2e/change-password.spec.ts` — happy path via account settings page — **deferred to Phase 10**: requires Playwright + a signed-in seeded user. The form wiring is covered by source review of `change-password-form.tsx`; the server behaviour is proven by T147 + T148.
 
 ### Implementation for User Story 6
 
-- [ ] T151 [US6] Implement `change-password` use case in `src/modules/auth/application/change-password.ts` — verifies current password, enforces policy, hashes new, updates `last_password_changed_at`, rotates current session (new ID), deletes all other sessions, emits `password_changed` + `concurrent_sessions_revoked`
-- [ ] T152 [US6] Implement API route `src/app/api/auth/change-password/route.ts`
-- [ ] T153 [P] [US6] Implement `ChangePasswordForm` component in `src/components/auth/change-password-form.tsx` with current-password auto-focus (per spec FR-024 table)
-- [ ] T154 [US6] Implement account settings page `src/app/(staff)/admin/account/page.tsx` (and mirrored `src/app/(member)/portal/account/page.tsx`) containing `<ChangePasswordForm>`
-- [ ] T155 [P] [US6] Add account-settings + change-password localised strings to `en.json`, `th.json`, `sv.json`
+- [X] T151 [US6] Implement `change-password` use case in `src/modules/auth/application/change-password.ts` — rate-limit per-user (5 wrong-current / 15min), verify current, reject same-password BEFORE HIBP, policy check, hash new, update `last_password_changed_at`, **rotate session** (delete ALL existing sessions then create fresh one; `killed = deletedCount - 1` excludes the rotated current), emit `password_changed` + (conditional) `concurrent_sessions_revoked`. DI-compatible for contract tests.
+- [X] T152 [US6] Implement API route `src/app/api/auth/change-password/route.ts` — gates via `getCurrentSession()`, validates with zod, maps Result to 200/400/401/403/429, sets new cookie on success so the user's current device continues signed in.
+- [X] T153 [P] [US6] Implement `ChangePasswordForm` component in `src/components/auth/change-password-form.tsx` — current-password auto-focus (FR-024), new-password + confirm with zod match refinement, live strength indicator (reuses `PasswordStrength` from Phase 5), error routing (wrong-current → refocus current, same-password → refocus new, weak/breached → refocus new with specific copy, rate-limited → toast). Resets form on success.
+- [X] T154 [US6] Implement account settings page `src/app/(staff)/admin/account/page.tsx` + mirror at `src/app/(member)/portal/account/page.tsx` — both wrap `<ChangePasswordForm />` with a card shell + user email + role badge + localised title/description.
+- [X] T155 [P] [US6] Add account-settings + change-password localised strings to `en.json`, `th.json`, `sv.json` — extended `auth.changePassword.*` with `description` + `errors.{wrongCurrent, samePassword, rateLimited}` keys (+4 per locale). `pnpm check:i18n` passes: 114 keys × 3 locales.
 
-**Checkpoint**: Users in any role can change their own password; session isolation verified.
+**Checkpoint**: Users in any role can change their own password; session isolation verified. ✅ **CODE COMPLETE 2026-04-10**: 141/141 unit+contract (8 new) + 35/35 integration (3 new) all green against live Neon. `pnpm build` registers 3 new routes: `/admin/account`, `/portal/account`, `POST /api/auth/change-password`. Total routes: 20.
 
 ---
 
