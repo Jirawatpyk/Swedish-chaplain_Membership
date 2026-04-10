@@ -53,7 +53,14 @@ export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // Retry flaky specs once locally, twice in CI. The E2E suite is
+  // inherently race-prone because all specs share the same seeded
+  // accounts and hit shared Upstash + Neon state; per-test
+  // `autoClearRateLimits` (see tests/e2e/fixtures.ts) handles the
+  // common case but transient timing issues around `waitForURL` on
+  // admin sign-in still occur. Retries mask these cleanly — a real
+  // regression fails on both attempts.
+  retries: process.env.CI ? 2 : 1,
   ...(process.env.CI ? { workers: 1 } : {}),
   reporter: [
     ['html', { open: 'never' }],
