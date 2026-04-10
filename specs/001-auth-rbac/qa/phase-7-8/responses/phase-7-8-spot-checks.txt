@@ -1,0 +1,29 @@
+# P7-SC-1: GET /portal (unauth) → 307 with returnTo
+HTTP/1.1 307 Temporary Redirect
+location: /portal/sign-in?returnTo=%2Fportal
+
+# P7-SC-2: GET /portal/sign-in → 200 with CSP + HSTS + X-Frame-Options
+HTTP/1.1 200 OK
+content-security-policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https: ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-frame-options: DENY
+x-request-id: 019d7558-e03b-7197-86b2-d6f26bb66994
+
+# P7-SC-3: GET /portal/sign-in?returnTo=%2Fportal → 200
+HTTP 200
+
+# P8-SC-1: GET /admin/account (unauth) → 307 redirect
+HTTP/1.1 307 Temporary Redirect
+location: /admin/sign-in?returnTo=%2Fadmin%2Faccount
+
+# P8-SC-2: GET /portal/account (unauth) → 307 redirect to /portal/sign-in
+HTTP/1.1 307 Temporary Redirect
+location: /portal/sign-in?returnTo=%2Fportal%2Faccount
+
+# P8-SC-3: POST /api/auth/change-password (unauth) → 401 no-session
+HTTP 401
+{"error":"no-session"}
+
+# P8-SC-4: POST /api/auth/change-password bad JSON → 400
+HTTP 401
+{"error":"no-session"}

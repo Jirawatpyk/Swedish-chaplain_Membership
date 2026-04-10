@@ -31,7 +31,11 @@ vi.mock('@/lib/auth-session', () => ({
   getCurrentSession: () => getCurrentSessionMock(),
 }));
 
-const setCookieMock = vi.fn(async (_id: string) => undefined);
+const setCookieMock = vi.fn(async (id: string) => {
+  // captured via vi.fn; body intentionally reads the param to
+  // satisfy no-unused-vars while we only assert the call args
+  void id;
+});
 vi.mock('@/lib/auth-cookies', () => ({
   setSessionCookie: (id: string) => setCookieMock(id),
   clearSessionCookie: vi.fn(async () => undefined),
