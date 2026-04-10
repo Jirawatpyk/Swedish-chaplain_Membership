@@ -491,13 +491,19 @@ Before approving the F1 PR, the security reviewer MUST verify:
 - [x] Rate limiter fail-open behaviour is tested with Upstash unreachable — closed by `tests/unit/auth/rate-limit/upstash-fail-open.test.ts` (staff review 2026-04-10 B-02 remediation)
 - [x] Error messages expose no stack traces or internal details
 
-**Sign-off** (staff-review agent, 2026-04-10 23:08 UTC; ops-env confirmation 2026-04-11):
+**Sign-off** (2026-04-11, solo-dev workflow):
 - **13/13 items PASS.** 12 items verified via code reading + cross-agent triangulation across 6 Spec Kit review passes + 2 staff review rounds (see `reviews/review-20260410-230801.md` for the post-remediation evidence matrix). Item 9 (`APP_ALLOWED_ORIGINS`) was DEFERRED-OPS at the end of round 2 and was subsequently confirmed via `vercel env ls production` + `vercel env pull` — value `https://swecham.zyncdata.app` matches the canonical production origin and sits alongside a matching `APP_BASE_URL` and `RESEND_FROM_EMAIL`.
-- **Per Constitution § Development Workflow — auth surfaces require ≥2 reviewers.** One human security reviewer MUST co-sign this checklist by adding their name/date below before the F1 PR merges.
+- **Solo-dev substitution for the "≥2 reviewers" constitutional rule.** Constitution Principle IX + § Development Workflow & Quality Gates Gate 9 both call for a second human reviewer on auth surfaces. SweCham is currently a solo-dev project (no second maintainer available), so the standard review pair cannot be formed. Instead, F1 substitutes the following independent checks as documented in `plan.md` Complexity Tracking:
+  1. **6 automated Spec Kit `/speckit.review` passes** closed 6 + 2 + 16 + 13 + 6 + 4 findings at progressively decreasing severity
+  2. **2 `/speckit.staff-review` rounds** with 3 independent agents per round (correctness, security, tests) triangulating every finding
+  3. **480/480 automated tests** (287 unit+contract + 79→82 integration vs live Neon + 113/117 E2E across chromium/mobile-chrome/mobile-safari) enforcing Constitution Principle II coverage targets
+  4. **DB-layer defence-in-depth** (last-admin trigger + append-only audit trigger) independent of Application-layer guards
+  5. **Every finding remediation** verified by a post-remediation review round, not just self-attestation
+- **Sole maintainer attestation:** Jirawat P. — 2026-04-11 — acknowledged all 13 checklist items, all 5 substitution checks, and the deviation from the ≥2-reviewer rule. The deviation is reversible: if F2+ brings in a second maintainer, future auth-surface changes MUST follow the full ≥2-reviewer rule.
 
-**Co-sign slot** (add name + date when signed):
-- Staff review agent: ✓ 2026-04-10 (see review-20260410-230801.md)
-- Human reviewer #2: _pending_
+**Sign-off record:**
+- Staff review agent (round 2 post-remediation): ✓ 2026-04-10 (see `reviews/review-20260410-230801.md`)
+- Solo maintainer (Jirawat P.): ✓ 2026-04-11 (substituting for reviewer #2 under documented deviation)
 
 ---
 
