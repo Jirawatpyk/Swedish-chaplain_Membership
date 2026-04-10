@@ -18,7 +18,10 @@ vi.mock('@/lib/auth-session', () => ({
   getCurrentSession: () => getCurrentSessionMock(),
 }));
 
-vi.mock('@/modules/auth/application/heartbeat', () => ({
+// The route handler imports `heartbeat` from `@/modules/auth`
+// (the public barrel — Constitution Principle III). Stub the
+// barrel DIRECTLY with only the symbol the route uses.
+vi.mock('@/modules/auth', () => ({
   heartbeat: (...args: unknown[]) => heartbeatMock(...args),
 }));
 

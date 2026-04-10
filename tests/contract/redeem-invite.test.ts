@@ -12,8 +12,14 @@ import { ok, err } from '@/lib/result';
 const redeemInviteMock = vi.fn();
 const setCookieMock = vi.fn(async (id: string) => { void id; });
 
-vi.mock('@/modules/auth/application/redeem-invite', () => ({
+// The route handler imports `redeemInvite` + `asTokenId` from
+// `@/modules/auth` (the public barrel — Constitution Principle III).
+// Stub the barrel DIRECTLY with ONLY the symbols the route uses.
+// No `importActual` because it triggers eager resolution of the
+// full barrel and is brittle under full-suite worker-pool caching.
+vi.mock('@/modules/auth', () => ({
   redeemInvite: (...args: unknown[]) => redeemInviteMock(...args),
+  asTokenId: (s: string) => s,
 }));
 
 vi.mock('@/lib/auth-cookies', () => ({

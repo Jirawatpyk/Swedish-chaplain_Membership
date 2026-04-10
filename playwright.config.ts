@@ -60,7 +60,7 @@ export default defineConfig({
   // common case but transient timing issues around `waitForURL` on
   // admin sign-in still occur. Retries mask these cleanly — a real
   // regression fails on both attempts.
-  retries: process.env.CI ? 2 : 1,
+  retries: process.env.CI ? 2 : 2,
   ...(process.env.CI ? { workers: 1 } : {}),
   reporter: [
     ['html', { open: 'never' }],

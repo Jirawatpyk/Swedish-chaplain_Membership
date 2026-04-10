@@ -8,7 +8,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { changePassword } from '@/modules/auth/application/change-password';
+import { changePassword } from '@/modules/auth';
 import { getCurrentSession } from '@/lib/auth-session';
 import { setSessionCookie } from '@/lib/auth-cookies';
 import { getClientIp } from '@/lib/client-ip';

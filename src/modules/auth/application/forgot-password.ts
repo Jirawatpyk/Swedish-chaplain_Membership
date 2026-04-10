@@ -35,9 +35,15 @@ import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import type { EmailSender } from '@/modules/auth/infrastructure/email/resend-client';
-import {
-  buildResetPasswordEmail,
-  type EmailLocale,
+// `buildResetPasswordEmail` is a PURE template function (no DB, no
+// network). The function VALUE is injected via `ForgotPasswordDeps`
+// from the composition root (`auth-deps.ts`); the type is
+// imported here as a compile-time-only reference. This mirrors the
+// `create-user.ts` pattern and keeps the Application layer free of
+// concrete Infrastructure module bindings (Constitution Principle III).
+import type {
+  buildResetPasswordEmail as BuildResetPasswordEmailFn,
+  EmailLocale,
 } from '@/modules/auth/infrastructure/email/reset-password-email';
 import { defaultForgotPasswordDeps } from '@/lib/auth-deps';
 
@@ -70,6 +76,7 @@ export interface ForgotPasswordDeps {
   readonly audit: AuditRepo;
   readonly limiter: RateLimiter;
   readonly email: EmailSender;
+  readonly buildResetPasswordEmail: typeof BuildResetPasswordEmailFn;
   readonly now: () => Date;
 }
 
@@ -81,9 +88,35 @@ export async function forgotPassword(
   input: ForgotPasswordInput,
   deps: ForgotPasswordDeps = defaultForgotPasswordDeps,
 ): Promise<Result<ForgotPasswordSuccess, ForgotPasswordError>> {
-  // 1. Rate limiting (email + ip)
+  // 1. Normalise the email FIRST (before rate-limit lookup) so the
+  //    rate-limit bucket key matches the same canonical form used by
+  //    the user-repo lookup. Without this, an attacker could submit
+  //    " user@example.com " (whitespace) and " user@example.com" and
+  //    " USER@example.com" as different rate-limit keys while still
+  //    hitting the same `users` row — bypassing the per-email bucket.
+  //    A parse failure is treated as "ok, silent" to preserve
+  //    enumeration safety (FR-005). The IP bucket still applies in
+  //    that case so a brute-force probe of malformed addresses can
+  //    still be rate-limited.
+  let normalisedEmail;
+  try {
+    normalisedEmail = asEmailAddress(input.email);
+  } catch {
+    // Parse failure: drain ONE token from the per-IP bucket so a
+    // probe-the-form attacker can't bypass IP rate-limit by sending
+    // unparseable junk, then return ok (enumeration safety).
+    await deps.limiter.check(
+      `forgot:ip:${input.sourceIp}`,
+      RATE_LIMIT_PER_IP.max,
+      RATE_LIMIT_PER_IP.windowSeconds,
+    );
+    return ok({ ok: true });
+  }
+
+  // 2. Rate limiting (email + ip) — use the normalised email so the
+  //    bucket key is canonical.
   const emailLimit = await deps.limiter.check(
-    `forgot:email:${input.email.toLowerCase()}`,
+    `forgot:email:${normalisedEmail}`,
     RATE_LIMIT_PER_EMAIL.max,
     RATE_LIMIT_PER_EMAIL.windowSeconds,
   );
@@ -99,14 +132,6 @@ export async function forgotPassword(
       1,
     );
     return err({ code: 'rate-limited', retryAfterSeconds: retryAfter });
-  }
-
-  // 2. Parse email (failure = silent ok)
-  let normalisedEmail;
-  try {
-    normalisedEmail = asEmailAddress(input.email);
-  } catch {
-    return ok({ ok: true });
   }
 
   // 3. Look up user
@@ -135,7 +160,7 @@ export async function forgotPassword(
 
   // 5. Send the email. Failure is logged but does NOT change the HTTP
   //    response (enumeration safety).
-  const built = buildResetPasswordEmail({
+  const built = deps.buildResetPasswordEmail({
     toEmail: user.email,
     token: token.id,
     locale: input.locale,

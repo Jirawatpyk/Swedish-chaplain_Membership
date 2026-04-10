@@ -9,10 +9,17 @@ import {
 } from '@/components/ui/card';
 import { InviteRedeemForm } from '@/components/auth/invite-redeem-form';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
+// Presentation-side data loaders for the invitation display page.
+// No Application use case provides a read-only "prefetch invitation
+// for display" surface (all existing use cases CONSUME the
+// invitation — pre-validation MUST NOT). The two reads below are
+// scoped to display decisions only and are the documented escape
+// hatch for page-level pre-validation.
+/* eslint-disable no-restricted-imports */
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
-import { isInvitationValid } from '@/modules/auth/domain/token';
-import { asTokenId } from '@/modules/auth/domain/branded';
+/* eslint-enable no-restricted-imports */
+import { isInvitationValid, asTokenId } from '@/modules/auth';
 
 /**
  * Invitation redemption page (T136) at URL `/invite/[token]`.

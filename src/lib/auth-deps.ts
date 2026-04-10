@@ -37,16 +37,20 @@ import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import { emailSender } from '@/modules/auth/infrastructure/email/resend-client';
 import { buildInvitationEmail } from '@/modules/auth/infrastructure/email/invitation-email';
+import { buildResetPasswordEmail } from '@/modules/auth/infrastructure/email/reset-password-email';
 import { checkPasswordPolicy } from '@/modules/auth/application/password-policy';
 
 // `checkPasswordPolicy` is imported as a value (not type-only) because it
 // is a pure Application-layer function with no Infrastructure dependencies.
 // This does NOT create a runtime cycle: password-policy.ts imports only
 // the logger and Node crypto, never auth-deps. `buildInvitationEmail`
-// follows the same rule — pure template-builder, no DB or network, so
-// injecting the value is safe even though it ships from the Infrastructure
-// folder (the physical location is legacy; functionally it is an
-// Application concern).
+// and `buildResetPasswordEmail` follow the same rule — pure template
+// builders, no DB or network, so injecting the value is safe even
+// though they ship from the Infrastructure folder (the physical
+// location is legacy; functionally they are Application concerns).
+// The composition root is the only place these values appear; the use
+// cases (`create-user.ts`, `forgot-password.ts`) take them as injectable
+// `Deps` fields and import only the function TYPE.
 
 // Type-only back-references to the Application use cases. These
 // imports are elided at compile time — no runtime cycle.
@@ -87,6 +91,7 @@ export const defaultForgotPasswordDeps: ForgotPasswordDeps = {
   audit: auditRepo,
   limiter: rateLimiter,
   email: emailSender,
+  buildResetPasswordEmail,
   now: wallClock,
 };
 

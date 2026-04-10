@@ -4,8 +4,7 @@
  * Admin-only. Disables a user account + kills their sessions.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { disableUser } from '@/modules/auth/application/disable-user';
-import { asUserId } from '@/modules/auth/domain/branded';
+import { disableUser, asUserId } from '@/modules/auth';
 import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
 

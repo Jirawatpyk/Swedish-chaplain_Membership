@@ -24,6 +24,7 @@
  * safe.
  */
 import { Result, err, ok } from '@/lib/result';
+import { isLastAdminTriggerError } from '@/lib/db-errors';
 import type { UserId } from '@/modules/auth/domain/branded';
 import type { UserAccount } from '@/modules/auth/domain/user';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
@@ -72,7 +73,10 @@ export async function disableUser(
   if (!target) return err({ code: 'not-found' });
   if (target.status === 'disabled') return err({ code: 'already-disabled' });
 
-  // Last-admin protection
+  // Last-admin protection — first line of defence (application layer).
+  // The DB trigger `users_last_admin_protection` (migration 0003) is
+  // the second line of defence and closes the race window between
+  // `countActiveAdmins()` and `disable()`.
   if (target.role === 'admin' && target.status === 'active') {
     const activeAdmins = await deps.users.countActiveAdmins();
     if (activeAdmins <= 1) {
@@ -80,7 +84,18 @@ export async function disableUser(
     }
   }
 
-  await deps.users.disable(target.id);
+  try {
+    await deps.users.disable(target.id);
+  } catch (error) {
+    // The DB trigger raises SQLSTATE 23514 (check_violation) when a
+    // concurrent request races us to zero active admins. Translate
+    // it to the existing public error code so callers see a
+    // consistent shape.
+    if (isLastAdminTriggerError(error)) {
+      return err({ code: 'last-admin-protection' });
+    }
+    throw error;
+  }
   const sessionsRevoked = await deps.sessions.deleteByUserId(target.id);
 
   // Audit: account_disabled + (optional) concurrent_sessions_revoked

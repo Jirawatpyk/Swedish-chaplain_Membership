@@ -14,6 +14,13 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
+// Admin user list page (server component) reads directly from the
+// repo. An Application-layer `listUsers` use case would be a
+// near-identical passthrough and add no behaviour; this read is
+// admin-gated by the route guard in layout.tsx. F9 polish may add
+// a paginated query surface — until then this escape hatch is the
+// documented path.
+// eslint-disable-next-line no-restricted-imports
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { UserListTable } from '@/components/auth/user-list-table';
 import { Badge } from '@/components/ui/badge';

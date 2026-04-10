@@ -9,9 +9,15 @@ import {
 } from '@/components/ui/card';
 import { ResetPasswordForm } from '@/components/auth/reset-password-form';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
+// Presentation-side data loader for the reset-password page.
+// No Application use case wraps a read-only "is this token
+// displayable?" check — all existing use cases CONSUME the token,
+// which pre-validation MUST NOT do (T-04 enumeration defence).
+// This direct infrastructure read is scoped to the single display
+// decision below and is the documented escape hatch.
+// eslint-disable-next-line no-restricted-imports
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
-import { isResetTokenValid } from '@/modules/auth/domain/token';
-import { asTokenId } from '@/modules/auth/domain/branded';
+import { isResetTokenValid, asTokenId } from '@/modules/auth';
 
 /**
  * Reset-password page (T107) at URL `/reset-password/[token]`.

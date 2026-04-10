@@ -12,7 +12,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { createUser } from '@/modules/auth/application/create-user';
+import { createUser } from '@/modules/auth';
 import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
 

@@ -91,8 +91,16 @@ test.describe('staff sign-in (happy path)', () => {
   test('wrong password keeps the user on the sign-in page with an error banner', async ({
     page,
   }) => {
+    // Use a UNIQUE nonexistent email (not the shared e2e-admin) so
+    // this test doesn't bump the real admin's `failed_signin_count`
+    // column on the DB. Sign-in returns the same generic
+    // 'invalid-credentials' error for both unknown-email and
+    // wrong-password (T-03 enumeration defence), so the UX we
+    // verify here is identical — but the side effect is now
+    // harmless to shared E2E state.
+    const nonexistentEmail = `wrongpw-probe-${Date.now()}@swecham.test`;
     await page.goto('/admin/sign-in');
-    await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
+    await fillField(page.getByLabel(/email/i), nonexistentEmail);
     await fillField(page.getByLabel(/password/i), 'deliberately-wrong-password');
     await page.getByRole('button', { name: /sign in/i }).click();
 

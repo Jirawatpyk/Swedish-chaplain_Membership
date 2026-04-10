@@ -24,6 +24,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+// Client component — same rationale as `idle-warning-dialog.tsx`.
+// Type-only import of a Domain type is pure and safe.
+// eslint-disable-next-line no-restricted-imports
 import type { Role } from '@/modules/auth/domain/role';
 
 export interface UserMenuProps {

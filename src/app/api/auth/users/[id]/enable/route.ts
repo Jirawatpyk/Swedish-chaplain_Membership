@@ -4,8 +4,7 @@
  * Admin-only. Transitions disabled → active.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { enableUser } from '@/modules/auth/application/enable-user';
-import { asUserId } from '@/modules/auth/domain/branded';
+import { enableUser, asUserId } from '@/modules/auth';
 import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
 

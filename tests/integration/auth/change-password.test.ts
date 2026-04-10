@@ -210,4 +210,102 @@ describe('integration: change-password (US6)', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('same-password');
   });
+
+  // S-03 (staff review 2026-04-10) — close the integration-coverage
+  // gap on the policy-fail and HIBP-breached branches. Both branches
+  // are unit-tested in `password-policy.test.ts` but `changePassword`'s
+  // end-to-end propagation of the `weak-password` error code was not
+  // verified at the integration layer until now.
+  it('weak-password: too-short new password is rejected with too-short reason', async () => {
+    const requestId = `it-change-pw-short-${Date.now()}`;
+
+    const { userRepo } = await import(
+      '@/modules/auth/infrastructure/db/user-repo'
+    );
+    const account = await userRepo.findById(user.userId);
+    if (!account) throw new Error('setup: user not found');
+
+    const result = await changePassword(
+      {
+        user: account,
+        currentSessionId: currentSessionId as never,
+        currentPassword: user.password,
+        newPassword: 'tooShort1', // 9 chars — fails MIN_PASSWORD_LENGTH=12
+        sourceIp: '203.0.113.73',
+        requestId,
+      },
+      { ...defaultChangePasswordDeps, limiter: unlimitedLimiter as never },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('weak-password');
+    if (result.error.code !== 'weak-password') return;
+    const codes = result.error.errors.map((e) => e.code);
+    expect(codes).toContain('too-short');
+
+    // Side-effect assertion: password hash UNCHANGED
+    const userRows = await db
+      .select({ hash: users.passwordHash })
+      .from(users)
+      .where(eq(users.id, user.userId));
+    const stillVerifies = await argon2Hasher.verify(
+      asPasswordHash(userRows[0]!.hash!),
+      user.password,
+    );
+    expect(stillVerifies).toBe(true);
+  });
+
+  it('weak-password: HIBP-breached new password is rejected with breached reason', async () => {
+    const requestId = `it-change-pw-pwned-${Date.now()}`;
+
+    const { userRepo } = await import(
+      '@/modules/auth/infrastructure/db/user-repo'
+    );
+    const account = await userRepo.findById(user.userId);
+    if (!account) throw new Error('setup: user not found');
+
+    // Stub the policy check to simulate HIBP returning a positive
+    // hit. Using a stub instead of the real HIBP API keeps the test
+    // deterministic and avoids network flakiness.
+    const stubBreachedPolicy = async () => ({
+      ok: false as const,
+      errors: [{ code: 'breached' as const, occurrences: 12345 }],
+      strength: 'weak' as const,
+    });
+
+    const result = await changePassword(
+      {
+        user: account,
+        currentSessionId: currentSessionId as never,
+        currentPassword: user.password,
+        newPassword: `LongAndUniqueButPretendBreached-${Date.now()}-Xy!`,
+        sourceIp: '203.0.113.74',
+        requestId,
+      },
+      {
+        ...defaultChangePasswordDeps,
+        limiter: unlimitedLimiter as never,
+        checkPolicy: stubBreachedPolicy as never,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('weak-password');
+    if (result.error.code !== 'weak-password') return;
+    const codes = result.error.errors.map((e) => e.code);
+    expect(codes).toContain('breached');
+
+    // Side-effect assertion: password hash UNCHANGED
+    const userRows = await db
+      .select({ hash: users.passwordHash })
+      .from(users)
+      .where(eq(users.id, user.userId));
+    const stillVerifies = await argon2Hasher.verify(
+      asPasswordHash(userRows[0]!.hash!),
+      user.password,
+    );
+    expect(stillVerifies).toBe(true);
+  });
 });

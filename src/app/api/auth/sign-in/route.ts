@@ -15,7 +15,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { signIn } from '@/modules/auth/application/sign-in';
+import { signIn } from '@/modules/auth';
 import { setSessionCookie } from '@/lib/auth-cookies';
 import { getClientIp } from '@/lib/client-ip';
 import { portalHomePath } from '@/lib/portal-paths';

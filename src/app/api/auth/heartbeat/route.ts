@@ -23,7 +23,7 @@ import { getCurrentSession } from '@/lib/auth-session';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { heartbeat } from '@/modules/auth/application/heartbeat';
+import { heartbeat } from '@/modules/auth';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);

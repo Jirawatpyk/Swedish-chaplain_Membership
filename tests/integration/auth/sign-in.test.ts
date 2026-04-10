@@ -120,4 +120,38 @@ describe('integration: sign-in happy path', () => {
       .where(eq(sessions.userId, testUser.userId));
     expect(sessionRows).toHaveLength(0);
   });
+
+  // S-02 (staff review 2026-04-10) — close the integration-coverage
+  // gap on the disabled-user branch. Previously the only test for this
+  // path was the contract test (`tests/contract/sign-in.test.ts`)
+  // with a fully mocked use case, which leaves the use-case branch
+  // itself unverified against live Neon. Constitution Principle II
+  // requires 100% branch coverage on sign-in at the integration level.
+  it('disabled user returns account-disabled and does not create a session', async () => {
+    // Disable the bee-pre-existing test user via the live repo. We
+    // import lazily to avoid loading the repo at module init.
+    const { userRepo } = await import(
+      '@/modules/auth/infrastructure/db/user-repo'
+    );
+    await userRepo.disable(testUser.userId);
+
+    const result = await signIn({
+      email: testUser.rawEmail,
+      password: testUser.password, // correct password — we want the disabled branch
+      portal: 'staff',
+      sourceIp: '203.0.113.13',
+      requestId: `it-signin-disabled-${Date.now()}`,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('account-disabled');
+
+    // Sanity: no session row created for the disabled user
+    const sessionRows = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.userId, testUser.userId));
+    expect(sessionRows).toHaveLength(0);
+  });
 });

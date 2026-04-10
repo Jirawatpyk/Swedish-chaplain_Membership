@@ -12,12 +12,23 @@
  *      On failure, return `weak-password` with the specific rule
  *      that failed so the UI can highlight it.
  *   6. Hash the new password.
- *   7. Update user.passwordHash + last_password_changed_at,
- *      mark the token consumed, delete all existing sessions,
- *      and clear any lockout — all in sequence. Neon doesn't support
- *      long transactions across multiple unrelated tables well, so we
- *      perform each step separately and live with the rare partial
- *      failure (logged and observed via audit completeness tests).
+ *   7. CONSUME the token FIRST (markResetConsumed +
+ *      invalidateAllUnconsumedForUser), THEN write the new password
+ *      hash, clear lock, clear failed-count, and delete sessions —
+ *      all in sequence. Neon doesn't support long transactions across
+ *      multiple unrelated tables well, so we perform each step
+ *      separately and live with the rare partial failure (logged and
+ *      observed via audit completeness tests).
+ *
+ *      WHY consume-then-set ordering matters (security):
+ *        If a process crashes between steps the failure mode MUST be
+ *        "the token is now invalid" not "the token is still valid AND
+ *        the password is set". The latter (set-then-consume) leaves a
+ *        narrow replay window: an attacker who has the same token
+ *        (T-15 interception) can race the legitimate user and set the
+ *        password to something else AFTER the legitimate user's call
+ *        succeeds. Consuming first means the worst-case is the user
+ *        re-requests a fresh link.
  *   8. Emit `password_reset_completed` + `concurrent_sessions_revoked`
  *      (the latter only when at least one session was killed).
  *
@@ -176,15 +187,18 @@ export async function resetPassword(
     return err({ code: 'weak-password', errors: policy.errors });
   }
 
-  // 5. Hash + persist
+  // 5. Consume token FIRST (W-01 hardening — see header comment).
+  //    If a crash happens between this step and step 6, the token is
+  //    invalid and the user requests a new link — strictly safer than
+  //    the inverse ordering, which would leave a replayable token.
+  await deps.tokens.markResetConsumed(input.token, now);
+  await deps.tokens.invalidateAllUnconsumedForUser(user.id, now);
+
+  // 6. Hash + persist
   const hashed = await deps.hasher.hash(input.newPassword);
   await deps.users.setPasswordHash(user.id, hashed, now);
   await deps.users.clearLock(user.id);
   await deps.users.clearFailedCount(user.id);
-
-  // 6. Consume token + invalidate siblings (belt & braces)
-  await deps.tokens.markResetConsumed(input.token, now);
-  await deps.tokens.invalidateAllUnconsumedForUser(user.id, now);
 
   // 7. Delete all existing sessions
   const killed = await deps.sessions.deleteByUserId(user.id);

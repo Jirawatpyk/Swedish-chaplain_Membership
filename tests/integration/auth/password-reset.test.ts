@@ -236,8 +236,18 @@ describe('integration: forgot-password → reset-password happy path', () => {
   });
 
   it('expired token is rejected as link-invalid', async () => {
-    // Manually insert an expired token row
-    const expiredId = 'e'.repeat(64);
+    // Manually insert an expired token row. The ID is unique per run
+    // so a previous run's token (which MAY not have been cleaned up,
+    // e.g. if a crash left a row behind) does not collide with this
+    // insert. Tokens are 64 hex chars; we concatenate a timestamp +
+    // a random half and pad to 64.
+    const expiredId = `${Date.now().toString(16)}${Math.random()
+      .toString(16)
+      .slice(2)
+      .replace(/[^0-9a-f]/g, '0')}`
+      .replace(/[^0-9a-f]/g, '0')
+      .padEnd(64, '0')
+      .slice(0, 64);
     const pastDate = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2 h ago
     await db.insert(passwordResetTokens).values({
       id: expiredId,

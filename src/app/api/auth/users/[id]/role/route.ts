@@ -5,8 +5,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { changeRole } from '@/modules/auth/application/change-role';
-import { asUserId } from '@/modules/auth/domain/branded';
+import { changeRole, asUserId } from '@/modules/auth';
 import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
 

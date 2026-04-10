@@ -15,6 +15,7 @@
  *   6. Audit `role_changed` + optional `concurrent_sessions_revoked`.
  */
 import { Result, err, ok } from '@/lib/result';
+import { isLastAdminTriggerError } from '@/lib/db-errors';
 import type { UserId } from '@/modules/auth/domain/branded';
 import type { Role } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
@@ -71,7 +72,10 @@ export async function changeRole(
     return err({ code: 'role-portal-mismatch' });
   }
 
-  // Last-admin protection (only fires when demoting the last admin)
+  // Last-admin protection — first line of defence (application layer).
+  // The DB trigger `users_last_admin_protection` (migration 0003) is
+  // the second line of defence and closes the race window between
+  // `countActiveAdmins()` and `setRole()`.
   if (target.role === 'admin' && target.status === 'active' && input.newRole !== 'admin') {
     const activeAdmins = await deps.users.countActiveAdmins();
     if (activeAdmins <= 1) {
@@ -80,7 +84,18 @@ export async function changeRole(
   }
 
   const previousRole = target.role;
-  await deps.users.setRole(target.id, input.newRole);
+  try {
+    await deps.users.setRole(target.id, input.newRole);
+  } catch (error) {
+    // The DB trigger raises SQLSTATE 23514 (check_violation) when a
+    // concurrent request races us to zero active admins. Translate
+    // it to the existing public error code so callers see a
+    // consistent shape.
+    if (isLastAdminTriggerError(error)) {
+      return err({ code: 'last-admin-protection' });
+    }
+    throw error;
+  }
   const sessionsRevoked = await deps.sessions.deleteByUserId(target.id);
 
   await deps.audit.append({

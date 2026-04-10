@@ -21,9 +21,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { and, eq, isNotNull, lte } from 'drizzle-orm';
 import { db } from '@/lib/db';
+// Cron job: bulk UPDATE on `users` + per-row audit row. No
+// Application use case exists for bulk cleanup — it is a
+// maintenance path, not a user flow. Wrapping in a passthrough
+// use case would add no behaviour. Documented escape hatch.
+/* eslint-disable no-restricted-imports */
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
-import { asUserId } from '@/modules/auth/domain/branded';
+/* eslint-enable no-restricted-imports */
+import { asUserId } from '@/modules/auth';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';

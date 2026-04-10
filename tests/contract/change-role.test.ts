@@ -20,8 +20,17 @@ vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
 }));
 
-vi.mock('@/modules/auth/application/change-role', () => ({
+// The route handler imports `changeRole` + `asUserId` from the
+// `@/modules/auth` public barrel (Constitution Principle III —
+// Clean Architecture barrel enforcement). The mock stubs the
+// barrel DIRECTLY (no `importActual`) — `importActual` triggers
+// eager resolution of the full barrel and is brittle under
+// full-suite worker-pool module caching. Since the route only
+// imports `changeRole` and `asUserId` from the barrel, stubbing
+// just those two is enough.
+vi.mock('@/modules/auth', () => ({
   changeRole: (...args: unknown[]) => changeRoleMock(...args),
+  asUserId: (s: string) => s,
 }));
 
 vi.mock('@/lib/logger', () => ({

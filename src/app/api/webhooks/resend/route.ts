@@ -29,6 +29,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { db } from '@/lib/db';
+// Resend webhook receiver writes delivery-event rows directly. The
+// schema table is used by NO Application use case — webhooks are a
+// pure ingest path; wrapping in a passthrough use case would add no
+// behaviour. Documented escape hatch for webhook ingest handlers.
+// eslint-disable-next-line no-restricted-imports
 import {
   emailDeliveryEvents,
   type EmailDeliveryEventInsert,

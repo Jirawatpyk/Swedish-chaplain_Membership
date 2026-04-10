@@ -10,8 +10,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { resetPassword } from '@/modules/auth/application/reset-password';
-import { asTokenId } from '@/modules/auth/domain/branded';
+import { resetPassword, asTokenId } from '@/modules/auth';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';

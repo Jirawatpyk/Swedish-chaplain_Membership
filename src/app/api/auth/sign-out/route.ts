@@ -9,7 +9,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { clearSessionCookie, getSessionIdFromCookie } from '@/lib/auth-cookies';
-import { signOut } from '@/modules/auth/application/sign-out';
+import { signOut } from '@/modules/auth';
 import { getClientIp } from '@/lib/client-ip';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';

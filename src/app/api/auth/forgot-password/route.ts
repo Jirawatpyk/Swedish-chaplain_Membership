@@ -7,11 +7,10 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { forgotPassword } from '@/modules/auth/application/forgot-password';
+import { forgotPassword, type EmailLocale } from '@/modules/auth';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import type { EmailLocale } from '@/modules/auth/infrastructure/email/reset-password-email';
 
 const inputSchema = z.object({
   email: z.string().email().max(254),
