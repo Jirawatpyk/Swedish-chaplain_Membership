@@ -146,9 +146,7 @@ specs/001-auth-rbac/
 ```text
 src/
 ├── app/                             # Presentation layer (Next.js routes)
-│   ├── (staff)/                     # Staff portal route group
-│   │   ├── sign-in/
-│   │   │   └── page.tsx
+│   ├── (staff)/                     # Staff portal route group (authed)
 │   │   └── admin/
 │   │       ├── layout.tsx           # staff shell, auth guard
 │   │       ├── page.tsx             # staff home
@@ -156,9 +154,7 @@ src/
 │   │       │   └── page.tsx         # change own password (FR-019)
 │   │       └── users/
 │   │           └── page.tsx         # account lifecycle UI (US4)
-│   ├── (member)/                    # Member portal route group
-│   │   ├── sign-in/
-│   │   │   └── page.tsx
+│   ├── (member)/                    # Member portal route group (authed)
 │   │   └── portal/
 │   │       ├── layout.tsx           # member shell, auth guard
 │   │       ├── page.tsx             # placeholder landing (Q1 resolution)
@@ -173,19 +169,32 @@ src/
 │   │                                #     · Online renewal (coming in F5/F8)
 │   │                                #   - Contact email (info@swecham.se) for urgent issues
 │   │                                #   - Sign-out in the shell header (always available)
-│   ├── (auth-public)/               # Shared public auth flows
+│   ├── (auth-public)/               # Shared public auth flows (unauthed)
+│   │   ├── admin/sign-in/           # staff sign-in — lives here (not `(staff)`)
+│   │   │   └── page.tsx             #   to bypass the staff layout auth guard
+│   │   ├── portal/sign-in/          # member sign-in — same rationale
+│   │   │   └── page.tsx
 │   │   ├── forgot-password/
 │   │   ├── reset-password/[token]/
 │   │   └── invite/[token]/
 │   ├── api/
-│   │   └── auth/
-│   │       ├── sign-in/route.ts
-│   │       ├── sign-out/route.ts
-│   │       ├── forgot-password/route.ts
-│   │       ├── reset-password/route.ts
-│   │       ├── change-password/route.ts
-│   │       ├── invite/route.ts
-│   │       └── redeem-invite/route.ts
+│   │   ├── auth/
+│   │   │   ├── sign-in/route.ts
+│   │   │   ├── sign-out/route.ts
+│   │   │   ├── forgot-password/route.ts
+│   │   │   ├── reset-password/route.ts
+│   │   │   ├── change-password/route.ts
+│   │   │   ├── heartbeat/route.ts   # T164 — idle-warning session refresh
+│   │   │   ├── invite/route.ts
+│   │   │   ├── redeem-invite/route.ts
+│   │   │   └── users/[id]/          # T130-T132 — admin lifecycle mutations
+│   │   │       ├── disable/route.ts
+│   │   │       ├── enable/route.ts
+│   │   │       └── role/route.ts
+│   │   ├── cron/
+│   │   │   └── lockout-cleanup/route.ts  # T160 — clears expired lockouts
+│   │   └── webhooks/
+│   │       └── resend/route.ts      # T162 — Resend delivery events
 │   ├── layout.tsx                   # root layout, i18n provider
 │   └── globals.css
 │
@@ -267,7 +276,14 @@ src/
 │   ├── env.ts                       # zod-validated process.env
 │   └── result.ts                    # Result<T, E> type for error handling
 │
-└── middleware.ts                    # Next.js middleware: session lookup + route guards
+└── proxy.ts                         # Next.js 16 Proxy (née `middleware.ts`):
+                                     #   request ID + READ_ONLY_MODE + CSRF
+                                     #   Origin allow-list + security headers.
+                                     #   Next.js 16 renamed the convention from
+                                     #   `middleware.ts` → `proxy.ts`; semantics
+                                     #   are unchanged. Session lookup itself
+                                     #   happens inside Route Handlers via
+                                     #   `requireSession()` (Node runtime).
 
 drizzle/
 ├── migrations/                      # SQL migrations

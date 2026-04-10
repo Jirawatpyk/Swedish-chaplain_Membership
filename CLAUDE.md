@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Project**: SweCham / TSCC Membership System — Thailand-Swedish Chamber of Commerce.
 **Folder name caveat**: the directory is historically `Swedish chaplain_membership`. "chaplain" is a typo for "chamber". Refer to the product as **SweCham / TSCC**, never "chaplain". Rename is tracked as R6 in `docs/phases-plan.md` (manual action — cannot be done from inside the active working directory).
 
-**Repository status (as of 2026-04-09)**: **no application source code exists yet**. The repo currently holds Spec Kit governance and planning artefacts only. Feature F1 (Auth & RBAC, branch `001-auth-rbac`) is mid-pipeline — spec / plan / research / data-model / contracts / security / tasks are written; implementation begins at `/speckit.implement`. All `src/`, `drizzle/`, `tests/`, `package.json` paths described below are **planned**, not present. Do not assume any file under `src/` exists until F1 implementation lands.
+**Repository status (as of 2026-04-10)**: **F1 (Auth & RBAC) is code-complete and verify-gate green on branch `001-auth-rbac`**. 177/191 tasks shipped (the 14 open checkboxes are documented deferrals for the ship gate — manual dashboard panels, Lighthouse CI supersession, release-QA walkthroughs). Test suite state: **297/297** green (193 unit+contract + 72 integration against live Neon + 32 Playwright E2E against `localhost:3100`). `src/`, `drizzle/migrations/`, `tests/`, `scripts/`, and `package.json` all exist and are current. Next Spec Kit gates: `/speckit.review` → `/speckit.ship`. F2–F9 are still in planning and have no source code yet — do not assume files exist outside of `src/modules/auth/**` + the Auth presentation surfaces listed in `specs/001-auth-rbac/plan.md`.
 
 ## Language for AI sessions
 
@@ -108,18 +108,18 @@ specs/<nnn-feature>/                   # Spec Kit artefacts — one dir per feat
 
 ## Commands
 
-Source code does not exist yet. The commands below are the **planned** F1 commands from `specs/001-auth-rbac/quickstart.md` — update this section when F1 lands and `package.json` is committed. **Use `pnpm`, not `npm`** — the lockfile is `pnpm-lock.yaml`.
+All commands below are current F1 commands from `package.json` (committed). **Use `pnpm`, not `npm`** — the lockfile is `pnpm-lock.yaml`. Dev and start both run on **port 3100** (port 3000 is reserved for other local Express projects on the primary dev workstation). Integration tests hit **live Neon Singapore** using `.env.local`, not a Docker container — the quickstart Docker note is historical.
 
-Daily dev (once F1 is implemented):
+Daily dev:
 
 ```bash
 pnpm install
-pnpm dev                       # Next.js dev with Turbopack
+pnpm dev                       # Next.js dev with Turbopack on :3100
 pnpm lint                      # ESLint; errors block merge
 pnpm typecheck                 # tsc --noEmit under strict
 pnpm test                      # Vitest run  (watch: pnpm test:watch)
 pnpm test:coverage             # with Vitest coverage thresholds
-pnpm test:integration          # real Postgres via Docker (port 55432) — see quickstart § 5.2
+pnpm test:integration          # against live Neon Singapore via DATABASE_URL from .env.local
 pnpm test:e2e                  # Playwright, all suites
 pnpm test:e2e --grep "@a11y"   # axe-core WCAG 2.1 AA scan only
 pnpm test:e2e --grep "@i18n"   # locale coverage only

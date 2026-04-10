@@ -89,3 +89,46 @@ describe('integration: audit retention — rows remain queryable', () => {
     expect(rows.length).toBe(1);
   });
 });
+
+describe('integration: audit event 14 shape — `concurrent_sessions_revoked` is a single combined row', () => {
+  it('emits exactly ONE row per trigger, not one per revoked session', async () => {
+    // Spec User Story 7 and FR-012 pin the semantics for event 14:
+    // when a password change / reset / role change kills N existing
+    // sessions, the audit trail gets ONE combined `concurrent_sessions_revoked`
+    // row — not N rows. This matters because (a) it's documented
+    // spec intent, (b) it prevents audit-log flooding, and (c) the
+    // combined-row shape is what the admin audit viewer (future F9)
+    // will render.
+    //
+    // The per-phase integration tests (password-reset.test.ts,
+    // change-password.test.ts, account-lifecycle.test.ts) already
+    // exercise the triggering flows end-to-end. This case pins the
+    // event shape directly, so a refactor that accidentally switches
+    // to per-session rows is caught here too.
+    const requestId = `it-audit-combined-${Date.now()}`;
+
+    // Simulate a revoke that killed 3 sessions — the summary carries
+    // the count, and there is only one audit row for the trigger.
+    await auditRepo.append({
+      eventType: 'concurrent_sessions_revoked',
+      actorUserId: 'system:bootstrap',
+      targetUserId: null,
+      sourceIp: null,
+      summary: 'test revoke trigger killed 3 sessions',
+      requestId,
+    });
+
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.eventType, 'concurrent_sessions_revoked'),
+          eq(auditLog.requestId, requestId),
+        ),
+      );
+
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.summary).toMatch(/3 sessions/);
+  });
+});

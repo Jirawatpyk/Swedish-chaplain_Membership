@@ -19,7 +19,7 @@ if (-not (Test-Path $configFile)) {
     if (Test-Path $extensionFile) {
         $usingDefaults = $true
     } else {
-        Write-Host "❌ Error: Configuration not found at $configFile"
+        Write-Host "[ERROR] Configuration not found at $configFile"
         Write-Host "Run 'specify extension add verify' to install and configure"
         exit 1
     }
@@ -63,19 +63,19 @@ if ($env:SPECKIT_VERIFY_MAX_FINDINGS -ne $null -and $env:SPECKIT_VERIFY_MAX_FIND
 # Validate configuration
 
 if (-not $maxFindings) {
-    Write-Host "❌ Error: Configuration value not set"
+    Write-Host "[ERROR] Configuration value not set"
     Write-Host "Edit $configFile and set 'report.max_findings'"
     exit 1
 }
 
 if ($maxFindings -notmatch '^\d+$') {
-    Write-Host "❌ Error: 'report.max_findings' must be a positive integer, got '$maxFindings'"
+    Write-Host "[ERROR] 'report.max_findings' must be a positive integer, got '$maxFindings'"
     Write-Host "Edit $configFile and set 'report.max_findings' to a number (e.g. 50)"
     exit 1
 }
 
 if ($usingDefaults) {
-    Write-Host "⚠️  No config file found; using defaults from extension.yml"
+    Write-Host "[WARN] No config file found; using defaults from extension.yml"
 }
 
-Write-Host "📋 Configuration loaded: max_findings=$maxFindings"
+Write-Host "[OK] Configuration loaded: max_findings=$maxFindings"
