@@ -18,7 +18,7 @@ import { safeReturnTo } from '@/lib/return-url';
  *
  * Mirrors the staff pattern — lives in the `(auth-public)` route
  * group so it does NOT inherit `(member)/portal/layout.tsx`'s auth
- * guard. Reuses `<SignInForm portal="member">` from Phase 3.
+ * guard. Reuses the shared `<SignInForm portal="member">` component.
  *
  * Reads the optional `returnTo` query param and validates via the
  * open-redirect guard before forwarding it to the form. Already

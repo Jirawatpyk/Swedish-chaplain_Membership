@@ -1,15 +1,15 @@
 /**
- * Token repository — password reset tokens (T097) + invitations (T121,
- * extended in Phase 6).
+ * Token repository — password reset tokens (T097) + invitations (T121).
  *
  * Each token id is 32 bytes of crypto-random entropy rendered as 64 hex
  * characters — same shape as session ids. Collision risk is negligible
  * (≈ 2⁻¹²⁸).
  *
- * Phase 5 (US3) only uses the reset-token half of this module. Phase 6
- * (US4) will add `createInvitation`/`findInvitationById`/
- * `markInvitationConsumed` to the same file so both token flows share
- * the same generation + persistence primitives.
+ * Both the reset-token half (T097, spec US3) and the invitation half
+ * (T121, spec US4) ship inside F1 so that the token generation +
+ * persistence primitives are shared. `createInvitation`,
+ * `findInvitationById`, and `markInvitationConsumed` power the invite
+ * lifecycle (spec FR-009 / FR-010).
  */
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '@/lib/db';
@@ -81,7 +81,7 @@ export interface TokenRepo {
    */
   invalidateAllUnconsumedForUser(userId: UserId, now: Date): Promise<number>;
 
-  // --- Invitation tokens (T121, Phase 6 US4) ---
+  // --- Invitation tokens (T121, spec US4) ---
   createInvitation(args: {
     userId: UserId;
     invitedByUserId: UserId;

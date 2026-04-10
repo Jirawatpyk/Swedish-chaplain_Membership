@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MIN_PASSWORD_LENGTH,
   checkPasswordPolicy,
+  weakPasswordMetricBucket,
+  type PasswordPolicyError,
 } from '@/modules/auth/application/password-policy';
 
 const originalFetch = global.fetch;
@@ -94,3 +96,37 @@ async function sha1Hex(input: string): Promise<string> {
   const { createHash } = await import('node:crypto');
   return createHash('sha1').update(input, 'utf8').digest('hex').toUpperCase();
 }
+
+describe('weakPasswordMetricBucket', () => {
+  it('returns "short" when the first error is too-short', () => {
+    const errors: PasswordPolicyError[] = [
+      { code: 'too-short', minLength: 12 },
+    ];
+    expect(weakPasswordMetricBucket(errors)).toBe('short');
+  });
+
+  it('returns "pwned" when the first error is common-password', () => {
+    const errors: PasswordPolicyError[] = [{ code: 'common-password' }];
+    expect(weakPasswordMetricBucket(errors)).toBe('pwned');
+  });
+
+  it('returns "pwned" when the first error is breached', () => {
+    const errors: PasswordPolicyError[] = [
+      { code: 'breached', occurrences: 42 },
+    ];
+    expect(weakPasswordMetricBucket(errors)).toBe('pwned');
+  });
+
+  it('returns null for an empty error list (defensive — caller should skip the metric)', () => {
+    expect(weakPasswordMetricBucket([])).toBe(null);
+  });
+
+  it('uses ONLY the first error — does not inspect the tail', () => {
+    const errors: PasswordPolicyError[] = [
+      { code: 'too-short', minLength: 12 },
+      { code: 'breached', occurrences: 99 },
+    ];
+    // First is too-short → 'short', regardless of the trailing breached entry.
+    expect(weakPasswordMetricBucket(errors)).toBe('short');
+  });
+});

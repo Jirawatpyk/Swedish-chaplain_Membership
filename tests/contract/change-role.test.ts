@@ -5,21 +5,19 @@
  * Contract: 200 ok (returns sessionsRevoked), 400 invalid-role / role-portal-mismatch,
  *           401 no-session, 403 forbidden (RBAC), 404 not-found,
  *           409 same-role / last-admin-protection.
+ *
+ * Mocks `@/lib/admin-context` directly — see `disable-user.test.ts`
+ * for the rationale.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const getCurrentSessionMock = vi.fn();
-const requireRoleMock = vi.fn();
+const requireAdminContextMock = vi.fn();
 const changeRoleMock = vi.fn();
 
-vi.mock('@/lib/auth-session', () => ({
-  getCurrentSession: (...args: unknown[]) => getCurrentSessionMock(...args),
-}));
-
-vi.mock('@/lib/rbac-guard', () => ({
-  requireRole: (...args: unknown[]) => requireRoleMock(...args),
+vi.mock('@/lib/admin-context', () => ({
+  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
 }));
 
 vi.mock('@/modules/auth/application/change-role', () => ({
@@ -30,13 +28,19 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
-vi.mock('@/lib/request-id', () => ({
-  requestIdFromHeaders: () => 'test-req-id',
-}));
-
-const adminSession = {
-  user: { id: 'admin-1', email: 'admin@swecham.se', role: 'admin', status: 'active', displayName: 'Admin' },
-  session: { id: 'sess-1' },
+const adminContext = {
+  current: {
+    user: {
+      id: 'admin-1',
+      email: 'admin@swecham.se',
+      role: 'admin',
+      status: 'active',
+      displayName: 'Admin',
+    },
+    session: { id: 'sess-1' },
+  },
+  sourceIp: '203.0.113.5',
+  requestId: 'test-req-id',
 };
 
 function makeRequest(body: unknown): NextRequest {
@@ -58,8 +62,7 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
   });
 
   it('200 on success — returns sessionsRevoked', async () => {
-    getCurrentSessionMock.mockResolvedValueOnce(adminSession);
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
     changeRoleMock.mockResolvedValueOnce(ok({ sessionsRevoked: 3 }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/role/route');
@@ -75,8 +78,7 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
   });
 
   it('400 on invalid-role (not in enum)', async () => {
-    getCurrentSessionMock.mockResolvedValueOnce(adminSession);
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
 
     const { POST } = await import('@/app/api/auth/users/[id]/role/route');
     const res = await POST(makeRequest({ newRole: 'superadmin' }), { params: routeParams });
@@ -88,8 +90,7 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
   });
 
   it('400 on non-JSON body', async () => {
-    getCurrentSessionMock.mockResolvedValueOnce(adminSession);
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
 
     const { POST } = await import('@/app/api/auth/users/[id]/role/route');
     const res = await POST(
@@ -104,28 +105,32 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('401 when not signed in', async () => {
-    getCurrentSessionMock.mockResolvedValueOnce(null);
+  it('401 when requireAdminContext rejects with no-session', async () => {
+    requireAdminContextMock.mockResolvedValueOnce({
+      response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
+    });
 
     const { POST } = await import('@/app/api/auth/users/[id]/role/route');
     const res = await POST(makeRequest({ newRole: 'manager' }), { params: routeParams });
 
     expect(res.status).toBe(401);
+    expect(changeRoleMock).not.toHaveBeenCalled();
   });
 
-  it('403 when RBAC denies', async () => {
-    getCurrentSessionMock.mockResolvedValueOnce(adminSession);
-    requireRoleMock.mockResolvedValueOnce({ ok: false, reason: 'role-denied' });
+  it('403 when requireAdminContext rejects with forbidden', async () => {
+    requireAdminContextMock.mockResolvedValueOnce({
+      response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
+    });
 
     const { POST } = await import('@/app/api/auth/users/[id]/role/route');
     const res = await POST(makeRequest({ newRole: 'manager' }), { params: routeParams });
 
     expect(res.status).toBe(403);
+    expect(changeRoleMock).not.toHaveBeenCalled();
   });
 
   it('404 when target user not found', async () => {
-    getCurrentSessionMock.mockResolvedValueOnce(adminSession);
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
     changeRoleMock.mockResolvedValueOnce(err({ code: 'not-found' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/role/route');
@@ -135,8 +140,7 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
   });
 
   it('409 on same-role', async () => {
-    getCurrentSessionMock.mockResolvedValueOnce(adminSession);
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
     changeRoleMock.mockResolvedValueOnce(err({ code: 'same-role' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/role/route');
@@ -148,8 +152,7 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
   });
 
   it('400 on role-portal-mismatch (staff↔member boundary)', async () => {
-    getCurrentSessionMock.mockResolvedValueOnce(adminSession);
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
     changeRoleMock.mockResolvedValueOnce(err({ code: 'role-portal-mismatch' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/role/route');
@@ -161,8 +164,7 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
   });
 
   it('409 on last-admin-protection', async () => {
-    getCurrentSessionMock.mockResolvedValueOnce(adminSession);
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
     changeRoleMock.mockResolvedValueOnce(err({ code: 'last-admin-protection' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/role/route');

@@ -18,7 +18,7 @@
  * concerns — Domain `PORTAL_FOR_ROLE` already owns the role→portal
  * mapping; this file owns the portal→path mapping.
  */
-import type { Portal } from '@/modules/auth/application/sign-in';
+import type { Portal } from '@/modules/auth/domain/role';
 
 /**
  * Home route for each portal. Where a signed-in user lands after

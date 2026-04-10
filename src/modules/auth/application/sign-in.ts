@@ -42,6 +42,7 @@ import { authMetrics, type SignInLabels } from '@/lib/metrics';
 import { type EmailAddress, asEmailAddress } from '@/modules/auth/domain/branded';
 import {
   PORTAL_FOR_ROLE,
+  type Portal,
   type Role,
 } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
@@ -59,7 +60,10 @@ import { defaultSignInDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
 
-export type Portal = 'staff' | 'member';
+// Re-export for backward compat with older callers that imported
+// `Portal` from this file. The canonical definition lives in
+// `@/modules/auth/domain/role`.
+export type { Portal };
 
 export interface SignInInput {
   readonly email: string;

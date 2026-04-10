@@ -8,7 +8,8 @@
  * re-validates via `requireRole`.
  *
  * For F1 MVP the list is server-rendered with no pagination UI
- * (capped at 50 per page); proper pagination lands in Phase 10 polish.
+ * (capped at 50 per page); proper pagination is a documented F9
+ * follow-up when the admin dashboard expands.
  */
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';

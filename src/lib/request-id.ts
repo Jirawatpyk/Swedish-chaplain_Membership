@@ -49,8 +49,9 @@ export function uuidv7(): string {
 
 /**
  * Read the inbound request id from a Headers object, or generate a new
- * one if absent or malformed. Used by middleware (T043) to attach a
- * stable id to every request before it reaches the app.
+ * one if absent or malformed. Used by `src/proxy.ts` (the Next.js 16
+ * request proxy) to attach a stable id to every request before it
+ * reaches the app.
  *
  * Header precedence: `x-request-id` → `x-vercel-id` → generate.
  */

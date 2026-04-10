@@ -8,7 +8,7 @@
  *     thrown exceptions across the boundary
  *
  * Templates live in `src/modules/auth/infrastructure/email/*.tsx`
- * (T098, T122 — Phase 3+).
+ * (reset-password: T098, invitation: T122).
  */
 import { Resend } from 'resend';
 import { env } from '@/lib/env';

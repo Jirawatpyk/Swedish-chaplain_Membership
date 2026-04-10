@@ -27,6 +27,12 @@
  */
 
 import { portalHomePath, portalSignInPath } from './portal-paths';
+import type { Portal } from '@/modules/auth/domain/role';
+
+// Re-export for backward compat with older callers that imported
+// `Portal` from this file. The canonical definition now lives in
+// Domain (`role.ts`).
+export type { Portal };
 
 const MAX_RETURN_TO_LENGTH = 512;
 const FORBIDDEN_PREFIXES = [
@@ -37,8 +43,6 @@ const FORBIDDEN_PREFIXES = [
   '/invite',
   '/api/',
 ];
-
-export type Portal = 'staff' | 'member';
 
 export function safeReturnTo(candidate: unknown, portal: Portal): string | null {
   if (typeof candidate !== 'string') return null;

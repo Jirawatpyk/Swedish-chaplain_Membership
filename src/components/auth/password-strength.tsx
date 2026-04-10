@@ -32,12 +32,28 @@ export interface PasswordStrengthProps {
  * while the user types. Does NOT replace the server-side
  * `checkPasswordPolicy` (HIBP + common-list) which runs on submit.
  *
- * Rules (matches the server heuristic in
- * `src/modules/auth/application/password-policy.ts scoreStrength`):
+ * Rules match the LENGTH-based half of the server `scoreStrength`
+ * in `src/modules/auth/application/password-policy.ts`:
  *   - empty  → no bar
  *   - <12 chars → weak
  *   - ≥16 chars AND has a non-alphanumeric → strong
  *   - otherwise → acceptable
+ *
+ * **Known client/server drift** (accepted trade-off): the client
+ * cannot replicate the HIBP breach check without making a network
+ * round-trip on every keystroke. A 16+ character password with a
+ * symbol that happens to be in the HIBP corpus will show a green
+ * bar on the client but will be rejected by the server with
+ * `{ error: 'weak-password', issues: ['breached'] }`. The three
+ * password forms MUST handle that response by showing the inline
+ * error AND resetting the displayed bar — `change-password-form`,
+ * `reset-password-form`, and `invite-redeem-form` all do this via
+ * their `setError('newPassword', …)` + re-render path (the bar is
+ * driven by the form's watched value; clearing or re-typing will
+ * re-run this estimator).
+ *
+ * The client/server drift is documented in
+ * `docs/ux-standards.md § 11.4` as a deliberate choice.
  *
  * Previously duplicated verbatim in `change-password-form.tsx`,
  * `invite-redeem-form.tsx`, and `reset-password-form.tsx`. A rule

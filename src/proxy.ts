@@ -25,8 +25,9 @@ import { REQUEST_ID_HEADER, requestIdFromHeaders } from '@/lib/request-id';
  *      none, so all headers live here).
  *
  * Session lookup + lockout enforcement happens INSIDE Route Handlers and
- * page server components (via the `getSession()` helper added in Phase 3),
- * not here, because Edge runtime cannot import postgres-js (Node.js APIs).
+ * page server components (via the `getCurrentSession()` helper in
+ * `src/lib/auth-session.ts`), not here, because Edge runtime cannot
+ * import postgres-js (Node.js APIs).
  *
  * Per Next.js 16 docs, runtime defaults to nodejs since v15.5+; we keep
  * the default so `@/lib/env` and `@/lib/csrf` (which depend on Node)
@@ -42,8 +43,9 @@ const HSTS_VALUE = 'max-age=63072000; includeSubDomains; preload';
 // them and the dev overlay shows a console error. Production has eval
 // disabled (React production bundles never call it).
 //
-// A future hardening pass in Phase 10 should switch the prod policy to
-// nonce-based script-src and drop unsafe-inline too.
+// A future hardening pass (tracked as an F1 ship-gate follow-up)
+// should switch the prod policy to nonce-based script-src and drop
+// unsafe-inline too.
 function buildCsp(isDevelopment: boolean): string {
   const scriptSrc = isDevelopment
     ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"

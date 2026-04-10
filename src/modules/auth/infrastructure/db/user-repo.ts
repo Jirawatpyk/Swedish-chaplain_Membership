@@ -92,6 +92,13 @@ export const userRepo: UserRepo = {
   },
 
   async incrementFailedCount(id: UserId): Promise<number> {
+    // Note: if the UPDATE matches no row (user id does not exist,
+    // e.g. a race with a concurrent delete), Drizzle returns an
+    // empty array and this function silently returns 0. The sign-in
+    // use case always calls this after a successful `findByEmail`,
+    // so the race window is effectively zero in production. If a
+    // future caller has a different assumption, change the return
+    // type to `number | null` and branch on the empty case.
     const rows = await db
       .update(users)
       .set({ failedSignInCount: sql`${users.failedSignInCount} + 1` })
