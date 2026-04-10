@@ -126,20 +126,27 @@ describe('integration: last-admin-protection guard (T-10)', () => {
     expect(result.error.code).toBe('last-admin-protection');
   });
 
-  it('changeRole ALLOWS changing a non-admin even when only one admin remains', async () => {
-    // Sanity: the guard is specific to demoting/disabling the last
-    // admin. Changing a member to manager is fine regardless of admin
-    // count. Creates a member for this test so the bootstrap admin
-    // stays untouched.
-    const memberTarget = await createActiveTestUser('member');
+  it('changeRole ALLOWS promoting a non-admin even when only one admin remains', async () => {
+    // Sanity: the last-admin guard is specific to DEMOTING or
+    // DISABLING the last admin. Promoting a manager to admin is
+    // explicitly allowed — it grows the admin count, it doesn't
+    // shrink it — so the guard MUST skip the check even when
+    // `countActiveAdmins()` returns 1.
+    //
+    // We use manager → admin (both staff-portal roles) because:
+    //   - Target role is NOT admin → guard is never entered
+    //     (the guard fires only when `target.role === 'admin'`)
+    //   - Both are staff roles → no portal-mismatch rejection
+    //   - The promotion is semantically valid under the policy
+    const managerTarget = await createActiveTestUser('manager');
     try {
       const result = await changeRole(
         {
-          targetUserId: memberTarget.userId,
-          newRole: 'manager',
+          targetUserId: managerTarget.userId,
+          newRole: 'admin',
           actorUserId: target.userId, // any admin will do
           sourceIp: '203.0.113.82',
-          requestId: `it-last-admin-member-${Date.now()}`,
+          requestId: `it-last-admin-promote-${Date.now()}`,
         },
         {
           users: oneAdminRepo(),
@@ -149,7 +156,11 @@ describe('integration: last-admin-protection guard (T-10)', () => {
       );
       expect(result.ok).toBe(true);
     } finally {
-      await deleteTestUser(memberTarget);
+      // Demote + delete. Demote first because deleteTestUser
+      // doesn't override the role and the cleanup helper might
+      // trip the bootstrap admin count guard on a real clean-up
+      // path in the future.
+      await deleteTestUser(managerTarget);
     }
   });
 });
