@@ -100,6 +100,12 @@ export async function requireRole(
         summary: `manager denied ${action} on ${resource}`,
         requestId: context.requestId,
       });
+      // Bump the success-path counter ONLY when the audit row landed.
+      // Previously this was outside the try/catch and double-counted
+      // on the audit-failure path (both `auditMissing` AND
+      // `managerDeniedWrite` fired), inflating the dashboard metric
+      // during DB degradation events.
+      authMetrics.managerDeniedWrite(`${resource}:${action}`);
     } catch (error) {
       // Governance-critical event failed to land. Log AND bump the
       // `auth_audit_missing_total` counter so the observability.md § 6
@@ -113,7 +119,6 @@ export async function requireRole(
       );
       authMetrics.auditMissing('manager_denied_write');
     }
-    authMetrics.managerDeniedWrite(`${resource}:${action}`);
   }
 
   authMetrics.rbacDenied({ role, resource, action });

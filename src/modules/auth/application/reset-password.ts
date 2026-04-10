@@ -139,8 +139,11 @@ export async function resetPassword(
     // here — it's the only "redemption failed" event in the audit
     // enum and the summary string disambiguates reset vs invitation
     // on the query side. Missing tokens don't have a user to audit.
-    // TODO(F9): once a dedicated `password_reset_failed` event type
-    // is added to AUDIT_EVENT_TYPES, swap the reuse below for it.
+    // TODO(audit-events): add a dedicated `password_reset_failed`
+    // event type in a follow-up F1 patch; once present, swap this
+    // reuse for the dedicated type. Not tied to F9 (admin audit
+    // viewer) — that feature only reads events, it doesn't define
+    // them.
     if (token) {
       await deps.audit.append({
         eventType: 'invitation_redemption_failed',

@@ -2,25 +2,28 @@
  * POST /api/auth/heartbeat (T164, contracts/auth-api.md § 11).
  *
  * Refreshes `sessions.last_seen_at` without any other side effect —
- * fuels the "Stay signed in" button on the idle-warning dialog (FR-022,
- * ux-standards § 8.2). Does NOT extend the absolute 12-hour cap.
+ * fuels the "Stay signed in" button on the idle-warning dialog
+ * (FR-022, ux-standards § 8.2). Does NOT extend the absolute 12-hour
+ * cap.
+ *
+ * Clean Architecture note (verify gate 2026-04-10): this route
+ * handler previously reached into `sessionRepo` and `rateLimiter`
+ * directly, duplicating what a use case should do. Both side effects
+ * now live in `heartbeat()` inside the Application layer; the route
+ * handler's only job is HTTP (session presence check, status codes,
+ * `Retry-After` header, log line).
  *
  * Audit: **none**. Heartbeats are routine (one per idle cycle per
- * active tab) and would flood the append-only log. Spec § US7 explicitly
- * exempts idle/absolute timeout expirations from the audit trail, and
- * routine heartbeats share that rationale.
- *
- * Rate limit: 60 per minute per session. A well-behaved client fires at
- * most once per idle cycle (≈ every 29 minutes); 60/min leaves a huge
- * margin while still shutting off a runaway loop.
+ * active tab) and would flood the append-only log. Spec § US7
+ * explicitly exempts idle/absolute timeout expirations from the
+ * audit trail, and routine heartbeats share that rationale.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { getCurrentSession } from '@/lib/auth-session';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { rateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
-import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
+import { heartbeat } from '@/modules/auth/application/heartbeat';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -30,19 +33,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'no-session' }, { status: 401 });
   }
 
-  // 60 per minute per session id. Keyed on the session — not the user —
-  // so that a user with multiple tabs gets a per-tab budget and a
-  // misbehaving tab cannot starve a well-behaved one.
-  const rl = await rateLimiter.check(
-    `heartbeat:session:${current.session.id}`,
-    60,
-    60,
-  );
-  if (!rl.success) {
+  const result = await heartbeat({
+    sessionId: current.session.id,
+    requestId,
+  });
+
+  if (!result.ok) {
     // Never log raw session IDs (observability.md § 3, CLAUDE.md § Secrets).
-    // `sessionIdHash` gives the same correlation power without the
-    // PII — pino's redact list catches accidental top-level `sessionId`
-    // fields too, but defence-in-depth: don't put it in the log object.
+    // `sessionIdHash` gives the same correlation power without the PII.
     logger.warn(
       { requestId, sessionIdHash: hashId(current.session.id) },
       'heartbeat.rate-limited',
@@ -52,21 +50,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       {
         status: 429,
         headers: {
-          'Retry-After': String(Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000))),
+          'Retry-After': String(result.error.retryAfterSeconds),
         },
       },
     );
   }
 
-  // `getCurrentSession()` already updated `last_seen_at` as part of its
-  // sliding-window heartbeat. We re-stamp here with a fresh `now` so the
-  // contract's "atomic update" promise holds regardless of how much
-  // compute sits between the two calls.
-  const now = new Date();
-  await sessionRepo.updateLastSeen(current.session.id, now);
-
   return NextResponse.json(
-    { ok: true, lastSeenAt: now.toISOString() },
+    { ok: true, lastSeenAt: result.value.lastSeenAt.toISOString() },
     { status: 200 },
   );
 }

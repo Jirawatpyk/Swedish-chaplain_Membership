@@ -6,9 +6,9 @@
  * append-only trigger or a schema constraint. This is the
  * structural safety net for spec SC-004 / FR-012 — the full
  * coverage that each individual use case emits the expected
- * event type is verified in the per-phase integration tests
- * (Phase 3 sign-in, Phase 5 password-reset, Phase 6 account-
- * lifecycle, Phase 8 change-password).
+ * event type is verified in the per-use-case integration tests
+ * (`sign-in.test.ts`, `password-reset.test.ts`,
+ * `account-lifecycle.test.ts`, `change-password.test.ts`).
  *
  * Strategy: for each of the 16 types we append a sentinel row
  * with a unique `requestId`, then SELECT it back and assert the
@@ -66,8 +66,8 @@ describe('integration: audit retention — rows remain queryable', () => {
   it('rows older than the current request-id series are still readable', async () => {
     // Write a row now — the "retention" dimension is really "nothing
     // actively deletes rows". The append-only trigger already blocks
-    // DELETE (verified by tests/integration/audit/append-only.test.ts
-    // in Phase 2), so if we can SELECT older rows back, retention
+    // DELETE (verified by `tests/integration/audit/append-only.test.ts`
+    // in the F1 suite), so if we can SELECT older rows back, retention
     // is trivially satisfied.
     const retentionRequestId = `it-audit-retention-${Date.now()}`;
 

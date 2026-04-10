@@ -7,8 +7,10 @@
  *
  *   200 — { user: { id, email, role, displayName }, redirect }
  *   400 — invalid-input
- *   401 — invalid-credentials
- *   403 — account-disabled / account-locked / portal-mismatch
+ *   401 — invalid-credentials (collapses email-not-found, wrong-password,
+ *          portal mismatch, AND pending-account into a single uniform
+ *          response — T-03 enumeration defence)
+ *   403 — account-disabled / account-locked
  *   429 — rate-limited (with Retry-After header)
  */
 import { NextResponse, type NextRequest } from 'next/server';

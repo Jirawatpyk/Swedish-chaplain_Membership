@@ -72,15 +72,17 @@ describe('auth-cookies — flag contract (T-05 session hijack defence)', () => {
     });
 
     it('sets Secure based on NODE_ENV — true in production, false elsewhere', async () => {
-      // The module read NODE_ENV at import time above. In vitest the
-      // env is not production, so Secure should be false. The
-      // production branch is exercised by the deploy-time smoke test
-      // (E2E suite reaches Vercel Preview over HTTPS and inspects
-      // the Set-Cookie header), which is out of scope here.
+      // The module reads NODE_ENV at import time. In vitest the env
+      // is 'test', so Secure should be false. The production branch
+      // (Secure=true over HTTPS) is not exercised by this suite and
+      // is a documented test gap — tracked informally as a future
+      // Playwright test against a Vercel Preview deployment that
+      // inspects the real Set-Cookie header. Until that exists the
+      // production behaviour is verified only via code review of
+      // `src/lib/auth-cookies.ts`.
       await setSessionCookie(asSessionId('e'.repeat(64)));
       const secureValue = cookieSetCalls[0]?.options.secure;
       expect(typeof secureValue).toBe('boolean');
-      // In vitest context NODE_ENV is 'test', not 'production'.
       expect(secureValue).toBe(false);
     });
 

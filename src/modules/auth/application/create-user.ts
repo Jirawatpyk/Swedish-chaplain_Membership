@@ -18,7 +18,8 @@
  *   4. Insert `invitations` row with 7-day expiry.
  *   5. Send invitation email. Failure is LOGGED but does not roll
  *      back the user row — the admin can resend via a future
- *      "resend invitation" action (Phase 10 polish).
+ *      "resend invitation" admin action (tracked for F9 polish; no
+ *      dedicated Feature number — it's a small F1 follow-up patch).
  *   6. Emit `account_created` audit event.
  */
 import { Result, err, ok } from '@/lib/result';
@@ -33,9 +34,11 @@ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { EmailSender } from '@/modules/auth/infrastructure/email/resend-client';
-import {
-  buildInvitationEmail,
-} from '@/modules/auth/infrastructure/email/invitation-email';
+// `buildInvitationEmail` is a PURE template function (no DB, no network).
+// Type-only import keeps the Application layer free of the concrete
+// value; the implementation is injected via `CreateUserDeps.buildEmail`
+// from `auth-deps.ts` composition root.
+import type { buildInvitationEmail as BuildInvitationEmailFn } from '@/modules/auth/infrastructure/email/invitation-email';
 import type { EmailLocale } from '@/modules/auth/infrastructure/email/reset-password-email';
 import { defaultCreateUserDeps } from '@/lib/auth-deps';
 
@@ -69,6 +72,7 @@ export interface CreateUserDeps {
   readonly tokens: TokenRepo;
   readonly audit: AuditRepo;
   readonly email: EmailSender;
+  readonly buildInvitationEmail: typeof BuildInvitationEmailFn;
   readonly now: () => Date;
 }
 
@@ -109,8 +113,10 @@ export async function createUser(
     now,
   });
 
-  // 4. Send invitation email
-  const built = buildInvitationEmail({
+  // 4. Send invitation email — template builder injected via deps
+  //    so this file never imports the concrete function at module
+  //    load time (Clean Architecture: Application imports types only).
+  const built = deps.buildInvitationEmail({
     toEmail: user.email,
     token: invitation.id,
     role: input.role,

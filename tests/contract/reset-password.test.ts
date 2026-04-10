@@ -5,7 +5,11 @@
  *   - 200 success → body { ok:true, signInUrl }
  *   - 400 invalid-input (missing fields)
  *   - 400 weak-password (rule breakdown in body)
- *   - 410 link-invalid (missing, expired, or consumed token — single public slug)
+ *   - 404 link-invalid with reason=not-found (token id absent from DB)
+ *   - 410 link-invalid with reason=expired / reason=used (token existed but
+ *     is no longer actionable). The public JSON body is identical across the
+ *     three reasons — the status code alone distinguishes them so clients
+ *     can tell the difference between "typo'd link" and "already used".
  *   - 429 rate-limited with Retry-After
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -107,14 +111,43 @@ describe('POST /api/auth/reset-password', () => {
     expect(body.issues).toContain('too-short');
   });
 
-  it('410 link-invalid for missing / expired / used token', async () => {
-    resetMock.mockResolvedValueOnce(err({ code: 'link-invalid' }));
+  it('404 link-invalid when reason=not-found (token id absent from DB)', async () => {
+    resetMock.mockResolvedValueOnce(
+      err({ code: 'link-invalid', reason: 'not-found' as const }),
+    );
+
+    const response = await POST(
+      makeRequest({ token: VALID_TOKEN, newPassword: 'new passphrase 2026!' }),
+    );
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe('link-invalid');
+  });
+
+  it('410 link-invalid when reason=expired', async () => {
+    resetMock.mockResolvedValueOnce(
+      err({ code: 'link-invalid', reason: 'expired' as const }),
+    );
 
     const response = await POST(
       makeRequest({ token: VALID_TOKEN, newPassword: 'new passphrase 2026!' }),
     );
     expect(response.status).toBe(410);
     const body = await response.json();
+    expect(body.error).toBe('link-invalid');
+  });
+
+  it('410 link-invalid when reason=used (token already consumed)', async () => {
+    resetMock.mockResolvedValueOnce(
+      err({ code: 'link-invalid', reason: 'used' as const }),
+    );
+
+    const response = await POST(
+      makeRequest({ token: VALID_TOKEN, newPassword: 'new passphrase 2026!' }),
+    );
+    expect(response.status).toBe(410);
+    const body = await response.json();
+    // Same public body across all three reasons — enumeration safety.
     expect(body.error).toBe('link-invalid');
   });
 

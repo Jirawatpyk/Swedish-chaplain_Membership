@@ -29,6 +29,7 @@ import {
   asPasswordHash,
   type PasswordHash,
 } from '@/modules/auth/domain/branded';
+import { logger } from '@/lib/logger';
 
 // `@node-rs/argon2` exports `Algorithm` as an ambient const enum which
 // trips Next.js' `isolatedModules: true`. We use the literal value:
@@ -85,7 +86,13 @@ class Argon2Hasher implements PasswordHasher {
       // legacy format). Log at WARN so ops has a diagnostic trail for
       // "user can't sign in even with right password" incidents, then
       // treat as authentication failure rather than crashing the server.
-      const { logger } = await import('@/lib/logger');
+      //
+      // Logger is imported statically at module top: previously used a
+      // dynamic `import('@/lib/logger')` to avoid a possible circular
+      // dependency, but pino has no back-edge to this file, so the
+      // dynamic import was unnecessary cost + a small risk that a
+      // module-init error in logger would swallow the original error
+      // via a secondary throw.
       logger.warn({ err: error }, 'argon2.verify.malformed_hash');
       return false;
     }

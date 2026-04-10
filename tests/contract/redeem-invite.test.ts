@@ -85,14 +85,43 @@ describe('contract: POST /api/auth/redeem-invite (T110)', () => {
     expect(body.issues).toContain('too-short');
   });
 
-  it('410 on link-invalid (expired / consumed)', async () => {
-    redeemInviteMock.mockResolvedValueOnce(err({ code: 'link-invalid' }));
+  it('404 on link-invalid when reason=not-found', async () => {
+    redeemInviteMock.mockResolvedValueOnce(
+      err({ code: 'link-invalid', reason: 'not-found' as const }),
+    );
+
+    const { POST } = await import('@/app/api/auth/redeem-invite/route');
+    const res = await POST(makeRequest({ token: 'a'.repeat(64), password: 'Good-P@ss-2026!' }));
+
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe('link-invalid');
+  });
+
+  it('410 on link-invalid when reason=expired', async () => {
+    redeemInviteMock.mockResolvedValueOnce(
+      err({ code: 'link-invalid', reason: 'expired' as const }),
+    );
 
     const { POST } = await import('@/app/api/auth/redeem-invite/route');
     const res = await POST(makeRequest({ token: 'a'.repeat(64), password: 'Good-P@ss-2026!' }));
 
     expect(res.status).toBe(410);
     const body = await res.json();
+    expect(body.error).toBe('link-invalid');
+  });
+
+  it('410 on link-invalid when reason=used (token already consumed)', async () => {
+    redeemInviteMock.mockResolvedValueOnce(
+      err({ code: 'link-invalid', reason: 'used' as const }),
+    );
+
+    const { POST } = await import('@/app/api/auth/redeem-invite/route');
+    const res = await POST(makeRequest({ token: 'a'.repeat(64), password: 'Good-P@ss-2026!' }));
+
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    // Same public body across all three reasons — enumeration safety.
     expect(body.error).toBe('link-invalid');
   });
 

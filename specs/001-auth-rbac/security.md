@@ -172,9 +172,16 @@ an unlocked device, or network interception.
 - **Content-Security-Policy** — reduces XSS surface area
 
 **Tests**:
-- `tests/contract/sign-in.test.ts` — asserts all cookie flags are set
+- `tests/unit/lib/auth-cookies.test.ts` — pins every cookie flag
+  (HttpOnly, Secure, SameSite=Lax, Path, Max-Age) for both
+  `setSessionCookie` and `clearSessionCookie`. Mocks `next/headers`
+  so the options object passed to `cookies().set()` is captured and
+  asserted field-by-field (review gate checklist 2026-04-10).
+- `tests/contract/sign-in.test.ts` — exercises the happy + failure
+  paths of the sign-in route; does NOT inspect cookie flags (the
+  cookie helper is mocked wholesale).
 - `tests/e2e/session-revocation.spec.ts` — verifies admin disable
-  immediately ends sessions
+  immediately ends sessions at the browser layer.
 
 ### T-06. Session fixation
 
@@ -421,7 +428,7 @@ the argon2id verify capacity of the function instances.
 | T-02 Brute force single-account | argon2id + lockout | brute-force.test |
 | T-03 Enumeration via sign-in | Generic 401 + dummy-hash timing | enumeration-timing.test, enumeration-message.test |
 | T-04 Enumeration via reset | Always-200 + timing | forgot-password.test, reset-enumeration-timing.test |
-| T-05 Session hijacking | HttpOnly + Secure + SameSite + idle + rotation | sign-in.test, session-revocation.spec |
+| T-05 Session hijacking | HttpOnly + Secure + SameSite + idle + rotation | auth-cookies.test (flag contract), sign-in.test, session-revocation.spec |
 | T-06 Session fixation | New session ID on sign-in/password/role change | session-rotation.test |
 | T-07 CSRF | Origin header allow-list + SameSite + no state-GET | csrf.test |
 | T-08 XSS | React escaping + no innerHTML + CSP + zod | xss-injection.spec |
