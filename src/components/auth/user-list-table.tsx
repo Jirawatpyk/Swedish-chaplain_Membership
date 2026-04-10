@@ -16,11 +16,11 @@ import {
   BanIcon,
   CircleCheckIcon,
   RefreshCwIcon,
-  UserPlusIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
 
 type Role = 'admin' | 'manager' | 'member';
 type Status = 'pending' | 'active' | 'disabled';
@@ -189,10 +189,7 @@ export function UserListTable({
           <RefreshCwIcon className="mr-1 inline size-3" aria-hidden />
           {t('refreshHint')}
         </p>
-        <Button variant="outline" size="sm" disabled={!isAdmin}>
-          <UserPlusIcon className="size-4" aria-hidden />
-          {t('actions.invite')}
-        </Button>
+        <InviteUserDialog disabled={!isAdmin} />
       </div>
 
       <ConfirmationDialog

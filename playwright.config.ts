@@ -1,4 +1,38 @@
+import { readFileSync, existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
+
+/**
+ * Minimal `.env.local` loader (no dotenv dep).
+ *
+ * Playwright does NOT auto-load .env files, so the global-setup +
+ * test workers lose access to Upstash and DB credentials unless we
+ * inject them here. Parses `KEY=VALUE` lines, strips `export `
+ * prefixes, removes surrounding single- or double-quotes, and
+ * ignores existing process.env values so an operator can still
+ * override locally via `UPSTASH_REDIS_REST_URL=... pnpm test:e2e`.
+ */
+function loadEnvLocal(): void {
+  const path = '.env.local';
+  if (!existsSync(path)) return;
+  const content = readFileSync(path, 'utf8');
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    if (!key || process.env[key] !== undefined) continue;
+    let value = rawValue ?? '';
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+loadEnvLocal();
 
 /**
  * Playwright configuration for F1 auth flows.
@@ -13,6 +47,10 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './tests/e2e',
+  // Global setup clears Upstash rate-limit buckets so a prior run's
+  // residue doesn't trip the 5/15-min sign-in limit. See
+  // tests/e2e/global-setup.ts.
+  globalSetup: './tests/e2e/global-setup.ts',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

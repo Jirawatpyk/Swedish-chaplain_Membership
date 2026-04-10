@@ -17,6 +17,7 @@
  * instead of being bounced to a malicious host.
  */
 import { expect, test } from '@playwright/test';
+import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -33,6 +34,10 @@ test.describe('return-after-signin (T171, spec AS5)', () => {
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD to run E2E tests',
   );
+
+  test.beforeAll(async () => {
+    await clearE2ERateLimits();
+  });
 
   test('unauth → /admin/sign-in injects returnTo query param', async ({ page }) => {
     await page.goto('/admin');

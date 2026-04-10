@@ -22,15 +22,26 @@
  * `pnpm dev`, so no separate terminal is needed.
  */
 import { expect, test } from '@playwright/test';
+import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+
+// Serialize the 3 tests in this file so successive sign-ins don't
+// race into the per-email rate-limit bucket.
+test.describe.configure({ mode: 'serial' });
 
 test.describe('staff sign-in (happy path)', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD to run E2E tests',
   );
+
+  test.beforeAll(async () => {
+    // Wipe rate-limit buckets so the 5/15-min per-email cap doesn't
+    // trip when a previous spec has already consumed the budget.
+    await clearE2ERateLimits();
+  });
 
   test('admin can sign in and lands on /admin with user menu visible', async ({ page }) => {
     // Capture non-OK sign-in responses so a rate-limit failure is

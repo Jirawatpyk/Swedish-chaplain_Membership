@@ -10,32 +10,40 @@
  *      appear.
  *   5. Sign out; assert re-sign-in with the NEW password succeeds.
  *
- * Requires E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD. Because this test
- * actually mutates the admin password, it restores the original
- * password at the end. Runs serially to avoid racing itself.
+ * **Safety rule**: this test mutates a real password. It MUST only
+ * ever run against a dedicated throwaway test user — never the
+ * bootstrap/production admin. We therefore HARDCODE the test user
+ * email below to the one seeded by `scripts/seed-e2e-user.ts`, and
+ * ignore `E2E_ADMIN_EMAIL` entirely. If the dedicated user doesn't
+ * exist, the test skips with a helpful message instructing the
+ * operator to run the seed script.
+ *
+ * Historical incident (2026-04-10): an earlier version of this spec
+ * read `E2E_ADMIN_EMAIL` from the env and mutated whatever user that
+ * pointed at — which happened to be the real bootstrap admin. The
+ * revert step failed under flaky conditions and left the admin's
+ * password stuck at a throwaway temp value. The fix is the hardcode.
  */
 import { expect, test } from '@playwright/test';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+// Hardcoded — do NOT read from env. Seeded by scripts/seed-e2e-user.ts.
+const E2E_CHANGE_PW_EMAIL = 'e2e-admin@swecham.test';
+const E2E_CHANGE_PW_PASSWORD = 'E2E-Testing-Password-2026!xZ';
 
 test.describe.configure({ mode: 'serial' });
 
 test.describe('change-password happy path (T150, SC-021)', () => {
-  test.skip(
-    !ADMIN_EMAIL || !ADMIN_PASSWORD,
-    'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD to run',
-  );
-
-  const tempPassword = `Temp-Rotate-${Date.now()}-xZ!9`;
+  // Evaluate temp password PER-TEST inside each test's closure so
+  // retries or re-runs don't compare against a stale snapshot.
+  const tempPassword = `E2E-Temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-xZ!9`;
 
   test('signed-in admin can change password and re-sign-in with the new one', async ({
     page,
   }) => {
     // Sign in
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await page.getByLabel(/email/i).fill(E2E_CHANGE_PW_EMAIL);
+    await page.getByLabel(/password/i).fill(E2E_CHANGE_PW_PASSWORD);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
 
@@ -46,7 +54,7 @@ test.describe('change-password happy path (T150, SC-021)', () => {
     // Primary input auto-focus — current password field per FR-024
     await expect(page.getByLabel(/current password/i)).toBeFocused();
 
-    await page.getByLabel(/current password/i).fill(ADMIN_PASSWORD!);
+    await page.getByLabel(/current password/i).fill(E2E_CHANGE_PW_PASSWORD);
     await page.getByLabel(/^new password$/i).fill(tempPassword);
     const confirm = page.getByLabel(/confirm/i);
     if (await confirm.count()) {
@@ -70,7 +78,7 @@ test.describe('change-password happy path (T150, SC-021)', () => {
 
   test('re-sign-in with NEW password succeeds; revert to original', async ({ page }) => {
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
+    await page.getByLabel(/email/i).fill(E2E_CHANGE_PW_EMAIL);
     await page.getByLabel(/password/i).fill(tempPassword);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
@@ -79,10 +87,10 @@ test.describe('change-password happy path (T150, SC-021)', () => {
     // stays usable.
     await page.goto('/admin/account');
     await page.getByLabel(/current password/i).fill(tempPassword);
-    await page.getByLabel(/^new password$/i).fill(ADMIN_PASSWORD!);
+    await page.getByLabel(/^new password$/i).fill(E2E_CHANGE_PW_PASSWORD);
     const confirm = page.getByLabel(/confirm/i);
     if (await confirm.count()) {
-      await confirm.first().fill(ADMIN_PASSWORD!);
+      await confirm.first().fill(E2E_CHANGE_PW_PASSWORD);
     }
     await page.getByRole('button', { name: /change|update|save/i }).first().click();
     await page.waitForResponse(

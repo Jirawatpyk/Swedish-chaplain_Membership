@@ -38,6 +38,9 @@ test.describe('forgot-password + reset-password a11y (T096, WCAG 2.1 AA)', () =>
   });
 
   test('reset-password with invalid token still passes axe on error state', async ({ page }) => {
-    await scan(page, '/reset-password/not-a-real-token-but-still-64-chars-' + 'a'.repeat(32));
+    // A 64-char hex string that isn't an issued token — the page
+    // should render the "link invalid" error state, which must still
+    // be accessible.
+    await scan(page, `/reset-password/${'a'.repeat(64)}`);
   });
 });

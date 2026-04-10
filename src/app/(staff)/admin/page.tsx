@@ -9,9 +9,15 @@ import { requireSession } from '@/lib/auth-session';
  *   - F3 — Members & Contacts list
  *   - F4 — Invoices & receipts
  *   - F6/F7 — Events & registration
+ *   - F9 — unified admin dashboard + audit log viewer + sidebar nav
  *
  * For F1 (MVP) it just confirms the sign-in flow worked and shows the
- * authenticated user their name + the placeholder roadmap.
+ * authenticated user their name + the placeholder roadmap. Links to
+ * F1-completed sub-pages (`/admin/users`, `/admin/account`) are
+ * intentionally NOT surfaced here — the proper nav shell lands in F9,
+ * and adding a transient quick-action row now would only be removed
+ * later. F1 admins reach `/admin/users` by URL and `/admin/account`
+ * via the UserMenu dropdown (ux-standards § 8.1).
  */
 export const metadata: Metadata = {
   title: 'Staff home',

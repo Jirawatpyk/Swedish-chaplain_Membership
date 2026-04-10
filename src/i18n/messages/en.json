@@ -178,6 +178,31 @@
       "toast": {
         "disabled": "{email} disabled.",
         "enabled": "{email} re-enabled."
+      },
+      "invite": {
+        "title": "Invite a new user",
+        "description": "They'll receive an email with a one-time link to set their password.",
+        "emailLabel": "Email address",
+        "emailPlaceholder": "person@example.com",
+        "roleLabel": "Role",
+        "roles": {
+          "admin": "Admin — full access",
+          "manager": "Manager — read-only on finance",
+          "member": "Member — self-service portal"
+        },
+        "submit": "Send invitation",
+        "submitting": "Sending…",
+        "cancel": "Cancel",
+        "toast": {
+          "success": "Invitation sent to {email}."
+        },
+        "errors": {
+          "generic": "Something went wrong. Please try again.",
+          "network": "Network error. Check your connection and try again.",
+          "invalid-input": "Please enter a valid email and role.",
+          "email-taken": "That email is already on the system.",
+          "forbidden": "You don't have permission to invite users."
+        }
       }
     }
   }

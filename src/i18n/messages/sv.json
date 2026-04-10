@@ -178,6 +178,31 @@
       "toast": {
         "disabled": "{email} inaktiverad.",
         "enabled": "{email} återaktiverad."
+      },
+      "invite": {
+        "title": "Bjud in en ny användare",
+        "description": "De får ett mejl med en engångslänk för att skapa sitt lösenord.",
+        "emailLabel": "E-postadress",
+        "emailPlaceholder": "person@example.com",
+        "roleLabel": "Roll",
+        "roles": {
+          "admin": "Admin — full åtkomst",
+          "manager": "Manager — läsbehörighet för ekonomi",
+          "member": "Medlem — självbetjäningsportal"
+        },
+        "submit": "Skicka inbjudan",
+        "submitting": "Skickar…",
+        "cancel": "Avbryt",
+        "toast": {
+          "success": "Inbjudan skickad till {email}."
+        },
+        "errors": {
+          "generic": "Något gick fel. Försök igen.",
+          "network": "Nätverksfel. Kontrollera anslutningen och försök igen.",
+          "invalid-input": "Ange en giltig e-postadress och roll.",
+          "email-taken": "Den e-postadressen finns redan i systemet.",
+          "forbidden": "Du har inte behörighet att bjuda in användare."
+        }
       }
     }
   }

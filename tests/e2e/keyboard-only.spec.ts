@@ -18,7 +18,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('keyboard-only navigation (T170, SC-022)', () => {
-  test('sign-in page: auto-focus email, Tab to password, Tab to submit, Enter submits', async ({
+  test('sign-in page: auto-focus email + Enter submits from password field', async ({
     page,
   }) => {
     await page.goto('/admin/sign-in');
@@ -27,28 +27,32 @@ test.describe('keyboard-only navigation (T170, SC-022)', () => {
     // Auto-focus per FR-024 primary-input auto-focus table
     await expect(page.getByLabel(/email/i)).toBeFocused();
 
+    // Fill email via keyboard (focus is already on the email field)
     await page.keyboard.type('keyboard-only-test@swecham.test');
-    // Tab off the email field
-    await page.keyboard.press('Tab');
+
+    // Tab through the form to reach the password input. The DOM order
+    // on the staff sign-in page is: email input → "Forgot password?"
+    // link → password input → submit button. We tab until the password
+    // field is focused, giving up after 4 tabs to avoid infinite loops
+    // if the tab order changes unexpectedly.
+    for (let i = 0; i < 4; i += 1) {
+      await page.keyboard.press('Tab');
+      if (await page.getByLabel(/password/i).evaluate((el) => el === document.activeElement)) {
+        break;
+      }
+    }
     await expect(page.getByLabel(/password/i)).toBeFocused();
 
     await page.keyboard.type('wrong-password-for-keyboard-test');
-    // Tab to next focusable element — should be the submit button
-    // (or a "forgot password?" link first; both are acceptable as
-    // long as focus eventually lands on a button and Enter submits).
-    await page.keyboard.press('Tab');
 
-    // Submit via keyboard — pressing Enter on a button inside a form
-    // should dispatch the form's submit event.
-    await page.keyboard.press('Enter');
-
-    // Wait for the form to either navigate or render an error banner
-    // (either outcome proves the Enter keypress reached the submit
-    // handler, which is all this test asserts).
-    await page.waitForResponse(
-      (res) => res.url().includes('/api/auth/sign-in'),
-      { timeout: 10_000 },
-    );
+    // Enter submits the form from any focused input field.
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes('/api/auth/sign-in'),
+        { timeout: 10_000 },
+      ),
+      page.keyboard.press('Enter'),
+    ]);
   });
 
   test('forgot-password page: email auto-focus + Enter submits', async ({ page }) => {

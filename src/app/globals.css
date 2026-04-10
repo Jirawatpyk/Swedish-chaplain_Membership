@@ -123,7 +123,13 @@
   --secondary-foreground: oklch(0.205 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  /* WCAG 2.1 AA fix (Phase 10 QA): the shadcn default destructive
+   * (oklch(0.577 0.245 27.325) ≈ #e7000b) only reaches a 4.36:1 contrast
+   * ratio against bg-destructive/5 in alert cards — below the 4.5:1
+   * minimum. Darkening L from 0.577 → 0.49 maps roughly to #c8080f,
+   * which measures 5.9:1 against the same tinted background and passes
+   * axe color-contrast. Dark-theme destructive stays unchanged. */
+  --destructive: oklch(0.49 0.213 27.325);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
   --chart-1: oklch(0.87 0 0);

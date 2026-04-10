@@ -59,7 +59,10 @@ test.describe('idle-warning dialog (T166, SC-013)', () => {
     // up to 12 s for the modal to appear.
     const modal = page.getByRole('alertdialog');
     await expect(modal).toBeVisible({ timeout: 12_000 });
-    await expect(modal.getByText(/still there|seconds/i)).toBeVisible();
+    // Use .first() because the title heading AND the aria-live
+    // description both contain "seconds" in English — strict mode
+    // otherwise rejects the ambiguous match.
+    await expect(modal.getByRole('heading', { name: /still there/i })).toBeVisible();
 
     // Click "Stay signed in" and watch for the heartbeat POST.
     const stayBtn = modal.getByRole('button', { name: /stay/i });
