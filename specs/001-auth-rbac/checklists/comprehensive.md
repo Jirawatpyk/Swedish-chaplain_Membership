@@ -11,8 +11,13 @@ requirement quality. Single file per user request (`Q1 = H`).
 **Depth**: Standard (~28 items) — sized for PR review gate use.
 
 **Audience**: Peer reviewer at PR time. Security-sensitive items ARE included
-because F1 is governed by Constitution Principle I (NON-NEGOTIABLE) and
-requires ≥2 reviewers per governance.
+because F1 is governed by Constitution Principle I (NON-NEGOTIABLE) and normally
+requires ≥2 reviewers per Constitution Principle IX / Gate 9. SweCham is a
+solo-dev project at the F1 ship point, so F1 uses the **solo-maintainer
+substitute clause** introduced in Constitution v1.3.0 (5 independent automated
+checks — see `plan.md` § Complexity Tracking entry #3 and `security.md § 5`
+sign-off block for the full deviation record). This checklist itself counts as
+part of check #1 of the substitute (multiple automated review passes).
 
 **Created**: 2026-04-09
 **Feature**: [spec.md](../spec.md)
