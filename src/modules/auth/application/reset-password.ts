@@ -34,6 +34,7 @@ import {
 } from '@/modules/auth/domain/token';
 import {
   checkPasswordPolicy,
+  weakPasswordMetricBucket,
   type PasswordPolicyError,
 } from '@/modules/auth/application/password-policy';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
@@ -46,6 +47,7 @@ import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upsta
 import type { Role } from '@/modules/auth/domain/role';
 import { PORTAL_FOR_ROLE } from '@/modules/auth/domain/role';
 import { defaultResetPasswordDeps } from '@/lib/auth-deps';
+import { portalSignInPath } from '@/lib/portal-paths';
 
 // --- Public types -------------------------------------------------------------
 
@@ -170,18 +172,12 @@ export async function resetPassword(
   // 4. Password policy
   const policy = await deps.checkPolicy(input.newPassword);
   if (!policy.ok) {
-    // Tag the metric with the first failing rule — observability.md
-    // § 4.5 uses this to break down weak-password rejections by cause.
-    // Both `common-password` and `breached` map to the `pwned` bucket
-    // because they share the same remediation (pick a different
-    // password) and we don't want to leak HIBP presence via metric
-    // dashboards.
-    const firstReason = policy.errors[0]?.code;
-    if (firstReason === 'too-short') {
-      authMetrics.passwordWeakRejected('short');
-    } else if (firstReason === 'common-password' || firstReason === 'breached') {
-      authMetrics.passwordWeakRejected('pwned');
-    }
+    // observability.md § 4.5 — tag the metric with the first failing
+    // rule. Mapping lives in `weakPasswordMetricBucket` so the
+    // `common-password`+`breached` → `pwned` collapse is defined in
+    // exactly one place (shared with change-password.ts).
+    const bucket = weakPasswordMetricBucket(policy.errors);
+    if (bucket) authMetrics.passwordWeakRejected(bucket);
     return err({ code: 'weak-password', errors: policy.errors });
   }
 
@@ -218,8 +214,7 @@ export async function resetPassword(
     });
   }
 
-  const portal = PORTAL_FOR_ROLE[user.role];
-  const signInUrl = portal === 'staff' ? '/admin/sign-in' : '/portal/sign-in';
+  const signInUrl = portalSignInPath(PORTAL_FOR_ROLE[user.role]);
 
   // observability.md § 4.2: successful reset completion counter + § 4.5
   // trigger breakdown (self vs reset).

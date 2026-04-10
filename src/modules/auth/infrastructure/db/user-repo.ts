@@ -62,7 +62,9 @@ export interface UserRepo {
   countAll(): Promise<number>;
 }
 
-class DrizzleUserRepo implements UserRepo {
+// Object-literal implementation — no class wrapper; see audit-repo.ts
+// for the rationale.
+export const userRepo: UserRepo = {
   async findByEmail(
     email: EmailAddress,
   ): Promise<{ user: UserAccount; passwordHash: PasswordHash | null } | null> {
@@ -77,17 +79,17 @@ class DrizzleUserRepo implements UserRepo {
       user: toDomain(row),
       passwordHash: row.passwordHash ? asPasswordHash(row.passwordHash) : null,
     };
-  }
+  },
 
   async findById(id: UserId): Promise<UserAccount | null> {
     const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;
-  }
+  },
 
   async updateLastSignIn(id: UserId, at: Date): Promise<void> {
     await db.update(users).set({ lastSignInAt: at }).where(eq(users.id, id));
-  }
+  },
 
   async incrementFailedCount(id: UserId): Promise<number> {
     const rows = await db
@@ -96,25 +98,25 @@ class DrizzleUserRepo implements UserRepo {
       .where(eq(users.id, id))
       .returning({ count: users.failedSignInCount });
     return rows[0]?.count ?? 0;
-  }
+  },
 
   async clearFailedCount(id: UserId): Promise<void> {
     await db
       .update(users)
       .set({ failedSignInCount: 0, lockedUntil: null })
       .where(eq(users.id, id));
-  }
+  },
 
   async setLocked(id: UserId, until: Date): Promise<void> {
     await db.update(users).set({ lockedUntil: until }).where(eq(users.id, id));
-  }
+  },
 
   async clearLock(id: UserId): Promise<void> {
     await db
       .update(users)
       .set({ lockedUntil: null, failedSignInCount: 0 })
       .where(eq(users.id, id));
-  }
+  },
 
   /**
    * Used by `disable-user` and `change-role` (T125 / T127) inside a
@@ -128,7 +130,7 @@ class DrizzleUserRepo implements UserRepo {
       .from(users)
       .where(sql`${users.role} = 'admin' AND ${users.status} = 'active'`);
     return rows[0]?.count ?? 0;
-  }
+  },
 
   async createPending(args: {
     email: EmailAddress;
@@ -147,36 +149,36 @@ class DrizzleUserRepo implements UserRepo {
     const row = rows[0];
     if (!row) throw new Error('user-repo.createPending: no row returned');
     return toDomain(row);
-  }
+  },
 
   async setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void> {
     await db
       .update(users)
       .set({ passwordHash: hash, lastPasswordChangedAt: now })
       .where(eq(users.id, id));
-  }
+  },
 
   async activate(id: UserId, now: Date): Promise<void> {
     await db
       .update(users)
       .set({ status: 'active', lastPasswordChangedAt: now })
       .where(eq(users.id, id));
-  }
+  },
 
   async disable(id: UserId): Promise<void> {
     await db.update(users).set({ status: 'disabled' }).where(eq(users.id, id));
-  }
+  },
 
   async enable(id: UserId): Promise<void> {
     await db
       .update(users)
       .set({ status: 'active', failedSignInCount: 0, lockedUntil: null })
       .where(eq(users.id, id));
-  }
+  },
 
   async setRole(id: UserId, role: Role): Promise<void> {
     await db.update(users).set({ role }).where(eq(users.id, id));
-  }
+  },
 
   async list(limit: number, offset: number): Promise<readonly UserAccount[]> {
     const rows = await db
@@ -186,14 +188,12 @@ class DrizzleUserRepo implements UserRepo {
       .limit(limit)
       .offset(offset);
     return rows.map(toDomain);
-  }
+  },
 
   async countAll(): Promise<number> {
     const rows = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(users);
     return rows[0]?.count ?? 0;
-  }
-}
-
-export const userRepo: UserRepo = new DrizzleUserRepo();
+  },
+};

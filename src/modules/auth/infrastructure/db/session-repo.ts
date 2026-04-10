@@ -50,7 +50,9 @@ export interface SessionRepo {
   deleteByUserIdExcept(userId: UserId, keepId: SessionId): Promise<number>;
 }
 
-class DrizzleSessionRepo implements SessionRepo {
+// Object-literal implementation — no class wrapper; see audit-repo.ts
+// for the rationale. Matches the rest of the codebase's adapter style.
+export const sessionRepo: SessionRepo = {
   async create(args: {
     userId: UserId;
     sourceIp: string;
@@ -72,21 +74,21 @@ class DrizzleSessionRepo implements SessionRepo {
     const row = rows[0];
     if (!row) throw new Error('session-repo.create: no row returned');
     return toDomain(row);
-  }
+  },
 
   async findById(id: SessionId): Promise<Session | null> {
     const rows = await db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;
-  }
+  },
 
   async updateLastSeen(id: SessionId, now: Date): Promise<void> {
     await db.update(sessions).set({ lastSeenAt: now }).where(eq(sessions.id, id));
-  }
+  },
 
   async delete(id: SessionId): Promise<void> {
     await db.delete(sessions).where(eq(sessions.id, id));
-  }
+  },
 
   async deleteByUserId(userId: UserId): Promise<number> {
     const result = await db
@@ -94,7 +96,7 @@ class DrizzleSessionRepo implements SessionRepo {
       .where(eq(sessions.userId, userId))
       .returning({ id: sessions.id });
     return result.length;
-  }
+  },
 
   async deleteByUserIdExcept(userId: UserId, keepId: SessionId): Promise<number> {
     // Delete every session for this user EXCEPT keepId. The row filter
@@ -106,7 +108,5 @@ class DrizzleSessionRepo implements SessionRepo {
       .where(and(eq(sessions.userId, userId), ne(sessions.id, keepId)))
       .returning({ id: sessions.id });
     return result.length;
-  }
-}
-
-export const sessionRepo: SessionRepo = new DrizzleSessionRepo();
+  },
+};

@@ -26,6 +26,7 @@ import {
 import type { Session } from '@/modules/auth/domain/session';
 import type { UserAccount } from '@/modules/auth/domain/user';
 import { PORTAL_FOR_ROLE } from '@/modules/auth/domain/role';
+import { portalHomePath } from '@/lib/portal-paths';
 import {
   checkPasswordPolicy,
   type PasswordPolicyError,
@@ -192,8 +193,7 @@ export async function redeemInvite(
     return err({ code: 'link-invalid', reason: 'used' });
   }
 
-  const portal = PORTAL_FOR_ROLE[activated.role];
-  const redirectTo = portal === 'staff' ? '/admin' : '/portal';
+  const redirectTo = portalHomePath(PORTAL_FOR_ROLE[activated.role]);
 
   // observability.md § 4.3 — invitation → account conversion.
   authMetrics.invitationRedeemed(activated.role);

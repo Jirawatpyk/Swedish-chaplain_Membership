@@ -33,6 +33,7 @@ import type { UserAccount } from '@/modules/auth/domain/user';
 import type { Session } from '@/modules/auth/domain/session';
 import {
   checkPasswordPolicy,
+  weakPasswordMetricBucket,
   type PasswordPolicyError,
 } from '@/modules/auth/application/password-policy';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
@@ -138,12 +139,11 @@ export async function changePassword(
   // 5. Policy check
   const policy = await deps.checkPolicy(input.newPassword);
   if (!policy.ok) {
-    const firstReason = policy.errors[0]?.code;
-    if (firstReason === 'too-short') {
-      authMetrics.passwordWeakRejected('short');
-    } else if (firstReason === 'common-password' || firstReason === 'breached') {
-      authMetrics.passwordWeakRejected('pwned');
-    }
+    // Shared bucket mapping — see reset-password.ts for the rationale.
+    // The `'same'` bucket is handled separately above (step 4) because
+    // it's not a policy error but a short-circuit before HIBP.
+    const bucket = weakPasswordMetricBucket(policy.errors);
+    if (bucket) authMetrics.passwordWeakRejected(bucket);
     return err({ code: 'weak-password', errors: policy.errors });
   }
 

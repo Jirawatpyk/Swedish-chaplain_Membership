@@ -92,7 +92,9 @@ export interface TokenRepo {
   markInvitationConsumed(id: TokenId, now: Date): Promise<void>;
 }
 
-class DrizzleTokenRepo implements TokenRepo {
+// Object-literal implementation — no class wrapper; see audit-repo.ts
+// for the rationale.
+export const tokenRepo: TokenRepo = {
   async createReset(args: {
     userId: UserId;
     now: Date;
@@ -111,7 +113,7 @@ class DrizzleTokenRepo implements TokenRepo {
     const row = rows[0];
     if (!row) throw new Error('token-repo.createReset: no row returned');
     return toDomainReset(row);
-  }
+  },
 
   async findResetById(id: TokenId): Promise<PasswordResetToken | null> {
     const rows = await db
@@ -121,14 +123,14 @@ class DrizzleTokenRepo implements TokenRepo {
       .limit(1);
     const row = rows[0];
     return row ? toDomainReset(row) : null;
-  }
+  },
 
   async markResetConsumed(id: TokenId, now: Date): Promise<void> {
     await db
       .update(passwordResetTokens)
       .set({ consumedAt: now })
       .where(eq(passwordResetTokens.id, id));
-  }
+  },
 
   async invalidateAllUnconsumedForUser(
     userId: UserId,
@@ -145,7 +147,7 @@ class DrizzleTokenRepo implements TokenRepo {
       )
       .returning({ id: passwordResetTokens.id });
     return result.length;
-  }
+  },
 
   async createInvitation(args: {
     userId: UserId;
@@ -169,7 +171,7 @@ class DrizzleTokenRepo implements TokenRepo {
     const row = rows[0];
     if (!row) throw new Error('token-repo.createInvitation: no row returned');
     return toDomainInvitation(row);
-  }
+  },
 
   async findInvitationById(id: TokenId): Promise<Invitation | null> {
     const rows = await db
@@ -179,14 +181,12 @@ class DrizzleTokenRepo implements TokenRepo {
       .limit(1);
     const row = rows[0];
     return row ? toDomainInvitation(row) : null;
-  }
+  },
 
   async markInvitationConsumed(id: TokenId, now: Date): Promise<void> {
     await db
       .update(invitations)
       .set({ consumedAt: now })
       .where(eq(invitations.id, id));
-  }
-}
-
-export const tokenRepo: TokenRepo = new DrizzleTokenRepo();
+  },
+};

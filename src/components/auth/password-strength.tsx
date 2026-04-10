@@ -26,6 +26,32 @@ export interface PasswordStrengthProps {
   readonly level: PasswordStrengthLevel;
 }
 
+/**
+ * Lightweight client-side strength estimator — used by every
+ * password-entering form to drive the `<PasswordStrength />` bar
+ * while the user types. Does NOT replace the server-side
+ * `checkPasswordPolicy` (HIBP + common-list) which runs on submit.
+ *
+ * Rules (matches the server heuristic in
+ * `src/modules/auth/application/password-policy.ts scoreStrength`):
+ *   - empty  → no bar
+ *   - <12 chars → weak
+ *   - ≥16 chars AND has a non-alphanumeric → strong
+ *   - otherwise → acceptable
+ *
+ * Previously duplicated verbatim in `change-password-form.tsx`,
+ * `invite-redeem-form.tsx`, and `reset-password-form.tsx`. A rule
+ * tweak (e.g. length threshold) now lives in exactly one place.
+ */
+export function estimatePasswordStrength(
+  password: string,
+): PasswordStrengthLevel {
+  if (password.length === 0) return 'empty';
+  if (password.length < 12) return 'weak';
+  if (password.length >= 16 && /[^a-zA-Z0-9]/.test(password)) return 'strong';
+  return 'acceptable';
+}
+
 const SEGMENT_COUNT = 3;
 
 function activeSegments(level: PasswordStrengthLevel): number {

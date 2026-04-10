@@ -7,11 +7,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { changeRole } from '@/modules/auth/application/change-role';
 import { asUserId } from '@/modules/auth/domain/branded';
-import { getCurrentSession } from '@/lib/auth-session';
-import { requireRole } from '@/lib/rbac-guard';
-import { getClientIp } from '@/lib/client-ip';
+import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
-import { requestIdFromHeaders } from '@/lib/request-id';
 
 const inputSchema = z.object({
   newRole: z.enum(['admin', 'manager', 'member']),
@@ -21,20 +18,8 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
-  const requestId = requestIdFromHeaders(request.headers);
-
-  const current = await getCurrentSession();
-  if (!current) {
-    return NextResponse.json({ error: 'no-session' }, { status: 401 });
-  }
-
-  const guard = await requireRole(current, 'auth:user', 'write', {
-    sourceIp: getClientIp(request),
-    requestId,
-  });
-  if (!guard.ok) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  }
+  const ctx = await requireAdminContext(request);
+  if ('response' in ctx) return ctx.response;
 
   let payload: unknown;
   try {
@@ -48,19 +33,16 @@ export async function POST(
 
   const parsed = inputSchema.safeParse(payload);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: 'invalid-role' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: 'invalid-role' }, { status: 400 });
   }
 
   const { id } = await params;
   const result = await changeRole({
     targetUserId: asUserId(id),
     newRole: parsed.data.newRole,
-    actorUserId: current.user.id,
-    sourceIp: getClientIp(request),
-    requestId,
+    actorUserId: ctx.current.user.id,
+    sourceIp: ctx.sourceIp,
+    requestId: ctx.requestId,
   });
 
   if (result.ok) {
@@ -81,7 +63,7 @@ export async function POST(
     case 'last-admin-protection':
       return NextResponse.json({ error: 'last-admin-protection' }, { status: 409 });
     default: {
-      logger.error({ requestId }, 'change-role: unhandled error variant');
+      logger.error({ requestId: ctx.requestId }, 'change-role: unhandled error variant');
       return NextResponse.json({ error: 'server-error' }, { status: 500 });
     }
   }

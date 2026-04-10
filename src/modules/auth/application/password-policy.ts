@@ -86,6 +86,33 @@ function scoreStrength(
 }
 
 /**
+ * Map a policy failure to the metric bucket documented in
+ * observability.md § 4.5 `auth_password_weak_rejected_total` labels.
+ *
+ * The buckets are deliberately coarser than the policy error codes:
+ *   - `short`  → password shorter than MIN_PASSWORD_LENGTH
+ *   - `pwned`  → common-password list OR HaveIBeenPwned breach
+ *   - `null`   → no mappable bucket (caller should not increment)
+ *
+ * Both `common-password` and `breached` collapse into `pwned`
+ * because (a) they share the same remediation ("pick a different
+ * one") and (b) we don't want dashboards to leak HIBP presence
+ * through a distinct bucket name.
+ *
+ * Returns `null` when the first error is unmappable, so callers
+ * can choose to skip the metric entirely rather than emit a
+ * nonsense label.
+ */
+export function weakPasswordMetricBucket(
+  errors: readonly PasswordPolicyError[],
+): 'short' | 'pwned' | null {
+  const first = errors[0]?.code;
+  if (first === 'too-short') return 'short';
+  if (first === 'common-password' || first === 'breached') return 'pwned';
+  return null;
+}
+
+/**
  * Query HaveIBeenPwned's k-anonymity API. Sends only the first 5
  * characters of the SHA-1 hash; the response is a list of suffixes that
  * match — we look up our suffix locally.

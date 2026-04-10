@@ -23,19 +23,32 @@ import type { Role } from './role';
 export type Action = 'read' | 'write' | 'delete' | 'admin';
 
 /**
- * F1 currently treats every protected resource as a single category.
- * Phase 2 features (members, invoices, events) will introduce more
- * specific resource ids; the policy function accepts a string so it
- * remains forward-compatible without a domain-wide enum.
+ * Known F1 resource identifiers. The literal union gives IDE
+ * autocomplete + catches typos in policy call sites, while the
+ * `(string & {})` tail keeps the type forward-compatible: F2+
+ * features can still pass resource ids that don't appear here
+ * (e.g. `'members:list'`, `'invoices:read'`) without having to
+ * widen the union file-by-file.
  *
- * Recognised F1 resource ids (suggested):
+ * The TS `(string & {})` trick is the standard pattern for
+ * "known literals with autocomplete + arbitrary-string fallback"
+ * — the intersection prevents the literals from being widened
+ * away by the compiler but accepts any string at the value level.
+ *
+ * Recognised F1 resource ids:
  *   - 'auth:self'           — own account (sign-out, change password)
  *   - 'auth:user'           — other accounts (admin lifecycle ops)
  *   - 'auth:audit'          — audit log viewer
  *   - 'staff:dashboard'     — staff home / read-only browsing
  *   - 'member:portal'       — member portal landing
  */
-export type Resource = string;
+export type Resource =
+  | 'auth:self'
+  | 'auth:user'
+  | 'auth:audit'
+  | 'staff:dashboard'
+  | 'member:portal'
+  | (string & {});
 
 /** Self-service resource id — actions on the actor's OWN account. */
 export const SELF_RESOURCE: Resource = 'auth:self';

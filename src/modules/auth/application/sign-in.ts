@@ -38,7 +38,7 @@
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
-import { authMetrics } from '@/lib/metrics';
+import { authMetrics, type SignInLabels } from '@/lib/metrics';
 import { type EmailAddress, asEmailAddress } from '@/modules/auth/domain/branded';
 import {
   PORTAL_FOR_ROLE,
@@ -114,7 +114,7 @@ export { defaultSignInDeps };
  */
 function outcomeLabel(
   result: Result<SignInSuccess, SignInError>,
-): import('@/lib/metrics').SignInLabels['outcome'] {
+): SignInLabels['outcome'] {
   if (result.ok) return 'success';
   switch (result.error.code) {
     case 'invalid-credentials':

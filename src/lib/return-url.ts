@@ -26,6 +26,8 @@
  * both server components and client forms.
  */
 
+import { portalHomePath, portalSignInPath } from './portal-paths';
+
 const MAX_RETURN_TO_LENGTH = 512;
 const FORBIDDEN_PREFIXES = [
   '/admin/sign-in',
@@ -69,7 +71,7 @@ export function safeReturnTo(candidate: unknown, portal: Portal): string | null 
 
   // Portal boundary — staff returnTo must start with /admin,
   // member returnTo must start with /portal
-  const requiredPrefix = portal === 'staff' ? '/admin' : '/portal';
+  const requiredPrefix = portalHomePath(portal);
   if (pathname !== requiredPrefix && !pathname.startsWith(`${requiredPrefix}/`)) {
     return null;
   }
@@ -84,7 +86,7 @@ export function safeReturnTo(candidate: unknown, portal: Portal): string | null 
  * while remembering where they were trying to go.
  */
 export function buildSignInUrl(portal: Portal, fromPath: string | null): string {
-  const base = portal === 'staff' ? '/admin/sign-in' : '/portal/sign-in';
+  const base = portalSignInPath(portal);
   if (!fromPath) return base;
   const safe = safeReturnTo(fromPath, portal);
   if (!safe) return base;

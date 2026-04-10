@@ -29,12 +29,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   PasswordStrength,
-  type PasswordStrengthLevel,
+  estimatePasswordStrength,
 } from './password-strength';
 
 const schema = z
   .object({
-    newPassword: z.string().min(12, 'Must be at least 12 characters').max(1000),
+    newPassword: z.string().min(12, 'Must be at least 12 characters').max(256),
     confirmPassword: z.string(),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
@@ -46,14 +46,6 @@ type FormValues = z.infer<typeof schema>;
 
 export interface ResetPasswordFormProps {
   readonly token: string;
-}
-
-/** Heuristic strength used in the client-side indicator. */
-function estimateStrength(password: string): PasswordStrengthLevel {
-  if (password.length === 0) return 'empty';
-  if (password.length < 12) return 'weak';
-  if (password.length >= 16 && /[^a-zA-Z0-9]/.test(password)) return 'strong';
-  return 'acceptable';
 }
 
 export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
@@ -81,7 +73,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   }, [setFocus]);
 
   const newPasswordValue = useWatch({ control, name: 'newPassword' });
-  const strength = estimateStrength(newPasswordValue ?? '');
+  const strength = estimatePasswordStrength(newPasswordValue ?? '');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setSubmitting(true);

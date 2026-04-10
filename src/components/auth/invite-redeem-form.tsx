@@ -26,13 +26,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   PasswordStrength,
-  type PasswordStrengthLevel,
+  estimatePasswordStrength,
 } from './password-strength';
 
 const schema = z
   .object({
     displayName: z.string().min(1).max(120),
-    password: z.string().min(12).max(1000),
+    password: z.string().min(12).max(256),
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -45,13 +45,6 @@ type FormValues = z.infer<typeof schema>;
 export interface InviteRedeemFormProps {
   readonly token: string;
   readonly email: string;
-}
-
-function estimateStrength(password: string): PasswordStrengthLevel {
-  if (password.length === 0) return 'empty';
-  if (password.length < 12) return 'weak';
-  if (password.length >= 16 && /[^a-zA-Z0-9]/.test(password)) return 'strong';
-  return 'acceptable';
 }
 
 export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
@@ -80,7 +73,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   }, [setFocus]);
 
   const passwordValue = useWatch({ control, name: 'password' });
-  const strength = estimateStrength(passwordValue ?? '');
+  const strength = estimatePasswordStrength(passwordValue ?? '');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setSubmitting(true);

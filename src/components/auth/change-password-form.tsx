@@ -28,13 +28,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   PasswordStrength,
-  type PasswordStrengthLevel,
+  estimatePasswordStrength,
 } from './password-strength';
 
 const schema = z
   .object({
     currentPassword: z.string().min(1),
-    newPassword: z.string().min(12).max(1000),
+    newPassword: z.string().min(12).max(256),
     confirmPassword: z.string(),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
@@ -43,13 +43,6 @@ const schema = z
   });
 
 type FormValues = z.infer<typeof schema>;
-
-function estimateStrength(password: string): PasswordStrengthLevel {
-  if (password.length === 0) return 'empty';
-  if (password.length < 12) return 'weak';
-  if (password.length >= 16 && /[^a-zA-Z0-9]/.test(password)) return 'strong';
-  return 'acceptable';
-}
 
 export function ChangePasswordForm() {
   const t = useTranslations('auth.changePassword');
@@ -80,7 +73,7 @@ export function ChangePasswordForm() {
   }, [setFocus]);
 
   const newValue = useWatch({ control, name: 'newPassword' });
-  const strength = estimateStrength(newValue ?? '');
+  const strength = estimatePasswordStrength(newValue ?? '');
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setSubmitting(true);

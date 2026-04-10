@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { signIn } from '@/modules/auth/application/sign-in';
 import { setSessionCookie } from '@/lib/auth-cookies';
 import { getClientIp } from '@/lib/client-ip';
+import { portalHomePath } from '@/lib/portal-paths';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           role: user.role,
           displayName: user.displayName,
         },
-        redirect: parsed.data.portal === 'staff' ? '/admin' : '/portal',
+        redirect: portalHomePath(parsed.data.portal),
       },
       { status: 200 },
     );

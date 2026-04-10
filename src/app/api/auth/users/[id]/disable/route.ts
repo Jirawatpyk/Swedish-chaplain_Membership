@@ -6,43 +6,29 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { disableUser } from '@/modules/auth/application/disable-user';
 import { asUserId } from '@/modules/auth/domain/branded';
-import { getCurrentSession } from '@/lib/auth-session';
-import { requireRole } from '@/lib/rbac-guard';
-import { getClientIp } from '@/lib/client-ip';
+import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
-import { requestIdFromHeaders } from '@/lib/request-id';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
-  const requestId = requestIdFromHeaders(request.headers);
-
-  const current = await getCurrentSession();
-  if (!current) {
-    return NextResponse.json({ error: 'no-session' }, { status: 401 });
-  }
-
-  const guard = await requireRole(current, 'auth:user', 'write', {
-    sourceIp: getClientIp(request),
-    requestId,
-  });
-  if (!guard.ok) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  }
+  const ctx = await requireAdminContext(request);
+  if ('response' in ctx) return ctx.response;
 
   const { id } = await params;
-  const targetUserId = asUserId(id);
-
   const result = await disableUser({
-    targetUserId,
-    actorUserId: current.user.id,
-    sourceIp: getClientIp(request),
-    requestId,
+    targetUserId: asUserId(id),
+    actorUserId: ctx.current.user.id,
+    sourceIp: ctx.sourceIp,
+    requestId: ctx.requestId,
   });
 
   if (result.ok) {
-    return NextResponse.json({ ok: true, sessionsRevoked: result.value.sessionsRevoked }, { status: 200 });
+    return NextResponse.json(
+      { ok: true, sessionsRevoked: result.value.sessionsRevoked },
+      { status: 200 },
+    );
   }
 
   const { error } = result;
@@ -54,7 +40,7 @@ export async function POST(
     case 'last-admin-protection':
       return NextResponse.json({ error: 'last-admin-protection' }, { status: 409 });
     default: {
-      logger.error({ requestId }, 'disable-user: unhandled error variant');
+      logger.error({ requestId: ctx.requestId }, 'disable-user: unhandled error variant');
       return NextResponse.json({ error: 'server-error' }, { status: 500 });
     }
   }

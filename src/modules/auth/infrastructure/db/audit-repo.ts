@@ -33,7 +33,10 @@ export interface AuditRepo {
   append(event: AppendAuditEvent): Promise<void>;
 }
 
-class DrizzleAuditRepo implements AuditRepo {
+// Object-literal implementation — no class wrapper because the repo
+// has no internal state and the interface has exactly one
+// implementation. Matches the rest of the codebase's adapter style.
+export const auditRepo: AuditRepo = {
   async append(event: AppendAuditEvent): Promise<void> {
     const summary =
       event.summary.length > AUDIT_SUMMARY_MAX_LENGTH
@@ -48,7 +51,5 @@ class DrizzleAuditRepo implements AuditRepo {
       summary,
       requestId: event.requestId,
     });
-  }
-}
-
-export const auditRepo: AuditRepo = new DrizzleAuditRepo();
+  },
+};

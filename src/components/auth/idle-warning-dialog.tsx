@@ -47,6 +47,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { IDLE_TIMEOUT_MS } from '@/modules/auth/domain/session';
+import { portalSignInPath } from '@/lib/portal-paths';
 
 export interface IdleWarningDialogProps {
   /** Where to send the user on involuntary sign-out. */
@@ -84,7 +85,7 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     lastActivityRef.current = Date.now();
   }, []);
 
-  const signInPath = portal === 'staff' ? '/admin/sign-in' : '/portal/sign-in';
+  const signInPath = portalSignInPath(portal);
 
   /**
    * Involuntarily sign the user out. Called when the 60-second
