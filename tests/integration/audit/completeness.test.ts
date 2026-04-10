@@ -23,7 +23,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import { AUDIT_EVENT_TYPES } from '@/modules/auth/domain/audit-event';
 
-describe('integration: audit completeness — all 16 event types writable', () => {
+describe('integration: audit completeness — all 17 event types writable', () => {
   it.each(AUDIT_EVENT_TYPES)(
     'can append and read back a %s audit row',
     async (eventType) => {
@@ -55,10 +55,13 @@ describe('integration: audit completeness — all 16 event types writable', () =
     },
   );
 
-  it('the full event-type list has exactly 16 entries', () => {
-    // Regression guard against accidental removal or duplication
-    expect(AUDIT_EVENT_TYPES.length).toBe(16);
-    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(16);
+  it('the full event-type list has exactly 17 entries', () => {
+    // Regression guard against accidental removal or duplication.
+    // Pass 5: bumped from 16 → 17 after splitting
+    // `password_reset_failed` out of the `invitation_redemption_failed`
+    // overload (see drizzle/migrations/0002_*).
+    expect(AUDIT_EVENT_TYPES.length).toBe(17);
+    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(17);
   });
 });
 

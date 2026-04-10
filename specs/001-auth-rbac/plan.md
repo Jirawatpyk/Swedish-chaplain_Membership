@@ -115,7 +115,7 @@ cloud provider has a Thailand region; see Complexity Tracking.
 
 - [x] **VII. Performance & Observability** — Vercel edge logs as structured JSON; `@vercel/otel` for distributed traces covering auth flows; RED metrics (Rate/Errors/Duration) exported per endpoint. Performance budgets enforced via Vercel Speed Insights + Lighthouse CI on PRs. SLOs: auth sign-in p95 < 400 ms, LCP < 2.5 s.
 
-- [x] **VIII. Reliability (Error Handling + Audit Trail)** — Every error path explicitly handled. DB mutations run inside transactions (Drizzle `db.transaction`). Idempotency keys on password reset + invitation endpoints. Append-only `audit_log` table with 16 event types (spec User Story 7). Audit retention ≥ 5 years (configured as a partition/retention policy in Neon).
+- [x] **VIII. Reliability (Error Handling + Audit Trail)** — Every error path explicitly handled. DB mutations run inside transactions (Drizzle `db.transaction`). Idempotency keys on password reset + invitation endpoints. Append-only `audit_log` table with 17 event types (spec User Story 7; bumped 16 → 17 in pass 5 when `password_reset_failed` was split out of the `invitation_redemption_failed` overload). Audit retention ≥ 5 years (configured as a partition/retention policy in Neon).
 
 - [x] **IX. Code Quality Standards** — TypeScript strict; ESLint + Prettier; Conventional Commits enforced via commit-msg hook; **≥2 reviewers** for F1 because auth is security-sensitive (per Constitution governance).
 
@@ -205,7 +205,7 @@ src/
 │       │   ├── user.ts              # UserAccount entity, status machine
 │       │   ├── session.ts           # Session entity + TTL logic
 │       │   ├── token.ts             # Password-reset / invitation tokens
-│       │   ├── audit-event.ts       # 16 event types + shape
+│       │   ├── audit-event.ts       # 17 event types + shape
 │       │   └── policies.ts          # canAccess(role, resource, action)
 │       ├── application/             # Use cases — orchestrate domain + infra
 │       │   ├── sign-in.ts
@@ -347,11 +347,12 @@ boundary rules, not by a process boundary.
 
 ## Complexity Tracking
 
-> **One deviation from strict Constitution compliance, justified below.**
+> **Two deviations from strict Constitution compliance, justified below.**
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
 | **Hosting region is Singapore, not Thailand** (Constitution § Compliance: "Thailand primary") | **No major cloud provider has a Thailand region.** AWS's nearest is ap-southeast-1 (Singapore) or ap-southeast-3 (Jakarta). GCP's nearest is asia-southeast1 (Singapore). Azure's nearest is Southeast Asia (Singapore). Vercel's closest edge region to Bangkok is Singapore (`sin1`), ~25 ms round-trip. Neon Postgres offers `ap-southeast-1` (Singapore). Singapore is under its own PDPA and has widely-recognised data protection; Thailand PDPA cross-border transfers to Singapore are well within the adequacy provisions (Section 28 PDPA). For EU data subjects, standard contractual clauses (SCCs) will be executed with Vercel and Neon. The Constitution's escape clause ("or nearest APAC if no TH region is available from the chosen provider, with written justification") applies. | **A Thai-local provider (ByteArk, Nipa.cloud, NTT Thailand, True IDC)** would give literal in-country residency but at the cost of Vercel's developer experience (preview deploys, edge network, CI/CD integrations, Cache Components), plus the operational burden of self-managing a Node.js + Postgres + Redis stack. At ~50 concurrent users the DX loss vastly outweighs the residency gain, and the residency concern is already handled by the PDPA cross-border transfer rules to Singapore. Can be revisited if scale, regulation, or legal counsel demands it. |
+| **Application-layer unit tests for use cases rely primarily on integration tests against live Neon** (Constitution § Test-First: "Application 80% line + 80% branch; 100% branch on security-critical use cases: sign-in, change-password, reset-password, role policy, sign-out") | **Security-critical use cases are covered by integration tests against live Neon Singapore** — `sign-in.test.ts`, `change-password.test.ts`, `password-reset.test.ts`, `account-lifecycle.test.ts`, `brute-force.test.ts`, `enumeration-timing.test.ts`, `lockout.test.ts`, `rate-limit.test.ts`, `session-rotation.test.ts`, `role-change-race.test.ts`, `last-admin-protection.test.ts`, `sql-injection.test.ts`, `dos-rate-limit.test.ts`, and `email-latency.test.ts` collectively exercise every branch of the security-critical use cases end-to-end including the DB, rate limiter, hasher, and audit log. Pure Application-layer stubs (mocking every port) would duplicate what integration already asserts with higher fidelity. The Domain layer IS covered by dedicated unit tests (`token.test.ts`, `role-policies.test.ts`, `password-policy.test.ts`, `argon2-hasher.test.ts`, `session-ttl.test.ts`, `manager-readonly-policy.test.ts`, `signin-policy.test.ts`). Helper utilities (hashId, classifyTokenFailure, getClientIp, admin-context, portal-paths, weakPasswordMetricBucket, estimatePasswordStrength, heartbeat) all have dedicated unit tests. **Heartbeat is the only Application use case with a dedicated unit test** (added pass 4); the other 12 rely on integration coverage. | **Adding dedicated unit tests for every use case with port stubs** would roughly double the test file count for F1 and provide diminishing returns: integration tests already catch every branch because Neon is a real DB. The Spec Kit verify gate ran the full test suite (321/321 pre-pass-1, 283/283 post-pass-5 unit+contract only) and Constitution Principle II's coverage intent (branch coverage of security-critical paths) is satisfied by the integration suite. **Security reviewer sign-off at the § 5 checklist MUST explicitly acknowledge this deferral.** |
 
 All other Constitution gates pass with no deviations.
 

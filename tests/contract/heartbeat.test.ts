@@ -93,4 +93,30 @@ describe('POST /api/auth/heartbeat', () => {
     const body = await response.json();
     expect(body.error).toBe('rate-limited');
   });
+
+  it('500 server-error when getCurrentSession throws (infra failure)', async () => {
+    getCurrentSessionMock.mockRejectedValueOnce(new Error('Neon down'));
+
+    const { POST } = await import('@/app/api/auth/heartbeat/route');
+    const response = await POST(makeRequest());
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBe('server-error');
+    // Critical: the try/catch must catch the throw and return a
+    // structured JSON body, not let Next.js bubble a raw HTML 500.
+    expect(heartbeatMock).not.toHaveBeenCalled();
+  });
+
+  it('500 server-error when heartbeat use case throws', async () => {
+    getCurrentSessionMock.mockResolvedValueOnce(signedInSession);
+    heartbeatMock.mockRejectedValueOnce(new Error('Upstash blip'));
+
+    const { POST } = await import('@/app/api/auth/heartbeat/route');
+    const response = await POST(makeRequest());
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBe('server-error');
+  });
 });

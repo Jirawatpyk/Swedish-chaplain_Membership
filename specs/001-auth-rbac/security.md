@@ -81,9 +81,19 @@ site; tries them all against our sign-in endpoint.
 - **HaveIBeenPwned k-anonymity check** on new-password flow (see T-11)
 
 **Tests**:
-- `tests/integration/auth/lockout.test.ts` — verifies the 5th failure locks, the 6th is rejected
-- `tests/integration/auth/rate-limit.test.ts` — verifies rate-limit headers + 429 response
-- `tests/e2e/signin-lockout.spec.ts` — verifies the UX of a locked account
+- `tests/integration/auth/lockout.test.ts` — pins the 5th-failure lock
+  at the DB layer; 6th attempt returns `account-locked` from the
+  sign-in use case
+- `tests/integration/auth/rate-limit.test.ts` — per-IP rate-limit
+  budget + 429 response
+- `tests/integration/auth/brute-force.test.ts` — per-email budget;
+  counts argon2 calls under load
+- `tests/e2e/signin-lockout.spec.ts` — full browser UX: 5 wrong
+  attempts → 6th attempt returns 403 `account-locked` → the
+  "account locked" toast is rendered (not the generic
+  invalid-credentials inline error). Uses the seeded
+  `e2e-member@swecham.test` disposable account so production
+  admins are never affected.
 
 ### T-02. Brute force (single-account)
 
@@ -331,7 +341,7 @@ invitation token by trying sequential values.
   statistically impossible at 10^50+ values
 
 **Tests**:
-- `tests/unit/auth/token-generation.test.ts` — generates 10 000 tokens;
+- `tests/integration/auth/token-generation.test.ts` — generates 10 000 tokens;
   asserts no duplicates and entropy distribution passes a chi-square test
 
 ### T-13. Audit log tampering
@@ -368,7 +378,7 @@ access gains credentials.
   of those patterns
 
 **Tests**:
-- `tests/unit/logger/redaction.test.ts` — logs an object with sensitive
+- `tests/unit/lib/logger-redaction.test.ts` — logs an object with sensitive
   keys; asserts the serialized output does not contain the values
 
 ### T-15. Invitation link interception

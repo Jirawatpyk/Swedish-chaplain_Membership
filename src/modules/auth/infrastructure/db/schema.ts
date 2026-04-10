@@ -46,6 +46,7 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'sign_out',
   'password_reset_requested',
   'password_reset_completed',
+  'password_reset_failed',
   'password_changed',
   'account_created',
   'account_disabled',

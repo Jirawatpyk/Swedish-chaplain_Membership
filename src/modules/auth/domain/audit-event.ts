@@ -1,10 +1,14 @@
 /**
  * Authentication audit event types (data-model.md § 2.7, spec User Story 7).
  *
- * 16 event types total — every user-visible auth action emits exactly
+ * 17 event types total — every user-visible auth action emits exactly
  * one row in `audit_log` (T067 audit-repo.append). The list is the
  * single source of truth and is duplicated in the Postgres enum
  * `audit_event_type` (schema.ts § auditEventTypeEnum) — keep in sync.
+ *
+ * Pass 5: bumped 16 → 17 after splitting `password_reset_failed`
+ * out of the `invitation_redemption_failed` overload. See
+ * `drizzle/migrations/0002_add_password_reset_failed_audit.sql`.
  *
  * Pure types — no framework imports.
  */
@@ -17,6 +21,7 @@ export const AUDIT_EVENT_TYPES = [
   'sign_out',
   'password_reset_requested',
   'password_reset_completed',
+  'password_reset_failed',
   'password_changed',
   'account_created',
   'account_disabled',

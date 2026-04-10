@@ -28,36 +28,50 @@ import { heartbeat } from '@/modules/auth/application/heartbeat';
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
-  const current = await getCurrentSession();
-  if (!current) {
-    return NextResponse.json({ error: 'no-session' }, { status: 401 });
-  }
+  // Wrap the whole body in try/catch so an infra throw (Neon blip
+  // during session lookup, Upstash blip during rate-limit check)
+  // produces a structured 500 JSON response with a `requestId` for
+  // log correlation — matching the pattern used by
+  // `requireAdminContext` in the other auth routes. Without this,
+  // the idle-warning dialog's client-side fetch would receive a raw
+  // Next.js 500 HTML body and its `response.json()` parse would
+  // throw instead of gracefully degrading to "couldn't extend,
+  // sign out soon".
+  try {
+    const current = await getCurrentSession();
+    if (!current) {
+      return NextResponse.json({ error: 'no-session' }, { status: 401 });
+    }
 
-  const result = await heartbeat({
-    sessionId: current.session.id,
-    requestId,
-  });
+    const result = await heartbeat({
+      sessionId: current.session.id,
+      requestId,
+    });
 
-  if (!result.ok) {
-    // Never log raw session IDs (observability.md § 3, CLAUDE.md § Secrets).
-    // `sessionIdHash` gives the same correlation power without the PII.
-    logger.warn(
-      { requestId, sessionIdHash: hashId(current.session.id) },
-      'heartbeat.rate-limited',
-    );
-    return NextResponse.json(
-      { error: 'rate-limited' },
-      {
-        status: 429,
-        headers: {
-          'Retry-After': String(result.error.retryAfterSeconds),
+    if (!result.ok) {
+      // Never log raw session IDs (observability.md § 3, CLAUDE.md § Secrets).
+      // `sessionIdHash` gives the same correlation power without the PII.
+      logger.warn(
+        { requestId, sessionIdHash: hashId(current.session.id) },
+        'heartbeat.rate-limited',
+      );
+      return NextResponse.json(
+        { error: 'rate-limited' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(result.error.retryAfterSeconds),
+          },
         },
-      },
-    );
-  }
+      );
+    }
 
-  return NextResponse.json(
-    { ok: true, lastSeenAt: result.value.lastSeenAt.toISOString() },
-    { status: 200 },
-  );
+    return NextResponse.json(
+      { ok: true, lastSeenAt: result.value.lastSeenAt.toISOString() },
+      { status: 200 },
+    );
+  } catch (error) {
+    logger.error({ err: error, requestId }, 'heartbeat.infra-error');
+    return NextResponse.json({ error: 'server-error' }, { status: 500 });
+  }
 }
