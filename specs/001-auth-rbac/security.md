@@ -485,15 +485,14 @@ Before approving the F1 PR, the security reviewer MUST verify:
 - [x] pino redaction is configured and tested
 - [x] No `dangerouslySetInnerHTML` in auth route trees
 - [x] No raw SQL concatenation anywhere in the repo (confirmed by grep)
-- [ ] `APP_ALLOWED_ORIGINS` env var is set in Vercel production — **DEFERRED-OPS** (cannot verify from code; `src/lib/env.ts` zod schema already requires it at boot, app refuses to start without it — ops must confirm the Vercel env value before merge)
+- [x] `APP_ALLOWED_ORIGINS` env var is set in Vercel production — confirmed 2026-04-11 via `vercel env ls production`. Value: `https://swecham.zyncdata.app`. Set alongside `APP_BASE_URL` and `RESEND_FROM_EMAIL` so the CSRF allow-list, invitation email links, and Resend sender all point at the same canonical origin.
 - [x] Session rotation on password change is verified in a test
 - [x] `last-admin-protection.test.ts` passes under concurrent load — **hardened** by `users_last_admin_protection` DB trigger in migrations 0003 + 0004 (staff review 2026-04-10 W-02 remediation)
 - [x] Rate limiter fail-open behaviour is tested with Upstash unreachable — closed by `tests/unit/auth/rate-limit/upstash-fail-open.test.ts` (staff review 2026-04-10 B-02 remediation)
 - [x] Error messages expose no stack traces or internal details
 
-**Sign-off** (staff-review agent, 2026-04-10 23:08 UTC):
-- 12/13 items PASS via code reading + cross-agent triangulation across 6 Spec Kit review passes + 2 staff review rounds. See `reviews/review-20260410-230801.md` for the post-remediation evidence matrix.
-- 1/13 item (APP_ALLOWED_ORIGINS Vercel env) is legitimately out-of-scope for a code review and requires ops confirmation before merge.
+**Sign-off** (staff-review agent, 2026-04-10 23:08 UTC; ops-env confirmation 2026-04-11):
+- **13/13 items PASS.** 12 items verified via code reading + cross-agent triangulation across 6 Spec Kit review passes + 2 staff review rounds (see `reviews/review-20260410-230801.md` for the post-remediation evidence matrix). Item 9 (`APP_ALLOWED_ORIGINS`) was DEFERRED-OPS at the end of round 2 and was subsequently confirmed via `vercel env ls production` + `vercel env pull` — value `https://swecham.zyncdata.app` matches the canonical production origin and sits alongside a matching `APP_BASE_URL` and `RESEND_FROM_EMAIL`.
 - **Per Constitution § Development Workflow — auth surfaces require ≥2 reviewers.** One human security reviewer MUST co-sign this checklist by adding their name/date below before the F1 PR merges.
 
 **Co-sign slot** (add name + date when signed):
