@@ -94,7 +94,7 @@ export async function getCurrentSession(): Promise<CurrentSession | null> {
  *
  * Preserves the current URL as a `returnTo` query param so the
  * sign-in form can navigate back after success (T171, spec AS5).
- * The `x-pathname` header is set by middleware.ts on every request;
+ * The `x-pathname` header is set by proxy.ts on every request;
  * `buildSignInUrl` validates the candidate against an open-redirect
  * guard before embedding it.
  */

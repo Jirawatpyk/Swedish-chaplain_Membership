@@ -4,19 +4,29 @@ import { checkCsrf } from '@/lib/csrf';
 import { REQUEST_ID_HEADER, requestIdFromHeaders } from '@/lib/request-id';
 
 /**
- * Main Next.js middleware (T043, research.md § 4 / § 5, plan.md § Constraints).
+ * Main Next.js Proxy handler (T043, research.md § 4 / § 5, plan.md § Constraints).
+ *
+ * **Next.js 16 rename**: what was previously `middleware.ts` is now
+ * `proxy.ts` with an exported `proxy()` function. See
+ * https://nextjs.org/docs/messages/middleware-to-proxy — the rename
+ * is cosmetic (Next.js renamed the convention because "middleware"
+ * collided with Express.js semantics; "proxy" better describes the
+ * network-boundary role). NextRequest / NextResponse / `config.matcher`
+ * are unchanged.
  *
  * Responsibilities:
  *   1. Inject a request ID (UUIDv7) into every request and response.
  *   2. Enforce READ_ONLY_MODE — every state-changing request returns 503.
- *   3. Enforce the CSRF Origin allow-list for /api/* state-changing requests.
+ *   3. Enforce the CSRF Origin allow-list for /api/* state-changing requests
+ *      (except `/api/webhooks/*` and `/api/cron/*` which authenticate via
+ *      HMAC signature / Bearer token — see src/lib/csrf.ts EXEMPT_PATH_PREFIXES).
  *   4. Set HSTS, CSP, X-Frame-Options, and other security headers on every
  *      response (single source of truth — next.config.ts intentionally has
  *      none, so all headers live here).
  *
  * Session lookup + lockout enforcement happens INSIDE Route Handlers and
  * page server components (via the `getSession()` helper added in Phase 3),
- * not here, because Edge middleware cannot import postgres-js (Node.js APIs).
+ * not here, because Edge runtime cannot import postgres-js (Node.js APIs).
  *
  * Per Next.js 16 docs, runtime defaults to nodejs since v15.5+; we keep
  * the default so `@/lib/env` and `@/lib/csrf` (which depend on Node)
@@ -68,7 +78,7 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const { method, nextUrl } = request;
   const requestId = requestIdFromHeaders(request.headers);
   const isStateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
@@ -121,7 +131,7 @@ export function middleware(request: NextRequest): NextResponse {
 
 /**
  * Match every request EXCEPT static assets (which Next.js serves via the
- * file system — no point running middleware on the favicon).
+ * file system — no point running the proxy on the favicon).
  */
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],

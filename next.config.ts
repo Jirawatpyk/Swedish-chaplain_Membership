@@ -14,8 +14,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
-  // Security headers (HSTS, CSP, X-Frame-Options) are set in middleware.ts so
+  // Security headers (HSTS, CSP, X-Frame-Options) are set in proxy.ts so
   // they apply uniformly to API routes and pages — single source of truth.
+  // (Next.js 16 renamed the `middleware.ts` convention to `proxy.ts`.)
   experimental: {
     // Enterprise UX § 2.1 — skeleton shimmer relies on CSS animations;
     // no additional experimental flags needed for the MVP.

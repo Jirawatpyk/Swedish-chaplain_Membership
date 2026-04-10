@@ -17,7 +17,7 @@ import { env } from './env';
  *
  * Why Origin over double-submit cookie:
  *   - Browsers set Origin automatically; scripts cannot forge it cross-origin.
- *   - Single point of enforcement (this file + middleware.ts).
+ *   - Single point of enforcement (this file + proxy.ts).
  *   - Zero client-side ceremony.
  *
  * Caveat: Safari sometimes sends `Origin: null` on same-origin redirects.

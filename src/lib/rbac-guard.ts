@@ -19,12 +19,13 @@
  *   // …mutating logic…
  *
  * **Deviation from plan.md / tasks.md T084**: the original task put
- * RBAC enforcement in `middleware.ts`. Edge middleware cannot do
- * `postgres-js` reads (Node APIs) or audit writes, so the check lives
- * in the Node runtime alongside `getCurrentSession()`. Calling this
- * function adds ZERO extra DB round-trips on the happy path
- * (`canAccess` is pure), and exactly ONE on the denial path (the
- * audit insert). Rate-limiting mitigates DoS against the denial path.
+ * RBAC enforcement in `middleware.ts` (renamed to `proxy.ts` in
+ * Next.js 16). Edge runtime cannot do `postgres-js` reads (Node
+ * APIs) or audit writes, so the check lives in the Node runtime
+ * alongside `getCurrentSession()`. Calling this function adds ZERO
+ * extra DB round-trips on the happy path (`canAccess` is pure), and
+ * exactly ONE on the denial path (the audit insert). Rate-limiting
+ * mitigates DoS against the denial path.
  */
 import type { CurrentSession } from './auth-session';
 import { logger } from './logger';
