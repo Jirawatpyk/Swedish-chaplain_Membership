@@ -101,8 +101,15 @@ class Argon2Hasher implements PasswordHasher {
   async verifyDummy(suppliedPassword: string): Promise<void> {
     const dummy = await getDummyHash();
     // Result deliberately ignored; we only care that the verification
-    // CPU cost was paid.
-    await verify(dummy, suppliedPassword).catch(() => false);
+    // CPU cost was paid. A native argon2 crash on this path (memory
+    // pressure, native-module failure) still must not break the
+    // sign-in flow — the timing equality invariant degrades to
+    // "no hash ran" which only matters if it happens on every call,
+    // and a warn log makes that observable to the oncall dashboard.
+    await verify(dummy, suppliedPassword).catch((error: unknown) => {
+      logger.warn({ err: error }, 'argon2.verifyDummy.failed');
+      return false;
+    });
   }
 }
 

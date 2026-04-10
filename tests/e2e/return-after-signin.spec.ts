@@ -1,6 +1,6 @@
 /**
  * T171 — Return to original URL after sign-in E2E test
- * (spec AS5, `SC-020 return-after-signin` in Phase 10).
+ * (spec AS5, success criterion SC-020).
  *
  * Scenario:
  *   1. Unauthenticated visitor clicks a deep protected URL

@@ -1,7 +1,7 @@
 /**
  * T114 + T115 + T117 + T118 merged — account lifecycle integration.
  *
- * Covers the highest-value paths of Phase 6 against live Neon:
+ * Covers the highest-value admin-lifecycle paths against live Neon:
  *   1. Invite happy path: createUser → pending user + invitation row
  *      + account_created audit. Email sender stubbed via DI.
  *   2. Redeem happy path: redeemInvite → pending→active, password hash

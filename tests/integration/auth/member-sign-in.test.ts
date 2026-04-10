@@ -10,7 +10,7 @@
  *   3. Inverse: an admin trying portal='member' is also rejected.
  *
  * Runs against live Neon DB using the same TestUser helper as the
- * other Phase 3-6 integration tests. A no-op rate limiter is injected
+ * other F1 auth integration tests. A no-op rate limiter is injected
  * to avoid burning the shared Upstash bucket across repeated runs.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

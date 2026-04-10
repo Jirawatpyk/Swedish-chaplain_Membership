@@ -14,7 +14,7 @@
  *
  * The DB insert is mocked to avoid touching Postgres — this file is
  * a CONTRACT test (wire format only). Actual write verification is
- * the job of a future Phase 10 integration test.
+ * the job of a future integration test (post-F1 follow-up).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'node:crypto';

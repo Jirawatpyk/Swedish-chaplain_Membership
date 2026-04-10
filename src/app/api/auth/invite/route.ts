@@ -8,15 +8,13 @@
  *   401 — no-session
  *   403 — forbidden (with manager_denied_write audit emission)
  *   409 — email-taken
+ *   500 — server-error (infra failure during session lookup / RBAC)
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createUser } from '@/modules/auth/application/create-user';
-import { getCurrentSession } from '@/lib/auth-session';
-import { requireRole } from '@/lib/rbac-guard';
-import { getClientIp } from '@/lib/client-ip';
+import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
-import { requestIdFromHeaders } from '@/lib/request-id';
 
 const inputSchema = z.object({
   email: z.string().email().max(254),
@@ -26,20 +24,8 @@ const inputSchema = z.object({
 });
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const requestId = requestIdFromHeaders(request.headers);
-
-  const current = await getCurrentSession();
-  if (!current) {
-    return NextResponse.json({ error: 'no-session' }, { status: 401 });
-  }
-
-  const guard = await requireRole(current, 'auth:user', 'write', {
-    sourceIp: getClientIp(request),
-    requestId,
-  });
-  if (!guard.ok) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  }
+  const ctx = await requireAdminContext(request);
+  if ('response' in ctx) return ctx.response;
 
   let payload: unknown;
   try {
@@ -63,9 +49,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     email: parsed.data.email,
     role: parsed.data.role,
     displayName: parsed.data.displayName ?? null,
-    actorUserId: current.user.id,
-    sourceIp: getClientIp(request),
-    requestId,
+    actorUserId: ctx.current.user.id,
+    sourceIp: ctx.sourceIp,
+    requestId: ctx.requestId,
     locale: parsed.data.locale,
   });
 
@@ -92,7 +78,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     case 'email-taken':
       return NextResponse.json({ error: 'email-taken' }, { status: 409 });
     default: {
-      logger.error({ requestId }, 'invite: unhandled error variant');
+      logger.error(
+        { requestId: ctx.requestId },
+        'invite: unhandled error variant',
+      );
       return NextResponse.json({ error: 'server-error' }, { status: 500 });
     }
   }

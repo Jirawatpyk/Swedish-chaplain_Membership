@@ -12,12 +12,15 @@
  *   5. Repeat with an admin session → `{ ok: true }`, no audit row
  *
  * **Deviation from plan.md T081**: the original task said "iterates
- * every admin-only endpoint". At the end of Phase 3 no admin-only
- * endpoints exist yet — `POST /api/auth/invite` and friends arrive in
- * Phase 6 (T128–T132). We therefore exercise the guard at the
- * application-layer seam (`requireRole`) which every future admin-only
- * route will funnel through. Phase 6 tests will layer on top by
- * calling the actual route handlers.
+ * every admin-only endpoint". This file exercises the guard at the
+ * application-layer seam (`requireRole`) which every admin-only
+ * route funnels through. The per-route enforcement is covered by
+ * the contract tests for each admin lifecycle handler
+ * (`disable-user.test.ts`, `enable-user.test.ts`, `change-role.test.ts`,
+ * `invite.test.ts`) which all mock `@/lib/admin-context` and assert
+ * the 401/403 short-circuit. This integration test remains the
+ * source of truth for the "manager denied write → audit row landed"
+ * contract at the DB layer.
  */
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

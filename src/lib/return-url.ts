@@ -29,9 +29,9 @@
 import { portalHomePath, portalSignInPath } from './portal-paths';
 import type { Portal } from '@/modules/auth/domain/role';
 
-// Re-export for backward compat with older callers that imported
-// `Portal` from this file. The canonical definition now lives in
-// Domain (`role.ts`).
+// Re-export so existing call sites that import `Portal` from this
+// file don't need updating. The canonical definition lives in
+// Domain (`@/modules/auth/domain/role`).
 export type { Portal };
 
 const MAX_RETURN_TO_LENGTH = 512;

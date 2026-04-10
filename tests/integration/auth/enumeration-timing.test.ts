@@ -31,7 +31,7 @@
  *      (dedicated CPU, same-region DB). Over the public internet to
  *      Neon from a developer's laptop, the floor is closer to 30-70
  *      ms thanks to round-trip jitter. T189 (Lighthouse budget)
- *      covers the production measurement in Phase 10.
+ *      covers the production measurement at ship-gate time.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { signIn, type SignInDeps } from '@/modules/auth/application/sign-in';

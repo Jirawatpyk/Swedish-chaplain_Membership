@@ -435,9 +435,9 @@ the argon2id verify capacity of the function instances.
 | T-09 SQL injection | Drizzle parameterised + ESLint rule | sql-injection.test |
 | T-10 Privilege escalation race | Session invalidation + SELECT FOR UPDATE | last-admin-protection.test, role-change-race.test |
 | T-11 Weak password | Min 12 + HIBP check | password-policy.test |
-| T-12 Token predictability | 32-byte CSPRNG | token-generation.test |
-| T-13 Audit log tampering | DB role grants (INSERT only) | append-only.test |
-| T-14 Secret leakage in logs | pino redaction + ESLint + CI grep | redaction.test |
+| T-12 Token predictability | 32-byte CSPRNG | tests/integration/auth/token-generation.test.ts |
+| T-13 Audit log tampering | DB role grants (INSERT only) | tests/integration/audit/append-only.test.ts |
+| T-14 Secret leakage in logs | pino redaction + ESLint + CI grep | tests/unit/lib/logger-redaction.test.ts |
 | T-15 Invitation link interception | Single-use + short TTL | password-reset.test (happy+replay+expired), account-lifecycle.test (invite replay) |
 | T-16 DoS via argon2 | Rate limit + fail-open cap | dos-rate-limit.test |
 

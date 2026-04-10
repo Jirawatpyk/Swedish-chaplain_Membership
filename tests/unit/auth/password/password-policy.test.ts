@@ -106,6 +106,11 @@ describe('weakPasswordMetricBucket', () => {
   });
 
   it('returns "pwned" when the first error is common-password', () => {
+    // `common-password` (locally matched via COMMON_PASSWORDS set)
+    // intentionally aliases to the `'pwned'` metric bucket, NOT a
+    // separate `'common'` bucket. Both signals mean "password reuse"
+    // on the operator dashboard, and distinguishing them would leak
+    // information about which branch caught the password.
     const errors: PasswordPolicyError[] = [{ code: 'common-password' }];
     expect(weakPasswordMetricBucket(errors)).toBe('pwned');
   });

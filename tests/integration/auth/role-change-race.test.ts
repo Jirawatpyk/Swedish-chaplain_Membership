@@ -26,10 +26,11 @@
  * and both mutations succeed. The test catches the "guard broken"
  * case by asserting the count-after-zero invariant always holds.
  *
- * The TRUE "exactly 2 admins" race requires a dedicated Neon branch
- * and is flagged as a Phase 11 follow-up; this test captures the
- * invariant side of the guarantee without requiring test isolation
- * we don't have.
+ * The TRUE "exactly 2 admins" race is covered by the dedicated
+ * `last-admin-protection.test.ts` (added during the verify gate):
+ * it stubs `countActiveAdmins()` to return 1, forcing the guard
+ * branch deterministically without needing a clean DB baseline.
+ * This file remains the invariant check under realistic load.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';

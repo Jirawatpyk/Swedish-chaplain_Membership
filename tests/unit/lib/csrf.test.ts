@@ -1,7 +1,7 @@
 /**
- * CSRF guard unit tests (T041 + Phase 9 QA bugfix).
+ * CSRF guard unit tests (T041 + F1 task-batch 9 QA bugfix).
  *
- * Regression guard for the Phase 9 `/api/webhooks/*` + `/api/cron/*`
+ * Regression guard for the `/api/webhooks/*` + `/api/cron/*`
  * CSRF exemption — these paths MUST be allowed through without an
  * Origin header because:
  *   - Webhook callers (Resend / Svix) never send Origin.
@@ -11,7 +11,7 @@
  *
  * Without the exemption, every webhook delivery and every cron tick
  * would 403 `csrf-rejected` in production. That was the finding in
- * the Phase 9 QA run.
+ * the F1 task-batch 9 QA verification run (tasks T041 + T109).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -92,7 +92,7 @@ describe('checkCsrf — state-changing API paths enforce Origin', () => {
   });
 });
 
-describe('checkCsrf — webhook + cron exemption (Phase 9 QA bugfix)', () => {
+describe('checkCsrf — webhook + cron exemption (F1 task-batch 9 QA bugfix)', () => {
   it('passes POST /api/webhooks/resend WITHOUT an Origin header', () => {
     // Webhooks authenticate via Svix signature, not Origin
     expect(checkCsrf('POST', '/api/webhooks/resend', null)).toEqual({
