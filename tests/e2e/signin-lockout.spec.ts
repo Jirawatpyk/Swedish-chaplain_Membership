@@ -12,33 +12,48 @@
  *      toast so the user knows what happened and doesn't keep
  *      guessing.
  *
- * Uses a dedicated disposable target account (`e2e-lockout@swecham.test`)
- * via `scripts/seed-e2e-user.ts`. Do NOT run against the bootstrap
- * admin — this test WILL lock the account, and even though the
- * lockout expires in 15 minutes, locking the only production admin
- * out for 15 minutes is obviously bad. The per-IP rate limit
- * (30/15 min) is wide enough to accommodate 6 sign-in attempts from
- * one browser context.
+ * Uses a **DEDICATED** disposable target account
+ * (`e2e-lockout@swecham.test`) provisioned by
+ * `scripts/seed-e2e-user.ts`. This account is used by NO other spec
+ * — locking it does not pollute any sibling E2E's sign-in path.
+ * Re-running the seed script resets `failedSignInCount=0` +
+ * `lockedUntil=null` so this spec can be re-run immediately.
  *
- * If the dedicated lockout user isn't seeded, the test skips
- * with a helpful message. Pre-existing lockout state (from a
- * previous run's final attempt) is cleared at `beforeAll` via
- * `clearAllE2ELockouts()` so the test starts from a clean baseline.
+ * Skipped automatically if `E2E_LOCKOUT_EMAIL` is unset. Re-seed
+ * the E2E users before running this spec:
+ *
+ *     node --env-file=.env.local --import tsx scripts/seed-e2e-user.ts
+ *     E2E_LOCKOUT_EMAIL='e2e-lockout@swecham.test' \
+ *       E2E_LOCKOUT_PASSWORD='E2E-Testing-Password-2026!xZ' \
+ *       pnpm test:e2e tests/e2e/signin-lockout.spec.ts
  */
 import { expect, test } from '@playwright/test';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
-// Reuse the member user — locking the admin would block the
-// seed-e2e-user re-run path; member is disposable.
-const LOCKOUT_EMAIL = process.env.E2E_MEMBER_EMAIL;
-const LOCKOUT_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+const LOCKOUT_EMAIL = process.env.E2E_LOCKOUT_EMAIL;
+const LOCKOUT_PASSWORD = process.env.E2E_LOCKOUT_PASSWORD;
 
 test.describe.configure({ mode: 'serial' });
 
+// Only run on the `chromium` project (desktop Chrome). Playwright
+// runs every spec once per project (`chromium`, `mobile-safari`,
+// `mobile-chrome`) in parallel. Because the lockout counter lives
+// on a SHARED Neon row, running this spec on 3 projects
+// simultaneously creates a race: each project submits 5 wrong
+// passwords + 1 locked check, but the row hits `failedSignInCount=5`
+// on whichever project writes first — the others see the lockout
+// on their 2nd or 3rd attempt and fail the assertion. Also, 3 × 6
+// = 18 attempts blow through the per-IP rate limit (30/15 min)
+// shared across the browser suite, starving every other sign-in
+// test. The check runs at module-load time (when `test.describe`
+// is declared) using `process.env.PLAYWRIGHT_PROJECT` — Playwright
+// sets neither that nor a dependable alternative, so we instead
+// guard the whole `test.describe` with a runtime annotation on
+// each test via `test.skip(...)` inside the test body itself.
 test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
   test.skip(
     !LOCKOUT_EMAIL || !LOCKOUT_PASSWORD,
-    'Set E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD to run (seeded by scripts/seed-e2e-user.ts)',
+    'Set E2E_LOCKOUT_EMAIL + E2E_LOCKOUT_PASSWORD to run (seeded by scripts/seed-e2e-user.ts — a dedicated disposable account)',
   );
 
   test.beforeAll(async () => {
@@ -53,12 +68,33 @@ test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
 
   test('5 wrong attempts lock the account; the 6th shows the locked toast', async ({
     page,
-  }) => {
-    // Drive the sign-in form 5 times with a deliberately wrong
-    // password. Go to the MEMBER sign-in page because the seeded
-    // E2E_MEMBER user has role=member and can't sign in via
-    // /admin/sign-in without tripping the portal-mismatch check
-    // (which returns 401 invalid-credentials, NOT a lockout failure).
+  }, testInfo) => {
+    // Chromium-project-only — see rationale at top of file.
+    test.skip(
+      testInfo.project.name !== 'chromium',
+      'lockout spec is chromium-project-only — the DB lockout row is shared across browser projects; running it 3x creates a race and exhausts per-IP rate limits',
+    );
+
+    // Important flow detail (sign-in.ts):
+    //   1. Rate-limit check first  → 429 if per-email bucket full (5/15 min)
+    //   2. User lookup
+    //   3. Password verify → on miss, increment `failedSignInCount`
+    //   4. If count ≥ 5, set `lockedUntil = now + 15 min`
+    //
+    // After 5 wrong attempts the per-email BUCKET is full AND the
+    // account is locked. A naive 6th attempt would hit the 429
+    // branch first (rate-limit) and never reach step 4's locked
+    // check. In production this is fine — the user sees
+    // rate-limited, waits 15 min, then sees account-locked.
+    // Simulating 15 min in an E2E is impractical, so we instead
+    // clear the Upstash rate-limit bucket AFTER the 5th attempt
+    // (which does NOT clear the DB lockout row — the row stays
+    // locked via `lockedUntil` for the full 15 min) so the 6th
+    // attempt reaches step 4 and returns 403 account-locked.
+    //
+    // The member sign-in page is used because the seeded lockout
+    // account has role=member — admin page would return
+    // portal-mismatch 401 instead of lockout 403.
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       await page.goto('/portal/sign-in');
       await page.waitForLoadState('networkidle');
@@ -67,7 +103,6 @@ test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
         .getByLabel(/password/i)
         .fill(`wrong-password-attempt-${attempt}`);
 
-      // Wait for the POST response so we can inspect status codes.
       const responsePromise = page.waitForResponse(
         (r) =>
           r.url().includes('/api/auth/sign-in') &&
@@ -77,17 +112,19 @@ test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
       await page.getByRole('button', { name: /sign in/i }).click();
       const response = await responsePromise;
 
-      // First 4 attempts → 401 invalid-credentials. The 5th is also
-      // 401 invalid-credentials BUT the DB-level failed-count hits
-      // the 5 threshold and sets `lockedUntil`, so the 6th attempt
-      // (below) is the first one to see `account-locked`.
-      expect([401, 403, 429]).toContain(response.status());
+      // Attempts 1-5 should all return 401 invalid-credentials.
+      // 429 means a previous run didn't clear Upstash properly.
+      expect([401, 403]).toContain(response.status());
     }
 
-    // 6th attempt — MUST now be `account-locked` (403), not
-    // `invalid-credentials` (401). This is the core T-01 assertion:
-    // the server has flipped the account into the locked state and
-    // the browser must see the distinct response.
+    // Simulate 15 minutes passing: clear the Upstash per-email
+    // rate-limit bucket so the 6th attempt can reach the lockout
+    // check. The DB `lockedUntil` row stays in the future — this
+    // is the state the user would be in after waiting out the
+    // rate limit.
+    await clearE2ERateLimits();
+
+    // 6th attempt — MUST now be `account-locked` (403).
     await page.goto('/portal/sign-in');
     await page.waitForLoadState('networkidle');
     await page.getByLabel(/email/i).fill(LOCKOUT_EMAIL!);
@@ -111,11 +148,14 @@ test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
     const body = await response.json().catch(() => ({}));
     expect(body.error).toBe('account-locked');
 
-    // UX assertion: the form shows the locked toast (not the
-    // generic invalid-credentials inline error). sonner renders
-    // toasts into a portal at the page level.
+    // UX assertion: the form shows the "too many failed attempts"
+    // toast from `auth.signIn.errors.accountLocked` (not the
+    // generic invalid-credentials inline error). The EN copy is
+    // "Too many failed attempts. Try again later."; Thai and
+    // Swedish use their translations. sonner renders toasts into
+    // a portal at the page level.
     await expect(
-      page.getByText(/account.*locked|locked.*try again/i).first(),
+      page.getByText(/too many failed attempts|try again later/i).first(),
     ).toBeVisible({ timeout: 5_000 });
   });
 

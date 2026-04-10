@@ -45,8 +45,15 @@ function AvatarFallback({
   return (
     <AvatarPrimitive.Fallback
       data-slot="avatar-fallback"
+      // WCAG 2.1 AA fix (review pass 5): the shadcn default
+      // `text-muted-foreground` on `bg-muted` yields 4.34:1 which is
+      // below the 4.5:1 minimum for normal text. Bump to `text-foreground`
+      // (full-strength text colour, ~10:1 contrast on bg-muted) so the
+      // user's initials meet contrast at all sizes. The avatar is
+      // decorative enough that the visual hierarchy change (slightly
+      // bolder initials) is imperceptible but passes axe.
       className={cn(
-        "flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs",
+        "flex size-full items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground group-data-[size=sm]/avatar:text-xs",
         className
       )}
       {...props}
