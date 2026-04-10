@@ -27,7 +27,7 @@
  *                           `scripts/seed-e2e-user.ts`)
  *   E2E_MANAGER_PASSWORD = (same script prints it)
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
@@ -52,8 +52,8 @@ test.describe('manager read-only staff portal (FR-003, User Story 2)', () => {
     await page.goto('/admin/sign-in');
     await page.waitForLoadState('networkidle');
 
-    await page.getByLabel(/email/i).fill(MANAGER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MANAGER_PASSWORD!);
+    await fillField(page.getByLabel(/email/i), MANAGER_EMAIL!);
+    await fillField(page.getByLabel(/password/i), MANAGER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
 
     // Manager lands on /admin (staff home) — the same landing page
@@ -111,8 +111,8 @@ test.describe('manager read-only staff portal (FR-003, User Story 2)', () => {
     // and would return 401 (no session) instead of 403 (session
     // but RBAC denied) — which hides the bug we want to verify.
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(MANAGER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MANAGER_PASSWORD!);
+    await fillField(page.getByLabel(/email/i), MANAGER_EMAIL!);
+    await fillField(page.getByLabel(/password/i), MANAGER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 10_000 });
 

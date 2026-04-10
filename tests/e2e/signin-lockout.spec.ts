@@ -27,7 +27,7 @@
  *       E2E_LOCKOUT_PASSWORD='E2E-Testing-Password-2026!xZ' \
  *       pnpm test:e2e tests/e2e/signin-lockout.spec.ts
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const LOCKOUT_EMAIL = process.env.E2E_LOCKOUT_EMAIL;
@@ -98,10 +98,11 @@ test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       await page.goto('/portal/sign-in');
       await page.waitForLoadState('networkidle');
-      await page.getByLabel(/email/i).fill(LOCKOUT_EMAIL!);
-      await page
-        .getByLabel(/password/i)
-        .fill(`wrong-password-attempt-${attempt}`);
+      await fillField(page.getByLabel(/email/i), LOCKOUT_EMAIL!);
+      await fillField(
+        page.getByLabel(/password/i),
+        `wrong-password-attempt-${attempt}`,
+      );
 
       const responsePromise = page.waitForResponse(
         (r) =>
@@ -127,10 +128,11 @@ test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
     // 6th attempt — MUST now be `account-locked` (403).
     await page.goto('/portal/sign-in');
     await page.waitForLoadState('networkidle');
-    await page.getByLabel(/email/i).fill(LOCKOUT_EMAIL!);
-    await page
-      .getByLabel(/password/i)
-      .fill('wrong-password-attempt-final');
+    await fillField(page.getByLabel(/email/i), LOCKOUT_EMAIL!);
+    await fillField(
+      page.getByLabel(/password/i),
+      'wrong-password-attempt-final',
+    );
 
     const sixthResponse = page.waitForResponse(
       (r) =>

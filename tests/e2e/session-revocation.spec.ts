@@ -18,7 +18,7 @@
  * Requires TWO seeded test users: e2e-admin (admin role) and
  * e2e-member (member role). Run `scripts/seed-e2e-user.ts` first.
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = 'e2e-admin@swecham.test';
@@ -53,8 +53,8 @@ test.describe('session revocation on disable (T-05, User Story 4)', () => {
       // 1. Victim signs in to the member portal and lands on /portal.
       await victimPage.goto('/portal/sign-in');
       await victimPage.waitForLoadState('networkidle');
-      await victimPage.getByLabel(/email/i).fill(VICTIM_EMAIL);
-      await victimPage.getByLabel(/password/i).fill(VICTIM_PASSWORD);
+      await fillField(victimPage.getByLabel(/email/i), VICTIM_EMAIL);
+      await fillField(victimPage.getByLabel(/password/i), VICTIM_PASSWORD);
       await victimPage.getByRole('button', { name: /sign in/i }).click();
       await victimPage.waitForURL('**/portal', { timeout: 15_000 });
       await expect(victimPage).toHaveURL(/\/portal$/);
@@ -62,8 +62,8 @@ test.describe('session revocation on disable (T-05, User Story 4)', () => {
       // 2. Admin signs in (separate context) and opens the users list.
       await adminPage.goto('/admin/sign-in');
       await adminPage.waitForLoadState('networkidle');
-      await adminPage.getByLabel(/email/i).fill(ADMIN_EMAIL);
-      await adminPage.getByLabel(/password/i).fill(ADMIN_PASSWORD);
+      await fillField(adminPage.getByLabel(/email/i), ADMIN_EMAIL);
+      await fillField(adminPage.getByLabel(/password/i), ADMIN_PASSWORD);
       await adminPage.getByRole('button', { name: /sign in/i }).click();
       await adminPage.waitForURL('**/admin', { timeout: 15_000 });
       await adminPage.goto('/admin/users');

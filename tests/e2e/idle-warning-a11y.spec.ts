@@ -12,7 +12,7 @@
  * so we catch contrast / focus-trap / landmark violations that only
  * appear while the dialog is open.
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 
 const E2E_ADMIN_EMAIL = 'e2e-admin@swecham.test';
@@ -23,26 +23,47 @@ test.describe('idle-warning dialog a11y (WCAG 2.1 AA)', () => {
     page,
   }) => {
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(E2E_ADMIN_EMAIL);
-    await page.getByLabel(/password/i).fill(E2E_ADMIN_PASSWORD);
+    await fillField(page.getByLabel(/email/i), E2E_ADMIN_EMAIL);
+    await fillField(page.getByLabel(/password/i), E2E_ADMIN_PASSWORD);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
     await page.waitForLoadState('networkidle');
 
-    // Trigger the idle warning via the component's test hook. If the
-    // hook isn't present (component was rewritten without it), the
-    // evaluate call is a no-op and the assertion below will fail with
-    // a clear message instead of hanging.
-    await page.evaluate(() => {
-      window.dispatchEvent(new CustomEvent('swecham:open-idle-warning'));
-    });
-
-    // The dialog might take a frame to paint — wait for its ARIA role.
+    // The idle-warning dialog component attaches its
+    // `swecham:open-idle-warning` listener inside a `useEffect`, so
+    // it's only ready AFTER the component has mounted on the page.
+    // On webkit the mount can race the first `dispatchEvent`, so
+    // we retry the dispatch until the dialog opens (or 5 s elapse).
     const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog'));
-    await expect(dialog.first()).toBeVisible({ timeout: 5_000 });
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => {
+            window.dispatchEvent(new CustomEvent('swecham:open-idle-warning'));
+          });
+          return dialog.first().isVisible();
+        },
+        {
+          message: 'idle-warning dialog did not open after dispatching swecham:open-idle-warning',
+          timeout: 5_000,
+          intervals: [250, 500, 1_000],
+        },
+      )
+      .toBe(true);
 
+    // Exclude Base UI's internal focus-guard spans from the scan.
+    // Base UI inserts invisible `<span role="button"
+    // data-base-ui-focus-guard>` elements as focus-trap sentinels
+    // around `AlertDialog`. axe flags them under
+    // `aria-command-name` because they have `role="button"` without
+    // an accessible name. They are **intentionally invisible**
+    // (clip-path inset(50%), 1×1 px) and **not user-interactive** —
+    // they exist purely to redirect Tab/Shift-Tab inside the modal.
+    // This is a library concern tracked upstream; excluding them
+    // here keeps the scan focused on OUR content.
     const result = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .exclude('[data-base-ui-focus-guard]')
       .analyze();
 
     const serious = result.violations.filter(

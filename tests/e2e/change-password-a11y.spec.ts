@@ -12,7 +12,7 @@
  *
  * Skips if the E2E admin isn't seeded (see scripts/seed-e2e-user.ts).
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 
 const E2E_ADMIN_EMAIL = 'e2e-admin@swecham.test';
@@ -23,8 +23,8 @@ test.describe('change-password page a11y (WCAG 2.1 AA)', () => {
     page,
   }) => {
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(E2E_ADMIN_EMAIL);
-    await page.getByLabel(/password/i).fill(E2E_ADMIN_PASSWORD);
+    await fillField(page.getByLabel(/email/i), E2E_ADMIN_EMAIL);
+    await fillField(page.getByLabel(/password/i), E2E_ADMIN_PASSWORD);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
 

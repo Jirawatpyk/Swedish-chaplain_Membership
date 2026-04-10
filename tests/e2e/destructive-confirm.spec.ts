@@ -13,7 +13,7 @@
  * by clicking the first action button and asserting the dialog
  * appears + Cancel dismisses it without firing the API.
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -28,8 +28,8 @@ test.describe('destructive-action confirmation (T120)', () => {
     page,
   }) => {
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
+    await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
 

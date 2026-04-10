@@ -23,7 +23,7 @@
  * never needs them — it only uses the public sign-in page — but the
  * skip keeps the e2e run consistent with the rest of the suite).
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 
 const PAYLOADS = [
   '<script>window.__xss_fired=1</script>',
@@ -53,8 +53,8 @@ test.describe('XSS injection resistance (T177, T-08)', () => {
     for (const payload of PAYLOADS) {
       // Fill hostile email + wrong password, submit, and let the server
       // return invalid-credentials so the error banner renders.
-      await page.getByLabel(/email/i).fill(payload);
-      await page.getByLabel(/password/i).fill('not-the-real-password');
+      await fillField(page.getByLabel(/email/i), payload);
+      await fillField(page.getByLabel(/password/i), 'not-the-real-password');
       // The form has its own client-side zod guard; many payloads will
       // be rejected client-side with a "please enter a valid email"
       // message, which is fine — the test only cares that the payload
@@ -71,8 +71,8 @@ test.describe('XSS injection resistance (T177, T-08)', () => {
       expect(fired, `payload executed: ${payload}`).toBe(0);
 
       // Clear for the next payload
-      await page.getByLabel(/email/i).fill('');
-      await page.getByLabel(/password/i).fill('');
+      await fillField(page.getByLabel(/email/i), '');
+      await fillField(page.getByLabel(/password/i), '');
     }
   });
 });

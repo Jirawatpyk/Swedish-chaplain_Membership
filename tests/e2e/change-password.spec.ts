@@ -24,7 +24,7 @@
  * revert step failed under flaky conditions and left the admin's
  * password stuck at a throwaway temp value. The fix is the hardcode.
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 
 // Hardcoded — do NOT read from env. Seeded by scripts/seed-e2e-user.ts.
 const E2E_CHANGE_PW_EMAIL = 'e2e-admin@swecham.test';
@@ -42,8 +42,8 @@ test.describe('change-password happy path (T150, SC-021)', () => {
   }) => {
     // Sign in
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(E2E_CHANGE_PW_EMAIL);
-    await page.getByLabel(/password/i).fill(E2E_CHANGE_PW_PASSWORD);
+    await fillField(page.getByLabel(/email/i), E2E_CHANGE_PW_EMAIL);
+    await fillField(page.getByLabel(/password/i), E2E_CHANGE_PW_PASSWORD);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
 
@@ -54,11 +54,11 @@ test.describe('change-password happy path (T150, SC-021)', () => {
     // Primary input auto-focus — current password field per FR-024
     await expect(page.getByLabel(/current password/i)).toBeFocused();
 
-    await page.getByLabel(/current password/i).fill(E2E_CHANGE_PW_PASSWORD);
-    await page.getByLabel(/^new password$/i).fill(tempPassword);
+    await fillField(page.getByLabel(/current password/i), E2E_CHANGE_PW_PASSWORD);
+    await fillField(page.getByLabel(/^new password$/i), tempPassword);
     const confirm = page.getByLabel(/confirm/i);
     if (await confirm.count()) {
-      await confirm.first().fill(tempPassword);
+      await fillField(confirm.first(), tempPassword);
     }
 
     await Promise.all([
@@ -78,19 +78,19 @@ test.describe('change-password happy path (T150, SC-021)', () => {
 
   test('re-sign-in with NEW password succeeds; revert to original', async ({ page }) => {
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(E2E_CHANGE_PW_EMAIL);
-    await page.getByLabel(/password/i).fill(tempPassword);
+    await fillField(page.getByLabel(/email/i), E2E_CHANGE_PW_EMAIL);
+    await fillField(page.getByLabel(/password/i), tempPassword);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
 
     // Revert: change back to the original password so the E2E env
     // stays usable.
     await page.goto('/admin/account');
-    await page.getByLabel(/current password/i).fill(tempPassword);
-    await page.getByLabel(/^new password$/i).fill(E2E_CHANGE_PW_PASSWORD);
+    await fillField(page.getByLabel(/current password/i), tempPassword);
+    await fillField(page.getByLabel(/^new password$/i), E2E_CHANGE_PW_PASSWORD);
     const confirm = page.getByLabel(/confirm/i);
     if (await confirm.count()) {
-      await confirm.first().fill(E2E_CHANGE_PW_PASSWORD);
+      await fillField(confirm.first(), E2E_CHANGE_PW_PASSWORD);
     }
     await page.getByRole('button', { name: /change|update|save/i }).first().click();
     await page.waitForResponse(

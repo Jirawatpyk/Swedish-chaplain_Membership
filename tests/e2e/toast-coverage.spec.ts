@@ -12,16 +12,17 @@
  * exactly one `role="status"` region is visible (the success card),
  * and the submit button has been replaced by a "Resend" button.
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 
 test.describe('feedback coverage on auth screens (T168, SC-015)', () => {
   test('forgot-password success shows exactly one status region', async ({ page }) => {
     await page.goto('/forgot-password');
     await page.waitForLoadState('networkidle');
 
-    await page
-      .getByLabel(/email/i)
-      .fill(`toast-coverage-${Date.now()}@swecham.test`);
+    await fillField(
+      page.getByLabel(/email/i),
+      `toast-coverage-${Date.now()}@swecham.test`,
+    );
 
     await Promise.all([
       page.waitForResponse(

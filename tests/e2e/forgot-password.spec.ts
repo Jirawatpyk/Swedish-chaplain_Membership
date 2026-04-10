@@ -12,7 +12,7 @@
  * Runs against the dev server on port 3100 started by
  * playwright.config.ts; skips if that server is unavailable.
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 
 test.describe('forgot-password happy path (T095, SC-017)', () => {
   test('submits email, shows success state, exposes resend after 60 s', async ({ page }) => {
@@ -20,7 +20,7 @@ test.describe('forgot-password happy path (T095, SC-017)', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByLabel(/email/i)).toBeFocused();
-    await page.getByLabel(/email/i).fill(`t095-${Date.now()}@swecham.test`);
+    await fillField(page.getByLabel(/email/i), `t095-${Date.now()}@swecham.test`);
 
     const submit = page.getByRole('button', { name: /send|reset|email/i }).first();
     await Promise.all([

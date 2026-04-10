@@ -16,7 +16,7 @@
  * external URL — the user still lands on the default after sign-in
  * instead of being bounced to a malicious host.
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -60,8 +60,8 @@ test.describe('return-after-signin (T171, spec AS5)', () => {
     await page.waitForURL(/\/admin\/sign-in\?returnTo=/);
 
     await page.waitForLoadState('networkidle');
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
+    await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
 
     const [signInResponse] = await Promise.all([
       page.waitForResponse(
@@ -93,8 +93,8 @@ test.describe('return-after-signin (T171, spec AS5)', () => {
     await page.goto('/admin/sign-in?returnTo=https%3A%2F%2Fevil.example%2Fsteal');
     await page.waitForLoadState('networkidle');
 
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
+    await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
 
     await Promise.all([
       page.waitForResponse(

@@ -10,7 +10,7 @@
  *
  * Skips unless E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD are set.
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
@@ -26,8 +26,8 @@ test.describe('member sign-in (T140)', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByLabel(/email/i)).toBeFocused();
-    await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
+    await fillField(page.getByLabel(/email/i), MEMBER_EMAIL!);
+    await fillField(page.getByLabel(/password/i), MEMBER_PASSWORD!);
 
     await Promise.all([
       page.waitForResponse(
@@ -43,8 +43,8 @@ test.describe('member sign-in (T140)', () => {
 
   test('member attempting /admin is bounced back to /portal', async ({ page }) => {
     await page.goto('/portal/sign-in');
-    await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
+    await fillField(page.getByLabel(/email/i), MEMBER_EMAIL!);
+    await fillField(page.getByLabel(/password/i), MEMBER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/portal', { timeout: 30_000 });
 

@@ -21,7 +21,7 @@
  * The `playwright.config.ts` `webServer` section auto-starts
  * `pnpm dev`, so no separate terminal is needed.
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -59,8 +59,8 @@ test.describe('staff sign-in (happy path)', () => {
     // Auto-focus should put the cursor on the email field (spec FR-024)
     await expect(page.getByLabel(/email/i)).toBeFocused();
 
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
+    await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
 
     // Wait for the sign-in API response AND the click to register
     // together; throw a descriptive error if the API rejects.
@@ -92,8 +92,8 @@ test.describe('staff sign-in (happy path)', () => {
     page,
   }) => {
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill('deliberately-wrong-password');
+    await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
+    await fillField(page.getByLabel(/password/i), 'deliberately-wrong-password');
     await page.getByRole('button', { name: /sign in/i }).click();
 
     // Still on the sign-in page (no redirect)
@@ -111,8 +111,8 @@ test.describe('staff sign-in (happy path)', () => {
   test('sign-out clears the session and redirects back to sign-in', async ({ page }) => {
     // Sign in first
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
+    await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 15_000 });
 

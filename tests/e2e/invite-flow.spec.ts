@@ -21,7 +21,7 @@
  * creates a unique invitee. The pending row + invitation row stay in
  * the DB until cleaned up by the retention policy or a manual purge.
  */
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -44,8 +44,8 @@ test.describe('invite-flow wall-clock (T119, SC-008)', () => {
 
     // Sign in
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
+    await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
 
@@ -61,7 +61,7 @@ test.describe('invite-flow wall-clock (T119, SC-008)', () => {
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
     const inviteeEmail = `invitee-${Date.now()}@swecham.test`;
-    await dialog.getByLabel(/email/i).fill(inviteeEmail);
+    await fillField(dialog.getByLabel(/email/i), inviteeEmail);
 
     // Select manager role via the native <select>
     const roleSelect = dialog.getByLabel(/role/i);
