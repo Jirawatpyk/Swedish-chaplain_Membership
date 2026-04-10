@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
-import { getLocale, getMessages } from 'next-intl/server';
+import { getLocale, getMessages, getNow, getTimeZone } from 'next-intl/server';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/sonner';
 import { SkipToContent } from '@/components/shell/skip-to-content';
@@ -45,8 +45,27 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const locale = await getLocale();
-  const messages = await getMessages();
+  // Resolve ALL four per-request values next-intl needs (`locale`,
+  // `messages`, `now`, `timeZone`) from the server-side request
+  // configuration. Pass every one to `NextIntlClientProvider`
+  // EXPLICITLY — per the next-intl v4 docs, the provider can only
+  // participate in Next.js static rendering if it has all four
+  // props. When any is missing, next-intl bails out of static mode,
+  // which in Next.js 16 triggers a SSR pass of client components
+  // BEFORE the provider context is wired up — that SSR pass throws
+  // `useTranslations context not found` in the dev terminal even
+  // though the page recovers via a client-only render.
+  //
+  // Providing all four props keeps the SSR pass self-contained: the
+  // provider owns its own request config, and every descendant
+  // `useTranslations` / `useFormatter` call sees a fully-populated
+  // context from the first render pass onward.
+  const [locale, messages, now, timeZone] = await Promise.all([
+    getLocale(),
+    getMessages(),
+    getNow(),
+    getTimeZone(),
+  ]);
 
   return (
     <html
@@ -55,7 +74,12 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full">
-        <NextIntlClientProvider locale={locale} messages={messages}>
+        <NextIntlClientProvider
+          locale={locale}
+          messages={messages}
+          now={now}
+          timeZone={timeZone}
+        >
           <ThemeProvider
             attribute="class"
             defaultTheme="system"
