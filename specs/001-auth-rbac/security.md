@@ -1,9 +1,9 @@
 # Security Model — F1 Auth & RBAC
 
 **Feature**: 001-auth-rbac
-**Status**: Active
-**Date**: 2026-04-09
-**Triggered by**: critique 2026-04-09 item E5 (Must-Address)
+**Status**: Signed-off — § 5 checklist 13/13 PASS as of 2026-04-11
+**Created**: 2026-04-09 (triggered by critique 2026-04-09 item E5 "Must-Address")
+**Last reviewed**: 2026-04-11 (staff review round 2 + solo-dev § 5 sign-off)
 **Scope**: Threat model, mitigations, and test mapping for F1 authentication
 and authorisation surfaces.
 

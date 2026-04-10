@@ -107,9 +107,16 @@ DATABASE_URL=postgres://...
 UPSTASH_REDIS_REST_URL=https://...
 UPSTASH_REDIS_REST_TOKEN=...
 RESEND_API_KEY=re_...
-APP_BASE_URL=http://localhost:3000
+RESEND_FROM_EMAIL=SweCham <noreply@zyncdata.app>
+APP_BASE_URL=http://localhost:3100
+APP_ALLOWED_ORIGINS=http://localhost:3100,http://localhost:3000
 AUTH_COOKIE_SIGNING_SECRET=<generated below>
 ```
+
+**Port note**: the dev server runs on **port 3100** (not 3000) to avoid
+colliding with other local Express projects the operator may keep on 3000.
+`package.json` pins it via `next dev --port 3100`. `APP_ALLOWED_ORIGINS`
+includes both ports so either one works during local dev.
 
 ### 2.5 Generate auth cookie signing secret
 
@@ -148,7 +155,7 @@ grants from `data-model.md` § 7.1.
 pnpm dev
 ```
 
-Opens `http://localhost:3000`. The app supports three routes at start:
+Opens `http://localhost:3100`. The app supports three routes at start:
 
 - `/admin/sign-in` — staff portal sign-in
 - `/portal/sign-in` — member portal sign-in
@@ -174,26 +181,29 @@ Coverage enforced in `vitest.config.ts`:
 
 ### 5.2 Integration tests
 
-Integration tests need a real Postgres. Start one via Docker:
+Integration tests run **against live Neon Singapore** using the
+`DATABASE_URL` from `.env.local` — NOT against a local Docker container.
+This trade was made during Phase 5 implementation: integration tests already
+need to catch real Postgres behaviour (triggers, enum values, RLS, etc.) that
+a Docker container could diverge from as migrations evolve. Running against
+the same Neon instance the dev server uses is higher fidelity and removes
+the "did I forget to `drizzle-kit migrate` the Docker DB?" failure mode.
 
 ```bash
-docker run -d --name swecham-test-pg \
-  -e POSTGRES_USER=test \
-  -e POSTGRES_PASSWORD=test \
-  -e POSTGRES_DB=swecham_test \
-  -p 55432:5432 \
-  postgres:17
-
-# Apply migrations to the test DB
-DATABASE_URL=postgres://test:test@localhost:55432/swecham_test \
-  pnpm drizzle-kit migrate
-
-# Run integration tests
 pnpm test:integration
 ```
 
-The integration test runner wipes all tables between test files (not between
-individual tests — serial tests share state within a file).
+The integration test helper (`tests/integration/helpers/test-users.ts`) creates
+rows with unique email suffixes per test run (`test-${Date.now()}-${rand}@swecham.test`)
+and deletes them in `afterEach`. Cascade cleans up sessions / tokens / invitations;
+`audit_log` rows are preserved by the append-only trigger (0001 migration).
+Stale rows from crashed runs can be cleaned up manually — see
+`docs/runbook/auth.md § 4` for the SQL.
+
+**Historical note**: a Docker-based workflow was described in earlier drafts
+of this quickstart. It has been retired. If you need a disposable Postgres
+for experiments outside the test suite, use a Neon branch via
+`neonctl branches create` instead.
 
 ### 5.3 E2E tests
 
@@ -212,8 +222,21 @@ pnpm test:e2e --grep "@i18n"
 ```
 
 Playwright is configured in `playwright.config.ts` to run against
-`http://localhost:3000` by default. For CI, point `PLAYWRIGHT_BASE_URL` at the
-Vercel preview deploy URL.
+`http://localhost:3100` by default (the dev server port; see § 4). For CI,
+point `PLAYWRIGHT_BASE_URL` at the Vercel preview deploy URL.
+
+**Local worker cap**: `playwright.config.ts` pins local runs to
+`workers: 3` (one per browser project). This is a workaround for Turbopack's
+on-demand compile model — 6 parallel workers hitting the same uncompiled
+route cause cascade timeouts. CI uses `workers: 1` (deterministic).
+
+**E2E env vars required**: `E2E_ADMIN_EMAIL`, `E2E_ADMIN_PASSWORD`,
+`E2E_MANAGER_EMAIL`, `E2E_MANAGER_PASSWORD`, `E2E_MEMBER_EMAIL`,
+`E2E_MEMBER_PASSWORD`, `E2E_LOCKOUT_EMAIL`, `E2E_LOCKOUT_PASSWORD`. If any
+pair is missing, the dependent specs call `test.skip()` silently — which
+can result in a misleading "N passed" summary. Export all four pairs or
+seed the 4 E2E users via `pnpm tsx scripts/seed-e2e-user.ts` (which also
+prints the exact export lines).
 
 ### 5.4 i18n coverage check
 
@@ -255,7 +278,7 @@ Output:
 ✓ Generated invitation token (7-day TTL)
 Open this URL in a browser to set your password:
 
-  http://localhost:3000/invite/01934f...
+  http://localhost:3100/invite/01934f...
 
 Audit log: account_created (actor=system:bootstrap, target=first.admin@swecham.example)
 ```
