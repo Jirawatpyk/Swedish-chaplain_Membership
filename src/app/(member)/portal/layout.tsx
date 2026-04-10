@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
 import { requireSession } from '@/lib/auth-session';
@@ -45,6 +46,8 @@ export default async function MemberLayout({ children }: { children: ReactNode }
         </div>
       </header>
       <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</div>
+      {/* T165 — Idle warning modal fires at 29 min of inactivity. */}
+      <IdleWarningDialog portal="member" />
     </div>
   );
 }

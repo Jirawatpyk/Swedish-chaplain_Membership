@@ -37,6 +37,7 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { authMetrics } from '@/lib/metrics';
 import { type EmailAddress, asEmailAddress } from '@/modules/auth/domain/branded';
 import {
   PORTAL_FOR_ROLE,
@@ -105,9 +106,42 @@ const defaultDeps: SignInDeps = {
 
 // --- Use case ----------------------------------------------------------------
 
+/**
+ * Map a sign-in error code to the metric label vocabulary in
+ * docs/observability.md § 4 table.
+ */
+function outcomeLabel(
+  result: Result<SignInSuccess, SignInError>,
+): import('@/lib/metrics').SignInLabels['outcome'] {
+  if (result.ok) return 'success';
+  switch (result.error.code) {
+    case 'invalid-credentials':
+      return 'invalid_credentials';
+    case 'account-locked':
+      return 'account_locked';
+    case 'account-disabled':
+      return 'account_disabled';
+    case 'rate-limited':
+      return 'rate_limited';
+  }
+}
+
 export async function signIn(
   input: SignInInput,
   deps: SignInDeps = defaultDeps,
+): Promise<Result<SignInSuccess, SignInError>> {
+  const start = performance.now();
+  const result = await signInImpl(input, deps);
+  const durationSeconds = (performance.now() - start) / 1000;
+  const outcome = outcomeLabel(result);
+  authMetrics.signInAttempt({ portal: input.portal, outcome });
+  authMetrics.signInDuration(durationSeconds, { portal: input.portal, outcome });
+  return result;
+}
+
+async function signInImpl(
+  input: SignInInput,
+  deps: SignInDeps,
 ): Promise<Result<SignInSuccess, SignInError>> {
   let normalisedEmail: EmailAddress;
   try {
@@ -215,6 +249,7 @@ export async function signIn(
         summary: `account locked after ${newCount} failed attempts`,
         requestId: input.requestId,
       });
+      authMetrics.lockout();
     }
     await deps.audit.append({
       eventType: 'sign_in_failure',

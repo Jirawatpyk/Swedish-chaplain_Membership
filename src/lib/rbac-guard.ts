@@ -29,6 +29,7 @@
  */
 import type { CurrentSession } from './auth-session';
 import { logger } from './logger';
+import { authMetrics } from './metrics';
 import {
   canAccess,
   type Action,
@@ -104,7 +105,10 @@ export async function requireRole(
         'rbac.audit-append-failed',
       );
     }
+    authMetrics.managerDeniedWrite(`${resource}:${action}`);
   }
+
+  authMetrics.rbacDenied({ role, resource, action });
 
   logger.warn(
     {

@@ -24,6 +24,7 @@ import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { authMetrics } from '@/lib/metrics';
 
 // --- Public interface ---------------------------------------------------------
 
@@ -134,6 +135,7 @@ class UpstashRateLimiter implements RateLimiter {
         { err: error, key, max, windowSeconds, fallback: true },
         'rate-limit upstream unreachable, falling back to in-memory bucket',
       );
+      authMetrics.redisFallback();
       return fallbackCheck(key, max, windowSeconds);
     }
   }
