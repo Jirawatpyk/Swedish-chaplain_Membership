@@ -69,6 +69,12 @@ const schema = z.object({
     .min(10)
     .refine((value) => value.startsWith('re_'), 'expected "re_" prefix'),
   RESEND_WEBHOOK_SIGNING_SECRET: z.string().min(10),
+  // From address used for all outbound transactional mail.
+  // MUST match a domain that is verified in the Resend account bound
+  // to `RESEND_API_KEY`. Format: `Display Name <local@domain>` OR
+  // bare `local@domain`. Optional; falls back to the SweCham brand
+  // default in `resend-client.ts`.
+  RESEND_FROM_EMAIL: z.string().min(3).optional(),
 
   // Auth cookie HMAC signing secret (≥32 bytes of entropy recommended).
   // Generate with: openssl rand -base64 48
@@ -151,6 +157,7 @@ export const env = {
   resend: {
     apiKey: raw.RESEND_API_KEY,
     webhookSigningSecret: raw.RESEND_WEBHOOK_SIGNING_SECRET,
+    fromEmail: raw.RESEND_FROM_EMAIL,
   },
 
   auth: {

@@ -17,6 +17,22 @@ import { type Result, err, ok } from '@/lib/result';
 
 const resend = new Resend(env.resend.apiKey);
 
+/**
+ * Default sender address. Resolution order:
+ *   1. `RESEND_FROM_EMAIL` env var (set in Vercel + .env.local once
+ *      the target domain has been verified in the Resend dashboard).
+ *   2. Hardcoded `SweCham <noreply@swecham.se>` fallback — kept for
+ *      backwards compatibility with documentation and tests. If the
+ *      fallback is used in a real environment where `swecham.se` is
+ *      NOT a verified Resend domain, Resend will reject the send
+ *      with HTTP 403 "This API key is not authorized to send emails
+ *      from swecham.se", which the retry loop logs and the
+ *      Application layer tolerates (invitations are still created;
+ *      the admin can resend from the UI once the env var is set).
+ */
+const FALLBACK_FROM = 'SweCham <noreply@swecham.se>';
+const DEFAULT_FROM = env.resend.fromEmail ?? FALLBACK_FROM;
+
 export interface EmailMessage {
   readonly to: string;
   readonly subject: string;
@@ -34,7 +50,6 @@ export interface EmailSender {
   send(message: EmailMessage): Promise<Result<{ messageId: string }, EmailError>>;
 }
 
-const DEFAULT_FROM = 'SweCham <noreply@swecham.se>';
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000] as const;
 
 async function delay(ms: number): Promise<void> {
