@@ -2,7 +2,7 @@
  * T141 — Member sign-in + placeholder axe a11y scan
  * (spec WCAG 2.1 AA).
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 
 async function scan(page: import('@playwright/test').Page, url: string) {

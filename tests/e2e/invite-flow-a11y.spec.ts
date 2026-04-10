@@ -17,7 +17,7 @@
  *      components exercised by forgot-password-a11y's reset form
  *      (they share `PasswordInput`, `Label`, `Button`).
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 
 test.describe('invite flow a11y (WCAG 2.1 AA)', () => {

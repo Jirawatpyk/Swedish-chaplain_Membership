@@ -13,7 +13,7 @@
  * by clicking the first action button and asserting the dialog
  * appears + Cancel dismisses it without firing the API.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;

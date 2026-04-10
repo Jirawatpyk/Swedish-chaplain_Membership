@@ -9,7 +9,7 @@
  * required.
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test.describe('staff sign-in a11y', () => {
   test('has zero WCAG 2.1 AA violations', async ({ page }) => {

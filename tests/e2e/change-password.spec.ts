@@ -24,7 +24,7 @@
  * revert step failed under flaky conditions and left the admin's
  * password stuck at a throwaway temp value. The fix is the hardcode.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // Hardcoded — do NOT read from env. Seeded by scripts/seed-e2e-user.ts.
 const E2E_CHANGE_PW_EMAIL = 'e2e-admin@swecham.test';

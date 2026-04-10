@@ -17,7 +17,7 @@
  * the `NEXT_LOCALE` cookie directly in Playwright context for each
  * locale under test.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const LOCALES = ['en', 'th', 'sv'] as const;
 

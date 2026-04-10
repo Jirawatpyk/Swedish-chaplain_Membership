@@ -27,7 +27,7 @@
  *       E2E_LOCKOUT_PASSWORD='E2E-Testing-Password-2026!xZ' \
  *       pnpm test:e2e tests/e2e/signin-lockout.spec.ts
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const LOCKOUT_EMAIL = process.env.E2E_LOCKOUT_EMAIL;

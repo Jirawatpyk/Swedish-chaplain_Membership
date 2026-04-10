@@ -12,7 +12,7 @@
  * so we catch contrast / focus-trap / landmark violations that only
  * appear while the dialog is open.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 
 const E2E_ADMIN_EMAIL = 'e2e-admin@swecham.test';

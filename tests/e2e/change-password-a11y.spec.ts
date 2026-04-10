@@ -12,7 +12,7 @@
  *
  * Skips if the E2E admin isn't seeded (see scripts/seed-e2e-user.ts).
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 
 const E2E_ADMIN_EMAIL = 'e2e-admin@swecham.test';

@@ -12,7 +12,7 @@
  * exactly one `role="status"` region is visible (the success card),
  * and the submit button has been replaced by a "Resend" button.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test.describe('feedback coverage on auth screens (T168, SC-015)', () => {
   test('forgot-password success shows exactly one status region', async ({ page }) => {

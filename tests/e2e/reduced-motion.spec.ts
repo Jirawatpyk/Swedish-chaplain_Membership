@@ -17,7 +17,7 @@
  * and more reliably we can query for the `role="status"` elements
  * that the Skeleton primitive renders.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test.describe('reduced-motion honour (T169, SC-016)', () => {
   test('shimmer animation is suppressed when prefers-reduced-motion is set', async ({ page }) => {

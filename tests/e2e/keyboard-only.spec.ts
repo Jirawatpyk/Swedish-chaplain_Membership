@@ -15,7 +15,7 @@
  * the PUBLIC sign-in page and the modal invocation through a test
  * hook, so the spec runs even in an offline environment.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test.describe('keyboard-only navigation (T170, SC-022)', () => {
   test('sign-in page: auto-focus email + Enter submits from password field', async ({

@@ -18,7 +18,7 @@
  * Requires TWO seeded test users: e2e-admin (admin role) and
  * e2e-member (member role). Run `scripts/seed-e2e-user.ts` first.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = 'e2e-admin@swecham.test';
@@ -32,6 +32,13 @@ test.describe('session revocation on disable (T-05, User Story 4)', () => {
   test.beforeAll(async () => {
     await clearE2ERateLimits();
   });
+
+  // Bump timeout — this spec runs TWO parallel sign-ins (victim +
+  // admin) in separate contexts, then does a disable POST and a
+  // victim redirect. The default 30s is tight when the dev server
+  // is cold or Neon is slow. 60s gives breathing room without
+  // hiding a real regression.
+  test.setTimeout(60_000);
 
   test('disabled user is redirected to sign-in on next protected request', async ({
     browser,

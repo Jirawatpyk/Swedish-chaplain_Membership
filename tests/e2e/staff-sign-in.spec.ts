@@ -21,7 +21,7 @@
  * The `playwright.config.ts` `webServer` section auto-starts
  * `pnpm dev`, so no separate terminal is needed.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;

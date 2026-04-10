@@ -16,7 +16,7 @@
  *
  * Skips without admin credentials.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;

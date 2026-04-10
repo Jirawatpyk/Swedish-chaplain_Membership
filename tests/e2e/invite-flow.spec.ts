@@ -21,7 +21,7 @@
  * creates a unique invitee. The pending row + invitation row stay in
  * the DB until cleaned up by the retention policy or a manual purge.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;

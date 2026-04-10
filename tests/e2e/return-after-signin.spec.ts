@@ -16,7 +16,7 @@
  * external URL — the user still lands on the default after sign-in
  * instead of being bounced to a malicious host.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;

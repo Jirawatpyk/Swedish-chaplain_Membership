@@ -23,7 +23,7 @@
  * never needs them — it only uses the public sign-in page — but the
  * skip keeps the e2e run consistent with the rest of the suite).
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const PAYLOADS = [
   '<script>window.__xss_fired=1</script>',

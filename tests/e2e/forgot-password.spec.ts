@@ -12,7 +12,7 @@
  * Runs against the dev server on port 3100 started by
  * playwright.config.ts; skips if that server is unavailable.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test.describe('forgot-password happy path (T095, SC-017)', () => {
   test('submits email, shows success state, exposes resend after 60 s', async ({ page }) => {

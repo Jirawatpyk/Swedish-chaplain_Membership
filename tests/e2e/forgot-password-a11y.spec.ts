@@ -10,7 +10,7 @@
  * (server returns "link invalid" but the page still renders the
  * error state, which must also pass axe).
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 
 async function scan(page: import('@playwright/test').Page, url: string) {

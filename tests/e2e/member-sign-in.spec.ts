@@ -10,7 +10,7 @@
  *
  * Skips unless E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD are set.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
