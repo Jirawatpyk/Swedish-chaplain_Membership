@@ -28,8 +28,30 @@ import { env } from './env';
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const PROTECTED_PATH_PREFIX = '/api/';
 
+/**
+ * Paths that are NOT browser-driven and therefore NOT subject to the
+ * Origin header check. These are authenticated by OTHER means:
+ *
+ *   - `/api/webhooks/*` — authenticated by upstream provider's HMAC
+ *     signature (e.g. Svix `svix-signature` header for Resend). Origin
+ *     is never sent by a server-to-server webhook caller, so enforcing
+ *     it here would block every webhook delivery.
+ *   - `/api/cron/*` — authenticated by a Bearer `CRON_SECRET` token
+ *     set by Vercel Cron. Vercel Cron does not send an Origin header.
+ *
+ * Everything else under `/api/` still goes through the Origin allow-list.
+ */
+const EXEMPT_PATH_PREFIXES = ['/api/webhooks/', '/api/cron/'];
+
 export type CsrfDecision =
-  | { readonly action: 'pass'; readonly reason: 'method-safe' | 'unprotected-path' | 'origin-allowed' }
+  | {
+      readonly action: 'pass';
+      readonly reason:
+        | 'method-safe'
+        | 'unprotected-path'
+        | 'exempt-path'
+        | 'origin-allowed';
+    }
   | { readonly action: 'reject'; readonly reason: 'missing-origin' | 'origin-not-allowed' };
 
 /**
@@ -48,6 +70,14 @@ export function checkCsrf(method: string, pathname: string, origin: string | nul
   }
   if (!pathname.startsWith(PROTECTED_PATH_PREFIX)) {
     return { action: 'pass', reason: 'unprotected-path' };
+  }
+  // Server-to-server endpoints (webhooks, cron) authenticate via their
+  // own signature / bearer-token mechanisms and never receive an Origin
+  // header. Exempt them from the browser-centric CSRF guard.
+  for (const prefix of EXEMPT_PATH_PREFIXES) {
+    if (pathname.startsWith(prefix)) {
+      return { action: 'pass', reason: 'exempt-path' };
+    }
   }
   if (!origin) {
     return { action: 'reject', reason: 'missing-origin' };

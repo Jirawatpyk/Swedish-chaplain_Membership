@@ -1,0 +1,36 @@
+# P9-SC-1: POST /api/cron/lockout-cleanup (dev, no auth) → 200 + cleared count
+HTTP 403
+{"error":"csrf-rejected","reason":"missing-origin"}
+
+# P9-SC-2: GET /api/cron/lockout-cleanup (dev, no auth) → 200
+HTTP 200
+{"ok":true,"cleared":0}
+
+# P9-SC-3: POST /api/webhooks/resend (no signature) → 401
+HTTP 403
+{"error":"csrf-rejected","reason":"missing-origin"}
+
+# P9-SC-4: POST /api/webhooks/resend (wrong signature) → 401
+HTTP 403
+{"error":"csrf-rejected","reason":"missing-origin"}
+
+# P9-SC-5: GET /api/webhooks/resend → 405 (no GET export)
+HTTP 405
+
+# P9-SC-6: All prior routes still responding (sanity check)
+  /admin/sign-in → HTTP 200
+  /forgot-password → HTTP 200
+  /portal/sign-in → HTTP 200
+  /admin/account → HTTP 307
+  /portal/account → HTTP 307
+# P9-SC-1 (retry): POST /api/cron/lockout-cleanup → 200
+HTTP 200
+{"ok":true,"cleared":0}
+
+# P9-SC-3 (retry): POST /api/webhooks/resend (no signature) → 401 invalid-signature
+HTTP 401
+{"error":"invalid-webhook-signature"}
+
+# P9-SC-4 (retry): POST /api/webhooks/resend (wrong signature) → 401
+HTTP 401
+{"error":"invalid-webhook-signature"}
