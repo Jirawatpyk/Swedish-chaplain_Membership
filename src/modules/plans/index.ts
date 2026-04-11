@@ -209,8 +209,16 @@ export {
   type ClonePlansToYearDeps,
 } from './application/clone-plans-to-year';
 
+// Phase 5 (US3 — T116) — shipped:
+
+export {
+  updatePlan,
+  type UpdatePlanInput,
+  type UpdatePlanError,
+  type UpdatePlanDeps,
+} from './application/update-plan';
+
 //
-// Phase 5+ (US3-US5) will add:
-//   export { updatePlan } from './application/update-plan';
+// Phase 6+ (US4-US5) will add:
 //   export { activatePlan, deactivatePlan, softDeletePlan, undeletePlan }
 //   export { getFeeConfig, updateFeeConfig }

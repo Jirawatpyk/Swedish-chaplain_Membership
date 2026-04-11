@@ -251,29 +251,29 @@ Web application, single Next.js project. Paths rooted at repository root unless 
 
 ### Tests for User Story 3 (RED FIRST)
 
-- [ ] T111 [P] [US3] Create `tests/contract/plans/update-plan.test.ts` — PATCH request + response shape, 422 `prior_year_locked_fields` with `details.locked_fields` and `suggested_action: 'clone_to_current_year'`, 404 on missing, 422 on partnership/corporate mismatch
-- [ ] T112 [P] [US3] Create `tests/integration/plans/prior-year-lock.test.ts` — seeded 2026 plan, clock fixture advances to 2027 → edit cosmetic field (plan_name.en) succeeds → edit locked field (annual_fee_minor_units) returns 422 with field name → test every field in `LOCKED_FIELDS_ON_PRIOR_YEAR` and every cosmetic field
-- [ ] T113 [P] [US3] Create `tests/integration/plans/concurrent-edit-lww.test.ts` — two concurrent `updatePlan` calls from different sessions; last-write-wins with the overwritten session receiving a warning toast (Application-layer returns a `{overwrittenBy: userId}` marker)
-- [ ] T114 [P] [US3] Create `tests/integration/plans/audit-diff-update.test.ts` — mutate plan → read latest `audit_log` entry → validate `payload` via `auditPayloadSchema.safeParse({success: true})` → verify `diff` shape is `{[field]: {before, after}}` with only changed fields (critique P9)
-- [ ] T115 [P] [US3] Create `tests/e2e/plans-edit.spec.ts` — admin opens Premium 2026 for edit → sees persistent lock banner → annual_fee input is disabled with lock-icon tooltip → edits plan_name.en → saves → toast "Plan updated"; also covers the API-level 422 rejection for direct PATCH with locked field
+- [X] T111 [P] [US3] Create `tests/contract/plans/update-plan.test.ts` — PATCH request + response shape, 422 `prior_year_locked_fields` with `details.locked_fields` and `suggested_action: 'clone_to_current_year'`, 404 on missing, 422 on partnership/corporate mismatch
+- [X] T112 [P] [US3] Create `tests/integration/plans/prior-year-lock.test.ts` — seeded 2026 plan, clock fixture advances to 2027 → edit cosmetic field (plan_name.en) succeeds → edit locked field (annual_fee_minor_units) returns 422 with field name → test every field in `LOCKED_FIELDS_ON_PRIOR_YEAR` and every cosmetic field
+- [X] T113 [P] [US3] Create `tests/integration/plans/concurrent-edit-lww.test.ts` — two concurrent `updatePlan` calls from different sessions; last-write-wins with the overwritten session receiving a warning toast (Application-layer returns a `{overwrittenBy: userId}` marker)
+- [X] T114 [P] [US3] Create `tests/integration/plans/audit-diff-update.test.ts` — mutate plan → read latest `audit_log` entry → validate `payload` via `auditPayloadSchema.safeParse({success: true})` → verify `diff` shape is `{[field]: {before, after}}` with only changed fields (critique P9)
+- [X] T115 [P] [US3] Create `tests/e2e/plans-edit.spec.ts` — admin opens Premium 2026 for edit → sees persistent lock banner → annual_fee input is disabled with lock-icon tooltip → edits plan_name.en → saves → toast "Plan updated"; also covers the API-level 422 rejection for direct PATCH with locked field
 
 ### Application layer for User Story 3
 
-- [ ] T116 [US3] Implement `src/modules/plans/application/update-plan.ts` — loads existing plan via `planRepo.findOne`, computes `detectLockedFieldChanges(oldPlan, patch, currentYear)` from `ClockPort`, returns `Result.err({type: 'prior_year_locked_fields', locked_fields})` if non-empty, otherwise validates patch against `planSchema.partial()`, applies via `planRepo.update`, appends `plan_updated` audit event with `diff: {[field]: {before, after}}` capturing only changed fields
+- [X] T116 [US3] Implement `src/modules/plans/application/update-plan.ts` — loads existing plan via `planRepo.findOne`, computes `detectLockedFieldChanges(oldPlan, patch, currentYear)` from `ClockPort`, returns `Result.err({type: 'prior_year_locked_fields', locked_fields})` if non-empty, otherwise validates patch against `planPatchSchema`, applies via `planRepo.update`, appends `plan_updated` audit event with `diff: {[field]: {before, after}}` capturing only changed fields
 
 ### Infrastructure for User Story 3
 
-- [ ] T117 [US3] Implement `PlanRepo.update` in `plan-repo.ts` — via `runInTenant`, updates row + performs secondary locked-field guard (defence-in-depth per research.md § 8) re-running `detectLockedFieldChanges` inside the transaction; logs high-severity `defence-in-depth triggered` warning if guard fires
+- [X] T117 [US3] Implement `PlanRepo.update` in `plan-repo.ts` — via `runInTenant`, updates row + performs secondary locked-field guard (defence-in-depth per research.md § 8) re-running `detectLockedFieldChanges` inside the transaction; logs high-severity `defence-in-depth triggered` warning if guard fires
 
 ### Presentation layer — API route for User Story 3
 
-- [ ] T118 [US3] Extend `src/app/api/plans/[year]/[planId]/route.ts` with PATCH handler — idempotency-key required, zod partial body validation, calls `updatePlan` use case, maps error types to HTTP codes (`prior_year_locked_fields` → 422, `not_found` → 404)
+- [X] T118 [US3] Extend `src/app/api/plans/[year]/[planId]/route.ts` with PATCH handler — idempotency-key required, zod partial body validation, calls `updatePlan` use case, maps error types to HTTP codes (`prior_year_locked_fields` → 422, `not_found` → 404)
 
 ### Presentation layer — UI components for User Story 3
 
-- [ ] T119 [P] [US3] Create `src/components/plans/prior-year-lock-banner.tsx` — localised persistent banner explaining the partial-lock rule per FR-014, with "Clone to current year and edit there" button that navigates to `/admin/plans/clone?from={year}&to={currentYear}`
-- [ ] T120 [P] [US3] Create `src/components/plans/plan-edit-form.tsx` — reuses `<LocaleTextInput>`, `<MoneyInput>`, `<BenefitMatrixEditor>` from US2 wizard components; on prior-year plan, disables locked-field inputs with lock icon + tooltip; renders `<PriorYearLockBanner>` at top when applicable
-- [ ] T121 [US3] Create `src/app/(staff)/admin/plans/[year]/[planId]/edit/page.tsx` — edit page wrapping `<PlanEditForm>` with PATCH submit handler
+- [X] T119 [P] [US3] Create `src/components/plans/prior-year-lock-banner.tsx` — localised persistent banner explaining the partial-lock rule per FR-014, with "Clone to current year and edit there" button that navigates to `/admin/plans/clone?from={year}&to={currentYear}`
+- [X] T120 [P] [US3] Create `src/components/plans/plan-edit-form.tsx` — reuses `<LocaleTextInput>`, `<MoneyInput>`, `<BenefitMatrixEditor>` from US2 wizard components; on prior-year plan, disables locked-field inputs with lock icon + tooltip; renders `<PriorYearLockBanner>` at top when applicable
+- [X] T121 [US3] Create `src/app/(staff)/admin/plans/[year]/[planId]/edit/page.tsx` — edit page wrapping `<PlanEditForm>` with PATCH submit handler
 
 **Checkpoint**: User Story 3 fully functional. MVP trio (US1+US2+US3) complete — chamber can list, create, clone, and edit the catalogue. FR-014 prior-year lock enforced at Domain + Application + Infrastructure layers.
 

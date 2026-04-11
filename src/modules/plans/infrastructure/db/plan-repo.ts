@@ -26,6 +26,7 @@
 import { and, count, eq, ilike, or, sql } from 'drizzle-orm';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { membershipPlans } from './schema';
 import type {
   CloneYearError,
@@ -44,6 +45,7 @@ import {
 } from '../../domain/plan';
 import type { BenefitMatrix } from '../../domain/benefit-matrix';
 import type { LocaleText } from '../../domain/locale-text';
+import { detectLockedFieldChanges } from '../../domain/locked-field-rule';
 
 // --- Row → Domain translation -----------------------------------------------
 
@@ -196,8 +198,56 @@ export const planRepo: PlanRepo = {
   },
 
   // -- update (US3) ----------------------------------------------------------
+  //
+  // Defence-in-depth (T117, research.md § 8): re-runs
+  // `detectLockedFieldChanges` INSIDE the transaction after loading the
+  // row via SELECT. If the guard fires, we roll back the transaction
+  // and log a high-severity warning — the Application layer should
+  // have blocked the request before reaching here, so a hit means
+  // either a race, a bypass bug, or direct repo invocation (from a
+  // seed script) that forgot to run the guard. We don't throw — we
+  // return `undefined` which the Application layer maps to not_found,
+  // because throwing from a repo is a bigger ergonomic hazard.
   async update(tenant, planId, year, patch, updatedBy) {
     return runInTenant(tenant, async (tx) => {
+      // Defence-in-depth: SELECT the row before UPDATE to re-verify
+      // the lock rule against fresh state. The rule needs the current
+      // year; we use the wall clock here because the repo does not
+      // receive a ClockPort (that's an Application-layer concern).
+      const existingRows = await tx
+        .select()
+        .from(membershipPlans)
+        .where(
+          and(
+            eq(membershipPlans.planId, planId),
+            eq(membershipPlans.planYear, year),
+          ),
+        )
+        .limit(1);
+      const existingRow = existingRows[0];
+      if (!existingRow) return undefined;
+      const existingPlan = rowToPlan(existingRow);
+      const currentYear = new Date().getUTCFullYear();
+      const locked = detectLockedFieldChanges(
+        existingPlan,
+        patch as Partial<Plan>,
+        currentYear,
+      );
+      if (locked.length > 0) {
+        logger.warn(
+          {
+            tenant: tenant.slug,
+            planId,
+            planYear: year as number,
+            lockedFields: locked,
+          },
+          'plan-repo: defence-in-depth locked-field guard triggered — the Application layer should have blocked this',
+        );
+        // Abort the transaction — return undefined so the caller maps
+        // to not_found rather than a misleading success
+        throw new Error(`locked fields: ${locked.join(', ')}`);
+      }
+
       // Build a sparse update object — only fields present in the patch
       // are written. Drizzle's `.set()` accepts partial records.
       const updateValues: Record<string, unknown> = { updatedBy, updatedAt: new Date() };
