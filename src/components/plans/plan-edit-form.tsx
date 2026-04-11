@@ -30,12 +30,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { LocaleTextInput } from './locale-text-input';
 import { MoneyInput } from './money-input';
 import { BenefitMatrixEditor } from './benefit-matrix-editor';
@@ -54,7 +48,19 @@ export interface PlanEditFormProps {
   readonly onCancel?: () => void;
 }
 
-/** Wraps a field that may be disabled with a lock tooltip. */
+/**
+ * Wraps a field that may be disabled with a lock icon overlay + a
+ * native `title` tooltip. Uses the browser's built-in title-attribute
+ * tooltip rather than a Radix/BaseUI `<Tooltip>` wrapper because the
+ * wrapped children can contain their own interactive elements (a
+ * `<Select>` or `<Button>` that each render a native `<button>`), and
+ * putting a `<button>`-based TooltipTrigger around another `<button>`
+ * is invalid HTML nesting that throws a React hydration error in
+ * dev and emits a "button inside button" DOM warning in prod. The
+ * native-title approach has zero HTML-nesting concerns, works on
+ * keyboard focus + mouse hover, and the banner at the top of the
+ * form already explains the rule in full.
+ */
 function LockWrapper({
   locked,
   children,
@@ -65,19 +71,15 @@ function LockWrapper({
   const t = useTranslations('admin.plans.priorYearLock');
   if (!locked) return <>{children}</>;
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger>
-          <div className="relative">
-            <div className="pointer-events-none opacity-60">{children}</div>
-            <div className="absolute right-2 top-2 flex items-center gap-1 text-muted-foreground">
-              <Lock className="h-4 w-4" />
-            </div>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent>{t('fieldTooltip')}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <div className="relative" title={t('fieldTooltip')}>
+      <div className="pointer-events-none opacity-60">{children}</div>
+      <div
+        aria-hidden="true"
+        className="absolute right-2 top-2 flex items-center gap-1 text-muted-foreground"
+      >
+        <Lock className="h-4 w-4" />
+      </div>
+    </div>
   );
 }
 
