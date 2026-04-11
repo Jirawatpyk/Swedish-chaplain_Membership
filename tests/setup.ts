@@ -60,6 +60,17 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  // IMPORTANT: `clearAllMocks` (not `resetAllMocks`) — several contract
+  // tests define `vi.mock(path, () => ({fn: vi.fn(async () => ({...}))}))`
+  // factories with functional default implementations. `resetAllMocks`
+  // would wipe those implementations back to `() => undefined`, breaking
+  // every test that relies on the factory default. `clearAllMocks` only
+  // clears `.calls` / `.results` while preserving implementations, which
+  // matches what those factories expect. The `mockResolvedValueOnce`
+  // leak that `resetAllMocks` would fix is a secondary symptom of the
+  // import-hang root cause, which is addressed directly by the
+  // `testTimeout: 10_000` bump in vitest.config.ts — hangs now fail
+  // loud at 10s instead of cascading through unconsumed mock queues.
   vi.clearAllMocks();
 });
 

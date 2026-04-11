@@ -27,6 +27,17 @@ export default defineConfig({
       'tests/integration/**',
       'tests/e2e/**',
     ],
+    // Raised from the 5s Vitest default because contract tests import
+    // route handlers that transitively cold-load `@node-rs/argon2`
+    // (native addon) + instantiate Upstash Redis clients at module
+    // evaluation time. Under heavy parallel file load (~46 files on a
+    // dev laptop), the serialized native-addon loader + HTTP client
+    // construction can push a single `await import(...)` past the 5s
+    // budget even though the test body itself is fully mocked and
+    // finishes in <50 ms once imports resolve. 10s is comfortable
+    // headroom without hiding genuinely slow tests. See QA
+    // investigation notes in specs/002-membership-plans/qa/.
+    testTimeout: 10_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary', 'lcov'],
