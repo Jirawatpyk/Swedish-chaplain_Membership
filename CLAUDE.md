@@ -2,8 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Project**: SweCham / TSCC Membership System — Thailand-Swedish Chamber of Commerce.
-**Folder name caveat**: the directory is historically `Swedish chaplain_membership`. "chaplain" is a typo for "chamber". Refer to the product as **SweCham / TSCC**, never "chaplain". Rename is tracked as R6 in `docs/phases-plan.md` (manual action — cannot be done from inside the active working directory).
+**Project**: **Chamber-OS** — a SaaS membership management platform for chambers of commerce and membership organisations. **SweCham / TSCC (Thailand-Swedish Chamber of Commerce)** is the first tenant, deployed at `swecham.zyncdata.app`. The platform is designed as **Multi-Tenant Aware, Single-Tenant Deployed (MTA+STD)** — F1 shipped single-tenant; F2 onwards use `tenant_id`-scoped schemas so future tenants can be onboarded without schema migration. See `docs/saas-architecture.md` for the multi-tenant strategy.
+
+**Scope**: Chamber-OS is the **membership management backend + admin portal + member self-service portal**. It is NOT a public website / CMS — tenants are expected to have their own public sites.
+
+**Folder name caveat**: the directory is historically `Swedish chaplain_membership`. "chaplain" is a typo for "chamber". Refer to the product as **Chamber-OS** (platform) or **SweCham / TSCC** (first tenant), never "chaplain". Rename is tracked as R6 in `docs/phases-plan.md` (manual action — cannot be done from inside the active working directory).
 
 **Repository status (as of 2026-04-11)**: **F1 (Auth & RBAC) is SHIP-READY on branch `001-auth-rbac`**. 188/191 tasks shipped; the 3 remaining checkboxes are documented deferrals to `/speckit.ship` release QA (T167 superseded by Lighthouse CI, T181 Vercel dashboard panels, T187 staging quickstart walk-through). Test suite state: **480/480 green** = 288 unit+contract + 82 integration vs live Neon Singapore + 113 passed + 1 flaky + 3 intentional skips of 117 Playwright E2E runs across chromium/mobile-chrome/mobile-safari. 6 `/speckit.review` passes + 2 `/speckit.staff-review` rounds closed all findings. `security.md § 5` checklist 13/13 PASS (co-signed by staff-review agent + solo maintainer). Vercel production env vars confirmed (`APP_BASE_URL`, `APP_ALLOWED_ORIGINS`, `RESEND_FROM_EMAIL` all point at `swecham.zyncdata.app`). `src/`, `drizzle/migrations/` (0000-0005 applied), `tests/`, `scripts/`, and `package.json` all exist and are current. Retrospective at `specs/001-auth-rbac/retrospective.md` reports 100% spec adherence. Next Spec Kit gate: **`/speckit.ship`**. F2–F9 are still in planning and have no source code yet — do not assume files exist outside of `src/modules/auth/**` + the Auth presentation surfaces listed in `specs/001-auth-rbac/plan.md`.
 
@@ -19,12 +22,18 @@ User prefers **Thai** for conversational turns. Code, specs, commit messages, an
 
 ## Key project docs (read in this order for context)
 
-1. `.specify/memory/constitution.md` — principles and quality gates
-2. `docs/phases-plan.md` — 9-feature roadmap across 3 phases + 6 resolved decisions (SV+EN+TH locales, TH-primary hosting, Stripe, 3 roles, no day-1 Excel migration, folder rename)
-3. `docs/database-analysis.md` — domain model derived from the Excel workbook (8 entities, 9 FK relationships, business rules)
-4. `docs/ux-standards.md` — enterprise UX playbook (shimmer skeletons, toasts, confirmation dialogs, idle warning, theming, keyboard & focus management). F1 auth screens MUST pass the § 15 checklist before merge.
-5. `docs/observability.md` — metrics, SLOs, alerts, log schema
-6. `specs/001-auth-rbac/` — active F1 feature bundle (see below)
+1. `.specify/memory/constitution.md` — principles and quality gates (v1.3.1, may need v1.4.0 MINOR bump for explicit tenant-isolation under Principle I — pending governance decision)
+2. `docs/phases-plan.md` — **10 core + 4 SaaS = 14 features** across 5 phases. Includes 6 resolved decisions (SV+EN+TH locales, TH-primary hosting, Stripe, 3 roles, no day-1 Excel migration, folder rename) + 2026-04-11 SaaS pivot update + scope boundary vs `swecham.com`.
+3. `docs/saas-architecture.md` — **multi-tenant strategy (MTA+STD)**, Postgres RLS, auth model (cross-tenant users, tenant-scoped membership), billing layers, white-label scope, migration path, pricing vision. Read this before designing any F2+ feature.
+4. `docs/membership-benefits-analysis.md` — authoritative 2026 Membership Package tier data from the PDF (6 corporate + 3 partnership tiers, full benefit matrix, data model, Q1–Q5 for F2 clarify). **Supersedes the deleted `docs/database-analysis.md`** which was Excel-derived and inaccurate.
+5. `docs/event-integration-analysis.md` — F6 EventCreate integration strategy (Zapier webhook → attendee import → benefit quota). No CRUD event management — we use EventCreate externally.
+6. `docs/email-broadcast-analysis.md` — F7 Email Broadcast / E-Blast system (paid benefit delivery via Resend Broadcasts API). New feature added to fill the critical gap for E-Blast quota delivery.
+7. `docs/smart-chamber-features.md` — **21 smart chamber features catalogued** (6 in MVP: benefit dashboard, at-risk detection, smart renewal, command palette, inline+bulk, timeline; 15 post-MVP: undo, NL search, saved filters, CSV import, realtime, engagement score, auto-upgrade suggestions, activity feed, compliance tracker, proactive alerts, public directory widget, GDPR export).
+8. `docs/ux-standards.md` — enterprise UX playbook (shimmer skeletons, toasts, confirmation dialogs, idle warning, theming, keyboard & focus management). F1 auth screens MUST pass the § 15 checklist before merge.
+9. `docs/observability.md` — metrics, SLOs, alerts, log schema
+10. `specs/001-auth-rbac/` — F1 feature bundle (shipped via PR #1)
+
+**Note**: `docs/database-analysis.md` was **deleted 2026-04-11** — it was Excel-derived and known to be inaccurate after the 2026 Membership Package PDF was provided. The reusable analyzer script lives at `.specify/scripts/analyze_excel.py`. Git history preserves the old content.
 
 ## Current feature: F1 — Auth & RBAC (`001-auth-rbac`)
 
@@ -203,4 +212,4 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 
 - 001-auth-rbac: Added TypeScript 5.7+ (strict mode, `strict: true`, `noUncheckedIndexedAccess: true`)
 
-Last updated: 2026-04-09
+Last updated: 2026-04-11
