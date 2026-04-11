@@ -289,35 +289,35 @@ Web application, single Next.js project. Paths rooted at repository root unless 
 
 ### Tests for User Story 4 (RED FIRST)
 
-- [ ] T122 [P] [US4] Create `tests/contract/plans/activate-deactivate.test.ts` — POST activate/deactivate endpoints, no-op idempotency, audit events `plan_activated` / `plan_deactivated`
-- [ ] T123 [P] [US4] Create `tests/contract/plans/delete-plan.test.ts` — DELETE shape, 409 `plan_has_active_members` when MemberAttachmentChecker returns > 0 (F2 stub always returns 0 so this path is only coverable via mock), `plan_soft_deleted` audit
-- [ ] T124 [P] [US4] Create `tests/contract/plans/undelete-plan.test.ts` — POST undelete, target state is Inactive (US4 AS4), `plan_undeleted` audit
-- [ ] T125 [P] [US4] Create `tests/integration/plans/soft-delete-with-members.test.ts` — swaps in a stub MemberAttachmentChecker returning 3 → delete refuses with 409 and payload `{affected_member_count: 3}`; stub returning 0 → delete succeeds (critique P7)
-- [ ] T126 [P] [US4] Create `tests/e2e/plans-deactivate.spec.ts` — full US4 acceptance flow: deactivate → confirm dialog → toast → badge; delete → confirm dialog → row hidden; show-deleted toggle → row reappears; undelete → row returns inactive
-- [ ] T126a [P] [US4] Create `tests/integration/plans/audit-diff-state-mutations.test.ts` — close SC-007 coverage for US4 events (analyze C1): mutate plan via activate → read latest audit_log row → assert `event_type = 'plan_activated'` AND `auditPayloadSchema.safeParse(payload).success === true` AND payload matches `{is_active: {before: false, after: true}}`; repeat for deactivate (single-field diff `is_active`), soft-delete (`deleted_at` diff with before: null / after: ISO-8601 string), undelete (`deleted_at` diff with before: ISO / after: null PLUS `is_active` forced false per US4 AS4)
+- [X] T122 [P] [US4] Create `tests/contract/plans/activate-deactivate.test.ts` — POST activate/deactivate endpoints, no-op idempotency, audit events `plan_activated` / `plan_deactivated`
+- [X] T123 [P] [US4] Create `tests/contract/plans/delete-plan.test.ts` — DELETE shape, 409 `plan_has_active_members` when MemberAttachmentChecker returns > 0 (F2 stub always returns 0 so this path is only coverable via mock), `plan_soft_deleted` audit
+- [X] T124 [P] [US4] Create `tests/contract/plans/undelete-plan.test.ts` — POST undelete, target state is Inactive (US4 AS4), `plan_undeleted` audit
+- [X] T125 [P] [US4] Create `tests/integration/plans/soft-delete-with-members.test.ts` — swaps in a stub MemberAttachmentChecker returning 3 → delete refuses with 409 and payload `{affected_member_count: 3}`; stub returning 0 → delete succeeds (critique P7)
+- [X] T126 [P] [US4] Create `tests/e2e/plans-deactivate.spec.ts` — full US4 acceptance flow: deactivate → confirm dialog → toast → badge; delete → confirm dialog → row hidden; show-deleted toggle → row reappears; undelete → row returns inactive
+- [X] T126a [P] [US4] Create `tests/integration/plans/audit-diff-state-mutations.test.ts` — close SC-007 coverage for US4 events (analyze C1): mutate plan via activate → read latest audit_log row → assert `event_type = 'plan_activated'` AND `auditPayloadSchema.safeParse(payload).success === true` AND payload matches `{is_active: {before: false, after: true}}`; repeat for deactivate (single-field diff `is_active`), soft-delete (`deleted_at` diff with before: null / after: ISO-8601 string), undelete (`deleted_at` diff with before: ISO / after: null PLUS `is_active` forced false per US4 AS4)
 
 ### Application layer for User Story 4
 
-- [ ] T127 [P] [US4] Implement `src/modules/plans/application/activate-plan.ts` — loads plan, idempotent no-op if already active, calls `planRepo.setActive(true)`, appends `plan_activated` audit
-- [ ] T128 [P] [US4] Implement `src/modules/plans/application/deactivate-plan.ts` — mirrors T127 with `plan_deactivated` audit
-- [ ] T129 [P] [US4] Implement `src/modules/plans/application/soft-delete-plan.ts` — loads plan, calls `memberAttachmentChecker.countActivePlanMembers(tenant, planId, year)`, returns `Result.err({type: 'has_active_members', count})` if > 0, else calls `planRepo.softDelete` setting `deleted_at = clock.now()`, appends `plan_soft_deleted` audit
-- [ ] T130 [P] [US4] Implement `src/modules/plans/application/undelete-plan.ts` — clears `deleted_at`, forces `is_active = false` (US4 AS4), appends `plan_undeleted` audit
+- [X] T127 [P] [US4] Implement `src/modules/plans/application/activate-plan.ts` — loads plan, idempotent no-op if already active, calls `planRepo.setActive(true)`, appends `plan_activated` audit
+- [X] T128 [P] [US4] Implement `src/modules/plans/application/deactivate-plan.ts` — mirrors T127 with `plan_deactivated` audit
+- [X] T129 [P] [US4] Implement `src/modules/plans/application/soft-delete-plan.ts` — loads plan, calls `memberAttachmentChecker.countActivePlanMembers(tenant, planId, year)`, returns `Result.err({type: 'has_active_members', count})` if > 0, else calls `planRepo.softDelete` setting `deleted_at = clock.now()`, appends `plan_soft_deleted` audit
+- [X] T130 [P] [US4] Implement `src/modules/plans/application/undelete-plan.ts` — clears `deleted_at`, forces `is_active = false` (US4 AS4), appends `plan_undeleted` audit
 
 ### Infrastructure for User Story 4
 
-- [ ] T131 [US4] Implement `PlanRepo.setActive(planId, year, active)` + `PlanRepo.softDelete(planId, year, deletedAt)` + `PlanRepo.undelete(planId, year)` in `plan-repo.ts` via `runInTenant`
+- [X] T131 [US4] Implement `PlanRepo.setActive(planId, year, active)` + `PlanRepo.softDelete(planId, year, deletedAt)` + `PlanRepo.undelete(planId, year)` in `plan-repo.ts` via `runInTenant` — shipped in Phase 2 foundational layer (T051 scaffold + Phase 3 fill)
 
 ### Presentation layer — API routes for User Story 4
 
-- [ ] T132 [P] [US4] Create `src/app/api/plans/[year]/[planId]/activate/route.ts` POST handler
-- [ ] T133 [P] [US4] Create `src/app/api/plans/[year]/[planId]/deactivate/route.ts` POST handler
-- [ ] T134 [P] [US4] Extend `src/app/api/plans/[year]/[planId]/route.ts` with DELETE handler → `softDeletePlan` use case
-- [ ] T135 [P] [US4] Create `src/app/api/plans/[year]/[planId]/undelete/route.ts` POST handler
+- [X] T132 [P] [US4] Create `src/app/api/plans/[year]/[planId]/activate/route.ts` POST handler
+- [X] T133 [P] [US4] Create `src/app/api/plans/[year]/[planId]/deactivate/route.ts` POST handler
+- [X] T134 [P] [US4] Extend `src/app/api/plans/[year]/[planId]/route.ts` with DELETE handler → `softDeletePlan` use case
+- [X] T135 [P] [US4] Create `src/app/api/plans/[year]/[planId]/undelete/route.ts` POST handler
 
 ### Presentation layer — UI for User Story 4
 
-- [ ] T136 [US4] Extend `<PlansTable>` row-level dropdown-menu with Activate / Deactivate / Delete / Undelete actions — each wired to the matching API route with `<AlertDialog>` confirmation per UX standards § 4.1 + sonner toast on success or rollback on failure
-- [ ] T137 [US4] Extend `<PlansTable>` filter bar with "Show deleted" switch that toggles the `showDeleted` query param
+- [X] T136 [US4] Extend `<PlansTable>` row-level dropdown-menu with Activate / Deactivate / Delete / Undelete actions — each wired to the matching API route with `<AlertDialog>` confirmation per UX standards § 4.1 + sonner toast on success or rollback on failure
+- [X] T137 [US4] Extend `<PlansTable>` filter bar with "Show deleted" switch that toggles the `showDeleted` query param — shipped in Phase 3 US1 (T084)
 
 **Checkpoint**: User Story 4 fully functional. FR-010 member-attachment refusal testable via stub swap (prepares for F3 real implementation). FR-039 confirmation dialogs verified.
 

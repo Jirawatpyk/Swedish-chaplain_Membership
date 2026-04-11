@@ -1,6 +1,7 @@
 /**
  * GET /api/plans/[year]/[planId] (T079, US1 + US3, contracts/plans-api.md § 2) +
- * PATCH /api/plans/[year]/[planId] (T118, US3, contracts/plans-api.md § 4).
+ * PATCH /api/plans/[year]/[planId] (T118, US3, contracts/plans-api.md § 4) +
+ * DELETE /api/plans/[year]/[planId] (T134, US4 FR-010).
  *
  * GET: returns one plan or 404. The 404 path is deliberately identical
  * for "plan never existed" and "plan belongs to a different tenant" —
@@ -14,6 +15,10 @@
  * `not_found` → 404, `invalid_body` → 400,
  * `partnership_corporate_mismatch` → 422,
  * `idempotency_conflict` → 409.
+ *
+ * DELETE: admin-only soft-delete. Requires `Idempotency-Key`. Maps
+ * `has_active_members` → 409 with `details.affected_member_count`,
+ * `not_found` → 404, `idempotency_conflict` → 409.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
@@ -27,7 +32,13 @@ import {
   hashRequestBody,
 } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
-import { asPlanSlug, asPlanYear, getPlan, updatePlan } from '@/modules/plans';
+import {
+  asPlanSlug,
+  asPlanYear,
+  getPlan,
+  softDeletePlan,
+  updatePlan,
+} from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 
 const pathSchema = z.object({
@@ -337,6 +348,178 @@ export async function PATCH(
       logger.error(
         { requestId: ctx.requestId, err: result.error },
         'update-plan: unhandled error',
+      );
+      return NextResponse.json(
+        { error: { code: 'server_error', message: 'Internal server error.' } },
+        { status: 500 },
+      );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/plans/[year]/[planId] — soft-delete plan (T134, US4)
+// ---------------------------------------------------------------------------
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ year: string; planId: string }> },
+): Promise<NextResponse> {
+  const ctx = await requireAdminContext(request, {
+    resource: 'plan',
+    action: 'write',
+  });
+  if ('response' in ctx) return ctx.response;
+
+  const raw = await params;
+  const parsedPath = pathSchema.safeParse(raw);
+  if (!parsedPath.success) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'invalid_path',
+          message: 'Invalid path parameters.',
+          details: { issues: parsedPath.error.issues },
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  const keyCheck = parseIdempotencyKey(request.headers);
+  if (!keyCheck.ok) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'missing_idempotency_key',
+          message:
+            keyCheck.reason === 'missing'
+              ? 'Idempotency-Key header is required.'
+              : 'Idempotency-Key header is malformed.',
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  const tenant = resolveTenantFromRequest(request);
+  const bodyHash = hashRequestBody(
+    {},
+    `DELETE /api/plans/${parsedPath.data.year}/${parsedPath.data.planId}`,
+  );
+  const classification = await classifyIdempotencyRequest(
+    tenant,
+    keyCheck.key,
+    bodyHash,
+  );
+  if (classification.kind === 'replay') {
+    return NextResponse.json(classification.previousResponse.body, {
+      status: classification.previousResponse.status,
+    });
+  }
+  if (classification.kind === 'conflict') {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'idempotency_conflict',
+          message: 'Idempotency-Key was reused with a different body.',
+        },
+      },
+      { status: 409 },
+    );
+  }
+  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+
+  const deps = buildPlansDeps(tenant);
+
+  const result = await softDeletePlan(
+    {
+      planId: asPlanSlug(parsedPath.data.planId),
+      year: asPlanYear(parsedPath.data.year),
+      actorUserId: ctx.current.user.id,
+      requestId: ctx.requestId,
+      sourceIp: ctx.sourceIp ?? null,
+      idempotencyKey: keyCheck.key,
+    },
+    {
+      tenant: deps.tenant,
+      planRepo: deps.planRepo,
+      feeConfigRepo: deps.feeConfigRepo,
+      audit: deps.audit,
+      clock: deps.clock,
+      members: deps.members,
+    },
+  );
+
+  if (result.ok) {
+    const body = {
+      plan_id: result.value.plan_id,
+      plan_year: result.value.plan_year,
+      plan_name: result.value.plan_name,
+      description: result.value.description,
+      sort_order: result.value.sort_order,
+      plan_category: result.value.plan_category,
+      member_type_scope: result.value.member_type_scope,
+      annual_fee_minor_units: result.value.annual_fee_minor_units,
+      includes_corporate_plan_id: result.value.includes_corporate_plan_id,
+      min_turnover_minor_units: result.value.min_turnover_minor_units,
+      max_turnover_minor_units: result.value.max_turnover_minor_units,
+      max_duration_years: result.value.max_duration_years,
+      max_member_age: result.value.max_member_age,
+      benefit_matrix: result.value.benefit_matrix,
+      is_active: result.value.is_active,
+      deleted_at: result.value.deleted_at?.toISOString() ?? null,
+      created_at: result.value.created_at.toISOString(),
+      updated_at: result.value.updated_at.toISOString(),
+    };
+    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
+      status: 200,
+      body,
+    });
+    return NextResponse.json(body, { status: 200 });
+  }
+
+  switch (result.error.type) {
+    case 'not_found':
+      return NextResponse.json(
+        { error: { code: 'not_found', message: 'Plan not found.' } },
+        { status: 404 },
+      );
+    case 'has_active_members':
+      return NextResponse.json(
+        {
+          error: {
+            code: 'plan_has_active_members',
+            message:
+              'This plan has active members attached and cannot be deleted.',
+            details: { affected_member_count: result.error.count },
+          },
+        },
+        { status: 409 },
+      );
+    case 'idempotency_conflict':
+      return NextResponse.json(
+        {
+          error: {
+            code: 'idempotency_conflict',
+            message: 'Idempotency-Key was reused with a different body.',
+          },
+        },
+        { status: 409 },
+      );
+    case 'audit_failed':
+      logger.error(
+        { requestId: ctx.requestId, err: result.error },
+        'soft-delete-plan: audit write failed',
+      );
+      return NextResponse.json(
+        { error: { code: 'audit_failed', message: 'Audit trail write failed.' } },
+        { status: 500 },
+      );
+    case 'server_error':
+    default:
+      logger.error(
+        { requestId: ctx.requestId, err: result.error },
+        'soft-delete-plan: unhandled error',
       );
       return NextResponse.json(
         { error: { code: 'server_error', message: 'Internal server error.' } },

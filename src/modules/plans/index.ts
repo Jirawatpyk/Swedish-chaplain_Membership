@@ -218,7 +218,36 @@ export {
   type UpdatePlanDeps,
 } from './application/update-plan';
 
+// Phase 6 (US4 — T127-T130) — shipped:
+
+export {
+  activatePlan,
+  type ActivatePlanInput,
+  type ActivatePlanError,
+  type ActivatePlanDeps,
+} from './application/activate-plan';
+
+export {
+  deactivatePlan,
+  type DeactivatePlanInput,
+  type DeactivatePlanError,
+  type DeactivatePlanDeps,
+} from './application/deactivate-plan';
+
+export {
+  softDeletePlan,
+  type SoftDeletePlanInput,
+  type SoftDeletePlanError,
+  type SoftDeletePlanDeps,
+} from './application/soft-delete-plan';
+
+export {
+  undeletePlan,
+  type UndeletePlanInput,
+  type UndeletePlanError,
+  type UndeletePlanDeps,
+} from './application/undelete-plan';
+
 //
-// Phase 6+ (US4-US5) will add:
-//   export { activatePlan, deactivatePlan, softDeletePlan, undeletePlan }
+// Phase 7+ (US5) will add:
 //   export { getFeeConfig, updateFeeConfig }
