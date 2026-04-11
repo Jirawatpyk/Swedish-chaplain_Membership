@@ -1,0 +1,9 @@
+{
+  "query": "clone",
+  "signedInAs": "manager",
+  "dialogOpen": true,
+  "emptyStateShown": true,
+  "emptyStateText": "No results found.",
+  "filteredOutActions": ["plan.new", "plan.clone", "fee.edit"],
+  "note": "The admin-only plan.clone action that matches 'clone' is filtered server-side for manager role; manager gets empty results."
+}

@@ -1,0 +1,17 @@
+{
+  "query": "palette",
+  "signedInAs": "admin",
+  "groupsRendered": [
+    {
+      "heading": "Actions",
+      "items": ["Create new plan", "Clone year", "Edit fee configuration", "View audit log"]
+    },
+    {
+      "heading": "Navigate",
+      "items": ["Plans list", "Fee configuration", "Users list", "Dashboard"]
+    }
+  ],
+  "plansGroupHidden": true,
+  "plansGroupHiddenReason": "no plan name matches 'palette'",
+  "adminOnlyActionsVisible": ["Create new plan", "Clone year", "Edit fee configuration"]
+}

@@ -1,0 +1,12 @@
+{
+  "query": "audit",
+  "signedInAs": "manager",
+  "groupsRendered": [
+    {
+      "heading": "Actions",
+      "items": ["View audit log"]
+    }
+  ],
+  "selectedByDefault": "View audit log",
+  "note": "Only the read-category action 'audit.view' (requires: 'read') passes the server-side role filter for manager."
+}

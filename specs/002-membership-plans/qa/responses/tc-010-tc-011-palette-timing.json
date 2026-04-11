@@ -1,0 +1,15 @@
+{
+  "coldOpen": {
+    "durationMs": 25,
+    "budgetMs": 300,
+    "pass": true,
+    "measurement": "performance.now() from ctrl+K keydown dispatch to cmdk-root present in DOM, after navigating to /admin/plans"
+  },
+  "warmOpen": {
+    "durationMs": 15,
+    "budgetMs": 100,
+    "pass": true,
+    "measurement": "performance.now() from ctrl+K keydown to cmdk-root after a previous open+close cycle"
+  },
+  "note": "Measurements taken on local dev server (Turbopack) with already-compiled route. Real-world cold-open on Vercel sin1 will include network roundtrip to /api/plans/search after first keystroke, which is covered by the <link rel=preconnect> hint in admin/layout.tsx (T157 critique P8)."
+}
