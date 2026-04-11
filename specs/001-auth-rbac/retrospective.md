@@ -2,6 +2,7 @@
 feature: 001-auth-rbac
 branch: 001-auth-rbac
 date: 2026-04-11
+last_updated: 2026-04-11T12:30Z
 completion_rate: 98%
 spec_adherence: 100%
 requirements_total: 47
@@ -18,8 +19,14 @@ tasks_added_during_implementation: 0
 critical_findings: 0
 significant_findings: 3
 minor_findings: 2
+post_ship_findings: 2
 positive_findings: 8
 constitution_violations: 0
+ship_state: shipped
+ship_pr: "#1"
+ship_merge_commit: baad811b5c27a90b342192b4e02e6e2ddb0d45df
+ship_production_deployment: swecham-l2hqfio2m-jirawatpyk-4879s-projects.vercel.app
+ship_production_url: https://swecham.zyncdata.app
 ---
 
 # F1 — Auth & RBAC — Retrospective
@@ -299,29 +306,111 @@ Three things shipped that were NOT in the original spec. All are infrastructure 
 3. **`E2E_*_EMAIL` env vars should be required, not optional-skip** — the round-2 E2E run with 41 skipped tests was caused by forgetting to export `E2E_ADMIN_EMAIL`. A failing `describe.beforeAll` would have been louder than a silent skip.
 4. **`src/lib/env.ts` should cross-validate `RESEND_FROM_EMAIL` domain against an `APP_TRUSTED_DOMAINS` list** — would have caught the `swecham.se` vs `zyncdata.app` mismatch before hitting Resend.
 5. **Client components should not use barrel imports that transitively load Node-only modules** — round-2 build broke because `idle-warning-dialog.tsx` pulled in the auth barrel which transitively loaded `@node-rs/argon2`. The fix was per-line `eslint-disable` on 3 client files. A cleaner solution: split the barrel into `@/modules/auth` (server) and `@/modules/auth/client` (pure Domain types only).
+6. **`src/lib/env.ts` should `.trim()` every string field that has format validation** (`.email()`, `.url()`, secret-shaped fields) — discovered post-merge during `/speckit.ship`: Vercel production env `BOOTSTRAP_ADMIN_EMAIL` had a literal trailing `\n` from an early `vercel env add` paste, which zod `.email()` rejected → first production deploy after merging PR #1 failed with "Invalid email." `AUTH_COOKIE_SIGNING_SECRET` had the same trailing `\n` but slipped through because its zod schema is only `.string().min(32)` (would have caused a real cookie-signing bug at first signed cookie). This is the **third time** trailing whitespace / newline in an env value caused a problem (W-03 forgot-password normalization, this incident — and arguably the Resend API key paste which was clean by luck). One-line fix: a `trimmedString` helper in `env.ts` that wraps `z.string().trim()` and is the default for every string field. **Cost of NOT having this**: ~30 minutes of post-ship triage during a production deploy that should have been ceremonial.
+7. **Vercel preview env vars must be set per-scope, not just `production`** — discovered post-push during `/speckit.ship`: I had run `vercel env add NAME production` for 3 vars, but Vercel preview deployments use the `preview` scope which had no values. PR #1's first preview build failed with "Required" errors for `APP_BASE_URL`, `APP_ALLOWED_ORIGINS`, `RESEND_WEBHOOK_SIGNING_SECRET`, `AUTH_COOKIE_SIGNING_SECRET`. Lesson: when adding env vars to Vercel, **default to all 3 environments** (production + preview + development) unless there's a specific reason to scope. The `vercel env add` CLI doesn't make this trade-off obvious. **Cost of NOT having this**: ~15 minutes of post-PR triage + 1 empty trigger commit to get a clean preview build.
 
 ### Recommendations (prioritised)
 
 **HIGH**
-- **Promote the public barrel pattern to Constitution Principle III** — every future `src/modules/*` module ships with a barrel + ESLint rule. File under `/speckit.constitution` when F2 lands.
+- **Promote the public barrel pattern to Constitution Principle III** — every future `src/modules/*` module ships with a barrel + ESLint rule. ✅ **DONE in Constitution v1.3.0** (commit `ba48b33`).
 - **Add boot-time cross-field validation** to `src/lib/env.ts`: `APP_ALLOWED_ORIGINS` MUST include `APP_BASE_URL` origin; `RESEND_FROM_EMAIL` domain MUST match a known trusted set.
+- **Trim every string field in `src/lib/env.ts`** that has format validation (`.email()`, `.url()`, secret-shaped fields). Add a `trimmedString` helper that wraps `z.string().trim()` and use it as the default for every string field. **Discovered post-merge during `/speckit.ship`** — production deploy failed twice on env values with trailing `\n` from Vercel paste. Cost: ~30 min triage of a deploy that should have been ceremonial.
 
 **MEDIUM**
 - **Split the auth barrel** into server + client variants to allow client components to import Domain types cleanly without the Node-only module graph.
 - **Add a `src/modules/auth/client.ts`** that re-exports only Domain types + pure helpers (no use cases, no infrastructure type imports). Client components use this path; server code uses the main `src/modules/auth/index.ts`.
 - **Add a Playwright "warm dev server" global-setup alternative** for when the operator prefers `pnpm dev` over `pnpm start` — issue HEAD requests to every auth route before workers start.
+- **Create a `vercel env add NAME --all-environments` wrapper script** at `scripts/vercel-env-add-all.ts` so the operator does not need to run `vercel env add NAME production && vercel env add NAME preview && vercel env add NAME development` every time. **Discovered post-merge** — preview build failed because env vars were only set in `production` scope.
 
 **LOW**
 - **Document M-2 (Turbopack parallel-worker cap) and the browser-extension hydration symptom in `docs/runbook/auth.md`** for future maintainers.
 - **Deprecate the `swecham.se` fallback in `resend-client.ts` once `swecham.se` is verified in the production Resend account** — the fallback silently hides misconfigured dev environments.
+- **Document the `BOOTSTRAP_ADMIN_EMAIL` env var as setup-only** in `docs/runbook/auth.md` — it is read by `scripts/seed-bootstrap-admin.ts` only and SHOULD NOT be set in Vercel `production`/`preview`/`development` (operators should keep it in their local terminal session via `BOOTSTRAP_ADMIN_EMAIL=foo pnpm tsx scripts/...`). The fact that it was in Vercel `production` triggered the post-merge crash.
 
 ### Follow-up commands
 
-| Priority | Command | Purpose |
-|---|---|---|
-| HIGH | `/speckit.constitution` | Amend Principle III to require module barrels; amend Principle IX for solo-dev review substitution pattern |
-| MEDIUM | None — keep F1 as-is and move on | Lessons above are F2+ concerns, not F1 ship blockers |
-| LOW | `/speckit.retrospective` on F2 | Verify the solo-dev substitution pattern works for a second feature |
+| Priority | Command | Purpose | Status |
+|---|---|---|---|
+| HIGH | `/speckit.constitution` | Amend Principle III to require module barrels; amend Principle IX for solo-dev review substitution pattern | ✅ DONE — Constitution v1.3.0 (commit `ba48b33`) |
+| MEDIUM | None — keep F1 as-is and move on | Lessons above are F2+ concerns, not F1 ship blockers | ✅ F1 SHIPPED — PR #1 merged 2026-04-11 05:23:40 UTC, production deploy `swecham-l2hqfio2m` Ready |
+| LOW | `/speckit.retrospective` on F2 | Verify the solo-dev substitution pattern works for a second feature | ⏳ Pending — F2 not yet started |
+
+---
+
+## Post-Ship Addendum (2026-04-11 12:30 UTC)
+
+This section was appended AFTER the retrospective was originally written, as
+`/speckit.ship` discovered two new issues that the retrospective did not
+predict. They are recorded here so the F2 retrospective can refer to them as
+historical context.
+
+### P-1 — Vercel preview env vars not auto-mirrored from production
+
+**Discovered**: PR #1 first preview build (commit `30c5f08`)
+**Symptom**: Vercel preview deploy failed with `Environment validation failed`
+listing 4 env vars as Required:
+- `AUTH_COOKIE_SIGNING_SECRET`
+- `RESEND_WEBHOOK_SIGNING_SECRET`
+- `APP_BASE_URL`
+- `APP_ALLOWED_ORIGINS`
+
+**Root cause**: When the maintainer ran `vercel env add NAME production` for
+the 3 new vars (`APP_BASE_URL`, `APP_ALLOWED_ORIGINS`, `RESEND_FROM_EMAIL`)
+during round 2 staff review, the values went into the **production** scope
+only. Vercel preview deployments use the **preview** scope, which had no
+values. The 2 secret vars (`AUTH_COOKIE_*` + `RESEND_WEBHOOK_*`) had been in
+production since the initial Vercel setup but were never mirrored to preview.
+
+**Resolution**: Added all 5 vars to preview scope (branch-scoped to
+`001-auth-rbac`) via `vercel env add NAME preview 001-auth-rbac --value <v>
+--yes`. Triggered rebuild via empty commit `7a7b860`. Preview build then
+passed.
+
+**Total impact**: ~15 minutes triage + 1 empty commit + 1 rebuild cycle.
+
+**Prevention** (added to recommendations above): default new Vercel env vars
+to all 3 environments unless there is a specific reason to scope.
+
+### P-2 — Trailing newline in Vercel env values
+
+**Discovered**: First production deploy after merging PR #1 (deployment
+`swecham-ejpk45zsx`)
+**Symptom**: Production build failed with `BOOTSTRAP_ADMIN_EMAIL: Invalid email`
+even though the value displayed correctly in `vercel env ls`.
+
+**Root cause**: The value `BOOTSTRAP_ADMIN_EMAIL=jirawat.p@eqho.com\n` was
+stored in Vercel with a literal trailing newline character. zod `.email()`
+validation rejects any string containing a newline. The same trailing `\n`
+existed on `AUTH_COOKIE_SIGNING_SECRET` but slipped through validation
+because its zod schema is only `.string().min(32)` (would have caused a real
+HMAC mismatch on the first signed cookie if not caught here).
+
+**Likely cause**: an early `vercel env add` interactive paste that included a
+trailing `Enter`. The value displayed normally because most consumers just
+read it via `process.env.NAME` without trimming.
+
+**Resolution**: `vercel env rm` followed by `vercel env add --value '<clean>'
+--yes` for both vars. `vercel --prod` to re-trigger production deploy.
+Production then built successfully (`swecham-l2hqfio2m`).
+
+**Total impact**: ~30 minutes triage of a deploy that should have been
+ceremonial.
+
+**Prevention** (added to recommendations above): make `trimmedString =
+z.string().trim()` the default for every string field in `src/lib/env.ts` so
+trailing whitespace / newline is silently absorbed at boot. Will land in F2.
+
+### Post-ship verification
+
+| Check | Result |
+|---|---|
+| PR #1 merged to `main` | ✅ commit `baad811` at 2026-04-11 05:23:40 UTC |
+| Production Vercel deploy | ✅ `swecham-l2hqfio2m-jirawatpyk-4879s-projects.vercel.app` Ready |
+| `https://swecham.zyncdata.app/admin/sign-in` | ✅ HTTP 200 (1.8 s) |
+| `https://swecham.zyncdata.app/portal/sign-in` | ✅ HTTP 200 |
+| `https://swecham.zyncdata.app/forgot-password` | ✅ HTTP 200 |
+| Remote branch `origin/001-auth-rbac` | ✅ deleted by `gh pr merge --delete-branch` |
+| Local branch | ✅ switched to `main`, fast-forward synced |
 
 ---
 
