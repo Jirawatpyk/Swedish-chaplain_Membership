@@ -161,18 +161,40 @@ export type {
 export { recordAuditEvent } from './application/record-audit-event';
 export type { RecordAuditEventError } from './application/record-audit-event';
 
-// --- Application: use cases (filled in as phases land) ----------------------
+// --- Application: use cases -------------------------------------------------
 //
-// Phase 3 (US1 — T072-T074) will add:
-//   export { listPlans, type ListPlansInput, type ListPlansError } from './application/list-plans';
-//   export { getPlan, type GetPlanInput, type GetPlanError } from './application/get-plan';
-//   export { searchPlans, type SearchPlansInput } from './application/search-plans';
+// Phase 3 (US1 — T072-T074) — shipped:
+
+export {
+  listPlans,
+  type ListPlansInput,
+  type ListPlansSuccess,
+  type ListPlansError,
+  type ListPlansDeps,
+  type PlanListItem,
+} from './application/list-plans';
+
+export {
+  getPlan,
+  type GetPlanInput,
+  type GetPlanError,
+  type GetPlanDeps,
+} from './application/get-plan';
+
+export {
+  searchPlans,
+  type SearchPlansInput,
+  type SearchPlansSuccess,
+  type SearchPlansError,
+  type SearchPlansDeps,
+  type PalettePlanHit,
+  type PaletteActionItem,
+  type PaletteNavigateItem,
+} from './application/search-plans';
+
 //
-// Phase 4 (US2 — T098-T099) will add:
+// Phase 4+ (US2-US5) will add:
 //   export { createPlan, clonePlansToYear } from './application/...';
-//
-// Phase 5 (US3 — T116): export { updatePlan } from './application/update-plan';
-// Phase 6 (US4 — T127-T130): export { activatePlan, deactivatePlan, softDeletePlan, undeletePlan }
-// Phase 7 (US5 — T144-T145): export { getFeeConfig, updateFeeConfig }
-//
-// No use cases are exported yet — Phase 2e only wires the ports + adapters.
+//   export { updatePlan } from './application/update-plan';
+//   export { activatePlan, deactivatePlan, softDeletePlan, undeletePlan }
+//   export { getFeeConfig, updateFeeConfig }

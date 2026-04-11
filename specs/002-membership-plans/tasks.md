@@ -149,50 +149,50 @@ Web application, single Next.js project. Paths rooted at repository root unless 
 
 ### Tests for User Story 1 (RED FIRST — commit failing, then implement)
 
-- [ ] T062 [P] [US1] Create `tests/contract/plans/list-plans.test.ts` — GET `/api/plans` request + response shape, query-param validation, `meta.currency_code` returned from `tenant_fee_config`, `missing_translations` flag on each row, pagination absent in F2
-- [ ] T063 [P] [US1] Create `tests/contract/plans/get-plan.test.ts` — GET `/api/plans/{year}/{planId}` shape, 404 on missing, 404-never-403 on cross-tenant probe, `plan_not_found` audit event appended
-- [ ] T064 [P] [US1] Create `tests/contract/plans/palette-search.test.ts` — GET `/api/plans/search` shape, role-filtered actions, localised plan names in active locale, `limit` query param
-- [ ] T065 [P] [US1] Create `tests/integration/plans/list-plans-filtering.test.ts` — two seeded tenants via helper, filter by category / year / search query / activeOnly / showDeleted — verify tenant isolation + filter correctness
-- [ ] T066 [P] [US1] Create `tests/integration/plans/get-plan-404-cross-tenant.test.ts` — probing Tenant B's plan_id from Tenant A's context returns 404 (not 403), logs `plan_not_found` event via T052 adapter
-- [ ] T067 [P] [US1] Create `tests/integration/plans/missing-translation-indicator.test.ts` — plan with `{en,th}` but no `sv` returns `missing_translations: ['sv']` for admin only
-- [ ] T068 [P] [US1] Create `tests/e2e/plans-list.spec.ts` — seed → sign-in → navigate `/admin/plans` → assert 9 rows → filter category=partnership → 3 rows → switch language EN→TH→SV → assert plan names re-render; tagged `@i18n`
-- [ ] T069 [P] [US1] Create `tests/e2e/plans-a11y.spec.ts` — `@axe-core/playwright` scan on `/admin/plans` + `/admin/plans/2026/premium` detail view returning zero violations; tagged `@a11y`
-- [ ] T070 [P] [US1] Create `tests/e2e/plans-reduced-motion.spec.ts` — navigate with `prefers-reduced-motion: reduce` emulation, assert shimmer gradient animation disabled, skeleton pulse fallback rendered; tagged `@reduced-motion`
-- [ ] T071 [P] [US1] Create `tests/e2e/plans-i18n-coverage.spec.ts` — iterate EN/TH/SV locales on `/admin/plans`, assert no untranslated keys surface, plan names render in active locale with missing-translation indicator for admin
+- [X] T062 [P] [US1] Create `tests/contract/plans/list-plans.test.ts` — GET `/api/plans` request + response shape, query-param validation, `meta.currency_code` returned from `tenant_fee_config`, `missing_translations` flag on each row, pagination absent in F2
+- [X] T063 [P] [US1] Create `tests/contract/plans/get-plan.test.ts` — GET `/api/plans/{year}/{planId}` shape, 404 on missing, 404-never-403 on cross-tenant probe, `plan_not_found` audit event appended
+- [X] T064 [P] [US1] Create `tests/contract/plans/palette-search.test.ts` — GET `/api/plans/search` shape, role-filtered actions, localised plan names in active locale, `limit` query param
+- [X] T065 [P] [US1] Create `tests/integration/plans/list-plans-filtering.test.ts` — two seeded tenants via helper, filter by category / year / search query / activeOnly / showDeleted — verify tenant isolation + filter correctness
+- [X] T066 [P] [US1] Create `tests/integration/plans/get-plan-404-cross-tenant.test.ts` — probing Tenant B's plan_id from Tenant A's context returns 404 (not 403), logs `plan_not_found` event via T052 adapter
+- [X] T067 [P] [US1] Create `tests/integration/plans/missing-translation-indicator.test.ts` — plan with `{en,th}` but no `sv` returns `missing_translations: ['sv']` for admin only
+- [X] T068 [P] [US1] Create `tests/e2e/plans-list.spec.ts` — seed → sign-in → navigate `/admin/plans` → assert 9 rows → filter category=partnership → 3 rows → switch language EN→TH→SV → assert plan names re-render; tagged `@i18n`
+- [X] T069 [P] [US1] Create `tests/e2e/plans-a11y.spec.ts` — `@axe-core/playwright` scan on `/admin/plans` + `/admin/plans/2026/premium` detail view returning zero violations; tagged `@a11y`
+- [X] T070 [P] [US1] Create `tests/e2e/plans-reduced-motion.spec.ts` — navigate with `prefers-reduced-motion: reduce` emulation, assert shimmer gradient animation disabled, skeleton pulse fallback rendered; tagged `@reduced-motion`
+- [X] T071 [P] [US1] Create `tests/e2e/plans-i18n-coverage.spec.ts` — iterate EN/TH/SV locales on `/admin/plans`, assert no untranslated keys surface, plan names render in active locale with missing-translation indicator for admin
 
 ### Application layer for User Story 1
 
-- [ ] T072 [P] [US1] Implement `src/modules/plans/application/list-plans.ts` — takes `{filter: {year?, category?, q?, activeOnly?, showDeleted?}}` + deps `{planRepo, feeConfigRepo, tenant, clock}` — loads plans via `planRepo.findByTenantAndYear` and fee-config via `feeConfigRepo.findByTenant`, hydrates `Money` display values, computes `missing_translations` flag, sorts by `(plan_category DESC, sort_order ASC)`
-- [ ] T073 [P] [US1] Implement `src/modules/plans/application/get-plan.ts` — returns `Result<Plan, {type:'not_found'}>`; on not_found, invokes `AuditPort.record` with `plan_not_found` event carrying `{ requested_plan_id, requested_year, method, route }` payload (critique E6)
-- [ ] T074 [P] [US1] Implement `src/modules/plans/application/search-plans.ts` — in-memory filter over the plans result set; returns `{ plans, actions, navigate }` grouped response; actions filtered by role (admin vs manager)
+- [X] T072 [P] [US1] Implement `src/modules/plans/application/list-plans.ts` — takes `{filter: {year?, category?, q?, activeOnly?, showDeleted?}}` + deps `{planRepo, feeConfigRepo, tenant, clock}` — loads plans via `planRepo.findByTenantAndYear` and fee-config via `feeConfigRepo.findByTenant`, hydrates `Money` display values, computes `missing_translations` flag, sorts by `(plan_category DESC, sort_order ASC)`
+- [X] T073 [P] [US1] Implement `src/modules/plans/application/get-plan.ts` — returns `Result<Plan, {type:'not_found'}>`; on not_found, invokes `AuditPort.record` with `plan_not_found` event carrying `{ requested_plan_id, requested_year, method, route }` payload (critique E6)
+- [X] T074 [P] [US1] Implement `src/modules/plans/application/search-plans.ts` — in-memory filter over the plans result set; returns `{ plans, actions, navigate }` grouped response; actions filtered by role (admin vs manager)
 
 ### Infrastructure for User Story 1
 
-- [ ] T075 [US1] Implement `PlanRepo.findByTenantAndYear` in `src/modules/plans/infrastructure/db/plan-repo.ts` — uses `runInTenant(ctx, tx => tx.select().from(membershipPlans).where(...))` with all filter predicates; relies on RLS for tenant scoping (no explicit `WHERE tenant_id = ?` — research.md § 7.1)
-- [ ] T076 [US1] Implement `PlanRepo.findOne` in the same file — returns undefined on miss (repo layer) and the Application layer maps undefined → `not_found`
-- [ ] T077 [US1] Implement `FeeConfigRepo.findByTenant` in `src/modules/plans/infrastructure/db/fee-config-repo.ts` via `runInTenant`
+- [X] T075 [US1] Implement `PlanRepo.findByTenantAndYear` in `src/modules/plans/infrastructure/db/plan-repo.ts` — uses `runInTenant(ctx, tx => tx.select().from(membershipPlans).where(...))` with all filter predicates; relies on RLS for tenant scoping (no explicit `WHERE tenant_id = ?` — research.md § 7.1)
+- [X] T076 [US1] Implement `PlanRepo.findOne` in the same file — returns undefined on miss (repo layer) and the Application layer maps undefined → `not_found`
+- [X] T077 [US1] Implement `FeeConfigRepo.findByTenant` in `src/modules/plans/infrastructure/db/fee-config-repo.ts` via `runInTenant`
 
 ### Presentation layer — API routes for User Story 1
 
-- [ ] T078 [P] [US1] Create `src/app/api/plans/route.ts` GET handler — parses query via zod, calls `listPlans` use case, serialises response per contracts/plans-api.md § 1; returns 401 if unauthenticated, 403 if member role
-- [ ] T079 [P] [US1] Create `src/app/api/plans/[year]/[planId]/route.ts` GET handler — parses path params, calls `getPlan` use case, returns 404 on not_found (never 403 for cross-tenant), serialises per § 2
-- [ ] T080 [P] [US1] Create `src/app/api/plans/search/route.ts` GET handler — calls `searchPlans` use case with role-aware action filtering, wraps in `unstable_cache` with 30s TTL tagged by tenant slug for palette perf
+- [X] T078 [P] [US1] Create `src/app/api/plans/route.ts` GET handler — parses query via zod, calls `listPlans` use case, serialises response per contracts/plans-api.md § 1; returns 401 if unauthenticated, 403 if member role
+- [X] T079 [P] [US1] Create `src/app/api/plans/[year]/[planId]/route.ts` GET handler — parses path params, calls `getPlan` use case, returns 404 on not_found (never 403 for cross-tenant), serialises per § 2
+- [X] T080 [P] [US1] Create `src/app/api/plans/search/route.ts` GET handler — calls `searchPlans` use case with role-aware action filtering, wraps in `unstable_cache` with 30s TTL tagged by tenant slug for palette perf
 
 ### Presentation layer — UI components for User Story 1
 
-- [ ] T081 [P] [US1] Create `src/components/plans/plan-list-skeleton.tsx` — shimmer skeleton in the **exact shape of the final table** (same row count, same column widths) per UX standards § 2.1 for CLS = 0; reduced-motion fallback disables shimmer gradient and uses static opacity pulse
-- [ ] T082 [P] [US1] Create `src/components/plans/money-display.tsx` — reads currency from `tenant_fee_config.currency_code` via React context and formats minor_units via `Intl.NumberFormat` per active locale
-- [ ] T083 [P] [US1] Create `src/components/plans/locale-text-display.tsx` — picks active locale with fallback to EN, renders missing-translation indicator badge (admin-only, derived from session role)
-- [ ] T084 [P] [US1] Create `src/components/plans/plans-table.tsx` — plain shadcn `<Table>` with sortable headers (plan name / category / annual fee / year / active state / updated at), filter bar (category select + year select + text search + activeOnly switch + showDeleted switch), category badges, row-level dropdown-menu for Edit/Activate/Deactivate/Delete (wired in later US3/US4 tasks); **NO inline edit** (deferred to F3 with US7)
-- [ ] T085 [US1] Create `src/app/(staff)/admin/plans/layout.tsx` — plans-section shell with breadcrumb + "New plan" CTA + "Clone year" CTA buttons
-- [ ] T086 [US1] Create `src/app/(staff)/admin/plans/page.tsx` — list page rendering `<PlanListSkeleton>` during load, `<PlansTable>` with data from `listPlans`, empty state when no plans exist for the filtered year
-- [ ] T087 [US1] Create `src/app/(staff)/admin/plans/[year]/[planId]/page.tsx` — read-only detail view showing full benefit matrix grouped by category (Brand Visibility / Events / Additional / Partnership-only)
+- [X] T081 [P] [US1] Create `src/components/plans/plan-list-skeleton.tsx` — shimmer skeleton in the **exact shape of the final table** (same row count, same column widths) per UX standards § 2.1 for CLS = 0; reduced-motion fallback disables shimmer gradient and uses static opacity pulse
+- [X] T082 [P] [US1] Create `src/components/plans/money-display.tsx` — reads currency from `tenant_fee_config.currency_code` via React context and formats minor_units via `Intl.NumberFormat` per active locale
+- [X] T083 [P] [US1] Create `src/components/plans/locale-text-display.tsx` — picks active locale with fallback to EN, renders missing-translation indicator badge (admin-only, derived from session role)
+- [X] T084 [P] [US1] Create `src/components/plans/plans-table.tsx` — plain shadcn `<Table>` with sortable headers (plan name / category / annual fee / year / active state / updated at), filter bar (category select + year select + text search + activeOnly switch + showDeleted switch), category badges, row-level dropdown-menu for Edit/Activate/Deactivate/Delete (wired in later US3/US4 tasks); **NO inline edit** (deferred to F3 with US7)
+- [X] T085 [US1] Create `src/app/(staff)/admin/plans/layout.tsx` — plans-section shell with breadcrumb + "New plan" CTA + "Clone year" CTA buttons
+- [X] T086 [US1] Create `src/app/(staff)/admin/plans/page.tsx` — list page rendering `<PlanListSkeleton>` during load, `<PlansTable>` with data from `listPlans`, empty state when no plans exist for the filtered year
+- [X] T087 [US1] Create `src/app/(staff)/admin/plans/[year]/[planId]/page.tsx` — read-only detail view showing full benefit matrix grouped by category (Brand Visibility / Events / Additional / Partnership-only)
 
 ### Seed data for User Story 1 (MVP depends on the 9 SweCham 2026 plans being loadable)
 
-- [ ] T088 [P] [US1] Create `scripts/seed-swecham-2026-plans.ts` — two-stage idempotent per critique P4: **Stage A** (own transaction) upserts `tenant_fee_config` with `(swecham, THB, 0.07, 100_000)`; **Stage B** (own transaction) refuses if any plan exists for `(swecham, 2026)` else inserts the 9 plans from data-model.md § 6.1 + § 6.2 with localised names from § 6.3 and writes 9 `plan_created` + 1 `fee_config_updated` audit events; guards tenant slug = `'swecham'`; outputs per-stage status
-- [ ] T089 [P] [US1] Create `tests/integration/plans/seed-idempotency.test.ts` — covers all three partial-state recovery scenarios from quickstart § 5: fresh DB, fee_config-only, plans-only-no-fee-config
-- [ ] T090 [US1] Run `TENANT_SLUG=swecham pnpm tsx scripts/seed-swecham-2026-plans.ts` against dev Neon → verify 9 plans + 1 fee config row + 10 audit entries; spot-check 3 rows in Neon SQL console to confirm `annual_fee_minor_units` values match PDF
+- [X] T088 [P] [US1] Create `scripts/seed-swecham-2026-plans.ts` — two-stage idempotent per critique P4: **Stage A** (own transaction) upserts `tenant_fee_config` with `(swecham, THB, 0.07, 100_000)`; **Stage B** (own transaction) refuses if any plan exists for `(swecham, 2026)` else inserts the 9 plans from data-model.md § 6.1 + § 6.2 with localised names from § 6.3 and writes 9 `plan_created` + 1 `fee_config_updated` audit events; guards tenant slug = `'swecham'`; outputs per-stage status
+- [X] T089 [P] [US1] Create `tests/integration/plans/seed-idempotency.test.ts` — covers all three partial-state recovery scenarios from quickstart § 5: fresh DB, fee_config-only, plans-only-no-fee-config
+- [X] T090 [US1] Run `TENANT_SLUG=swecham pnpm tsx scripts/seed-swecham-2026-plans.ts` against dev Neon → verify 9 plans + 1 fee config row + 10 audit entries; spot-check 3 rows in Neon SQL console to confirm `annual_fee_minor_units` values match PDF
 - [ ] T091 [US1] Run `pnpm dev` on port 3100, manually verify US1 acceptance scenarios 1–6 from spec.md (list shows 9 rows, filter works, language switch re-renders plan names, shimmer loads, member role is denied)
 
 **Checkpoint**: User Story 1 fully functional and independently testable. **`tests/integration/plans/tenant-isolation.test.ts` (T027) MUST now pass green — if still red, stop-the-line until the RLS + repo implementation is corrected.** Spec SC-001 (< 2s first paint p95) + SC-004 (100% i18n coverage) + SC-005 (exact 9 seed rows) + SC-006 (axe-core clean) verified. MVP ready for demo.

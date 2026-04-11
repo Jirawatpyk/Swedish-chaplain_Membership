@@ -19,6 +19,7 @@
  */
 
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -109,17 +110,23 @@ export const membershipPlans = pgTable(
     planCategory: planCategoryEnum('plan_category').notNull(),
     memberTypeScope: memberTypeScopeEnum('member_type_scope').notNull(),
 
-    // Pricing — integer minor units only. Currency comes from tenant_fee_config
-    // (critique P3). A future mixed-currency tenant can add per-plan currency
-    // via an additive migration without breaking F2 code.
-    annualFeeMinorUnits: integer('annual_fee_minor_units').notNull(),
+    // Pricing — bigint minor units (NOT integer — SweCham Premium's
+    // min_turnover is 10B satang = 100M THB, which overflows int32's
+    // ~2.1B ceiling). bigint is 8 bytes = ~9.2 × 10^18 headroom.
+    // Mode 'number' returns a plain JS number — values up to
+    // Number.MAX_SAFE_INTEGER (~9 quadrillion) round-trip safely,
+    // well above any plausible annual fee.
+    annualFeeMinorUnits: bigint('annual_fee_minor_units', { mode: 'number' }).notNull(),
 
     // Partnership ↔ Corporate bundling (null for corporate, non-null for partnership)
     includesCorporatePlanId: text('includes_corporate_plan_id'),
 
-    // Eligibility (nullable — each constraint is optional)
-    minTurnoverMinorUnits: integer('min_turnover_minor_units'),
-    maxTurnoverMinorUnits: integer('max_turnover_minor_units'),
+    // Eligibility (nullable — each constraint is optional). Turnover
+    // values are money-like and use bigint for the same reason as
+    // annualFeeMinorUnits. max_duration_years + max_member_age stay
+    // as integer because they're small cardinal counts.
+    minTurnoverMinorUnits: bigint('min_turnover_minor_units', { mode: 'number' }),
+    maxTurnoverMinorUnits: bigint('max_turnover_minor_units', { mode: 'number' }),
     maxDurationYears: integer('max_duration_years'),
     maxMemberAge: integer('max_member_age'),
 
@@ -171,7 +178,9 @@ export const tenantFeeConfig = pgTable('tenant_fee_config', {
   currencyCode: text('currency_code').notNull(),
   // numeric(5,4) → 0.0700 = 7%
   vatRate: numeric('vat_rate', { precision: 5, scale: 4 }).notNull(),
-  registrationFeeMinorUnits: integer('registration_fee_minor_units')
+  // bigint for consistency with plan money columns, even though the
+  // registration fee is small (100_000 satang = 1,000 THB for SweCham).
+  registrationFeeMinorUnits: bigint('registration_fee_minor_units', { mode: 'number' })
     .notNull()
     .default(0),
   updatedAt: timestamp('updated_at', { withTimezone: true })

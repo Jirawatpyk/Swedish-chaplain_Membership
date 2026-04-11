@@ -57,6 +57,13 @@
       "when": 1775909936285,
       "tag": "0007_audit_log_f2_extension",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1775915326091,
+      "tag": "0008_money_columns_to_bigint",
+      "breakpoints": true
     }
   ]
 }
