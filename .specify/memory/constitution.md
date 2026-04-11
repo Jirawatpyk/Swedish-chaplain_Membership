@@ -1,6 +1,23 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.3.1 → 1.4.0  (MINOR: SaaS pivot — add explicit
+                tenant-isolation clause to Principle I NON-NEGOTIABLE for
+                multi-tenant deployments. Triggered by the 2026-04-11
+                strategic decision to pivot Chamber-OS into a SaaS
+                platform serving multiple chambers. F2 onwards will be
+                multi-tenant-aware (see docs/saas-architecture.md); this
+                amendment makes tenant isolation a first-class
+                constitutional requirement rather than an implementation
+                convention. Principle I materially expands: a new bullet
+                on tenant isolation + rationale clarifications. New
+                Compliance & Technology Standards bullet on multi-tenant
+                data isolation. No principle is removed, renumbered, or
+                redefined; existing single-tenant code remains compliant
+                by construction (the new clause is scoped "when the
+                platform is deployed as multi-tenant"). MINOR bump per
+                § Versioning policy.)
+
 Version change: 1.3.0 → 1.3.1  (PATCH: clarify that the solo-maintainer
                 substitute clauses also exempt the "no direct push to main"
                 / "no direct commits to main" rules — discovered post-ship
@@ -84,6 +101,24 @@ History:
                          the canonical record. The default ≥2-reviewers + no-
                          direct-push rules remain unchanged for multi-maintainer
                          projects.
+  - 1.4.0 (2026-04-11) — SaaS pivot. Chamber-OS is pivoting from single-tenant
+                         SweCham deployment into a multi-tenant SaaS platform
+                         serving chambers of commerce and membership
+                         organisations. F1 (Auth & RBAC, shipped) remains
+                         cross-tenant by design (user identity is global).
+                         F2 onwards are multi-tenant aware — every data row
+                         carries a `tenant_id` column with Postgres Row-Level
+                         Security enforcing isolation at the database layer.
+                         This amendment adds an explicit tenant-isolation
+                         clause to Principle I (Data Privacy & Security,
+                         NON-NEGOTIABLE) and a matching bullet in Compliance
+                         & Technology Standards. Full architectural strategy
+                         in `docs/saas-architecture.md`. The new clause is
+                         scoped "when the platform is deployed as multi-
+                         tenant" so F1's single-tenant deployment remains
+                         compliant without retrofit. Solo-maintainer
+                         substitute clause (from v1.3.0 + v1.3.1) applies
+                         to this amendment itself.
 
 Modified principles in 1.3.0:
   - III. Clean Architecture            — adds required "public barrel + ESLint
@@ -125,6 +160,42 @@ Modified sections in 1.3.1:
 
 Added sections in 1.3.1: None.
 Removed sections in 1.3.1: None.
+
+Modified principles in 1.4.0:
+  - I. Data Privacy & Security (NON-NEGOTIABLE) — adds a new NON-NEGOTIABLE
+                                                   bullet on **tenant isolation**
+                                                   scoped to multi-tenant
+                                                   deployments. Single-tenant
+                                                   deployments (like the current
+                                                   F1 SweCham deploy) are exempt
+                                                   by the "when deployed as
+                                                   multi-tenant" scoping — no
+                                                   existing code is now
+                                                   non-compliant. Rationale
+                                                   paragraph expands to mention
+                                                   multi-tenant SaaS context.
+
+Modified sections in 1.4.0:
+  - Compliance & Technology Standards — new bullet "Multi-Tenant Isolation"
+                                          explicitly requires:
+                                          (a) shared-database + shared-schema
+                                              isolation via `tenant_id` column
+                                              on every F2+ table;
+                                          (b) Postgres Row-Level Security (RLS)
+                                              policy enforcing `tenant_id`
+                                              match at the database layer;
+                                          (c) application-layer tenant context
+                                              injected into every query;
+                                          (d) automated tests verify cross-
+                                              tenant access is IMPOSSIBLE
+                                              (not merely "blocked");
+                                          (e) tenant context MUST be a
+                                              first-class Domain type per
+                                              Principle III, not an
+                                              afterthought.
+
+Added sections in 1.4.0: None (existing sections expanded only).
+Removed sections in 1.4.0: None.
 
 Templates requiring updates:
   ✅ reviewed .specify/templates/plan-template.md   — Constitution Check still
@@ -178,7 +249,9 @@ Follow-up TODOs:
 Personal data MUST be handled under **both Thailand PDPA and EU GDPR** at every layer
 of the system. Because SweCham has Thai-resident admins + Thai tax obligations AND
 Swedish/EU member data subjects, both regimes apply simultaneously — design for the
-stricter of the two on every field.
+stricter of the two on every field. When the platform is deployed as a **multi-tenant
+SaaS** serving multiple chambers, the same privacy rules apply **per tenant** AND
+cross-tenant data access MUST be impossible by construction.
 
 - Every processing activity MUST have a documented lawful basis, explicit purpose, and
   retention policy. Data minimization and purpose limitation are mandatory.
@@ -196,13 +269,53 @@ stricter of the two on every field.
   detail). Cross-border transfers of EU data subjects' personal data MUST rely on
   a lawful GDPR transfer mechanism (adequacy decision, SCCs, or explicit consent) and
   MUST be documented in the record of processing.
+- **Tenant Isolation (multi-tenant SaaS deployments only)** — When the platform is
+  deployed as multi-tenant, tenant isolation is NON-NEGOTIABLE and MUST be enforced
+  at **BOTH** layers simultaneously (defence in depth):
+  1. **Application layer** — every query, mutation, and side effect MUST be scoped
+     by `tenantId` injected via middleware from the resolved tenant context
+     (subdomain, custom domain, or signed header). A use case that forgets to
+     pass `tenantId` is a bug and MUST fail at compile time via the Domain-layer
+     `TenantContext` type (first-class per Principle III — no string-typed
+     tenant IDs passed as implicit parameters).
+  2. **Database layer** — Postgres Row-Level Security (RLS) policies MUST be
+     enabled on every table holding tenant-scoped data, with a policy that
+     enforces `tenant_id = current_setting('app.current_tenant')`. The
+     application layer MUST `SET LOCAL app.current_tenant` per connection
+     before running queries. Even if application-layer enforcement is bypassed
+     by a code bug, Postgres itself refuses cross-tenant reads and writes.
+  3. **Test enforcement** — every tenant-scoped feature MUST include automated
+     integration tests that (a) create two tenants, (b) insert data into each,
+     (c) attempt cross-tenant reads AND writes from both directions, and
+     (d) assert zero cross-tenant visibility. A feature missing this test
+     cannot pass the Review Gate.
+  4. **Audit log** — cross-tenant access attempts (even failed ones) MUST be
+     logged as high-severity security events.
+  5. **Super-admin impersonation** (platform operators only) — if a super-admin
+     console is built (future F13), impersonation MUST be explicit, audit-logged
+     with `actor_type = 'super_admin_impersonation'`, and time-limited.
+     Super-admin direct DB access MUST use a dedicated `swecham_super` role
+     with `BYPASS_RLS`, logged at the database level.
 
-**Rationale**: SweCham / TSCC processes commercial member records (companies + named
+  **Cross-tenant access is impossible by construction, not by convention.**
+  F1 Auth & RBAC (cross-tenant user identity layer — users table has no
+  `tenant_id`) is the one deliberate exception; `users` identity is global,
+  tenant membership is modelled via a separate `user_tenants` join table
+  added in the SaaS phase (F10). F1's lack of `tenant_id` on `users` is
+  therefore NOT a violation of this clause — see `docs/saas-architecture.md`
+  § 4 for the full rationale.
+
+**Rationale**: Chamber-OS processes commercial member records (companies + named
 contact persons) with dual regulatory exposure (Thai PDPA for in-country processing,
 EU GDPR for Swedish and EU member data subjects). A breach is both a legal event in
 two jurisdictions and a trust catastrophe for a chamber whose primary asset is its
-network. Retrofit remediation for GDPR/PDPA/OWASP violations is orders of magnitude
-more expensive and damaging than getting it right at design time.
+network. When the platform serves multiple chambers, a single cross-tenant leak is
+an **existential risk** — losing Chamber A's data to Chamber B destroys trust with
+ALL chambers on the platform simultaneously. Postgres RLS + application-layer
+enforcement + mandatory cross-tenant tests give us three independent layers of
+defence; any one of them alone is insufficient. Retrofit remediation for GDPR/PDPA/
+OWASP violations OR tenant-isolation breaches is orders of magnitude more expensive
+and damaging than getting it right at design time.
 
 ### II. Test-First Development (NON-NEGOTIABLE)
 
@@ -469,6 +582,28 @@ The following stack-level and regulatory constraints apply to every feature:
   EU data subjects' personal data (e.g. Swedish member contact details) MUST rely on
   a lawful GDPR transfer mechanism. **EU replication is NOT required** unless a
   specific legal review concludes otherwise.
+- **Multi-Tenant Isolation** (applies when the platform is deployed as multi-tenant
+  SaaS — F2 onwards per Principle I): isolation MUST be enforced at BOTH application
+  AND database layers (defence in depth). Operational requirements:
+  * Shared database + shared schema with `tenant_id` column on every tenant-scoped
+    table. No schema-per-tenant, no DB-per-tenant (rejected for ops cost at current scale).
+  * Postgres **Row-Level Security (RLS)** policies enabled on every tenant-scoped
+    table. Application layer MUST `SET LOCAL app.current_tenant = '<tenant>'` per
+    connection before running queries.
+  * Application roles: `swecham_app_rw` (tenant-scoped CRUD, RLS enforced) and
+    `swecham_app_ro` (read-only). Platform-operator role `swecham_super` (BYPASS_RLS)
+    only for super-admin console + migrations.
+  * Tenant resolution from request: subdomain → tenants table lookup, OR custom
+    domain → tenants table lookup, OR signed `X-Tenant-Slug` header for dev/admin
+    tooling. Middleware rejects requests with no resolvable tenant.
+  * Every tenant-scoped feature ships with automated cross-tenant-access tests
+    (positive + negative). A feature without this test cannot pass the Review Gate.
+  * Audit log captures `tenant_id` on every event. Cross-tenant access attempts
+    (even failed ones) are high-severity audit events.
+  * F1 Auth & RBAC is the deliberate exception: `users` table is cross-tenant
+    (user identity is global). Tenant membership is modelled in a `user_tenants`
+    join table added in the SaaS phase (F10+). This is NOT a Principle I
+    violation — see `docs/saas-architecture.md` § 4.
 - **Audit Retention**: ≥5 years for finance, authentication, and PII access records
   (satisfies both Thai tax record retention and GDPR accountability).
 - **Secrets**: Managed via a secret store (e.g., platform env vars / vault); never
@@ -592,4 +727,4 @@ Swedish law).
 - Runtime development guidance for agents lives in `CLAUDE.md` (and equivalent agent
   files). Those files are subordinate to this constitution.
 
-**Version**: 1.3.1 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-04-11
+**Version**: 1.4.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-04-11
