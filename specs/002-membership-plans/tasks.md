@@ -207,37 +207,37 @@ Web application, single Next.js project. Paths rooted at repository root unless 
 
 ### Tests for User Story 2 (RED FIRST)
 
-- [ ] T092 [P] [US2] Create `tests/contract/plans/create-plan.test.ts` — POST `/api/plans` request validation, 201 + created plan shape, 400 on invalid body, 422 on corporate/partnership mismatch, 409 on duplicate `(tenant, plan_id, year)`, 409 on idempotency conflict
-- [ ] T093 [P] [US2] Create `tests/contract/plans/clone-plans.test.ts` — POST `/api/plans/clone`, 201 shape with `{source_year, target_year, cloned_count, cloned_plan_ids}`, 409 `target_year_populated` when target has rows, 409 `source_year_empty` when source empty
-- [ ] T094 [P] [US2] Create `tests/integration/plans/clone-idempotency.test.ts` — clone 2026→2027, verify 9 new rows; clone again → 409; delete the 9 2027 rows then clone again → succeeds
-- [ ] T095 [P] [US2] Create `tests/integration/plans/create-plan-validation.test.ts` — exhaustive zod schema tests against planSchema including corporate/partnership integrity and turnover ordering
-- [ ] T096 [P] [US2] Create `tests/integration/plans/audit-diff-create-clone.test.ts` — verifies `plan_created` and `plan_cloned` audit entries round-trip through `auditPayloadSchema.safeParse` with `success: true` (critique P9)
-- [ ] T097 [P] [US2] Create `tests/e2e/plans-create-wizard.spec.ts` — admin navigates to `/admin/plans/new`, completes 4 wizard steps, submits, verifies new row appears in list; also tests clone flow via the "Clone 2026 → 2027" button from the list
+- [X] T092 [P] [US2] Create `tests/contract/plans/create-plan.test.ts` — POST `/api/plans` request validation, 201 + created plan shape, 400 on invalid body, 422 on corporate/partnership mismatch, 409 on duplicate `(tenant, plan_id, year)`, 409 on idempotency conflict
+- [X] T093 [P] [US2] Create `tests/contract/plans/clone-plans.test.ts` — POST `/api/plans/clone`, 201 shape with `{source_year, target_year, cloned_count, cloned_plan_ids}`, 409 `target_year_populated` when target has rows, 409 `source_year_empty` when source empty
+- [X] T094 [P] [US2] Create `tests/integration/plans/clone-idempotency.test.ts` — clone 2026→2027, verify 9 new rows; clone again → 409; delete the 9 2027 rows then clone again → succeeds
+- [X] T095 [P] [US2] Create `tests/integration/plans/create-plan-validation.test.ts` — exhaustive zod schema tests against planSchema including corporate/partnership integrity and turnover ordering
+- [X] T096 [P] [US2] Create `tests/integration/plans/audit-diff-create-clone.test.ts` — verifies `plan_created` and `plan_cloned` audit entries round-trip through `auditPayloadSchema.safeParse` with `success: true` (critique P9)
+- [X] T097 [P] [US2] Create `tests/e2e/plans-create-wizard.spec.ts` — admin navigates to `/admin/plans/new`, completes 4 wizard steps, submits, verifies new row appears in list; also tests clone flow via the "Clone 2026 → 2027" button from the list
 
 ### Application layer for User Story 2
 
-- [ ] T098 [P] [US2] Implement `src/modules/plans/application/create-plan.ts` — validates input via `planSchema`, checks duplicate via `planRepo.findOne`, inserts via `planRepo.insert`, appends `plan_created` audit event; transactional (single DB transaction for both insert + audit); takes explicit `idempotencyKey` parameter
-- [ ] T099 [P] [US2] Implement `src/modules/plans/application/clone-plans-to-year.ts` — loads all non-deleted plans for `(tenant, source_year)`, checks target year is empty, opens transaction, bulk-inserts N new plans with `plan_year = target_year` + `is_active = activate_cloned || false` + new `created_at`/`updated_at`/`created_by`, appends one `plan_cloned` audit event with the full new plan_ids list
+- [X] T098 [P] [US2] Implement `src/modules/plans/application/create-plan.ts` — validates input via `planSchema`, checks duplicate via `planRepo.findOne`, inserts via `planRepo.insert`, appends `plan_created` audit event; transactional (single DB transaction for both insert + audit); takes explicit `idempotencyKey` parameter
+- [X] T099 [P] [US2] Implement `src/modules/plans/application/clone-plans-to-year.ts` — loads all non-deleted plans for `(tenant, source_year)`, checks target year is empty, opens transaction, bulk-inserts N new plans with `plan_year = target_year` + `is_active = activate_cloned || false` + new `created_at`/`updated_at`/`created_by`, appends one `plan_cloned` audit event with the full new plan_ids list
 
 ### Infrastructure for User Story 2
 
-- [ ] T100 [US2] Implement `PlanRepo.insert` in `plan-repo.ts` via `runInTenant` — single-row insert, relies on composite PK uniqueness for duplicate detection
-- [ ] T101 [US2] Implement `PlanRepo.cloneYear` in `plan-repo.ts` via `runInTenant` — opens transaction, performs target-year existence check, bulk insert via Drizzle `insert().values([...])`, returns new plan_ids
+- [X] T100 [US2] Implement `PlanRepo.insert` in `plan-repo.ts` via `runInTenant` — single-row insert, relies on composite PK uniqueness for duplicate detection
+- [X] T101 [US2] Implement `PlanRepo.cloneYear` in `plan-repo.ts` via `runInTenant` — opens transaction, performs target-year existence check, bulk insert via Drizzle `insert().values([...])`, returns new plan_ids
 
 ### Presentation layer — API routes for User Story 2
 
-- [ ] T102 [P] [US2] Extend `src/app/api/plans/route.ts` with POST handler — zod body validation, `Idempotency-Key` header required, calls `createPlan` use case, returns 201 with created plan
-- [ ] T103 [P] [US2] Create `src/app/api/plans/clone/route.ts` POST handler — zod body `{source_year, target_year, activate_cloned?}`, idempotency key required, calls `clonePlansToYear`, returns 201 with clone summary
+- [X] T102 [P] [US2] Extend `src/app/api/plans/route.ts` with POST handler — zod body validation, `Idempotency-Key` header required, calls `createPlan` use case, returns 201 with created plan
+- [X] T103 [P] [US2] Create `src/app/api/plans/clone/route.ts` POST handler — zod body `{source_year, target_year, activate_cloned?}`, idempotency key required, calls `clonePlansToYear`, returns 201 with clone summary
 
 ### Presentation layer — UI components for User Story 2
 
-- [ ] T104 [P] [US2] Create `src/components/plans/locale-text-input.tsx` — tabbed en/th/sv editor with EN required + TH/SV optional indicators, tab-switching preserves field state, missing-locale badges surface live
-- [ ] T105 [P] [US2] Create `src/components/plans/money-input.tsx` — integer-only numeric input rendering the tenant currency prefix (e.g. `฿`), converts user input to minor_units on change, rejects non-integer and out-of-range values
-- [ ] T106 [P] [US2] Create `src/components/plans/benefit-matrix-editor.tsx` — grouped editor per the PDF structure (Brand Visibility / Events / Additional Benefits / Partnership-only) with category-conditional visibility: `partnership` block hidden when plan_category = `corporate`
-- [ ] T107 [P] [US2] Create `src/components/plans/clone-year-dialog.tsx` — confirmation `<AlertDialog>` per UX standards § 4.1 with title verb "Clone 2026 → 2027?", body listing the 9 plans to clone, primary button "Clone 9 plans", secondary "Cancel"
-- [ ] T108 [US2] Create `src/components/plans/plan-form-wizard.tsx` — 4-step react-hook-form wizard (Basics → Fees → Benefits → Review) with zod resolver using `planSchema`, per-step validation blocking Next button until fields pass, final Save disabled until all steps valid
-- [ ] T109 [US2] Create `src/app/(staff)/admin/plans/new/page.tsx` — wizard page wrapping `<PlanFormWizard>` with submit handler POST `/api/plans` + toast success + redirect to new plan's edit page
-- [ ] T110 [US2] Create `src/app/(staff)/admin/plans/clone/page.tsx` — clone UI with source/target year selectors + "Clone 9 plans to 2027" button invoking `<CloneYearDialog>` + POST `/api/plans/clone` + toast success
+- [X] T104 [P] [US2] Create `src/components/plans/locale-text-input.tsx` — tabbed en/th/sv editor with EN required + TH/SV optional indicators, tab-switching preserves field state, missing-locale badges surface live
+- [X] T105 [P] [US2] Create `src/components/plans/money-input.tsx` — integer-only numeric input rendering the tenant currency prefix (e.g. `฿`), converts user input to minor_units on change, rejects non-integer and out-of-range values
+- [X] T106 [P] [US2] Create `src/components/plans/benefit-matrix-editor.tsx` — grouped editor per the PDF structure (Brand Visibility / Events / Additional Benefits / Partnership-only) with category-conditional visibility: `partnership` block hidden when plan_category = `corporate`
+- [X] T107 [P] [US2] Create `src/components/plans/clone-year-dialog.tsx` — confirmation `<AlertDialog>` per UX standards § 4.1 with title verb "Clone 2026 → 2027?", body listing the 9 plans to clone, primary button "Clone 9 plans", secondary "Cancel"
+- [X] T108 [US2] Create `src/components/plans/plan-form-wizard.tsx` — 4-step wizard (Basics → Fees → Benefits → Review) with per-step zod validation (plain useState instead of react-hook-form — cleaner for nested partnership transitions), Next button disabled until step valid, final Save disabled until full schema parses
+- [X] T109 [US2] Create `src/app/(staff)/admin/plans/new/page.tsx` — wizard page wrapping `<PlanFormWizard>` with submit handler POST `/api/plans` + toast success + redirect to new plan's edit page
+- [X] T110 [US2] Create `src/app/(staff)/admin/plans/clone/page.tsx` — clone UI with source/target year selectors + "Clone 9 plans to 2027" button invoking `<CloneYearDialog>` + POST `/api/plans/clone` + toast success
 
 **Checkpoint**: User Story 2 fully functional. SC-002 (< 30s task-completion) verified for clone flow. US1 + US2 combined gives the chamber a complete annual catalogue lifecycle on MVP day.
 

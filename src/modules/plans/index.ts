@@ -192,9 +192,25 @@ export {
   type PaletteNavigateItem,
 } from './application/search-plans';
 
+// Phase 4 (US2 — T098-T099) — shipped:
+
+export {
+  createPlan,
+  type CreatePlanInput,
+  type CreatePlanError,
+  type CreatePlanDeps,
+} from './application/create-plan';
+
+export {
+  clonePlansToYear,
+  type ClonePlansToYearInput,
+  type ClonePlansToYearSuccess,
+  type ClonePlansToYearError,
+  type ClonePlansToYearDeps,
+} from './application/clone-plans-to-year';
+
 //
-// Phase 4+ (US2-US5) will add:
-//   export { createPlan, clonePlansToYear } from './application/...';
+// Phase 5+ (US3-US5) will add:
 //   export { updatePlan } from './application/update-plan';
 //   export { activatePlan, deactivatePlan, softDeletePlan, undeletePlan }
 //   export { getFeeConfig, updateFeeConfig }
