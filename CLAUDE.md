@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -205,6 +205,7 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 <!-- Do not hand-edit `## Active Technologies` or `## Recent Changes` — add durable guidance above this marker instead. -->
 
 ## Active Technologies
+- TypeScript 5.7+ (strict mode, `strict: true`, `noUncheckedIndexedAccess: true`) — unchanged from F1 (002-membership-plans)
 
 - TypeScript 5.7+ (strict mode, `strict: true`, `noUncheckedIndexedAccess: true`) (001-auth-rbac)
 
