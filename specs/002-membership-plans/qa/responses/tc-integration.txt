@@ -1,0 +1,30 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/plans/tenant-isolation.test.ts" "tests/integration/plans/list-plans-filtering.test.ts" "tests/integration/plans/get-plan-404-cross-tenant.test.ts" "tests/integration/plans/missing-translation-indicator.test.ts" "tests/integration/plans/seed-idempotency.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/integration/plans/tenant-isolation.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 3328[2mms[22m[39m
+   [33m[2m✓[22m[39m Tenant isolation — REVIEW GATE BLOCKER (T027)[2m > [22mA.update(B.plan_id) affects 0 rows [33m336[2mms[22m[39m
+   [33m[2m✓[22m[39m Tenant isolation — REVIEW GATE BLOCKER (T027)[2m > [22mA.delete(B.plan_id) affects 0 rows [33m337[2mms[22m[39m
+   [33m[2m✓[22m[39m Tenant isolation — REVIEW GATE BLOCKER (T027)[2m > [22maudit_log permissive policy: F1 NULL-tenant rows visible from both A and B [33m501[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/seed-idempotency.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 9160[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: seed idempotency (T089)[2m > [22mScenario 1 — fresh DB: fee config + 9 plans inserted [33m2416[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: seed idempotency (T089)[2m > [22mScenario 2 — already seeded: both stages are no-ops [33m2282[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: seed idempotency (T089)[2m > [22mScenario 3 — partial (fee_config only, plans missing): stage B recovers [33m2233[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: seed idempotency (T089)[2m > [22mScenario 4 — partial (plans only, fee_config missing): stage A recovers [33m2229[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/list-plans-filtering.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 2683[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/get-plan-404-cross-tenant.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1504[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: get-plan 404 cross-tenant probe (T066)[2m > [22mgetPlan from Tenant A context returns not_found (not forbidden) [33m339[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: get-plan 404 cross-tenant probe (T066)[2m > [22mappends plan_not_found audit event with the expected payload shape [33m525[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/missing-translation-indicator.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 1546[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: missing_translations indicator (T067)[2m > [22msurfaces missing_translations on each plan in the list [33m339[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: missing_translations indicator (T067)[2m > [22mmeta.currency_code resolves from tenant_fee_config [33m338[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[32m27 passed[39m[22m[90m (27)[39m
+[2m   Start at [22m 20:59:11
+[2m   Duration [22m 20.11s[2m (transform 193ms, setup 30ms, collect 621ms, tests 18.22s, environment 0ms, prepare 102ms)[22m
+

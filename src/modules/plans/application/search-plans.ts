@@ -13,7 +13,12 @@
  */
 
 import { ok, type Result } from '@/lib/result';
-import type { Role } from '@/modules/auth';
+// Type-only import from the deep domain path. Importing from the
+// `@/modules/auth` barrel here would chain-pull the heartbeat use case
+// → auth-deps → `@node-rs/argon2` into the client bundle the moment
+// any client component re-exports this file via the plans barrel.
+// See plans/domain/policies.ts for the full rationale.
+import type { Role } from '@/modules/auth/domain/role';
 import type { TenantContext } from '@/modules/tenants';
 import type { ClockPort, PlanRepo } from './ports';
 import { asPlanYear, type PlanCategory } from '../domain/plan';

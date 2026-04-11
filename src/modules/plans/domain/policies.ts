@@ -1,31 +1,46 @@
 /**
- * F2 Plans + Fee-config RBAC policies — thin wrappers that delegate to
- * F1's `canAccess(role, resource, action)` policy matrix.
+ * F2 Plans + Fee-config RBAC policies.
  *
- * Why wrappers instead of duplicated logic:
- *   - F1's `canAccess` already encodes admin/manager/member semantics.
- *     F2 plan + fee_config rules are identical: admin full CRUD,
- *     manager read-only, member denied. Reimplementing would create
- *     two sources of truth.
- *   - The F1 `Resource` type uses `(string & {})` so we can pass
- *     `'plan'` and `'fee_config'` without widening the F1 union.
- *     T056 (Phase 2f) will optionally add them to the known literal
- *     list for IDE autocomplete — behaviour-identical.
+ * Implements the admin/manager/member matrix for plan + fee_config
+ * resources inline. The rules are trivial (admin full, manager read
+ * only, member denied) and match F1's `canAccess` semantics — the F1
+ * function is the authoritative source-of-truth for the identity
+ * surface (auth:self, auth:user, auth:audit, staff:dashboard,
+ * member:portal), and this file mirrors the same decision for the F2
+ * resources.
  *
- * Pure TypeScript — no framework imports. Imports from the auth
- * module go through its public barrel.
+ * **Why inline instead of delegating to F1's canAccess**:
+ *   - `@/modules/plans` is imported by client components (e.g.
+ *     `LocaleTextDisplay`). If this Domain file imported `canAccess`
+ *     at runtime from `@/modules/auth`, the auth barrel's use-case
+ *     re-exports would chain-pull `@node-rs/argon2` (a Node-only
+ *     native binding) into the client bundle, breaking every plans
+ *     page with a Next.js "Module not found" error at turbopack
+ *     build time. Verified by `/speckit.qa` on 2026-04-11 against
+ *     the running dev server — the error reproduces on every visit
+ *     to `/admin/plans` until the runtime import is removed.
+ *   - F1's own `canAccess` is ~10 lines. Duplicating the
+ *     "admin=yes, manager=read, member=no" semantics for 2 resources
+ *     is cheaper than the bundler hazard.
+ *   - F1 role-policies tests still cover F1 semantics and do not
+ *     need to change.
+ *   - `Role` is imported type-only (erased at compile time, no
+ *     bundler impact) from the deep path `@/modules/auth/domain/role`
+ *     which is framework-free and safe for the client bundle.
+ *
+ * Pure TypeScript. Zero runtime imports from other modules.
  */
 
-import { canAccess, type Role } from '@/modules/auth';
+import type { Role } from '@/modules/auth/domain/role';
 
 /**
  * Can `role` mutate a plan (create / update / activate / deactivate /
- * delete / undelete / clone)? Delegates to F1 policy.
+ * delete / undelete / clone)?
  *
  * Rule (spec Q4): only `admin`. Managers are read-only; members denied.
  */
 export function canAdminMutatePlan(role: Role): boolean {
-  return canAccess(role, 'plan', 'write');
+  return role === 'admin';
 }
 
 /**
@@ -33,20 +48,19 @@ export function canAdminMutatePlan(role: Role): boolean {
  * interact with plans via F3+ signup UI, not the staff surface).
  */
 export function canReadPlan(role: Role): boolean {
-  return canAccess(role, 'plan', 'read');
+  return role === 'admin' || role === 'manager';
 }
 
 /** Alias used by the palette backend to filter "view" actions. */
 export const canManagerReadPlan = canReadPlan;
 
 /**
- * Can `role` clone plans from one year to another? Uses the dedicated
- * `'clone'` action (F2 addition to F1's Action union) — functionally
- * admin-only in F2, but distinct from `write` so future fine-grained
- * roles can grant clone without full mutation rights.
+ * Can `role` clone plans from one year to another? Clone is an
+ * admin-only action (mirrors F1's canAccess with the `'clone'` action
+ * added in T056).
  */
 export function canCloneYear(role: Role): boolean {
-  return canAccess(role, 'plan', 'clone');
+  return role === 'admin';
 }
 
 /**
@@ -54,12 +68,12 @@ export function canCloneYear(role: Role): boolean {
  * fee)? Admin + manager yes.
  */
 export function canReadFeeConfig(role: Role): boolean {
-  return canAccess(role, 'fee_config', 'read');
+  return role === 'admin' || role === 'manager';
 }
 
 /**
  * Can `role` mutate the tenant fee config? Admin only.
  */
 export function canMutateFeeConfig(role: Role): boolean {
-  return canAccess(role, 'fee_config', 'write');
+  return role === 'admin';
 }

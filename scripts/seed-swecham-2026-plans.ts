@@ -36,7 +36,7 @@
 
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { db, runInTenant } from '@/lib/db';
+import { db } from '@/lib/db';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { asPlanYear } from '@/modules/plans/domain/plan';
