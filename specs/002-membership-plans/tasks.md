@@ -331,27 +331,27 @@ Web application, single Next.js project. Paths rooted at repository root unless 
 
 ### Tests for User Story 5 (RED FIRST)
 
-- [ ] T138 [P] [US5] Create `tests/contract/plans/fee-config.test.ts` — GET + PATCH shape, PATCH body validation (vat_rate range, registration_fee_minor_units non-negative integer), manager role can GET but not PATCH
-- [ ] T139 [P] [US5] Create `tests/contract/plans/fee-config-currency-immutable.test.ts` — PATCH with `{currency_code: 'JPY'}` against a tenant with seeded plans returns 422 `currency_code_immutable_in_f2` with `details.current_currency_code`, `details.attempted_currency_code`, `details.non_deleted_plan_count`, `details.remediation` (critique R1)
-- [ ] T140 [P] [US5] Create `tests/integration/plans/fee-config-update.test.ts` — edit vat_rate + registration_fee → audit event captures diff → manager PATCH returns 403
-- [ ] T141 [P] [US5] Create `tests/integration/plans/fee-config-currency-immutable.test.ts` — seeds 9 plans then PATCH with currency change → 422; deletes all 9 plans then PATCH with currency change → succeeds (proves the lock is per-plan-count, not absolute)
-- [ ] T142 [P] [US5] Create `tests/integration/plans/audit-diff-fee-config.test.ts` — same diff-shape round-trip assertion as T114 but for `fee_config_updated`
-- [ ] T143 [P] [US5] Create `tests/e2e/fee-config.spec.ts` — admin edits VAT → saves → toast; manager signs in → fee-config page shows read-only values with edit controls hidden or disabled
+- [X] T138 [P] [US5] Create `tests/contract/plans/fee-config.test.ts` — GET + PATCH shape, PATCH body validation (vat_rate range, registration_fee_minor_units non-negative integer), manager role can GET but not PATCH
+- [X] T139 [P] [US5] Create `tests/contract/plans/fee-config-currency-immutable.test.ts` — PATCH with `{currency_code: 'JPY'}` against a tenant with seeded plans returns 422 `currency_code_immutable_in_f2` with `details.current_currency_code`, `details.attempted_currency_code`, `details.non_deleted_plan_count`, `details.remediation` (critique R1)
+- [X] T140 [P] [US5] Create `tests/integration/plans/fee-config-update.test.ts` — edit vat_rate + registration_fee → audit event captures diff → manager PATCH returns 403
+- [X] T141 [P] [US5] Create `tests/integration/plans/fee-config-currency-immutable.test.ts` — seeds 9 plans then PATCH with currency change → 422; deletes all 9 plans then PATCH with currency change → succeeds (proves the lock is per-plan-count, not absolute)
+- [X] T142 [P] [US5] Create `tests/integration/plans/audit-diff-fee-config.test.ts` — same diff-shape round-trip assertion as T114 but for `fee_config_updated`
+- [X] T143 [P] [US5] Create `tests/e2e/fee-config.spec.ts` — admin edits VAT → saves → toast; manager signs in → fee-config page shows read-only values with edit controls hidden or disabled
 
 ### Application layer for User Story 5
 
-- [ ] T144 [P] [US5] Implement `src/modules/plans/application/get-fee-config.ts` — simple delegation to `feeConfigRepo.findByTenant`
-- [ ] T145 [P] [US5] Implement `src/modules/plans/application/update-fee-config.ts` — if patch contains `currency_code` different from current, calls `planRepo.countActiveForTenant` and returns `Result.err({type: 'currency_code_immutable_in_f2', non_deleted_plan_count})` when > 0 (critique R1); otherwise validates via zod and updates via `feeConfigRepo.update` + appends `fee_config_updated` audit with diff
+- [X] T144 [P] [US5] Implement `src/modules/plans/application/get-fee-config.ts` — simple delegation to `feeConfigRepo.findByTenant`
+- [X] T145 [P] [US5] Implement `src/modules/plans/application/update-fee-config.ts` — if patch contains `currency_code` different from current, calls `planRepo.countActiveForTenant` and returns `Result.err({type: 'currency_code_immutable_in_f2', non_deleted_plan_count})` when > 0 (critique R1); otherwise validates via zod and updates via `feeConfigRepo.update` + appends `fee_config_updated` audit with diff
 
 ### Infrastructure for User Story 5
 
-- [ ] T146 [US5] Implement `FeeConfigRepo.update` in `fee-config-repo.ts` via `runInTenant`
-- [ ] T147 [US5] Implement `PlanRepo.countActiveForTenant` in `plan-repo.ts` — counts rows where `deleted_at IS NULL`
+- [X] T146 [US5] Implement `FeeConfigRepo.update` in `fee-config-repo.ts` via `runInTenant` *(shipped in Phase 2 foundational; Phase 7 extends patch to accept `currency_code` for count===0 path)*
+- [X] T147 [US5] Implement `PlanRepo.countActiveForTenant` in `plan-repo.ts` — counts rows where `deleted_at IS NULL` *(shipped in Phase 2 foundational)*
 
 ### Presentation layer for User Story 5
 
-- [ ] T148 [P] [US5] Create `src/app/api/fee-config/route.ts` GET + PATCH handlers — PATCH maps `currency_code_immutable_in_f2` error to 422 with the exact `details` shape from contracts/plans-api.md § 13
-- [ ] T149 [US5] Create `src/app/(staff)/admin/settings/fees/page.tsx` — form with VAT + registration-fee fields (editable for admin, disabled for manager), currency-code read-only display, explanatory note about F10 currency migration path
+- [X] T148 [P] [US5] Create `src/app/api/fee-config/route.ts` GET + PATCH handlers — PATCH maps `currency_code_immutable_in_f2` error to 422 with the exact `details` shape from contracts/plans-api.md § 13
+- [X] T149 [US5] Create `src/app/(staff)/admin/settings/fees/page.tsx` — form with VAT + registration-fee fields (editable for admin, disabled for manager), currency-code read-only display, explanatory note about F10 currency migration path
 
 **Checkpoint**: User Story 5 fully functional. Critique R1 currency immutability enforced end-to-end. FR-017 manager read-only verified.
 

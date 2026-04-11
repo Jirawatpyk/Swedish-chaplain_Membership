@@ -171,9 +171,11 @@ export interface FeeConfigRepo {
   findByTenant(tenant: TenantContext): Promise<TenantFeeConfig | undefined>;
 
   /**
-   * Partial update. `currency_code` is not accepted in the patch —
-   * the use case `update-fee-config` rejects currency changes with
-   * `currency_code_immutable_in_f2` before calling this method.
+   * Partial update. `currency_code` IS accepted in the patch, but
+   * the Application use case `update-fee-config` gates it behind the
+   * F2 immutability guard (critique R1) — the repo simply writes the
+   * fields provided. When `non_deleted_plan_count === 0` the use
+   * case allows a currency swap through.
    */
   update(
     tenant: TenantContext,
@@ -195,6 +197,7 @@ export interface FeeConfigRepo {
 export type FeeConfigPatch = {
   readonly vat_rate?: number;
   readonly registration_fee_minor_units?: number;
+  readonly currency_code?: string;
 };
 
 export type FeeConfigUpsert = {

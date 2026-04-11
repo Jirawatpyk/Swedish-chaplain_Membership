@@ -248,6 +248,17 @@ export {
   type UndeletePlanDeps,
 } from './application/undelete-plan';
 
-//
-// Phase 7+ (US5) will add:
-//   export { getFeeConfig, updateFeeConfig }
+// Phase 7 (US5 — T144-T145) — shipped:
+
+export {
+  getFeeConfig,
+  type GetFeeConfigDeps,
+  type GetFeeConfigError,
+} from './application/get-fee-config';
+
+export {
+  updateFeeConfig,
+  type UpdateFeeConfigInput,
+  type UpdateFeeConfigError,
+  type UpdateFeeConfigDeps,
+} from './application/update-fee-config';

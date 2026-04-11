@@ -58,6 +58,11 @@ export const feeConfigRepo: FeeConfigRepo = {
       if (patch.registration_fee_minor_units !== undefined) {
         updateValues.registrationFeeMinorUnits = patch.registration_fee_minor_units;
       }
+      if (patch.currency_code !== undefined) {
+        // Application layer `update-fee-config` gates this behind the
+        // F2 immutability guard — the repo trusts its caller.
+        updateValues.currencyCode = patch.currency_code;
+      }
       const updated = await tx
         .update(tenantFeeConfig)
         .set(updateValues)
