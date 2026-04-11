@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-04-11T17:50:29.950Z",
+  "event_type": "fee_config_updated",
+  "payload": {
+    "diff": {
+      "vat_rate": {
+        "after": 0.07,
+        "before": 0.075
+      },
+      "registration_fee_minor_units": {
+        "after": 100000,
+        "before": 150000
+      }
+    }
+  }
+}
+---
+{
+  "timestamp": "2026-04-11T17:49:53.853Z",
+  "event_type": "fee_config_updated",
+  "payload": {
+    "diff": {
+      "registration_fee_minor_units": {
+        "after": 150000,
+        "before": 100000
+      }
+    }
+  }
+}
+---
+{
+  "timestamp": "2026-04-11T17:49:22.559Z",
+  "event_type": "fee_config_updated",
+  "payload": {
+    "diff": {
+      "vat_rate": {
+        "after": 0.075,
+        "before": 0.07
+      }
+    }
+  }
+}
+---
