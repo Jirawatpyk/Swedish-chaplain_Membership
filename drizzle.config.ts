@@ -23,7 +23,11 @@ if (!connectionString) {
 }
 
 export default defineConfig({
-  schema: './src/modules/auth/infrastructure/db/schema.ts',
+  schema: [
+    './src/modules/auth/infrastructure/db/schema.ts',
+    // F2: plans + fee config schema (002-membership-plans)
+    './src/modules/plans/infrastructure/db/schema.ts',
+  ],
   out: './drizzle/migrations',
   dialect: 'postgresql',
   dbCredentials: {

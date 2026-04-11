@@ -86,27 +86,30 @@ const eslintConfig = defineConfig([
   },
   {
     // Clean Architecture boundary — cross-module imports MUST go
-    // through the module's public barrel (`src/modules/auth/index.ts`).
+    // through the module's public barrel (`src/modules/auth/index.ts`,
+    // `src/modules/plans/index.ts`, `src/modules/tenants/index.ts`).
     // Deep imports into `./domain`, `./application`, or
     // `./infrastructure` from outside the module leak layer internals
     // and bypass the boundary that the barrel exists to guard.
     //
-    // Intra-module files (inside `src/modules/auth/**`) are NOT subject
+    // Intra-module files (inside `src/modules/<name>/**`) are NOT subject
     // to this rule — the deep paths are the canonical way for
     // Application use cases to talk to Domain types and Infrastructure
     // ports via type-only imports. The scope below (`files`) excludes
-    // the module itself so internal wiring keeps working.
+    // the modules themselves so internal wiring keeps working.
     files: ["src/**/*.{ts,tsx}"],
     ignores: [
       "src/modules/auth/**",
-      // `src/lib/**` is the shared auth/composition adapter layer.
-      // Files here provide the glue between auth module internals
-      // and Next.js route handlers (cookies, session lookup,
-      // db client, rbac guards, composition root `auth-deps.ts`).
+      "src/modules/plans/**",
+      "src/modules/tenants/**",
+      // `src/lib/**` is the shared composition adapter layer.
+      // Files here provide the glue between module internals and
+      // Next.js route handlers (cookies, session lookup, db client,
+      // rbac guards, tenant resolver, composition roots).
       // These files LEGITIMATELY depend on branded types and
-      // repository interfaces from `@/modules/auth/**` — the
-      // boundary the barrel guards is Presentation ↔ Module, and
-      // `src/lib/**` sits on the Module side of that boundary.
+      // repository interfaces from `@/modules/**` — the boundary the
+      // barrel guards is Presentation ↔ Module, and `src/lib/**` sits
+      // on the Module side of that boundary.
       "src/lib/**",
     ],
     rules: {
@@ -129,6 +132,32 @@ const eslintConfig = defineConfig([
               message:
                 "Cross-module import must go through the auth public barrel (`@/modules/auth`). " +
                 "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
+            {
+              group: [
+                "@/modules/plans/domain/**",
+                "@/modules/plans/application/**",
+                "@/modules/plans/infrastructure/**",
+                "./modules/plans/domain/**",
+                "./modules/plans/application/**",
+                "./modules/plans/infrastructure/**",
+                "../modules/plans/domain/**",
+                "../modules/plans/application/**",
+                "../modules/plans/infrastructure/**",
+              ],
+              message:
+                "Cross-module import must go through the plans public barrel (`@/modules/plans`). " +
+                "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
+            {
+              group: [
+                "@/modules/tenants/domain/**",
+                "./modules/tenants/domain/**",
+                "../modules/tenants/domain/**",
+              ],
+              message:
+                "Cross-module import must go through the tenants public barrel (`@/modules/tenants`). " +
+                "Deep imports into domain from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
             },
           ],
         },

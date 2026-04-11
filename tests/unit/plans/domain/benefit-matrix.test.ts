@@ -1,0 +1,88 @@
+import { describe, expect, it } from 'vitest';
+import {
+  benefitMatrixSchema,
+  partnershipBenefitsSchema,
+} from '@/modules/plans/domain/plan-validators';
+
+describe('BenefitMatrix validation (via zod schemas)', () => {
+  const baseCorporate = {
+    eblast_per_year: 6,
+    website_page_type: 'member_news_update' as const,
+    homepage_logo_category: 'premium' as const,
+    directory_listing_size: 'full_page' as const,
+    event_discount_scope: 'all_employees' as const,
+    events_cobranded_access: true,
+    cultural_tickets_per_year: 2,
+    m2m_benefits_access: true,
+    business_referrals: true,
+    tailor_made_services: true,
+    partnership: null,
+  };
+
+  const validPartnership = {
+    event_tickets_included: 6,
+    booth_included: true,
+    rollup_logo_at_events: true,
+    logo_on_merch: true,
+    video_duration_minutes: 1.5 as const,
+    video_frequency_scope: 'all_events' as const,
+    website_logo_months: 12,
+    banner_per_year: 20,
+    newsletter_promotion: true,
+    enewsletter_logo: true,
+    directory_ad_position: 'pages_1_and_2' as const,
+  };
+
+  it('accepts a valid corporate benefit matrix (partnership null)', () => {
+    const result = benefitMatrixSchema.safeParse(baseCorporate);
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a valid partnership benefit matrix', () => {
+    const result = benefitMatrixSchema.safeParse({
+      ...baseCorporate,
+      partnership: validPartnership,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects unknown website_page_type enum value', () => {
+    const result = benefitMatrixSchema.safeParse({
+      ...baseCorporate,
+      website_page_type: 'invalid_page',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown homepage_logo_category enum value', () => {
+    const result = benefitMatrixSchema.safeParse({
+      ...baseCorporate,
+      homepage_logo_category: 'GIGANTIC',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects negative eblast_per_year', () => {
+    const result = benefitMatrixSchema.safeParse({
+      ...baseCorporate,
+      eblast_per_year: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects partnership with out-of-range video_duration_minutes', () => {
+    const result = partnershipBenefitsSchema.safeParse({
+      ...validPartnership,
+      video_duration_minutes: 2.0,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects partnership with unknown directory_ad_position', () => {
+    const result = partnershipBenefitsSchema.safeParse({
+      ...validPartnership,
+      directory_ad_position: 'back_page',
+    });
+    expect(result.success).toBe(false);
+  });
+});

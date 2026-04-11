@@ -3,6 +3,7 @@ import {
   index,
   inet,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -41,6 +42,7 @@ export const userStatusEnum = pgEnum('user_status', [
 ]);
 
 export const auditEventTypeEnum = pgEnum('audit_event_type', [
+  // --- F1 identity events (17) ---
   'sign_in_success',
   'sign_in_failure',
   'sign_out',
@@ -58,6 +60,17 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'concurrent_sessions_revoked',
   'manager_denied_write',
   'invitation_redemption_failed',
+  // --- F2 plan + fee-config events (10) — added by migration 0007 ---
+  'plan_created',
+  'plan_updated',
+  'plan_cloned',
+  'plan_activated',
+  'plan_deactivated',
+  'plan_soft_deleted',
+  'plan_undeleted',
+  'plan_not_found',
+  'plan_cross_tenant_probe',
+  'fee_config_updated',
 ]);
 
 export const emailDeliveryEventTypeEnum = pgEnum('email_delivery_event_type', [
@@ -176,12 +189,22 @@ export const auditLog = pgTable(
     // ≤ 500 chars — enforced at the application layer (audit-repo append).
     summary: text('summary').notNull(),
     requestId: text('request_id').notNull(),
+    // F2 extensions (added by migration 0007, nullable for F1 row compat):
+    //   - `payload` — typed JSONB diff for plan_* / fee_config_updated events.
+    //     F1 rows remain NULL. Validated via auditPayloadSchema before insert.
+    //   - `tenantId` — scopes F2 plan events to their originating tenant slug.
+    //     F1 identity events stay NULL (cross-tenant visibility preserved by
+    //     the permissive RLS policy on audit_log).
+    payload: jsonb('payload'),
+    tenantId: text('tenant_id'),
   },
   (table) => [
     index('audit_log_timestamp_idx').on(sql`${table.timestamp} DESC`),
     index('audit_log_actor_idx').on(table.actorUserId),
     index('audit_log_target_idx').on(table.targetUserId),
     index('audit_log_event_type_idx').on(table.eventType),
+    // F2: speeds up tenant-scoped audit queries + RLS policy hit
+    index('audit_log_tenant_id_idx').on(table.tenantId),
   ],
 );
 

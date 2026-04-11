@@ -167,6 +167,16 @@ main().catch((e) => { console.error(e); process.exit(1); });
 
 This verification is not optional — it is a 30-minute empirical check that unblocks a load-bearing architectural decision. `/speckit.tasks` can proceed before the script runs, but the first implementation task is "run verify-rls-set-local.ts and commit the research.md receipt".
 
+**Verified on Neon Singapore 2026-04-11** — all three expected outputs produced (step 2: 0 rows, step 3: 1 row, step 4: 0 rows). Script deleted per T007 instructions.
+
+**⚠️ CRITICAL FINDING (Neon-specific)**: The Neon-integration-provisioned role `neondb_owner` has `rolbypassrls = TRUE`, so `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` are a **no-op** for it. RLS policies are silently bypassed when queries run as the owner role. The verification script had to introduce a second role `chamber_app` (`CREATE ROLE chamber_app NOLOGIN NOBYPASSRLS`) and use `SET LOCAL ROLE chamber_app` as the first statement of every tenant-scoped transaction — only then do `FORCE ROW LEVEL SECURITY` policies actually fire. This has three implications for the F2 implementation:
+
+1. **Migration `0006` MUST create the `chamber_app` role** via `DO $$ BEGIN IF NOT EXISTS ... CREATE ROLE chamber_app NOLOGIN NOBYPASSRLS; END $$`, grant `neondb_owner` membership in it (`GRANT chamber_app TO neondb_owner`), and grant `chamber_app` the minimum privileges on `membership_plans` + `tenant_fee_config` + `audit_log` (`GRANT SELECT, INSERT, UPDATE, DELETE ON ... TO chamber_app`).
+2. **`runInTenant(ctx, fn)` in `src/lib/db.ts` MUST issue `SET LOCAL ROLE chamber_app` as the first statement of every transaction**, before `SET LOCAL app.current_tenant`. Forgetting the `SET LOCAL ROLE` makes RLS a no-op without any error, so a defence-in-depth dev-mode assertion in `assertTenantContextSet` should also verify `current_user = 'chamber_app'` when `DEBUG_RLS_STATE=1`.
+3. **The tenant-isolation integration test (T027) MUST run as `chamber_app` via `SET LOCAL ROLE`**, otherwise the test is passing trivially against the BYPASSRLS owner and gives false confidence.
+
+The future F13 super-admin scan is the only legitimate caller that needs the owner privileges — it explicitly does NOT call `runInTenant` and deliberately accepts the scan-level cross-tenant visibility for correlation purposes.
+
 ### 2.5 Dev-mode RLS-state assertion (critique E5, 2026-04-11)
 
 The "NULL tenant → zero rows" Postgres behaviour is correct-by-default but creates a **silent debugging trap**: a developer who forgets to wrap a query in `runInTenant()` sees an empty result set and debugs it as a data issue rather than a security-policy issue. Time-to-diagnose can be 20+ minutes per incident across the team.

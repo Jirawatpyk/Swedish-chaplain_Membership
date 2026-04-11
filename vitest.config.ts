@@ -70,6 +70,43 @@ export default defineConfig({
           branches: 100,
           functions: 100,
         },
+        // F2: Tenants cross-cutting Domain-only module — pure types,
+        // constructor validator, branded types. 100% line coverage.
+        'src/modules/tenants/domain/**/*.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F2: Plans Domain layer — 100% line coverage (pure functions).
+        'src/modules/plans/domain/**/*.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F2: Plans Application layer — ≥80% line + 80% branch default,
+        // 100% branch on security-critical use cases below.
+        'src/modules/plans/application/update-plan.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/plans/application/clone-plans-to-year.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/plans/application/soft-delete-plan.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/plans/application/update-fee-config.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
       },
     },
   },
