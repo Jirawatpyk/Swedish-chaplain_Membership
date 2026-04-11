@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Conventional Commits enforcement (CLAUDE.md § Conventions).
+# `[Spec Kit]`-prefixed messages are allowed via commitlint.config.cjs ignore rule.
+npx --no-install commitlint --edit "$1"

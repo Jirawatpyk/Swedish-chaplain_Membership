@@ -1,0 +1,26 @@
+# SC-1: GET /admin/users unauthenticated → should 307 redirect
+HTTP/1.1 307 Temporary Redirect
+content-security-policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https: ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+permissions-policy: camera=(), microphone=(), geolocation=()
+referrer-policy: strict-origin-when-cross-origin
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+
+# SC-2: GET /invite/invalid-token-xyz → 200 with link-invalid card (no crash)
+HTTP 200
+
+# SC-3: POST /api/auth/invite unauthenticated → 401 no-session
+HTTP 401
+{"error":"no-session"}
+
+# SC-4: POST /api/auth/redeem-invite invalid token → 410 link-invalid
+HTTP 410
+{"error":"link-invalid"}
+
+# SC-5: POST /api/auth/users/<id>/disable unauthenticated → 401
+HTTP 401
+{"error":"no-session"}
+
+# SC-6: POST /api/auth/users/<id>/role unauthenticated → 401
+HTTP 401
+{"error":"no-session"}
+

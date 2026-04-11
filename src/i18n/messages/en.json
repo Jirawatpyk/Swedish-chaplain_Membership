@@ -1,0 +1,209 @@
+{
+  "auth": {
+    "signIn": {
+      "title": "Sign in",
+      "emailLabel": "Email",
+      "passwordLabel": "Password",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "forgotPassword": "Forgot your password?",
+      "errors": {
+        "invalidCredentials": "Email or password is incorrect.",
+        "accountDisabled": "Your account has been disabled. Contact an administrator.",
+        "accountLocked": "Too many failed attempts. Try again later.",
+        "rateLimited": "Too many requests. Please wait and try again."
+      }
+    },
+    "signOut": {
+      "label": "Sign out"
+    },
+    "forgotPassword": {
+      "title": "Reset your password",
+      "description": "Enter your email and we'll send you a reset link.",
+      "emailLabel": "Email",
+      "submit": "Send reset link",
+      "submitted": "If that email matches an account, a reset link is on the way.",
+      "resend": "Didn't get the email? Resend"
+    },
+    "resetPassword": {
+      "title": "Choose a new password",
+      "newPasswordLabel": "New password",
+      "confirmPasswordLabel": "Confirm new password",
+      "submit": "Update password",
+      "success": "Password updated. You can now sign in.",
+      "errors": {
+        "tokenExpired": "This reset link has expired. Request a new one.",
+        "tokenUsed": "This reset link has already been used.",
+        "weakPassword": "Choose a stronger password.",
+        "passwordBreached": "This password appears in a known data breach. Choose a different one."
+      }
+    },
+    "passwordStrength": {
+      "weak": "Weak — at least 12 characters required.",
+      "acceptable": "Acceptable strength.",
+      "strong": "Strong password."
+    },
+    "changePassword": {
+      "title": "Change password",
+      "description": "Change your account password. Your current device stays signed in; every other active session is signed out.",
+      "currentPasswordLabel": "Current password",
+      "newPasswordLabel": "New password",
+      "submit": "Change password",
+      "success": "Password updated. Other sessions have been signed out.",
+      "errors": {
+        "wrongCurrent": "Current password is incorrect.",
+        "samePassword": "Pick a different password — the new one cannot equal the current one.",
+        "rateLimited": "Too many attempts. Please wait a few minutes and try again."
+      }
+    },
+    "invite": {
+      "title": "Finish setting up your account",
+      "displayNameLabel": "Your name",
+      "passwordLabel": "Choose a password",
+      "submit": "Activate account",
+      "errors": {
+        "tokenExpired": "This invitation has expired. Ask an administrator to send a new one.",
+        "tokenUsed": "This invitation has already been used."
+      }
+    },
+    "idleWarning": {
+      "title": "Still there?",
+      "description": "You'll be signed out in {seconds} seconds.",
+      "stay": "Stay signed in",
+      "signOut": "Sign out now"
+    },
+    "denied": {
+      "readOnly": "Your role does not permit this action.",
+      "portalMismatch": "This account can't sign in here."
+    },
+    "memberPortal": {
+      "title": "Member portal",
+      "welcome": "Welcome, {name}",
+      "versionBadge": "v1.0 — more features coming soon",
+      "intro": "You're signed in to the SweCham member portal. The full experience is being rolled out phase by phase.",
+      "roadmapHeading": "What's coming next",
+      "roadmapDescription": "Your upcoming member experience by phase.",
+      "roadmap": {
+        "profile": {
+          "title": "Your profile",
+          "description": "View and update your membership details (coming in F3)."
+        },
+        "invoices": {
+          "title": "Invoices & receipts",
+          "description": "Tax-compliant Thai invoices and payment history (F4)."
+        },
+        "events": {
+          "title": "Events & registration",
+          "description": "Browse chamber events and register online (F6)."
+        },
+        "renewal": {
+          "title": "Online renewal",
+          "description": "Renew your membership and pay with card (F5)."
+        }
+      },
+      "contactHeading": "Need help?",
+      "contactDescription": "Until self-service lands, email us and we'll help directly."
+    }
+  },
+  "shell": {
+    "skipToContent": "Skip to main content",
+    "userMenu": {
+      "label": "Account menu",
+      "account": "Account settings",
+      "signOut": "Sign out"
+    },
+    "theme": {
+      "label": "Toggle theme",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "roleBadge": {
+      "admin": "Admin",
+      "manager": "Manager",
+      "member": "Member"
+    }
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "network": "Network error. Check your connection and try again.",
+    "notFound": "We couldn't find what you were looking for.",
+    "unauthorized": "You need to sign in to see this.",
+    "forbidden": "You don't have permission to see this.",
+    "readOnlyMode": "The system is currently in read-only mode for maintenance."
+  },
+  "buttons": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "close": "Close",
+    "back": "Back",
+    "retry": "Try again"
+  },
+  "admin": {
+    "users": {
+      "title": "Users",
+      "subtitle": "{total} accounts total",
+      "viewingAs": "Viewing as {role}",
+      "listHeading": "All accounts",
+      "listDescription": "Invite, disable, enable, or change roles. Destructive actions require confirmation.",
+      "empty": "No users yet. Invite the first one to get started.",
+      "refreshHint": "Changes apply immediately after confirmation.",
+      "columns": {
+        "email": "Email",
+        "name": "Name",
+        "role": "Role",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "actions": {
+        "invite": "Invite user",
+        "disable": "Disable",
+        "enable": "Enable",
+        "changeRole": "Change role",
+        "self": "That's you"
+      },
+      "confirm": {
+        "cancel": "Cancel",
+        "disable": {
+          "title": "Disable this account?",
+          "description": "{email} will lose access immediately and all their active sessions will be signed out. You can re-enable the account later."
+        },
+        "enable": {
+          "title": "Re-enable this account?",
+          "description": "{email} will regain access and can sign in again."
+        }
+      },
+      "toast": {
+        "disabled": "{email} disabled.",
+        "enabled": "{email} re-enabled."
+      },
+      "invite": {
+        "title": "Invite a new user",
+        "description": "They'll receive an email with a one-time link to set their password.",
+        "emailLabel": "Email address",
+        "emailPlaceholder": "person@example.com",
+        "roleLabel": "Role",
+        "roles": {
+          "admin": "Admin — full access",
+          "manager": "Manager — read-only on finance",
+          "member": "Member — self-service portal"
+        },
+        "submit": "Send invitation",
+        "submitting": "Sending…",
+        "cancel": "Cancel",
+        "toast": {
+          "success": "Invitation sent to {email}."
+        },
+        "errors": {
+          "generic": "Something went wrong. Please try again.",
+          "network": "Network error. Check your connection and try again.",
+          "invalid-input": "Please enter a valid email and role.",
+          "email-taken": "That email is already on the system.",
+          "forbidden": "You don't have permission to invite users."
+        }
+      }
+    }
+  }
+}

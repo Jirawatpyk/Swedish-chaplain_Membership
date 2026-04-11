@@ -1,0 +1,27 @@
+# Build outputs
+.next
+out
+build
+dist
+coverage
+playwright-report
+test-results
+
+# Dependencies
+node_modules
+pnpm-lock.yaml
+
+# Generated
+next-env.d.ts
+drizzle/migrations
+
+# Docs with custom formatting
+docs/**/*.md
+specs/**/*.md
+.specify/**/*.md
+.claude/**
+AGENTS.md
+CLAUDE.md
+
+# Env
+.env*

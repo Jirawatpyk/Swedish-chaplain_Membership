@@ -142,3 +142,5 @@ docs/*.xls
 docs/~$*
 # Excel lock files anywhere in the repo
 ~$*.xls*
+.vercel
+.env*.local

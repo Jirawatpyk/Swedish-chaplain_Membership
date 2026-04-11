@@ -1,0 +1,18 @@
+# API 1: POST /api/auth/forgot-password (malformed JSON → 400)
+HTTP 400
+{"error":"invalid-input","message":"Body must be JSON"}
+# API 2: POST /api/auth/forgot-password (missing email field → 400)
+HTTP 400
+{"error":"invalid-input","message":"Invalid request body"}
+# API 3: POST /api/auth/forgot-password (unknown email → 200 neutral)
+HTTP 200
+{"message":"If an account exists for that email, a reset link has been sent."}
+# API 4: POST /api/auth/reset-password (invalid token → 410 link-invalid)
+HTTP 410
+{"error":"link-invalid"}
+# API 5: POST /api/auth/reset-password (weak password → 400 weak-password)
+HTTP 410
+{"error":"link-invalid"}
+# API 6: POST /api/auth/reset-password (missing token → 400 invalid-input)
+HTTP 400
+{"error":"invalid-input","message":"Invalid request body"}

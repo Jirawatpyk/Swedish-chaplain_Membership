@@ -1,0 +1,209 @@
+{
+  "auth": {
+    "signIn": {
+      "title": "Logga in",
+      "emailLabel": "E-post",
+      "passwordLabel": "Lösenord",
+      "submit": "Logga in",
+      "submitting": "Loggar in…",
+      "forgotPassword": "Glömt ditt lösenord?",
+      "errors": {
+        "invalidCredentials": "E-post eller lösenord är felaktigt.",
+        "accountDisabled": "Ditt konto har inaktiverats. Kontakta en administratör.",
+        "accountLocked": "För många misslyckade försök. Försök igen senare.",
+        "rateLimited": "För många förfrågningar. Vänta och försök igen."
+      }
+    },
+    "signOut": {
+      "label": "Logga ut"
+    },
+    "forgotPassword": {
+      "title": "Återställ ditt lösenord",
+      "description": "Ange din e-post så skickar vi en återställningslänk.",
+      "emailLabel": "E-post",
+      "submit": "Skicka återställningslänk",
+      "submitted": "Om e-posten matchar ett konto är en återställningslänk på väg.",
+      "resend": "Fick du inget mejl? Skicka igen"
+    },
+    "resetPassword": {
+      "title": "Välj ett nytt lösenord",
+      "newPasswordLabel": "Nytt lösenord",
+      "confirmPasswordLabel": "Bekräfta nytt lösenord",
+      "submit": "Uppdatera lösenord",
+      "success": "Lösenordet uppdaterat. Du kan nu logga in.",
+      "errors": {
+        "tokenExpired": "Den här återställningslänken har gått ut. Begär en ny.",
+        "tokenUsed": "Den här återställningslänken har redan använts.",
+        "weakPassword": "Välj ett starkare lösenord.",
+        "passwordBreached": "Det här lösenordet har förekommit i ett känt dataläckage. Välj ett annat."
+      }
+    },
+    "passwordStrength": {
+      "weak": "Svagt — minst 12 tecken krävs.",
+      "acceptable": "Godtagbar styrka.",
+      "strong": "Starkt lösenord."
+    },
+    "changePassword": {
+      "title": "Byt lösenord",
+      "description": "Byt ditt kontos lösenord. Din nuvarande enhet förblir inloggad; alla andra aktiva sessioner loggas ut.",
+      "currentPasswordLabel": "Nuvarande lösenord",
+      "newPasswordLabel": "Nytt lösenord",
+      "submit": "Byt lösenord",
+      "success": "Lösenordet uppdaterat. Andra sessioner har loggats ut.",
+      "errors": {
+        "wrongCurrent": "Nuvarande lösenord är felaktigt.",
+        "samePassword": "Välj ett annat lösenord — det nya får inte vara samma som det nuvarande.",
+        "rateLimited": "För många försök. Vänta några minuter och försök igen."
+      }
+    },
+    "invite": {
+      "title": "Slutför ditt konto",
+      "displayNameLabel": "Ditt namn",
+      "passwordLabel": "Välj ett lösenord",
+      "submit": "Aktivera konto",
+      "errors": {
+        "tokenExpired": "Den här inbjudan har gått ut. Be en administratör skicka en ny.",
+        "tokenUsed": "Den här inbjudan har redan använts."
+      }
+    },
+    "idleWarning": {
+      "title": "Är du kvar?",
+      "description": "Du loggas ut om {seconds} sekunder.",
+      "stay": "Stanna inloggad",
+      "signOut": "Logga ut nu"
+    },
+    "denied": {
+      "readOnly": "Din roll tillåter inte den här åtgärden.",
+      "portalMismatch": "Det här kontot kan inte logga in här."
+    },
+    "memberPortal": {
+      "title": "Medlemsportal",
+      "welcome": "Välkommen, {name}",
+      "versionBadge": "v1.0 — fler funktioner kommer",
+      "intro": "Du är inloggad i SweCham medlemsportal. Den fullständiga upplevelsen rullas ut fas för fas.",
+      "roadmapHeading": "Det som kommer härnäst",
+      "roadmapDescription": "Din kommande medlemsupplevelse per fas.",
+      "roadmap": {
+        "profile": {
+          "title": "Din profil",
+          "description": "Visa och uppdatera dina medlemsuppgifter (kommer i F3)."
+        },
+        "invoices": {
+          "title": "Fakturor & kvitton",
+          "description": "Thailändska skattekvalificerade fakturor och betalningshistorik (F4)."
+        },
+        "events": {
+          "title": "Evenemang & anmälan",
+          "description": "Bläddra i handelskammarevenemang och anmäl dig online (F6)."
+        },
+        "renewal": {
+          "title": "Online-förnyelse",
+          "description": "Förnya ditt medlemskap och betala med kort (F5)."
+        }
+      },
+      "contactHeading": "Behöver du hjälp?",
+      "contactDescription": "Tills självbetjäning lanseras, mejla oss så hjälper vi dig direkt."
+    }
+  },
+  "shell": {
+    "skipToContent": "Hoppa till huvudinnehållet",
+    "userMenu": {
+      "label": "Kontomeny",
+      "account": "Kontoinställningar",
+      "signOut": "Logga ut"
+    },
+    "theme": {
+      "label": "Växla tema",
+      "light": "Ljust",
+      "dark": "Mörkt",
+      "system": "System"
+    },
+    "roleBadge": {
+      "admin": "Administratör",
+      "manager": "Chef",
+      "member": "Medlem"
+    }
+  },
+  "errors": {
+    "generic": "Något gick fel. Försök igen.",
+    "network": "Nätverksfel. Kontrollera anslutningen och försök igen.",
+    "notFound": "Vi kunde inte hitta det du letade efter.",
+    "unauthorized": "Du måste logga in för att se det här.",
+    "forbidden": "Du har inte behörighet att se det här.",
+    "readOnlyMode": "Systemet är i skrivskyddat läge för underhåll."
+  },
+  "buttons": {
+    "cancel": "Avbryt",
+    "confirm": "Bekräfta",
+    "save": "Spara",
+    "delete": "Radera",
+    "close": "Stäng",
+    "back": "Tillbaka",
+    "retry": "Försök igen"
+  },
+  "admin": {
+    "users": {
+      "title": "Användare",
+      "subtitle": "{total} konton totalt",
+      "viewingAs": "Visar som {role}",
+      "listHeading": "Alla konton",
+      "listDescription": "Bjud in, inaktivera, återaktivera eller byt roll. Destruktiva åtgärder kräver bekräftelse.",
+      "empty": "Inga användare ännu. Bjud in den första för att komma igång.",
+      "refreshHint": "Ändringar träder i kraft direkt efter bekräftelse.",
+      "columns": {
+        "email": "E-post",
+        "name": "Namn",
+        "role": "Roll",
+        "status": "Status",
+        "actions": "Åtgärder"
+      },
+      "actions": {
+        "invite": "Bjud in användare",
+        "disable": "Inaktivera",
+        "enable": "Aktivera",
+        "changeRole": "Byt roll",
+        "self": "Det är du"
+      },
+      "confirm": {
+        "cancel": "Avbryt",
+        "disable": {
+          "title": "Inaktivera det här kontot?",
+          "description": "{email} förlorar åtkomst direkt och alla aktiva sessioner loggas ut. Du kan återaktivera kontot senare."
+        },
+        "enable": {
+          "title": "Återaktivera det här kontot?",
+          "description": "{email} återfår åtkomst och kan logga in igen."
+        }
+      },
+      "toast": {
+        "disabled": "{email} inaktiverad.",
+        "enabled": "{email} återaktiverad."
+      },
+      "invite": {
+        "title": "Bjud in en ny användare",
+        "description": "De får ett mejl med en engångslänk för att skapa sitt lösenord.",
+        "emailLabel": "E-postadress",
+        "emailPlaceholder": "person@example.com",
+        "roleLabel": "Roll",
+        "roles": {
+          "admin": "Admin — full åtkomst",
+          "manager": "Manager — läsbehörighet för ekonomi",
+          "member": "Medlem — självbetjäningsportal"
+        },
+        "submit": "Skicka inbjudan",
+        "submitting": "Skickar…",
+        "cancel": "Avbryt",
+        "toast": {
+          "success": "Inbjudan skickad till {email}."
+        },
+        "errors": {
+          "generic": "Något gick fel. Försök igen.",
+          "network": "Nätverksfel. Kontrollera anslutningen och försök igen.",
+          "invalid-input": "Ange en giltig e-postadress och roll.",
+          "email-taken": "Den e-postadressen finns redan i systemet.",
+          "forbidden": "Du har inte behörighet att bjuda in användare."
+        }
+      }
+    }
+  }
+}

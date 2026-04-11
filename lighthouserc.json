@@ -1,0 +1,84 @@
+{
+  "ci": {
+    "collect": {
+      "url": [
+        "http://localhost:3100/admin/sign-in",
+        "http://localhost:3100/portal/sign-in",
+        "http://localhost:3100/forgot-password"
+      ],
+      "startServerCommand": "pnpm dev --port 3100",
+      "startServerReadyPattern": "Ready in",
+      "startServerReadyTimeout": 180000,
+      "numberOfRuns": 3,
+      "settings": {
+        "preset": "desktop",
+        "throttlingMethod": "simulate",
+        "throttling": {
+          "cpuSlowdownMultiplier": 4,
+          "rttMs": 150,
+          "throughputKbps": 1600,
+          "uploadThroughputKbps": 750,
+          "requestLatencyMs": 0,
+          "downloadThroughputKbps": 0
+        },
+        "screenEmulation": {
+          "mobile": true,
+          "width": 360,
+          "height": 640,
+          "deviceScaleFactor": 2,
+          "disabled": false
+        },
+        "formFactor": "mobile",
+        "onlyCategories": ["performance", "accessibility"]
+      }
+    },
+    "assert": {
+      "preset": "lighthouse:recommended",
+      "assertions": {
+        "categories:performance": [
+          "error",
+          { "minScore": 0.9 }
+        ],
+        "categories:accessibility": [
+          "error",
+          { "minScore": 0.95 }
+        ],
+        "largest-contentful-paint": [
+          "error",
+          { "maxNumericValue": 2500, "aggregationMethod": "optimistic" }
+        ],
+        "cumulative-layout-shift": [
+          "error",
+          { "maxNumericValue": 0.0, "aggregationMethod": "pessimistic" }
+        ],
+        "total-blocking-time": [
+          "warn",
+          { "maxNumericValue": 300, "aggregationMethod": "optimistic" }
+        ],
+        "first-contentful-paint": [
+          "warn",
+          { "maxNumericValue": 1800, "aggregationMethod": "optimistic" }
+        ],
+        "interactive": [
+          "warn",
+          { "maxNumericValue": 5000, "aggregationMethod": "optimistic" }
+        ],
+        "uses-text-compression": "warn",
+        "uses-responsive-images": "warn",
+        "offscreen-images": "warn",
+        "render-blocking-resources": "warn",
+        "unused-javascript": "off",
+        "unused-css-rules": "off",
+        "color-contrast": "error",
+        "button-name": "error",
+        "document-title": "error",
+        "html-has-lang": "error",
+        "label": "error",
+        "valid-lang": "error"
+      }
+    },
+    "upload": {
+      "target": "temporary-public-storage"
+    }
+  }
+}

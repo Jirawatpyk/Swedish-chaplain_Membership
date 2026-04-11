@@ -114,7 +114,7 @@ Based on the 8 entities in the workbook plus the cross-cutting infrastructure ne
 
 | #  | Feature                                   | Depends on | Touches Entities                              | Sensitive? |
 |----|-------------------------------------------|------------|-----------------------------------------------|------------|
-| F1 | Auth & RBAC                               | —          | (users, roles, sessions)                      | ⚠ Yes      |
+| F1 | Auth & RBAC ✅ **CODE COMPLETE 2026-04-10** | —          | (users, roles, sessions, password_reset_tokens, invitations, audit_log, email_delivery_events) | ⚠ Yes      |
 | F2 | Membership Types Catalog (read + admin)   | F1         | membership_types                              | No         |
 | F3 | **Member & Contact Management** (CRUD + search) | F1, F2 | members, **contacts**                        | ⚠ PII      |
 | F4 | Membership Invoicing (MB invoices + PDF)  | F1, F3     | invoices, invoice_items                       | ⚠ Finance  |

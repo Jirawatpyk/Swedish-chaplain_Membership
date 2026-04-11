@@ -1,0 +1,66 @@
+/**
+ * Authentication audit event types (data-model.md § 2.7, spec User Story 7).
+ *
+ * 17 event types total — every user-visible auth action emits exactly
+ * one row in `audit_log` (T067 audit-repo.append). The list is the
+ * single source of truth and is duplicated in the Postgres enum
+ * `audit_event_type` (schema.ts § auditEventTypeEnum) — keep in sync.
+ *
+ * Pass 5: bumped 16 → 17 after splitting `password_reset_failed`
+ * out of the `invitation_redemption_failed` overload. See
+ * `drizzle/migrations/0002_add_password_reset_failed_audit.sql`.
+ *
+ * Pure types — no framework imports.
+ */
+
+import type { AuditEventId, UserId } from './branded';
+
+export const AUDIT_EVENT_TYPES = [
+  'sign_in_success',
+  'sign_in_failure',
+  'sign_out',
+  'password_reset_requested',
+  'password_reset_completed',
+  'password_reset_failed',
+  'password_changed',
+  'account_created',
+  'account_disabled',
+  'account_reenabled',
+  'role_changed',
+  'lockout_triggered',
+  'lockout_cleared',
+  'session_forcibly_ended',
+  'concurrent_sessions_revoked',
+  'manager_denied_write',
+  'invitation_redemption_failed',
+] as const;
+
+export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
+
+/**
+ * Special actor sentinel values (data-model.md § 2.7):
+ *
+ *   - 'anonymous'        — sign-in failure for an unknown email
+ *   - 'system:bootstrap' — the bootstrap admin seed script (T080)
+ *   - 'system:cron'      — scheduled jobs (T160 lockout-cleanup)
+ */
+export type ActorRef = UserId | 'anonymous' | 'system:bootstrap' | 'system:cron';
+
+export interface AuditEvent {
+  readonly id: AuditEventId;
+  readonly timestamp: Date;
+  readonly eventType: AuditEventType;
+  readonly actorUserId: ActorRef;
+  readonly targetUserId: UserId | null;
+  readonly sourceIp: string | null;
+  /** Short human-readable description, ≤ 500 chars. NEVER contains secrets. */
+  readonly summary: string;
+  readonly requestId: string;
+}
+
+/** Maximum length of `summary` — enforced by audit-repo before insert. */
+export const AUDIT_SUMMARY_MAX_LENGTH = 500;
+
+export function isAuditEventType(value: string): value is AuditEventType {
+  return (AUDIT_EVENT_TYPES as readonly string[]).includes(value);
+}
