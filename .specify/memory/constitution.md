@@ -1,6 +1,19 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.3.0 → 1.3.1  (PATCH: clarify that the solo-maintainer
+                substitute clauses also exempt the "no direct push to main"
+                / "no direct commits to main" rules — discovered post-ship
+                during F1 retrospective addendum work when the maintainer
+                created an unnecessary PR + branch + self-merge cycle for
+                a docs-only commit purely to satisfy the literal text of
+                Principle IX, only to find that the solo-dev substitute
+                already covered the spirit of the rule. PATCH bump: no
+                principle is removed, no rule is loosened beyond what the
+                v1.3.0 substitute already implied; this is a clarifying
+                edit so future readers do not waste cycles on the same
+                ceremony.)
+
 Version change: 1.2.0 → 1.3.0  (MINOR: F1 lessons-learned — module public barrel
                 as required Clean Architecture artefact + solo-dev review substitution
                 escape hatch + adjusted amendment procedure for solo-maintainer repos)
@@ -55,6 +68,22 @@ History:
                          substitute escape clause. Governance § Amendment procedure
                          adds a matching solo-maintainer substitute to allow
                          self-hosted amendments in single-maintainer repos.
+  - 1.3.1 (2026-04-11) — PATCH clarification. The "no direct push to main" /
+                         "no direct commits to main" rules in Principle IX +
+                         § Development Workflow Additional rules are explicitly
+                         tied to the solo-maintainer substitute clause: when the
+                         substitute applies (single-maintainer project), direct
+                         pushes to main are PERMITTED for the same reasons the
+                         ≥2-reviewers rule is substituted (no second human is
+                         available to perform the PR review the gate exists for).
+                         The PR + self-merge ceremony adds zero independent
+                         oversight in a solo-dev workflow and was creating
+                         pointless friction. CI gates (lint, typecheck, tests,
+                         Vercel preview build) MUST still pass before any direct
+                         push to main, and the post-ship Vercel deploy log is
+                         the canonical record. The default ≥2-reviewers + no-
+                         direct-push rules remain unchanged for multi-maintainer
+                         projects.
 
 Modified principles in 1.3.0:
   - III. Clean Architecture            — adds required "public barrel + ESLint
@@ -76,6 +105,26 @@ Modified sections in 1.3.0:
 
 Added sections in 1.3.0: None.
 Removed sections in 1.3.0: None.
+
+Modified principles in 1.3.1:
+  - IX. Code Quality Standards         — direct-push line gains an inline note
+                                           pointing at the solo-maintainer
+                                           substitute clause as the exemption
+                                           authority for single-maintainer repos.
+
+Modified sections in 1.3.1:
+  - Development Workflow & Quality Gates > Additional rules
+      * "No direct commits to main"    — gains the same solo-maintainer
+                                          exemption note as Principle IX.
+  - Sync Impact Report                 — extended with the v1.3.1 rationale +
+                                          the eat-our-own-dog-food evidence
+                                          (the docs(retrospective) commit was
+                                          first pushed via PR #2 → realised
+                                          ceremony was pointless → closed PR,
+                                          cherry-picked to main, pushed direct).
+
+Added sections in 1.3.1: None.
+Removed sections in 1.3.1: None.
 
 Templates requiring updates:
   ✅ reviewed .specify/templates/plan-template.md   — Constitution Check still
@@ -344,7 +393,17 @@ The codebase MUST maintain strict, automated quality gates.
   The substitute is **reversible**: as soon as a second maintainer is available,
   the feature reverts to the default ≥2-reviewers rule. The substitute applies
   per-feature — it is NOT a blanket repo-wide waiver.
-- Direct pushes to `main` are forbidden; all changes arrive via PR with passing CI.
+- Direct pushes to `main` are forbidden by default; all changes arrive via PR with
+  passing CI. **Solo-maintainer exemption**: when the solo-maintainer substitute
+  clause above applies (single-maintainer project, no second human reviewer
+  available), direct pushes to `main` are PERMITTED for the same reasons the
+  ≥2-reviewers rule is substituted — the PR + self-merge cycle adds zero
+  independent oversight in a solo-dev workflow and creates pointless friction.
+  CI gates (lint, typecheck, tests, Vercel preview/production build) MUST still
+  pass before any direct push, and the post-deploy log is the canonical record.
+  This exemption is **per-repo, not per-commit**: a solo-dev project may push
+  directly throughout, but a multi-maintainer project must use PRs for every
+  change. Reverts to the default rule when a second maintainer joins.
 
 **Rationale**: Automated gates catch what humans miss and keep the bar constant as the
 team grows. For solo-dev projects the default ≥2-reviewers rule creates a
@@ -355,6 +414,14 @@ reproducible (re-run any `/speckit.*` command), and independent from the maintai
 own judgement at critical decision points. Field-tested on F1: see
 `specs/001-auth-rbac/plan.md` § Complexity Tracking entry #3 and the substitution
 evidence in `specs/001-auth-rbac/reviews/` + `specs/001-auth-rbac/retrospective.md`.
+
+The v1.3.1 PATCH expanded the substitute to cover the direct-push rule after the
+post-ship retrospective addendum work demonstrated that creating a PR + branch +
+self-merge cycle for a docs-only commit added zero oversight (no second reviewer,
+same CI, same git history) while wasting ~5 minutes of cycle time per commit. The
+retrospective.md "Post-Ship Addendum" was first committed to a `docs/f1-post-ship-findings`
+branch + PR #2 → realised the ceremony was pointless → closed PR, cherry-picked to
+main, pushed direct, amended the constitution.
 
 ### X. Simplicity (YAGNI)
 
@@ -464,7 +531,10 @@ justification in `plan.md` Complexity Tracking and ≥2 maintainer approvals.
 
 Additional rules (apply across all gates):
 
-- No direct commits to `main`.
+- No direct commits to `main` (default). **Solo-maintainer exemption**: see
+  Principle IX direct-push line — single-maintainer projects MAY commit + push
+  directly to `main` provided CI gates still pass. The exemption applies
+  per-repo, not per-commit.
 - PRs MUST reference the spec/feature branch they implement.
 - A failing test on `main` stops all other work until resolved.
 - Secrets or PII accidentally committed MUST trigger immediate rotation and a
@@ -522,4 +592,4 @@ Swedish law).
 - Runtime development guidance for agents lives in `CLAUDE.md` (and equivalent agent
   files). Those files are subordinate to this constitution.
 
-**Version**: 1.3.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-04-11
+**Version**: 1.3.1 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-04-11
