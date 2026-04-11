@@ -204,6 +204,201 @@
           "forbidden": "You don't have permission to invite users."
         }
       }
+    },
+    "plans": {
+      "title": "Membership Plans",
+      "subtitle": "{total} plans in {year}",
+      "listHeading": "Plan catalogue",
+      "listDescription": "Manage tier definitions, annual fees, and benefit matrices. Prior-year plans are partially locked for audit integrity.",
+      "empty": {
+        "title": "No plans for this year",
+        "description": "Create one from scratch, or clone the previous year’s catalogue.",
+        "newCta": "New plan",
+        "cloneCta": "Clone {sourceYear} → {targetYear}"
+      },
+      "refreshHint": "Changes apply immediately and appear in the audit log.",
+      "columns": {
+        "name": "Name",
+        "category": "Category",
+        "annualFee": "Annual fee",
+        "memberType": "Member type",
+        "year": "Year",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "filters": {
+        "all": "All",
+        "category": {
+          "label": "Category",
+          "corporate": "Corporate",
+          "partnership": "Partnership"
+        },
+        "year": "Year",
+        "search": {
+          "placeholder": "Search plans…",
+          "label": "Search"
+        },
+        "activeOnly": "Active only",
+        "showDeleted": "Show deleted"
+      },
+      "badges": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "deleted": "Deleted",
+        "corporate": "Corporate",
+        "partnership": "Partnership",
+        "missingTranslations": "Missing {locales}"
+      },
+      "actions": {
+        "new": "New plan",
+        "cloneYear": "Clone year",
+        "edit": "Edit",
+        "view": "View",
+        "activate": "Activate",
+        "deactivate": "Deactivate",
+        "delete": "Delete",
+        "undelete": "Restore"
+      },
+      "priorYearLock": {
+        "banner": "Historical plan — pricing, eligibility, and benefits are locked for {year}.",
+        "explanation": "To change fees or benefits, clone this plan into the current year and edit the copy. Cosmetic fields (name, description, sort order) remain editable here.",
+        "cloneCta": "Clone to {currentYear}",
+        "fieldTooltip": "Locked on prior-year plans. Clone to edit."
+      },
+      "create": {
+        "title": "New plan",
+        "steps": {
+          "basics": "Basics",
+          "fees": "Fees",
+          "benefits": "Benefits",
+          "review": "Review"
+        },
+        "labels": {
+          "planId": "Plan ID (slug)",
+          "planIdHelp": "Lowercase letters, digits, and hyphens only (e.g. diamond, start-up).",
+          "planYear": "Plan year",
+          "planName": "Plan name",
+          "description": "Description",
+          "sortOrder": "Sort order",
+          "sortOrderHelp": "Lower numbers appear first in dropdowns.",
+          "planCategory": "Category",
+          "memberTypeScope": "Member type",
+          "annualFee": "Annual fee",
+          "includesCorporatePlanId": "Bundled corporate plan",
+          "minTurnover": "Minimum turnover",
+          "maxTurnover": "Maximum turnover",
+          "maxDurationYears": "Max duration (years)",
+          "maxMemberAge": "Max member age",
+          "benefitMatrix": "Benefit matrix"
+        },
+        "buttons": {
+          "next": "Next",
+          "back": "Back",
+          "save": "Save plan",
+          "saving": "Saving…",
+          "cancel": "Cancel"
+        }
+      },
+      "edit": {
+        "title": "Edit {planName}",
+        "save": "Save changes",
+        "saving": "Saving…"
+      },
+      "clone": {
+        "title": "Clone year",
+        "description": "Clone all {count} non-deleted plans from {sourceYear} into {targetYear}. New plans start as inactive until you review and activate them.",
+        "sourceLabel": "Source year",
+        "targetLabel": "Target year",
+        "activateClonedLabel": "Activate cloned plans immediately",
+        "submit": "Clone {count} plans",
+        "submitting": "Cloning…",
+        "cancel": "Cancel"
+      },
+      "confirm": {
+        "deactivate": {
+          "title": "Deactivate {planName}?",
+          "description": "Members already on this plan keep their access, but no new signups will be allowed until you reactivate it.",
+          "confirmCta": "Deactivate"
+        },
+        "delete": {
+          "title": "Delete {planName}?",
+          "description": "The plan will be hidden from the default list and archived for audit. You can restore it from \"Show deleted\".",
+          "confirmCta": "Delete"
+        },
+        "undelete": {
+          "title": "Restore {planName}?",
+          "description": "The plan will return to the list as Inactive. Activate it separately if needed.",
+          "confirmCta": "Restore"
+        }
+      },
+      "toast": {
+        "created": "Plan “{planName}” created.",
+        "updated": "Plan “{planName}” updated.",
+        "activated": "Plan “{planName}” activated.",
+        "deactivated": "Plan “{planName}” deactivated.",
+        "deleted": "Plan “{planName}” deleted.",
+        "undeleted": "Plan “{planName}” restored.",
+        "cloned": "{count} plans cloned to {targetYear}.",
+        "overwrittenByOtherAdmin": "Your edit was overwritten by {otherAdmin}. Check the latest state."
+      },
+      "errors": {
+        "generic": "Something went wrong. Please try again.",
+        "network": "Network error. Check your connection and try again.",
+        "notFound": "Plan not found.",
+        "forbidden": "You don’t have permission to do that.",
+        "validation": "Please fix the highlighted fields.",
+        "priorYearLocked": "These fields are locked on historical plans: {fields}. Clone this plan to the current year to edit them.",
+        "duplicateKey": "A plan with this ID already exists for {year}.",
+        "memberAttached": "{count} active members are on this plan. Move them to another plan before deleting.",
+        "idempotencyConflict": "This request was already handled with different data. Refresh and try again.",
+        "targetYearPopulated": "{targetYear} already has plans. Delete them first or choose a different year.",
+        "sourceYearEmpty": "No plans found for {sourceYear}."
+      }
+    },
+    "settings": {
+      "fees": {
+        "title": "Fee configuration",
+        "subtitle": "Per-tenant currency, VAT rate, and registration fee.",
+        "description": "These values apply to every plan in your catalogue. The currency is immutable in this release.",
+        "labels": {
+          "currencyCode": "Currency",
+          "vatRate": "VAT rate (%)",
+          "registrationFee": "Registration fee"
+        },
+        "currencyImmutableNote": "The currency is locked at {currency} until a future release adds mixed-currency support.",
+        "save": "Save changes",
+        "saving": "Saving…",
+        "toast": {
+          "success": "Fee configuration updated."
+        },
+        "errors": {
+          "generic": "Something went wrong. Please try again.",
+          "forbidden": "Only administrators can change fee configuration.",
+          "currencyImmutable": "Currency cannot be changed while {count} plans exist. Delete all plans first.",
+          "validation": "Please fix the highlighted fields."
+        }
+      }
+    }
+  },
+  "palette": {
+    "placeholder": "Search plans, actions, and pages…",
+    "empty": "No results found.",
+    "groups": {
+      "plans": "Plans",
+      "actions": "Actions",
+      "navigate": "Navigate"
+    },
+    "actions": {
+      "newPlan": "Create new plan",
+      "cloneYear": "Clone year",
+      "editFees": "Edit fee configuration",
+      "viewAuditLog": "View audit log"
+    },
+    "navigate": {
+      "plansList": "Plans list",
+      "feeConfig": "Fee configuration",
+      "usersList": "Users list",
+      "dashboard": "Dashboard"
     }
   }
 }

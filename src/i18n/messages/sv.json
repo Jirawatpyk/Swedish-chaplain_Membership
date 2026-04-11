@@ -204,6 +204,201 @@
           "forbidden": "Du har inte behörighet att bjuda in användare."
         }
       }
+    },
+    "plans": {
+      "title": "Medlemspaket",
+      "subtitle": "{total} paket år {year}",
+      "listHeading": "Paketkatalog",
+      "listDescription": "Hantera nivådefinitioner, årliga avgifter och förmånsmatriser. Föregående års paket är delvis låsta för revisionsintegritet.",
+      "empty": {
+        "title": "Inga paket för detta år",
+        "description": "Skapa ett nytt från grunden, eller klona föregående års katalog.",
+        "newCta": "Nytt paket",
+        "cloneCta": "Klona {sourceYear} → {targetYear}"
+      },
+      "refreshHint": "Ändringar tillämpas omedelbart och visas i revisionsloggen.",
+      "columns": {
+        "name": "Namn",
+        "category": "Kategori",
+        "annualFee": "Årsavgift",
+        "memberType": "Medlemstyp",
+        "year": "År",
+        "status": "Status",
+        "actions": "Åtgärder"
+      },
+      "filters": {
+        "all": "Alla",
+        "category": {
+          "label": "Kategori",
+          "corporate": "Företag",
+          "partnership": "Partnerskap"
+        },
+        "year": "År",
+        "search": {
+          "placeholder": "Sök paket…",
+          "label": "Sök"
+        },
+        "activeOnly": "Endast aktiva",
+        "showDeleted": "Visa borttagna"
+      },
+      "badges": {
+        "active": "Aktiv",
+        "inactive": "Inaktiv",
+        "deleted": "Borttagen",
+        "corporate": "Företag",
+        "partnership": "Partnerskap",
+        "missingTranslations": "Saknar {locales}"
+      },
+      "actions": {
+        "new": "Nytt paket",
+        "cloneYear": "Klona år",
+        "edit": "Redigera",
+        "view": "Visa",
+        "activate": "Aktivera",
+        "deactivate": "Inaktivera",
+        "delete": "Ta bort",
+        "undelete": "Återställ"
+      },
+      "priorYearLock": {
+        "banner": "Historiskt paket — pris, behörighet och förmåner för {year} är låsta.",
+        "explanation": "För att ändra avgifter eller förmåner, klona detta paket till innevarande år och redigera kopian. Kosmetiska fält (namn, beskrivning, sortering) kan fortfarande redigeras här.",
+        "cloneCta": "Klona till {currentYear}",
+        "fieldTooltip": "Låst på föregående års paket. Klona för att redigera."
+      },
+      "create": {
+        "title": "Nytt paket",
+        "steps": {
+          "basics": "Grunder",
+          "fees": "Avgifter",
+          "benefits": "Förmåner",
+          "review": "Granska"
+        },
+        "labels": {
+          "planId": "Paket-ID (slug)",
+          "planIdHelp": "Endast gemener, siffror och bindestreck (t.ex. diamond, start-up).",
+          "planYear": "Paketår",
+          "planName": "Paketnamn",
+          "description": "Beskrivning",
+          "sortOrder": "Sorteringsordning",
+          "sortOrderHelp": "Lägre siffror visas först i listor.",
+          "planCategory": "Kategori",
+          "memberTypeScope": "Medlemstyp",
+          "annualFee": "Årsavgift",
+          "includesCorporatePlanId": "Inkluderat företagspaket",
+          "minTurnover": "Minsta omsättning",
+          "maxTurnover": "Högsta omsättning",
+          "maxDurationYears": "Maximal varaktighet (år)",
+          "maxMemberAge": "Maximal medlemsålder",
+          "benefitMatrix": "Förmånsmatris"
+        },
+        "buttons": {
+          "next": "Nästa",
+          "back": "Tillbaka",
+          "save": "Spara paket",
+          "saving": "Sparar…",
+          "cancel": "Avbryt"
+        }
+      },
+      "edit": {
+        "title": "Redigera {planName}",
+        "save": "Spara ändringar",
+        "saving": "Sparar…"
+      },
+      "clone": {
+        "title": "Klona år",
+        "description": "Klona alla {count} icke-borttagna paket från {sourceYear} till {targetYear}. Nya paket startar som inaktiva tills du granskar och aktiverar dem.",
+        "sourceLabel": "Källår",
+        "targetLabel": "Målår",
+        "activateClonedLabel": "Aktivera klonade paket omedelbart",
+        "submit": "Klona {count} paket",
+        "submitting": "Klonar…",
+        "cancel": "Avbryt"
+      },
+      "confirm": {
+        "deactivate": {
+          "title": "Inaktivera {planName}?",
+          "description": "Befintliga medlemmar behåller sin åtkomst, men inga nya registreringar tillåts förrän du aktiverar det igen.",
+          "confirmCta": "Inaktivera"
+        },
+        "delete": {
+          "title": "Ta bort {planName}?",
+          "description": "Paketet döljs från standardlistan och arkiveras för revision. Du kan återställa det från \"Visa borttagna\".",
+          "confirmCta": "Ta bort"
+        },
+        "undelete": {
+          "title": "Återställ {planName}?",
+          "description": "Paketet återvänder till listan som Inaktivt. Aktivera det separat vid behov.",
+          "confirmCta": "Återställ"
+        }
+      },
+      "toast": {
+        "created": "Paketet “{planName}” skapades.",
+        "updated": "Paketet “{planName}” uppdaterades.",
+        "activated": "Paketet “{planName}” aktiverades.",
+        "deactivated": "Paketet “{planName}” inaktiverades.",
+        "deleted": "Paketet “{planName}” togs bort.",
+        "undeleted": "Paketet “{planName}” återställdes.",
+        "cloned": "{count} paket klonade till {targetYear}.",
+        "overwrittenByOtherAdmin": "Din ändring skrevs över av {otherAdmin}. Kontrollera det senaste läget."
+      },
+      "errors": {
+        "generic": "Något gick fel. Försök igen.",
+        "network": "Nätverksfel. Kontrollera din anslutning och försök igen.",
+        "notFound": "Paketet hittades inte.",
+        "forbidden": "Du har inte behörighet att göra det.",
+        "validation": "Korrigera de markerade fälten.",
+        "priorYearLocked": "Dessa fält är låsta på historiska paket: {fields}. Klona paketet till innevarande år för att redigera.",
+        "duplicateKey": "Ett paket med detta ID finns redan för {year}.",
+        "memberAttached": "{count} aktiva medlemmar använder detta paket. Flytta dem till ett annat paket före borttagning.",
+        "idempotencyConflict": "Denna förfrågan har redan hanterats med andra data. Uppdatera och försök igen.",
+        "targetYearPopulated": "{targetYear} har redan paket. Ta bort dem först eller välj ett annat år.",
+        "sourceYearEmpty": "Inga paket hittades för {sourceYear}."
+      }
+    },
+    "settings": {
+      "fees": {
+        "title": "Avgiftskonfiguration",
+        "subtitle": "Valuta, momssats och registreringsavgift per tenant.",
+        "description": "Dessa värden tillämpas på alla paket i din katalog. Valutan är oföränderlig i denna version.",
+        "labels": {
+          "currencyCode": "Valuta",
+          "vatRate": "Momssats (%)",
+          "registrationFee": "Registreringsavgift"
+        },
+        "currencyImmutableNote": "Valutan är låst till {currency} tills en framtida version lägger till stöd för blandade valutor.",
+        "save": "Spara ändringar",
+        "saving": "Sparar…",
+        "toast": {
+          "success": "Avgiftskonfigurationen uppdaterades."
+        },
+        "errors": {
+          "generic": "Något gick fel. Försök igen.",
+          "forbidden": "Endast administratörer kan ändra avgiftskonfigurationen.",
+          "currencyImmutable": "Valutan kan inte ändras medan {count} paket finns. Ta bort alla paket först.",
+          "validation": "Korrigera de markerade fälten."
+        }
+      }
+    }
+  },
+  "palette": {
+    "placeholder": "Sök paket, åtgärder och sidor…",
+    "empty": "Inga resultat.",
+    "groups": {
+      "plans": "Paket",
+      "actions": "Åtgärder",
+      "navigate": "Navigera"
+    },
+    "actions": {
+      "newPlan": "Skapa nytt paket",
+      "cloneYear": "Klona år",
+      "editFees": "Redigera avgiftskonfiguration",
+      "viewAuditLog": "Visa revisionslogg"
+    },
+    "navigate": {
+      "plansList": "Paketlista",
+      "feeConfig": "Avgiftskonfiguration",
+      "usersList": "Användarlista",
+      "dashboard": "Instrumentpanel"
     }
   }
 }

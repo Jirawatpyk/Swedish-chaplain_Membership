@@ -113,29 +113,29 @@ Web application, single Next.js project. Paths rooted at repository root unless 
 
 ### Plans module Application layer — ports + composition root
 
-- [ ] T048 Create `src/modules/plans/application/ports.ts` — port interfaces: `PlanRepo`, `FeeConfigRepo`, `AuditPort`, `ClockPort`, `MemberAttachmentChecker` (critique P7) — all methods take `tenant: TenantContext` explicitly; import `TenantContext` from `@/modules/tenants`
-- [ ] T049 [P] Create `src/modules/plans/infrastructure/members/stub-member-attachment-checker.ts` — F2 stub implementing `MemberAttachmentChecker.countActivePlanMembers(tenant, planId, year): Promise<number>` returning `0` always with file-header comment pointing to critique P7 and F3 replacement plan
-- [ ] T050 [P] Create `src/modules/plans/infrastructure/db/plan-repo.ts` — skeleton class implementing `PlanRepo` via `runInTenant` from `@/lib/db`; methods `findByTenantAndYear`, `findOne`, `insert`, `update`, `softDelete`, `undelete`, `cloneYear`, `countActiveForTenant` — actual method bodies filled in US1–US5 phases
-- [ ] T051 [P] Create `src/modules/plans/infrastructure/db/fee-config-repo.ts` — skeleton implementing `FeeConfigRepo` via `runInTenant`; methods `findByTenant`, `update`, `countActiveForTenantExcludingDeleted` (used by T138 currency-immutability guard)
-- [ ] T052 [P] Create `src/modules/plans/infrastructure/audit/plan-audit-adapter.ts` — implements `AuditPort.record(tenant, event)` by inserting into F1 `audit_log` table with `event_type`, `payload` (validated via auditPayloadSchema), `tenant_id = tenant.slug`, `actor_user_id` from session, `request_id` from proxy context, `summary` auto-derived from payload (≤500 chars)
-- [ ] T053 [P] Create `src/modules/plans/application/record-audit-event.ts` — thin Application wrapper over `AuditPort` that runs `auditPayloadSchema.safeParse(payload)` and returns `Result<void, AuditShapeError>`
-- [ ] T054 Create `src/modules/plans/plans-deps.ts` — composition root wiring every Infrastructure singleton (plan-repo, fee-config-repo, plan-audit-adapter, stub-member-attachment-checker) into a single `PlansDeps` export consumed by API route handlers and server actions
-- [ ] T055 Create `src/modules/plans/index.ts` — public barrel exporting Application use cases (skeleton now, filled in later phases), Domain cross-boundary types (`Plan`, `MemberTypeScope`, `PlanCategory`, `LocaleText`, `Money`, `F2AuditEvent`), and branded-type constructors. NO internal infrastructure exports.
+- [X] T048 Create `src/modules/plans/application/ports.ts` — port interfaces: `PlanRepo`, `FeeConfigRepo`, `AuditPort`, `ClockPort`, `MemberAttachmentChecker` (critique P7) — all methods take `tenant: TenantContext` explicitly; import `TenantContext` from `@/modules/tenants`
+- [X] T049 [P] Create `src/modules/plans/infrastructure/members/stub-member-attachment-checker.ts` — F2 stub implementing `MemberAttachmentChecker.countActivePlanMembers(tenant, planId, year): Promise<number>` returning `0` always with file-header comment pointing to critique P7 and F3 replacement plan
+- [X] T050 [P] Create `src/modules/plans/infrastructure/db/plan-repo.ts` — skeleton class implementing `PlanRepo` via `runInTenant` from `@/lib/db`; methods `findByTenantAndYear`, `findOne`, `insert`, `update`, `softDelete`, `undelete`, `cloneYear`, `countActiveForTenant` — actual method bodies filled in US1–US5 phases
+- [X] T051 [P] Create `src/modules/plans/infrastructure/db/fee-config-repo.ts` — skeleton implementing `FeeConfigRepo` via `runInTenant`; methods `findByTenant`, `update`, `countActiveForTenantExcludingDeleted` (used by T138 currency-immutability guard)
+- [X] T052 [P] Create `src/modules/plans/infrastructure/audit/plan-audit-adapter.ts` — implements `AuditPort.record(tenant, event)` by inserting into F1 `audit_log` table with `event_type`, `payload` (validated via auditPayloadSchema), `tenant_id = tenant.slug`, `actor_user_id` from session, `request_id` from proxy context, `summary` auto-derived from payload (≤500 chars)
+- [X] T053 [P] Create `src/modules/plans/application/record-audit-event.ts` — thin Application wrapper over `AuditPort` that runs `auditPayloadSchema.safeParse(payload)` and returns `Result<void, AuditShapeError>`
+- [X] T054 Create `src/modules/plans/plans-deps.ts` — composition root wiring every Infrastructure singleton (plan-repo, fee-config-repo, plan-audit-adapter, stub-member-attachment-checker) into a single `PlansDeps` export consumed by API route handlers and server actions
+- [X] T055 Create `src/modules/plans/index.ts` — public barrel exporting Application use cases (skeleton now, filled in later phases), Domain cross-boundary types (`Plan`, `MemberTypeScope`, `PlanCategory`, `LocaleText`, `Money`, `F2AuditEvent`), and branded-type constructors. NO internal infrastructure exports.
 
 ### F1 RBAC extension (cross-module edit — authorised via F1 public barrel contract)
 
-- [ ] T056 Extend `src/modules/auth/domain/policies.ts`: add `'plan'` + `'fee_config'` to `Resource` union, add `'clone'` to `Action` union, extend `canAccess` lookup with rows for admin (full CRUD + clone + fee-config-update), manager (read-only on both), member (deny all); add unit test cases to `tests/unit/auth/domain/role-policies.test.ts` for new matrix entries
+- [X] T056 Extend `src/modules/auth/domain/policies.ts`: add `'plan'` + `'fee_config'` to `Resource` union, add `'clone'` to `Action` union, extend `canAccess` lookup with rows for admin (full CRUD + clone + fee-config-update), manager (read-only on both), member (deny all); add unit test cases to `tests/unit/auth/domain/role-policies.test.ts` for new matrix entries
 
 ### i18n scaffolding
 
-- [ ] T057 [P] Extend `src/i18n/messages/en.json` — add canonical EN copy for `admin.plans.*` (list headers, filter labels, empty states, action verbs, success/error toasts, confirmation dialogs, prior-year lock banner), `admin.settings.fees.*` (all labels + immutability message), `palette.*` (prompts, groups, empty state)
-- [ ] T058 [P] Extend `src/i18n/messages/th.json` with Thai translations for every new key (per Clarifications Q3 — EN required, TH mandatory at release)
-- [ ] T059 [P] Extend `src/i18n/messages/sv.json` with Swedish translations for every new key
-- [ ] T060 [P] Extend `scripts/check-i18n-coverage.ts` to scan `admin.plans.*`, `admin.settings.fees.*`, `palette.*` namespaces with fail-on-missing-EN and warn-on-missing-TH-or-SV (CI-blocking on release branches)
+- [X] T057 [P] Extend `src/i18n/messages/en.json` — add canonical EN copy for `admin.plans.*` (list headers, filter labels, empty states, action verbs, success/error toasts, confirmation dialogs, prior-year lock banner), `admin.settings.fees.*` (all labels + immutability message), `palette.*` (prompts, groups, empty state)
+- [X] T058 [P] Extend `src/i18n/messages/th.json` with Thai translations for every new key (per Clarifications Q3 — EN required, TH mandatory at release)
+- [X] T059 [P] Extend `src/i18n/messages/sv.json` with Swedish translations for every new key
+- [X] T060 [P] Extend `scripts/check-i18n-coverage.ts` to scan `admin.plans.*`, `admin.settings.fees.*`, `palette.*` namespaces with fail-on-missing-EN and warn-on-missing-TH-or-SV (CI-blocking on release branches)
 
 ### Shared idempotency middleware
 
-- [ ] T061 [P] Create `src/lib/idempotency.ts` — `Idempotency-Key` header validator + storage wrapper reading/writing to the F1 `idempotency_keys` table; 24h retention; returns `{ status: 'first' | 'replay' | 'conflict' }` for POST/PATCH/DELETE handlers
+- [X] T061 [P] Create `src/lib/idempotency.ts` — `Idempotency-Key` header validator + storage wrapper reading/writing to the F1 `idempotency_keys` table; 24h retention; returns `{ status: 'first' | 'replay' | 'conflict' }` for POST/PATCH/DELETE handlers
 
 **Checkpoint**: Foundation complete. `pnpm lint && pnpm typecheck && pnpm test tests/unit/tenants tests/unit/plans/domain` all green. `tests/integration/plans/tenant-isolation.test.ts` and `rls-debug-state.test.ts` authored RED, blocking every downstream phase until they flip to green in the appropriate user-story phase. User story work may now begin in parallel.
 

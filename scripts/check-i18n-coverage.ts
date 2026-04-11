@@ -21,6 +21,30 @@ const MESSAGES_DIR = resolve(process.cwd(), 'src', 'i18n', 'messages');
 const LOCALES = ['en', 'th', 'sv'] as const;
 type Locale = (typeof LOCALES)[number];
 
+/**
+ * Feature-required namespaces. Dropping any of these from en.json is a
+ * hard error (CI fails immediately) because the feature surface can't
+ * render without them. F2 adds `admin.plans.*`, `admin.settings.fees.*`,
+ * and `palette.*` — extended here per task T060.
+ */
+const REQUIRED_NAMESPACES = [
+  // F1 — auth surfaces + shell + admin users
+  'auth.signIn',
+  'auth.signOut',
+  'auth.forgotPassword',
+  'auth.resetPassword',
+  'auth.changePassword',
+  'auth.invite',
+  'shell',
+  'buttons',
+  'errors',
+  'admin.users',
+  // F2 — plans + fee config + command palette
+  'admin.plans',
+  'admin.settings.fees',
+  'palette',
+] as const;
+
 const RELEASE_BRANCH_PATTERN = /^(main|release\/.+)$/;
 const branch = process.env.GITHUB_REF_NAME ?? process.env.BRANCH ?? '';
 const isReleaseBranch = RELEASE_BRANCH_PATTERN.test(branch);
@@ -55,6 +79,21 @@ async function main(): Promise<void> {
 
   const enKeys = sets.en;
   const issues: string[] = [];
+
+  // Hard-fail namespace check: every feature-required namespace MUST
+  // have at least one key present in en.json. This catches structural
+  // drops (e.g. a refactor that deletes `admin.plans` wholesale) that
+  // the key-by-key comparison below would silently accept if the
+  // namespace is also absent from th/sv.
+  for (const ns of REQUIRED_NAMESPACES) {
+    const hasAny = [...enKeys].some((k) => k === ns || k.startsWith(`${ns}.`));
+    if (!hasAny) {
+      console.error(
+        `[check:i18n] HARD FAIL — required namespace "${ns}" is missing from en.json`,
+      );
+      process.exitCode = 1;
+    }
+  }
 
   for (const key of enKeys) {
     if (!sets.th.has(key)) issues.push(`th.json missing: ${key}`);

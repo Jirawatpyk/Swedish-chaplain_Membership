@@ -40,11 +40,13 @@ export function canReadPlan(role: Role): boolean {
 export const canManagerReadPlan = canReadPlan;
 
 /**
- * Can `role` clone plans from one year to another? Clone is a write
- * action — admin only.
+ * Can `role` clone plans from one year to another? Uses the dedicated
+ * `'clone'` action (F2 addition to F1's Action union) — functionally
+ * admin-only in F2, but distinct from `write` so future fine-grained
+ * roles can grant clone without full mutation rights.
  */
 export function canCloneYear(role: Role): boolean {
-  return canAccess(role, 'plan', 'write');
+  return canAccess(role, 'plan', 'clone');
 }
 
 /**

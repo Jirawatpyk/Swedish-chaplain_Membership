@@ -20,12 +20,19 @@
 
 import type { Role } from './role';
 
-export type Action = 'read' | 'write' | 'delete' | 'admin';
+/**
+ * Policy actions. F1 baseline: read/write/delete/admin.
+ * F2 (002-membership-plans) adds `'clone'` for the year-clone
+ * operation — functionally `admin only` in F2, but distinct from
+ * `write` so a future fine-grained role (e.g. "catalogue editor")
+ * could be granted clone without full mutation rights.
+ */
+export type Action = 'read' | 'write' | 'delete' | 'admin' | 'clone';
 
 /**
- * Known F1 resource identifiers. The literal union gives IDE
+ * Known resource identifiers. The literal union gives IDE
  * autocomplete + catches typos in policy call sites, while the
- * `(string & {})` tail keeps the type forward-compatible: F2+
+ * `(string & {})` tail keeps the type forward-compatible: F3+
  * features can still pass resource ids that don't appear here
  * (e.g. `'members:list'`, `'invoices:read'`) without having to
  * widen the union file-by-file.
@@ -41,6 +48,10 @@ export type Action = 'read' | 'write' | 'delete' | 'admin';
  *   - 'auth:audit'          — audit log viewer
  *   - 'staff:dashboard'     — staff home / read-only browsing
  *   - 'member:portal'       — member portal landing
+ *
+ * F2 resource ids (added by 002-membership-plans):
+ *   - 'plan'                — membership plan catalogue (CRUD + clone)
+ *   - 'fee_config'          — per-tenant currency/VAT/registration fee
  */
 export type Resource =
   | 'auth:self'
@@ -48,6 +59,8 @@ export type Resource =
   | 'auth:audit'
   | 'staff:dashboard'
   | 'member:portal'
+  | 'plan'
+  | 'fee_config'
   | (string & {});
 
 /** Self-service resource id — actions on the actor's OWN account. */
@@ -56,13 +69,20 @@ export const SELF_RESOURCE: Resource = 'auth:self';
 /**
  * Decide whether `role` may perform `action` on `resource`.
  *
- * Rules (spec § Clarifications Q4):
- *   1. admin   → all actions on all resources
+ * Rules (spec § Clarifications Q4, extended by F2):
+ *   1. admin   → all actions on all resources (including `clone` on `plan`)
  *   2. manager → all reads; writes ONLY on `auth:self`
  *   3. member  → reads on `member:*` resources; writes ONLY on `auth:self`
  *
- * The policy is intentionally simple — F1 is small enough that an
- * explicit table is clearer than a rule engine.
+ * F2 additions:
+ *   - `plan` / `fee_config` inherit the baseline rules — admin gets
+ *     every action, manager gets read-only, member is denied entirely
+ *     (the staff surface is not exposed to member accounts).
+ *   - `clone` is an admin-only action on `plan`. Non-`plan` resources
+ *     do not accept `clone` — it returns false for anything else.
+ *
+ * The policy is intentionally simple — an explicit table is clearer
+ * than a rule engine at this scale.
  */
 export function canAccess(role: Role, resource: Resource, action: Action): boolean {
   // Self-service is always allowed for the owning role.
@@ -76,15 +96,17 @@ export function canAccess(role: Role, resource: Resource, action: Action): boole
 
   if (role === 'manager') {
     // Read everything; never mutate (spec Q4 — "manager read-only").
+    // F2: manager can read plan + fee_config but cannot mutate / clone.
     return action === 'read';
   }
 
   // member: F1 only exposes the member portal landing page (placeholder).
+  // F2: members are blocked from the staff catalogue surface entirely.
   if (role === 'member') {
     if (resource.startsWith('member:')) {
       return action === 'read';
     }
-    // Members may NOT browse staff resources or audit logs.
+    // Members may NOT browse staff resources, audit logs, or plans.
     return false;
   }
 
