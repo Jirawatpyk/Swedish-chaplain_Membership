@@ -277,6 +277,8 @@ Web application, single Next.js project. Paths rooted at repository root unless 
 
 **Checkpoint**: User Story 3 fully functional. MVP trio (US1+US2+US3) complete — chamber can list, create, clone, and edit the catalogue. FR-014 prior-year lock enforced at Domain + Application + Infrastructure layers.
 
+> **Deferred to F3**: US3 AS4 (partnership bundle-change warning in review step) is consciously deferred to F3 Member & Contact Management because it depends on F3-scope entities (members table + member invoices) that do not exist in F2. Full rationale + F3 pickup plan: [`specs/002-membership-plans/deferred-to-f3.md § D1`](./deferred-to-f3.md). This deferral is tracked in `docs/phases-plan.md` under the F3 note so the F3 `/speckit.specify` gate cannot miss it.
+
 ---
 
 ## Phase 6: User Story 4 — Admin deactivates and soft-deletes plans (Priority: P2)

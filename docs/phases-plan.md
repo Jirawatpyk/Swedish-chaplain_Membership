@@ -132,6 +132,16 @@ per `saas-architecture.md`. Every row has `tenant_id` defaulting to `'swecham'`.
 > model (1 member : N contacts) but are **one feature** at the spec / UX level —
 > contacts have no independent lifecycle and are always edited in the context of
 > their parent member. Clean Architecture (Principle III) still applies.
+>
+> **⚠ F2 → F3 carry-overs** (read before `/speckit.specify` for F3):
+> `specs/002-membership-plans/deferred-to-f3.md` lists F2 acceptance scenarios
+> that were consciously deferred because they depend on F3-scope entities
+> (members table, member invoices, benefit inheritance). Currently tracked:
+> **D1 — US3 AS4 Partnership bundle-change warning**. Every F3 spec session
+> MUST grep this file and either (a) fold each pending item into the F3 spec
+> or (b) explicitly reject it with a rationale added to the "Resolved in F3"
+> section of that file. Do not delete the file until every pending row is
+> closed.
 
 ### Core features (F1-F9)
 
