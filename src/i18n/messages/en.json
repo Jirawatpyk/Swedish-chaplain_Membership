@@ -381,6 +381,8 @@
     }
   },
   "palette": {
+    "title": "Command palette",
+    "description": "Search for a plan, action, or page to run",
     "placeholder": "Search plans, actions, and pages…",
     "empty": "No results found.",
     "groups": {

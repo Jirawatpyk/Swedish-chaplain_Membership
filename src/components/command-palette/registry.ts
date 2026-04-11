@@ -1,0 +1,93 @@
+/**
+ * T152 — Command palette static registry + shared type definitions (US6).
+ *
+ * Canonical type surface that:
+ *   - the `searchPlans` use case returns (via `@/modules/plans`), and
+ *   - the `<CommandPalette>` client component consumes.
+ *
+ * The client component imports **only** these types and the
+ * `filterEntriesByRole` helper. It does not import any other module —
+ * the registry stays free of framework/React dependencies so it can be
+ * consumed server-side too if future work ever needs it.
+ *
+ * The action + navigate entries that live in `search-plans.ts` are the
+ * authoritative source of truth; this file only defines the shapes and
+ * the role-filtering helper. Duplicating the registry here would drift.
+ */
+
+// Type-only import from the deep domain path. The auth public barrel
+// chain-pulls `@node-rs/argon2` into the client bundle whenever a
+// client component transitively imports from it. See the same
+// rationale in `search-plans.ts` and `command-palette.tsx`.
+// eslint-disable-next-line no-restricted-imports
+import type { Role } from '@/modules/auth/domain/role';
+
+// --- Entity (plan) hit shape -------------------------------------------------
+
+export type PalettePlanEntity = {
+  readonly plan_id: string;
+  readonly plan_year: number;
+  readonly plan_name: string; // already localised server-side
+  readonly category: 'corporate' | 'partnership';
+  readonly is_active: boolean;
+  readonly url: string;
+};
+
+// --- Action + navigate entries ----------------------------------------------
+
+export type PaletteRoleRequirement = 'admin' | 'read';
+
+export type PaletteActionEntry = {
+  readonly id: string;
+  readonly label: string; // i18n key (e.g. `palette.actions.newPlan`)
+  readonly url: string;
+  readonly requires: PaletteRoleRequirement;
+};
+
+export type PaletteNavigateEntry = {
+  readonly id: string;
+  readonly label: string; // i18n key
+  readonly url: string;
+  readonly requires: PaletteRoleRequirement;
+};
+
+// --- Server-response contract ------------------------------------------------
+
+/**
+ * Shape returned by GET /api/plans/search — matches contracts/plans-api.md § 11.
+ * Actions + navigate entries are already role-filtered by the server.
+ */
+export type PaletteSearchResponse = {
+  readonly results: {
+    readonly plans: ReadonlyArray<PalettePlanEntity>;
+    readonly actions: ReadonlyArray<{
+      readonly id: string;
+      readonly label: string;
+      readonly url: string;
+    }>;
+    readonly navigate: ReadonlyArray<{
+      readonly id: string;
+      readonly label: string;
+      readonly url: string;
+    }>;
+  };
+};
+
+// --- Role filter helper ------------------------------------------------------
+
+/**
+ * Client-side role gate, mirroring `search-plans.ts → filterByRole`.
+ *
+ * The server is the authoritative gate — every action and navigate
+ * entry the response already excludes write-side items for managers.
+ * This helper is a defence-in-depth belt-and-braces check so a bug in
+ * the server filter cannot expose an admin action to a manager.
+ */
+export function filterEntriesByRole<T extends { readonly requires: PaletteRoleRequirement }>(
+  entries: ReadonlyArray<T>,
+  role: Role,
+): ReadonlyArray<T> {
+  if (role === 'admin') return entries;
+  if (role === 'manager') return entries.filter((e) => e.requires === 'read');
+  return [];
+}

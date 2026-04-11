@@ -381,6 +381,8 @@
     }
   },
   "palette": {
+    "title": "Kommandopalett",
+    "description": "Sök efter ett paket, en åtgärd eller en sida",
     "placeholder": "Sök paket, åtgärder och sidor…",
     "empty": "Inga resultat.",
     "groups": {
