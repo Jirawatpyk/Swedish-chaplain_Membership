@@ -39,6 +39,12 @@ import {
   type PlanSchemaInput,
 } from '@/modules/plans';
 
+const MEMBER_TYPE_OPTIONS = [
+  { value: 'company', label: 'Company' },
+  { value: 'individual', label: 'Individual' },
+  { value: 'both', label: 'Both' },
+] as const;
+
 export interface PlanEditFormProps {
   readonly initialValues: PlanSchemaInput;
   readonly currentYear: number;
@@ -160,14 +166,15 @@ export function PlanEditForm({
                   update('member_type_scope', v as PlanSchemaInput['member_type_scope']);
                 }}
                 disabled={isLocked('member_type_scope')}
+                items={MEMBER_TYPE_OPTIONS}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="company">Company</SelectItem>
-                  <SelectItem value="individual">Individual</SelectItem>
-                  <SelectItem value="both">Both</SelectItem>
+                  {MEMBER_TYPE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

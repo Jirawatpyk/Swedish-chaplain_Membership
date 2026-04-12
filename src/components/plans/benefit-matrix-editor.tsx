@@ -109,6 +109,52 @@ function BoolField({
   );
 }
 
+// --- Select option arrays (single source of truth for items + rendering) ---
+
+const WEBSITE_PAGE_OPTIONS = [
+  { value: '__null__', label: 'None' },
+  { value: 'member_news_update', label: 'Member news update' },
+  { value: 'smes_spotlight', label: 'SMEs spotlight' },
+  { value: 'student_intern_cv', label: 'Student/intern CV' },
+] as const;
+
+const LOGO_CATEGORY_OPTIONS = [
+  { value: '__null__', label: 'None' },
+  { value: 'premium', label: 'Premium' },
+  { value: 'large', label: 'Large' },
+  { value: 'regular', label: 'Regular' },
+  { value: 'start_up', label: 'Start-up' },
+] as const;
+
+const DIRECTORY_SIZE_OPTIONS = [
+  { value: '__null__', label: 'None' },
+  { value: 'full_page', label: 'Full page' },
+  { value: 'half_page', label: 'Half page' },
+  { value: 'eighth_page', label: 'Eighth page' },
+] as const;
+
+const DISCOUNT_SCOPE_OPTIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'all_employees', label: 'All employees' },
+  { value: 'one_ticket_per_event', label: 'One ticket per event' },
+] as const;
+
+const VIDEO_DURATION_OPTIONS = [
+  { value: '1', label: '1.0' },
+  { value: '1.5', label: '1.5' },
+] as const;
+
+const VIDEO_FREQUENCY_OPTIONS = [
+  { value: 'all_events', label: 'All events' },
+  { value: 'three_selected_events', label: 'Three selected events' },
+] as const;
+
+const DIRECTORY_AD_OPTIONS = [
+  { value: 'pages_1_and_2', label: 'Pages 1 and 2' },
+  { value: 'first_pages', label: 'First pages' },
+  { value: 'first_10_pages', label: 'First 10 pages' },
+] as const;
+
 export function BenefitMatrixEditor({
   value,
   onChange,
@@ -161,15 +207,15 @@ export function BenefitMatrixEditor({
                 })
               }
               disabled={disabled}
+              items={WEBSITE_PAGE_OPTIONS}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__null__">None</SelectItem>
-                <SelectItem value="member_news_update">Member news update</SelectItem>
-                <SelectItem value="smes_spotlight">SMEs spotlight</SelectItem>
-                <SelectItem value="student_intern_cv">Student/intern CV</SelectItem>
+                {WEBSITE_PAGE_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -186,16 +232,15 @@ export function BenefitMatrixEditor({
                 })
               }
               disabled={disabled}
+              items={LOGO_CATEGORY_OPTIONS}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__null__">None</SelectItem>
-                <SelectItem value="premium">Premium</SelectItem>
-                <SelectItem value="large">Large</SelectItem>
-                <SelectItem value="regular">Regular</SelectItem>
-                <SelectItem value="start_up">Start-up</SelectItem>
+                {LOGO_CATEGORY_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -212,15 +257,15 @@ export function BenefitMatrixEditor({
                 })
               }
               disabled={disabled}
+              items={DIRECTORY_SIZE_OPTIONS}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__null__">None</SelectItem>
-                <SelectItem value="full_page">Full page</SelectItem>
-                <SelectItem value="half_page">Half page</SelectItem>
-                <SelectItem value="eighth_page">Eighth page</SelectItem>
+                {DIRECTORY_SIZE_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -241,14 +286,15 @@ export function BenefitMatrixEditor({
               patch({ event_discount_scope: v as BenefitMatrix['event_discount_scope'] })
             }
             disabled={disabled}
+            items={DISCOUNT_SCOPE_OPTIONS}
           >
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">None</SelectItem>
-              <SelectItem value="all_employees">All employees</SelectItem>
-              <SelectItem value="one_ticket_per_event">One ticket per event</SelectItem>
+              {DISCOUNT_SCOPE_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -329,13 +375,15 @@ export function BenefitMatrixEditor({
                     });
                   }}
                   disabled={disabled}
+                  items={VIDEO_DURATION_OPTIONS}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">1.0</SelectItem>
-                    <SelectItem value="1.5">1.5</SelectItem>
+                    {VIDEO_DURATION_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -349,15 +397,15 @@ export function BenefitMatrixEditor({
                     })
                   }
                   disabled={disabled}
+                  items={VIDEO_FREQUENCY_OPTIONS}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all_events">All events</SelectItem>
-                    <SelectItem value="three_selected_events">
-                      Three selected events
-                    </SelectItem>
+                    {VIDEO_FREQUENCY_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -372,14 +420,15 @@ export function BenefitMatrixEditor({
                     })
                   }
                   disabled={disabled}
+                  items={DIRECTORY_AD_OPTIONS}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="pages_1_and_2">Pages 1 and 2</SelectItem>
-                    <SelectItem value="first_pages">First pages</SelectItem>
-                    <SelectItem value="first_10_pages">First 10 pages</SelectItem>
+                    {DIRECTORY_AD_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

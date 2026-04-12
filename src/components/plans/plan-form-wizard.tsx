@@ -43,6 +43,17 @@ import {
   type PlanSchemaInput,
 } from '@/modules/plans';
 
+const CATEGORY_OPTIONS = [
+  { value: 'corporate', label: 'Corporate' },
+  { value: 'partnership', label: 'Partnership' },
+] as const;
+
+const MEMBER_TYPE_OPTIONS = [
+  { value: 'company', label: 'Company' },
+  { value: 'individual', label: 'Individual' },
+  { value: 'both', label: 'Both' },
+] as const;
+
 const STEPS = ['basics', 'fees', 'benefits', 'review'] as const;
 type StepKey = (typeof STEPS)[number];
 
@@ -196,13 +207,15 @@ export function PlanFormWizard({
               <Select
                 value={draft.plan_category}
                 onValueChange={(v) => update('plan_category', v as PlanCategory)}
+                items={CATEGORY_OPTIONS}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="corporate">Corporate</SelectItem>
-                  <SelectItem value="partnership">Partnership</SelectItem>
+                  {CATEGORY_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -213,14 +226,15 @@ export function PlanFormWizard({
                 onValueChange={(v) =>
                   update('member_type_scope', v as PlanSchemaInput['member_type_scope'])
                 }
+                items={MEMBER_TYPE_OPTIONS}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="company">Company</SelectItem>
-                  <SelectItem value="individual">Individual</SelectItem>
-                  <SelectItem value="both">Both</SelectItem>
+                  {MEMBER_TYPE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
