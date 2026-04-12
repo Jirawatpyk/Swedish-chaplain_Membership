@@ -12,6 +12,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, PlanRepo } from './ports';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
@@ -21,7 +22,9 @@ export type GetPlanInput = {
   readonly year: PlanYear;
 };
 
-export type GetPlanError = { readonly type: 'not_found' };
+export type GetPlanError =
+  | { readonly type: 'not_found' }
+  | { readonly type: 'server_error'; readonly message: string };
 
 export type GetPlanDeps = {
   readonly tenant: TenantContext;
@@ -38,17 +41,27 @@ export async function getPlan(
   input: GetPlanInput,
   deps: GetPlanDeps,
 ): Promise<Result<Plan, GetPlanError>> {
-  const plan = await deps.planRepo.findOne(
-    deps.tenant,
-    input.planId,
-    input.year,
-  );
+  let plan: Plan | undefined;
+  try {
+    plan = await deps.planRepo.findOne(
+      deps.tenant,
+      input.planId,
+      input.year,
+    );
+  } catch (e) {
+    return err({
+      type: 'server_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
+  }
 
   if (!plan) {
     // 404 never 403: log the request-path audit event so the future
     // F13 scan can correlate. This is info severity by design — the
     // scan escalates to 'high' only when cross-tenant match is found.
-    await deps.audit.record(
+    // Audit failure on a read-path 404 is non-fatal but surfaces a
+    // compliance gap for on-call awareness.
+    const auditResult = await deps.audit.record(
       {
         tenant: deps.tenant,
         actorUserId: deps.actorUserId,
@@ -65,6 +78,12 @@ export async function getPlan(
         },
       },
     );
+    if (!auditResult.ok) {
+      logger.warn(
+        { requestId: deps.requestId, err: auditResult.error },
+        'get-plan: plan_not_found audit write failed — compliance gap',
+      );
+    }
     return err({ type: 'not_found' });
   }
 

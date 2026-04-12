@@ -67,7 +67,19 @@ export const auditDiffSchema = z.record(
   }),
 );
 
-export type AuditDiff = z.infer<typeof auditDiffSchema>;
+/**
+ * Immutable diff record — prevents post-construction mutation that
+ * could cause the recorded audit event to diverge from the caller's
+ * intent if the write is async-interleaved.
+ *
+ * Use `MutableAuditDiff` for construction, then widen to `AuditDiff`.
+ */
+export type AuditDiff = Readonly<
+  Record<string, Readonly<{ before: unknown; after: unknown }>>
+>;
+
+/** Mutable builder type — use for constructing diffs, then assign to `AuditDiff`. */
+export type MutableAuditDiff = Record<string, { before: unknown; after: unknown }>;
 
 // --- Per-event payload schemas (single source of truth per data-model § 2.6) --
 

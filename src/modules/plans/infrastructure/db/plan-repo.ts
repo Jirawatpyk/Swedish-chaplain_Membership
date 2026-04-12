@@ -243,9 +243,11 @@ export const planRepo: PlanRepo = {
           },
           'plan-repo: defence-in-depth locked-field guard triggered — the Application layer should have blocked this',
         );
-        // Abort the transaction — return undefined so the caller maps
-        // to not_found rather than a misleading success
-        throw new Error(`locked fields: ${locked.join(', ')}`);
+        // Abort — return undefined so the caller maps to not_found
+        // rather than a misleading success. We do NOT throw here
+        // because the Application layer expects `undefined`, not an
+        // exception, for defence-in-depth rejections.
+        return undefined;
       }
 
       // Build a sparse update object — only fields present in the patch

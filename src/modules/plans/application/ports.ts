@@ -28,6 +28,7 @@ import type {
   PlanYear,
 } from '../domain/plan';
 import type { TenantFeeConfig } from '../domain/fee-config';
+import type { CurrencyCode } from '../domain/money';
 import type { F2AuditEvent, F2AuditEventType } from '../domain/audit-event';
 import type { PlanPatchOutput, PlanSchemaOutput } from '../domain/plan-validators';
 
@@ -197,11 +198,11 @@ export interface FeeConfigRepo {
 export type FeeConfigPatch = {
   readonly vat_rate?: number;
   readonly registration_fee_minor_units?: number;
-  readonly currency_code?: string;
+  readonly currency_code?: CurrencyCode;
 };
 
 export type FeeConfigUpsert = {
-  readonly currency_code: string;
+  readonly currency_code: CurrencyCode;
   readonly vat_rate: number;
   readonly registration_fee_minor_units: number;
   readonly updated_by: string;

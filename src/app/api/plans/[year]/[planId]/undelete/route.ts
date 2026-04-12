@@ -7,24 +7,14 @@
  * state-mutation endpoints.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { z } from 'zod';
 import { requireAdminContext } from '@/lib/admin-context';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import {
-  parseIdempotencyKey,
-  classifyIdempotencyRequest,
-  reserveIdempotencyRecord,
-  rememberIdempotentResponse,
-  hashRequestBody,
-} from '@/lib/idempotency';
+import { rememberIdempotentResponse } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
 import { undeletePlan, asPlanSlug, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-
-const pathSchema = z.object({
-  year: z.coerce.number().int().min(2000).max(2100),
-  planId: z.string().regex(/^[a-z0-9-]{1,63}$/, 'plan slug must match [a-z0-9-]{1,63}'),
-});
+import { serialisePlan } from '@/app/api/plans/_serialise-plan';
+import { planPathSchema as pathSchema } from '@/app/api/plans/_schemas';
+import { runIdempotencyGuard } from '@/app/api/plans/_idempotency-guard';
 
 export async function POST(
   request: NextRequest,
@@ -51,51 +41,13 @@ export async function POST(
     );
   }
 
-  const keyCheck = parseIdempotencyKey(request.headers);
-  if (!keyCheck.ok) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'missing_idempotency_key',
-          message:
-            keyCheck.reason === 'missing'
-              ? 'Idempotency-Key header is required.'
-              : 'Idempotency-Key header is malformed.',
-        },
-      },
-      { status: 400 },
-    );
-  }
-
-  const tenant = resolveTenantFromRequest(request);
-  const bodyHash = hashRequestBody(
-    {},
+  const guard = await runIdempotencyGuard(
+    request,
     `POST /api/plans/${parsedPath.data.year}/${parsedPath.data.planId}/undelete`,
   );
-  const classification = await classifyIdempotencyRequest(
-    tenant,
-    keyCheck.key,
-    bodyHash,
-  );
-  if (classification.kind === 'replay') {
-    return NextResponse.json(classification.previousResponse.body, {
-      status: classification.previousResponse.status,
-    });
-  }
-  if (classification.kind === 'conflict') {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'idempotency_conflict',
-          message: 'Idempotency-Key was reused with a different body.',
-        },
-      },
-      { status: 409 },
-    );
-  }
-  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  if (guard.kind === 'response') return guard.response;
 
-  const deps = buildPlansDeps(tenant);
+  const deps = buildPlansDeps(guard.tenant);
 
   const result = await undeletePlan(
     {
@@ -104,7 +56,7 @@ export async function POST(
       actorUserId: ctx.current.user.id,
       requestId: ctx.requestId,
       sourceIp: ctx.sourceIp ?? null,
-      idempotencyKey: keyCheck.key,
+      idempotencyKey: guard.key,
     },
     {
       tenant: deps.tenant,
@@ -117,27 +69,8 @@ export async function POST(
   );
 
   if (result.ok) {
-    const body = {
-      plan_id: result.value.plan_id,
-      plan_year: result.value.plan_year,
-      plan_name: result.value.plan_name,
-      description: result.value.description,
-      sort_order: result.value.sort_order,
-      plan_category: result.value.plan_category,
-      member_type_scope: result.value.member_type_scope,
-      annual_fee_minor_units: result.value.annual_fee_minor_units,
-      includes_corporate_plan_id: result.value.includes_corporate_plan_id,
-      min_turnover_minor_units: result.value.min_turnover_minor_units,
-      max_turnover_minor_units: result.value.max_turnover_minor_units,
-      max_duration_years: result.value.max_duration_years,
-      max_member_age: result.value.max_member_age,
-      benefit_matrix: result.value.benefit_matrix,
-      is_active: result.value.is_active,
-      deleted_at: result.value.deleted_at?.toISOString() ?? null,
-      created_at: result.value.created_at.toISOString(),
-      updated_at: result.value.updated_at.toISOString(),
-    };
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
+    const body = serialisePlan(result.value);
+    await rememberIdempotentResponse(guard.tenant, guard.key, guard.bodyHash, {
       status: 200,
       body,
     });

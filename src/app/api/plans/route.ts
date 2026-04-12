@@ -29,6 +29,7 @@ import {
 import { logger } from '@/lib/logger';
 import { listPlans, asPlanYear, createPlan } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
+import { serialisePlan } from './_serialise-plan';
 
 const querySchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100).optional(),
@@ -69,28 +70,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const deps = buildPlansDeps(tenant);
 
   // Build filter sparsely — exactOptionalPropertyTypes: true rejects
-  // explicit `undefined` values on optional fields, and the typed
-  // filter object is readonly. Build a writable intermediate and
-  // cast on the call site.
-  const mutableFilter: {
-    year?: number;
-    category?: 'corporate' | 'partnership';
-    q?: string;
-    activeOnly?: boolean;
-    showDeleted?: boolean;
-  } = {};
-  if (parsed.data.year !== undefined) mutableFilter.year = parsed.data.year;
-  if (parsed.data.category !== undefined) mutableFilter.category = parsed.data.category;
-  if (parsed.data.q !== undefined) mutableFilter.q = parsed.data.q;
-  if (parsed.data.activeOnly !== undefined) mutableFilter.activeOnly = parsed.data.activeOnly;
-  if (parsed.data.showDeleted !== undefined) mutableFilter.showDeleted = parsed.data.showDeleted;
-
+  // explicit `undefined` values on optional fields, so we use
+  // conditional spread to only include defined fields.
   const filter: Parameters<typeof listPlans>[0]['filter'] = {
-    ...(mutableFilter.year !== undefined && { year: asPlanYear(mutableFilter.year) }),
-    ...(mutableFilter.category !== undefined && { category: mutableFilter.category }),
-    ...(mutableFilter.q !== undefined && { q: mutableFilter.q }),
-    ...(mutableFilter.activeOnly !== undefined && { activeOnly: mutableFilter.activeOnly }),
-    ...(mutableFilter.showDeleted !== undefined && { showDeleted: mutableFilter.showDeleted }),
+    ...(parsed.data.year !== undefined && { year: asPlanYear(parsed.data.year) }),
+    ...(parsed.data.category !== undefined && { category: parsed.data.category }),
+    ...(parsed.data.q !== undefined && { q: parsed.data.q }),
+    ...(parsed.data.activeOnly !== undefined && { activeOnly: parsed.data.activeOnly }),
+    ...(parsed.data.showDeleted !== undefined && { showDeleted: parsed.data.showDeleted }),
   };
 
   const result = await listPlans(
@@ -231,29 +218,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   );
 
   if (result.ok) {
-    const body = {
-      plan_id: result.value.plan_id,
-      plan_year: result.value.plan_year,
-      plan_name: result.value.plan_name,
-      description: result.value.description,
-      sort_order: result.value.sort_order,
-      plan_category: result.value.plan_category,
-      member_type_scope: result.value.member_type_scope,
-      annual_fee_minor_units: result.value.annual_fee_minor_units,
-      includes_corporate_plan_id: result.value.includes_corporate_plan_id,
-      min_turnover_minor_units: result.value.min_turnover_minor_units,
-      max_turnover_minor_units: result.value.max_turnover_minor_units,
-      max_duration_years: result.value.max_duration_years,
-      max_member_age: result.value.max_member_age,
-      benefit_matrix: result.value.benefit_matrix,
-      is_active: result.value.is_active,
-      deleted_at:
-        result.value.deleted_at !== null
-          ? result.value.deleted_at.toISOString()
-          : null,
-      created_at: result.value.created_at.toISOString(),
-      updated_at: result.value.updated_at.toISOString(),
-    };
+    const body = serialisePlan(result.value);
     await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
       status: 201,
       body,

@@ -17,7 +17,7 @@
  */
 'use client';
 
-import { useId } from 'react';
+import { useEffect, useId } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -127,14 +127,16 @@ export function BenefitMatrixEditor({
     });
   }
 
-  // Lazily materialise a partnership sub-object when the plan category
-  // flips to 'partnership' and the sub-object is still null.
-  if (planCategory === 'partnership' && value.partnership === null) {
-    onChange({ ...value, partnership: DEFAULT_PARTNERSHIP });
-  }
-  if (planCategory === 'corporate' && value.partnership !== null) {
-    onChange({ ...value, partnership: null });
-  }
+  // Sync the partnership sub-object when planCategory changes.
+  // Runs as an effect to avoid calling onChange during render.
+  useEffect(() => {
+    if (planCategory === 'partnership' && value.partnership === null) {
+      onChange({ ...value, partnership: DEFAULT_PARTNERSHIP });
+    } else if (planCategory === 'corporate' && value.partnership !== null) {
+      onChange({ ...value, partnership: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only fire on category change
+  }, [planCategory]);
 
   return (
     <div className="space-y-6">

@@ -43,6 +43,7 @@ import type {
   PlanRepo,
 } from './ports';
 import { recordAuditEvent } from './record-audit-event';
+import { classifyZodIssues } from './classify-zod-issues';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
 import {
   detectLockedFieldChanges,
@@ -53,7 +54,7 @@ import {
   type PlanPatchInput,
   type PlanPatchOutput,
 } from '../domain/plan-validators';
-import type { AuditDiff } from '../domain/audit-event';
+import type { AuditDiff, MutableAuditDiff } from '../domain/audit-event';
 
 // --- Input / output types ---------------------------------------------------
 
@@ -94,39 +95,6 @@ export type UpdatePlanDeps = {
   readonly members: MemberAttachmentChecker;
 };
 
-// Mirrors the classification helper in create-plan.ts — keep in sync.
-const INTEGRITY_PATHS = new Set<string>([
-  'includes_corporate_plan_id',
-  'benefit_matrix.partnership',
-]);
-
-function classifyZodIssues(
-  issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; message: string }>,
-):
-  | {
-      readonly kind: 'shape';
-      readonly details: ReadonlyArray<{ path: string; message: string }>;
-    }
-  | {
-      readonly kind: 'integrity';
-      readonly details: ReadonlyArray<string>;
-    } {
-  const shape: Array<{ path: string; message: string }> = [];
-  const integrity: string[] = [];
-  for (const issue of issues) {
-    const path = issue.path.join('.');
-    if (INTEGRITY_PATHS.has(path)) {
-      integrity.push(issue.message);
-    } else {
-      shape.push({ path, message: issue.message });
-    }
-  }
-  if (shape.length === 0 && integrity.length > 0) {
-    return { kind: 'integrity', details: integrity };
-  }
-  return { kind: 'shape', details: shape };
-}
-
 // --- Diff helper ------------------------------------------------------------
 
 /**
@@ -142,7 +110,7 @@ function computeDiff(
   oldPlan: Plan,
   patch: PlanPatchOutput,
 ): AuditDiff {
-  const diff: AuditDiff = {};
+  const diff: MutableAuditDiff = {};
   const patchFields = Object.keys(patch) as Array<keyof PlanPatchOutput>;
   for (const field of patchFields) {
     const before = (oldPlan as unknown as Record<string, unknown>)[field];

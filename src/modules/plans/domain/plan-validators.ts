@@ -218,6 +218,55 @@ export const planPatchSchema = z
     // NOT via PATCH. Deliberately omitted here.
   })
   .superRefine((patch, ctx) => {
+    // Corporate ↔ partnership integrity — same rules as planSchema,
+    // but only fire when the patch touches both sides of the constraint.
+    // When only one side is patched, the merged-result validation in
+    // update-plan.ts catches cross-field mismatches against the full plan.
+    if (
+      patch.plan_category === 'partnership' &&
+      patch.includes_corporate_plan_id === null
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Partnership plans must bundle a corporate plan (includes_corporate_plan_id)',
+        path: ['includes_corporate_plan_id'],
+      });
+    }
+    if (
+      patch.plan_category === 'corporate' &&
+      patch.includes_corporate_plan_id !== undefined &&
+      patch.includes_corporate_plan_id !== null
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Corporate plans cannot bundle another plan',
+        path: ['includes_corporate_plan_id'],
+      });
+    }
+    if (
+      patch.plan_category === 'partnership' &&
+      patch.benefit_matrix !== undefined &&
+      patch.benefit_matrix.partnership === null
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Partnership plans must have benefit_matrix.partnership populated',
+        path: ['benefit_matrix', 'partnership'],
+      });
+    }
+    if (
+      patch.plan_category === 'corporate' &&
+      patch.benefit_matrix !== undefined &&
+      patch.benefit_matrix.partnership !== null
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Corporate plans must have benefit_matrix.partnership = null',
+        path: ['benefit_matrix', 'partnership'],
+      });
+    }
+
+    // Turnover range sanity
     if (
       patch.min_turnover_minor_units != null &&
       patch.max_turnover_minor_units != null &&

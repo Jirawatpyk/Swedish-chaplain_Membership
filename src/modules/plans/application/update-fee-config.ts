@@ -33,6 +33,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { z } from 'zod';
 import type { TenantContext } from '@/modules/tenants';
+import type { CurrencyCode } from '../domain/money';
 import type {
   AuditPort,
   ClockPort,
@@ -143,8 +144,8 @@ export async function updateFeeConfig(
     }
   }
 
-  // Compute the diff — only include fields that actually changed
-  const diff: Record<string, { before: unknown; after: unknown }> = {};
+  // 4. Compute the diff — only include fields that actually changed
+  const diff: import('../domain/audit-event').MutableAuditDiff = {};
   if (patch.vat_rate !== undefined && patch.vat_rate !== current.vat_rate) {
     diff.vat_rate = { before: current.vat_rate, after: patch.vat_rate };
   }
@@ -179,7 +180,7 @@ export async function updateFeeConfig(
         ...(patch.registration_fee_minor_units !== undefined
           ? { registration_fee_minor_units: patch.registration_fee_minor_units }
           : {}),
-        ...(currencyChanged ? { currency_code: patch.currency_code! } : {}),
+        ...(currencyChanged ? { currency_code: patch.currency_code! as CurrencyCode } : {}),
       },
       input.actorUserId,
     );

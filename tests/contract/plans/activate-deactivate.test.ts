@@ -178,6 +178,43 @@ describe('contract: POST /api/plans/[year]/[planId]/activate (T122)', () => {
     expect(activatePlanMock).not.toHaveBeenCalled();
   });
 
+  it('403 when manager role attempts activate', async () => {
+    requireAdminContextMock.mockResolvedValueOnce({
+      response: NextResponse.json(
+        { error: { code: 'forbidden', message: 'Insufficient permissions.' } },
+        { status: 403 },
+      ),
+    });
+    const { POST } = await import(
+      '@/app/api/plans/[year]/[planId]/activate/route'
+    );
+    const res = await POST(
+      makeRequest('http://localhost/api/plans/2026/premium/activate'),
+      { params: params('2026', 'premium') },
+    );
+    expect(res.status).toBe(403);
+    expect(activatePlanMock).not.toHaveBeenCalled();
+  });
+
+  it('500 when audit write fails', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
+    activatePlanMock.mockResolvedValueOnce(
+      err({ type: 'audit_failed', message: 'db down' }),
+    );
+
+    const { POST } = await import(
+      '@/app/api/plans/[year]/[planId]/activate/route'
+    );
+    const res = await POST(
+      makeRequest('http://localhost/api/plans/2026/premium/activate'),
+      { params: params('2026', 'premium') },
+    );
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error?.code).toBe('audit_failed');
+  });
+
   it('400 when Idempotency-Key header missing', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
@@ -245,6 +282,43 @@ describe('contract: POST /api/plans/[year]/[planId]/deactivate (T122)', () => {
       { params: params('2026', 'ghost') },
     );
     expect(res.status).toBe(404);
+  });
+
+  it('403 when manager role attempts deactivate', async () => {
+    requireAdminContextMock.mockResolvedValueOnce({
+      response: NextResponse.json(
+        { error: { code: 'forbidden', message: 'Insufficient permissions.' } },
+        { status: 403 },
+      ),
+    });
+    const { POST } = await import(
+      '@/app/api/plans/[year]/[planId]/deactivate/route'
+    );
+    const res = await POST(
+      makeRequest('http://localhost/api/plans/2026/premium/deactivate'),
+      { params: params('2026', 'premium') },
+    );
+    expect(res.status).toBe(403);
+    expect(deactivatePlanMock).not.toHaveBeenCalled();
+  });
+
+  it('500 when audit write fails on deactivate', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
+    deactivatePlanMock.mockResolvedValueOnce(
+      err({ type: 'audit_failed', message: 'db down' }),
+    );
+
+    const { POST } = await import(
+      '@/app/api/plans/[year]/[planId]/deactivate/route'
+    );
+    const res = await POST(
+      makeRequest('http://localhost/api/plans/2026/premium/deactivate'),
+      { params: params('2026', 'premium') },
+    );
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error?.code).toBe('audit_failed');
   });
 
   it('409 idempotency_conflict when key replayed with different body', async () => {

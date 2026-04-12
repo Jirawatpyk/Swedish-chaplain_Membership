@@ -108,6 +108,7 @@ export type {
   F2AuditEventType,
   AuditSeverity,
   AuditDiff,
+  MutableAuditDiff,
 } from './domain/audit-event';
 export {
   auditPayloadSchema,

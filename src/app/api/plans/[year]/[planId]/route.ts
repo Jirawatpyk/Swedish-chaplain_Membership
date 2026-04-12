@@ -21,7 +21,6 @@
  * `not_found` → 404, `idempotency_conflict` → 409.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { z } from 'zod';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
@@ -40,11 +39,8 @@ import {
   updatePlan,
 } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-
-const pathSchema = z.object({
-  year: z.coerce.number().int().min(2000).max(2100),
-  planId: z.string().regex(/^[a-z0-9-]{1,63}$/, 'plan slug must match [a-z0-9-]{1,63}'),
-});
+import { serialisePlan } from '@/app/api/plans/_serialise-plan';
+import { planPathSchema as pathSchema } from '@/app/api/plans/_schemas';
 
 export async function GET(
   request: NextRequest,
@@ -92,29 +88,7 @@ export async function GET(
   );
 
   if (result.ok) {
-    return NextResponse.json(
-      {
-        plan_id: result.value.plan_id,
-        plan_year: result.value.plan_year,
-        plan_name: result.value.plan_name,
-        description: result.value.description,
-        sort_order: result.value.sort_order,
-        plan_category: result.value.plan_category,
-        member_type_scope: result.value.member_type_scope,
-        annual_fee_minor_units: result.value.annual_fee_minor_units,
-        includes_corporate_plan_id: result.value.includes_corporate_plan_id,
-        min_turnover_minor_units: result.value.min_turnover_minor_units,
-        max_turnover_minor_units: result.value.max_turnover_minor_units,
-        max_duration_years: result.value.max_duration_years,
-        max_member_age: result.value.max_member_age,
-        benefit_matrix: result.value.benefit_matrix,
-        is_active: result.value.is_active,
-        deleted_at: result.value.deleted_at?.toISOString() ?? null,
-        created_at: result.value.created_at.toISOString(),
-        updated_at: result.value.updated_at.toISOString(),
-      },
-      { status: 200 },
-    );
+    return NextResponse.json(serialisePlan(result.value), { status: 200 });
   }
 
   if (result.error.type === 'not_found') {
@@ -124,6 +98,18 @@ export async function GET(
     );
   }
 
+  if (result.error.type === 'server_error') {
+    logger.error(
+      { requestId: ctx.requestId, err: result.error },
+      'get-plan: server error',
+    );
+    return NextResponse.json(
+      { error: { code: 'server_error', message: 'Internal server error.' } },
+      { status: 500 },
+    );
+  }
+
+  // Exhaustive fallback — should not be reachable
   logger.error(
     { requestId: ctx.requestId },
     'get-plan: unhandled error variant',
@@ -248,26 +234,7 @@ export async function PATCH(
   );
 
   if (result.ok) {
-    const body = {
-      plan_id: result.value.plan_id,
-      plan_year: result.value.plan_year,
-      plan_name: result.value.plan_name,
-      description: result.value.description,
-      sort_order: result.value.sort_order,
-      plan_category: result.value.plan_category,
-      member_type_scope: result.value.member_type_scope,
-      annual_fee_minor_units: result.value.annual_fee_minor_units,
-      includes_corporate_plan_id: result.value.includes_corporate_plan_id,
-      min_turnover_minor_units: result.value.min_turnover_minor_units,
-      max_turnover_minor_units: result.value.max_turnover_minor_units,
-      max_duration_years: result.value.max_duration_years,
-      max_member_age: result.value.max_member_age,
-      benefit_matrix: result.value.benefit_matrix,
-      is_active: result.value.is_active,
-      deleted_at: result.value.deleted_at?.toISOString() ?? null,
-      created_at: result.value.created_at.toISOString(),
-      updated_at: result.value.updated_at.toISOString(),
-    };
+    const body = serialisePlan(result.value);
     await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
       status: 200,
       body,
@@ -451,26 +418,7 @@ export async function DELETE(
   );
 
   if (result.ok) {
-    const body = {
-      plan_id: result.value.plan_id,
-      plan_year: result.value.plan_year,
-      plan_name: result.value.plan_name,
-      description: result.value.description,
-      sort_order: result.value.sort_order,
-      plan_category: result.value.plan_category,
-      member_type_scope: result.value.member_type_scope,
-      annual_fee_minor_units: result.value.annual_fee_minor_units,
-      includes_corporate_plan_id: result.value.includes_corporate_plan_id,
-      min_turnover_minor_units: result.value.min_turnover_minor_units,
-      max_turnover_minor_units: result.value.max_turnover_minor_units,
-      max_duration_years: result.value.max_duration_years,
-      max_member_age: result.value.max_member_age,
-      benefit_matrix: result.value.benefit_matrix,
-      is_active: result.value.is_active,
-      deleted_at: result.value.deleted_at?.toISOString() ?? null,
-      created_at: result.value.created_at.toISOString(),
-      updated_at: result.value.updated_at.toISOString(),
-    };
+    const body = serialisePlan(result.value);
     await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
       status: 200,
       body,

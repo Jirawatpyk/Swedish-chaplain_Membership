@@ -131,10 +131,6 @@ export function PlansTable({
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  function resolvePlanName(plan: PlanListItem): string {
-    return plan.plan_name.en;
-  }
-
   async function runAction(action: PendingAction): Promise<void> {
     const { method, url } = endpointFor(action.kind, action.plan);
     setSubmitting(true);
@@ -156,7 +152,7 @@ export function PlansTable({
           } as const
         )[action.kind];
         toast.success(
-          tToast(toastKey, { planName: resolvePlanName(action.plan) }),
+          tToast(toastKey, { planName: action.plan.plan_name.en }),
         );
         startTransition(() => {
           router.refresh();
@@ -193,7 +189,9 @@ export function PlansTable({
     // click fires the action immediately. The dropdown menu closed
     // already at click, so there's no UI glitch.
     if (kind === 'activate') {
-      void runAction({ kind, plan });
+      // Activate is non-destructive — fire immediately, no confirmation.
+      // Error handling is inside runAction (toast + finally cleanup).
+      runAction({ kind, plan }).catch(() => {});
       return;
     }
     setPending({ kind, plan });
@@ -442,7 +440,7 @@ export function PlansTable({
             if (!open && !submitting) setPending(null);
           }}
           title={tConfirm(`${pending.kind as 'deactivate' | 'delete' | 'undelete'}.title`, {
-            planName: resolvePlanName(pending.plan),
+            planName: pending.plan.plan_name.en,
           })}
           description={tConfirm(
             `${pending.kind as 'deactivate' | 'delete' | 'undelete'}.description`,

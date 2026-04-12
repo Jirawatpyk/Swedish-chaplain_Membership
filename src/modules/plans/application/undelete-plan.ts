@@ -29,7 +29,7 @@ import type {
   PlanRepo,
 } from './ports';
 import { recordAuditEvent } from './record-audit-event';
-import type { AuditDiff } from '../domain/audit-event';
+import type { AuditDiff, MutableAuditDiff } from '../domain/audit-event';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
 
 export type UndeletePlanInput = {
@@ -102,15 +102,16 @@ export async function undeletePlan(
   // Build diff: always clears deleted_at. If the row happened to be
   // is_active=true before soft-delete, the repo forces it false per
   // AS4 — surface that in the audit diff too.
-  const diff: AuditDiff = {
+  const mutableDiff: MutableAuditDiff = {
     deleted_at: {
       before: previousDeletedAt.toISOString(),
       after: null,
     },
   };
   if (previousActive === true) {
-    diff.is_active = { before: true, after: false };
+    mutableDiff.is_active = { before: true, after: false };
   }
+  const diff: AuditDiff = mutableDiff;
 
   const auditResult = await recordAuditEvent(
     deps.audit,

@@ -72,9 +72,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(result.value, { status: 200 });
   }
 
+  // server_error from use case (e.g. DB connection failure)
   logger.error(
-    { requestId: ctx.requestId },
-    'search-plans: unexpected error',
+    { requestId: ctx.requestId, err: result.error },
+    'search-plans: server error',
   );
   return NextResponse.json(
     { error: { code: 'server_error', message: 'Internal server error.' } },

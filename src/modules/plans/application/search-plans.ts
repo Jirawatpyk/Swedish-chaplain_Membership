@@ -12,7 +12,7 @@
  * in F7+), revisit the Typesense/Meilisearch decision.
  */
 
-import { ok, type Result } from '@/lib/result';
+import { err, ok, type Result } from '@/lib/result';
 // Type-only import from the deep domain path. Importing from the
 // `@/modules/auth` barrel here would chain-pull the heartbeat use case
 // → auth-deps → `@node-rs/argon2` into the client bundle the moment
@@ -21,7 +21,7 @@ import { ok, type Result } from '@/lib/result';
 import type { Role } from '@/modules/auth/domain/role';
 import type { TenantContext } from '@/modules/tenants';
 import type { ClockPort, PlanRepo } from './ports';
-import { asPlanYear, type PlanCategory } from '../domain/plan';
+import { asPlanYear, type Plan, type PlanCategory } from '../domain/plan';
 import { pickLocaleText, type LocaleKey } from '../domain/locale-text';
 
 // --- Types --------------------------------------------------------------------
@@ -62,7 +62,8 @@ export type SearchPlansSuccess = {
   };
 };
 
-export type SearchPlansError = never;
+export type SearchPlansError =
+  | { readonly type: 'server_error'; readonly message: string };
 
 export type SearchPlansDeps = {
   readonly tenant: TenantContext;
@@ -150,10 +151,18 @@ export async function searchPlans(
   const q = input.q.trim();
 
   // Load the current year's plans (RLS-scoped) and filter in memory
-  const plans = await deps.planRepo.findByTenantAndYear(deps.tenant, {
-    year: currentYear,
-    showDeleted: false,
-  });
+  let plans: Plan[];
+  try {
+    plans = await deps.planRepo.findByTenantAndYear(deps.tenant, {
+      year: currentYear,
+      showDeleted: false,
+    });
+  } catch (e) {
+    return err({
+      type: 'server_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
+  }
 
   const planHits: PalettePlanHit[] = [];
   for (const plan of plans) {
