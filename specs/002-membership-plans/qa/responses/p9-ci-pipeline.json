@@ -1,0 +1,10 @@
+{
+  "lint": { "errors": 0, "warnings": 0 },
+  "typecheck": { "errors": 0 },
+  "unitContract": { "files": 52, "tests": 495, "passed": 495, "failed": 0 },
+  "integration": { "files": 42, "passed": 41, "skipped": 1, "tests": 164, "testsPassed": 163, "testsSkipped": 1 },
+  "i18n": { "keys": 268, "locales": 3, "missing": 0 },
+  "build": "green",
+  "tenantIsolation": { "tests": 10, "passed": 10 },
+  "rlsDebugState": { "tests": 1, "skipped": 1, "reason": "DEBUG_RLS_STATE not set — correct for non-dev env" }
+}

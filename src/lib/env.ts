@@ -94,6 +94,27 @@ const schema = z.object({
 
   // Logging
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+
+  // --- F2 Multi-tenancy -----------------------------------------------------
+  // Single-tenant deployment: `TENANT_SLUG=swecham` in F2. The tenant-context
+  // resolver (`src/lib/tenant-context.ts`) emits this as a constant
+  // TenantContext for every request until F10 introduces real subdomain /
+  // custom-domain resolution. Slug format `[a-z0-9-]{1,63}` matches the
+  // `asTenantContext()` validator in `src/modules/tenants/domain/tenant-context.ts`
+  // so invalid slugs are rejected at boot rather than runtime.
+  TENANT_SLUG: z
+    .string()
+    .regex(
+      /^[a-z0-9-]{1,63}$/,
+      'TENANT_SLUG must be 1..63 chars of [a-z0-9-] (lowercase alphanumeric + hyphen)',
+    ),
+
+  // Dev-mode safety net: when TRUE, `assertTenantContextSet()` in `src/lib/db.ts`
+  // throws a loud, stack-traced error if a query runs while
+  // `current_setting('app.current_tenant', TRUE)` is NULL — prevents
+  // "I forgot runInTenant" class of bug during development. MUST be false
+  // (or unset) in production; the env validator asserts this below.
+  DEBUG_RLS_STATE: booleanFromString.default(false),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -133,6 +154,17 @@ if (!upstashUrl || !upstashToken) {
     'Environment validation failed (src/lib/env.ts):\n' +
       '  - missing Upstash credentials. Set either KV_REST_API_URL + KV_REST_API_TOKEN ' +
       '(Vercel KV) or UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN (plain Upstash).',
+  );
+}
+
+// F2: DEBUG_RLS_STATE must not be enabled in production — it's a dev-mode
+// assertion that would add query overhead in prod and signals a
+// configuration mistake. Fail fast rather than silently run with it.
+if (raw.NODE_ENV === 'production' && raw.DEBUG_RLS_STATE) {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - DEBUG_RLS_STATE must be false (or unset) when NODE_ENV=production. ' +
+      'This flag is a development-time RLS safety net, not a production feature.',
   );
 }
 
@@ -179,6 +211,14 @@ export const env = {
 
   log: {
     level: raw.LOG_LEVEL,
+  },
+
+  // F2: Single-tenant deployment — constant resolved by
+  // `src/lib/tenant-context.ts` for every request. Extended in F10
+  // when a real subdomain resolver replaces the constant.
+  tenant: {
+    slug: raw.TENANT_SLUG,
+    debugRlsState: raw.DEBUG_RLS_STATE,
   },
 } as const;
 

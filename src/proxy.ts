@@ -2,6 +2,19 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { checkCsrf } from '@/lib/csrf';
 import { REQUEST_ID_HEADER, requestIdFromHeaders } from '@/lib/request-id';
+import { resolveTenantFromRequest } from '@/lib/tenant-context';
+
+/**
+ * F2 tenant header — forwarded to route handlers + server components so
+ * they can assert/log the active tenant without re-running the resolver
+ * on every request. Route handlers still call `resolveTenantFromRequest`
+ * themselves (which returns the exact same `TenantContext` brand) — the
+ * header is a **paper trail** for observability, not the source of
+ * truth. F10 will change the resolver to parse the request and this
+ * header will then carry whatever the resolver extracted (subdomain,
+ * session claim, etc.) without any other code change.
+ */
+export const TENANT_SLUG_HEADER = 'x-tenant-slug';
 
 /**
  * Main Next.js Proxy handler (T043, research.md § 4 / § 5, plan.md § Constraints).
@@ -115,6 +128,7 @@ export function proxy(request: NextRequest): NextResponse {
   }
 
   // 3. Pass-through with security headers + request ID + x-pathname
+  //    + x-tenant-slug (F2).
   //    (x-pathname lets server components read the current URL via
   //    `headers()` so e.g. `requireSession()` can build a returnTo
   //    query param — Next.js does not expose the pathname to server
@@ -122,6 +136,24 @@ export function proxy(request: NextRequest): NextResponse {
   const forwardedHeaders = new Headers(request.headers);
   forwardedHeaders.set('x-pathname', nextUrl.pathname + nextUrl.search);
   forwardedHeaders.set(REQUEST_ID_HEADER, requestId);
+
+  // F2: resolve tenant once in the proxy so every downstream consumer
+  // (route handlers, server components, logs) sees the same slug. In F2
+  // this is a constant from env; in F10 it will parse the request URL /
+  // session claim. Wrapped in try/catch because a malformed env var
+  // would otherwise take down every request — if resolution fails, we
+  // log + skip the header and let the route handler's call to
+  // `resolveTenantFromRequest` surface the real error on its own terms.
+  try {
+    const tenant = resolveTenantFromRequest(request);
+    forwardedHeaders.set(TENANT_SLUG_HEADER, tenant.slug);
+  } catch {
+    // Intentionally silent — resolver would have already failed at boot
+    // if env.TENANT_SLUG was malformed; this catch guards against a
+    // future F10 resolver that throws for unauthenticated requests on
+    // tenant-unknown routes (landing page, public docs, etc.).
+  }
+
   const response = NextResponse.next({
     request: {
       headers: forwardedHeaders,

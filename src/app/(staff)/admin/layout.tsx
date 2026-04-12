@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
+import { CommandPaletteRoot } from '@/components/shell/command-palette-root';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
 import { requireSession } from '@/lib/auth-session';
@@ -26,6 +27,14 @@ export default async function StaffLayout({ children }: { children: ReactNode })
 
   return (
     <div className="flex min-h-screen flex-col">
+      {/*
+        T157 — Preconnect hint so the first ⌘K open can kick off the
+        `/api/plans/search` fetch without paying a fresh DNS + TLS
+        round-trip. Same-origin preconnect (`href="/"`) primes the
+        connection pool for palette lazy-loads on cold /admin sessions
+        per critique P8. React 19 hoists this <link> into <head>.
+      */}
+      <link rel="preconnect" href="/" crossOrigin="anonymous" />
       <header className="border-b border-border bg-background">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <Link href="/admin" className="text-sm font-semibold tracking-tight">
@@ -44,6 +53,8 @@ export default async function StaffLayout({ children }: { children: ReactNode })
       <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</div>
       {/* T165 — Idle warning modal fires at 29 min of inactivity. */}
       <IdleWarningDialog portal="staff" />
+      {/* T156 — Command palette (⌘K / Ctrl+K) mounted once for all /admin/** routes. */}
+      <CommandPaletteRoot />
     </div>
   );
 }

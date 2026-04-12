@@ -44,6 +44,28 @@ import { Label } from '@/components/ui/label';
 // eslint-disable-next-line no-restricted-imports
 import { isRole, ROLES, type Role } from '@/modules/auth/domain/role';
 
+/**
+ * The exhaustive list of error codes the invite route + this dialog
+ * know how to localise. Keep this in sync with `admin.users.invite.errors.*`
+ * in `src/i18n/messages/en.json`. Unknown codes fall back to `generic`
+ * via `resolveInviteErrorKey` below.
+ */
+const KNOWN_INVITE_ERROR_KEYS = [
+  'generic',
+  'network',
+  'invalid-input',
+  'email-taken',
+  'forbidden',
+] as const;
+
+type InviteErrorKey = (typeof KNOWN_INVITE_ERROR_KEYS)[number];
+
+function resolveInviteErrorKey(code: string): InviteErrorKey {
+  return (KNOWN_INVITE_ERROR_KEYS as readonly string[]).includes(code)
+    ? (code as InviteErrorKey)
+    : 'generic';
+}
+
 export interface InviteUserDialogProps {
   readonly disabled?: boolean;
 }
@@ -163,7 +185,7 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
                 role="alert"
                 className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive"
               >
-                {t('errors.' + errorCode, { default: t('errors.generic') })}
+                {t(`errors.${resolveInviteErrorKey(errorCode)}`)}
               </div>
             ) : null}
           </div>

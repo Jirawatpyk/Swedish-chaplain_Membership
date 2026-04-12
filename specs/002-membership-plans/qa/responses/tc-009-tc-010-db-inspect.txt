@@ -1,0 +1,33 @@
+=== TC-009: SweCham 2026 seed inspection ===
+Total plans: 9 (expected: 9)
+Partnership: 3 (expected: 3)
+Corporate: 6 (expected: 6)
+
+Plans (rows):
+  diamond        partnership  ฿200,000 (active) — Diamond Partnership
+  platinum       partnership  ฿150,000 (active) — Platinum Partnership
+  gold           partnership  ฿100,000 (active) — Gold Partnership
+  premium        corporate    ฿36,000 (active) — Premium Corporate
+  large          corporate    ฿26,000 (active) — Large Corporate
+  regular        corporate    ฿16,000 (active) — Regular Corporate
+  start-up       corporate    ฿10,000 (active) — Start-up
+  individual     corporate    ฿6,000 (active) — Individual
+  thai-alumni    corporate    ฿1,000 (active) — Thai Alumni/Student
+
+=== TC-010: audit_log reconstruction ===
+Total plan_created events: 9 (expected: 9)
+  premium        year=2026 fee=3600000 cat=corporate
+  large          year=2026 fee=2600000 cat=corporate
+  regular        year=2026 fee=1600000 cat=corporate
+  start-up       year=2026 fee=1000000 cat=corporate
+  individual     year=2026 fee=600000 cat=corporate
+  thai-alumni    year=2026 fee=100000 cat=corporate
+  diamond        year=2026 fee=20000000 cat=partnership
+  platinum       year=2026 fee=15000000 cat=partnership
+  gold           year=2026 fee=10000000 cat=partnership
+
+=== Diff reconstruction sanity ===
+All required payload fields present ✓
+
+=== fee_config inspection ===
+  currency=THB vat=0.0700 registration_fee=100000 satang

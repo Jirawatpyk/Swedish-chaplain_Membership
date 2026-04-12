@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { canAccess, isReadOnlyRole, SELF_RESOURCE } from '@/modules/auth/domain/policies';
 import { ROLES, type Role } from '@/modules/auth/domain/role';
 
-const ACTIONS = ['read', 'write', 'delete', 'admin'] as const;
+const ACTIONS = ['read', 'write', 'delete', 'admin', 'clone'] as const;
 const NON_SELF_RESOURCES = [
   'auth:user',
   'auth:audit',
@@ -18,6 +18,9 @@ const NON_SELF_RESOURCES = [
   'member:portal',
   'invoices:invoice',
   'unknown:thing',
+  // F2 additions (002-membership-plans)
+  'plan',
+  'fee_config',
 ] as const;
 
 describe('canAccess — admin role', () => {
@@ -95,6 +98,46 @@ describe('canAccess — exhaustive negative coverage', () => {
   it('every defined Role appears in ROLES exactly once', () => {
     expect(ROLES).toEqual(['admin', 'manager', 'member']);
     expect(new Set(ROLES).size).toBe(ROLES.length);
+  });
+});
+
+describe('canAccess — F2 plans + fee_config resources (T056)', () => {
+  // F2 adds `plan` and `fee_config` to the Resource union plus the
+  // `clone` action. The baseline matrix inherits from F1:
+  //   admin   → every action (including clone)
+  //   manager → read-only
+  //   member  → denied
+
+  it('admin gets every action on plan + fee_config (incl. clone)', () => {
+    for (const action of ACTIONS) {
+      expect(canAccess('admin', 'plan', action)).toBe(true);
+      expect(canAccess('admin', 'fee_config', action)).toBe(true);
+    }
+  });
+
+  it('manager can READ plan + fee_config', () => {
+    expect(canAccess('manager', 'plan', 'read')).toBe(true);
+    expect(canAccess('manager', 'fee_config', 'read')).toBe(true);
+  });
+
+  it('manager CANNOT mutate plan or fee_config', () => {
+    for (const action of ['write', 'delete', 'admin', 'clone'] as const) {
+      expect(canAccess('manager', 'plan', action)).toBe(false);
+      expect(canAccess('manager', 'fee_config', action)).toBe(false);
+    }
+  });
+
+  it('member is denied every action on plan + fee_config', () => {
+    for (const action of ACTIONS) {
+      expect(canAccess('member', 'plan', action)).toBe(false);
+      expect(canAccess('member', 'fee_config', action)).toBe(false);
+    }
+  });
+
+  it('the `clone` action is admin-exclusive', () => {
+    expect(canAccess('admin', 'plan', 'clone')).toBe(true);
+    expect(canAccess('manager', 'plan', 'clone')).toBe(false);
+    expect(canAccess('member', 'plan', 'clone')).toBe(false);
   });
 });
 

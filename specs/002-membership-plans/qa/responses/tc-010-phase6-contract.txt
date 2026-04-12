@@ -1,0 +1,20 @@
+
+> swecham-membership@0.1.0 test C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --passWithNoTests "tests/contract/plans/activate-deactivate.test.ts" "tests/contract/plans/delete-plan.test.ts" "tests/contract/plans/undelete-plan.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/contract/plans/undelete-plan.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 318[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/[year]/[planId]/undelete (T124)[2m > [22m200 on successful undelete — deleted_at cleared, is_active forced false (AS4) [33m309[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/delete-plan.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 320[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: DELETE /api/plans/[year]/[planId] (T123)[2m > [22m200 on successful soft-delete — returns plan with deleted_at set [33m309[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/activate-deactivate.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 342[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/[year]/[planId]/activate (T122)[2m > [22m200 on activate — returns plan with is_active: true [33m310[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m18 passed[39m[22m[90m (18)[39m
+[2m   Start at [22m 00:09:30
+[2m   Duration [22m 7.75s[2m (transform 356ms, setup 106ms, collect 413ms, tests 981ms, environment 2.36s, prepare 719ms)[22m
+

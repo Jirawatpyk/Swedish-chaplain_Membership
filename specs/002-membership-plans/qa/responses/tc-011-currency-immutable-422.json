@@ -1,0 +1,15 @@
+{
+  "status": 422,
+  "body": {
+    "error": {
+      "code": "currency_code_immutable_in_f2",
+      "message": "currency_code is immutable in F2 while non-deleted plans exist for this tenant.",
+      "details": {
+        "current_currency_code": "THB",
+        "attempted_currency_code": "JPY",
+        "non_deleted_plan_count": 9,
+        "remediation": "Delete or soft-delete all plans for this tenant, then change currency, then rebuild plans. Proper currency migration with FX-rate-aware revaluation is an F10 concern."
+      }
+    }
+  }
+}

@@ -243,9 +243,123 @@ owner).
 
 ---
 
-## 10. Links
+## 10. F2 Plans — metrics catalogue
+
+Each metric follows the `<module>_<subject>_<action>` convention established in § 4.
+
+### 10.1 Plan CRUD
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `plans_created_total` | counter | `category` (corporate / partnership), `year` | Volume of plan creation — spike detection |
+| `plans_updated_total` | counter | `category`, `year`, `locked_field_attempted` (true / false) | Edit volume; `locked_field_attempted=true` = UX signal that the lock banner was ignored client-side |
+| `plans_cloned_total` | counter | `source_year`, `target_year` | Clone frequency — expect a once-per-year spike in December |
+| `plans_activated_total` | counter | `year` | State transitions to active |
+| `plans_deactivated_total` | counter | `year` | State transitions to inactive |
+| `plans_soft_deleted_total` | counter | `year` | Soft-delete events |
+| `plans_undeleted_total` | counter | `year` | Undelete events — high values suggest UX confusion |
+| `plans_list_duration_seconds` | histogram | `year`, `role` | List query latency (p95 < 400 ms target per Constitution VII) |
+| `plans_get_duration_seconds` | histogram | — | Single plan fetch latency |
+
+### 10.2 Fee configuration
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `fee_config_updated_total` | counter | — | Fee-config mutations — expect rare, audit-sensitive |
+| `fee_config_get_duration_seconds` | histogram | `role` | Read latency for fee-config page |
+
+### 10.3 Command palette
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `palette_search_requests_total` | counter | `role` | Volume of search API calls |
+| `palette_search_duration_seconds` | histogram | — | `/api/plans/search` response latency (budget: < 100 ms p95) |
+| `palette_open_cold_ms` | histogram | — | Client-side cold-open measurement (budget: < 300 ms) |
+| `palette_open_warm_ms` | histogram | — | Client-side warm-open measurement (budget: < 100 ms) |
+
+### 10.4 Tenant isolation
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `plans_not_found_total` | counter | `endpoint` | Info-severity 404s — normal noise, but input to F13 cross-tenant correlator |
+| `plans_cross_tenant_probe_total` | counter | — | **HIGH SEVERITY** — escalated by F13 periodic scan when `plan_not_found` entries correlate to a plan existing in another tenant |
+
+### 10.5 Dependencies (USE)
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `plans_db_query_duration_seconds` | histogram | `query` (list / get / create / update / clone / delete / search) | Neon query latency for plans module |
+| `plans_db_connection_errors_total` | counter | — | Connection failures specific to plans operations |
+| `plans_rls_set_local_duration_seconds` | histogram | — | Time to execute `SET LOCAL app.current_tenant` per transaction |
+
+---
+
+## 11. SLOs — F2
+
+| SLO | Target | Window | Error budget | Source |
+|---|---|---|---|---|
+| **Plans list availability** | ≥ 99.9% of `/api/plans/{year}` return non-5xx | 30-day rolling | 0.1% ≈ 43 min/month | `plans_list_duration_seconds` + 5xx counter |
+| **Plans API latency (p95)** | < 400 ms (Constitution VII) | 30-day rolling | 5% can exceed | `plans_list_duration_seconds` histogram |
+| **Palette search latency (p95)** | < 100 ms | 30-day rolling | 5% can exceed | `palette_search_duration_seconds` |
+| **Tenant isolation correctness** | Zero cross-tenant data leaks | Per release | 0% (hard rule) | `tenant-isolation.test.ts` + `plans_cross_tenant_probe_total` MUST be 0 |
+
+---
+
+## 12. Alerts — F2
+
+| Alert | Condition | Severity | Owner | Runbook |
+|---|---|---|---|---|
+| **Plans API error rate** | `rate(5xx) > 5%` over 5 min on `/api/plans/**` | 🚨 Page | Plans on-call | Check Neon health, RLS config, recent deploys |
+| **Plans API latency p95 > 800 ms** | 10-min rolling window | 🚨 Page | Plans on-call | Check Neon query plan, connection pool saturation |
+| **Cross-tenant probe detected** | `rate(plans_cross_tenant_probe_total) > 0` | 🚨 Page | Security | See § 12.1 runbook below |
+| **Cross-tenant probe (low-freq)** | `rate(plans_not_found_total) > 1/min` sustained 5 min | ⚠ Warn | Security | Possible probing — review audit_log for actor pattern |
+| **Clone year spike** | `rate(plans_cloned_total) > 5/hour` | ⚠ Warn | Product | Unexpected cloning activity — verify admin intent |
+| **Fee config mutation** | `fee_config_updated_total` increment | 📉 Report | Finance | Audit review — fee changes affect invoicing |
+
+### 12.1 `plan_cross_tenant_probe` runbook (critique E9)
+
+**Severity**: 🚨 Page — immediate human response required.
+**Thresholds**: 1/min = alarm, 5/hr = investigation.
+**Target triage time**: < 5 minutes.
+
+**Triage steps**:
+
+1. **Inspect audit_log** — query entries for the alerting window:
+   ```sql
+   SELECT * FROM audit_log
+   WHERE event_type = 'plan_not_found'
+     AND created_at >= NOW() - INTERVAL '30 minutes'
+   ORDER BY created_at DESC;
+   ```
+2. **Identify actor** — extract `actor_user_id` from the matching rows. Cross-reference with `users` table to determine role, tenant, and account status.
+3. **Check pattern** — determine if the 404s correlate to plan IDs that exist in *another* tenant (this is the F13 periodic scan's job, but can be done manually):
+   ```sql
+   SELECT DISTINCT payload->>'plan_id' AS probed_plan_id,
+          mp.tenant_id AS actual_tenant
+   FROM audit_log al
+   LEFT JOIN membership_plans mp
+     ON mp.plan_id = al.payload->>'plan_id'
+   WHERE al.event_type = 'plan_not_found'
+     AND al.created_at >= NOW() - INTERVAL '30 minutes'
+     AND mp.tenant_id IS NOT NULL
+     AND mp.tenant_id != al.tenant_id;
+   ```
+4. **Decide action**:
+   - If confirmed cross-tenant probe: **disable the actor account** immediately, create an incident record, notify the affected tenant.
+   - If false positive (e.g. bookmarked URL after plan deletion): close the alert with a note.
+5. **Post-incident**: file a post-mortem within 48 hours per § 8.1.
+
+**Escalation**: if triage exceeds 5 minutes or the pattern is unclear, page the engineering lead per § 8.2 escalation table.
+
+**Reference**: `specs/002-membership-plans/plan.md` § I (Tenant Isolation), critique E6 + E9 (2026-04-11).
+
+---
+
+## 13. Links
 
 - Constitution Principle VII: `.specify/memory/constitution.md` § VII
 - F1 plan observability: `specs/001-auth-rbac/plan.md` § "VII. Performance & Observability"
 - F1 research observability: `specs/001-auth-rbac/research.md` § 11
 - F1 security metrics tie-in: `specs/001-auth-rbac/security.md` § 6 (review gate uses metrics from § 4 here)
+- F2 plan observability: `specs/002-membership-plans/plan.md` § I (Tenant Isolation) + § VII (Observability)
+- F2 cross-tenant probe design: critique E6 + E9 (2026-04-11)

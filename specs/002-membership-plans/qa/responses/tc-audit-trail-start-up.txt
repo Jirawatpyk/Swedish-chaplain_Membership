@@ -1,0 +1,58 @@
+[
+  {
+    "eventType": "plan_activated",
+    "timestamp": "2026-04-11T17:14:15.148Z",
+    "payload": {
+      "diff": {
+        "is_active": {
+          "after": true,
+          "before": false
+        }
+      },
+      "plan_id": "start-up",
+      "plan_year": 2026
+    }
+  },
+  {
+    "eventType": "plan_undeleted",
+    "timestamp": "2026-04-11T17:13:56.116Z",
+    "payload": {
+      "diff": {
+        "deleted_at": {
+          "after": null,
+          "before": "2026-04-11T17:12:52.521Z"
+        }
+      },
+      "plan_id": "start-up",
+      "plan_year": 2026
+    }
+  },
+  {
+    "eventType": "plan_soft_deleted",
+    "timestamp": "2026-04-11T17:12:52.933Z",
+    "payload": {
+      "diff": {
+        "deleted_at": {
+          "after": "2026-04-11T17:12:52.521Z",
+          "before": null
+        }
+      },
+      "plan_id": "start-up",
+      "plan_year": 2026
+    }
+  },
+  {
+    "eventType": "plan_deactivated",
+    "timestamp": "2026-04-11T17:12:07.070Z",
+    "payload": {
+      "diff": {
+        "is_active": {
+          "after": false,
+          "before": true
+        }
+      },
+      "plan_id": "start-up",
+      "plan_year": 2026
+    }
+  }
+]

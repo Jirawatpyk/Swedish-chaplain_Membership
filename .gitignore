@@ -49,6 +49,7 @@ coverage/
 playwright-report/
 test-results/
 .vitest/
+.playwright-mcp/
 
 # ============================================
 # Logs

@@ -100,29 +100,79 @@ add Omise as a secondary rail.
 
 ---
 
-## Recommended Feature List (9 features)
+## 📌 2026-04-11 Strategic Update — SaaS Pivot + Scope Revisions
 
-Based on the 8 entities in the workbook plus the cross-cutting infrastructure needed.
+Between the original plan and today, several discoveries changed the roadmap:
+
+1. **SaaS vision** — platform will serve **multiple chambers**, not just SweCham.
+   Multi-tenant-aware architecture from F2 onwards. See
+   [`saas-architecture.md`](./saas-architecture.md).
+2. **2026 Membership Package PDF** — authoritative tier data. Excel-derived
+   analysis was inaccurate. See
+   [`membership-benefits-analysis.md`](./membership-benefits-analysis.md).
+3. **F6/F7 rescoped** — SweCham uses **EventCreate** (external platform).
+   F6 becomes Event Integration (Zapier webhook import), F7 is re-used for
+   **Email Broadcast / E-Blast** (missing paid benefit). See
+   [`event-integration-analysis.md`](./event-integration-analysis.md) and
+   [`email-broadcast-analysis.md`](./email-broadcast-analysis.md).
+4. **21 smart features catalogued** — 6 in MVP, 15 in post-MVP roadmap. See
+   [`smart-chamber-features.md`](./smart-chamber-features.md).
+5. **F1 shipped** via PR #1 — auth + RBAC live. Remaining 9 core + 4 SaaS features.
+6. **`docs/database-analysis.md` deleted** — Excel-derived, inaccurate. Analyzer
+   script (`.specify/scripts/analyze_excel.py`) preserved as reusable tool.
+
+---
+
+## Recommended Feature List (10 core + 4 SaaS = 14 features)
+
+All F2+ features are **multi-tenant aware, single-tenant deployed** (MTA+STD)
+per `saas-architecture.md`. Every row has `tenant_id` defaulting to `'swecham'`.
 
 > **Note on F3**: `members` and `contacts` are two separate entities in the data
 > model (1 member : N contacts) but are **one feature** at the spec / UX level —
 > contacts have no independent lifecycle and are always edited in the context of
-> their parent member. Clean Architecture (Principle III) still applies: Domain
-> layer keeps `Member` and `Contact` as distinct aggregates with their own
-> repositories and services; only the *feature/spec* is merged to avoid YAGNI
-> overhead (Principle X).
+> their parent member. Clean Architecture (Principle III) still applies.
+>
+> **⚠ F2 → F3 carry-overs** (read before `/speckit.specify` for F3):
+> `specs/002-membership-plans/deferred-to-f3.md` lists F2 acceptance scenarios
+> that were consciously deferred because they depend on F3-scope entities
+> (members table, member invoices, benefit inheritance). Currently tracked:
+> **D1 — US3 AS4 Partnership bundle-change warning**. Every F3 spec session
+> MUST grep this file and either (a) fold each pending item into the F3 spec
+> or (b) explicitly reject it with a rationale added to the "Resolved in F3"
+> section of that file. Do not delete the file until every pending row is
+> closed.
 
-| #  | Feature                                   | Depends on | Touches Entities                              | Sensitive? |
-|----|-------------------------------------------|------------|-----------------------------------------------|------------|
-| F1 | Auth & RBAC ✅ **CODE COMPLETE 2026-04-10** | —          | (users, roles, sessions, password_reset_tokens, invitations, audit_log, email_delivery_events) | ⚠ Yes      |
-| F2 | Membership Types Catalog (read + admin)   | F1         | membership_types                              | No         |
-| F3 | **Member & Contact Management** (CRUD + search) | F1, F2 | members, **contacts**                        | ⚠ PII      |
-| F4 | Membership Invoicing (MB invoices + PDF)  | F1, F3     | invoices, invoice_items                       | ⚠ Finance  |
-| F5 | Online Payment (Stripe/Omise integration) | F1, F4     | payments, invoices                            | 🔒 PCI     |
-| F6 | Event Management (CRUD, calendar)         | F1         | events                                        | No         |
-| F7 | Event Registration & Ticketing            | F1, F3, F4, F6 | event_registrations, invoices             | ⚠ PII+Finance |
-| F8 | Renewal Tracking & Reminders              | F1, F3, F4 | (view over invoices), email                   | ⚠ PII      |
-| F9 | Admin Dashboard & Audit Log Viewer        | F1, all    | all read, audit_log                           | ⚠ All PII  |
+### Core features (F1-F9)
+
+| #  | Feature                                             | Depends on | Sensitive? |
+|----|----------------------------------------------------|------------|------------|
+| F1 | **Auth & RBAC** ✅ **SHIPPED via PR #1**            | —          | ⚠ PII      |
+| F2 | **Membership Plans Catalog** (per-tenant benefits, 2-layer corporate + partnership) | F1 | No         |
+| F3 | **Member & Contact Management** (CRUD, search, turnover/age rules) | F1, F2 | ⚠ PII |
+| F4 | **Membership Invoicing + Thai-tax PDF** (pro-rate, registration fee, VAT per tenant) | F1, F3 | ⚠ Finance |
+| F5 | **Online Payment** (Stripe + PromptPay, member self-service renewal) | F1, F4 | 🔒 PCI |
+| F6 | **🔄 EventCreate Integration** (was Event Management — rescoped: Zapier webhook → attendee import → benefit quota tracking) | F1, F3, F2 | ⚠ PII |
+| F7 | **🆕 Email Broadcast / E-Blast** (paid benefit delivery via Resend Broadcasts, quota tracking) | F1, F3, F2 | ⚠ PII |
+| F8 | **Renewal Tracking + Smart Reminders** (tier-aware, at-risk detection, auto-upgrade suggestions) | F1, F3, F4 | ⚠ PII |
+| F9 | **Admin Dashboard + Directory + Timeline + Audit Viewer** (benefit usage, engagement score, smart insights, GDPR export) | F1, all | ⚠ All PII |
+
+### SaaS layer (F10-F13)
+
+| #  | Feature | Depends on | When |
+|----|---------|------------|------|
+| F10 | **Tenant Onboarding** (self-service signup, provisioning, tenant switcher) | F1-F9 | After MVP validation + first external customer interest |
+| F11 | **SaaS Billing** (Stripe Subscriptions for tenants — separate from F5 tenant-to-member billing) | F10 | Alongside F10 |
+| F12 | **White-label Branding** (per-tenant logo, colours, custom domain, email templates, SSO) | F10, F11 | After first 3-5 tenants |
+| F13 | **Super-Admin Console** (manage all tenants, impersonation, MRR dashboard, GDPR ops) | F10-F12 | When tenant count > 10 |
+
+**Notes on sensitivity markers** (maps to Constitution gates):
+
+- **⚠ PII** → GDPR/PDPA scope, **Principle I**, ≥2 reviewers at Review gate
+- **⚠ Finance** → audit trail mandatory, **Principle VIII**
+- **🔒 PCI** → **Principle IV** (NON-NEGOTIABLE), tokenization only, ≥2 reviewers,
+  SAQ-A scope preserved
+- **All F2+ features**: tenant-scoped via Postgres RLS per `saas-architecture.md`
 
 **Notes on sensitivity markers** (maps to Constitution gates):
 
@@ -162,50 +212,116 @@ of work if done sequentially; faster in parallel after F1 is merged.
 
 ---
 
-### 🚀 Phase 2 — **Self-service & Automation**
+### 🚀 Phase 2 — **Self-service, Automation & Value Delivery**
 
-**Goal**: Members can pay themselves online; events and registrations move into the
-system; renewal reminders go out automatically.
+**Goal**: Members can pay themselves online, receive E-Blasts they paid for,
+renewals auto-track with smart reminders.
 
 **Success criteria**:
-- Members can renew online without admin intervention
-- Events are tracked end-to-end (create → register → invoice → attend)
-- Renewal dashboard shows real-time status; reminders fire automatically
+- Members can renew online without admin intervention (F5)
+- E-Blast benefit actually delivered (F7) — paid benefit obligation fulfilled
+- Renewal dashboard shows real-time status with smart reminders (F8 + smart #2 #3)
+- EventCreate webhook integration working (F6)
 
 | Order | Feature | Branch name | Reviewers |
 |-------|---------|-------------|-----------|
-| 5     | **F5 — Online Payment** | `005-payment` | **≥2 (PCI + security checklist)** |
-| 6     | **F6 — Event Management** | `006-events` | ≥1 |
-| 7     | **F7 — Event Registration & Ticketing** | `007-event-registration` | ≥2 (PII+finance) |
-| 8     | **F8 — Renewal Tracking & Reminders** | `008-renewal` | ≥2 (PII) |
+| 5     | **F5 — Online Payment (Stripe + PromptPay)** | `005-payment` | **≥2 (PCI + security checklist)** |
+| 6     | **F7 — Email Broadcast / E-Blast** 🆕 | `006-email-broadcast` | ≥2 (PII + email deliverability) |
+| 7     | **F8 — Renewal Tracking + Smart Reminders** | `007-renewal` | ≥2 (PII) |
+| 8     | **F6 — EventCreate Integration** 🔄 (rescoped) | `008-event-integration` | ≥2 (PII + webhook security) |
 
-**Phase 2 ships when**: a member receives a renewal email, clicks a link, pays online
-via card/PromptPay, and gets a tax receipt PDF — all without admin involvement.
+**Phase 2 ships when**: a member receives a renewal email, clicks a link, pays
+online via PromptPay, gets a tax receipt PDF, and receives their Premium-tier
+E-Blasts — all without admin involvement.
 
-**⚠ PCI scope reminder**: F6 MUST stay SAQ-A eligible (hosted fields / redirect to
-processor). No raw card data touches our servers.
+**⚠ PCI scope reminder**: F5 MUST stay SAQ-A eligible (Stripe Elements hosted
+fields). No raw card data touches our servers.
+
+**Smart features delivered in Phase 2**:
+- #2 At-Risk Detection (F8)
+- #3 Smart Renewal Reminders (F8)
+- #1 Benefit Usage Dashboard backend (F7 contributes the e-blast data)
 
 ---
 
-### 📊 Phase 3 — **Admin Polish & Visibility**
+### 📊 Phase 3 — **Admin Polish, Smart Intelligence & Directory**
 
-**Goal**: Give admin staff the dashboards, reports, and oversight tools to run the
-chamber efficiently.
+**Goal**: Give admin staff the smart dashboards, reports, and oversight tools
+to run the chamber efficiently. Ship differentiator smart features.
 
 **Success criteria**:
-- Real-time KPI dashboard (members/invoices/events/revenue)
+- Benefit Usage Dashboard live for every member (smart #1)
+- Timeline view per member (smart #8)
+- Engagement Score + Activity Feed (smart #15, #17)
+- Partnership Compliance Tracker (smart #18)
+- Directory E-Book generator + optional online directory (smart #20)
+- GDPR self-service export (smart #21)
 - Audit log fully queryable
-- Data exports for accounting
 
 | Order | Feature | Branch name | Reviewers |
 |-------|---------|-------------|-----------|
-| 9     | **F9 — Admin Dashboard & Audit Log Viewer** | `009-admin-dashboard` | ≥2 (reads all PII) |
+| 9     | **F9 — Admin Dashboard + Directory + Timeline + Audit** | `009-admin-dashboard` | ≥2 (reads all PII) |
 
 *(Phase 3 may be broken into sub-specs if F9 proves too large: `009a-kpi-dashboard`,
-`009b-audit-log`, `009c-export`.)*
+`009b-audit-log`, `009c-directory`, `009d-timeline`.)*
 
-**Phase 3 ships when**: the board/treasurer can pull any report they need without
-asking a developer.
+**Phase 3 ships when**: the board/treasurer can pull any report they need
+without asking a developer, and members can see their own benefit usage
+without contacting admin.
+
+**Smart features delivered in Phase 3**:
+- #1 Benefit Usage Dashboard (UI layer)
+- #8 Timeline View per Member
+- #15 Engagement Score
+- #16 Auto Tier Upgrade Suggestions
+- #17 Activity Feed / Notifications
+- #18 Partnership Compliance Tracker
+- #19 Smart Suggestions / Proactive Alerts
+- #20 Public Member Directory
+- #21 GDPR Self-Service Export
+
+---
+
+### 🌍 Phase 4 — **SaaS Launch** (post-MVP, when external tenant interest confirmed)
+
+**Goal**: Turn the single-tenant system into a multi-tenant SaaS platform that
+other chambers can sign up for.
+
+**Success criteria**:
+- A second chamber (e.g., JCC Japanese Chamber) can self-serve sign up
+- Their data is fully isolated from SweCham (Postgres RLS verified by test)
+- They can customise plans, branding, payment processor
+- SaaS subscription billing works (Stripe Subscriptions)
+- First external customer pays us
+
+| Order | Feature | Branch name | Reviewers |
+|-------|---------|-------------|-----------|
+| 10    | **F10 — Tenant Onboarding** (signup wizard, provisioning, tenant switcher) | `010-tenant-onboarding` | ≥2 (multi-tenant isolation) |
+| 11    | **F11 — SaaS Billing** (Stripe Subscriptions, tier limits, dunning) | `011-saas-billing` | ≥2 (PCI + billing) |
+| 12    | **F12 — White-label Branding** (logo, colours, custom domain, email templates) | `012-white-label` | ≥1 |
+| 13    | **F13 — Super-Admin Console** (manage tenants, impersonation, MRR) | `013-super-admin` | ≥2 (security — impersonation) |
+
+**Phase 4 ships when**: Chamber-OS can be marketed publicly as a SaaS product
+with at least one paying external tenant beyond SweCham.
+
+---
+
+### 🎨 Phase 5 — **Expert UX Enhancements** (optional, post-launch polish)
+
+**Goal**: Ship the remaining 6 Expert UX smart features that elevate the
+product from "good" to "best-in-class".
+
+| Feature | Purpose |
+|---|---|
+| #9 Global Undo / Time Travel | Never lose data to accidental clicks |
+| #10 Natural Language Search | "show me all premium members no events 90 days" |
+| #11 Keyboard Shortcuts Reference (?) | Discoverability for power features |
+| #12 Saved Filters / Segments | Power user productivity |
+| #13 CSV / Excel Import | Fast onboarding for new tenants |
+| #14 Real-Time Updates (SSE) | Multi-admin collaboration |
+
+These features ship incrementally based on customer feedback and priority.
+None are blocking for MVP or initial SaaS launch.
 
 ---
 

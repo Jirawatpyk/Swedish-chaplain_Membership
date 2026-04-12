@@ -1,0 +1,20 @@
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/plans/soft-delete-with-members.test.ts" "tests/integration/plans/audit-diff-state-mutations.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/integration/plans/audit-diff-state-mutations.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 5808[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_activated — payload round-trips with is_active diff [33m1643[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_deactivated — payload round-trips with is_active diff [33m1203[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_soft_deleted — payload round-trips with deleted_at diff (before: null, after: ISO) [33m1204[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_undeleted — payload round-trips with deleted_at diff (before: ISO, after: null) [33m1757[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/soft-delete-with-members.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2288[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: soft-delete with attached members (T125)[2m > [22mScenario 1 — stub checker returns 3 → refuses with has_active_members [33m953[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: soft-delete with attached members (T125)[2m > [22mScenario 2 — stub checker returns 0 → soft-delete succeeds [33m1334[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+[2m   Start at [22m 00:09:52
+[2m   Duration [22m 9.91s[2m (transform 197ms, setup 31ms, collect 587ms, tests 8.10s, environment 0ms, prepare 102ms)[22m
+
