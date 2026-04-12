@@ -36,6 +36,7 @@ import { Separator } from '@/components/ui/separator';
 import { LocaleTextInput } from './locale-text-input';
 import { MoneyInput } from './money-input';
 import { BenefitMatrixEditor } from './benefit-matrix-editor';
+import { usePlanOptions } from './use-plan-options';
 import {
   planSchema,
   type BenefitMatrix,
@@ -99,18 +100,7 @@ export function PlanFormWizard({
   const t = useTranslations('admin.plans.create');
   const tLabels = useTranslations('admin.plans.create.labels');
   const tButtons = useTranslations('admin.plans.create.buttons');
-  const tOpts = useTranslations('admin.plans.create.options');
-
-  const CATEGORY_OPTIONS = useMemo(() => [
-    { value: 'corporate', label: tOpts('planCategory.corporate') },
-    { value: 'partnership', label: tOpts('planCategory.partnership') },
-  ], [tOpts]);
-
-  const MEMBER_TYPE_OPTIONS = useMemo(() => [
-    { value: 'company', label: tOpts('memberTypeScope.company') },
-    { value: 'individual', label: tOpts('memberTypeScope.individual') },
-    { value: 'both', label: tOpts('memberTypeScope.both') },
-  ], [tOpts]);
+  const { categoryOptions: CATEGORY_OPTIONS, memberTypeOptions: MEMBER_TYPE_OPTIONS } = usePlanOptions();
 
   const [step, setStep] = useState<StepKey>('basics');
   const [draft, setDraft] = useState<PlanSchemaInput>(
