@@ -1,0 +1,6 @@
+{
+  "requirements": { "total": 16, "checked": 16, "unchecked": 0 },
+  "security": { "total": 40, "checked": 40, "unchecked": 0 },
+  "ux": { "total": 25, "checked": 25, "unchecked": 0 },
+  "note": "security.md grep returns 41 [x] matches = 40 items + 1 notes line. ux.md grep returns 26 = 25 items + 1 notes line. All genuine checklist items are marked [x]."
+}
