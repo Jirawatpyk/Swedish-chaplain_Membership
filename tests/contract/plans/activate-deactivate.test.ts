@@ -6,10 +6,11 @@
  *   - 200 on activate (was inactive → now active)
  *   - 200 on deactivate (was active → now inactive)
  *   - 200 on no-op (activate an already-active plan — idempotent)
+ *   - 403 when manager role attempts activate/deactivate
  *   - 404 when plan not found
  *   - 401 unauthenticated
  *   - 400 missing Idempotency-Key
- *   - 409 idempotency_conflict when key reused with different body
+ *   - 500 when audit write fails
  *
  * Mocks the auth context + idempotency + use cases so the handler runs
  * without DB or session. Real DB coverage lives in:
