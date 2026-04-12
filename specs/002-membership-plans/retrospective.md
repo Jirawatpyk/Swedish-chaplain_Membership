@@ -2,8 +2,8 @@
 feature: 002-membership-plans
 branch: 002-membership-plans
 date: 2026-04-12
-last_updated: 2026-04-12T11:00Z
-completion_rate: 97%
+last_updated: 2026-04-12T15:12Z
+completion_rate: 98%
 spec_adherence: 100%
 requirements_total: 32
 requirements_implemented: 32
@@ -11,18 +11,21 @@ requirements_modified: 0
 requirements_partial: 0
 requirements_not_implemented: 0
 unspecified_implementations: 2
-tasks_total: 174
-tasks_completed: 165
-tasks_deferred_to_user: 6
-tasks_deferred_to_f3: 3
+tasks_total: 175
+tasks_completed: 173
+tasks_deferred_to_user: 2
+tasks_deferred_to_f3: 0
 tasks_modified: 0
-tasks_added_during_implementation: 0
+tasks_added_during_implementation: 1
 critical_findings: 0
 significant_findings: 2
 minor_findings: 3
 positive_findings: 6
 constitution_violations: 0
-ship_state: ready_for_review
+ship_state: shipped
+pr_number: 3
+pr_url: https://github.com/Jirawatpyk/Swedish-chaplain_Membership/pull/3
+merged_at: 2026-04-12T08:12:49Z
 ---
 
 # F2 — Membership Plans — Retrospective
@@ -43,17 +46,18 @@ F2 is also the feature where Chamber-OS earns its SaaS posture: it introduced th
 
 **US7 (Inline Edit + Bulk Actions) deferred to F3** per critique X1c — the value math on ≤9 plan rows was thin, and deferring gives the editable-table primitive the multi-entity stress test it deserves under F3 Members.
 
-**Implementation**: 9 phases across 17 commits + 8 QA passes (all PASSED). 165 of 174 tasks completed. Solo-dev workflow under Constitution v1.3.1/v1.4.0 substitute clause.
+**Implementation**: 9 phases across 33 commits + 8 QA passes (all PASSED) + 3 PR review rounds (21→5→0 findings) + 1 staff review (APPROVED WITH CONDITIONS → fixed). 173 of 175 tasks completed. Solo-dev workflow under Constitution v1.3.1/v1.4.0 substitute clause.
 
 **Test baseline at ship:**
-- Unit + contract: **495/495 green** (52 files)
-- Integration vs live Neon Singapore: **163/164 green** (41 files, 1 intentional skip)
-- i18n: **268 keys × 3 locales** (EN + TH + SV)
+- Unit + contract: **500/500 green** (52 files)
+- Integration vs live Neon Singapore: **165/165 green** (42 files, 1 intentional skip)
+- i18n: **296 keys × 3 locales** (EN + TH + SV)
+- E2E: **66 passed** (F2 tests all green)
 - Lint: 0 errors, 0 warnings
 - Typecheck: 0 errors (strict + `exactOptionalPropertyTypes: true`)
 - Production build: green
 
-**Recommendation**: proceed to `/speckit.review` → `/speckit.ship`.
+**Ship status**: merged via PR [#3](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/pull/3) on 2026-04-12.
 
 ---
 
@@ -124,9 +128,9 @@ F2 is also the feature where Chamber-OS earns its SaaS posture: it introduced th
 
 ### Deferred to user action
 - **T008**: Admin workflow confirmation (10-minute chat with SweCham admin)
-- **T009**: `TENANT_SLUG=swecham` in Vercel prod/preview env
-- **T168–T170**: Prod Neon migration + seed + env var verification
-- **T173**: Manual smoke test of all user stories
+- **T174**: SC-010 usability walkthrough with 3 participants
+
+*T009, T168–T170, T173 completed during post-implementation polish.*
 
 ---
 
@@ -185,17 +189,22 @@ Two critique rounds (2026-04-11) surfaced **4 Must-Address + 14 Recommendations*
 | Metric | Value |
 |--------|-------|
 | Phases | 9 |
-| Commits | 17+ |
-| Tasks total | 174 |
-| Tasks completed | 165 (95%) |
-| Tasks deferred | 9 (6 user-action + 3 F3) |
-| User stories shipped | 6/7 (US7 deferred) |
-| Unit + contract tests | 495 |
-| Integration tests | 163 (+81 vs F1 baseline of 82) |
-| i18n keys | 268 (+268 vs F1 baseline) |
+| Commits | 33 |
+| Tasks total | 175 |
+| Tasks completed | 173 (98.9%) |
+| Tasks deferred (human-only) | 2 (T008, T174) |
+| User stories shipped | 6/7 (US7 deferred to F3) |
+| Unit + contract tests | 500 (+20 vs F1 baseline of 480) |
+| Integration tests | 165 (+83 vs F1 baseline of 82) |
+| E2E specs (F2) | 66 passed |
+| i18n keys | 296 (+296 vs F1 baseline) |
 | QA passes | 8 (all PASSED) |
+| PR review rounds | 3 (21→5→0 findings) |
+| Staff review rounds | 1 (APPROVED WITH CONDITIONS → fixed) |
 | Critique findings resolved | 18 (4 must + 14 recommend) |
 | Security checklist | 40/40 |
 | UX checklist | 25/25 |
 | Requirements checklist | 16/16 |
 | Constitution violations | 0 |
+| PR | [#3](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/pull/3) |
+| Merged | 2026-04-12T08:12:49Z |
