@@ -211,6 +211,8 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - `runInTenant(ctx, fn)` + Postgres RLS (`SET LOCAL app.current_tenant`) — tenant isolation pattern (F2+)
 - `DEBUG_RLS_STATE` — dev-only assertion for tenant-context verification (F2+)
 - 10 new audit event types: `plan_created`, `plan_updated`, `plan_cloned`, `plan_activated`, `plan_deactivated`, `plan_soft_deleted`, `plan_undeleted`, `plan_not_found`, `plan_cross_tenant_probe`, `fee_config_updated` (F2)
+- TypeScript 5.7+ (strict mode) / Node 22 LTS + Next.js 16 App Router, React 19, shadcn/ui (Sidebar, Sheet, Tooltip), Tailwind CSS v4, lucide-react, next-intl, next-themes (003-nav-menu)
+- N/A — no database changes. Client-side localStorage for collapse preference. (003-nav-menu)
 
 ## Recent Changes
 

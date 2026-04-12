@@ -450,5 +450,26 @@
       "usersList": "Users list",
       "dashboard": "Dashboard"
     }
+  },
+  "nav": {
+    "staff": {
+      "dashboard": "Dashboard",
+      "plans": "Plans",
+      "users": "Users",
+      "settings": "Settings",
+      "settingsFees": "Fee Configuration",
+      "sections": {
+        "main": "Main",
+        "settings": "Settings"
+      },
+      "collapse": "Collapse sidebar",
+      "expand": "Expand sidebar",
+      "ariaLabel": "Staff navigation"
+    },
+    "member": {
+      "dashboard": "Dashboard",
+      "account": "Account",
+      "ariaLabel": "Member navigation"
+    }
   }
 }

@@ -22,8 +22,8 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
 
-  --font-sans: var(--font-geist-sans), system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans Thai', sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans Thai', sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace, ui-monospace, monospace;
 
   /* Shimmer keyframes — see ux-standards § 2.1 */
   --animate-shimmer: shimmer 1.8s linear infinite;
@@ -218,6 +218,25 @@ body {
       opacity: 0.55;
     }
   }
+
+  /* FR-012: Instant sidebar state changes for reduced-motion users */
+  [data-slot="sidebar-wrapper"],
+  [data-slot="sidebar-wrapper"] *,
+  [data-slot="sidebar-gap"],
+  [data-slot="sidebar"] {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+
+/* --- Cursor: Tailwind v4 does not set cursor-pointer on buttons by default --- */
+button,
+[role="button"],
+a[href],
+summary,
+[data-slot="sidebar-menu-button"],
+[data-slot="sidebar-rail"] {
+  cursor: pointer;
 }
 
 /* --- Focus-visible: WCAG 2.1 AA + docs/ux-standards.md § 7 --- */
