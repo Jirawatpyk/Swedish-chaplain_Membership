@@ -89,7 +89,7 @@ export default async function FeeConfigPage() {
               vat_rate: feeConfig.vat_rate,
               registration_fee_minor_units: feeConfig.registration_fee_minor_units,
             }}
-            currentUserRole={currentUser.role as 'admin' | 'manager' | 'member'}
+            currentUserRole={currentUser.role}
           />
         </CardContent>
       </Card>

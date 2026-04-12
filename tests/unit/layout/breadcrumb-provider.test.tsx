@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/globals -- test probes legitimately capture hook return values into outer variables */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { useEffect, useRef } from 'react';
 
@@ -83,6 +83,23 @@ describe('<BreadcrumbProvider>', () => {
     }
     render(<Probe />);
     expect(map!.size).toBe(0);
+    // Vitest sets NODE_ENV='test', so the no-op branch runs here.
     expect(() => api!.setLabel('x', 'y')).not.toThrow();
+  });
+
+  it('dev-mode setter throws with an actionable error when used outside provider', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    // Re-import under the new NODE_ENV so the EMPTY_API branch is picked up.
+    vi.resetModules();
+    const mod = await import('@/components/layout/breadcrumb-provider');
+
+    let api: ReturnType<typeof mod.useBreadcrumbLabels> | null = null;
+    function Probe() {
+      api = mod.useBreadcrumbLabels();
+      return null;
+    }
+    render(<Probe />);
+    expect(() => api!.setLabel('x', 'y')).toThrow(/outside <BreadcrumbProvider>/);
+    vi.unstubAllEnvs();
   });
 });

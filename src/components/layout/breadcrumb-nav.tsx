@@ -106,32 +106,35 @@ function BreadcrumbFragment({
   );
 }
 
+// URL segment → i18n key under `breadcrumb.*`. Segments equal to their key
+// are spelled out for grep-ability rather than synthesised.
+const STATIC_LABEL_KEYS = {
+  admin: 'admin',
+  dashboard: 'dashboard',
+  users: 'users',
+  plans: 'plans',
+  settings: 'settings',
+  fees: 'fees',
+  account: 'account',
+  new: 'newPlan',
+  clone: 'clonePlan',
+  edit: 'editPlan',
+} as const;
+
 function buildStaticLabels(
   t: ReturnType<typeof useTranslations<'breadcrumb'>>,
 ): Readonly<Record<string, string>> {
-  const safe = (key: string): string => {
+  const result: Record<string, string> = {};
+  for (const [segment, key] of Object.entries(STATIC_LABEL_KEYS)) {
     try {
-      return t(key as Parameters<typeof t>[0]);
+      result[segment] = t(key as Parameters<typeof t>[0]);
     } catch (err) {
       // Missing TH/SV labels would otherwise silently fall back to the raw URL
       // slug on screen. Surface in dev so translators catch gaps before prod.
       if (process.env.NODE_ENV === 'development') {
         console.warn(`[BreadcrumbNav] missing i18n key: breadcrumb.${key}`, err);
       }
-      return '';
     }
-  };
-  const entries: Array<[string, string]> = [
-    ['admin', safe('admin')],
-    ['dashboard', safe('dashboard')],
-    ['users', safe('users')],
-    ['plans', safe('plans')],
-    ['settings', safe('settings')],
-    ['fees', safe('fees')],
-    ['account', safe('account')],
-    ['new', safe('newPlan')],
-    ['clone', safe('clonePlan')],
-    ['edit', safe('editPlan')],
-  ];
-  return Object.fromEntries(entries.filter(([, v]) => v.length > 0));
+  }
+  return result;
 }

@@ -1,19 +1,9 @@
-type BreadcrumbSegmentBase = {
+export type BreadcrumbSegment = {
   href: string;
   segment: string;
   label: string;
+  isCurrent: boolean;
 };
-
-export type CurrentBreadcrumbSegment = BreadcrumbSegmentBase & {
-  isCurrent: true;
-};
-export type AncestorBreadcrumbSegment = BreadcrumbSegmentBase & {
-  isCurrent: false;
-};
-
-export type BreadcrumbSegment =
-  | CurrentBreadcrumbSegment
-  | AncestorBreadcrumbSegment;
 
 export type ParseBreadcrumbOptions = {
   pathname: string;
@@ -41,15 +31,12 @@ export function parseBreadcrumbPath({
   if (parts.length === 0) return [];
 
   const lastIndex = parts.length - 1;
-  return parts.map((segment, index) => {
-    const href = '/' + parts.slice(0, index + 1).join('/');
-    const label =
-      dynamicLabels.get(segment) ?? staticLabels[segment] ?? segment;
-    if (index === lastIndex) {
-      return { href, segment, label, isCurrent: true } as const;
-    }
-    return { href, segment, label, isCurrent: false } as const;
-  });
+  return parts.map((segment, index) => ({
+    href: '/' + parts.slice(0, index + 1).join('/'),
+    segment,
+    label: dynamicLabels.get(segment) ?? staticLabels[segment] ?? segment,
+    isCurrent: index === lastIndex,
+  }));
 }
 
 export type TruncatedBreadcrumb = {

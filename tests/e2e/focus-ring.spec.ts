@@ -41,15 +41,26 @@ test.describe('F4 SC-011 — universal focus ring @a11y @layout', () => {
             boxShadow: cs.boxShadow,
             outlineStyle: cs.outlineStyle,
             outlineWidth: cs.outlineWidth,
+            outlineColor: cs.outlineColor,
           };
         });
         if (!focus) continue; // body focus — nothing to check
-        const hasRing =
-          (focus.boxShadow && focus.boxShadow !== 'none') ||
-          (focus.outlineStyle !== 'none' && focus.outlineWidth !== '0px');
+        const hasBoxShadow = !!focus.boxShadow && focus.boxShadow !== 'none';
+        // A transparent outline (e.g. `.focus-ring:focus-visible`) is invisible
+        // in normal mode but reveals in Windows High Contrast Mode. It only
+        // counts as a visible ring if paired with a box-shadow; a standalone
+        // transparent outline should NOT pass the assertion.
+        const transparentOutline =
+          focus.outlineColor === 'rgba(0, 0, 0, 0)' ||
+          focus.outlineColor === 'transparent';
+        const hasOpaqueOutline =
+          focus.outlineStyle !== 'none' &&
+          focus.outlineWidth !== '0px' &&
+          !transparentOutline;
+        const hasRing = hasBoxShadow || hasOpaqueOutline;
         expect(
           hasRing,
-          `${path} tab#${i} must render a visible focus ring (box-shadow or outline)`,
+          `${path} tab#${i} must render a visible focus ring (box-shadow or opaque outline)`,
         ).toBe(true);
       }
     }

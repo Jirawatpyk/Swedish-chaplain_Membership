@@ -9,6 +9,11 @@ type ContentContainerProps = {
   className?: string;
 };
 
+const MAX_WIDTH_BY_VARIANT = {
+  admin: 'max-w-[var(--content-max-width-admin)]',
+  portal: 'max-w-[var(--content-max-width-portal)]',
+} as const;
+
 export function ContentContainer({
   children,
   variant = 'admin',
@@ -19,13 +24,10 @@ export function ContentContainer({
     <div
       data-slot="content-container"
       data-variant={variant}
-      data-full-bleed={fullBleed ? 'true' : 'false'}
+      data-full-bleed={String(fullBleed)}
       className={cn(
         'mx-auto w-full',
-        !fullBleed &&
-          (variant === 'portal'
-            ? 'max-w-[var(--content-max-width-portal)]'
-            : 'max-w-[var(--content-max-width-admin)]'),
+        !fullBleed && MAX_WIDTH_BY_VARIANT[variant],
         'px-[var(--page-padding-x)] py-[var(--page-padding-y)]',
         className,
       )}
