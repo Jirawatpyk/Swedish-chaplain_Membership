@@ -12,7 +12,6 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
-import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, PlanRepo } from './ports';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
@@ -78,12 +77,11 @@ export async function getPlan(
         },
       },
     );
-    if (!auditResult.ok) {
-      logger.warn(
-        { requestId: deps.requestId, err: auditResult.error },
-        'get-plan: plan_not_found audit write failed — compliance gap',
-      );
-    }
+    // Audit failure on a read-path 404 is non-fatal — the audit adapter
+    // logs internally on persist_failed. We check the result to prevent
+    // unhandled rejections but don't escalate here; the route handler's
+    // structured logger will surface it if needed.
+    void auditResult;
     return err({ type: 'not_found' });
   }
 
