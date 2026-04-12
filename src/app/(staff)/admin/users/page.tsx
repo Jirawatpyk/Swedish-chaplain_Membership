@@ -31,6 +31,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: 'Users · SweCham' };
@@ -44,18 +46,16 @@ export default async function AdminUsersPage() {
   const total = await userRepo.countAll();
 
   return (
-    <main className="container mx-auto max-w-6xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('title')}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t('subtitle', { total })}
-          </p>
-        </div>
-        <Badge variant="secondary">
-          {t('viewingAs', { role: currentUser.role })}
-        </Badge>
-      </div>
+    <ContentContainer>
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle', { total })}
+        actions={
+          <Badge variant="secondary">
+            {t('viewingAs', { role: currentUser.role })}
+          </Badge>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -76,6 +76,6 @@ export default async function AdminUsersPage() {
           />
         </CardContent>
       </Card>
-    </main>
+    </ContentContainer>
   );
 }

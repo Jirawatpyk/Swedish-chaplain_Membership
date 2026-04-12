@@ -471,5 +471,21 @@
       "account": "Account",
       "ariaLabel": "Member navigation"
     }
+  },
+  "breadcrumb": {
+    "admin": "Admin",
+    "dashboard": "Dashboard",
+    "users": "Users",
+    "plans": "Plans",
+    "settings": "Settings",
+    "fees": "Fee Configuration",
+    "account": "Account",
+    "newPlan": "New Plan",
+    "clonePlan": "Clone Plan",
+    "editPlan": "Edit"
+  },
+  "layout": {
+    "breadcrumbAriaLabel": "Breadcrumb navigation",
+    "ellipsis": "More pages"
   }
 }

@@ -26,6 +26,9 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { FeeConfigForm } from '@/components/plans/fee-config-form';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
+import { logger } from '@/lib/logger';
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: 'Fee configuration · SweCham' };
@@ -47,26 +50,32 @@ export default async function FeeConfigPage() {
     if (result.error.type === 'not_found') {
       notFound();
     }
+    logger.error(
+      {
+        route: '/admin/settings/fees',
+        errorType: result.error.type,
+      },
+      'fee_config_load_failed',
+    );
     return (
-      <main className="space-y-4">
-        <p className="text-sm text-destructive" role="alert">
+      <ContentContainer>
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <p className="text-body text-destructive" role="alert">
           {t('errors.generic')}
         </p>
-      </main>
+      </ContentContainer>
     );
   }
 
   const feeConfig = result.value;
 
   return (
-    <main className="space-y-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
-        </div>
-        <Badge variant="secondary">{currentUser.role}</Badge>
-      </header>
+    <ContentContainer>
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={<Badge variant="secondary">{currentUser.role}</Badge>}
+      />
 
       <Card>
         <CardHeader>
@@ -84,6 +93,6 @@ export default async function FeeConfigPage() {
           />
         </CardContent>
       </Card>
-    </main>
+    </ContentContainer>
   );
 }

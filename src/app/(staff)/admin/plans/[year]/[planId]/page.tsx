@@ -27,6 +27,9 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { MoneyDisplay } from '@/components/plans/money-display';
 import { LocaleTextDisplay } from '@/components/plans/locale-text-display';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
+import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 
 export async function generateMetadata({
   params,
@@ -81,33 +84,36 @@ export default async function PlanDetailPage({
   const feeConfig = await deps.feeConfigRepo.findByTenant(tenant);
   const currencyCode = feeConfig?.currency_code ?? 'THB';
 
+  const planDisplayName = plan.plan_name.en ?? planId;
+
   return (
-    <main className="space-y-4">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            <LocaleTextDisplay
-              value={plan.plan_name}
-              showMissingBadge={currentUser.role === 'admin'}
-            />
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            <LocaleTextDisplay value={plan.description} />
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Badge variant={plan.plan_category === 'partnership' ? 'default' : 'secondary'}>
-            {t(`badges.${plan.plan_category}`)}
-          </Badge>
-          {plan.deleted_at ? (
-            <Badge variant="outline">{t('badges.deleted')}</Badge>
-          ) : plan.is_active ? (
-            <Badge variant="default">{t('badges.active')}</Badge>
-          ) : (
-            <Badge variant="secondary">{t('badges.inactive')}</Badge>
-          )}
-        </div>
-      </header>
+    <ContentContainer>
+      <PlanBreadcrumbLabel segment={planId} label={planDisplayName} />
+      <PageHeader
+        title={
+          <LocaleTextDisplay
+            value={plan.plan_name}
+            showMissingBadge={currentUser.role === 'admin'}
+          />
+        }
+        subtitle={
+          plan.description ? <LocaleTextDisplay value={plan.description} /> : undefined
+        }
+        badge={
+          <div className="flex gap-2">
+            <Badge variant={plan.plan_category === 'partnership' ? 'default' : 'secondary'}>
+              {t(`badges.${plan.plan_category}`)}
+            </Badge>
+            {plan.deleted_at ? (
+              <Badge variant="outline">{t('badges.deleted')}</Badge>
+            ) : plan.is_active ? (
+              <Badge variant="default">{t('badges.active')}</Badge>
+            ) : (
+              <Badge variant="secondary">{t('badges.inactive')}</Badge>
+            )}
+          </div>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -247,7 +253,7 @@ export default async function PlanDetailPage({
           ) : null}
         </CardContent>
       </Card>
-    </main>
+    </ContentContainer>
   );
 }
 

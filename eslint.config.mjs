@@ -165,8 +165,46 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    // Security: forbid direct equality checks on password* / passwordHash* variables
-    // (addresses spec SC-018 / tasks.md T-190). Use argon2 verify() instead.
+    // Enforce PageHeader + ContentContainer composition on page.tsx roots.
+    // Forbids ad-hoc layout/spacing/heading utility classes on the
+    // outermost JSX element returned by a page component. Inner elements
+    // are unrestricted so per-card / per-section styling keeps working.
+    files: [
+      "src/app/(staff)/admin/**/page.tsx",
+      "src/app/(member)/portal/**/page.tsx",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          // `export default function X() { return (<Root className=".." />) }`
+          selector:
+            "ExportDefaultDeclaration > FunctionDeclaration > BlockStatement > ReturnStatement > JSXElement > JSXOpeningElement > JSXAttribute[name.name='className'][value.type='Literal'][value.value=/(^|\\s)(max-w-|mx-auto|container(\\s|$)|p-\\d|px-\\d|py-\\d|space-y-|text-(xl|2xl|3xl|4xl))/]",
+          message:
+            "Page roots must compose via <ContentContainer> + <PageHeader>. " +
+            "Remove ad-hoc max-w-*/mx-auto/container/p-*/px-*/py-*/space-y-*/heading text-* classes from the top-level element.",
+        },
+        {
+          // `export default () => { return (<Root className=".." />) }`
+          selector:
+            "ExportDefaultDeclaration > ArrowFunctionExpression > BlockStatement > ReturnStatement > JSXElement > JSXOpeningElement > JSXAttribute[name.name='className'][value.type='Literal'][value.value=/(^|\\s)(max-w-|mx-auto|container(\\s|$)|p-\\d|px-\\d|py-\\d|space-y-|text-(xl|2xl|3xl|4xl))/]",
+          message:
+            "Page roots must compose via <ContentContainer> + <PageHeader>. " +
+            "Remove ad-hoc max-w-*/mx-auto/container/p-*/px-*/py-*/space-y-*/heading text-* classes from the top-level element.",
+        },
+        {
+          // `export default () => (<Root className=".." />)` — expression body
+          selector:
+            "ExportDefaultDeclaration > ArrowFunctionExpression > JSXElement > JSXOpeningElement > JSXAttribute[name.name='className'][value.type='Literal'][value.value=/(^|\\s)(max-w-|mx-auto|container(\\s|$)|p-\\d|px-\\d|py-\\d|space-y-|text-(xl|2xl|3xl|4xl))/]",
+          message:
+            "Page roots must compose via <ContentContainer> + <PageHeader>. " +
+            "Remove ad-hoc max-w-*/mx-auto/container/p-*/px-*/py-*/space-y-*/heading text-* classes from the top-level element.",
+        },
+      ],
+    },
+  },
+  {
+    // Forbid direct === comparisons on password variables — always use argon2 verify() instead.
     files: ["src/modules/auth/**/*.ts", "src/modules/auth/**/*.tsx"],
     rules: {
       "no-restricted-syntax": [

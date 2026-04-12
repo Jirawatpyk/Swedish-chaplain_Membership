@@ -29,6 +29,8 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { PlansTable } from '@/components/plans/plans-table';
 import { PlanListSkeleton } from '@/components/plans/plan-list-skeleton';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: 'Plans · SweCham' };
@@ -52,14 +54,12 @@ export default async function PlansListPage({
   const t = await getTranslations('admin.plans');
 
   return (
-    <main className="space-y-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('listDescription')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {currentUser.role === 'admin' ? (
+    <ContentContainer>
+      <PageHeader
+        title={t('title')}
+        subtitle={t('listDescription')}
+        actions={
+          currentUser.role === 'admin' ? (
             <>
               <Link
                 href="/admin/plans/clone"
@@ -76,9 +76,9 @@ export default async function PlansListPage({
                 {t('actions.new')}
               </Link>
             </>
-          ) : null}
-        </div>
-      </header>
+          ) : null
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -94,7 +94,7 @@ export default async function PlansListPage({
           </Suspense>
         </CardContent>
       </Card>
-    </main>
+    </ContentContainer>
   );
 }
 

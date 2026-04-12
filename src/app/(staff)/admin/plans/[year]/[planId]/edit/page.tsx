@@ -16,6 +16,9 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { asPlanSlug, asPlanYear, getPlan, type PlanSchemaInput } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
+import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EditPlanClient } from './edit-plan-client';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -93,12 +96,9 @@ export default async function EditPlanPage({
   };
 
   return (
-    <main className="mx-auto max-w-4xl space-y-4 py-4">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {t('title', { planName: plan.plan_name.en })}
-        </h1>
-      </header>
+    <ContentContainer>
+      <PlanBreadcrumbLabel segment={plan.plan_id} label={plan.plan_name.en} />
+      <PageHeader title={t('title', { planName: plan.plan_name.en })} />
       <Card>
         <CardHeader>
           <CardTitle>{plan.plan_name.en}</CardTitle>
@@ -113,6 +113,6 @@ export default async function EditPlanPage({
           />
         </CardContent>
       </Card>
-    </main>
+    </ContentContainer>
   );
 }

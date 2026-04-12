@@ -9,6 +9,8 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 
 /**
@@ -28,14 +30,12 @@ export default async function StaffAccountPage() {
   const tShell = await getTranslations('shell.roleBadge');
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('title')}</h1>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <span>{user.email}</span>
-          <Badge variant="secondary">{tShell(user.role)}</Badge>
-        </div>
-      </header>
+    <ContentContainer>
+      <PageHeader
+        title={t('title')}
+        subtitle={user.email}
+        badge={<Badge variant="secondary">{tShell(user.role)}</Badge>}
+      />
 
       <Card>
         <CardHeader>
@@ -48,6 +48,6 @@ export default async function StaffAccountPage() {
           <ChangePasswordForm />
         </CardContent>
       </Card>
-    </div>
+    </ContentContainer>
   );
 }

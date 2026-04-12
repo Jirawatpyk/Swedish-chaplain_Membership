@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 
 /**
@@ -33,16 +34,12 @@ export default async function MemberPortalHomePage() {
   const t = await getTranslations('auth.memberPortal');
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {t('welcome', { name: user.displayName ?? user.email })}
-          </h1>
-          <Badge variant="secondary">{t('versionBadge')}</Badge>
-        </div>
-        <p className="text-sm text-muted-foreground">{t('intro')}</p>
-      </header>
+    <>
+      <PageHeader
+        title={t('welcome', { name: user.displayName ?? user.email })}
+        subtitle={t('intro')}
+        badge={<Badge variant="secondary">{t('versionBadge')}</Badge>}
+      />
 
       <Card>
         <CardHeader>
@@ -50,47 +47,47 @@ export default async function MemberPortalHomePage() {
           <CardDescription>{t('roadmapDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <ul className="grid gap-3 text-sm">
+          <ul className="grid gap-3 text-body">
             <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">
                 F3
               </span>
               <div>
                 <p className="font-medium">{t('roadmap.profile.title')}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-caption text-muted-foreground">
                   {t('roadmap.profile.description')}
                 </p>
               </div>
             </li>
             <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">
                 F4
               </span>
               <div>
                 <p className="font-medium">{t('roadmap.invoices.title')}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-caption text-muted-foreground">
                   {t('roadmap.invoices.description')}
                 </p>
               </div>
             </li>
             <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">
                 F6
               </span>
               <div>
                 <p className="font-medium">{t('roadmap.events.title')}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-caption text-muted-foreground">
                   {t('roadmap.events.description')}
                 </p>
               </div>
             </li>
             <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">
                 F5
               </span>
               <div>
                 <p className="font-medium">{t('roadmap.renewal.title')}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-caption text-muted-foreground">
                   {t('roadmap.renewal.description')}
                 </p>
               </div>
@@ -107,12 +104,12 @@ export default async function MemberPortalHomePage() {
         <CardContent>
           <a
             href="mailto:info@swecham.se"
-            className="text-sm underline underline-offset-4"
+            className="text-body underline underline-offset-4"
           >
             info@swecham.se
           </a>
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }

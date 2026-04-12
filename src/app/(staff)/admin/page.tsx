@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 
 /**
@@ -27,15 +29,11 @@ export default async function StaffHomePage() {
   const { user } = await requireSession('staff');
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Welcome{user.displayName ? `, ${user.displayName}` : ''}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          You are signed in as <strong>{user.role}</strong>.
-        </p>
-      </header>
+    <ContentContainer>
+      <PageHeader
+        title={`Welcome${user.displayName ? `, ${user.displayName}` : ''}`}
+        subtitle={`You are signed in as ${user.role}.`}
+      />
 
       <Card>
         <CardHeader>
@@ -43,26 +41,26 @@ export default async function StaffHomePage() {
           <CardDescription>F1 (auth) is the foundation. The rest of the staff workspace lands in upcoming phases.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ul className="grid gap-3 text-sm">
+          <ul className="grid gap-3 text-body">
             <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">F3</span>
+              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">F3</span>
               <span>Member &amp; contact directory</span>
             </li>
             <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">F4</span>
+              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">F4</span>
               <span>Invoices &amp; receipts (Thai tax compliant)</span>
             </li>
             <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">F6</span>
+              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">F6</span>
               <span>Events &amp; registration</span>
             </li>
             <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">F5</span>
+              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">F5</span>
               <span>Online membership renewal &amp; payments</span>
             </li>
           </ul>
         </CardContent>
       </Card>
-    </div>
+    </ContentContainer>
   );
 }

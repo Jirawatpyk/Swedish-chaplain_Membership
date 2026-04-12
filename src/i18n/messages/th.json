@@ -471,5 +471,21 @@
       "account": "บัญชีของฉัน",
       "ariaLabel": "เมนูนำทางสำหรับสมาชิก"
     }
+  },
+  "breadcrumb": {
+    "admin": "ผู้ดูแลระบบ",
+    "dashboard": "แดชบอร์ด",
+    "users": "ผู้ใช้งาน",
+    "plans": "แผนสมาชิก",
+    "settings": "การตั้งค่า",
+    "fees": "การตั้งค่าค่าธรรมเนียม",
+    "account": "บัญชี",
+    "newPlan": "แผนใหม่",
+    "clonePlan": "คัดลอกแผน",
+    "editPlan": "แก้ไข"
+  },
+  "layout": {
+    "breadcrumbAriaLabel": "การนำทางเส้นทาง",
+    "ellipsis": "หน้าอื่นๆ"
   }
 }

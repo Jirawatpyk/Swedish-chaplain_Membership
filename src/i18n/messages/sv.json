@@ -471,5 +471,21 @@
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering"
     }
+  },
+  "breadcrumb": {
+    "admin": "Admin",
+    "dashboard": "Instrumentpanel",
+    "users": "Användare",
+    "plans": "Planer",
+    "settings": "Inställningar",
+    "fees": "Avgiftskonfiguration",
+    "account": "Konto",
+    "newPlan": "Ny plan",
+    "clonePlan": "Klona plan",
+    "editPlan": "Redigera"
+  },
+  "layout": {
+    "breadcrumbAriaLabel": "Brödsmulenavigering",
+    "ellipsis": "Fler sidor"
   }
 }

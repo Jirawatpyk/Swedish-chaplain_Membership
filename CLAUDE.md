@@ -218,6 +218,7 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 
 ## Recent Changes
 
+- 004-page-layout-standard: F4 Page Layout Enterprise Standardization — PageHeader + ContentContainer + BreadcrumbNav primitives, 11 admin + portal pages migrated, Button 32→36px + cursor/disabled, typography scale (.text-h1–.text-h4 + .text-body + .text-caption) + Thai line-height override, universal focus ring, form/table/overlay token alignment. 12 new i18n keys (breadcrumb.* + layout.*), 24 new unit tests for layout primitives. `docs/shadcn-customizations.md` catalogues every primitive modification.
 - 002-membership-plans: F2 Membership Plans — 6 user stories (US1–US6) shipped across 9 phases. Added `cmdk` command palette, `src/modules/tenants/` + `src/modules/plans/` bounded contexts, Postgres RLS tenant isolation, 2 new DB tables (`membership_plans`, `tenant_fee_config`), migrations 0006 + 0007, 268 i18n keys (EN+TH+SV), 495 unit+contract tests, 163 integration tests on live Neon Singapore. US7 (Inline Edit + Bulk Actions) deferred to F3.
 - 001-auth-rbac: F1 Auth & RBAC shipped via PR #1. 188/191 tasks, 480/480 tests.
 
