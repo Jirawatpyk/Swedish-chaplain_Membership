@@ -28,12 +28,10 @@ export type ActivatePlanInput = {
   readonly actorUserId: string;
   readonly requestId: string;
   readonly sourceIp: string | null;
-  readonly idempotencyKey: string;
 };
 
 export type ActivatePlanError =
   | { readonly type: 'not_found' }
-  | { readonly type: 'idempotency_conflict' }
   | { readonly type: 'audit_failed'; readonly message: string }
   | { readonly type: 'server_error'; readonly message: string };
 

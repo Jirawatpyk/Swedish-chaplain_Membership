@@ -7,9 +7,9 @@
  *   1. Load the plan via `planRepo.findOne` — returns `not_found`
  *      (404-never-403) if the plan doesn't exist or belongs to a
  *      different tenant.
- *   2. Derive the current PlanState and call `canTransition` — returns
- *      `not_found` if the transition is illegal (e.g. activating a
- *      soft-deleted plan). Soft-deleted plans must be undeleted first.
+ *   2. Reject soft-deleted plans immediately — activate/deactivate
+ *      are NOT the undelete path; soft-deleted plans must go through
+ *      `undeletePlan` first.
  *   3. Short-circuit idempotent no-op: if already in target state,
  *      return the existing plan WITHOUT writing an audit event.
  *   4. Call `planRepo.setActive(target)` to flip the flag.
@@ -26,7 +26,7 @@ import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, PlanRepo } from './ports';
 import { recordAuditEvent } from './record-audit-event';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
-import { planStateOf, canTransition } from '../domain/plan-state';
+import { planStateOf } from '../domain/plan-state';
 
 export type SetPlanActiveInput = {
   readonly planId: PlanSlug;
@@ -70,11 +70,11 @@ export async function setPlanActive(
     return err({ type: 'not_found' });
   }
 
-  // 2. State machine guard — reject illegal transitions (e.g. soft_deleted → active)
+  // 2. Derive current state and reject soft-deleted plans immediately.
+  //    activate/deactivate are NOT the undelete path — soft-deleted plans
+  //    must go through the dedicated undeletePlan use case first.
   const currentState = planStateOf(existing);
-  const transition = canTransition(currentState, targetState);
-  if (!transition.ok) {
-    // "404 never 403" — treat illegal transitions the same as not_found
+  if (currentState === 'soft_deleted') {
     return err({ type: 'not_found' });
   }
 

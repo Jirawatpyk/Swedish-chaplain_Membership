@@ -8,6 +8,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireAdminContext } from '@/lib/admin-context';
+import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { rememberIdempotentResponse } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
 import { undeletePlan, asPlanSlug, asPlanYear } from '@/modules/plans';
@@ -41,13 +42,15 @@ export async function POST(
     );
   }
 
+  const tenant = resolveTenantFromRequest(request);
   const guard = await runIdempotencyGuard(
     request,
+    tenant,
     `POST /api/plans/${parsedPath.data.year}/${parsedPath.data.planId}/undelete`,
   );
   if (guard.kind === 'response') return guard.response;
 
-  const deps = buildPlansDeps(guard.tenant);
+  const deps = buildPlansDeps(tenant);
 
   const result = await undeletePlan(
     {
@@ -70,7 +73,7 @@ export async function POST(
 
   if (result.ok) {
     const body = serialisePlan(result.value);
-    await rememberIdempotentResponse(guard.tenant, guard.key, guard.bodyHash, {
+    await rememberIdempotentResponse(tenant, guard.key, guard.bodyHash, {
       status: 200,
       body,
     });

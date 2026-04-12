@@ -190,7 +190,8 @@ export function PlansTable({
     // already at click, so there's no UI glitch.
     if (kind === 'activate') {
       // Activate is non-destructive — fire immediately, no confirmation.
-      // Error handling is inside runAction (toast + finally cleanup).
+      // Guard against double-click race before submitting state takes effect.
+      if (submitting) return;
       runAction({ kind, plan }).catch(() => {});
       return;
     }

@@ -33,7 +33,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { z } from 'zod';
 import type { TenantContext } from '@/modules/tenants';
-import type { CurrencyCode } from '../domain/money';
+import { SUPPORTED_CURRENCIES } from '../domain/money';
 import type {
   AuditPort,
   ClockPort,
@@ -54,7 +54,9 @@ const feeConfigPatchSchema = z
       .int('registration_fee_minor_units must be an integer')
       .nonnegative('registration_fee_minor_units must be ≥ 0')
       .optional(),
-    currency_code: z.string().length(3, 'currency_code must be 3 letters').optional(),
+    currency_code: z.enum(SUPPORTED_CURRENCIES, {
+      errorMap: () => ({ message: 'currency_code must be a supported ISO 4217 code' }),
+    }).optional(),
   })
   .strict();
 
@@ -180,7 +182,7 @@ export async function updateFeeConfig(
         ...(patch.registration_fee_minor_units !== undefined
           ? { registration_fee_minor_units: patch.registration_fee_minor_units }
           : {}),
-        ...(currencyChanged ? { currency_code: patch.currency_code! as CurrencyCode } : {}),
+        ...(currencyChanged ? { currency_code: patch.currency_code! } : {}),
       },
       input.actorUserId,
     );

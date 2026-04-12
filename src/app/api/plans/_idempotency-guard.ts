@@ -22,7 +22,6 @@ import {
   reserveIdempotencyRecord,
   hashRequestBody,
 } from '@/lib/idempotency';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import type { TenantContext } from '@/modules/tenants';
 
 type IdempotencyProceed = {
@@ -43,11 +42,13 @@ export type IdempotencyResult = IdempotencyProceed | IdempotencyShortCircuit;
  * Run the idempotency guard preamble for a state-mutating route.
  *
  * @param request  — the incoming NextRequest
+ * @param tenant   — already-resolved TenantContext (from requireAdminContext)
  * @param hashSeed — unique seed for the body hash (e.g. `'POST /api/plans/2026/premium/activate'`)
  * @param body     — the parsed request body (use `{}` for bodyless POSTs)
  */
 export async function runIdempotencyGuard(
   request: NextRequest,
+  tenant: TenantContext,
   hashSeed: string,
   body: unknown = {},
 ): Promise<IdempotencyResult> {
@@ -70,7 +71,6 @@ export async function runIdempotencyGuard(
     };
   }
 
-  const tenant = resolveTenantFromRequest(request);
   const bodyHash = hashRequestBody(body, hashSeed);
   const classification = await classifyIdempotencyRequest(
     tenant,

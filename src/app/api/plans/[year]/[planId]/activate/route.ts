@@ -8,6 +8,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireAdminContext } from '@/lib/admin-context';
+import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { rememberIdempotentResponse } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
 import { activatePlan, asPlanSlug, asPlanYear } from '@/modules/plans';
@@ -41,13 +42,15 @@ export async function POST(
     );
   }
 
+  const tenant = resolveTenantFromRequest(request);
   const guard = await runIdempotencyGuard(
     request,
+    tenant,
     `POST /api/plans/${parsedPath.data.year}/${parsedPath.data.planId}/activate`,
   );
   if (guard.kind === 'response') return guard.response;
 
-  const deps = buildPlansDeps(guard.tenant);
+  const deps = buildPlansDeps(tenant);
 
   const result = await activatePlan(
     {
@@ -56,7 +59,6 @@ export async function POST(
       actorUserId: ctx.current.user.id,
       requestId: ctx.requestId,
       sourceIp: ctx.sourceIp ?? null,
-      idempotencyKey: guard.key,
     },
     {
       tenant: deps.tenant,
@@ -70,7 +72,7 @@ export async function POST(
 
   if (result.ok) {
     const body = serialisePlan(result.value);
-    await rememberIdempotentResponse(guard.tenant, guard.key, guard.bodyHash, {
+    await rememberIdempotentResponse(tenant, guard.key, guard.bodyHash, {
       status: 200,
       body,
     });
@@ -82,16 +84,6 @@ export async function POST(
       return NextResponse.json(
         { error: { code: 'not_found', message: 'Plan not found.' } },
         { status: 404 },
-      );
-    case 'idempotency_conflict':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'idempotency_conflict',
-            message: 'Idempotency-Key was reused with a different body.',
-          },
-        },
-        { status: 409 },
       );
     case 'audit_failed':
       logger.error(

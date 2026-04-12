@@ -139,7 +139,6 @@ describe('Integration: US4 state-mutation audit-diff round-trip (T126a)', () => 
         actorUserId: user.userId,
         requestId: 'req-act',
         sourceIp: null,
-        idempotencyKey: 'idem-act',
       },
       buildCtx(tenant),
     );
@@ -181,7 +180,6 @@ describe('Integration: US4 state-mutation audit-diff round-trip (T126a)', () => 
         actorUserId: user.userId,
         requestId: 'req-deact',
         sourceIp: null,
-        idempotencyKey: 'idem-deact',
       },
       buildCtx(tenant),
     );
@@ -297,6 +295,88 @@ describe('Integration: US4 state-mutation audit-diff round-trip (T126a)', () => 
       expect(deletedAtDiff).toBeDefined();
       expect(typeof deletedAtDiff!.before).toBe('string');
       expect(deletedAtDiff!.after).toBeNull();
+    }
+  });
+
+  it('activate on soft-deleted plan returns not_found (illegal transition guard)', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await feeConfigRepo.upsert(tenant.ctx, {
+      currency_code: 'THB',
+      vat_rate: 0.07,
+      registration_fee_minor_units: 100_000,
+      updated_by: user.userId,
+    });
+    // Seed as inactive, then soft-delete
+    await planRepo.insert(tenant.ctx, seed(user.userId, false));
+    const deleteResult = await softDeletePlan(
+      {
+        planId: asPlanSlug('premium'),
+        year: asPlanYear(2027),
+        actorUserId: user.userId,
+        requestId: 'req-del-guard',
+        sourceIp: null,
+        idempotencyKey: 'idem-del-guard',
+      },
+      buildCtx(tenant),
+    );
+    expect(deleteResult.ok).toBe(true);
+
+    // Attempt to activate the soft-deleted plan — should be rejected
+    const result = await activatePlan(
+      {
+        planId: asPlanSlug('premium'),
+        year: asPlanYear(2027),
+        actorUserId: user.userId,
+        requestId: 'req-act-guard',
+        sourceIp: null,
+      },
+      buildCtx(tenant),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('not_found');
+    }
+  });
+
+  it('deactivate on soft-deleted plan returns not_found (illegal transition guard)', async () => {
+    const user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test-swecham');
+    await feeConfigRepo.upsert(tenant.ctx, {
+      currency_code: 'THB',
+      vat_rate: 0.07,
+      registration_fee_minor_units: 100_000,
+      updated_by: user.userId,
+    });
+    // Seed as inactive, then soft-delete
+    await planRepo.insert(tenant.ctx, seed(user.userId, false));
+    const deleteResult = await softDeletePlan(
+      {
+        planId: asPlanSlug('premium'),
+        year: asPlanYear(2027),
+        actorUserId: user.userId,
+        requestId: 'req-del-guard2',
+        sourceIp: null,
+        idempotencyKey: 'idem-del-guard2',
+      },
+      buildCtx(tenant),
+    );
+    expect(deleteResult.ok).toBe(true);
+
+    // Attempt to deactivate the soft-deleted plan — should be rejected
+    const result = await deactivatePlan(
+      {
+        planId: asPlanSlug('premium'),
+        year: asPlanYear(2027),
+        actorUserId: user.userId,
+        requestId: 'req-deact-guard',
+        sourceIp: null,
+      },
+      buildCtx(tenant),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('not_found');
     }
   });
 });
