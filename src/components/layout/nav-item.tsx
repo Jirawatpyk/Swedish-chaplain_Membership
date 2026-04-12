@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -66,14 +67,23 @@ function NavGroupCollapsible({ group }: { readonly group: NavGroup }) {
   );
   const groupActive = isNavItemActive(pathname, group.activePattern);
 
-  // Single-child group renders as flat link
+  // Controlled open state — auto-opens when a child route becomes active.
+  // Derives from pathname on every render; user can still manually collapse.
+  const shouldOpen = anyChildActive || groupActive;
+  const [open, setOpen] = useState(shouldOpen);
+  // Re-open on client-side navigation without useEffect (sync derived state)
+  if (shouldOpen && !open) {
+    setOpen(true);
+  }
+
+  // Single-child group renders as flat link (uses group icon)
   if (group.children.length === 1) {
     const child = group.children[0]!;
     return <NavItemLink item={{ ...child, icon: group.icon }} />;
   }
 
   return (
-    <Collapsible defaultOpen={anyChildActive || groupActive} className="group/collapsible">
+    <Collapsible open={open} onOpenChange={setOpen} className="group/collapsible">
       <SidebarMenuItem>
         <CollapsibleTrigger
           render={

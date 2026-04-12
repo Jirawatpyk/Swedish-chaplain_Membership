@@ -135,6 +135,9 @@ export const memberNavConfig: NavConfig = {
 // Active-state matching utility (T009)
 // ---------------------------------------------------------------------------
 
+/** Prefix used for exact-match active patterns (e.g., `exact:/admin`). */
+const EXACT_PREFIX = 'exact:' as const;
+
 /**
  * Determine if a nav item is active for the given pathname.
  *
@@ -143,8 +146,8 @@ export const memberNavConfig: NavConfig = {
  * - `/admin/plans` — prefix match (pathname starts with the pattern)
  */
 export function isNavItemActive(pathname: string, activePattern: string): boolean {
-  if (activePattern.startsWith('exact:')) {
-    return pathname === activePattern.slice(6);
+  if (activePattern.startsWith(EXACT_PREFIX)) {
+    return pathname === activePattern.slice(EXACT_PREFIX.length);
   }
   return pathname === activePattern || pathname.startsWith(`${activePattern}/`);
 }
@@ -164,7 +167,7 @@ export function findActivePattern(
   for (const pattern of patterns) {
     if (isNavItemActive(pathname, pattern)) {
       // For exact matches, compare by the actual path length (strip "exact:" prefix)
-      const len = pattern.startsWith('exact:') ? pattern.length - 6 : pattern.length;
+      const len = pattern.startsWith(EXACT_PREFIX) ? pattern.length - EXACT_PREFIX.length : pattern.length;
       if (len > bestLen) {
         best = pattern;
         bestLen = len;

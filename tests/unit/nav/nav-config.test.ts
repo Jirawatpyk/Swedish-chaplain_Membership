@@ -97,3 +97,21 @@ describe('isNavGroup type guard', () => {
     expect(isNavGroup(item)).toBe(false);
   });
 });
+
+describe('single-child NavGroup flatten', () => {
+  it('Settings group has exactly 1 child (triggers single-child flatten path)', () => {
+    const settingsGroup = staffNavConfig.sections[1]!.items[0]!;
+    expect(isNavGroup(settingsGroup)).toBe(true);
+    const group = settingsGroup as NavGroup;
+    expect(group.children).toHaveLength(1);
+  });
+
+  it('single-child flatten uses group icon, not child icon', () => {
+    const settingsGroup = staffNavConfig.sections[1]!.items[0]! as NavGroup;
+    const child = settingsGroup.children[0]!;
+    // Group icon and child icon should be different (Settings vs DollarSign)
+    expect(settingsGroup.icon).not.toBe(child.icon);
+    // The flatten path does { ...child, icon: group.icon } — child href is preserved
+    expect(child.href).toBe('/admin/settings/fees');
+  });
+});

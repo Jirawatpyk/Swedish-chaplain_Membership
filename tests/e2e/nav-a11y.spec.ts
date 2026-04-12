@@ -99,6 +99,22 @@ test.describe('nav a11y — US5 @a11y', () => {
     await expect(sidebarContainer.first()).toBeAttached();
   });
 
+  test('skip-link is first Tab stop (WCAG 2.4.1)', async ({ page }) => {
+    test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'Set E2E_ADMIN_*');
+
+    await page.goto('/admin/sign-in');
+    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
+    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.waitForURL(/\/admin(\/|$)/, { timeout: 10_000 });
+    await page.goto('/admin');
+
+    // First Tab should focus the skip-to-content link
+    await page.keyboard.press('Tab');
+    const focused = page.locator(':focus');
+    await expect(focused).toHaveAttribute('href', '#main-content');
+  });
+
   test('keyboard Tab reaches sidebar links', async ({ page }) => {
     test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'Set E2E_ADMIN_*');
 

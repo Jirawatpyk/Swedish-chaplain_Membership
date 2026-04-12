@@ -218,7 +218,6 @@ export function PlansTable({
     }
     startTransition(() => {
       router.push(`/admin/plans?${params.toString()}`);
-      router.refresh();
     });
   }
 
