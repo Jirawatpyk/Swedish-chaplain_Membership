@@ -218,7 +218,6 @@ export function PlansTable({
     }
     startTransition(() => {
       router.push(`/admin/plans?${params.toString()}`);
-      router.refresh();
     });
   }
 
@@ -256,16 +255,11 @@ export function PlansTable({
               setCategory(next);
               updateFilter({ category: next });
             }}
-            items={[
-              { value: 'all', label: t('filters.all') },
-              { value: 'corporate', label: t('filters.category.corporate') },
-              { value: 'partnership', label: t('filters.category.partnership') },
-            ]}
           >
             <SelectTrigger id="plans-category" className="w-[180px]">
               <SelectValue placeholder={t('filters.category.label')} />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent align="start" alignItemWithTrigger={false}>
               <SelectItem value="all">{t('filters.all')}</SelectItem>
               <SelectItem value="corporate">{t('filters.category.corporate')}</SelectItem>
               <SelectItem value="partnership">{t('filters.category.partnership')}</SelectItem>

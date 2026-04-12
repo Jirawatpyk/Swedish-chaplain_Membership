@@ -37,6 +37,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 // Client component — same rationale as `idle-warning-dialog.tsx`:
 // the `@/modules/auth` barrel transitively loads Node-only
 // Infrastructure modules and cannot be used from client code.
@@ -159,26 +166,24 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="invite-role">{t('roleLabel')}</Label>
-              <select
-                id="invite-role"
+              <Select
                 value={role}
                 disabled={submitting}
-                onChange={(e) => {
-                  // Narrow via the domain type guard rather than a raw
-                  // `as Role` cast. ROLES is the single source of truth,
-                  // so if someone adds a fourth role the <select> gains
-                  // a new <option> and `isRole` still accepts it.
-                  const next = e.target.value;
-                  if (isRole(next)) setRole(next);
+                onValueChange={(next) => {
+                  if (next && isRole(next)) setRole(next);
                 }}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {t(`roles.${r}`)}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="invite-role" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start" alignItemWithTrigger={false}>
+                  {ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {t(`roles.${r}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {errorCode ? (
               <div
