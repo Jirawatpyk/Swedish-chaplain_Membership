@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Folder name caveat**: the directory is historically `Swedish chaplain_membership`. "chaplain" is a typo for "chamber". Refer to the product as **Chamber-OS** (platform) or **SweCham / TSCC** (first tenant), never "chaplain". Rename is tracked as R6 in `docs/phases-plan.md` (manual action — cannot be done from inside the active working directory).
 
-**Repository status (as of 2026-04-11)**: **F1 (Auth & RBAC) is SHIP-READY on branch `001-auth-rbac`**. 188/191 tasks shipped; the 3 remaining checkboxes are documented deferrals to `/speckit.ship` release QA (T167 superseded by Lighthouse CI, T181 Vercel dashboard panels, T187 staging quickstart walk-through). Test suite state: **480/480 green** = 288 unit+contract + 82 integration vs live Neon Singapore + 113 passed + 1 flaky + 3 intentional skips of 117 Playwright E2E runs across chromium/mobile-chrome/mobile-safari. 6 `/speckit.review` passes + 2 `/speckit.staff-review` rounds closed all findings. `security.md § 5` checklist 13/13 PASS (co-signed by staff-review agent + solo maintainer). Vercel production env vars confirmed (`APP_BASE_URL`, `APP_ALLOWED_ORIGINS`, `RESEND_FROM_EMAIL` all point at `swecham.zyncdata.app`). `src/`, `drizzle/migrations/` (0000-0005 applied), `tests/`, `scripts/`, and `package.json` all exist and are current. Retrospective at `specs/001-auth-rbac/retrospective.md` reports 100% spec adherence. Next Spec Kit gate: **`/speckit.ship`**. F2–F9 are still in planning and have no source code yet — do not assume files exist outside of `src/modules/auth/**` + the Auth presentation surfaces listed in `specs/001-auth-rbac/plan.md`.
+**Repository status (as of 2026-04-12)**: **F1 (Auth & RBAC) SHIPPED via PR #1.** **F2 (Membership Plans) is REVIEW-READY on branch `002-membership-plans`**. 165/174 tasks completed across 9 phases; 9 remaining are user-action items (prod deployment, smoke test) + F3 deferrals. Test suite state: **495/495 unit+contract green** + **163/164 integration green** (1 intentional skip) on live Neon Singapore + 268 i18n keys × 3 locales. 8 QA passes all PASSED. Security checklist 40/40, UX checklist 25/25, Requirements checklist 16/16. Constitution v1.4.0 Principle I tenant-isolation test (Review-Gate blocker) 10/10 green. Production build clean. Retrospective at `specs/002-membership-plans/retrospective.md`. Next Spec Kit gate: **`/speckit.review` → `/speckit.ship`**. Source modules: `src/modules/auth/**` (F1) + `src/modules/tenants/**` + `src/modules/plans/**` (F2) + presentation surfaces in `src/app/(staff)/admin/plans/**` + `src/app/(staff)/admin/settings/fees/**` + `src/components/command-palette/**`.
 
 ## Language for AI sessions
 
@@ -16,13 +16,13 @@ User prefers **Thai** for conversational turns. Code, specs, commit messages, an
 
 ## Governance — read before proposing architecture changes
 
-- `.specify/memory/constitution.md` — **v1.3.1** (amended 2026-04-11; v1.3.0 added F1 lessons-learned, v1.3.1 PATCH clarifies that solo-maintainer exemption also covers the no-direct-push rule), authoritative. 10 principles (4 NON-NEGOTIABLE: Data Privacy & Security, Test-First, Clean Architecture, PCI DSS) plus 6 Core (i18n, Inclusive UX, Perf & Observability, Reliability, Code Quality, Simplicity). Principle III requires every `src/modules/*` module to ship a public barrel + ESLint `no-restricted-imports` rule. Principle IX + Gate 9 + § Governance + § Development Workflow Additional rules carry a **solo-maintainer substitute** clause for the default ≥2-reviewers + no-direct-push rules, applicable when no second human reviewer is available. Amendments go through a PR with ≥2 maintainer approvals (or the solo-maintainer substitute) + a Sync Impact Report.
+- `.specify/memory/constitution.md` — **v1.4.0** (amended 2026-04-11; v1.4.0 MINOR adds explicit SaaS tenant-isolation requirements under Principle I with 5 sub-clauses: app-layer, db-layer, integration test, audit, super-admin), authoritative. 10 principles (4 NON-NEGOTIABLE: Data Privacy & Security, Test-First, Clean Architecture, PCI DSS) plus 6 Core (i18n, Inclusive UX, Perf & Observability, Reliability, Code Quality, Simplicity). Principle I now requires **two-layer tenant isolation** (application + database) with a mandatory cross-tenant integration test as a Review-Gate blocker. Principle III requires every `src/modules/*` module to ship a public barrel + ESLint `no-restricted-imports` rule. Principle IX + Gate 9 + § Governance + § Development Workflow Additional rules carry a **solo-maintainer substitute** clause for the default ≥2-reviewers + no-direct-push rules, applicable when no second human reviewer is available. Amendments go through a PR with ≥2 maintainer approvals (or the solo-maintainer substitute) + a Sync Impact Report.
 - Every `/speckit.plan` runs a **Constitution Check** against all 10 principles. Any deviation lives in `plan.md` § Complexity Tracking with a rejected simpler alternative — unjustified violations block the gate.
 - The escape clause that allows Singapore hosting (Constitution § Compliance: Hosting & Residency) is used by F1. See `specs/001-auth-rbac/plan.md` Complexity Tracking.
 
 ## Key project docs (read in this order for context)
 
-1. `.specify/memory/constitution.md` — principles and quality gates (v1.3.1, may need v1.4.0 MINOR bump for explicit tenant-isolation under Principle I — pending governance decision)
+1. `.specify/memory/constitution.md` — principles and quality gates (v1.4.0, includes SaaS tenant-isolation requirements under Principle I)
 2. `docs/phases-plan.md` — **10 core + 4 SaaS = 14 features** across 5 phases. Includes 6 resolved decisions (SV+EN+TH locales, TH-primary hosting, Stripe, 3 roles, no day-1 Excel migration, folder rename) + 2026-04-11 SaaS pivot update + scope boundary vs `swecham.com`.
 3. `docs/saas-architecture.md` — **multi-tenant strategy (MTA+STD)**, Postgres RLS, auth model (cross-tenant users, tenant-scoped membership), billing layers, white-label scope, migration path, pricing vision. Read this before designing any F2+ feature.
 4. `docs/membership-benefits-analysis.md` — authoritative 2026 Membership Package tier data from the PDF (6 corporate + 3 partnership tiers, full benefit matrix, data model, Q1–Q5 for F2 clarify). **Supersedes the deleted `docs/database-analysis.md`** which was Excel-derived and inaccurate.
@@ -205,12 +205,16 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 <!-- Do not hand-edit `## Active Technologies` or `## Recent Changes` — add durable guidance above this marker instead. -->
 
 ## Active Technologies
-- TypeScript 5.7+ (strict mode, `strict: true`, `noUncheckedIndexedAccess: true`) — unchanged from F1 (002-membership-plans)
-
-- TypeScript 5.7+ (strict mode, `strict: true`, `noUncheckedIndexedAccess: true`) (001-auth-rbac)
+- TypeScript 5.7+ (strict mode, `strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`) (001-auth-rbac, 002-membership-plans)
+- `cmdk` — headless command palette primitive (F2, powers smart-chamber feature #4)
+- `src/modules/tenants/` — cross-cutting Domain-only module hosting `TenantContext` branded type (F2+)
+- `runInTenant(ctx, fn)` + Postgres RLS (`SET LOCAL app.current_tenant`) — tenant isolation pattern (F2+)
+- `DEBUG_RLS_STATE` — dev-only assertion for tenant-context verification (F2+)
+- 10 new audit event types: `plan_created`, `plan_updated`, `plan_cloned`, `plan_activated`, `plan_deactivated`, `plan_soft_deleted`, `plan_undeleted`, `plan_not_found`, `plan_cross_tenant_probe`, `fee_config_updated` (F2)
 
 ## Recent Changes
 
-- 001-auth-rbac: Added TypeScript 5.7+ (strict mode, `strict: true`, `noUncheckedIndexedAccess: true`)
+- 002-membership-plans: F2 Membership Plans — 6 user stories (US1–US6) shipped across 9 phases. Added `cmdk` command palette, `src/modules/tenants/` + `src/modules/plans/` bounded contexts, Postgres RLS tenant isolation, 2 new DB tables (`membership_plans`, `tenant_fee_config`), migrations 0006 + 0007, 268 i18n keys (EN+TH+SV), 495 unit+contract tests, 163 integration tests on live Neon Singapore. US7 (Inline Edit + Bulk Actions) deferred to F3.
+- 001-auth-rbac: F1 Auth & RBAC shipped via PR #1. 188/191 tasks, 480/480 tests.
 
-Last updated: 2026-04-11
+Last updated: 2026-04-12

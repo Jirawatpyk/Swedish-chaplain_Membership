@@ -4,7 +4,11 @@
       "url": [
         "http://localhost:3100/admin/sign-in",
         "http://localhost:3100/portal/sign-in",
-        "http://localhost:3100/forgot-password"
+        "http://localhost:3100/forgot-password",
+        "http://localhost:3100/admin/plans",
+        "http://localhost:3100/admin/settings/fees",
+        "http://localhost:3100/admin/plans/new",
+        "http://localhost:3100/admin/plans/2026/premium/edit"
       ],
       "startServerCommand": "pnpm dev --port 3100",
       "startServerReadyPattern": "Ready in",
