@@ -13,6 +13,105 @@ spec / plan / tasks / review / retrospective for each release lives under
 
 ---
 
+## [F2] Membership Plans — 2026-04-12
+
+**Spec**: [`specs/002-membership-plans/spec.md`](specs/002-membership-plans/spec.md)
+**Plan**: [`specs/002-membership-plans/plan.md`](specs/002-membership-plans/plan.md)
+**Retrospective**: [`specs/002-membership-plans/retrospective.md`](specs/002-membership-plans/retrospective.md)
+**Spec adherence**: 100% (21/21 functional requirements implemented)
+**Test baseline**: 500/500 unit+contract + 165/165 integration (live Neon Singapore) + 296 i18n keys x 3 locales
+
+### Added
+
+- **Membership plan catalogue** — full CRUD admin surface at `/admin/plans`
+  with 9 seeded SweCham 2026 plans (6 corporate + 3 partnership tiers).
+  Filterable by category, year, active state, and free-text search. Shimmer
+  skeleton in the exact table shape for CLS 0. Plan detail view with full
+  benefit matrix grouped by Brand Visibility / Events / Additional / Partnership.
+- **Year versioning + clone** — plans carry an explicit year attribute with
+  composite PK `(tenant_id, plan_id, plan_year)`. "Clone 2026 to 2027" copies
+  all active plans to a new year in one transaction. Idempotent — refuses if
+  target year already has plans. Historical plans remain untouched.
+- **4-step create wizard** — Basics, Fees, Benefits, Review with per-step
+  zod validation. Partnership plan category automatically shows/hides the
+  partnership benefits block and requires `includes_corporate_plan_id`.
+- **Plan edit with prior-year lock** — current-year plans fully editable;
+  prior-year plans enforce a partial lock (cosmetic fields editable, pricing /
+  eligibility / benefits / scope frozen) with persistent banner + lock icons.
+  Triple-layered enforcement: Domain + Application + Infrastructure defence-in-depth.
+- **Activate / deactivate / soft-delete / undelete** — state machine
+  `active <-> inactive -> soft_deleted -> (undelete) -> inactive`. Member
+  attachment check prevents deleting plans with active members (F2 stub;
+  F3 real implementation). "Show deleted" toggle reveals soft-deleted rows.
+- **Per-tenant fee configuration** — currency code (THB), VAT rate (7%),
+  registration fee (1,000 THB) editable at `/admin/settings/fees`. Currency
+  code is immutable once plans exist (422 `currency_code_immutable_in_f2`
+  with plan count). Manager read-only access.
+- **Command palette** — `Cmd+K` / `Ctrl+K` opens a `cmdk`-based palette
+  with plan search (3+ chars), grouped results (Plans / Actions / Navigate),
+  keyboard navigation, role-filtered actions (admin-only items hidden from
+  manager), lazy-load on first open (not mount), `preconnect` hint for
+  cold-start mitigation. < 100ms warm open.
+- **Multi-tenant infrastructure** — `src/modules/tenants/` cross-cutting
+  Domain-only module with branded `TenantContext` type. `runInTenant(ctx, fn)`
+  wraps every tenant-scoped transaction with `SET LOCAL app.current_tenant`.
+  Postgres RLS on `membership_plans`, `tenant_fee_config`, and `audit_log`.
+  `DEBUG_RLS_STATE` dev assertion catches "forgot runInTenant" bugs.
+  10-assertion cross-tenant integration test (Review-Gate blocker).
+- **10 new audit event types** — `plan_created`, `plan_updated`, `plan_cloned`,
+  `plan_activated`, `plan_deactivated`, `plan_soft_deleted`, `plan_undeleted`,
+  `plan_not_found`, `plan_cross_tenant_probe`, `fee_config_updated`. All carry
+  structured `payload` JSONB with field-level before/after diffs.
+- **Idempotency middleware** — `Idempotency-Key` header required on all
+  mutations. 24h TTL in Upstash Redis. Replay on same key+body; 409 on
+  same key + different body. Fail-open on Redis outage.
+- **Benefit matrix editor** — grouped UI matching the PDF structure with
+  7 Select dropdowns, 5 boolean switches, 3 numeric inputs, and a
+  partnership-only section that auto-shows/hides based on plan category.
+- **i18n** — 296 keys in EN + TH + SV. All Select option labels translated.
+  Plan display names stored as structured `{en, th, sv}` locale map with
+  missing-translation indicator for admin.
+- **Keyboard-only E2E suite** — 6-spec Playwright test that covers the
+  entire F2 admin surface using only `page.keyboard.press` (zero `.click()`
+  or `.hover()` calls enforced by self-lint).
+
+### Changed
+
+- **Repository constitution v1.3.1 -> v1.4.0** (MINOR). SaaS pivot adds
+  explicit tenant-isolation clause to Principle I (NON-NEGOTIABLE) with 5
+  sub-clauses: application-layer, database-layer, integration test,
+  audit, super-admin impersonation.
+- **F1 RBAC policies** extended with `plan` + `fee_config` resources and
+  `clone` action.
+- **UI primitives** — `cursor-pointer` added to Button, Switch, SelectTrigger
+  base classes.
+
+### Fixed
+
+- **Client bundle env leak** — `get-plan.ts` imported `@/lib/logger` which
+  chain-pulled `@/lib/env.ts` (server-only) into the client bundle via barrel
+  re-exports. Removed logger import; audit adapter logs internally.
+- **Button-in-button hydration error** — `LockWrapper` was using a Radix
+  `<Tooltip>` (renders `<button>`) around form controls (also `<button>`).
+  Replaced with native `title` attribute tooltip.
+- **Select label display** — Base UI Select requires `items` prop on
+  `<Select.Root>` for `<SelectValue>` to show label instead of raw enum
+  value. Added to all 11 Select components.
+
+### Technical Notes
+
+- **New modules**: `src/modules/tenants/` (Domain-only, branded TenantContext)
+  + `src/modules/plans/` (full Clean Architecture bounded context with public
+  barrel + ESLint boundary rule).
+- **New DB tables**: `membership_plans` (composite PK), `tenant_fee_config`.
+  Migrations 0006 (tables + RLS) + 0007 (audit_log extension) + 0008 (bigint).
+- **Money storage**: integer minor units per field + single `currency_code`
+  on `tenant_fee_config` (no per-plan currency — YAGNI per critique P3).
+- **Deferred to F3**: US7 Inline Edit + Bulk Actions (critique X1c), US3 AS4
+  partnership bundle-change warning (depends on F3 members table).
+
+---
+
 ## [F1] Auth & RBAC — 2026-04-11
 
 **Spec**: [`specs/001-auth-rbac/spec.md`](specs/001-auth-rbac/spec.md)
