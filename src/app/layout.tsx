@@ -87,7 +87,7 @@ export default async function RootLayout({
             disableTransitionOnChange
           >
             <SkipToContent />
-            <div id="main-content" className="min-h-full">
+            <div className="min-h-full">
               {children}
             </div>
             <Toaster position="top-right" richColors />

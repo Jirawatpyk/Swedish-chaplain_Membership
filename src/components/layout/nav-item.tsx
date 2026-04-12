@@ -17,8 +17,8 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  useSidebar,
 } from '@/components/ui/sidebar';
-import { useSidebar } from '@/components/ui/sidebar';
 
 // ---------------------------------------------------------------------------
 // Flat NavItem renderer

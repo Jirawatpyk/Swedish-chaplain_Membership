@@ -4,17 +4,16 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
-import { isNavItemActive, memberNavConfig, type NavItem } from '@/config/nav';
+import { isNavGroup, isNavItemActive, memberNavConfig, type NavItem } from '@/config/nav';
 import { cn } from '@/lib/utils';
 
 export function MemberNav() {
   const pathname = usePathname();
   const t = useTranslations();
 
-  // Flatten all items from all sections
-  const items: readonly NavItem[] = memberNavConfig.sections.flatMap(
-    (section) => section.items as readonly NavItem[],
-  );
+  const items = memberNavConfig.sections
+    .flatMap((section) => section.items)
+    .filter((item): item is NavItem => !isNavGroup(item));
 
   return (
     <nav aria-label={t('nav.member.ariaLabel')} className="flex items-center gap-1">

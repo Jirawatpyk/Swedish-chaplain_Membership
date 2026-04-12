@@ -96,4 +96,16 @@ describe('findActivePattern (deepest match wins)', () => {
   it('returns null for completely unrelated path', () => {
     expect(findActivePattern('/portal', patterns)).toBeNull();
   });
+
+  it('exact: pattern uses path length (not raw string length) for tie-breaking', () => {
+    // 'exact:/admin' raw length = 12, '/admin/plans' raw length = 12
+    // Only '/admin/plans' matches /admin/plans (exact:/admin does NOT match)
+    expect(findActivePattern('/admin/plans', ['exact:/admin', '/admin/plans'])).toBe('/admin/plans');
+    // Only exact:/admin matches /admin
+    expect(findActivePattern('/admin', ['exact:/admin', '/admin/plans'])).toBe('exact:/admin');
+  });
+
+  it('prefix pattern wins over shorter exact pattern for sub-paths', () => {
+    expect(findActivePattern('/admin/settings/fees', ['exact:/admin', '/admin/settings'])).toBe('/admin/settings');
+  });
 });

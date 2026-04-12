@@ -20,7 +20,8 @@ export interface NavItem {
   /** URL prefix for active-state matching. Use `exact:` prefix for exact match. */
   readonly activePattern: string;
   /** If set, item is visible only to these roles. Type-only for now — filtering
-   *  logic deferred until a role-differentiated nav item exists. */
+   *  logic deferred until a role-differentiated nav item exists.
+   *  TODO: Narrow to ReadonlyArray<Role> when auth barrel re-exports Role type. */
   readonly roles?: ReadonlyArray<string>;
 }
 
@@ -28,6 +29,8 @@ export interface NavItem {
 export interface NavGroup {
   readonly titleKey: string;
   readonly icon: LucideIcon;
+  /** NavGroup has no href — navigation happens through children. */
+  readonly href?: never;
   /** URL prefix — group auto-expands when any child matches. */
   readonly activePattern: string;
   readonly children: readonly NavItem[];
@@ -160,8 +163,8 @@ export function findActivePattern(
 
   for (const pattern of patterns) {
     if (isNavItemActive(pathname, pattern)) {
-      // For exact matches, use the raw path length; for prefix, use pattern length
-      const len = pattern.startsWith('exact:') ? pattern.length : pattern.length;
+      // For exact matches, compare by the actual path length (strip "exact:" prefix)
+      const len = pattern.startsWith('exact:') ? pattern.length - 6 : pattern.length;
       if (len > bestLen) {
         best = pattern;
         bestLen = len;

@@ -46,7 +46,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
           </div>
         </div>
       </header>
-      <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</div>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6" id="main-content">{children}</main>
       {/* T165 — Idle warning modal fires at 29 min of inactivity. */}
       <IdleWarningDialog portal="member" />
     </div>

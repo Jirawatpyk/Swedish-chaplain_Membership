@@ -45,7 +45,8 @@ export default async function StaffLayout({ children }: { children: ReactNode })
         */}
         <link rel="preconnect" href="/" crossOrigin="anonymous" />
 
-        <StaffSidebar tenantName="SweCham" />
+        {/* TODO: resolve tenant name from session context when F10 ships (MTA+STD) */}
+        <StaffSidebar tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} />
 
         <SidebarInset>
           <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-4">
