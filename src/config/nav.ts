@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import type { Role } from '@/modules/auth';
 import {
   LayoutDashboardIcon,
   FileTextIcon,
@@ -20,9 +21,8 @@ export interface NavItem {
   /** URL prefix for active-state matching. Use `exact:` prefix for exact match. */
   readonly activePattern: string;
   /** If set, item is visible only to these roles. Type-only for now — filtering
-   *  logic deferred until a role-differentiated nav item exists.
-   *  TODO: Narrow to ReadonlyArray<Role> when auth barrel re-exports Role type. */
-  readonly roles?: ReadonlyArray<string>;
+   *  logic deferred until a role-differentiated nav item exists. */
+  readonly roles?: ReadonlyArray<Role>;
 }
 
 /** An expandable/collapsible group of NavItems (e.g., Settings → Fees). */

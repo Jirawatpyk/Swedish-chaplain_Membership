@@ -32,7 +32,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-4">
             <Link href="/portal" className="text-sm font-semibold tracking-tight">
-              SweCham · Member
+              {process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} · Member
             </Link>
             <MemberNav />
           </div>
