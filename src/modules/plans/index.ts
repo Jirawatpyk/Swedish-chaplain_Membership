@@ -259,6 +259,7 @@ export {
 
 export {
   updateFeeConfig,
+  type FeeConfigPatchInput,
   type UpdateFeeConfigInput,
   type UpdateFeeConfigError,
   type UpdateFeeConfigDeps,

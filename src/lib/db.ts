@@ -127,7 +127,11 @@ export async function runInTenant<T>(
     // logged against the chamber_app role. Both statements are parameter-
     // safe — ctx.slug is already validated by asTenantContext against
     // `[a-z0-9-]{1,63}` so there is no injection surface even though GUC
-    // names don't accept bind parameters.
+    // names don't accept bind parameters. The runtime assertion below is
+    // a belt-and-suspenders guard against future type-system bypasses.
+    if (!/^[a-z0-9-]{1,63}$/.test(ctx.slug)) {
+      throw new Error(`runInTenant: slug invariant violated: ${ctx.slug}`);
+    }
     await tx.execute(sql`SET LOCAL ROLE chamber_app`);
     await tx.execute(sql.raw(`SET LOCAL app.current_tenant = '${ctx.slug}'`));
 

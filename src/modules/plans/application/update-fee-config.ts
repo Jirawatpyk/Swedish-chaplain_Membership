@@ -60,8 +60,15 @@ const feeConfigPatchSchema = z
   })
   .strict();
 
+/** Typed patch shape matching the zod schema above. */
+export type FeeConfigPatchInput = {
+  readonly vat_rate?: number;
+  readonly registration_fee_minor_units?: number;
+  readonly currency_code?: string;
+};
+
 export type UpdateFeeConfigInput = {
-  readonly patch: unknown;
+  readonly patch: FeeConfigPatchInput;
   readonly actorUserId: string;
   readonly requestId: string;
   readonly sourceIp: string | null;

@@ -115,7 +115,7 @@ export async function clonePlansToYear(
     }
     return err({
       type: 'server_error',
-      message: 'unknown clone error',
+      message: `unhandled clone error: ${JSON.stringify(cloneResult.error)}`,
     });
   }
 

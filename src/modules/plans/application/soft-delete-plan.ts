@@ -19,6 +19,11 @@
  *
  * F2 uses a stub checker that always returns 0 (no `members` table
  * yet). F3 swaps in a real implementation without touching this file.
+ *
+ * **F3 TODO**: When F3 adds the real `MemberAttachmentChecker`, also
+ * add a "referenced by partnership plans" guard — soft-deleting a
+ * corporate plan that is still linked via `includes_corporate_plan_id`
+ * on an active partnership plan would leave a dangling reference.
  */
 
 import { err, ok, type Result } from '@/lib/result';

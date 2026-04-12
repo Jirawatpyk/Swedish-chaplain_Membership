@@ -19,7 +19,11 @@ import {
   hashRequestBody,
 } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
-import { getFeeConfig, updateFeeConfig } from '@/modules/plans';
+import {
+  getFeeConfig,
+  updateFeeConfig,
+  type FeeConfigPatchInput,
+} from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import type { TenantFeeConfig } from '@/modules/plans';
 
@@ -166,7 +170,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
 
   const result = await updateFeeConfig(
     {
-      patch: rawBody,
+      patch: rawBody as FeeConfigPatchInput,
       actorUserId: ctx.current.user.id,
       requestId: ctx.requestId,
       sourceIp: ctx.sourceIp ?? null,

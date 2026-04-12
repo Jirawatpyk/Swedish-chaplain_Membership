@@ -98,13 +98,37 @@ export type UpdatePlanDeps = {
 // --- Diff helper ------------------------------------------------------------
 
 /**
+ * Recursive deep-equal comparison for audit diff computation.
+ * Handles primitives, arrays, and plain objects. Avoids
+ * `JSON.stringify` which is sensitive to property ordering
+ * and cannot handle Date objects or circular references safely.
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object') return false;
+
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, i) => deepEqual(item, b[i]));
+  }
+
+  const keysA = Object.keys(a as Record<string, unknown>);
+  const keysB = Object.keys(b as Record<string, unknown>);
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every((k) =>
+    deepEqual(
+      (a as Record<string, unknown>)[k],
+      (b as Record<string, unknown>)[k],
+    ),
+  );
+}
+
+/**
  * Compute the `{field: {before, after}}` diff between the old plan
  * and the validated patch. Only fields that are present in the patch
  * AND have a value different from the current plan are included.
- *
- * Uses `JSON.stringify` for deep comparison — sufficient for the
- * JSONB fields (plan_name, description, benefit_matrix) that appear
- * in the patch. Primitive fields compare directly.
  */
 function computeDiff(
   oldPlan: Plan,
@@ -116,7 +140,7 @@ function computeDiff(
     const before = (oldPlan as unknown as Record<string, unknown>)[field];
     const after = (patch as unknown as Record<string, unknown>)[field];
     if (after === undefined) continue;
-    if (JSON.stringify(before) === JSON.stringify(after)) continue;
+    if (deepEqual(before, after)) continue;
     diff[field] = { before, after };
   }
   return diff;
