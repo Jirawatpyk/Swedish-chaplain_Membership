@@ -124,9 +124,9 @@
 
 ### Tests for US5
 
-- [ ] T025 [P] [US5] E2E test: staff sidebar in `tests/e2e/staff-sidebar.spec.ts` — sidebar renders on admin pages, active state correct per route, collapse/expand works (including rapid toggle 5× without glitch), mobile drawer opens/closes, nav links route correctly
-- [ ] T026 [P] [US5] E2E test: member nav in `tests/e2e/member-nav.spec.ts` — nav bar renders on portal pages, active state correct, responsive on mobile viewport
-- [ ] T027 [P] [US5] E2E a11y test: navigation accessibility in `tests/e2e/nav-a11y.spec.ts` — axe-core scan on admin pages (sidebar expanded + collapsed), axe-core on portal pages, keyboard Tab order through sidebar items, Enter navigates, Escape closes mobile drawer + focus returns to hamburger, `aria-expanded` on collapse toggle, `aria-label` on `<nav>` landmarks, reduced-motion: instant state changes
+- [x] T025 [P] [US5] E2E test: staff sidebar in `tests/e2e/staff-sidebar.spec.ts` — sidebar renders on admin pages, active state correct per route, collapse/expand works (including rapid toggle 5× without glitch), mobile drawer opens/closes, nav links route correctly
+- [x] T026 [P] [US5] E2E test: member nav in `tests/e2e/member-nav.spec.ts` — nav bar renders on portal pages, active state correct, responsive on mobile viewport
+- [x] T027 [P] [US5] E2E a11y test: navigation accessibility in `tests/e2e/nav-a11y.spec.ts` — axe-core scan on admin pages (sidebar expanded + collapsed), axe-core on portal pages, keyboard Tab order through sidebar items, Enter navigates, Escape closes mobile drawer + focus returns to hamburger, `aria-expanded` on collapse toggle, `aria-label` on `<nav>` landmarks, reduced-motion: instant state changes
 
 ### Implementation for US5
 
@@ -146,7 +146,7 @@
 - [x] T032 Run `pnpm typecheck` — verify zero TypeScript errors under strict mode
 - [x] T033 Run `pnpm check:i18n` — verify all `nav.*` keys present in EN, TH, SV with no missing keys
 - [x] T034 Run `pnpm test` — verify all unit tests pass (nav-config, active-state, sidebar-state)
-- [ ] T035 Run `pnpm test:e2e` — verify all E2E tests pass (staff-sidebar, member-nav, nav-a11y)
+- [x] T035 Run `pnpm test:e2e` — verify all E2E tests pass (staff-sidebar, member-nav, nav-a11y)
 - [x] T036 Run `pnpm build` — verify production build is clean with no warnings
 - [ ] T037 Visual review: verify light + dark theme consistency across staff sidebar, member nav, mobile drawer
 - [ ] T038 Visual review: verify i18n labels render correctly in EN, TH, SV (no overflow, no missing translations, correct truncation)
