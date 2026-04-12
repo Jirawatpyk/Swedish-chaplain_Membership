@@ -17,7 +17,8 @@
  */
 'use client';
 
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useMemo } from 'react';
+import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -109,58 +110,58 @@ function BoolField({
   );
 }
 
-// --- Select option arrays (single source of truth for items + rendering) ---
-
-const WEBSITE_PAGE_OPTIONS = [
-  { value: '__null__', label: 'None' },
-  { value: 'member_news_update', label: 'Member news update' },
-  { value: 'smes_spotlight', label: 'SMEs spotlight' },
-  { value: 'student_intern_cv', label: 'Student/intern CV' },
-] as const;
-
-const LOGO_CATEGORY_OPTIONS = [
-  { value: '__null__', label: 'None' },
-  { value: 'premium', label: 'Premium' },
-  { value: 'large', label: 'Large' },
-  { value: 'regular', label: 'Regular' },
-  { value: 'start_up', label: 'Start-up' },
-] as const;
-
-const DIRECTORY_SIZE_OPTIONS = [
-  { value: '__null__', label: 'None' },
-  { value: 'full_page', label: 'Full page' },
-  { value: 'half_page', label: 'Half page' },
-  { value: 'eighth_page', label: 'Eighth page' },
-] as const;
-
-const DISCOUNT_SCOPE_OPTIONS = [
-  { value: 'none', label: 'None' },
-  { value: 'all_employees', label: 'All employees' },
-  { value: 'one_ticket_per_event', label: 'One ticket per event' },
-] as const;
-
-const VIDEO_DURATION_OPTIONS = [
-  { value: '1', label: '1.0' },
-  { value: '1.5', label: '1.5' },
-] as const;
-
-const VIDEO_FREQUENCY_OPTIONS = [
-  { value: 'all_events', label: 'All events' },
-  { value: 'three_selected_events', label: 'Three selected events' },
-] as const;
-
-const DIRECTORY_AD_OPTIONS = [
-  { value: 'pages_1_and_2', label: 'Pages 1 and 2' },
-  { value: 'first_pages', label: 'First pages' },
-  { value: 'first_10_pages', label: 'First 10 pages' },
-] as const;
-
 export function BenefitMatrixEditor({
   value,
   onChange,
   planCategory,
   disabled = false,
 }: BenefitMatrixEditorProps) {
+  const t = useTranslations('admin.plans.create.options');
+
+  const WEBSITE_PAGE_OPTIONS = useMemo(() => [
+    { value: '__null__', label: t('websitePageType.none') },
+    { value: 'member_news_update', label: t('websitePageType.member_news_update') },
+    { value: 'smes_spotlight', label: t('websitePageType.smes_spotlight') },
+    { value: 'student_intern_cv', label: t('websitePageType.student_intern_cv') },
+  ], [t]);
+
+  const LOGO_CATEGORY_OPTIONS = useMemo(() => [
+    { value: '__null__', label: t('homepageLogoCategory.none') },
+    { value: 'premium', label: t('homepageLogoCategory.premium') },
+    { value: 'large', label: t('homepageLogoCategory.large') },
+    { value: 'regular', label: t('homepageLogoCategory.regular') },
+    { value: 'start_up', label: t('homepageLogoCategory.start_up') },
+  ], [t]);
+
+  const DIRECTORY_SIZE_OPTIONS = useMemo(() => [
+    { value: '__null__', label: t('directoryListingSize.none') },
+    { value: 'full_page', label: t('directoryListingSize.full_page') },
+    { value: 'half_page', label: t('directoryListingSize.half_page') },
+    { value: 'eighth_page', label: t('directoryListingSize.eighth_page') },
+  ], [t]);
+
+  const DISCOUNT_SCOPE_OPTIONS = useMemo(() => [
+    { value: 'none', label: t('eventDiscountScope.none') },
+    { value: 'all_employees', label: t('eventDiscountScope.all_employees') },
+    { value: 'one_ticket_per_event', label: t('eventDiscountScope.one_ticket_per_event') },
+  ], [t]);
+
+  const VIDEO_DURATION_OPTIONS = useMemo(() => [
+    { value: '1', label: t('videoDuration.1_0') },
+    { value: '1.5', label: t('videoDuration.1_5') },
+  ], [t]);
+
+  const VIDEO_FREQUENCY_OPTIONS = useMemo(() => [
+    { value: 'all_events', label: t('videoFrequencyScope.all_events') },
+    { value: 'three_selected_events', label: t('videoFrequencyScope.three_selected_events') },
+  ], [t]);
+
+  const DIRECTORY_AD_OPTIONS = useMemo(() => [
+    { value: 'pages_1_and_2', label: t('directoryAdPosition.pages_1_and_2') },
+    { value: 'first_pages', label: t('directoryAdPosition.first_pages') },
+    { value: 'first_10_pages', label: t('directoryAdPosition.first_10_pages') },
+  ], [t]);
+
   function patch(partial: Partial<BenefitMatrix>): void {
     onChange({ ...value, ...partial });
   }

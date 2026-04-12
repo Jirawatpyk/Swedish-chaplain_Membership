@@ -43,17 +43,6 @@ import {
   type PlanSchemaInput,
 } from '@/modules/plans';
 
-const CATEGORY_OPTIONS = [
-  { value: 'corporate', label: 'Corporate' },
-  { value: 'partnership', label: 'Partnership' },
-] as const;
-
-const MEMBER_TYPE_OPTIONS = [
-  { value: 'company', label: 'Company' },
-  { value: 'individual', label: 'Individual' },
-  { value: 'both', label: 'Both' },
-] as const;
-
 const STEPS = ['basics', 'fees', 'benefits', 'review'] as const;
 type StepKey = (typeof STEPS)[number];
 
@@ -110,6 +99,18 @@ export function PlanFormWizard({
   const t = useTranslations('admin.plans.create');
   const tLabels = useTranslations('admin.plans.create.labels');
   const tButtons = useTranslations('admin.plans.create.buttons');
+  const tOpts = useTranslations('admin.plans.create.options');
+
+  const CATEGORY_OPTIONS = useMemo(() => [
+    { value: 'corporate', label: tOpts('planCategory.corporate') },
+    { value: 'partnership', label: tOpts('planCategory.partnership') },
+  ], [tOpts]);
+
+  const MEMBER_TYPE_OPTIONS = useMemo(() => [
+    { value: 'company', label: tOpts('memberTypeScope.company') },
+    { value: 'individual', label: tOpts('memberTypeScope.individual') },
+    { value: 'both', label: tOpts('memberTypeScope.both') },
+  ], [tOpts]);
 
   const [step, setStep] = useState<StepKey>('basics');
   const [draft, setDraft] = useState<PlanSchemaInput>(

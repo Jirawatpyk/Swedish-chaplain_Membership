@@ -291,6 +291,54 @@
           "maxMemberAge": "อายุสูงสุดของสมาชิก",
           "benefitMatrix": "ตารางสิทธิประโยชน์"
         },
+        "options": {
+          "planCategory": {
+            "corporate": "นิติบุคคล",
+            "partnership": "พันธมิตร"
+          },
+          "memberTypeScope": {
+            "company": "บริษัท",
+            "individual": "บุคคล",
+            "both": "ทั้งสอง"
+          },
+          "websitePageType": {
+            "none": "ไม่มี",
+            "member_news_update": "ข่าวสมาชิก",
+            "smes_spotlight": "SMEs สปอตไลท์",
+            "student_intern_cv": "นักศึกษา/ฝึกงาน CV"
+          },
+          "homepageLogoCategory": {
+            "none": "ไม่มี",
+            "premium": "พรีเมียม",
+            "large": "ใหญ่",
+            "regular": "ปกติ",
+            "start_up": "สตาร์ทอัพ"
+          },
+          "directoryListingSize": {
+            "none": "ไม่มี",
+            "full_page": "เต็มหน้า",
+            "half_page": "ครึ่งหน้า",
+            "eighth_page": "หนึ่งในแปดหน้า"
+          },
+          "eventDiscountScope": {
+            "none": "ไม่มี",
+            "all_employees": "พนักงานทั้งหมด",
+            "one_ticket_per_event": "หนึ่งบัตรต่องาน"
+          },
+          "videoDuration": {
+            "1_0": "1.0 นาที",
+            "1_5": "1.5 นาที"
+          },
+          "videoFrequencyScope": {
+            "all_events": "ทุกงาน",
+            "three_selected_events": "สามงานที่เลือก"
+          },
+          "directoryAdPosition": {
+            "pages_1_and_2": "หน้า 1 และ 2",
+            "first_pages": "หน้าแรกๆ",
+            "first_10_pages": "10 หน้าแรก"
+          }
+        },
         "buttons": {
           "next": "ถัดไป",
           "back": "ย้อนกลับ",

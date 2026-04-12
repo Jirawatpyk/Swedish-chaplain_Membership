@@ -16,7 +16,7 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Lock } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -38,12 +38,6 @@ import {
   LOCKED_FIELDS_ON_PRIOR_YEAR,
   type PlanSchemaInput,
 } from '@/modules/plans';
-
-const MEMBER_TYPE_OPTIONS = [
-  { value: 'company', label: 'Company' },
-  { value: 'individual', label: 'Individual' },
-  { value: 'both', label: 'Both' },
-] as const;
 
 export interface PlanEditFormProps {
   readonly initialValues: PlanSchemaInput;
@@ -100,6 +94,13 @@ export function PlanEditForm({
   const t = useTranslations('admin.plans.create.labels');
   const tEdit = useTranslations('admin.plans.edit');
   const tButtons = useTranslations('admin.plans.create.buttons');
+  const tOpts = useTranslations('admin.plans.create.options');
+
+  const MEMBER_TYPE_OPTIONS = useMemo(() => [
+    { value: 'company', label: tOpts('memberTypeScope.company') },
+    { value: 'individual', label: tOpts('memberTypeScope.individual') },
+    { value: 'both', label: tOpts('memberTypeScope.both') },
+  ], [tOpts]);
 
   const [draft, setDraft] = useState<PlanSchemaInput>(initialValues);
   const isPriorYear = draft.plan_year < currentYear;

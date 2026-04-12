@@ -291,6 +291,54 @@
           "maxMemberAge": "Max member age",
           "benefitMatrix": "Benefit matrix"
         },
+        "options": {
+          "planCategory": {
+            "corporate": "Corporate",
+            "partnership": "Partnership"
+          },
+          "memberTypeScope": {
+            "company": "Company",
+            "individual": "Individual",
+            "both": "Both"
+          },
+          "websitePageType": {
+            "none": "None",
+            "member_news_update": "Member news update",
+            "smes_spotlight": "SMEs spotlight",
+            "student_intern_cv": "Student/intern CV"
+          },
+          "homepageLogoCategory": {
+            "none": "None",
+            "premium": "Premium",
+            "large": "Large",
+            "regular": "Regular",
+            "start_up": "Start-up"
+          },
+          "directoryListingSize": {
+            "none": "None",
+            "full_page": "Full page",
+            "half_page": "Half page",
+            "eighth_page": "Eighth page"
+          },
+          "eventDiscountScope": {
+            "none": "None",
+            "all_employees": "All employees",
+            "one_ticket_per_event": "One ticket per event"
+          },
+          "videoDuration": {
+            "1_0": "1.0 min",
+            "1_5": "1.5 min"
+          },
+          "videoFrequencyScope": {
+            "all_events": "All events",
+            "three_selected_events": "Three selected events"
+          },
+          "directoryAdPosition": {
+            "pages_1_and_2": "Pages 1 and 2",
+            "first_pages": "First pages",
+            "first_10_pages": "First 10 pages"
+          }
+        },
         "buttons": {
           "next": "Next",
           "back": "Back",

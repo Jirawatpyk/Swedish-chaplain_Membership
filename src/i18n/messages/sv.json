@@ -291,6 +291,54 @@
           "maxMemberAge": "Maximal medlemsålder",
           "benefitMatrix": "Förmånsmatris"
         },
+        "options": {
+          "planCategory": {
+            "corporate": "Företag",
+            "partnership": "Partnerskap"
+          },
+          "memberTypeScope": {
+            "company": "Företag",
+            "individual": "Individ",
+            "both": "Båda"
+          },
+          "websitePageType": {
+            "none": "Ingen",
+            "member_news_update": "Medlemsnyheter",
+            "smes_spotlight": "SME-spotlight",
+            "student_intern_cv": "Student/praktikant CV"
+          },
+          "homepageLogoCategory": {
+            "none": "Ingen",
+            "premium": "Premium",
+            "large": "Stor",
+            "regular": "Ordinarie",
+            "start_up": "Start-up"
+          },
+          "directoryListingSize": {
+            "none": "Ingen",
+            "full_page": "Helsida",
+            "half_page": "Halvsida",
+            "eighth_page": "Åttondels sida"
+          },
+          "eventDiscountScope": {
+            "none": "Ingen",
+            "all_employees": "Alla anställda",
+            "one_ticket_per_event": "En biljett per evenemang"
+          },
+          "videoDuration": {
+            "1_0": "1,0 min",
+            "1_5": "1,5 min"
+          },
+          "videoFrequencyScope": {
+            "all_events": "Alla evenemang",
+            "three_selected_events": "Tre utvalda evenemang"
+          },
+          "directoryAdPosition": {
+            "pages_1_and_2": "Sida 1 och 2",
+            "first_pages": "Första sidorna",
+            "first_10_pages": "Första 10 sidorna"
+          }
+        },
         "buttons": {
           "next": "Nästa",
           "back": "Tillbaka",
