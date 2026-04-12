@@ -26,7 +26,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { PlansTable } from '@/components/plans/plans-table';
 import { PlanListSkeleton } from '@/components/plans/plan-list-skeleton';
@@ -78,7 +77,6 @@ export default async function PlansListPage({
               </Link>
             </>
           ) : null}
-          <Badge variant="secondary">{currentUser.role}</Badge>
         </div>
       </header>
 
