@@ -38,12 +38,17 @@ export function PageHeader({
           {badge}
         </div>
         {subtitle ? (
-          <p
+          // <div> (not <p>) because `subtitle` is typed `ReactNode` and
+          // callers pass arbitrary elements (e.g. <SkeletonBlock> = a
+          // <div>) from `loading.tsx`. A <p> with a <div> descendant
+          // breaks HTML validity and triggers a React 19 hydration
+          // error.
+          <div
             data-slot="page-header-subtitle"
             className="[margin-block-start:0.25rem] text-body text-muted-foreground"
           >
             {subtitle}
-          </p>
+          </div>
         ) : null}
       </div>
       {actions ? (

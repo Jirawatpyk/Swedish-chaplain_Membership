@@ -1,7 +1,14 @@
 /* eslint-disable react-hooks/globals -- test probes legitimately capture hook return values into outer variables */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { useEffect, useRef } from 'react';
+
+// Ensure environment mutations (stubEnv / resetModules) can't leak into
+// subsequent tests even if a preceding test body throws.
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
+});
 
 import {
   BreadcrumbProvider,
@@ -90,6 +97,8 @@ describe('<BreadcrumbProvider>', () => {
   it('dev-mode setter throws with an actionable error when used outside provider', async () => {
     vi.stubEnv('NODE_ENV', 'development');
     // Re-import under the new NODE_ENV so the EMPTY_API branch is picked up.
+    // The matching `vi.unstubAllEnvs` + `vi.resetModules` runs in afterEach
+    // even if this test body throws, so leakage is impossible.
     vi.resetModules();
     const mod = await import('@/components/layout/breadcrumb-provider');
 
@@ -100,6 +109,5 @@ describe('<BreadcrumbProvider>', () => {
     }
     render(<Probe />);
     expect(() => api!.setLabel('x', 'y')).toThrow(/outside <BreadcrumbProvider>/);
-    vi.unstubAllEnvs();
   });
 });

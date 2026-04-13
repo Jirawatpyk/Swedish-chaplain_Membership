@@ -24,19 +24,25 @@ export function parseBreadcrumbPath({
   staticLabels,
   dynamicLabels,
 }: ParseBreadcrumbOptions): BreadcrumbSegment[] {
-  const parts = pathname
-    .split('/')
-    .filter((p) => p.length > 0)
-    .map(safeDecode);
-  if (parts.length === 0) return [];
+  // Raw segments drive `href` reconstruction so the URL we link back to
+  // is bit-identical to the one Next.js routed here with (preserving any
+  // percent-encoding). Decoded segments drive label lookup + display so
+  // `admin/plans/%E0%B8%AB` matches the dynamic-label key `ห` and shows
+  // the human-readable glyph in the breadcrumb trail.
+  const rawParts = pathname.split('/').filter((p) => p.length > 0);
+  if (rawParts.length === 0) return [];
 
-  const lastIndex = parts.length - 1;
-  return parts.map((segment, index) => ({
-    href: '/' + parts.slice(0, index + 1).join('/'),
-    segment,
-    label: dynamicLabels.get(segment) ?? staticLabels[segment] ?? segment,
-    isCurrent: index === lastIndex,
-  }));
+  const decodedParts = rawParts.map(safeDecode);
+  const lastIndex = rawParts.length - 1;
+  return rawParts.map((rawSegment, index) => {
+    const decoded = decodedParts[index] ?? rawSegment;
+    return {
+      href: '/' + rawParts.slice(0, index + 1).join('/'),
+      segment: decoded,
+      label: dynamicLabels.get(decoded) ?? staticLabels[decoded] ?? decoded,
+      isCurrent: index === lastIndex,
+    };
+  });
 }
 
 export type TruncatedBreadcrumb = {

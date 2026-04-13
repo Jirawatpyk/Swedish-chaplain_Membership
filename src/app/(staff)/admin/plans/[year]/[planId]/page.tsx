@@ -185,10 +185,10 @@ export default async function PlanDetailPage({
         </CardHeader>
         <CardContent className="space-y-4">
           <section>
-            <h2 className="text-sm font-semibold uppercase text-muted-foreground">
+            <h2 className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
               Brand Visibility
             </h2>
-            <dl className="mt-2 grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
+            <dl className="mt-2 grid grid-cols-1 gap-2 text-body md:grid-cols-2">
               <KV label="E-blast per year" value={String(plan.benefit_matrix.eblast_per_year)} />
               <KV
                 label="Website page type"
@@ -206,8 +206,10 @@ export default async function PlanDetailPage({
           </section>
           <Separator />
           <section>
-            <h2 className="text-sm font-semibold uppercase text-muted-foreground">Events</h2>
-            <dl className="mt-2 grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
+            <h2 className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
+              Events
+            </h2>
+            <dl className="mt-2 grid grid-cols-1 gap-2 text-body md:grid-cols-2">
               <KV label="Discount scope" value={plan.benefit_matrix.event_discount_scope} />
               <KV
                 label="Co-branded access"
@@ -223,10 +225,10 @@ export default async function PlanDetailPage({
             <>
               <Separator />
               <section>
-                <h2 className="text-sm font-semibold uppercase text-muted-foreground">
+                <h2 className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
                   Partnership
                 </h2>
-                <dl className="mt-2 grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
+                <dl className="mt-2 grid grid-cols-1 gap-2 text-body md:grid-cols-2">
                   <KV
                     label="Event tickets"
                     value={String(plan.benefit_matrix.partnership.event_tickets_included)}

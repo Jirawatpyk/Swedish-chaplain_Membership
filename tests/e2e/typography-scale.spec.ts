@@ -37,6 +37,11 @@ test.describe('F4 SC-010 — typography scale @layout', () => {
         expect(size, `${path} h1`).toBeCloseTo(EXPECTED_H1_PX, 0);
       }
 
+      // SC-010 literal: every h2/h3/h4 on a migrated page MUST either carry
+      // a .text-h{N} utility that resolves to the FR-017 token or be
+      // explicitly opted out via .text-caption (small section labels).
+      // Anything else is a regression — silently skipping unclassed
+      // headings (the round-1 behavior) hid three stale h2s on plan-detail.
       for (const [level, expected] of [
         [2, EXPECTED_H2_PX],
         [3, EXPECTED_H3_PX],
@@ -46,14 +51,20 @@ test.describe('F4 SC-010 — typography scale @layout', () => {
         const count = await headings.count();
         for (let i = 0; i < count; i++) {
           const el = headings.nth(i);
-          // Only verify headings that carry a .text-h{N} class (migrated ones).
-          const hasToken = await el.evaluate((node, n) =>
-            node.className.includes(`text-h${n}`), level);
-          if (!hasToken) continue;
-          const size = await el.evaluate((node) =>
-            parseFloat(getComputedStyle(node).fontSize),
-          );
-          expect(size, `${path} h${level}`).toBeCloseTo(expected, 0);
+          const className = await el.evaluate((node) => node.className);
+          const hasHeadingToken = className.includes(`text-h${level}`);
+          const hasCaptionOptOut = className.includes('text-caption');
+          expect(
+            hasHeadingToken || hasCaptionOptOut,
+            `${path} h${level} must use .text-h${level} (or .text-caption for small labels). ` +
+              `Actual className: "${className}"`,
+          ).toBe(true);
+          if (hasHeadingToken) {
+            const size = await el.evaluate((node) =>
+              parseFloat(getComputedStyle(node).fontSize),
+            );
+            expect(size, `${path} h${level} font-size`).toBeCloseTo(expected, 0);
+          }
         }
       }
     }

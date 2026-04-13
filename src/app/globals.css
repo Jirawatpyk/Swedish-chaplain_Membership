@@ -288,21 +288,6 @@ body {
   overflow: hidden;
 }
 
-/* --- Universal focus ring utility ---
-   Keeps a transparent `outline` so Windows High Contrast Mode (which
-   does not render `box-shadow`) still shows a visible focus ring and
-   WCAG 2.1 AA is satisfied. */
-.focus-ring {
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-}
-.focus-ring:focus-visible {
-  outline: 3px solid transparent;
-  outline-offset: 2px;
-  border-color: var(--ring);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
-}
-
 /* --- Skeleton shimmer base + reduced-motion fallback --- */
 .skeleton-shimmer {
   background: linear-gradient(

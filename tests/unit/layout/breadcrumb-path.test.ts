@@ -82,6 +82,50 @@ describe('parseBreadcrumbPath', () => {
     ]);
   });
 
+  it('preserves percent-encoded href while decoding label', () => {
+    const dynamicLabels = new Map([['กรุงเทพ', 'Bangkok Chapter']]);
+    // %E0%B8%81%E0%B8%A3%E0%B8%B8%E0%B8%87%E0%B9%80%E0%B8%97%E0%B8%9E = "กรุงเทพ"
+    const result = parseBreadcrumbPath({
+      pathname:
+        '/admin/plans/%E0%B8%81%E0%B8%A3%E0%B8%B8%E0%B8%87%E0%B9%80%E0%B8%97%E0%B8%9E',
+      staticLabels,
+      dynamicLabels,
+    });
+    const last = result.at(-1)!;
+    expect(last.href).toBe(
+      '/admin/plans/%E0%B8%81%E0%B8%A3%E0%B8%B8%E0%B8%87%E0%B9%80%E0%B8%97%E0%B8%9E',
+    );
+    expect(last.segment).toBe('กรุงเทพ');
+    expect(last.label).toBe('Bangkok Chapter');
+  });
+
+  it('treats consecutive slashes as a single separator', () => {
+    // Empty segments from `//` are filtered out (`filter(p => p.length > 0)`).
+    const result = parseBreadcrumbPath({
+      pathname: '/admin//plans',
+      staticLabels,
+      dynamicLabels: new Map(),
+    });
+    expect(result.map((s) => s.segment)).toEqual(['admin', 'plans']);
+  });
+
+  it('keeps query-string text attached to the final segment', () => {
+    // Callers are expected to pass a clean pathname from `usePathname()`
+    // (no query string). If raw `window.location.pathname` is ever passed
+    // by accident, the query chunk ends up as part of the segment —
+    // label lookup silently falls through to the raw text, which is the
+    // current (documented) behavior. Pinning it here prevents future
+    // regressions that would silently swallow the tail.
+    const result = parseBreadcrumbPath({
+      pathname: '/admin/plans?year=2026',
+      staticLabels,
+      dynamicLabels: new Map(),
+    });
+    const last = result.at(-1)!;
+    expect(last.segment).toBe('plans?year=2026');
+    expect(last.label).toBe('plans?year=2026');
+  });
+
   it('ignores trailing slash', () => {
     const withSlash = parseBreadcrumbPath({
       pathname: '/admin/plans/',

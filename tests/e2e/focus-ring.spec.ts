@@ -45,11 +45,15 @@ test.describe('F4 SC-011 — universal focus ring @a11y @layout', () => {
           };
         });
         if (!focus) continue; // body focus — nothing to check
+        // Per docs/shadcn-customizations.md § Focus-ring pattern, the
+        // convergent SC-011 implementation is:
+        //   (a) primitives use Tailwind `focus-visible:ring-*` → box-shadow
+        //   (b) unclassed elements get `*:focus-visible { outline: 2px
+        //       solid currentColor }` → opaque outline
+        // A transparent outline without a box-shadow must NOT pass — it
+        // would only be visible in Windows High Contrast Mode and is not
+        // the documented pattern.
         const hasBoxShadow = !!focus.boxShadow && focus.boxShadow !== 'none';
-        // A transparent outline (e.g. `.focus-ring:focus-visible`) is invisible
-        // in normal mode but reveals in Windows High Contrast Mode. It only
-        // counts as a visible ring if paired with a box-shadow; a standalone
-        // transparent outline should NOT pass the assertion.
         const transparentOutline =
           focus.outlineColor === 'rgba(0, 0, 0, 0)' ||
           focus.outlineColor === 'transparent';
@@ -60,7 +64,7 @@ test.describe('F4 SC-011 — universal focus ring @a11y @layout', () => {
         const hasRing = hasBoxShadow || hasOpaqueOutline;
         expect(
           hasRing,
-          `${path} tab#${i} must render a visible focus ring (box-shadow or opaque outline)`,
+          `${path} tab#${i} must render a visible focus ring (primitive box-shadow or global opaque outline)`,
         ).toBe(true);
       }
     }

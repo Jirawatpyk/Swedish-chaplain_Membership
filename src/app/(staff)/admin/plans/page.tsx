@@ -11,7 +11,6 @@
  * path the API route uses.
  */
 import type { Metadata } from 'next';
-import { Suspense } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon, CopyIcon } from 'lucide-react';
@@ -28,7 +27,6 @@ import {
 } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { PlansTable } from '@/components/plans/plans-table';
-import { PlanListSkeleton } from '@/components/plans/plan-list-skeleton';
 import { ContentContainer } from '@/components/layout/content-container';
 import { PageHeader } from '@/components/layout/page-header';
 
@@ -86,12 +84,17 @@ export default async function PlansListPage({
           <CardDescription>{t('refreshHint')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<PlanListSkeleton />}>
-            <PlansList
-              query={query}
-              currentUserRole={currentUser.role as 'admin' | 'manager' | 'member'}
-            />
-          </Suspense>
+          {/*
+            No internal <Suspense> wrapper — the route-level loading.tsx
+            is the single Suspense boundary and renders <PlanListSkeleton>
+            with the real page shell. Double-wrapping caused the shimmer
+            to run twice (once for loading.tsx, once for the inner
+            boundary swap).
+          */}
+          <PlansList
+            query={query}
+            currentUserRole={currentUser.role as 'admin' | 'manager' | 'member'}
+          />
         </CardContent>
       </Card>
     </ContentContainer>

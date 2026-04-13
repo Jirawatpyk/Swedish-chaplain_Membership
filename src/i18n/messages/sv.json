@@ -107,6 +107,7 @@
   },
   "shell": {
     "skipToContent": "Hoppa till huvudinnehållet",
+    "welcome": "Välkommen",
     "userMenu": {
       "label": "Kontomeny",
       "account": "Kontoinställningar",
@@ -142,9 +143,22 @@
     "retry": "Försök igen"
   },
   "admin": {
+    "home": {
+      "welcomeWithName": "Välkommen, {name}",
+      "subtitle": "Du är inloggad som {role}.",
+      "cardTitle": "Vad som kommer härnäst",
+      "cardDescription": "F1 (autentisering) är grunden. Resten av personalarbetsytan levereras i kommande faser.",
+      "roadmap": {
+        "f3": "Medlems- och kontaktkatalog",
+        "f4": "Fakturor och kvitton (thailändsk skatt)",
+        "f5": "Förnyelse och betalning av medlemskap online",
+        "f6": "Evenemang och registrering"
+      }
+    },
     "users": {
       "title": "Användare",
       "subtitle": "{total} konton totalt",
+      "pageSubtitle": "Hantera personal- och medlemskonton, roller och status.",
       "viewingAs": "Visar som {role}",
       "listHeading": "Alla konton",
       "listDescription": "Bjud in, inaktivera, återaktivera eller byt roll. Destruktiva åtgärder kräver bekräftelse.",
@@ -349,8 +363,12 @@
       },
       "edit": {
         "title": "Redigera {planName}",
+        "titleGeneric": "Redigera paket",
         "save": "Spara ändringar",
         "saving": "Sparar…"
+      },
+      "detail": {
+        "titleGeneric": "Paketdetaljer"
       },
       "clone": {
         "title": "Klona år",
@@ -486,6 +504,10 @@
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",
-    "ellipsis": "Fler sidor"
+    "ellipsis": "Fler sidor",
+    "loading": "Laddar…",
+    "loadingPage": "Laddar sidinnehåll",
+    "loadingTable": "Laddar tabelldata",
+    "loadingForm": "Laddar formulär"
   }
 }

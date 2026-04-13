@@ -40,6 +40,12 @@ Rule to enforce at code review:
 </DropdownMenuTrigger>
 ```
 
+**Every new interactive primitive MUST carry `focus-visible:border-ring
+focus-visible:ring-3 focus-visible:ring-ring/50`** (or the equivalent
+shadcn base-class pattern) — don't rely on the global `*:focus-visible`
+fallback. The fallback is a safety net for unclassed elements, not a
+substitute for primitive-level focus styling.
+
 ## Dark-mode token audit (T060b)
 
 - `--card-shadow` has a dark override (`0 1px 2px 0 rgb(0 0 0 / 0.3)`) so
@@ -53,3 +59,51 @@ Rule to enforce at code review:
   `[lang="th"] .text-h{1-4}, [lang="th"] .text-body` rule.
 - Thai table cell line-clamp (`[lang="th"] td { line-clamp: 2 }`) prevents
   row-height expansion from tone-mark/diacritic envelopes.
+
+## Focus-ring pattern (SC-011)
+
+Single convergent pattern — two layers, one implementation each:
+
+1. **Primitive-level ring** (Tailwind `focus-visible:ring-*`): every
+   interactive shadcn primitive (`button.tsx`, `input.tsx`, `textarea.tsx`,
+   `select.tsx`, etc.) uses `focus-visible:border-ring focus-visible:ring-3
+   focus-visible:ring-ring/50`. This is the canonical visible ring and
+   what SC-011 asserts identity on.
+2. **Global fallback** (`*:focus-visible { outline: 2px solid currentColor }`
+   in `globals.css`): covers unclassed elements (e.g. a raw `<a href>` or a
+   custom control that forgot to style focus). The ring is derived from
+   `currentColor` so it inherits text contrast automatically.
+
+No intermediate utility class — a previous `.focus-ring` utility was
+removed because it was unused and invited divergence from the two layers
+above. Don't reintroduce one unless a real call site needs the
+WHCM-safe transparent-outline + box-shadow combo; at that point, promote
+the style into the primitive itself rather than a shared class.
+
+## Table sticky header
+
+`table.tsx` ships with `thead { position: sticky; top: 0; z-10 }` so column
+labels stay visible while the `<div data-slot="table-container">`
+horizontal-scrolls on narrow viewports. This assumes the Table lives in a
+full-page scroll context (the default — e.g. `/admin/users`,
+`/admin/plans`). **If you place a Table inside a fixed-height Card or a
+constrained-scroll region**, the sticky behavior can surprise. Opt out per
+call site with `className="[&_thead]:static"` on the `<Table>` element.
+
+## Admin vs portal shell asymmetry
+
+`src/app/(staff)/admin/layout.tsx` and `src/app/(member)/portal/layout.tsx`
+place `ContentContainer` differently:
+
+- **Portal**: the shell wraps `{children}` in
+  `<ContentContainer variant="portal">`. Portal pages **do not** import
+  ContentContainer themselves — keep their file roots as `<>` fragments.
+- **Admin**: the shell renders `<BreadcrumbNav />` (which must sit between
+  the top bar and the content) and then `{children}`. Each admin page
+  owns its `<ContentContainer>` so breadcrumb can render above the
+  container without a separate padding rule.
+
+Do not "fix" this by mirroring the two shells — the asymmetry exists so
+breadcrumb spacing stays consistent without double-wrapping. A future
+`<AdminPageShell>` wrapper could absorb the boilerplate, but the shape
+must stay: `TopBar → BreadcrumbNav → ContentContainer → page content`.

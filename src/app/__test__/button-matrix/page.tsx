@@ -33,6 +33,12 @@ const SIZES = [
  * production). `NODE_ENV` alone is unreliable on Vercel because every
  * deployment — preview and production — ships with
  * `NODE_ENV=production`.
+ *
+ * **Unauthenticated by design** — the page skips the usual
+ * `requireSession()` guard so headless E2E runs can hit it without
+ * seeding a session cookie. Consequence: never set `ALLOW_TEST_ROUTES=1`
+ * in any environment that carries real session cookies or real user
+ * data. CI ephemeral deploys only.
  */
 export default function ButtonMatrixPage() {
   if (!process.env.ALLOW_TEST_ROUTES) notFound();

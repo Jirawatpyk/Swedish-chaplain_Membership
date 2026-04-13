@@ -36,7 +36,11 @@ export function BreadcrumbProvider({ children }: { children: ReactNode }) {
 
   // Functional update keeps React 19 concurrent renders consistent — no
   // separate ref mirror, so the committed state is always the single
-  // source of truth for consumers.
+  // source of truth for consumers. The `prev.get(segment) === label`
+  // short-circuit relies on primitive string equality; if we ever widen
+  // `label` to `ReactNode`, drop the short-circuit or swap it for a
+  // structural comparison — identity equality on objects will force a
+  // re-render on every call.
   const setLabel = useCallback((segment: string, label: string) => {
     setMap((prev) => {
       if (prev.get(segment) === label) return prev;
