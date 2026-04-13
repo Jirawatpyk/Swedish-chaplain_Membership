@@ -342,17 +342,27 @@ summary,
   cursor: pointer;
 }
 
-/* --- Focus-visible: WCAG 2.1 AA + docs/ux-standards.md § 7 ---
-   No `border-radius` override: the previous `border-radius: 2px` was
-   being applied to the element ITSELF on focus, which squared off
-   rounded inputs/buttons momentarily. Modern browsers (Chrome 94+,
-   Firefox 88+, Safari 16.4+) already draw `outline` following each
-   element's natural `border-radius`, so the ring matches Input's
-   rounded-lg corners, Button's rounded-lg corners, etc. without any
-   extra CSS. */
-*:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
+/* --- Focus-visible fallback: WCAG 2.1 AA + docs/ux-standards.md § 7 ---
+   Scoped to `@layer base` so any Tailwind utility (in `@layer
+   utilities`) — e.g. `outline-none`, `outline-hidden`, component-level
+   `focus-visible:ring-*` — wins the cascade. Without the layer, this
+   unlayered rule beat every utility, stacking a currentColor outline
+   on top of ring-driven box-shadows (double-ring bug on sidebar menu
+   buttons, Input, Button).
+
+   Unclassed elements (raw <a href>, native <summary>, etc.) still
+   fall through to this rule as their only focus styling, satisfying
+   WCAG 2.1 AA on elements no component class targets.
+
+   No `border-radius` override: previous `border-radius: 2px` squared
+   off rounded inputs on focus. Modern browsers (Chrome 94+,
+   Firefox 88+, Safari 16.4+) draw `outline` following each element's
+   natural `border-radius`. */
+@layer base {
+  *:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
 }
 
 /* --- Skip link — see `src/components/shell/skip-to-content.tsx` --- */
