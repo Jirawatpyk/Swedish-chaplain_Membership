@@ -176,7 +176,14 @@ export function FeeConfigForm({
       ) : null}
 
       {isAdmin ? (
-        <Button type="submit" disabled={submitting}>
+        // Full-width + lg size mirrors ChangePasswordForm's submit pattern
+        // for visual consistency across /admin single-action settings forms.
+        <Button
+          type="submit"
+          className="w-full"
+          size="lg"
+          disabled={submitting}
+        >
           {submitting ? t('saving') : t('save')}
         </Button>
       ) : null}

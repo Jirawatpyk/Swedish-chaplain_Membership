@@ -48,7 +48,8 @@ export default async function Loading() {
                 <SkeletonBlock className="h-4 w-36" />
                 <SkeletonBlock className="h-[var(--input-height)] w-full" />
               </div>
-              <SkeletonBlock className="h-9 w-24" />
+              {/* Full-width submit — mirrors ChangePasswordForm pattern. */}
+              <SkeletonBlock className="h-9 w-full" />
             </div>
           </CardContent>
         </Card>
