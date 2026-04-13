@@ -3,11 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { useEffect, useRef } from 'react';
 
-// Ensure environment mutations (stubEnv / resetModules) can't leak into
-// subsequent tests even if a preceding test body throws.
+// `vi.stubEnv` leaks globally — clear unconditionally after every test.
+// `vi.resetModules()` lives INSIDE the one test that needs it: static
+// `import` bindings at the top of this file are hoisted and won't
+// benefit from a module registry reset, so calling it here would be a
+// no-op for the 4 tests that use those imports and a false signal of
+// isolation for future additions.
 afterEach(() => {
   vi.unstubAllEnvs();
-  vi.resetModules();
 });
 
 import {

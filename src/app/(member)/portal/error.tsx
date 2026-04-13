@@ -25,6 +25,7 @@ export default function PortalError({
   reset: () => void;
 }) {
   const t = useTranslations('errors');
+  const tButtons = useTranslations('buttons');
 
   useEffect(() => {
     console.error('[portal error boundary]', error);
@@ -44,7 +45,7 @@ export default function PortalError({
           </div>
         </CardHeader>
         <CardContent className="flex gap-2">
-          <Button onClick={reset}>{t('retry')}</Button>
+          <Button onClick={reset}>{tButtons('retry')}</Button>
         </CardContent>
       </Card>
     </>

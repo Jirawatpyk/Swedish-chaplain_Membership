@@ -17,7 +17,7 @@ import { SkeletonBlock } from '@/components/shell/page-skeletons';
  */
 export function ChangePasswordFormSkeleton() {
   return (
-    <div className="space-y-4" role="status" aria-busy="true">
+    <div className="space-y-4" aria-busy="true">
       {/* Current password */}
       <div className="space-y-2">
         <SkeletonBlock className="h-4 w-32" />

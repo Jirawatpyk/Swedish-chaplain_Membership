@@ -58,10 +58,9 @@ export function PlanListSkeleton({ rowCount = DEFAULT_ROW_COUNT }: PlanListSkele
     <div
       data-plan-list-skeleton
       data-reduced-motion={reducedMotion ? 'true' : 'false'}
-      role="status"
-      aria-live="polite"
+      // No role="status"/aria-live here — callers wrap this in
+      // <PageSkeletonShell> which owns the single live region.
       aria-busy="true"
-      aria-label="Loading plans"
       className="w-full"
     >
       {/* Header row */}

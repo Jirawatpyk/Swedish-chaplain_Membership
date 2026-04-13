@@ -109,21 +109,20 @@ describe('parseBreadcrumbPath', () => {
     expect(result.map((s) => s.segment)).toEqual(['admin', 'plans']);
   });
 
-  it('keeps query-string text attached to the final segment', () => {
-    // Callers are expected to pass a clean pathname from `usePathname()`
-    // (no query string). If raw `window.location.pathname` is ever passed
-    // by accident, the query chunk ends up as part of the segment —
-    // label lookup silently falls through to the raw text, which is the
-    // current (documented) behavior. Pinning it here prevents future
-    // regressions that would silently swallow the tail.
+  it('strips the query string so label lookup still resolves', () => {
+    // `parseBreadcrumbPath` defensively splits on `?`, so a caller
+    // passing `window.location.pathname` (which may include a query)
+    // still gets clean segments. Without this, `plans?year=2026` would
+    // fall through static-label lookup and render the raw URL text.
     const result = parseBreadcrumbPath({
       pathname: '/admin/plans?year=2026',
       staticLabels,
       dynamicLabels: new Map(),
     });
     const last = result.at(-1)!;
-    expect(last.segment).toBe('plans?year=2026');
-    expect(last.label).toBe('plans?year=2026');
+    expect(last.segment).toBe('plans');
+    expect(last.label).toBe('Plans');
+    expect(last.href).toBe('/admin/plans');
   });
 
   it('ignores trailing slash', () => {

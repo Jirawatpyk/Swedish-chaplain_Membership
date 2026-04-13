@@ -24,12 +24,18 @@ export function parseBreadcrumbPath({
   staticLabels,
   dynamicLabels,
 }: ParseBreadcrumbOptions): BreadcrumbSegment[] {
+  // Defensive strip: Next.js's `usePathname()` never includes the query
+  // string, but a caller passing `window.location.pathname` directly
+  // could — we split on `?` so a stray query chunk never corrupts the
+  // final segment's label lookup.
+  //
   // Raw segments drive `href` reconstruction so the URL we link back to
   // is bit-identical to the one Next.js routed here with (preserving any
   // percent-encoding). Decoded segments drive label lookup + display so
   // `admin/plans/%E0%B8%AB` matches the dynamic-label key `ห` and shows
   // the human-readable glyph in the breadcrumb trail.
-  const rawParts = pathname.split('/').filter((p) => p.length > 0);
+  const cleanPath = pathname.split('?')[0] ?? pathname;
+  const rawParts = cleanPath.split('/').filter((p) => p.length > 0);
   if (rawParts.length === 0) return [];
 
   const decodedParts = rawParts.map(safeDecode);

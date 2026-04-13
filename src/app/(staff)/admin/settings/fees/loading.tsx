@@ -15,7 +15,8 @@ import {
 
 /**
  * Loading matches real <FeeConfigForm>: 3 fields with `space-y-6`,
- * helper note under currency, left-aligned standalone save button.
+ * helper note under currency, full-width `size="lg"` save button
+ * (same pattern as ChangePasswordForm for admin single-action forms).
  */
 export default async function Loading() {
   const t = await getTranslations('admin.settings.fees');

@@ -32,6 +32,7 @@ export default function AdminError({
   reset: () => void;
 }) {
   const t = useTranslations('errors');
+  const tButtons = useTranslations('buttons');
 
   useEffect(() => {
     // Surface once so the user's console correlates with server logs
@@ -53,7 +54,7 @@ export default function AdminError({
           </div>
         </CardHeader>
         <CardContent className="flex gap-2">
-          <Button onClick={reset}>{t('retry')}</Button>
+          <Button onClick={reset}>{tButtons('retry')}</Button>
         </CardContent>
       </Card>
     </ContentContainer>

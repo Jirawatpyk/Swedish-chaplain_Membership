@@ -34,10 +34,13 @@ describe('SkeletonBlock', () => {
 });
 
 describe('CardSkeleton', () => {
-  it('emits role=status + aria-busy for screen readers', () => {
+  it('emits aria-busy without claiming its own live region', () => {
+    // The outer <PageSkeletonShell> is the sole role="status" region
+    // per page; nested live regions cause some screen readers to
+    // announce twice. CardSkeleton marks busy but doesn't set role.
     const { container } = render(<CardSkeleton />);
     const root = container.querySelector('[data-slot="card-skeleton"]');
-    expect(root!.getAttribute('role')).toBe('status');
+    expect(root!.getAttribute('role')).toBeNull();
     expect(root!.getAttribute('aria-busy')).toBe('true');
   });
 
@@ -104,10 +107,12 @@ describe('FormSkeleton', () => {
       <FormSkeleton fields={3} footerButtons={1} withHeader={false} />,
     );
     const root = container.querySelector('[data-slot="form-skeleton"]');
-    // 6 field blocks + 1 button = 7 (no title, no description).
+    // 6 field blocks + 1 button = 7 at minimum. The class assertions
+    // below verify the "no chrome" semantic directly; block count stays
+    // soft for future decorative additions (see file header policy).
     expect(
       root!.querySelectorAll('[data-slot="skeleton-block"]').length,
-    ).toBe(7);
+    ).toBeGreaterThanOrEqual(7);
     expect(root!.className).not.toContain('border');
     expect(root!.className).not.toContain('bg-card');
   });
@@ -129,10 +134,12 @@ describe('TableSkeleton', () => {
     ).toBeGreaterThanOrEqual(16);
   });
 
-  it('marks the skeleton as aria-busy', () => {
+  it('marks the skeleton as aria-busy but not role=status', () => {
+    // See CardSkeleton's a11y test — PageSkeletonShell owns the live
+    // region; nested primitives only carry aria-busy.
     const { container } = render(<TableSkeleton />);
     const root = container.querySelector('[data-slot="table-skeleton"]');
-    expect(root!.getAttribute('role')).toBe('status');
+    expect(root!.getAttribute('role')).toBeNull();
     expect(root!.getAttribute('aria-busy')).toBe('true');
   });
 });

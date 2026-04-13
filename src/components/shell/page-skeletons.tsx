@@ -15,11 +15,13 @@
  * - FormSkeleton mirrors the Input height + label spacing tokens.
  *
  * Accessibility:
+ * - `PageSkeletonShell` is the SOLE live region per page — it emits
+ *   `role="status"` + `aria-live="polite"` with an i18n-driven label
+ *   so screen readers hear "Loading…" once per navigation.
  * - Container primitives (CardSkeleton, FormSkeleton, TableSkeleton,
- *   DetailSkeleton) self-announce with `role="status"` + `aria-busy`.
- * - `PageSkeletonShell` wraps a whole `loading.tsx` page to emit a
- *   single `aria-live="polite"` region with an i18n-driven label —
- *   screen readers hear "Loading…" on navigation.
+ *   DetailSkeleton) mark themselves `aria-busy="true"` but NOT
+ *   `role="status"` — nested live regions are discouraged by ARIA
+ *   (NVDA+Firefox may announce twice or ignore the inner).
  */
 import { cn } from '@/lib/utils';
 
@@ -57,7 +59,6 @@ export function CardSkeleton({
   return (
     <div
       data-slot="card-skeleton"
-      role="status"
       aria-busy="true"
       className={cn(
         'rounded-[var(--card-radius)] border border-border bg-card shadow-[var(--card-shadow)]',
@@ -128,7 +129,6 @@ export function FormSkeleton({
     return (
       <div
         data-slot="form-skeleton"
-        role="status"
         aria-busy="true"
         className={cn('flex flex-col gap-4', className)}
       >
@@ -140,7 +140,6 @@ export function FormSkeleton({
   return (
     <div
       data-slot="form-skeleton"
-      role="status"
       aria-busy="true"
       className={cn(
         'rounded-[var(--card-radius)] border border-border bg-card shadow-[var(--card-shadow)]',
@@ -175,7 +174,6 @@ export function TableSkeleton({
   return (
     <div
       data-slot="table-skeleton"
-      role="status"
       aria-busy="true"
       className={cn('w-full overflow-hidden', className)}
     >
@@ -214,7 +212,6 @@ export function DetailSkeleton({
   return (
     <dl
       data-slot="detail-skeleton"
-      role="status"
       aria-busy="true"
       className={cn(
         'grid gap-4',
