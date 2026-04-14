@@ -194,6 +194,18 @@
   --modal-easing: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* --- Sidebar tablet override -----------------------------------------------
+ * On tablet-portrait viewports (768-1023px) collapse the desktop sidebar
+ * rail to icon-only width so the content area gets ~720px of usable space
+ * (was 512px with a 256px expanded rail, causing horizontal scroll).
+ * Mobile (<768px) uses the off-canvas drawer (md:flex hides the rail).
+ * Desktop (≥1024px) respects the user's expand/collapse preference. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  [data-slot="sidebar-wrapper"] {
+    --sidebar-width: 3rem;            /* match --sidebar-width-icon */
+  }
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
