@@ -100,12 +100,19 @@ function BoolField({
   readonly disabled?: boolean;
 }) {
   const id = useId();
+  const labelId = `${id}-label`;
   return (
     <div className="flex items-center justify-between gap-4 py-1">
-      <Label htmlFor={id} className="flex-1">
+      <Label htmlFor={id} id={labelId} className="flex-1">
         {label}
       </Label>
-      <Switch id={id} checked={value} onCheckedChange={onChange} disabled={disabled} />
+      <Switch
+        id={id}
+        aria-labelledby={labelId}
+        checked={value}
+        onCheckedChange={onChange}
+        disabled={disabled}
+      />
     </div>
   );
 }

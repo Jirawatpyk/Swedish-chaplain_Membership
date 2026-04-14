@@ -19,6 +19,14 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
 
@@ -110,90 +118,85 @@ export function UserListTable({
 
   return (
     <>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left">
-              <th className="pb-2 pr-4 font-medium">{t('columns.email')}</th>
-              <th className="pb-2 pr-4 font-medium">{t('columns.name')}</th>
-              <th className="pb-2 pr-4 font-medium">{t('columns.role')}</th>
-              <th className="pb-2 pr-4 font-medium">{t('columns.status')}</th>
-              <th className="pb-2 pr-4 font-medium text-right">{t('columns.actions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => {
-              const isSelf = user.id === currentUserId;
-              const canDisable = isAdmin && !isSelf && user.status === 'active';
-              const canEnable = isAdmin && user.status === 'disabled';
-              const busy = busyId === user.id;
-              return (
-                <tr
-                  key={user.id}
-                  className="border-b last:border-none"
-                  // Data attrs for deterministic E2E selectors — the
-                  // session-revocation spec (T-05) needs to find a
-                  // specific user's id by email without scraping the
-                  // visible text. Safe to ship to production: the
-                  // page is admin-only and these are the same values
-                  // already in the visible table.
-                  data-user-id={user.id}
-                  data-user-email={user.email.toLowerCase()}
-                >
-                  <td className="py-3 pr-4">{user.email}</td>
-                  <td className="py-3 pr-4 text-muted-foreground">
-                    {user.displayName ?? '—'}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <Badge variant={roleVariant[user.role]}>{user.role}</Badge>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <Badge variant={statusVariant[user.status]}>{user.status}</Badge>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <div className="flex items-center justify-end gap-2">
-                      {canDisable ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => setPending({ kind: 'disable', user })}
-                        >
-                          <BanIcon className="size-4" aria-hidden />
-                          {t('actions.disable')}
-                        </Button>
-                      ) : null}
-                      {canEnable ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => setPending({ kind: 'enable', user })}
-                        >
-                          <CircleCheckIcon className="size-4" aria-hidden />
-                          {t('actions.enable')}
-                        </Button>
-                      ) : null}
-                      {!canDisable && !canEnable ? (
-                        <span className="text-xs text-muted-foreground">
-                          {isSelf ? t('actions.self') : '—'}
-                        </span>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {users.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="py-6 text-center text-muted-foreground">
-                  {t('empty')}
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('columns.email')}</TableHead>
+            <TableHead>{t('columns.name')}</TableHead>
+            <TableHead>{t('columns.role')}</TableHead>
+            <TableHead>{t('columns.status')}</TableHead>
+            <TableHead className="text-right">{t('columns.actions')}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {users.map((user) => {
+            const isSelf = user.id === currentUserId;
+            const canDisable = isAdmin && !isSelf && user.status === 'active';
+            const canEnable = isAdmin && user.status === 'disabled';
+            const busy = busyId === user.id;
+            return (
+              <TableRow
+                key={user.id}
+                // Data attrs for deterministic E2E selectors — the
+                // session-revocation spec (T-05) needs to find a
+                // specific user's id by email without scraping the
+                // visible text.
+                data-user-id={user.id}
+                data-user-email={user.email.toLowerCase()}
+              >
+                <TableCell>{user.email}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {user.displayName ?? '—'}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={roleVariant[user.role]}>{user.role}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={statusVariant[user.status]}>{user.status}</Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center justify-end gap-2">
+                    {canDisable ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => setPending({ kind: 'disable', user })}
+                      >
+                        <BanIcon className="size-4" aria-hidden />
+                        {t('actions.disable')}
+                      </Button>
+                    ) : null}
+                    {canEnable ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => setPending({ kind: 'enable', user })}
+                      >
+                        <CircleCheckIcon className="size-4" aria-hidden />
+                        {t('actions.enable')}
+                      </Button>
+                    ) : null}
+                    {!canDisable && !canEnable ? (
+                      <span className="text-xs text-muted-foreground">
+                        {isSelf ? t('actions.self') : '—'}
+                      </span>
+                    ) : null}
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+          {users.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                {t('empty')}
+              </TableCell>
+            </TableRow>
+          ) : null}
+        </TableBody>
+      </Table>
 
       <div className="mt-6 flex items-center justify-between">
         <p className="text-xs text-muted-foreground">

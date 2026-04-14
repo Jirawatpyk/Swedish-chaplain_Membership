@@ -1,6 +1,10 @@
 import * as React from "react"
 
-const MOBILE_BREAKPOINT = 768
+// 1024 (Tailwind lg) — at <=1024px the sidebar collapses into a mobile
+// drawer so the content area never gets squashed below ~720px on
+// tablet-portrait viewports. F4 layout-responsive E2E test expects
+// no horizontal scroll at 768px which requires this breakpoint.
+const MOBILE_BREAKPOINT = 1024
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
