@@ -115,10 +115,12 @@ async function PlansList({
     ? query.category
     : null;
 
+  const parsedYear = query.year ? Number(query.year) : NaN;
+  const validYear =
+    Number.isInteger(parsedYear) && parsedYear >= 2000 && parsedYear <= 2100;
+
   const filter: Parameters<typeof listPlans>[0]['filter'] = {
-    ...(query.year && !Number.isNaN(Number(query.year))
-      ? { year: asPlanYear(Number(query.year)) }
-      : {}),
+    ...(validYear ? { year: asPlanYear(parsedYear) } : {}),
     ...(category ? { category } : {}),
     ...(query.q ? { q: query.q } : {}),
     ...(query.activeOnly === 'true' ? { activeOnly: true } : {}),

@@ -71,6 +71,30 @@ test.describe('plans list — US1 @i18n', () => {
     expect(firstName).toMatch(/[\u0e00-\u0e7f]/);
   });
 
+  test('invalid year query param does not crash the page (regression)', async ({
+    page,
+  }) => {
+    // Regression: /admin/plans?year=9999 used to throw because the page
+    // validated with `!Number.isNaN(Number(q))` which accepts out-of-range
+    // integers, then passed the raw value to `asPlanYear()` which rejected
+    // it as a 500 server error. Now the page MUST silently drop invalid
+    // year params and render the default (unfiltered) list.
+    await signIn(page);
+
+    for (const badYear of ['9999', '1999', 'abc', '1.5', '']) {
+      const response = await page.goto(`/admin/plans?year=${encodeURIComponent(badYear)}`);
+      expect(
+        response?.status(),
+        `year=${badYear} must not 500`,
+      ).toBeLessThan(500);
+      // Page renders the 9 seeded 2026 plans (filter silently dropped)
+      const rows = page.getByRole('row').filter({
+        has: page.locator('[data-plan-id]'),
+      });
+      await expect(rows).toHaveCount(9, { timeout: 5_000 });
+    }
+  });
+
   test('member role is denied /admin/plans with 403', async ({ page }) => {
     const memberEmail = process.env.E2E_MEMBER_EMAIL;
     const memberPassword = process.env.E2E_MEMBER_PASSWORD;
