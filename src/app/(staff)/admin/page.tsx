@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
+import { getTranslations } from 'next-intl/server';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 
 /**
@@ -12,57 +15,48 @@ import { requireSession } from '@/lib/auth-session';
  *   - F9 — unified admin dashboard + audit log viewer + sidebar nav
  *
  * For F1 (MVP) it just confirms the sign-in flow worked and shows the
- * authenticated user their name + the placeholder roadmap. Links to
- * F1-completed sub-pages (`/admin/users`, `/admin/account`) are
- * intentionally NOT surfaced here — the proper nav shell lands in F9,
- * and adding a transient quick-action row now would only be removed
- * later. F1 admins reach `/admin/users` by URL and `/admin/account`
- * via the UserMenu dropdown (ux-standards § 8.1).
+ * authenticated user their name + the placeholder roadmap.
  */
 export const metadata: Metadata = {
   title: 'Staff home',
 };
 
+const ROADMAP_PHASES = ['F3', 'F4', 'F5', 'F6'] as const;
+
 export default async function StaffHomePage() {
   const { user } = await requireSession('staff');
+  const tShell = await getTranslations('shell');
+  const t = await getTranslations('admin.home');
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Welcome{user.displayName ? `, ${user.displayName}` : ''}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          You are signed in as <strong>{user.role}</strong>.
-        </p>
-      </header>
+    <ContentContainer>
+      <PageHeader
+        title={
+          user.displayName
+            ? t('welcomeWithName', { name: user.displayName })
+            : tShell('welcome')
+        }
+        subtitle={t('subtitle', { role: user.role })}
+      />
 
       <Card>
         <CardHeader>
-          <CardTitle>What ships next</CardTitle>
-          <CardDescription>F1 (auth) is the foundation. The rest of the staff workspace lands in upcoming phases.</CardDescription>
+          <CardTitle>{t('cardTitle')}</CardTitle>
+          <CardDescription>{t('cardDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <ul className="grid gap-3 text-sm">
-            <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">F3</span>
-              <span>Member &amp; contact directory</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">F4</span>
-              <span>Invoices &amp; receipts (Thai tax compliant)</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">F6</span>
-              <span>Events &amp; registration</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">F5</span>
-              <span>Online membership renewal &amp; payments</span>
-            </li>
+          <ul className="grid gap-3 text-body">
+            {ROADMAP_PHASES.map((phase) => (
+              <li key={phase} className="flex items-start gap-3">
+                <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">
+                  {phase}
+                </span>
+                <span>{t(`roadmap.${phase.toLowerCase() as 'f3' | 'f4' | 'f5' | 'f6'}`)}</span>
+              </li>
+            ))}
           </ul>
         </CardContent>
       </Card>
-    </div>
+    </ContentContainer>
   );
 }

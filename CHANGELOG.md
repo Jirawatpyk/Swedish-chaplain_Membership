@@ -13,6 +13,77 @@ spec / plan / tasks / review / retrospective for each release lives under
 
 ---
 
+## [F4] Page Layout Enterprise Standardization — 2026-04-13
+
+**Spec**: [`specs/004-page-layout-standard/spec.md`](specs/004-page-layout-standard/spec.md)
+**Plan**: [`specs/004-page-layout-standard/plan.md`](specs/004-page-layout-standard/plan.md)
+**Retrospective**: [`specs/004-page-layout-standard/retrospective.md`](specs/004-page-layout-standard/retrospective.md)
+**Spec adherence**: 100% (23/23 FRs + 14/14 SCs verified or scaffolded)
+**Test baseline**: 578/578 unit+contract passing · 337 i18n keys × 3 locales · 15 E2E specs authored (execution in Ship pre-flight)
+
+### Added
+
+- **Three layout primitives** — `<PageHeader>` (title/subtitle/actions/badge, CSS logical properties),
+  `<ContentContainer>` (admin 72rem / portal 64rem), `<BreadcrumbNav>` with `<BreadcrumbProvider>`
+  (depth≥3 rule, mobile truncation, i18n labels, percent-encoded URL round-trip).
+- **Route-level skeleton system** — 11 `loading.tsx` files + 6 shared skeleton primitives
+  (`SkeletonBlock`, `CardSkeleton`, `FormSkeleton`, `TableSkeleton`, `DetailSkeleton`,
+  `PageSkeletonShell`) + colocated `<ChangePasswordFormSkeleton>`. Single `role="status"` live
+  region per page; shimmer CSS utility with automatic `prefers-reduced-motion` fallback.
+- **Error boundaries** — `admin/error.tsx` + `portal/error.tsx` catch server-component
+  failures, log via `error.digest`, render inside shell chrome, recoverable via `reset()`.
+- **~30 CSS design tokens** — content max-widths, page padding, top-bar height, typography
+  scale (h1–h4 + body + caption + `--line-height-th`), form-field / table / card / modal
+  dimensions. Zero magic numbers in `src/components/layout`.
+- **Semantic typography classes** — `.text-h1`–`.text-h4`, `.text-body`, `.text-caption`
+  with `[lang="th"]` line-height override (Thai diacritic clearance).
+- **Universal focus ring** — `@layer base *:focus-visible` fallback for unclassed elements;
+  component-level `focus-visible:ring-*` owns the canonical ring on shadcn primitives.
+- **ESLint FR-003 enforcement** — `no-restricted-syntax` rule blocks ad-hoc
+  `max-w-*`/`mx-auto`/`container`/`p-*`/heading `text-*` classes on `page.tsx` root elements.
+
+### Changed
+
+- **Button `size="default"`**: 32px → 36px + `cursor-pointer` + `disabled:cursor-not-allowed`.
+  Aligns with Input `--input-height` and WCAG 2.5.5 touch target.
+- **11 admin + portal pages** migrated to the page-shell composition.
+- **Suspense strategy**: internal `<Suspense>` removed from `/admin/plans/page.tsx` and
+  `/admin/users/page.tsx`. Route-level `loading.tsx` is the sole boundary (load once,
+  shimmer once — previous double-wrapping caused visible two-pass shimmer).
+- **`/admin/users` data fetch** split into async `UsersDataSection` child with `Promise.all`
+  parallel fetch (list + count).
+- **FeeConfigForm save button** — full-width `size="lg"` to match `ChangePasswordForm` pattern.
+- **shadcn/ui primitives** — `table.tsx` (sticky thead, focus-within mirrors hover, Thai
+  line-clamp opt-in), `card.tsx` (tokens + dark-mode `--card-shadow` override),
+  `dialog/alert-dialog/sheet.tsx` (modal tokens). Catalogued in `docs/shadcn-customizations.md`.
+
+### Fixed
+
+- **Hydration error**: PageHeader subtitle wrapper `<p>` → `<div>` (`ReactNode` may be a div).
+- **Focus-ring corner flash**: removed `border-radius: 2px` override from `*:focus-visible`.
+- **Focus-ring double-ring bug**: global rule moved to `@layer base` so component utilities
+  win the cascade (sidebar / Button / Input no longer stack outline + ring).
+- **Error boundary crash**: `t('retry')` was on the wrong namespace — now reads
+  `buttons.retry` via a second translator.
+- **Nested live regions**: only outer `<PageSkeletonShell>` carries `role="status"`;
+  skeleton primitives just set `aria-busy`.
+- **Breadcrumb URL round-trip**: raw segments drive `href`, decoded segments drive label
+  lookup; query strings defensively stripped.
+- **Plan detail typography**: 3 section `<h2 text-sm>` → `<h2 text-caption>` to match FR-017.
+
+### Technical Notes
+
+- **Clean Architecture (Principle III)**: Presentation-layer only. Zero touches to Domain,
+  Application, or Infrastructure. `BreadcrumbProvider` is the sole client island.
+- **Performance**: layout primitives are React Server Components — zero client JS added.
+- **i18n**: +16 new keys since F3 → 337 keys × 3 locales.
+- **Governance**: 4 staff-review rounds (25 findings resolved) + CLI QA (33/37 verified;
+  14 deferred to Ship pre-flight) + constitution compliance check.
+- **Deferred to Ship pre-flight** (retrospective L3): 32 E2E execution + visual-regression
+  audits needing seeded test DB + `E2E_ADMIN_*` env. Matches F3 solo-maintainer pattern.
+
+---
+
 ## [F2] Membership Plans — 2026-04-12
 
 **Spec**: [`specs/002-membership-plans/spec.md`](specs/002-membership-plans/spec.md)

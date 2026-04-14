@@ -15,6 +15,8 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
 import { CloneYearClient } from './clone-year-client';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -47,10 +49,8 @@ export default async function CloneYearPage() {
   const currentYearPlanCount = listResult.ok ? listResult.value.data.length : 0;
 
   return (
-    <main className="mx-auto max-w-2xl space-y-4 py-4">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('title')}</h1>
-      </header>
+    <ContentContainer>
+      <PageHeader title={t('title')} />
       <Card>
         <CardHeader>
           <CardTitle>{t('title')}</CardTitle>
@@ -63,6 +63,6 @@ export default async function CloneYearPage() {
           />
         </CardContent>
       </Card>
-    </main>
+    </ContentContainer>
   );
 }

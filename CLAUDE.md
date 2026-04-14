@@ -213,10 +213,13 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - 10 new audit event types: `plan_created`, `plan_updated`, `plan_cloned`, `plan_activated`, `plan_deactivated`, `plan_soft_deleted`, `plan_undeleted`, `plan_not_found`, `plan_cross_tenant_probe`, `fee_config_updated` (F2)
 - TypeScript 5.7+ (strict mode) / Node 22 LTS + Next.js 16 App Router, React 19, shadcn/ui (Sidebar, Sheet, Tooltip), Tailwind CSS v4, lucide-react, next-intl, next-themes (003-nav-menu)
 - N/A — no database changes. Client-side localStorage for collapse preference. (003-nav-menu)
+- TypeScript 5.7+ (strict mode, `strict: true`, `noUncheckedIndexedAccess: true`) — unchanged from F1 (004-page-layout-standard)
+- N/A — no database changes. Client-side `localStorage` for sidebar collapse (existing from F3). (004-page-layout-standard)
 
 ## Recent Changes
 
+- 004-page-layout-standard: F4 Page Layout Enterprise Standardization — PageHeader + ContentContainer + BreadcrumbNav primitives, 11 admin + portal pages migrated, Button 32→36px + cursor/disabled, typography scale (.text-h1–.text-h4 + .text-body + .text-caption) + Thai line-height override, universal focus ring, form/table/overlay token alignment. 12 new i18n keys (breadcrumb.* + layout.*), 24 new unit tests for layout primitives. `docs/shadcn-customizations.md` catalogues every primitive modification.
 - 002-membership-plans: F2 Membership Plans — 6 user stories (US1–US6) shipped across 9 phases. Added `cmdk` command palette, `src/modules/tenants/` + `src/modules/plans/` bounded contexts, Postgres RLS tenant isolation, 2 new DB tables (`membership_plans`, `tenant_fee_config`), migrations 0006 + 0007, 268 i18n keys (EN+TH+SV), 495 unit+contract tests, 163 integration tests on live Neon Singapore. US7 (Inline Edit + Bulk Actions) deferred to F3.
 - 001-auth-rbac: F1 Auth & RBAC shipped via PR #1. 188/191 tasks, 480/480 tests.
 
-Last updated: 2026-04-12
+Last updated: 2026-04-13

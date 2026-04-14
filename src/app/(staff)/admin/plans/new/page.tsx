@@ -21,6 +21,8 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
 import { NewPlanClient } from './new-plan-client';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -42,10 +44,8 @@ export default async function NewPlanPage() {
   const currencyPrefix = feeConfig?.currency_code === 'THB' ? '฿' : (feeConfig?.currency_code ?? 'THB');
 
   return (
-    <main className="mx-auto max-w-4xl space-y-4 py-4">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('title')}</h1>
-      </header>
+    <ContentContainer>
+      <PageHeader title={t('title')} />
       <Card>
         <CardHeader>
           <CardTitle>{t('title')}</CardTitle>
@@ -54,6 +54,6 @@ export default async function NewPlanPage() {
           <NewPlanClient currentYear={currentYear} currencyPrefix={currencyPrefix} />
         </CardContent>
       </Card>
-    </main>
+    </ContentContainer>
   );
 }

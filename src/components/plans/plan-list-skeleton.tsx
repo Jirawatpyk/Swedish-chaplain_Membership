@@ -58,21 +58,20 @@ export function PlanListSkeleton({ rowCount = DEFAULT_ROW_COUNT }: PlanListSkele
     <div
       data-plan-list-skeleton
       data-reduced-motion={reducedMotion ? 'true' : 'false'}
-      role="status"
-      aria-live="polite"
+      // No role="status"/aria-live here — callers wrap this in
+      // <PageSkeletonShell> which owns the single live region.
       aria-busy="true"
-      aria-label="Loading plans"
       className="w-full"
     >
       {/* Header row */}
       <div className="border-b border-border bg-muted/30 px-4 py-3">
         <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px] gap-4">
-          <SkeletonCell className="h-4" reducedMotion={reducedMotion} />
-          <SkeletonCell className="h-4 w-24" reducedMotion={reducedMotion} />
-          <SkeletonCell className="h-4 w-28" reducedMotion={reducedMotion} />
-          <SkeletonCell className="h-4 w-24" reducedMotion={reducedMotion} />
-          <SkeletonCell className="h-4 w-16" reducedMotion={reducedMotion} />
-          <SkeletonCell className="h-4 w-12" reducedMotion={reducedMotion} />
+          <SkeletonCell className="h-4" />
+          <SkeletonCell className="h-4 w-24" />
+          <SkeletonCell className="h-4 w-28" />
+          <SkeletonCell className="h-4 w-24" />
+          <SkeletonCell className="h-4 w-16" />
+          <SkeletonCell className="h-4 w-12" />
         </div>
       </div>
 
@@ -83,12 +82,12 @@ export function PlanListSkeleton({ rowCount = DEFAULT_ROW_COUNT }: PlanListSkele
           className="border-b border-border px-4 py-4 last:border-b-0"
         >
           <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px] gap-4">
-            <SkeletonCell className="h-5 w-48" reducedMotion={reducedMotion} />
-            <SkeletonCell className="h-5 w-24" reducedMotion={reducedMotion} />
-            <SkeletonCell className="h-5 w-28" reducedMotion={reducedMotion} />
-            <SkeletonCell className="h-5 w-20" reducedMotion={reducedMotion} />
-            <SkeletonCell className="h-5 w-16" reducedMotion={reducedMotion} />
-            <SkeletonCell className="h-5 w-8" reducedMotion={reducedMotion} />
+            <SkeletonCell className="h-5 w-48" />
+            <SkeletonCell className="h-5 w-24" />
+            <SkeletonCell className="h-5 w-28" />
+            <SkeletonCell className="h-5 w-20" />
+            <SkeletonCell className="h-5 w-16" />
+            <SkeletonCell className="h-5 w-8" />
           </div>
         </div>
       ))}
@@ -97,20 +96,9 @@ export function PlanListSkeleton({ rowCount = DEFAULT_ROW_COUNT }: PlanListSkele
   );
 }
 
-function SkeletonCell({
-  className,
-  reducedMotion,
-}: {
-  className?: string;
-  reducedMotion: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        'rounded-md bg-muted',
-        reducedMotion ? 'opacity-60' : 'animate-pulse',
-        className,
-      )}
-    />
-  );
+function SkeletonCell({ className }: { className?: string }) {
+  // Animation + reduced-motion handling both live in the shared
+  // `.skeleton-shimmer` utility (UX standards § 2.1 / 2.2). The root
+  // component still exposes `data-reduced-motion` for the test probe.
+  return <div className={cn('rounded-md skeleton-shimmer', className)} />;
 }

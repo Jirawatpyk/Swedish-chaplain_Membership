@@ -146,6 +146,52 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* --- Page layout tokens --- */
+  --content-max-width-admin: 72rem;   /* 1152px */
+  --content-max-width-portal: 64rem;  /* 1024px */
+  --page-padding-x: 1.5rem;           /* 24px */
+  --page-padding-y: 1.5rem;           /* 24px */
+  --page-header-gap: 1.5rem;          /* 24px — gap between PageHeader and content */
+  --page-section-gap: 1.5rem;         /* 24px — gap between content sections */
+  --top-bar-height: 3.5rem;           /* 56px — admin + portal top bar */
+
+  /* --- Typography scale --- */
+  --font-size-h1: 1.875rem;           /* 30px */
+  --font-size-h2: 1.5rem;             /* 24px */
+  --font-size-h3: 1.25rem;            /* 20px */
+  --font-size-h4: 1.125rem;           /* 18px */
+  --font-size-body: 0.875rem;         /* 14px */
+  --font-size-caption: 0.75rem;       /* 12px */
+  --font-weight-heading: 600;
+  --line-height-body: 1.5;
+  --line-height-caption: 1.4;
+  --line-height-th: 1.65;             /* Thai diacritic envelope override */
+
+  /* --- Form fields --- */
+  --input-height: 2.25rem;            /* 36px — aligns with Button size=default */
+  --input-padding-x: 0.75rem;         /* 12px */
+  --field-label-gap: 0.375rem;        /* 6px */
+  --field-error-color: var(--destructive);
+
+  /* --- Data tables --- */
+  --table-row-height: 2.75rem;        /* 44px */
+  --table-cell-padding-x: 0.75rem;    /* 12px */
+  --table-cell-padding-y: 0.5rem;     /* 8px */
+  --table-row-hover-bg: color-mix(in oklch, var(--muted) 50%, transparent);
+
+  /* --- Cards --- */
+  --card-padding: 1.5rem;             /* 24px */
+  --card-radius: var(--radius-lg);
+  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+
+  /* --- Modals / overlays --- */
+  --modal-backdrop-opacity: 0.8;
+  --modal-max-width-sm: 25rem;        /* 400px — confirmation dialogs */
+  --modal-max-width-md: 32rem;        /* 512px — form dialogs */
+  --modal-max-width-lg: 42rem;        /* 672px — detail dialogs */
+  --modal-duration: 200ms;
+  --modal-easing: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dark {
@@ -180,11 +226,66 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* Heavier card shadow so elevation stays visible on dark surfaces. */
+  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3);
 }
 
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/* --- Typography scale utilities --- */
+.text-h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-body);
+  letter-spacing: -0.01em;
+}
+.text-h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-body);
+  letter-spacing: -0.01em;
+}
+.text-h3 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-body);
+}
+.text-h4 {
+  font-size: var(--font-size-h4);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-body);
+}
+.text-body {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+.text-caption {
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+}
+
+/* Thai script needs more vertical clearance for diacritics above/below base characters. */
+[lang="th"] .text-h1,
+[lang="th"] .text-h2,
+[lang="th"] .text-h3,
+[lang="th"] .text-h4,
+[lang="th"] .text-body {
+  line-height: var(--line-height-th);
+}
+
+/* Thai cells clamp at 2 lines; diacritics make unclamped rows visually
+   inconsistent at variable heights. Scoped to an opt-in class so
+   monetary, ID, and status cells are never silently truncated. */
+[lang="th"] .text-cell-clamp {
+  display: -webkit-box;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* --- Skeleton shimmer base + reduced-motion fallback --- */
@@ -219,7 +320,9 @@ body {
     }
   }
 
-  /* FR-012: Instant sidebar state changes for reduced-motion users */
+  /* Sidebar uses a scoped CSS custom property for its animation;
+     `!important` on duration is the only way to override it from a
+     media query without editing the component stylesheet. */
   [data-slot="sidebar-wrapper"],
   [data-slot="sidebar-wrapper"] *,
   [data-slot="sidebar-gap"],
@@ -239,11 +342,27 @@ summary,
   cursor: pointer;
 }
 
-/* --- Focus-visible: WCAG 2.1 AA + docs/ux-standards.md § 7 --- */
-*:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-  border-radius: 2px;
+/* --- Focus-visible fallback: WCAG 2.1 AA + docs/ux-standards.md § 7 ---
+   Scoped to `@layer base` so any Tailwind utility (in `@layer
+   utilities`) — e.g. `outline-none`, `outline-hidden`, component-level
+   `focus-visible:ring-*` — wins the cascade. Without the layer, this
+   unlayered rule beat every utility, stacking a currentColor outline
+   on top of ring-driven box-shadows (double-ring bug on sidebar menu
+   buttons, Input, Button).
+
+   Unclassed elements (raw <a href>, native <summary>, etc.) still
+   fall through to this rule as their only focus styling, satisfying
+   WCAG 2.1 AA on elements no component class targets.
+
+   No `border-radius` override: previous `border-radius: 2px` squared
+   off rounded inputs on focus. Modern browsers (Chrome 94+,
+   Firefox 88+, Safari 16.4+) draw `outline` following each element's
+   natural `border-radius`. */
+@layer base {
+  *:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
 }
 
 /* --- Skip link — see `src/components/shell/skip-to-content.tsx` --- */

@@ -107,6 +107,7 @@
   },
   "shell": {
     "skipToContent": "Skip to main content",
+    "welcome": "Welcome",
     "userMenu": {
       "label": "Account menu",
       "account": "Account settings",
@@ -142,9 +143,22 @@
     "retry": "Try again"
   },
   "admin": {
+    "home": {
+      "welcomeWithName": "Welcome, {name}",
+      "subtitle": "You are signed in as {role}.",
+      "cardTitle": "What ships next",
+      "cardDescription": "F1 (auth) is the foundation. The rest of the staff workspace lands in upcoming phases.",
+      "roadmap": {
+        "f3": "Member & contact directory",
+        "f4": "Invoices & receipts (Thai tax compliant)",
+        "f5": "Online membership renewal & payments",
+        "f6": "Events & registration"
+      }
+    },
     "users": {
       "title": "Users",
       "subtitle": "{total} accounts total",
+      "pageSubtitle": "Manage staff and member accounts, roles, and status.",
       "viewingAs": "Viewing as {role}",
       "listHeading": "All accounts",
       "listDescription": "Invite, disable, enable, or change roles. Destructive actions require confirmation.",
@@ -349,8 +363,12 @@
       },
       "edit": {
         "title": "Edit {planName}",
+        "titleGeneric": "Edit plan",
         "save": "Save changes",
         "saving": "Saving…"
+      },
+      "detail": {
+        "titleGeneric": "Plan details"
       },
       "clone": {
         "title": "Clone year",
@@ -471,5 +489,25 @@
       "account": "Account",
       "ariaLabel": "Member navigation"
     }
+  },
+  "breadcrumb": {
+    "admin": "Admin",
+    "dashboard": "Dashboard",
+    "users": "Users",
+    "plans": "Plans",
+    "settings": "Settings",
+    "fees": "Fee Configuration",
+    "account": "Account",
+    "newPlan": "New Plan",
+    "clonePlan": "Clone Plan",
+    "editPlan": "Edit"
+  },
+  "layout": {
+    "breadcrumbAriaLabel": "Breadcrumb navigation",
+    "ellipsis": "More pages",
+    "loading": "Loading…",
+    "loadingPage": "Loading page content",
+    "loadingTable": "Loading table data",
+    "loadingForm": "Loading form"
   }
 }

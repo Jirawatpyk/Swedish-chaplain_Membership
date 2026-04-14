@@ -31,7 +31,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 duration-[var(--modal-duration)] supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -49,11 +49,19 @@ function DialogContent({
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay
+        style={{
+          backgroundColor: `color-mix(in oklch, black calc(var(--modal-backdrop-opacity) * 100%), transparent)`,
+        }}
+      />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        // Inline style required: Tailwind v4 arbitrary utilities resolve at build time and
+        // cannot consume a runtime CSS custom property for animation-timing-function.
+        style={{ animationTimingFunction: 'var(--modal-easing)' }}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // Default max-width sized for form dialogs; callers override via className for sm/lg use cases.
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-[var(--card-radius)] bg-popover p-[var(--card-padding)] text-sm text-popover-foreground shadow-[var(--card-shadow)] ring-1 ring-foreground/10 duration-[var(--modal-duration)] outline-none sm:max-w-[var(--modal-max-width-md)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
@@ -102,7 +110,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "-mx-[var(--card-padding)] -mb-[var(--card-padding)] flex flex-col-reverse gap-2 rounded-b-[var(--card-radius)] border-t bg-muted/50 p-[var(--card-padding)] sm:flex-row sm:justify-end",
         className
       )}
       {...props}

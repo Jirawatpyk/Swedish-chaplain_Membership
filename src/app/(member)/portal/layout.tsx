@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
+import { ContentContainer } from '@/components/layout/content-container';
 import { MemberNav } from '@/components/layout/member-nav';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
@@ -28,10 +29,10 @@ export default async function MemberLayout({ children }: { children: ReactNode }
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-border bg-background">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
+      <header className="flex h-[var(--top-bar-height)] items-center border-b border-border bg-background px-[var(--page-padding-x)] gap-2">
+        <div className="mx-auto w-full max-w-[var(--content-max-width-portal)] flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <Link href="/portal" className="text-sm font-semibold tracking-tight">
+            <Link href="/portal" className="text-body font-semibold tracking-tight">
               {process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} · Member
             </Link>
             <MemberNav />
@@ -46,7 +47,9 @@ export default async function MemberLayout({ children }: { children: ReactNode }
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6" id="main-content">{children}</main>
+      <main className="flex-1" id="main-content">
+        <ContentContainer variant="portal">{children}</ContentContainer>
+      </main>
       {/* T165 — Idle warning modal fires at 29 min of inactivity. */}
       <IdleWarningDialog portal="member" />
     </div>

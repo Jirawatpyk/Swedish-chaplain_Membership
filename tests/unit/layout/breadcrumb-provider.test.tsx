@@ -1,0 +1,116 @@
+/* eslint-disable react-hooks/globals -- test probes legitimately capture hook return values into outer variables */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, render } from '@testing-library/react';
+import { useEffect, useRef } from 'react';
+
+// `vi.stubEnv` leaks globally — clear unconditionally after every test.
+// `vi.resetModules()` lives INSIDE the one test that needs it: static
+// `import` bindings at the top of this file are hoisted and won't
+// benefit from a module registry reset, so calling it here would be a
+// no-op for the 4 tests that use those imports and a false signal of
+// isolation for future additions.
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+import {
+  BreadcrumbProvider,
+  useBreadcrumbLabels,
+  useBreadcrumbLabelMap,
+} from '@/components/layout/breadcrumb-provider';
+
+describe('<BreadcrumbProvider>', () => {
+  it('context Map starts empty', () => {
+    let observed: ReadonlyMap<string, string> | null = null;
+    function Probe() {
+      observed = useBreadcrumbLabelMap();
+      return null;
+    }
+    render(
+      <BreadcrumbProvider>
+        <Probe />
+      </BreadcrumbProvider>,
+    );
+    expect(observed).not.toBeNull();
+    expect(observed!.size).toBe(0);
+  });
+
+  it('setLabel registers and overwrites a segment→label pair', () => {
+    let api: ReturnType<typeof useBreadcrumbLabels> | null = null;
+    let map: ReadonlyMap<string, string> | null = null;
+    function Probe() {
+      api = useBreadcrumbLabels();
+      map = useBreadcrumbLabelMap();
+      return null;
+    }
+    render(
+      <BreadcrumbProvider>
+        <Probe />
+      </BreadcrumbProvider>,
+    );
+
+    act(() => api!.setLabel('abc', 'First'));
+    expect(map!.get('abc')).toBe('First');
+
+    act(() => api!.setLabel('abc', 'Second'));
+    expect(map!.get('abc')).toBe('Second');
+  });
+
+  it('setLabel keeps a stable reference across re-renders', () => {
+    const seen: Array<(segment: string, label: string) => void> = [];
+    function Probe() {
+      const api = useBreadcrumbLabels();
+      const ref = useRef(api.setLabel);
+      useEffect(() => {
+        seen.push(api.setLabel);
+        ref.current = api.setLabel;
+      });
+      return null;
+    }
+    const { rerender } = render(
+      <BreadcrumbProvider>
+        <Probe />
+      </BreadcrumbProvider>,
+    );
+    rerender(
+      <BreadcrumbProvider>
+        <Probe />
+      </BreadcrumbProvider>,
+    );
+    // Both renders must produce the same setLabel reference — a missing
+    // second effect is itself a regression.
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(seen[1]).toBe(seen[0]);
+  });
+
+  it('returns empty map and no-op setter when used outside provider', () => {
+    let api: ReturnType<typeof useBreadcrumbLabels> | null = null;
+    let map: ReadonlyMap<string, string> | null = null;
+    function Probe() {
+      api = useBreadcrumbLabels();
+      map = useBreadcrumbLabelMap();
+      return null;
+    }
+    render(<Probe />);
+    expect(map!.size).toBe(0);
+    // Vitest sets NODE_ENV='test', so the no-op branch runs here.
+    expect(() => api!.setLabel('x', 'y')).not.toThrow();
+  });
+
+  it('dev-mode setter throws with an actionable error when used outside provider', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    // Re-import under the new NODE_ENV so the EMPTY_API branch is picked up.
+    // The matching `vi.unstubAllEnvs` + `vi.resetModules` runs in afterEach
+    // even if this test body throws, so leakage is impossible.
+    vi.resetModules();
+    const mod = await import('@/components/layout/breadcrumb-provider');
+
+    let api: ReturnType<typeof mod.useBreadcrumbLabels> | null = null;
+    function Probe() {
+      api = mod.useBreadcrumbLabels();
+      return null;
+    }
+    render(<Probe />);
+    expect(() => api!.setLabel('x', 'y')).toThrow(/outside <BreadcrumbProvider>/);
+  });
+});

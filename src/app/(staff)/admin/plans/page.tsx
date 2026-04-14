@@ -11,7 +11,6 @@
  * path the API route uses.
  */
 import type { Metadata } from 'next';
-import { Suspense } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon, CopyIcon } from 'lucide-react';
@@ -28,7 +27,8 @@ import {
 } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { PlansTable } from '@/components/plans/plans-table';
-import { PlanListSkeleton } from '@/components/plans/plan-list-skeleton';
+import { ContentContainer } from '@/components/layout/content-container';
+import { PageHeader } from '@/components/layout/page-header';
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: 'Plans · SweCham' };
@@ -52,14 +52,12 @@ export default async function PlansListPage({
   const t = await getTranslations('admin.plans');
 
   return (
-    <main className="space-y-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('listDescription')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {currentUser.role === 'admin' ? (
+    <ContentContainer>
+      <PageHeader
+        title={t('title')}
+        subtitle={t('listDescription')}
+        actions={
+          currentUser.role === 'admin' ? (
             <>
               <Link
                 href="/admin/plans/clone"
@@ -76,9 +74,9 @@ export default async function PlansListPage({
                 {t('actions.new')}
               </Link>
             </>
-          ) : null}
-        </div>
-      </header>
+          ) : null
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -86,15 +84,20 @@ export default async function PlansListPage({
           <CardDescription>{t('refreshHint')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<PlanListSkeleton />}>
-            <PlansList
-              query={query}
-              currentUserRole={currentUser.role as 'admin' | 'manager' | 'member'}
-            />
-          </Suspense>
+          {/*
+            No internal <Suspense> wrapper — the route-level loading.tsx
+            is the single Suspense boundary and renders <PlanListSkeleton>
+            with the real page shell. Double-wrapping caused the shimmer
+            to run twice (once for loading.tsx, once for the inner
+            boundary swap).
+          */}
+          <PlansList
+            query={query}
+            currentUserRole={currentUser.role as 'admin' | 'manager' | 'member'}
+          />
         </CardContent>
       </Card>
-    </main>
+    </ContentContainer>
   );
 }
 

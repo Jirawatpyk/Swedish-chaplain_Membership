@@ -40,6 +40,20 @@ const applicationForbiddenImports = [
   "@react-email/components",
 ];
 
+/**
+ * FR-003 — page-root ad-hoc utility-class blocker.
+ *
+ * Defined once at module scope so all three export-shape selectors
+ * (function decl, arrow block body, arrow expression body) can share
+ * one source of truth for the forbidden-class pattern.
+ */
+const AD_HOC_LAYOUT_CLASS_REGEX =
+  "(^|\\s)(max-w-|mx-auto|container(\\s|$)|p-\\d|px-\\d|py-\\d|space-y-|text-(xl|2xl|3xl|4xl))";
+const PAGE_ROOT_CLASS_ATTR = `JSXAttribute[name.name='className'][value.type='Literal'][value.value=/${AD_HOC_LAYOUT_CLASS_REGEX}/]`;
+const PAGE_ROOT_MESSAGE =
+  "Page roots must compose via <ContentContainer> + <PageHeader>. " +
+  "Remove ad-hoc max-w-*/mx-auto/container/p-*/px-*/py-*/space-y-*/heading text-* classes from the top-level element.";
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -165,8 +179,38 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    // Security: forbid direct equality checks on password* / passwordHash* variables
-    // (addresses spec SC-018 / tasks.md T-190). Use argon2 verify() instead.
+    // Enforce PageHeader + ContentContainer composition on page.tsx roots.
+    // Forbids ad-hoc layout/spacing/heading utility classes on the
+    // outermost JSX element returned by a page component. Inner elements
+    // are unrestricted so per-card / per-section styling keeps working.
+    // The shared regex + message live at module top (FR-003 block).
+    files: [
+      "src/app/(staff)/admin/**/page.tsx",
+      "src/app/(member)/portal/**/page.tsx",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          // `export default function X() { return (<Root className=".." />) }`
+          selector: `ExportDefaultDeclaration > FunctionDeclaration > BlockStatement > ReturnStatement > JSXElement > JSXOpeningElement > ${PAGE_ROOT_CLASS_ATTR}`,
+          message: PAGE_ROOT_MESSAGE,
+        },
+        {
+          // `export default () => { return (<Root className=".." />) }`
+          selector: `ExportDefaultDeclaration > ArrowFunctionExpression > BlockStatement > ReturnStatement > JSXElement > JSXOpeningElement > ${PAGE_ROOT_CLASS_ATTR}`,
+          message: PAGE_ROOT_MESSAGE,
+        },
+        {
+          // `export default () => (<Root className=".." />)` — expression body
+          selector: `ExportDefaultDeclaration > ArrowFunctionExpression > JSXElement > JSXOpeningElement > ${PAGE_ROOT_CLASS_ATTR}`,
+          message: PAGE_ROOT_MESSAGE,
+        },
+      ],
+    },
+  },
+  {
+    // Forbid direct === comparisons on password variables — always use argon2 verify() instead.
     files: ["src/modules/auth/**/*.ts", "src/modules/auth/**/*.tsx"],
     rules: {
       "no-restricted-syntax": [

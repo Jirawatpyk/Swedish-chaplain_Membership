@@ -174,6 +174,14 @@ per `saas-architecture.md`. Every row has `tenant_id` defaulting to `'swecham'`.
   SAQ-A scope preserved
 - **All F2+ features**: tenant-scoped via Postgres RLS per `saas-architecture.md`
 
+**Branch vs Phase numbering note**: Branch `nnn-name` numbers do NOT always match
+F## phase numbers in this plan. Specifically: `003-nav-menu` and `004-page-layout-standard`
+are **ad-hoc UI-infrastructure features** shipped outside the F1-F13 business-feature
+sequence — they unblock future business features by standardizing navigation and page
+layout. **F3 Member and F4 Invoicing (per this plan) have NOT been started yet**;
+their branches will be numbered based on the next-available sequence (likely
+`005-members-contacts`, `006-mb-invoicing`) when work begins.
+
 **Notes on sensitivity markers** (maps to Constitution gates):
 
 - **⚠ PII** → GDPR/PDPA scope, **Principle I**, ≥2 reviewers at Review gate.
@@ -322,6 +330,20 @@ product from "good" to "best-in-class".
 
 These features ship incrementally based on customer feedback and priority.
 None are blocking for MVP or initial SaaS launch.
+
+---
+
+### 🎨 Phase 5B — **Design System Completion** (post-`004-page-layout-standard` polish)
+
+Three small on-demand follow-ups that close the remaining ~15% UI-consistency
+gap left by `004-page-layout-standard`. None blocking for MVP or any business
+feature.
+
+| Feature | Scope | Trigger |
+|---|---|---|
+| **Motion System** | Animation duration/easing tokens platform-wide, `prefers-reduced-motion` audit + fallbacks | When motion-heavy feature lands (e.g., F9 Dashboard) |
+| **Visual System Completion** | Icon size scale, shadow elevation scale, spacing canonical usage | On-demand when new component needs a scale not yet tokenised |
+| **Dark Mode Token Completeness** | Every `004-page-layout-standard` token gets explicit `.dark {}` variant | When dark-mode usage data justifies + any degraded visual reported |
 
 ---
 

@@ -1,9 +1,12 @@
 import type { ReactNode } from 'react';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { CommandPaletteRoot } from '@/components/shell/command-palette-root';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
+import { BreadcrumbNav } from '@/components/layout/breadcrumb-nav';
+import { BreadcrumbProvider } from '@/components/layout/breadcrumb-provider';
 import { StaffSidebar } from '@/components/layout/staff-sidebar';
 import {
   SidebarInset,
@@ -26,7 +29,6 @@ export default async function StaffLayout({ children }: { children: ReactNode })
 
   // RBAC guard at the layout level — members redirected to their portal.
   if (user.role === 'member') {
-    const { redirect } = await import('next/navigation');
     redirect('/portal');
   }
 
@@ -49,7 +51,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
         <StaffSidebar tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} />
 
         <SidebarInset>
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-4">
+          <header className="flex h-[var(--top-bar-height)] shrink-0 items-center gap-2 border-b border-border bg-background px-[var(--page-padding-x)]">
             {/* Hamburger trigger — visible on mobile only (md:hidden is built into SidebarTrigger) */}
             <SidebarTrigger className="-ml-1 md:hidden" />
             <div className="flex flex-1 items-center justify-end gap-2">
@@ -61,9 +63,12 @@ export default async function StaffLayout({ children }: { children: ReactNode })
               />
             </div>
           </header>
-          <main className="flex-1 px-4 py-6" id="main-content">
-            {children}
-          </main>
+          <BreadcrumbProvider>
+            <BreadcrumbNav />
+            <main className="flex-1" id="main-content">
+              {children}
+            </main>
+          </BreadcrumbProvider>
         </SidebarInset>
 
         {/* T165 — Idle warning modal fires at 29 min of inactivity. */}
