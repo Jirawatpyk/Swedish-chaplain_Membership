@@ -61,9 +61,18 @@ function SelectContent({
   children,
   side = "bottom",
   sideOffset = 4,
-  align = "center",
+  // Default to start (LTR: left-edge) alignment so the popup never
+  // drifts off the trigger's left edge when content is wider than
+  // the trigger. Center-align caused horizontal shift on small Select
+  // triggers (e.g. plan Category on /admin/plans/new).
+  align = "start",
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  // Disable item-aligned positioning (where Base UI overlays the
+  // selected item over the trigger). It causes the popup to shift
+  // both horizontally and vertically based on which item is selected,
+  // which feels jarring on small triggers. Standard popover-below-
+  // trigger behaviour is more predictable.
+  alignItemWithTrigger = false,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<
