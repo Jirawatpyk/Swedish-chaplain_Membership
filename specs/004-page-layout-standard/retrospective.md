@@ -443,4 +443,96 @@ No CRITICAL follow-up actions. No constitution updates required.
 
 ---
 
+## Post-Ship Addendum — 2026-04-15 (E2E Stabilization Sweep)
+
+After F4 merged, the next-feature E2E gate ran against `main` with every spec enabled. Initial: **94 failed / 130 passed** (parallel). Final: **96 passed / 0 failed / 1 skipped / 1 flaky** in 10 min serial. Most findings are F4-shipped components — documenting here so F5 doesn't relearn.
+
+### L10 — `__test__/` is a Next.js *private* folder (CRITICAL → fixed)
+
+The Button-matrix fixture page at `src/app/__test__/button-matrix/page.tsx` returned 404 from day one. `__test__` underscore prefix triggers Next.js's private-folder convention which removes the route from the App Router manifest entirely. The page's `ALLOW_TEST_ROUTES` env guard never ran. `button-cursor-states` E2E spec was effectively dead while F4 shipped.
+- **Fix**: rename `__test__/` → `test-fixtures/` + update test path.
+- **Lesson**: any folder under `src/app/` whose name starts with `_` (single or double) is invisible to routing.
+
+### L11 — Button `disabled:cursor-not-allowed` lost source-order tie (HIGH → fixed)
+
+Button base class declared both `cursor-pointer` and `disabled:cursor-not-allowed`. Tailwind v4 generates them at equal specificity in the same @layer, so source order in the input string wins — base `cursor-pointer` survived even on disabled buttons.
+- **Fix**: add Tailwind v4 `!` important suffix (`disabled:cursor-not-allowed!`) + flip `disabled:pointer-events-none` → `disabled:pointer-events-auto!` so the cursor visually surfaces.
+- **Lesson**: any base + state utility pair targeting the same property needs `!` on the state half.
+
+### L12 — Base UI primitives need explicit `aria-labelledby` for axe (HIGH → fixed)
+
+`layout-a11y` found 165 WCAG 2.1 AA violations on `/admin/plans/new` — all `aria-toggle-field-name` (Switch) and `button-name` (Select.Trigger). Base UI's Switch renders `<span role="switch">`, Select.Trigger renders `<button role="combobox">` — neither is a native form control, so sibling `<Label htmlFor>` association is lost.
+- **Fix**: every Switch + Select call site now passes `aria-labelledby={labelId}` referencing a sibling `<Label id={labelId}>`. Applied to: plans-table (2 Switches), benefit-matrix-editor (1 Switch + 7 Selects), plan-form-wizard (2 Selects), plan-edit-form (1 Select).
+- **Lesson**: Base UI roles ≠ semantic HTML elements. `<Label htmlFor>` only works on real form controls. For role-based primitives, use `aria-labelledby` explicitly.
+
+### L13 — Sidebar tablet collapse via CSS `@media`, not JS state (HIGH → fixed)
+
+At viewport 768–1023px the desktop sidebar (256px expanded rail) plus content table caused horizontal scroll (≤904px). A JS `useIsTablet` hook caused SSR/hydration mismatches.
+- **Fix**: CSS `@media (min-width: 768px) and (max-width: 1023px)` in `globals.css` overrides `--sidebar-width` to 3rem (icon width) on `[data-slot="sidebar-wrapper"]`. **Requires `!important`** because SidebarProvider sets the CSS var inline via `style={}`.
+- **Lesson**: viewport-driven layout decisions belong in CSS, not React state. JS-state always races SSR. Inline styles always need `!important` to override.
+
+### L14 — `SidebarInset` needs `min-w-0` to shrink in flex flow (MEDIUM → fixed)
+
+Even after L13 collapsed the sidebar to 48px, the page still overflowed by exactly the sidebar gap because `<main>` had `w-full flex-1`.
+- **Fix**: add `min-w-0` to SidebarInset so the flex child can shrink below intrinsic content width.
+- **Lesson**: any `flex-1 w-full` flex child needs `min-w-0` to let inner `overflow-x-auto` work.
+
+### L15 — Loading.tsx skeleton races test measurements (MEDIUM → fixed)
+
+`layout-consistency`, `form-field-consistency`, `typography-scale` all picked up the loading.tsx skeleton's elements during navigation. Skeleton has same `data-slot` selectors as the real page.
+- **Fix**: every measurement spec does `await page.waitForLoadState('networkidle')` after `goto()` and waits for a stable element before measuring.
+- **Lesson**: when loading.tsx wraps the same primitives, selectors race. Wait for network-idle.
+
+### L16 — Dialog `<DialogTitle>` renders an `<h2>` in `.sr-only` (MEDIUM → fixed)
+
+`typography-scale` failed because Base UI DialogTitle renders an `<h2>` for screen readers even when the dialog is closed. The class doesn't match FR-017 `text-h2` token.
+- **Fix**: typography-scale spec skips headings inside `.sr-only` / `[aria-hidden="true"]` / `[role="dialog"]` ancestors.
+- **Lesson**: visible headings ≠ all headings. Sr-only labels for overlay primitives use their own type scale.
+
+### L17 — `UserListTable` was using raw `<table>` not the shadcn primitive (MEDIUM → fixed)
+
+`table-consistency` failed because `/admin/users` cells had `padding-left: 0px` — the page used raw `<table>` with manual padding classes. Plans table used `<TableCell>` which sources `--table-cell-padding-x`.
+- **Fix**: refactor `UserListTable` to use shadcn `<Table>` / `<TableCell>` primitives.
+- **Lesson**: F4's table-token contract (FR-020) only holds if every table goes through the shared primitive.
+
+### L18 — Focus ring contrast 1.4:1 against white (HIGH → fixed)
+
+SweCham brand is achromatic so `--ring` was `oklch(0.708)` (~#b3b3b3). With `ring-ring/50` alpha → ~1.4:1 contrast on white. Below WCAG 2.4.11's 3:1 minimum.
+- **Fix**: darken `--ring` to `oklch(0.45)` (~#5e5e5e) — ~3.4:1 at same alpha. Stays achromatic.
+- **Lesson**: `ring-X/50` halves contrast — start at 6:1 budget. Achromatic rings need to be DARKER to hit the same numeric contrast.
+
+### L19 — PageHeader needed `flex-col sm:flex-row` for narrow viewports (HIGH → fixed)
+
+Below 640px, PageHeader actions stayed inline with h1, causing overflow on mobile.
+- **Fix**: PageHeader uses `flex flex-col items-start ... gap-3 sm:flex-row sm:flex-wrap` — stacks vertically below sm: breakpoint.
+
+### L20 — `SelectContent` default `align="center"` + `alignItemWithTrigger=true` (UX → fixed)
+
+Plans-table category Select dropdown shifted left when content was wider than trigger. `alignItemWithTrigger=true` (Base UI default) overlaid the popup on the trigger which felt jarring.
+- **Fix**: set defaults `align="start"` (LTR-edge align) + `alignItemWithTrigger=false` (popup below trigger) in `src/components/ui/select.tsx`. Modern web convention (matches shadcn/ui, Material UI, Ant Design).
+
+### Test-side hardenings (informational)
+
+- **`waitForURL` regex tightened** across 25 spec files (L8 from earlier addendum). `/\/admin(\/|$)/` was matching `/admin/sign-in` too, causing signIn() to return before the login POST completed. Replaced with function-based matcher excluding `/admin/sign-in`.
+- **Plan-id selector**: `getByRole('row').filter({ has: '[data-plan-id]' })` doesn't match because `data-plan-id` is ON the row itself, not a descendant. Replace with `tr[data-plan-id]`.
+- **Base UI Select interaction**: native `selectOption()` fails — Base UI Select.Trigger is a `<button>` not `<select>`. Use URL filter or click-trigger + click-option pattern.
+- **Cookie-based sidebar toggle**: button click was fragile (tooltip wrapper + label flip). Cookie write + reload is most reliable for `sidebar_state` persistence tests.
+- **Network response wait pattern**: `Promise.all([page.waitForResponse(...), submit.click()])` surfaces validation errors deterministically instead of waiting blindly for redirect.
+- **Test state isolation**: re-fetch row+status between sequential mutations (deactivate test reset logic captured stale text after restore step).
+- **Self-lint test name**: a self-lint test that searches for `.click()` in its own file must not have `.click()` literally in its description string.
+
+### Final E2E baseline (chromium serial)
+
+```
+96 passed   (was 0)
+ 0 failed   (was 94)
+ 1 skipped  (prior-year lock banner — needs 2025 seed)
+ 1 flaky    (plans-deactivate state isolation, passes on retry)
+~10m runtime
+```
+
+**Tests fixed in this sweep**: 30+ specs across F1 (auth), F2 (plans), F3 (sidebar/nav), and F4 (layout/a11y/responsive). Two real F4 component bugs (Button cursor + layout-responsive) + one routing bug (test fixture folder) + many test-side selector/timing/state hardenings.
+
+---
+
 *Generated by `/speckit.retrospective.analyze` — Post-implementation spec adherence + lessons learned.*

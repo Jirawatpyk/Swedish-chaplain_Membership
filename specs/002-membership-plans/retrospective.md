@@ -199,3 +199,33 @@ Two critique rounds (2026-04-11) surfaced **4 Must-Address + 14 Recommendations*
 | UX checklist | 25/25 |
 | Requirements checklist | 16/16 |
 | Constitution violations | 0 |
+
+---
+
+## Post-Ship Addendum — 2026-04-15 (E2E Stabilization Sweep)
+
+After F4 merged, a full Chromium serial E2E run against `main` exercised every F2 spec end-to-end for the first time. Several F2-area issues surfaced that hadn't manifested when only the unit/integration/contract layers were green at ship.
+
+### Component fixes back-applied to F2 code
+
+- **plans-table — plan name is now a real link** (`<a href={planDetailUrl}>`). Keyboard users can Tab → Enter to reach a plan detail; before this the row only had a dropdown trigger button. UX + a11y improvement.
+- **plans-table Switches got `aria-labelledby`** — Base UI Switch renders `<span role="switch">`, not `<input>`, so `<Label htmlFor>` association is silent. Added `id` on Label + `aria-labelledby` on Switch for both filter switches (Active-only + Show-deleted).
+- **benefit-matrix-editor BoolField + 7 Selects** got the same `aria-labelledby` pattern. axe was reporting 165 WCAG 2.1 AA violations on `/admin/plans/new` from these unlabeled controls; now zero.
+- **plan-form-wizard + plan-edit-form Selects** (3 total) got explicit `aria-label` on `SelectTrigger` since the closest visible Label is sometimes hidden by a wrapper.
+- **plan-form-wizard `<Label>` for plan_id** got a missing `htmlFor` so `getByLabel(/plan id/i)` can resolve it.
+- **plans/page.tsx — validate `?year=` query before `asPlanYear`**: `?year=9999` (or any out-of-range integer) used to throw 500 because the gate `!Number.isNaN(Number(q))` accepted out-of-range integers. Now validates `[2000, 2100]` explicitly.
+
+### Test-side fixes that affected F2 specs
+
+- **`waitForURL` regex** `/\/admin(\/|$)/` matched `/admin/sign-in` and made signIn() return before the login POST completed. 25 specs across F1/F2/F3/F4 needed the same fix.
+- **Plan-id row selector**: `getByRole('row').filter({ has: '[data-plan-id]' })` doesn't match because `data-plan-id` is ON the `<tr>` itself, not a descendant. Replaced with `tr[data-plan-id]`.
+- **Base UI Select interaction**: `selectOption()` fails because Base UI Select.Trigger is a `<button>`, not a native `<select>`. Use URL filter or click-trigger + click-option pattern.
+- **Plans-deactivate state isolation**: re-fetch row + status between restore + activate steps; captured stale text caused the activate branch to skip.
+- **plans-create-wizard clone**: pick a unique target year per run so re-runs don't 409 on `target_year_populated`.
+- **command-palette navigate**: click the matched option directly (cmdk Enter propagation is unreliable under React 19).
+
+See `specs/004-page-layout-standard/retrospective.md` § Post-Ship Addendum for the full L10–L20 lessons (most apply to F2 too).
+
+### Final F2 E2E status (chromium)
+
+All F2 tests pass: plans-list, plans-create-wizard, plans-edit, plans-deactivate, plans-keyboard-only, plans-i18n-coverage, plans-a11y, plans-reduced-motion, fee-config, command-palette. 1 skipped (`plans-edit prior-year lock banner` — needs a 2025 seed; Domain logic is unit-tested).

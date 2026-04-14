@@ -182,3 +182,35 @@ Reading `sidebar_state` cookie on the server to pass `defaultOpen` to `SidebarPr
 | Constitution review | PASS — 10/10 principles checked, 0 violations |
 | Human Gate readiness | PASS — no spec changes proposed |
 | Actionability | PASS — 5 recommendations with priority + action |
+
+---
+
+## Post-Ship Addendum — 2026-04-15 (E2E Stabilization Sweep)
+
+After F4 merged, the E2E gate ran every F3 sidebar/nav spec in chromium serial mode for the first time. Several F3-specific issues surfaced.
+
+### Component fixes back-applied to F3 code
+
+- **Sidebar tablet auto-collapse via `globals.css` @media** — at viewport 768–1023px the desktop sidebar's expanded 256px rail plus content overflowed the viewport. CSS @media now overrides `--sidebar-width` to 3rem (icon mode) inside the tablet range. **Requires `!important`** because SidebarProvider sets the CSS var inline via `style={}`, which has higher specificity than a stylesheet rule.
+- **SidebarInset got `min-w-0`** — `<main>` had `w-full flex-1` which forced 100% of the parent flex container, so the sidebar gap pushed the doc past the viewport. `min-w-0` lets the flex child shrink below intrinsic content width so `overflow-x-auto` can do its job.
+- **Decided NOT to add a useIsTablet hook** — earlier attempt to force-collapse via `SidebarProvider` state caused SSR/hydration mismatches because the server doesn't know the viewport. CSS-only is the right primitive here.
+
+### Test-side fixes that affected F3 specs
+
+- **`data-state` lives on `[data-slot="sidebar"]`, not `[data-slot="sidebar-wrapper"]`** — staff-sidebar.spec.ts assertions had to update the locator. The wrapper is the outer flex container; the inner sidebar element holds the expand/collapse state.
+- **Sidebar toggle via cookie write** — `staff-sidebar.spec.ts` collapse/expand tests now write the `sidebar_state` cookie + reload instead of clicking the toggle button. The button click path was fragile (tooltip wrapper kept hover state across toggles) and the keyboard shortcut `Cmd+B` didn't reliably propagate through Playwright's synthetic keydown.
+- **Member-nav waitForURL** had the same `/portal/sign-in` race as `/admin/sign-in` — fix-portal-url applied to 4 portal specs.
+- **Breadcrumb test scoped to `:visible`** — the BreadcrumbNav component renders both desktop + mobile breadcrumb lists for responsive switching. The test was counting items across both lists.
+
+### Real F3 component bugs found by E2E (now fixed)
+
+| # | Bug | Root cause | Fix |
+|---|-----|-----------|-----|
+| 1 | Tablet viewport overflow at 768px | desktop sidebar fixed at 256px | CSS @media tablet override + SidebarInset min-w-0 |
+| 2 | Plans table row had no anchor link | plans-table only rendered dropdown trigger | wrap plan-name in `<a href={detailUrl}>` (also helps F2 keyboard-only test) |
+
+See `specs/004-page-layout-standard/retrospective.md` § Post-Ship Addendum for the full L10–L20 lessons.
+
+### Final F3 E2E status (chromium)
+
+All F3 sidebar/nav tests pass: staff-sidebar (7 tests including collapse, persist, rapid-toggle, tenant-name, active-state, route), member-nav (4 tests), nav-a11y (5 tests), breadcrumb-navigation (2 tests).
