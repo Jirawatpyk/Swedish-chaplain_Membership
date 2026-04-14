@@ -32,7 +32,7 @@ test.describe('fee config — US5', () => {
     await page.getByLabel(/email/i).fill(email);
     await page.getByLabel(/password/i).fill(password);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/admin(\/|$)/, { timeout: 10_000 });
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); }, { timeout: 10_000 });
   }
 
   test('admin edits VAT → saves → toast', async ({ page }) => {

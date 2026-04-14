@@ -38,7 +38,7 @@ test.describe('plans list — US1 @i18n', () => {
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/admin(\/|$)/, { timeout: 10_000 });
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); }, { timeout: 10_000 });
   }
 
   test('admin sees 9 SweCham 2026 plans with filter + locale switch', async ({

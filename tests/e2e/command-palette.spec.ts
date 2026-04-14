@@ -32,7 +32,7 @@ async function signIn(page: Page, email: string, password: string): Promise<void
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL(/\/admin(\/|$)/, { timeout: 10_000 });
+  await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); }, { timeout: 10_000 });
 }
 
 test.describe('command palette — US6', () => {

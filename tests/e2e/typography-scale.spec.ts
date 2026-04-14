@@ -24,7 +24,7 @@ test.describe('F4 SC-010 — typography scale @layout', () => {
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/admin(\/|$)/);
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     const pages = ['/admin', '/admin/users', '/admin/plans', '/admin/settings/fees'];
     for (const path of pages) {

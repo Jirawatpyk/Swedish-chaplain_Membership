@@ -23,7 +23,7 @@ test.describe('plans a11y — US1 @a11y', () => {
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/admin(\/|$)/);
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     await page.goto('/admin/plans');
     // Wait for the table skeleton to resolve into real rows before scanning
@@ -42,7 +42,7 @@ test.describe('plans a11y — US1 @a11y', () => {
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/admin(\/|$)/);
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     await page.goto('/admin/plans/2026/premium');
     await page.locator('h1').waitFor({ timeout: 10_000 });

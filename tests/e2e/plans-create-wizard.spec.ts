@@ -34,7 +34,7 @@ test.describe('plans create + clone wizard — US2', () => {
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/admin(\/|$)/, { timeout: 10_000 });
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); }, { timeout: 10_000 });
   }
 
   test('admin creates a new plan via the 4-step wizard', async ({ page }) => {

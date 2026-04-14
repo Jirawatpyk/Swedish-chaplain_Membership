@@ -29,7 +29,7 @@ test.describe('F4 SC-009 — top bar consistency @layout', () => {
     await adminPage.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await adminPage.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await adminPage.getByRole('button', { name: /sign in/i }).click();
-    await adminPage.waitForURL(/\/admin(\/|$)/);
+    await adminPage.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     await memberPage.goto('/portal/sign-in');
     await memberPage.getByLabel(/email/i).fill(MEMBER_EMAIL!);

@@ -23,7 +23,7 @@ test.describe('F4 US3 — breadcrumb navigation @layout', () => {
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/admin(\/|$)/);
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     // /admin/users → depth 2 → no breadcrumb
     await page.goto('/admin/users');
@@ -42,7 +42,7 @@ test.describe('F4 US3 — breadcrumb navigation @layout', () => {
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/admin(\/|$)/);
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     await page.goto('/admin/settings/fees');
     const ellipsis = page.locator('[data-slot="breadcrumb-ellipsis"]');

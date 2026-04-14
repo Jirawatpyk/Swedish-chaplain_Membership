@@ -19,7 +19,7 @@ test.describe('F4 SC-012 — form field consistency @layout', () => {
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/admin(\/|$)/);
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     await page.goto('/admin/settings/fees');
     const inputs = page.locator('input[type="text"], input[type="number"], input:not([type])');

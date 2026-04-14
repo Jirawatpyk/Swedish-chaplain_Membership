@@ -57,7 +57,7 @@ test.describe('keyboard-only plans admin — T158', () => {
 
     // Submit via Enter
     await Promise.all([
-      page.waitForURL(/\/admin(\/|$)/, { timeout: 15_000 }),
+      page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); }, { timeout: 15_000 }),
       page.keyboard.press('Enter'),
     ]);
   }
