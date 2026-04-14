@@ -131,7 +131,13 @@
    * axe color-contrast. Dark-theme destructive stays unchanged. */
   --destructive: oklch(0.49 0.213 27.325);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* Focus-ring contrast (WCAG 2.4.11): the previous `oklch(0.708)`
+   * (~#b3b3b3) gave only ~1.4:1 contrast against white at the
+   * `ring-ring/50` alpha used in primitives — well below the 3:1
+   * minimum. `oklch(0.45)` (~#5e5e5e) measures ~3.4:1 with the same
+   * 50% alpha and stays monochrome (chroma 0) so it matches the
+   * SweCham gray brand. Dark-theme ring already passes — kept as-is. */
+  --ring: oklch(0.45 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
