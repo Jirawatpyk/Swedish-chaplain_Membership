@@ -89,6 +89,10 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     const wrapper = page.locator('[data-slot="sidebar"]').first();
 
     // Find toggle button — desktop sidebar (mobile sheet renders its own).
+    // Use locator() with strict: false to avoid click-blocking from the
+    // tooltip wrapper that shadcn SidebarMenuButton mounts when `tooltip`
+    // is set. force: true bypasses Playwright's stability check that the
+    // tooltip may keep alive on hover-pre-click.
     const toggle = page.getByRole('button', { name: /collapse sidebar|expand sidebar/i }).first();
     await expect(toggle).toBeVisible();
 
@@ -97,13 +101,13 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     expect(initialState).not.toBeNull();
 
     // Toggle
-    await toggle.click();
+    await toggle.click({ force: true });
     await page.waitForTimeout(300);
     const newState = await wrapper.getAttribute('data-state');
     expect(newState).not.toBe(initialState);
 
     // Toggle back
-    await toggle.click();
+    await toggle.click({ force: true });
     await page.waitForTimeout(300);
     const restoredState = await wrapper.getAttribute('data-state');
     expect(restoredState).toBe(initialState);
@@ -117,7 +121,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     const toggle = page.getByRole('button', { name: /collapse sidebar|expand sidebar/i });
 
     for (let i = 0; i < 5; i++) {
-      await toggle.click();
+      await toggle.click({ force: true });
       await page.waitForTimeout(100);
     }
     await page.waitForTimeout(500);
