@@ -70,8 +70,8 @@ test.describe('fee config — US5', () => {
     await page.goto('/admin/settings/fees');
 
     // VAT field present but disabled
-    await expect(page.getByText(/vat rate/i)).toBeVisible();
     const vatInput = page.getByLabel(/vat rate/i);
+    await expect(vatInput).toBeVisible();
     await expect(vatInput).toBeDisabled();
 
     // Save button hidden or disabled

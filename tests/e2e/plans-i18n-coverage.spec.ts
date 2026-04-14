@@ -48,10 +48,13 @@ test.describe('plans i18n coverage — US1 @i18n', () => {
       const title = await page.locator('h1').first().textContent();
       expect(title).toMatch(EXPECTED_TITLE[locale]);
 
-      // 2. No raw translation keys leak into the DOM
-      const body = await page.locator('body').textContent();
-      expect(body).not.toMatch(/admin\.plans\./);
-      expect(body).not.toMatch(/palette\./);
+      // 2. No raw translation keys leak into the visible DOM.
+      //    Use innerText (visible text only) to skip <script> contents
+      //    — next-themes' theme-init script contains minified code with
+      //    dots that look like keys but never surface to users.
+      const bodyText = await page.evaluate(() => document.body.innerText);
+      expect(bodyText).not.toMatch(/admin\.plans\.[a-z]/);
+      expect(bodyText).not.toMatch(/\bpalette\.[a-z]/);
     });
   }
 });

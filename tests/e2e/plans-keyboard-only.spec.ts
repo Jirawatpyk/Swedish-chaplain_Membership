@@ -109,7 +109,9 @@ test.describe('keyboard-only plans admin — T158', () => {
       await page.keyboard.press('Tab');
       const tag = await page.evaluate(() => document.activeElement?.tagName?.toLowerCase());
       const href = await page.evaluate(() => (document.activeElement as HTMLAnchorElement)?.href ?? '');
-      if (tag === 'a' && href.includes('/admin/plans/')) {
+      // Match a plan detail URL: /admin/plans/{year}/{planId}
+      // Not the clone page (/admin/plans/clone) or new page (/admin/plans/new)
+      if (tag === 'a' && /\/admin\/plans\/\d{4}\//.test(href)) {
         foundTableLink = true;
         break;
       }

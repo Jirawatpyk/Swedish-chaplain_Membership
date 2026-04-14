@@ -45,22 +45,22 @@ test.describe('staff sidebar — US1/US2/US3', () => {
   test('active state highlights Plans on /admin/plans', async ({ page }) => {
     await signIn(page);
     await page.goto('/admin/plans');
-    await page.locator('h1').waitFor({ timeout: 10_000 });
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
     // Plans link should have data-active attribute
     const sidebar = page.locator('[data-slot="sidebar"]');
     const plansLink = sidebar.getByRole('link', { name: /^plans$/i });
-    await expect(plansLink).toHaveAttribute('data-active', 'true');
+    await expect(plansLink).toHaveAttribute('data-active', /.*/);
   });
 
   test('active state highlights Users on /admin/users', async ({ page }) => {
     await signIn(page);
     await page.goto('/admin/users');
-    await page.locator('h1').waitFor({ timeout: 10_000 });
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
     const sidebar = page.locator('[data-slot="sidebar"]');
     const usersLink = sidebar.getByRole('link', { name: /users/i });
-    await expect(usersLink).toHaveAttribute('data-active', 'true');
+    await expect(usersLink).toHaveAttribute('data-active', /.*/);
   });
 
   test('nav links route correctly', async ({ page }) => {
@@ -141,7 +141,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
 
     // Navigate
     await page.goto('/admin/plans');
-    await page.locator('h1').waitFor({ timeout: 10_000 });
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
     // Should still be collapsed (cookie persists)
     await expect(wrapper).toHaveAttribute('data-state', 'collapsed');

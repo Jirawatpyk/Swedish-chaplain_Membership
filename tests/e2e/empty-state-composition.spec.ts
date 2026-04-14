@@ -21,7 +21,7 @@ test.describe('F4 US5 — empty state composition @layout', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
-    await page.goto('/admin/plans?year=1900'); // force empty year
+    await page.goto('/admin/plans?year=2099'); // force empty year (valid but unseeded)
     const container = page.locator('[data-slot="content-container"]').first();
     await expect(container).toBeVisible();
 

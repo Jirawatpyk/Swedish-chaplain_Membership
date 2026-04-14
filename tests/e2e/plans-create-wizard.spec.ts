@@ -55,7 +55,7 @@ test.describe('plans create + clone wizard — US2', () => {
     await page.getByRole('button', { name: 'Next', exact: true }).click();
 
     // Step 3 — Benefits
-    await expect(page.getByRole('heading', { name: /benefits/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Benefits', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Next', exact: true }).click();
 
     // Step 4 — Review

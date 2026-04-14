@@ -101,5 +101,11 @@ export default defineConfig({
     url: 'http://localhost:3100',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
+    env: {
+      // Enable /__test__/* fixture pages (button-matrix etc.) used by
+      // E2E specs. The page itself refuses to render unless this env
+      // var is set, so production deploys never expose the routes.
+      ALLOW_TEST_ROUTES: '1',
+    },
   },
 });

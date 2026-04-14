@@ -51,19 +51,19 @@ test.describe('plans deactivate / delete / undelete — US4', () => {
     await row.getByRole('button', { name: /actions/i }).click();
     await page.getByRole('menuitem', { name: /deactivate/i }).click();
 
-    // AlertDialog confirmation
+    // AlertDialog confirmation — confirmCta label matches the action verb
     await expect(page.getByRole('alertdialog')).toBeVisible();
-    await page.getByRole('button', { name: /confirm/i }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: /deactivate/i }).click();
 
     // Toast + badge flip
-    await expect(page.getByText(/deactivated/i)).toBeVisible();
+    await expect(page.getByText(/deactivated/i).first()).toBeVisible();
     await expect(row.getByText(/inactive/i)).toBeVisible();
 
     // 2. Delete (soft-delete) via row-level dropdown
     await row.getByRole('button', { name: /actions/i }).click();
     await page.getByRole('menuitem', { name: /delete/i }).click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
-    await page.getByRole('button', { name: /confirm/i }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: /^delete$/i }).click();
 
     // Row hidden from default list
     await expect(page.locator('[data-plan-id="premium"]')).toHaveCount(0);
@@ -75,9 +75,9 @@ test.describe('plans deactivate / delete / undelete — US4', () => {
     // 4. Undelete
     const deletedRow = page.locator('[data-plan-id="premium"]').first();
     await deletedRow.getByRole('button', { name: /actions/i }).click();
-    await page.getByRole('menuitem', { name: /undelete/i }).click();
+    await page.getByRole('menuitem', { name: /undelete|restore/i }).click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
-    await page.getByRole('button', { name: /confirm/i }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: /restore/i }).click();
 
     // Row returns as Inactive (US4 AS4)
     await expect(deletedRow.getByText(/inactive/i)).toBeVisible();
