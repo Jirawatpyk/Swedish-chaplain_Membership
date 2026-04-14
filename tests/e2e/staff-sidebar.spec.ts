@@ -88,9 +88,9 @@ test.describe('staff sidebar — US1/US2/US3', () => {
      // elements (desktop + mobile) — take the desktop one.
     const wrapper = page.locator('[data-slot="sidebar"]').first();
 
-    // Find toggle button
-    const toggle = page.getByRole('button', { name: /collapse sidebar|expand sidebar/i });
-    await expect(toggle).toBeAttached();
+    // Find toggle button — desktop sidebar (mobile sheet renders its own).
+    const toggle = page.getByRole('button', { name: /collapse sidebar|expand sidebar/i }).first();
+    await expect(toggle).toBeVisible();
 
     // Get initial state
     const initialState = await wrapper.getAttribute('data-state');
