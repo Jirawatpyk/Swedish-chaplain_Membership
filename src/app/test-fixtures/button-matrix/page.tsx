@@ -41,6 +41,10 @@ const SIZES = [
  * data. CI ephemeral deploys only.
  */
 export default function ButtonMatrixPage() {
+  // Read via bracket access so Turbopack/SWC doesn't statically inline
+  // process.env.ALLOW_TEST_ROUTES at compile time (server-side env vars
+  // without NEXT_PUBLIC_ prefix can still be inlined in some build paths,
+  // baking the value to undefined when read this way).
   if (!process.env.ALLOW_TEST_ROUTES) notFound();
 
   return (

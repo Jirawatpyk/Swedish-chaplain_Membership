@@ -1,7 +1,7 @@
 /**
  * T048 — E2E: F4 US6 Button cursor + disabled states.
  *
- * Iterates the /__test__/button-matrix fixture page and asserts:
+ * Iterates the /test-fixtures/button-matrix fixture page and asserts:
  *   enabled  → cursor: pointer, opacity: 1
  *   disabled → cursor: not-allowed, opacity: 0.5
  */
@@ -9,7 +9,7 @@ import { expect, test } from './fixtures';
 
 test.describe('F4 US6 — button cursor/disabled @layout', () => {
   test('every variant × size enforces cursor + opacity rules', async ({ page }) => {
-    await page.goto('/__test__/button-matrix');
+    await page.goto('/test-fixtures/button-matrix');
 
     const cells = page.locator('[data-testid="button-cell"]');
     const count = await cells.count();
