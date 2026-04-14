@@ -259,7 +259,7 @@ export function PlansTable({
             <SelectTrigger id="plans-category" className="w-[180px]">
               <SelectValue placeholder={t('filters.category.label')} />
             </SelectTrigger>
-            <SelectContent align="start" alignItemWithTrigger={false}>
+            <SelectContent>
               <SelectItem value="all">{t('filters.all')}</SelectItem>
               <SelectItem value="corporate">{t('filters.category.corporate')}</SelectItem>
               <SelectItem value="partnership">{t('filters.category.partnership')}</SelectItem>

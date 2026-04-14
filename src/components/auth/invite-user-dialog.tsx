@@ -176,7 +176,7 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
                 <SelectTrigger id="invite-role" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent align="start" alignItemWithTrigger={false}>
+                <SelectContent>
                   {ROLES.map((r) => (
                     <SelectItem key={r} value={r}>
                       {t(`roles.${r}`)}
