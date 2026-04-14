@@ -22,6 +22,10 @@ test.describe('F4 SC-012 — form field consistency @layout', () => {
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     await page.goto('/admin/settings/fees');
+    // Wait for the form inputs to mount (loading.tsx skeleton swaps for
+    // the real FeeConfigForm).
+    await page.waitForLoadState('networkidle');
+    await page.locator('#vat_rate').waitFor({ timeout: 10_000 });
     // Scope to visible inputs only — hidden inputs (search Select combobox
     // hidden in Base UI, inputs inside closed dialogs, etc.) have
     // getBoundingClientRect().height === 0 and aren't part of the form

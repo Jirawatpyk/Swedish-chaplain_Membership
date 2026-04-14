@@ -50,6 +50,10 @@ test.describe('F4 US1 — layout consistency @layout', () => {
 
     for (const path of PAGES) {
       await page.goto(path);
+      // Wait for the page (not the loading.tsx) to finish hydrating.
+      // /admin/settings/fees has a loading skeleton with its own
+      // ContentContainer that races the real page's container.
+      await page.waitForLoadState('networkidle');
       const h1 = page.getByRole('heading', { level: 1 }).first();
       await expect(h1, `${path} has h1`).toBeVisible();
 
