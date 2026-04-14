@@ -7,16 +7,16 @@ import {
 } from '@/components/ui/card';
 import { ContentContainer } from '@/components/layout/content-container';
 import { PageHeader } from '@/components/layout/page-header';
+import { PlanFormWizardSkeleton } from '@/components/plans/plan-form-wizard-skeleton';
 import {
-  FormSkeleton,
   PageSkeletonShell,
   SkeletonBlock,
 } from '@/components/shell/page-skeletons';
 
 /**
- * Real title uses the generic "Edit plan" key; the real page swaps in
- * "Edit {planName}" once data resolves. Zero CLS because the h1 box is
- * the same height in both states.
+ * Edit uses the same <PlanFormWizard> as /plans/new. Title is generic
+ * here ("Edit plan"); the real page swaps in "Edit {planName}" once
+ * data resolves. Zero CLS because the h1 box is the same height.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.plans');
@@ -32,7 +32,7 @@ export default async function Loading() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <FormSkeleton fields={6} footerButtons={2} withHeader={false} />
+            <PlanFormWizardSkeleton />
           </CardContent>
         </Card>
       </ContentContainer>
