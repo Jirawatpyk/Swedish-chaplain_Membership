@@ -63,9 +63,9 @@ test.describe('invite-flow wall-clock (T119, SC-008)', () => {
     const inviteeEmail = `invitee-${Date.now()}@swecham.test`;
     await fillField(dialog.getByLabel(/email/i), inviteeEmail);
 
-    // Select manager role via the native <select>
-    const roleSelect = dialog.getByLabel(/role/i);
-    await roleSelect.selectOption('manager');
+    // Select manager role via the Base UI combobox (button, not native <select>)
+    await dialog.getByLabel(/role/i).click();
+    await page.getByRole('option', { name: /manager/i }).click();
 
     // Submit → wait for the 201
     const [inviteResponse] = await Promise.all([

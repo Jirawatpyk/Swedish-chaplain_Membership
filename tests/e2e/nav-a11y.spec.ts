@@ -76,7 +76,7 @@ test.describe('nav a11y — US5 @a11y', () => {
     await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
     await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/portal(\/|$)/, { timeout: 10_000 });
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/portal(\/|$)/.test(p) && !p.startsWith("/portal/sign-in"); }, { timeout: 10_000 });
     await page.goto('/portal');
 
     const results = await new AxeBuilder({ page })

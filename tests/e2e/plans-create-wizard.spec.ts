@@ -47,16 +47,16 @@ test.describe('plans create + clone wizard — US2', () => {
     await page.getByLabel(/plan id/i).fill(planId);
     await page.getByLabel(/plan year/i).fill('2027');
     await page.getByLabel(/plan name \(en\)/i).fill('E2E Test Plan');
-    await page.getByRole('button', { name: /next/i }).click();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
 
     // Step 2 — Fees
     await expect(page.getByRole('heading', { name: /fees/i })).toBeVisible();
     await page.getByLabel(/annual fee/i).fill('5000');
-    await page.getByRole('button', { name: /next/i }).click();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
 
     // Step 3 — Benefits
     await expect(page.getByRole('heading', { name: /benefits/i })).toBeVisible();
-    await page.getByRole('button', { name: /next/i }).click();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
 
     // Step 4 — Review
     await expect(page.getByRole('heading', { name: /review/i })).toBeVisible();

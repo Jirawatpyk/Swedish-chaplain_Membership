@@ -25,7 +25,7 @@ test.describe('member nav — US4', () => {
     await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
     await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/portal(\/|$)/, { timeout: 10_000 });
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/portal(\/|$)/.test(p) && !p.startsWith("/portal/sign-in"); }, { timeout: 10_000 });
   }
 
   test('member nav renders with Dashboard and Account links', async ({

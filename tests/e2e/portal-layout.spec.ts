@@ -19,7 +19,7 @@ test.describe('F4 US4 — portal layout @layout', () => {
     await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
     await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/portal(\/|$)/);
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/portal(\/|$)/.test(p) && !p.startsWith("/portal/sign-in"); });
 
     for (const path of ['/portal', '/portal/account']) {
       await page.goto(path);

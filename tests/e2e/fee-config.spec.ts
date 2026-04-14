@@ -43,15 +43,16 @@ test.describe('fee config — US5', () => {
     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
     await page.goto('/admin/settings/fees');
 
-    // Wait for form to hydrate
-    await expect(page.getByText(/vat rate/i)).toBeVisible();
+    // Wait for form to hydrate — use getByLabel to disambiguate from
+    // the page subtitle which also contains "VAT rate" text.
+    const vatInput = page.getByLabel(/vat rate/i);
+    await expect(vatInput).toBeVisible();
 
     // Currency read-only
     const currencyField = page.getByLabel(/currency/i);
     await expect(currencyField).toBeDisabled();
 
     // Edit VAT rate
-    const vatInput = page.getByLabel(/vat rate/i);
     await vatInput.fill('0.075');
 
     await page.getByRole('button', { name: /save/i }).click();

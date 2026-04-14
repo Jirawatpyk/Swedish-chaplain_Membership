@@ -35,7 +35,7 @@ test.describe('F4 SC-009 — top bar consistency @layout', () => {
     await memberPage.getByLabel(/email/i).fill(MEMBER_EMAIL!);
     await memberPage.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
     await memberPage.getByRole('button', { name: /sign in/i }).click();
-    await memberPage.waitForURL(/\/portal(\/|$)/);
+    await memberPage.waitForURL((u) => { const p = new URL(u).pathname; return /^\/portal(\/|$)/.test(p) && !p.startsWith("/portal/sign-in"); });
 
     const adminHeader = await adminPage.locator('header').first().evaluate((el) => {
       const cs = getComputedStyle(el);
