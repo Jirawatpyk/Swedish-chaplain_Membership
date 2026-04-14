@@ -47,24 +47,31 @@ test.describe('plans deactivate / delete / undelete — US4', () => {
     await page.goto('/admin/plans');
 
     // Ensure Premium starts Active (previous test runs may have left it
-    // Inactive or deleted). Show-deleted first so a soft-deleted Premium
-    // is visible and can be restored if present.
-    await page.goto('/admin/plans?showDeleted=true');
-    const premiumRow = page.locator('[data-plan-id="premium"]').first();
-    if (await premiumRow.count() > 0) {
-      const statusText = (await premiumRow.textContent()) ?? '';
-      if (/deleted/i.test(statusText)) {
-        await premiumRow.getByRole('button', { name: /actions/i }).click();
+    // Inactive or deleted). Re-fetch status after each reset step
+    // because restore + activate are sequential mutations.
+    async function ensurePremiumActive(): Promise<void> {
+      await page.goto('/admin/plans?showDeleted=true');
+      let row = page.locator('[data-plan-id="premium"]').first();
+      if (!(await row.count())) return;
+
+      let status = (await row.textContent()) ?? '';
+      if (/deleted/i.test(status)) {
+        await row.getByRole('button', { name: /actions/i }).click();
         await page.getByRole('menuitem', { name: /undelete|restore/i }).click();
         await page.getByRole('alertdialog').getByRole('button', { name: /restore/i }).click();
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(800);
+        // Re-fetch the row + status — restore changed the DOM
+        await page.goto('/admin/plans?showDeleted=true');
+        row = page.locator('[data-plan-id="premium"]').first();
+        status = (await row.textContent()) ?? '';
       }
-      if (/inactive/i.test(statusText)) {
-        await premiumRow.getByRole('button', { name: /actions/i }).click();
+      if (/inactive/i.test(status)) {
+        await row.getByRole('button', { name: /actions/i }).click();
         await page.getByRole('menuitem', { name: /^activate$/i }).click();
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(800);
       }
     }
+    await ensurePremiumActive();
     await page.goto('/admin/plans');
 
     // 1. Deactivate via row-level dropdown — wait for the menu to open
