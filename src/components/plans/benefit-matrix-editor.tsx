@@ -71,7 +71,7 @@ function NumberField({
   const id = useId();
   return (
     <div className="space-y-1">
-      <Label htmlFor={id}>{label}</Label>
+      <Label>{label}</Label>
       <Input
         id={id}
         type="number"
@@ -217,7 +217,7 @@ export function BenefitMatrixEditor({
               disabled={disabled}
               items={WEBSITE_PAGE_OPTIONS}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger aria-label="Website page type" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -242,7 +242,7 @@ export function BenefitMatrixEditor({
               disabled={disabled}
               items={LOGO_CATEGORY_OPTIONS}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger aria-label="Homepage logo category" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -267,7 +267,7 @@ export function BenefitMatrixEditor({
               disabled={disabled}
               items={DIRECTORY_SIZE_OPTIONS}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger aria-label="Directory listing size" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -296,7 +296,7 @@ export function BenefitMatrixEditor({
             disabled={disabled}
             items={DISCOUNT_SCOPE_OPTIONS}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger aria-label="Event discount scope" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -385,7 +385,7 @@ export function BenefitMatrixEditor({
                   disabled={disabled}
                   items={VIDEO_DURATION_OPTIONS}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger aria-label="Video duration (minutes)" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -407,7 +407,7 @@ export function BenefitMatrixEditor({
                   disabled={disabled}
                   items={VIDEO_FREQUENCY_OPTIONS}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger aria-label="Video frequency scope" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -430,7 +430,7 @@ export function BenefitMatrixEditor({
                   disabled={disabled}
                   items={DIRECTORY_AD_OPTIONS}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger aria-label="Directory ad position" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

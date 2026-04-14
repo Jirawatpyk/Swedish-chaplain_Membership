@@ -171,7 +171,7 @@ export function PlanFormWizard({
           <h2 className="text-lg font-semibold">{t('steps.basics')}</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="plan_id">{tLabels('planId')}</Label>
+              <Label>{tLabels('planId')}</Label>
               <Input
                 id="plan_id"
                 value={draft.plan_id}
@@ -200,7 +200,7 @@ export function PlanFormWizard({
                 onValueChange={(v) => update('plan_category', v as PlanCategory)}
                 items={CATEGORY_OPTIONS}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger aria-label={tLabels('planCategory')} className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -219,7 +219,7 @@ export function PlanFormWizard({
                 }
                 items={MEMBER_TYPE_OPTIONS}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger aria-label={tLabels('memberTypeScope')} className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

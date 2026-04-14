@@ -140,7 +140,7 @@ export function PlanEditForm({
         />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-1">
-            <Label htmlFor="sort_order">{t('sortOrder')}</Label>
+            <Label>{t('sortOrder')}</Label>
             <Input
               id="sort_order"
               type="number"
@@ -164,7 +164,7 @@ export function PlanEditForm({
                 disabled={isLocked('member_type_scope')}
                 items={MEMBER_TYPE_OPTIONS}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger aria-label={t('memberTypeScope')} className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
