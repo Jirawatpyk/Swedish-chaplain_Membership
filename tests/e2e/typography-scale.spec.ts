@@ -29,8 +29,13 @@ test.describe('F4 SC-010 — typography scale @layout', () => {
     const pages = ['/admin', '/admin/users', '/admin/plans', '/admin/settings/fees'];
     for (const path of pages) {
       await page.goto(path);
+      // Wait for network idle so the page (not loading.tsx skeleton's h1)
+      // is what we measure — measuring during the loading phase returns
+      // NaN because the skeleton h1 has display:none until hydrated.
+      await page.waitForLoadState('networkidle');
       const h1 = page.getByRole('heading', { level: 1 });
       if (await h1.count()) {
+        await h1.first().waitFor({ state: 'visible', timeout: 5_000 });
         const size = await h1
           .first()
           .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));

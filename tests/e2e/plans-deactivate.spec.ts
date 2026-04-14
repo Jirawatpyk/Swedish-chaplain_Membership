@@ -67,10 +67,14 @@ test.describe('plans deactivate / delete / undelete — US4', () => {
     }
     await page.goto('/admin/plans');
 
-    // 1. Deactivate via row-level dropdown
+    // 1. Deactivate via row-level dropdown — wait for the menu to open
+    // before clicking the menuitem (Base UI DropdownMenu portal mount
+    // can race on first open).
     const row = page.locator('[data-plan-id="premium"]').first();
     await row.getByRole('button', { name: /actions/i }).click();
-    await page.getByRole('menuitem', { name: /deactivate/i }).click();
+    const deactivateItem = page.getByRole('menuitem', { name: /deactivate/i });
+    await deactivateItem.waitFor({ state: 'visible', timeout: 10_000 });
+    await deactivateItem.click();
 
     // AlertDialog confirmation — confirmCta label matches the action verb
     await expect(page.getByRole('alertdialog')).toBeVisible();
