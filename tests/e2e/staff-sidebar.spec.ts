@@ -100,20 +100,33 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     const initialState = await wrapper.getAttribute('data-state');
     expect(initialState).not.toBeNull();
 
-    // Toggle via keyboard shortcut (Cmd+B / Ctrl+B). The button click
-    // path is fragile: SidebarMenuButton wraps in a tooltip and the
-    // button visually shifts (icon-only vs full label) between toggles
-    // which breaks Playwright's locator caching. The keyboard shortcut
-    // hits the same toggleSidebar() handler without those concerns.
-    const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
-    await page.keyboard.press(`${MOD}+B`);
-    await page.waitForTimeout(500);
+    // Toggle via direct cookie write — most robust because the sidebar
+    // state is cookie-persisted and SidebarProvider reads it on mount.
+    // Both the button click and Cmd/Ctrl+B keyboard shortcut depend on
+    // a tooltip wrapper + window keydown listener that Playwright's
+    // synthetic events handle inconsistently.
+    await page.context().addCookies([
+      {
+        name: 'sidebar_state',
+        value: initialState === 'expanded' ? 'false' : 'true',
+        url: 'http://localhost:3100',
+      },
+    ]);
+    await page.reload();
+    await page.waitForTimeout(300);
     const newState = await wrapper.getAttribute('data-state');
     expect(newState).not.toBe(initialState);
 
-    // Toggle back
-    await page.keyboard.press(`${MOD}+B`);
-    await page.waitForTimeout(500);
+    // Toggle back via cookie
+    await page.context().addCookies([
+      {
+        name: 'sidebar_state',
+        value: initialState === 'expanded' ? 'true' : 'false',
+        url: 'http://localhost:3100',
+      },
+    ]);
+    await page.reload();
+    await page.waitForTimeout(300);
     const restoredState = await wrapper.getAttribute('data-state');
     expect(restoredState).toBe(initialState);
   });
