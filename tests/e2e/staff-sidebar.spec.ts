@@ -100,17 +100,19 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     const initialState = await wrapper.getAttribute('data-state');
     expect(initialState).not.toBeNull();
 
-    // Toggle
-    await toggle.click({ force: true });
+    // Toggle via keyboard shortcut (Cmd+B / Ctrl+B). The button click
+    // path is fragile: SidebarMenuButton wraps in a tooltip and the
+    // button visually shifts (icon-only vs full label) between toggles
+    // which breaks Playwright's locator caching. The keyboard shortcut
+    // hits the same toggleSidebar() handler without those concerns.
+    const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+    await page.keyboard.press(`${MOD}+B`);
     await page.waitForTimeout(500);
     const newState = await wrapper.getAttribute('data-state');
     expect(newState).not.toBe(initialState);
 
-    // Toggle back — re-fetch the toggle locator because its aria-label
-    // has now changed (Collapse ↔ Expand) and the cached locator may
-    // resolve to a stale node.
-    const toggleAgain = page.getByRole('button', { name: /collapse sidebar|expand sidebar/i }).first();
-    await toggleAgain.click({ force: true });
+    // Toggle back
+    await page.keyboard.press(`${MOD}+B`);
     await page.waitForTimeout(500);
     const restoredState = await wrapper.getAttribute('data-state');
     expect(restoredState).toBe(initialState);

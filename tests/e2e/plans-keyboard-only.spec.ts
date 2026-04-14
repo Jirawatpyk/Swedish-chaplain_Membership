@@ -222,7 +222,7 @@ test.describe('keyboard-only plans admin — T158', () => {
 
   // --- Zero-mouse-call lint assertion ---
 
-  test('self-lint: this file contains zero .click() or .hover() calls in test code', async () => {
+  test('self-lint: this file contains zero mouse-call methods in test code', async () => {
     const source = fs.readFileSync(
       path.join(__dirname, 'plans-keyboard-only.spec.ts'),
       'utf-8',
