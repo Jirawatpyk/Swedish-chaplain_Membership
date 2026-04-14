@@ -102,13 +102,16 @@ test.describe('staff sidebar — US1/US2/US3', () => {
 
     // Toggle
     await toggle.click({ force: true });
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500);
     const newState = await wrapper.getAttribute('data-state');
     expect(newState).not.toBe(initialState);
 
-    // Toggle back
-    await toggle.click({ force: true });
-    await page.waitForTimeout(300);
+    // Toggle back — re-fetch the toggle locator because its aria-label
+    // has now changed (Collapse ↔ Expand) and the cached locator may
+    // resolve to a stale node.
+    const toggleAgain = page.getByRole('button', { name: /collapse sidebar|expand sidebar/i }).first();
+    await toggleAgain.click({ force: true });
+    await page.waitForTimeout(500);
     const restoredState = await wrapper.getAttribute('data-state');
     expect(restoredState).toBe(initialState);
   });

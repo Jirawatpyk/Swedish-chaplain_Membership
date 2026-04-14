@@ -136,7 +136,9 @@ test.describe('keyboard-only plans admin — T158', () => {
     await page.goto('/admin/settings/fees');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByText(/vat rate/i)).toBeVisible({ timeout: 5_000 });
+    // Use getByLabel to disambiguate from the page subtitle that also
+    // contains "VAT rate" text.
+    await expect(page.getByLabel(/vat rate/i)).toBeVisible({ timeout: 5_000 });
 
     // Tab through form fields — verify we can reach the VAT and registration fee inputs
     let reachedVat = false;
