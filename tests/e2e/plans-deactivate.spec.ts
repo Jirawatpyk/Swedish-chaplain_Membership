@@ -46,6 +46,27 @@ test.describe('plans deactivate / delete / undelete — US4', () => {
     await signIn(page);
     await page.goto('/admin/plans');
 
+    // Ensure Premium starts Active (previous test runs may have left it
+    // Inactive or deleted). Show-deleted first so a soft-deleted Premium
+    // is visible and can be restored if present.
+    await page.goto('/admin/plans?showDeleted=true');
+    const premiumRow = page.locator('[data-plan-id="premium"]').first();
+    if (await premiumRow.count() > 0) {
+      const statusText = (await premiumRow.textContent()) ?? '';
+      if (/deleted/i.test(statusText)) {
+        await premiumRow.getByRole('button', { name: /actions/i }).click();
+        await page.getByRole('menuitem', { name: /undelete|restore/i }).click();
+        await page.getByRole('alertdialog').getByRole('button', { name: /restore/i }).click();
+        await page.waitForTimeout(500);
+      }
+      if (/inactive/i.test(statusText)) {
+        await premiumRow.getByRole('button', { name: /actions/i }).click();
+        await page.getByRole('menuitem', { name: /^activate$/i }).click();
+        await page.waitForTimeout(500);
+      }
+    }
+    await page.goto('/admin/plans');
+
     // 1. Deactivate via row-level dropdown
     const row = page.locator('[data-plan-id="premium"]').first();
     await row.getByRole('button', { name: /actions/i }).click();

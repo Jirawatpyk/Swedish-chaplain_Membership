@@ -27,12 +27,17 @@ test.describe('F4 SC-013 — data table consistency @layout', () => {
       await row.waitFor({ timeout: 10_000 });
       return row.evaluate((el) => {
         const cs = getComputedStyle(el);
-        const td = el.querySelector('td');
+        // Skip cells with explicit pr-0 / pl-0 overrides (action columns
+        // and checkbox columns have those for icon-button alignment).
+        const td = Array.from(el.querySelectorAll('td')).find((cell) => {
+          const cellCs = getComputedStyle(cell);
+          return parseFloat(cellCs.paddingLeft) > 0;
+        });
         const tdCs = td ? getComputedStyle(td) : null;
         return {
           rowHeight: el.getBoundingClientRect().height,
-          cellPaddingX: tdCs?.paddingInlineStart,
-          cellPaddingY: tdCs?.paddingBlockStart,
+          cellPaddingX: tdCs?.paddingLeft,
+          cellPaddingY: tdCs?.paddingTop,
           hoverBg: cs.backgroundColor,
         };
       });

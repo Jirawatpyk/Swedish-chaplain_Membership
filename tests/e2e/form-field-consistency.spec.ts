@@ -22,7 +22,11 @@ test.describe('F4 SC-012 — form field consistency @layout', () => {
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     await page.goto('/admin/settings/fees');
-    const inputs = page.locator('input[type="text"], input[type="number"], input:not([type])');
+    // Scope to visible inputs only — hidden inputs (search Select combobox
+    // hidden in Base UI, inputs inside closed dialogs, etc.) have
+    // getBoundingClientRect().height === 0 and aren't part of the form
+    // field consistency check.
+    const inputs = page.locator('input[type="text"]:visible, input[type="number"]:visible, input:not([type]):visible');
     const count = await inputs.count();
     expect(count).toBeGreaterThan(0);
 

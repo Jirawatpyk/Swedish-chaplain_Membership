@@ -83,7 +83,10 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     await signIn(page);
     await page.goto('/admin');
 
-    const wrapper = page.locator('[data-slot="sidebar-wrapper"]');
+    // data-state lives on [data-slot="sidebar"] (the inner sidebar
+     // element), not on sidebar-wrapper. There are usually two sidebar
+     // elements (desktop + mobile) — take the desktop one.
+    const wrapper = page.locator('[data-slot="sidebar"]').first();
 
     // Find toggle button
     const toggle = page.getByRole('button', { name: /collapse sidebar|expand sidebar/i });
@@ -91,6 +94,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
 
     // Get initial state
     const initialState = await wrapper.getAttribute('data-state');
+    expect(initialState).not.toBeNull();
 
     // Toggle
     await toggle.click();

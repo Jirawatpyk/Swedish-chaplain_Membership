@@ -271,12 +271,15 @@ export function PlansTable({
           <Switch
             id="plans-active-only"
             checked={activeOnly}
+            aria-labelledby="plans-active-only-label"
             onCheckedChange={(v) => {
               setActiveOnly(v);
               updateFilter({ activeOnly: v ? 'true' : null });
             }}
           />
-          <Label htmlFor="plans-active-only">{t('filters.activeOnly')}</Label>
+          <Label htmlFor="plans-active-only" id="plans-active-only-label">
+            {t('filters.activeOnly')}
+          </Label>
         </div>
 
         {isAdmin ? (
@@ -284,12 +287,15 @@ export function PlansTable({
             <Switch
               id="plans-show-deleted"
               checked={showDeleted}
+              aria-labelledby="plans-show-deleted-label"
               onCheckedChange={(v) => {
                 setShowDeleted(v);
                 updateFilter({ showDeleted: v ? 'true' : null });
               }}
             />
-            <Label htmlFor="plans-show-deleted">{t('filters.showDeleted')}</Label>
+            <Label htmlFor="plans-show-deleted" id="plans-show-deleted-label">
+              {t('filters.showDeleted')}
+            </Label>
           </div>
         ) : null}
       </div>

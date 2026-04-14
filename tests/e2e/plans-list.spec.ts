@@ -99,9 +99,10 @@ test.describe('plans list — US1 @i18n', () => {
     await page.getByLabel(/password/i).fill(memberPassword!);
     await page.getByRole('button', { name: /sign in/i }).click();
     // Member signs in to portal — manual navigation to /admin/plans must
-    // redirect away (never 200 the staff page)
-    const response = await page.goto('/admin/plans');
-    // Redirected to portal OR 403 — either is acceptable, just not 200 staff page
-    expect([302, 307, 403]).toContain(response?.status() ?? 200);
+    // redirect away. page.goto() follows redirects so the final status is
+    // usually 200 (on the destination). Check the final URL instead —
+    // it must NOT stay on the staff page.
+    await page.goto('/admin/plans');
+    await expect(page).not.toHaveURL(/\/admin\/plans(\?|$)/);
   });
 });
