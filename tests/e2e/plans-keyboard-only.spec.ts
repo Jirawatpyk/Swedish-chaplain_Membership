@@ -99,7 +99,7 @@ test.describe('keyboard-only plans admin — T158', () => {
     await page.waitForLoadState('networkidle');
 
     // Verify plans table is visible
-    const rows = page.getByRole('row').filter({ has: page.locator('[data-plan-id]') });
+    const rows = page.locator('tr[data-plan-id]');
     await expect(rows).toHaveCount(9, { timeout: 10_000 });
 
     // Tab into the table area — we should be able to reach row links

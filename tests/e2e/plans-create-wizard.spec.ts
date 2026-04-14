@@ -85,7 +85,7 @@ test.describe('plans create + clone wizard — US2', () => {
     // Verify 9 new rows in the 2028 filter
     await page.waitForURL(/\/admin\/plans/, { timeout: 10_000 });
     await page.getByLabel(/year/i).fill('2028');
-    const rows = page.getByRole('row').filter({ has: page.locator('[data-plan-id]') });
+    const rows = page.locator('tr[data-plan-id]');
     await expect(rows).toHaveCount(9, { timeout: 10_000 });
   });
 });

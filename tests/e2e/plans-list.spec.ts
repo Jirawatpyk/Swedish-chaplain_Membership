@@ -48,24 +48,25 @@ test.describe('plans list — US1 @i18n', () => {
     await page.goto('/admin/plans');
 
     // 1. Expect 9 rows (6 corporate + 3 partnership from the SweCham 2026 seed)
-    const rows = page.getByRole('row').filter({ has: page.locator('[data-plan-id]') });
+    const rows = page.locator('tr[data-plan-id]');
     await expect(rows).toHaveCount(9, { timeout: 10_000 });
 
     // 2. Filter category = partnership → 3 rows
-    await page.getByLabel(/category/i).selectOption('partnership');
+    //    Filter is URL-backed — navigate with query param directly since the
+    //    Base UI Select is a button, not a native <select>.
+    await page.goto('/admin/plans?category=partnership');
     await expect(rows).toHaveCount(3);
 
     // 3. Reset filter + switch to Thai locale (via language switcher if present,
     //    else by navigating with ?locale=th). The e2e suite doesn't ship a
     //    language switcher yet — we rely on the Accept-Language override.
-    await page.getByLabel(/category/i).selectOption('');
     await page.goto('/admin/plans');
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'th-TH' });
     await page.reload();
     // Plan names should now render in Thai — at least one row should contain
     // a Thai character (basic sanity check; comprehensive i18n coverage is
     // in plans-i18n-coverage.spec.ts)
-    const thRows = page.getByRole('row').filter({ has: page.locator('[data-plan-id]') });
+    const thRows = page.locator('tr[data-plan-id]');
     const firstName = await thRows.first().locator('[data-plan-name]').textContent();
     // Match any Thai character range U+0E00-U+0E7F
     expect(firstName).toMatch(/[\u0e00-\u0e7f]/);
@@ -88,9 +89,7 @@ test.describe('plans list — US1 @i18n', () => {
         `year=${badYear} must not 500`,
       ).toBeLessThan(500);
       // Page renders the 9 seeded 2026 plans (filter silently dropped)
-      const rows = page.getByRole('row').filter({
-        has: page.locator('[data-plan-id]'),
-      });
+      const rows = page.locator('tr[data-plan-id]');
       await expect(rows).toHaveCount(9, { timeout: 5_000 });
     }
   });
