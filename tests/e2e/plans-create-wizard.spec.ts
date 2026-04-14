@@ -72,23 +72,33 @@ test.describe('plans create + clone wizard — US2', () => {
     await signIn(page);
     await page.goto('/admin/plans/clone');
 
-    // Pick source + target years
+    // Pick a unique target year per run so re-runs don't hit
+    // 409 target_year_populated. Range 2030-2099 gives plenty of room.
+    const TARGET_YEAR = String(2030 + (Date.now() % 70));
+
     await page.getByLabel(/source year/i).fill('2026');
-    await page.getByLabel(/target year/i).fill('2028'); // use 2028 to avoid collision with previous test
+    await page.getByLabel(/target year/i).fill(TARGET_YEAR);
 
     // Open confirmation dialog — use the page-level submit button,
     // not any "Clone year" nav link
     await page.getByRole('button', { name: /^clone\s+\d+\s+plans?$/i }).click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
-    // Click the confirmation button inside the dialog
-    await page
-      .getByRole('alertdialog')
-      .getByRole('button', { name: /^clone\s+\d+\s+plans?$/i })
-      .click();
 
-    // Verify 9 new rows in the 2028 filter
-    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin\/plans(\/|$)/.test(p) && !p.startsWith("/admin/plans/clone"); }, { timeout: 10_000 });
-    await page.goto('/admin/plans?year=2028');
+    // Click the confirmation button + wait for the POST in parallel
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/api/plans/clone') && r.request().method() === 'POST',
+        { timeout: 10_000 },
+      ),
+      page
+        .getByRole('alertdialog')
+        .getByRole('button', { name: /^clone\s+\d+\s+plans?$/i })
+        .click(),
+    ]);
+    expect(response.status()).toBe(201);
+
+    // Verify 9 new rows in the target-year filter
+    await page.goto(`/admin/plans?year=${TARGET_YEAR}`);
     const rows = page.locator('tr[data-plan-id]');
     await expect(rows).toHaveCount(9, { timeout: 10_000 });
   });

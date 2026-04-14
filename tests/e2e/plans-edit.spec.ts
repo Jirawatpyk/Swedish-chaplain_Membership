@@ -44,16 +44,27 @@ test.describe('plans edit — US3', () => {
 
     await expect(page.getByRole('heading', { name: /premium/i })).toBeVisible();
 
-    // Mutate plan_name.en
+    // Mutate plan_name.en — use a unique value so re-runs don't no-op
+    const newName = `Premium Plus ${Date.now().toString(36).slice(-4)}`;
     const nameInput = page.getByLabel(/plan name.*en/i).first();
-    await nameInput.fill('Premium Plus');
+    await nameInput.fill(newName);
+    // Wait a tick for React state to commit before clicking submit
+    await page.waitForTimeout(150);
 
-    // Save
-    await page.getByRole('button', { name: /save/i }).click();
+    // Save — wait for the PATCH response in parallel with the click so
+    // we catch both success and validation errors deterministically.
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/api/plans/2026/premium') && r.request().method() === 'PATCH',
+        { timeout: 10_000 },
+      ),
+      page.getByRole('button', { name: /save/i }).click(),
+    ]);
+    expect(response.status()).toBe(200);
 
     // Redirect back to list (toast may fire + fade before we can assert)
     await page.waitForURL(/\/admin\/plans(?!\/\d{4})/, { timeout: 10_000 });
-    await expect(page.getByText('Premium Plus')).toBeVisible();
+    await expect(page.getByText(newName)).toBeVisible();
   });
 
   test('admin sees persistent lock banner on prior-year plan', async ({ page }) => {

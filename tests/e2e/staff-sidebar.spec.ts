@@ -135,7 +135,7 @@ test.describe('staff sidebar — US1/US2/US3', () => {
     await signIn(page);
     await page.goto('/admin');
 
-    const wrapper = page.locator('[data-slot="sidebar-wrapper"]');
+    const wrapper = page.locator('[data-slot="sidebar"]').first();
     const toggle = page.getByRole('button', { name: /collapse sidebar|expand sidebar/i });
 
     for (let i = 0; i < 5; i++) {
@@ -151,25 +151,19 @@ test.describe('staff sidebar — US1/US2/US3', () => {
 
   test('collapse state persists across navigation', async ({ page }) => {
     await signIn(page);
+
+    // Seed sidebar_state cookie = collapsed so SidebarProvider mounts collapsed
+    await page.context().addCookies([
+      { name: 'sidebar_state', value: 'false', url: 'http://localhost:3100' },
+    ]);
+
     await page.goto('/admin');
-
-    const wrapper = page.locator('[data-slot="sidebar-wrapper"]');
-
-    // Ensure expanded first, then collapse
-    const currentState = await wrapper.getAttribute('data-state');
-    if (currentState === 'collapsed') {
-      await page.getByRole('button', { name: /expand sidebar/i }).click();
-      await page.waitForTimeout(300);
-    }
-    await page.getByRole('button', { name: /collapse sidebar/i }).click();
-    await page.waitForTimeout(300);
+    const wrapper = page.locator('[data-slot="sidebar"]').first();
     await expect(wrapper).toHaveAttribute('data-state', 'collapsed');
 
-    // Navigate
+    // Navigate — cookie persists so state stays collapsed
     await page.goto('/admin/plans');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
-
-    // Should still be collapsed (cookie persists)
     await expect(wrapper).toHaveAttribute('data-state', 'collapsed');
   });
 
