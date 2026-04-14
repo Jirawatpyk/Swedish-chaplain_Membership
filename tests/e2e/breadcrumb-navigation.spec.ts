@@ -31,7 +31,10 @@ test.describe('F4 US3 — breadcrumb navigation @layout', () => {
 
     // /admin/settings/fees → depth 3 → breadcrumb
     await page.goto('/admin/settings/fees');
-    const crumbs = page.locator('[data-slot="breadcrumb"] [data-slot="breadcrumb-item"]');
+    // Component renders both desktop + mobile breadcrumb lists for
+    // responsive switching; count only the visible (desktop) list.
+    const crumbs = page
+      .locator('[data-slot="breadcrumb-list"]:visible [data-slot="breadcrumb-item"]');
     await expect(crumbs.first()).toBeVisible();
     await expect(crumbs).toHaveCount(3);
   });

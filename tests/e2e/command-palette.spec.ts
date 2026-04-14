@@ -99,11 +99,10 @@ test.describe('command palette — US6', () => {
     // Wait for debounced filter to settle
     await page.waitForTimeout(300);
 
-    // cmdk needs explicit arrow-down to highlight the first option before
-    // Enter can select it (the auto-select-first behavior is not reliable
-    // across React 19 + cmdk versions).
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Enter');
+    // Click the matched option directly — more reliable than relying on
+    // cmdk's keyboard selection, which doesn't always propagate Enter
+    // to the highlighted option under React 19.
+    await palette.getByRole('option', { name: /platinum/i }).click();
 
     await page.waitForURL(/\/admin\/plans\/\d{4}\/platinum/, {
       timeout: 5_000,

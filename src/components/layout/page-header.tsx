@@ -26,7 +26,10 @@ export function PageHeader({
     <header
       data-slot="page-header"
       className={cn(
-        '[margin-block-end:var(--page-header-gap)] flex flex-wrap items-start justify-between gap-3',
+        // Below Tailwind's sm breakpoint (640px) stack title + actions
+        // vertically so action groups wrap cleanly on mobile. At 640px+
+        // lay out inline with flex-wrap as a safety net for long titles.
+        '[margin-block-end:var(--page-header-gap)] flex flex-col items-start justify-between gap-3 sm:flex-row sm:flex-wrap',
         className,
       )}
     >

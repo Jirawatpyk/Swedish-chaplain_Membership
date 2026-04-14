@@ -51,7 +51,16 @@ test.describe('F4 SC-010 — typography scale @layout', () => {
         const count = await headings.count();
         for (let i = 0; i < count; i++) {
           const el = headings.nth(i);
-          const className = await el.evaluate((node) => node.className);
+          // Skip headings rendered inside dialog/popover portals — they
+          // inherit their own type scale from the primitive and are not
+          // page-level headings.
+          const { className, inPortal } = await el.evaluate((node) => ({
+            className: node.className,
+            inPortal: node.closest(
+              '[role="dialog"],[role="alertdialog"],[data-slot="popover-content"],[data-slot="dropdown-menu-content"]',
+            ) !== null,
+          }));
+          if (inPortal) continue;
           const hasHeadingToken = className.includes(`text-h${level}`);
           const hasCaptionOptOut = className.includes('text-caption');
           expect(

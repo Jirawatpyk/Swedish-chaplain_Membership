@@ -45,7 +45,7 @@ test.describe('plans a11y — US1 @a11y', () => {
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     await page.goto('/admin/plans/2026/premium');
-    await page.locator('h1').waitFor({ timeout: 10_000 });
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

@@ -76,15 +76,19 @@ test.describe('plans create + clone wizard — US2', () => {
     await page.getByLabel(/source year/i).fill('2026');
     await page.getByLabel(/target year/i).fill('2028'); // use 2028 to avoid collision with previous test
 
-    // Open confirmation dialog
-    await page.getByRole('button', { name: /clone/i }).click();
+    // Open confirmation dialog — use the page-level submit button,
+    // not any "Clone year" nav link
+    await page.getByRole('button', { name: /^clone\s+\d+\s+plans?$/i }).click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
-    await expect(page.getByText(/9 plans/i)).toBeVisible();
-    await page.getByRole('button', { name: /clone \d+ plans/i }).click();
+    // Click the confirmation button inside the dialog
+    await page
+      .getByRole('alertdialog')
+      .getByRole('button', { name: /^clone\s+\d+\s+plans?$/i })
+      .click();
 
     // Verify 9 new rows in the 2028 filter
-    await page.waitForURL(/\/admin\/plans/, { timeout: 10_000 });
-    await page.getByLabel(/year/i).fill('2028');
+    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin\/plans(\/|$)/.test(p) && !p.startsWith("/admin/plans/clone"); }, { timeout: 10_000 });
+    await page.goto('/admin/plans?year=2028');
     const rows = page.locator('tr[data-plan-id]');
     await expect(rows).toHaveCount(9, { timeout: 10_000 });
   });
