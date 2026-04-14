@@ -337,11 +337,16 @@ export function PlansTable({
                   data-plan-year={plan.plan_year}
                 >
                   <TableCell>
-                    <LocaleTextDisplay
-                      value={plan.plan_name}
-                      showMissingBadge={isAdmin}
-                      dataAttr="data-plan-name"
-                    />
+                    <a
+                      href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`}
+                      className="hover:underline focus-visible:underline"
+                    >
+                      <LocaleTextDisplay
+                        value={plan.plan_name}
+                        showMissingBadge={isAdmin}
+                        dataAttr="data-plan-name"
+                      />
+                    </a>
                   </TableCell>
                   <TableCell>
                     <Badge
