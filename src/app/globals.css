@@ -208,7 +208,10 @@
  * Desktop (≥1024px) respects the user's expand/collapse preference. */
 @media (min-width: 768px) and (max-width: 1023px) {
   [data-slot="sidebar-wrapper"] {
-    --sidebar-width: 3rem;            /* match --sidebar-width-icon */
+    /* !important is required because SidebarProvider sets the var
+     * inline via style={} which would otherwise win specificity
+     * over an @media stylesheet rule. */
+    --sidebar-width: 3rem !important;            /* match --sidebar-width-icon */
   }
 }
 
