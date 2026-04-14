@@ -171,7 +171,7 @@ export function PlanFormWizard({
           <h2 className="text-lg font-semibold">{t('steps.basics')}</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
-              <Label>{tLabels('planId')}</Label>
+              <Label htmlFor="plan_id">{tLabels('planId')}</Label>
               <Input
                 id="plan_id"
                 value={draft.plan_id}
