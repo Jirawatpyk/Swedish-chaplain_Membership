@@ -444,6 +444,18 @@
           "validation": "Korrigera de markerade fälten."
         }
       }
+    },
+    "members": {
+      "title": "Members",
+      "overrideReason": {
+        "board_approved": "Board approved",
+        "pending_renewal_grace": "Pending renewal (grace period)",
+        "data_correction": "Data correction",
+        "other": "Other"
+      },
+      "bundleChangeWarning": {
+        "title": "Plan bundle change"
+      }
     }
   },
   "palette": {
@@ -509,5 +521,37 @@
     "loadingPage": "Laddar sidinnehåll",
     "loadingTable": "Laddar tabelldata",
     "loadingForm": "Laddar formulär"
+  },
+  "portal": {
+    "profile": {
+      "title": "My profile"
+    }
+  },
+  "audit": {
+    "eventType": {
+      "member_created": "Member created",
+      "member_updated": "Member updated",
+      "member_plan_changed": "Plan changed",
+      "member_primary_contact_changed": "Primary contact changed",
+      "member_status_changed": "Status changed",
+      "member_archived": "Member archived",
+      "member_undeleted": "Member undeleted",
+      "contact_created": "Contact added",
+      "contact_updated": "Contact updated",
+      "contact_removed": "Contact removed",
+      "member_self_updated": "Profile updated by member",
+      "member_self_update_forbidden": "Forbidden self-update blocked",
+      "member_cross_tenant_probe": "Cross-tenant probe detected",
+      "plan_bundle_changed": "Plan bundle changed",
+      "member_contact_email_changed": "Contact email changed",
+      "user_sessions_revoked": "Sessions revoked",
+      "email_verification_sent": "Email verification sent",
+      "email_change_notification_sent_to_old_address": "Email-change notice sent to old address",
+      "member_email_change_reverted": "Email change reverted",
+      "email_verification_resent": "Verification email resent",
+      "email_dispatch_failed": "Email dispatch failed",
+      "invitation_bounced": "Invitation bounced",
+      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
+    }
   }
 }

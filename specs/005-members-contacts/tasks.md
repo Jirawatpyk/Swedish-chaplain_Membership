@@ -17,12 +17,12 @@
 
 **Purpose**: Install new dependencies, configure ESLint boundaries, extend i18n scaffolding.
 
-- [ ] T001 Install `@tanstack/react-table@^8` + `i18n-iso-countries@^7` via `pnpm add` and verify React 19 compat per research § 7 and § 10
-- [ ] T002 [P] Install shadcn primitives `checkbox`, `combobox`, `calendar` via `pnpm dlx shadcn@latest add checkbox combobox calendar`
-- [ ] T003 [P] Extend `eslint.config.mjs` with `no-restricted-imports` rules forbidding (a) deep imports into `src/modules/members/{domain,application,infrastructure}` from outside the module, (b) `@/modules/auth/domain/**` imports from `src/modules/members/**` (per Plan E2 branded-UserId rule)
-- [ ] T004 [P] Extend `vitest.config.ts` coverage config to include `src/modules/members/**` with Domain=100% line, Application=80% line+branch, 100% branch on security-critical use cases listed in plan § Constitution Check II
-- [ ] T005 [P] Scaffold i18n keys: add empty `admin.members.*`, `admin.members.overrideReason.*`, `admin.members.bundleChangeWarning.*`, `portal.profile.*`, `audit.eventType.{member_*,contact_*,plan_bundle_changed,member_contact_email_changed,user_sessions_revoked,email_verification_sent,email_change_notification_sent_to_old_address,member_email_change_reverted,email_verification_resent,email_dispatch_failed,invitation_bounced,bulk_action_rate_limit_exceeded}` across `src/i18n/messages/{en,th,sv}.json`
-- [ ] T006 [P] Add environment variable `FEATURE_F3_MEMBERS` (default `true`) to `src/lib/env.ts` zod schema and document in `.env.example`
+- [X] T001 Install `@tanstack/react-table@^8` + `i18n-iso-countries@^7` via `pnpm add` and verify React 19 compat per research § 7 and § 10
+- [X] T002 [P] Install shadcn primitives `checkbox`, `combobox`, `calendar` via `pnpm dlx shadcn@latest add checkbox combobox calendar` (combobox = Popover + Command composition, no separate primitive)
+- [X] T003 [P] Extend `eslint.config.mjs` with `no-restricted-imports` rules forbidding (a) deep imports into `src/modules/members/{domain,application,infrastructure}` from outside the module, (b) `@/modules/auth/domain/**` imports from `src/modules/members/**` (per Plan E2 branded-UserId rule)
+- [X] T004 [P] Extend `vitest.config.ts` coverage config to include `src/modules/members/**` with Domain=100% line, Application=80% line+branch, 100% branch on security-critical use cases listed in plan § Constitution Check II
+- [X] T005 [P] Scaffold i18n keys: add `admin.members.*`, `admin.members.overrideReason.*`, `admin.members.bundleChangeWarning.*`, `portal.profile.*`, `audit.eventType.{23 F3 events}` across `src/i18n/messages/{en,th,sv}.json` (367 keys × 3 locales, `pnpm check:i18n` OK)
+- [X] T006 [P] Add environment variable `FEATURE_F3_MEMBERS` (default `true`) to `src/lib/env.ts` zod schema and document in `.env.example`
 
 ---
 
@@ -32,57 +32,57 @@
 
 ### Database schema + RLS
 
-- [ ] T007 Author failing integration test `tests/integration/members/migration-schema.test.ts` that asserts presence of `members` + `contacts` tables, `pg_trgm` extension, all required indexes (per data-model § 2), and RLS enabled + FORCED on both tables
-- [ ] T008 Create Drizzle schema `src/modules/members/infrastructure/db/schema-members.ts` matching data-model § 1.1 (including `last_activity_at` denorm column)
-- [ ] T009 Create Drizzle schema `src/modules/members/infrastructure/db/schema-contacts.ts` matching data-model § 1.2
-- [ ] T010 Generate migration `drizzle/migrations/0008_members_contacts.sql` via `pnpm drizzle-kit generate`; manually extend with RLS policies, `pg_trgm` extension, `CREATE INDEX CONCURRENTLY` statements, and the primary-contact partial unique index per data-model § 2 + § 3
-- [ ] T011 Add Postgres trigger to `0008` migration: `AFTER INSERT ON audit_log` that updates `members.last_activity_at = NEW.timestamp WHERE member_id = NEW.payload->>'member_id'` (R2-E3 requirement)
-- [ ] T012 Author failing integration test `tests/integration/members/tenant-isolation.test.ts` — creates two UUID-suffixed tenants, inserts members + contacts for each, asserts zero cross-tenant visibility on SELECT/INSERT/UPDATE/DELETE + emission of `member_cross_tenant_probe` audit event (**Review-Gate blocker — Constitution Principle I clause 3**)
-- [ ] T013 Extend `tests/integration/rls-coverage.test.ts` (F2) to include `members` + `contacts` in its `information_schema.tables` loop (critique E12)
+- [X] T007 Author integration test `tests/integration/members/migration-schema.test.ts` — 9/9 green; asserts members + contacts tables, pg_trgm, 9 key indexes, RLS + FORCE, 23 audit enum values, `member_status` enum, trigger installation
+- [X] T008 Create Drizzle schema `src/modules/members/infrastructure/db/schema-members.ts` matching data-model § 1.1 (including `last_activity_at` denorm column)
+- [X] T009 Create Drizzle schema `src/modules/members/infrastructure/db/schema-contacts.ts` matching data-model § 1.2
+- [X] T010 Migration `drizzle/migrations/0009_members_contacts.sql` — base generated via drizzle-kit, hand-extended with pg_trgm, GIN trgm indexes, composite FKs, 19 CHECK constraints, chamber_app DML + enum USAGE grants, RLS + FORCE + policies (ENABLE/ALL/USING+WITH CHECK on both tables), SECURITY DEFINER last_activity_at trigger function (numbered 0009 because 0008 was already consumed by F2 polish migration `0008_money_columns_to_bigint.sql`)
+- [X] T011 Trigger `audit_log_bump_member_last_activity` in migration 0009 — SECURITY DEFINER function with scoped `UPDATE members SET last_activity_at = NEW.timestamp WHERE member_id = (NEW.payload->>'member_id')::uuid AND tenant_id = NEW.tenant_id`; gracefully skips malformed payloads via exception handler (R2-E3 requirement)
+- [X] T012 Integration test `tests/integration/members/tenant-isolation.test.ts` — **14/14 green on live Neon Singapore** (Review-Gate blocker — Constitution v1.4.0 Principle I clause 3). Covers: members + contacts SELECT/UPDATE/DELETE/INSERT isolation both directions, RLS WITH CHECK rejection on forged tenant_id, secure-default zero rows when `app.current_tenant` unset, per-tenant email uniqueness (consultant across tenants), primary-contact partial unique index enforcement, cross-tenant composite FK violation
+- [X] T013 New test `tests/integration/rls-coverage.test.ts` — 8/8 green; parametrized `it.each` loop over `[membership_plans, tenant_fee_config, members, contacts]` asserting (a) `rowsecurity=true, forcerowsecurity=true` via `pg_class`, (b) every policy's `qual` references `current_setting('app.current_tenant', ...)`. Net future-proofing: any new tenant-scoped table added without RLS red-fails CI here (critique E12)
 
 ### Audit log extension
 
-- [ ] T014 Author migration `drizzle/migrations/0009_audit_log_f3_extension.sql` with **23 `ALTER TYPE audit_event_type ADD VALUE`** statements wrapped in idempotent `DO $$ BEGIN … EXCEPTION WHEN duplicate_object THEN NULL; END $$;` blocks (per Plan § Migration Rollback Plan R2-E4), covering every event listed in spec FR-023 + data-model § 4 (authoritative count)
-- [ ] T015 Apply both migrations via `pnpm drizzle-kit migrate` to local + staging Neon; verify via `psql -c "SELECT enum_range(NULL::audit_event_type);"` that all new values are registered
+- [X] T014 Migration `drizzle/migrations/0010_audit_log_f3_extension.sql` — 23 `ALTER TYPE audit_event_type ADD VALUE` statements wrapped in idempotent `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid WHERE t.typname = 'audit_event_type' AND e.enumlabel = '...') THEN ... END IF; END$$` blocks (same pattern as F2 migration 0007). Numbered 0010 because the members_contacts migration took slot 0009. Journal `_journal.json` updated to register it.
+- [X] T015 Applied both migrations via `pnpm db:migrate` to live Neon Singapore; verified via direct pg_enum + pg_class + pg_extension + information_schema queries — all 23 new audit event types present, pg_trgm enabled, RLS enabled+forced on both tables, trigger installed, 4/4 key indexes present
 
 ### Domain layer — tenants module reuse + members module skeleton
 
-- [ ] T016 [P] Create `src/modules/members/index.ts` public barrel skeleton (exports to be filled story-by-story)
-- [ ] T017 [P] Create `src/modules/members/domain/value-objects/email.ts` — RFC 5321 email validator + branded type
-- [ ] T018 [P] Create `src/modules/members/domain/value-objects/phone.ts` — E.164 validator + branded type
-- [ ] T019 [P] Create `src/modules/members/domain/value-objects/iso-country-code.ts` — ISO 3166-1 alpha-2 enum validator
-- [ ] T020 [P] Create `src/modules/members/domain/value-objects/tax-id.ts` — country-aware validator incl. Thai 13-digit checksum
-- [ ] T021 [P] Create `src/modules/members/domain/value-objects/override-reason.ts` — enum `board_approved|pending_renewal_grace|data_correction|other` + 500-char note + "other requires note" invariant (FR-006a)
-- [ ] T022 [P] Create `src/modules/members/domain/value-objects/user-id.ts` — branded opaque `UserId` type (plan E2: NOT imported from auth/domain)
-- [ ] T023 [P] Create `src/modules/members/domain/member.ts` — Member aggregate root, `MemberStatus` state machine (`active` ↔ `inactive`; `* → archived`; `archived → active` iff < 90 days)
-- [ ] T024 [P] Create `src/modules/members/domain/contact.ts` — Contact entity owned by Member
-- [ ] T025 [P] Create `src/modules/members/domain/policies/primary-contact-invariant.ts` — asserts exactly one `is_primary=TRUE` per member while `removed_at IS NULL` + status ∈ {active, inactive}
-- [ ] T026 [P] Create `src/modules/members/domain/policies/turnover-policy.ts` — validates `turnover_thb` against plan band (FR-006)
-- [ ] T027 [P] Create `src/modules/members/domain/policies/age-eligibility-policy.ts` — Thai Alumni age ≤ 35 at plan start (FR-008)
-- [ ] T028 [P] Create `src/modules/members/domain/policies/startup-duration-policy.ts` — Start-up `founded_year` within 2 years of registration (FR-007)
-- [ ] T029 [P] Create `src/modules/members/domain/policies/archive-window-policy.ts` — 90-day undelete rule
-- [ ] T030 [P] Create `src/modules/members/domain/policies/thai-tax-id-checksum.ts` — official 13-digit weighting algorithm
-- [ ] T031 [P] Create `src/modules/members/domain/portal-self-update-fields.ts` — compile-time tuple `['firstName', 'lastName', 'phone', 'preferred_language', 'website', 'description']` (FR-014a)
-- [ ] T032 Author unit tests for every value object + policy in `tests/unit/members/domain/**`; all MUST fail (red) before moving to Application layer
+- [X] T016 [P] Public barrel `src/modules/members/index.ts` — exports Domain types + value-object constructors (exports expanded story-by-story; use-case exports added when Application layer lands)
+- [X] T017 [P] `domain/value-objects/email.ts` — RFC 5322-simplified regex + lowercase normalization + 254-char RFC 5321 cap + 4 error codes (empty / too_long / invalid_format)
+- [X] T018 [P] `domain/value-objects/phone.ts` — E.164 (+[1-9]{7,14}$) + strips ASCII formatting chars before validation
+- [X] T019 [P] `domain/value-objects/iso-country-code.ts` — `i18n-iso-countries.isValid()` (pure-data lookup, no framework) + uppercase + trim
+- [X] T020 [P] `domain/value-objects/tax-id.ts` — country-aware: Thai (`country='TH'`) enforces 13-digit format + checksum; others are length 1..50 with no checksum
+- [X] T021 [P] `domain/value-objects/override-reason.ts` — 4-enum + 500-char note + "other requires note" invariant
+- [X] T022 [P] `domain/value-objects/user-id.ts` — branded opaque UUID-validated UserId (lowercase-normalized). ESLint rule (added in T003) forbids `@/modules/auth/domain/**` imports from members/** so the opacity is enforced at build time
+- [X] T023 [P] `domain/member.ts` — Member aggregate type + `MEMBER_STATUSES` + `setStatus`, `archive`, `undelete` (90-day window) state transitions returning `Result<Member, MemberStateError>`
+- [X] T024 [P] `domain/contact.ts` — Contact entity type + `PREFERRED_LANGUAGES` + `isPreferredLanguage` guard
+- [X] T025 [P] `domain/policies/primary-contact-invariant.ts` — `assertPrimaryContactInvariant(contacts, memberStatus)`; rule suspended when status='archived'; reports zero / multiple / removed-and-primary violations
+- [X] T026 [P] `domain/policies/turnover-policy.ts` — `checkTurnoverBand(turnoverThb, {minThb, maxThb})`; null turnover skips, null-bound sides are open
+- [X] T027 [P] `domain/policies/age-eligibility-policy.ts` — `checkAgeEligibility(dob, planStart, maxAge=35)`; handles month/day delta; inclusive `<=`
+- [X] T028 [P] `domain/policies/startup-duration-policy.ts` — `checkStartupDuration(foundedYear, regDate, maxYears=2)`
+- [X] T029 [P] `domain/policies/archive-window-policy.ts` — `archiveWindowStatus(archivedAt, now)` reports not_archived / within_window (daysRemaining) / window_expired
+- [X] T030 [P] `domain/policies/thai-tax-id-checksum.ts` — official Revenue Department 13-digit weighted-sum algorithm
+- [X] T031 [P] `domain/portal-self-update-fields.ts` — split tuples: `PORTAL_SELF_UPDATE_CONTACT_FIELDS = ['firstName','lastName','phone','preferredLanguage']` + `PORTAL_SELF_UPDATE_MEMBER_FIELDS = ['website','description']` (FR-014a)
+- [X] T032 Unit tests for every value object + policy — **89/89 green** across 10 test files in `tests/unit/members/domain/**` (email, phone, iso-country-code, tax-id, override-reason, user-id, thai-tax-id-checksum, member-state, contact, policies.test.ts)
 
 ### Application layer ports
 
-- [ ] T033 [P] Define ports in `src/modules/members/application/ports/member-repo.ts`, `contact-repo.ts`, `audit-port.ts`, `clock-port.ts`, `email-port.ts`, `session-revocation-port.ts`, `plan-lookup-port.ts` — interfaces only, no implementation
+- [X] T033 Ports `application/ports/{member-repo,contact-repo,audit-port,clock-port,email-port,session-revocation-port,plan-lookup-port}.ts` — 7 interface files, zero implementation, returning `Result<T, RepoError>` throughout. `F3AuditEventType` union literal covers all 23 event types from data-model § 4
 
 ### RBAC extension
 
-- [ ] T034 Extend `src/modules/auth/application/rbac-guard.ts` (F1) with `members:*` and `contacts:*` resource families per research § 3
-- [ ] T035 Author failing unit tests for the RBAC matrix (admin/manager/member × CRUD × resources) in `tests/unit/auth/rbac-guard-f3.test.ts`
+- [X] T034 Extended `src/modules/auth/domain/policies.ts` (the authoritative RBAC policy — `rbac-guard.ts` lives in `src/lib/` and reads from this) with F3 resource literals: `members`, `members:bulk`, `members:own`, `contacts`, `contacts:own`. Admin full CRUD, manager read-only, member RW on `*:own` only, bulk admin-only
+- [X] T035 `tests/unit/auth/rbac-guard-f3.test.ts` — **21/21 green** covering the admin/manager/member × CRUD × 5 resources matrix including explicit denials (member cannot read directory, manager cannot bulk, member cannot delete own profile)
 
 ### Feature flag infra
 
-- [ ] T036 Create `src/lib/feature-flags.ts` helper `isF3Enabled()` reading `process.env.FEATURE_F3_MEMBERS`
-- [ ] T037 Author integration test `tests/integration/members/feature-flag-kill-switch.test.ts` asserting that when `FEATURE_F3_MEMBERS=false`, every `/api/members/**` and `/api/portal/**` route returns `503 read_only_mode`
+- [X] T036 `src/lib/feature-flags.ts` + extended `src/proxy.ts` with the FEATURE_F3_MEMBERS kill-switch branch — when `env.features.f3Members` is false, every `/api/members/**` and `/api/portal/**` request (read OR write) returns 503 `read_only_mode` with Retry-After: 300, applied BEFORE the CSRF check so disabling is unconditional
+- [X] T037 `tests/integration/middleware/feature-flag-f3-kill-switch.test.ts` — **7/7 green**; covers GET/POST/PATCH on `/api/members`, `/api/members/:id`, `/api/portal/profile` + non-F3 paths (`/api/auth/me`, `/api/plans`) pass through unaffected. Same `vi.mock('@/lib/env', …)` pattern as F2's READ_ONLY_MODE test
 
 ### Observability
 
-- [ ] T038 [P] Add `email`, `phone`, `date_of_birth`, `tax_id` to the `pino` redaction list in `src/lib/logger.ts`
-- [ ] T039 [P] Author stub `docs/observability.md § F3 Members` with metric names + SLO targets from plan § Constitution Check VII (fleshed out in Polish phase)
+- [X] T038 [P] Pino REDACT_PATHS extended with: `email`, `toEmail`, `phone`, `date_of_birth`, `dateOfBirth`, `tax_id`, `taxId` (top-level + one-level-deep `*.` variants). Uses `[REDACTED]` censor, matches existing F1 pattern
+- [X] T039 [P] `docs/observability.md § 14 F3 Members & Contacts` — 10 metrics (members.api.latency/requests, search.latency, bulk.rows_per_action, cross_tenant_probe.count, self_update_forbidden.count, email_change.count, bundle_warning_count.latency, outbox.dispatch.latency/failures) + SLO targets from plan (p95 < 400ms, search p95 < 500ms, bulk 100 rows p95 < 5s, bundle warning p95 < 200ms) + high-severity audit event thresholds + PII redaction (T038) reference
 
 ---
 

@@ -115,6 +115,14 @@ const schema = z.object({
   // "I forgot runInTenant" class of bug during development. MUST be false
   // (or unset) in production; the env validator asserts this below.
   DEBUG_RLS_STATE: booleanFromString.default(false),
+
+  // --- F3 Feature flag ------------------------------------------------------
+  // Kill-switch for the Members & Contacts feature. When FALSE every
+  // `/api/members/**` and `/api/portal/**` route returns 503 `read_only_mode`
+  // via the feature-flag guard (T036/T037). Default TRUE so normal
+  // deployments pick up the feature; set to FALSE in Vercel env to
+  // temporarily disable without a code deploy.
+  FEATURE_F3_MEMBERS: booleanFromString.default(true),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -219,6 +227,11 @@ export const env = {
   tenant: {
     slug: raw.TENANT_SLUG,
     debugRlsState: raw.DEBUG_RLS_STATE,
+  },
+
+  // F3 feature flags
+  features: {
+    f3Members: raw.FEATURE_F3_MEMBERS,
   },
 } as const;
 

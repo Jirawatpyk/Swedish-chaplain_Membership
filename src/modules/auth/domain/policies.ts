@@ -52,6 +52,14 @@ export type Action = 'read' | 'write' | 'delete' | 'admin' | 'clone';
  * F2 resource ids (added by 002-membership-plans):
  *   - 'plan'                — membership plan catalogue (CRUD + clone)
  *   - 'fee_config'          — per-tenant currency/VAT/registration fee
+ *
+ * F3 resource ids (added by 005-members-contacts):
+ *   - 'members'             — member directory + detail (admin CRUD, manager R)
+ *   - 'members:bulk'        — bulk actions (FR-019, admin-only)
+ *   - 'members:own'         — the acting member's own profile (member R+W
+ *                             on whitelisted fields per FR-014a)
+ *   - 'contacts'            — contact CRUD on any member (admin RW, manager R)
+ *   - 'contacts:own'        — member self-service contact edit (whitelisted fields)
  */
 export type Resource =
   | 'auth:self'
@@ -61,6 +69,11 @@ export type Resource =
   | 'member:portal'
   | 'plan'
   | 'fee_config'
+  | 'members'
+  | 'members:bulk'
+  | 'members:own'
+  | 'contacts'
+  | 'contacts:own'
   | (string & {});
 
 /** Self-service resource id — actions on the actor's OWN account. */
@@ -91,22 +104,32 @@ export function canAccess(role: Role, resource: Resource, action: Action): boole
   }
 
   if (role === 'admin') {
+    // F3 bulk: admin-only; other actions on bulk are meaningless.
+    if (resource === 'members:bulk') return action === 'write';
     return true;
   }
 
   if (role === 'manager') {
+    // F3: manager is read-only on the member directory + contacts.
+    // Never bulk, never write, never delete.
+    if (resource === 'members:bulk') return false;
     // Read everything; never mutate (spec Q4 — "manager read-only").
-    // F2: manager can read plan + fee_config but cannot mutate / clone.
     return action === 'read';
   }
 
   // member: F1 only exposes the member portal landing page (placeholder).
   // F2: members are blocked from the staff catalogue surface entirely.
+  // F3: members may read+write (whitelisted fields) on their OWN
+  //     profile + contact. Cross-member reads + directory reads are denied.
   if (role === 'member') {
+    if (resource === 'members:own' || resource === 'contacts:own') {
+      return action === 'read' || action === 'write';
+    }
     if (resource.startsWith('member:')) {
       return action === 'read';
     }
-    // Members may NOT browse staff resources, audit logs, or plans.
+    // Members may NOT browse staff resources, audit logs, plans, or
+    // the full member/contact directory.
     return false;
   }
 

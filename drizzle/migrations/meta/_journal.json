@@ -64,6 +64,20 @@
       "when": 1775915326091,
       "tag": "0008_money_columns_to_bigint",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776252552934,
+      "tag": "0009_members_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1776252600000,
+      "tag": "0010_audit_log_f3_extension",
+      "breakpoints": true
     }
   ]
 }

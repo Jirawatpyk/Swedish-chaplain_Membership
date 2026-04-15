@@ -118,6 +118,41 @@ export default defineConfig({
           branches: 100,
           functions: 100,
         },
+        // F3: Members Domain layer — 100% line coverage (pure functions,
+        // value objects, policies, state machine).
+        'src/modules/members/domain/**/*.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F3: Members Application layer — security-critical use cases
+        // require 100% branch coverage per plan.md § Constitution Check II.
+        'src/modules/members/application/enforce-tenant-context-on-member.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/members/application/use-cases/change-contact-email.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/members/application/enforce-self-service-field-whitelist.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/members/application/bulk-action-cap.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/members/application/archive-cascade-guard.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
       },
     },
   },

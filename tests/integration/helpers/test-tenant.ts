@@ -33,6 +33,8 @@ import {
   tenantFeeConfig,
 } from '@/modules/plans/infrastructure/db/schema';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 
 export interface TestTenant {
   readonly ctx: TenantContext;
@@ -63,6 +65,9 @@ export async function createTestTenant(
     // Run as the BYPASSRLS owner so the DELETE sees the rows regardless
     // of RLS — the whole point of the helper is to wipe everything this
     // tenant inserted. Plain `db.delete(...)` uses the owner role.
+    // Order matters: contacts → members (FK constraint), then plans → fee_config.
+    await db.delete(contacts).where(eq(contacts.tenantId, slug));
+    await db.delete(members).where(eq(members.tenantId, slug));
     await db.delete(membershipPlans).where(eq(membershipPlans.tenantId, slug));
     await db
       .delete(tenantFeeConfig)

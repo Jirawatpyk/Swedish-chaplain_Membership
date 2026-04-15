@@ -116,6 +116,7 @@ const eslintConfig = defineConfig([
       "src/modules/auth/**",
       "src/modules/plans/**",
       "src/modules/tenants/**",
+      "src/modules/members/**",
       // `src/lib/**` is the shared composition adapter layer.
       // Files here provide the glue between module internals and
       // Next.js route handlers (cookies, session lookup, db client,
@@ -173,6 +174,22 @@ const eslintConfig = defineConfig([
                 "Cross-module import must go through the tenants public barrel (`@/modules/tenants`). " +
                 "Deep imports into domain from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
             },
+            {
+              group: [
+                "@/modules/members/domain/**",
+                "@/modules/members/application/**",
+                "@/modules/members/infrastructure/**",
+                "./modules/members/domain/**",
+                "./modules/members/application/**",
+                "./modules/members/infrastructure/**",
+                "../modules/members/domain/**",
+                "../modules/members/application/**",
+                "../modules/members/infrastructure/**",
+              ],
+              message:
+                "Cross-module import must go through the members public barrel (`@/modules/members`). " +
+                "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
           ],
         },
       ],
@@ -205,6 +222,35 @@ const eslintConfig = defineConfig([
           // `export default () => (<Root className=".." />)` — expression body
           selector: `ExportDefaultDeclaration > ArrowFunctionExpression > JSXElement > JSXOpeningElement > ${PAGE_ROOT_CLASS_ATTR}`,
           message: PAGE_ROOT_MESSAGE,
+        },
+      ],
+    },
+  },
+  {
+    // F3 Plan E2 — members module must not depend on auth Domain types.
+    // `linked_user_id` is modelled as a branded opaque `UserId` inside
+    // members/domain/. Importing `@/modules/auth/domain/**` from anywhere
+    // under members/** couples Member Domain to Auth Domain and defeats
+    // the opaque-type boundary. The cross-module barrel rule above
+    // ignores `src/modules/members/**`, so this dedicated rule is needed.
+    files: ["src/modules/members/**/*.ts", "src/modules/members/**/*.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/modules/auth/domain/**",
+                "./modules/auth/domain/**",
+                "../modules/auth/domain/**",
+                "../../modules/auth/domain/**",
+              ],
+              message:
+                "F3 Plan E2 — members module must not import `@/modules/auth/domain/**`. " +
+                "Model `linked_user_id` as a branded opaque `UserId` in members/domain/ instead.",
+            },
+          ],
         },
       ],
     },

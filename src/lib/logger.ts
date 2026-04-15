@@ -65,6 +65,24 @@ const REDACT_PATHS = [
   'RESEND_API_KEY',
   'KV_REST_API_TOKEN',
   'UPSTASH_REDIS_REST_TOKEN',
+  // --- F3 member + contact PII (T038, plan § Observability) ---
+  // Never log raw contact details — they are collected under
+  // PDPA + GDPR lawful basis and log retention exceeds the data-minimization
+  // window. Tests assert redaction via `tests/unit/lib/logger-pii.test.ts`.
+  'email',
+  '*.email',
+  'toEmail',
+  '*.toEmail',
+  'phone',
+  '*.phone',
+  'date_of_birth',
+  '*.date_of_birth',
+  'dateOfBirth',
+  '*.dateOfBirth',
+  'tax_id',
+  '*.tax_id',
+  'taxId',
+  '*.taxId',
 ];
 
 const baseOptions: LoggerOptions = {

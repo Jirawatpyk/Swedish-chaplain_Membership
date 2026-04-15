@@ -363,3 +363,52 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 - F1 security metrics tie-in: `specs/001-auth-rbac/security.md` § 6 (review gate uses metrics from § 4 here)
 - F2 plan observability: `specs/002-membership-plans/plan.md` § I (Tenant Isolation) + § VII (Observability)
 - F2 cross-tenant probe design: critique E6 + E9 (2026-04-11)
+
+---
+
+## 14. F3 Members & Contacts (stub — T039)
+
+**Status**: scaffolded during Batch A.2 of F3 implementation; to be fleshed out in the Polish phase (T229+). This section lists the metric names + SLO targets derived from `specs/005-members-contacts/plan.md § Constitution Check VII`. Full runbook entries land alongside the first user story that emits each event type.
+
+### 14.1 Metrics
+
+| Metric | Type | Source |
+|---|---|---|
+| `members.api.latency_ms` | histogram | every `/api/members/**` + `/api/portal/**` route handler via OTel span duration |
+| `members.api.requests_total` | counter | every `/api/members/**` response, labels `{method, route, status}` |
+| `members.search.latency_ms` | histogram | `GET /api/members?search=…` — tracked separately because pg_trgm hit rates matter |
+| `members.bulk.rows_per_action` | histogram | `POST /api/members/bulk` — labels `{action, outcome}` |
+| `members.cross_tenant_probe.count` | counter | emitted each time `member_cross_tenant_probe` audit event lands |
+| `members.self_update_forbidden.count` | counter | emitted each time `member_self_update_forbidden` audit event lands (forged portal payload) |
+| `members.email_change.count` | counter | labels `{verified, reverted, failed}` |
+| `members.bundle_warning_count.latency_ms` | histogram | `/api/plans/[year]/[planId]/affected-members` |
+| `outbox.dispatch.latency_ms` | histogram | member-email outbox dispatcher |
+| `outbox.dispatch.failures_total` | counter | includes permanent_failed after 5 retries (emits `email_dispatch_failed` audit) |
+
+### 14.2 SLO targets
+
+- **Members API p95 < 400 ms, p99 < 800 ms** (Constitution VII)
+- **Members substring search p95 < 500 ms** on 5,000-row tenant (SC-002)
+- **Bulk-change 100 rows p95 < 5 s** with zero partial-state failures (SC-004)
+- **Bundle-change warning count fetch p95 < 200 ms** at 500-member tenant (SC-008)
+- **LCP < 2.5 s, INP < 200 ms, CLS < 0.1** on mid-range mobile over 4G (every new screen)
+
+### 14.3 High-severity audit events
+
+| Event | Threshold | Action |
+|---|---|---|
+| `member_cross_tenant_probe` | 1 in 5 min / 5 in 1 h | alarm → incident, same playbook as § 12 `plan_not_found` |
+| `member_self_update_forbidden` | 5 in 10 min per actor | alarm — investigate forged portal payload / script |
+| `email_dispatch_failed` | 1 per critical notification type | alarm — triage Resend outage vs bad template |
+| `member_email_change_reverted` | any occurrence | info-level — review for admin-impersonation ATO |
+| `bulk_action_rate_limit_exceeded` | 1 in 10 min per actor | info-level — verify not a script abuse |
+
+### 14.4 PII redaction (T038)
+
+`src/lib/logger.ts` REDACT_PATHS extended with: `email`, `toEmail`, `phone`, `date_of_birth`, `dateOfBirth`, `tax_id`, `taxId` (top-level + one-level-deep). Invariant test: `tests/unit/lib/logger-pii.test.ts` (to be authored when the first use case logs structured data).
+
+### 14.5 Reference
+
+- `specs/005-members-contacts/plan.md § VII Performance & Observability`
+- `specs/005-members-contacts/data-model.md § 4` (23 F3 audit event types + payload shapes)
+- Constitution Principle I clause 4 (audit severity for cross-tenant probes)
