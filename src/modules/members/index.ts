@@ -109,3 +109,39 @@ export {
   type DirectorySearchError,
   type DirectoryRow,
 } from './application/use-cases/directory-search';
+
+// --- US3 use cases ----------------------------------------------------------
+
+export {
+  updateMember,
+  updateMemberSchema,
+  type UpdateMemberInput,
+  type UpdateMemberError,
+  type UpdateMemberDeps,
+} from './application/use-cases/update-member';
+
+export {
+  changePlan,
+  changePlanSchema,
+  type ChangePlanInput,
+  type ChangePlanError,
+  type ChangePlanDeps,
+} from './application/use-cases/change-plan';
+
+export {
+  addContact,
+  updateContactFields,
+  removeContact,
+  promotePrimary,
+  addContactSchema,
+  updateContactFieldsSchema,
+  type ContactCrudError,
+  type ContactCrudDeps,
+} from './application/use-cases/contact-crud';
+
+export {
+  affectedMembersCount,
+  type AffectedMembersCountInput,
+  type AffectedMembersCountError,
+  type AffectedMembersCountDeps,
+} from './application/use-cases/affected-members-count';

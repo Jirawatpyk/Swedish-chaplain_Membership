@@ -92,6 +92,10 @@ type Props = {
   readonly onSubmit: (values: MemberFormValues) => Promise<void> | void;
   readonly submitting: boolean;
   readonly onCancel?: () => void;
+  /** When set, pre-fills the form from these values (edit mode). */
+  readonly initialValues?: Partial<MemberFormValues>;
+  /** 'create' (default) or 'edit' — switches submit/submitting labels. */
+  readonly mode?: 'create' | 'edit';
 };
 
 // --- Small visual helpers ----------------------------------------------------
@@ -121,8 +125,12 @@ export function MemberForm({
   onSubmit,
   submitting,
   onCancel,
+  initialValues,
+  mode = 'create',
 }: Props) {
-  const t = useTranslations('admin.members.create');
+  const tCreate = useTranslations('admin.members.create');
+  const tEdit = useTranslations('admin.members.edit');
+  const t = mode === 'edit' ? tEdit : tCreate;
   const tf = useTranslations('admin.members.create.fields');
 
   const {
@@ -134,10 +142,14 @@ export function MemberForm({
   } = useForm<MemberFormValues>({
     resolver: zodResolver(memberFormSchema),
     defaultValues: {
-      country: 'TH',
-      plan_year: defaultPlanYear,
-      primary_contact: { preferred_language: 'en' },
-    },
+      country: initialValues?.country ?? 'TH',
+      plan_year: initialValues?.plan_year ?? defaultPlanYear,
+      ...(initialValues ?? {}),
+      primary_contact: {
+        preferred_language: 'en',
+        ...(initialValues?.primary_contact ?? {}),
+      },
+    } as MemberFormValues,
   });
 
   // react-hook-form's `watch()` returns a fresh subscription each render,
@@ -151,7 +163,9 @@ export function MemberForm({
   );
   const needsDob = Boolean(selectedPlan?.requires_date_of_birth);
 
-  const [country, setCountry] = useState<string>('TH');
+  const [country, setCountry] = useState<string>(
+    initialValues?.country ?? 'TH',
+  );
   const countryIsTH = country.toUpperCase() === 'TH';
 
   return (

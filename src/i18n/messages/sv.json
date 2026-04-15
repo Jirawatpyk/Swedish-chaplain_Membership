@@ -465,7 +465,14 @@
         }
       },
       "bundleChangeWarning": {
-        "title": "Plan bundle change"
+        "title": "Planpaket-ändring",
+        "description": "Att byta plan ändrar det paketerade corporate-nivån för {affectedCount, plural, =0 {inga} one {# medlem} other {# medlemmar}} på det gamla partnerskapet.",
+        "oldBundle": "Gammalt paket",
+        "newBundle": "Nytt paket",
+        "affectedCount": "{count, plural, =0 {Inga medlemmar påverkas} one {# medlem påverkas} other {# medlemmar påverkas}}",
+        "confirm": "Bekräfta paketändring",
+        "cancel": "Avbryt",
+        "loading": "Beräknar berörda medlemmar…"
       },
       "subtitle": "Medlemsföretag + primära kontakter",
       "refreshHint": "Sök, filtrera eller öppna en rad för detaljer.",
@@ -610,6 +617,38 @@
         "openExisting": "Öppna befintlig medlem",
         "proceed": "Fortsätt ändå",
         "cancel": "Avbryt"
+      },
+      "edit": {
+        "pageTitle": "Redigera {companyName} · SweCham",
+        "title": "Redigera medlem",
+        "subtitle": "Uppdatera medlemsdetaljer, plan eller primär kontakt.",
+        "submit": "Spara ändringar",
+        "submitting": "Sparar…",
+        "cancel": "Avbryt",
+        "success": "Medlem uppdaterad.",
+        "contactsHeading": "Kontakter",
+        "addContact": "Lägg till kontakt",
+        "primary": "Primär",
+        "promoteLabel": "Befordra till primär",
+        "removeLabel": "Ta bort kontakt",
+        "removeConfirmTitle": "Ta bort kontakt?",
+        "removeConfirmDescription": "Detta raderar kontakten mjukt. Posten bevaras för revision men kontakten visas inte längre i katalogen.",
+        "removeConfirm": "Ta bort",
+        "addHelpTip": "Akut primär kontakt-överföring — använd \"Lägg till kontakt\" och sedan \"Befordra till primär\".",
+        "errors": {
+          "generic": "Något gick fel. Försök igen.",
+          "notFound": "Medlem hittades inte.",
+          "validation": "Rätta markerade fält.",
+          "contactNotFound": "Kontakt hittades inte.",
+          "cannotRemovePrimary": "Kan inte ta bort primär kontakt. Befordra en annan kontakt först."
+        }
+      },
+      "contactForm": {
+        "title": "Lägg till kontakt",
+        "editTitle": "Redigera kontakt",
+        "submit": "Spara",
+        "submitting": "Sparar…",
+        "cancel": "Avbryt"
       }
     }
   },
@@ -671,7 +710,8 @@
     "editPlan": "Redigera",
     "members": "Medlemmar",
     "memberDetail": "Detaljer",
-    "newMember": "Ny medlem"
+    "newMember": "Ny medlem",
+    "editMember": "Redigera"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",

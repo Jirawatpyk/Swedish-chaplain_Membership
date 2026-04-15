@@ -465,7 +465,14 @@
         }
       },
       "bundleChangeWarning": {
-        "title": "Plan bundle change"
+        "title": "Plan bundle change",
+        "description": "Changing the plan changes the bundled corporate tier for {affectedCount, plural, =0 {no} one {# member} other {# members}} on the old partnership.",
+        "oldBundle": "Old bundle",
+        "newBundle": "New bundle",
+        "affectedCount": "{count, plural, =0 {No members affected} one {# member affected} other {# members affected}}",
+        "confirm": "Confirm bundle change",
+        "cancel": "Cancel",
+        "loading": "Calculating affected members…"
       },
       "subtitle": "Member companies + primary contacts",
       "refreshHint": "Search, filter, or open any row for details.",
@@ -610,6 +617,38 @@
         "openExisting": "Open existing member",
         "proceed": "Proceed anyway",
         "cancel": "Cancel"
+      },
+      "edit": {
+        "pageTitle": "Edit {companyName} · SweCham",
+        "title": "Edit member",
+        "subtitle": "Update member details, plan, or primary contact.",
+        "submit": "Save changes",
+        "submitting": "Saving…",
+        "cancel": "Cancel",
+        "success": "Member updated.",
+        "contactsHeading": "Contacts",
+        "addContact": "Add contact",
+        "primary": "Primary",
+        "promoteLabel": "Promote to primary",
+        "removeLabel": "Remove contact",
+        "removeConfirmTitle": "Remove contact?",
+        "removeConfirmDescription": "This will soft-delete the contact. The record is kept for audit but the contact will no longer appear in the directory.",
+        "removeConfirm": "Remove",
+        "addHelpTip": "Emergency primary contact transfer — use \"Add contact\" then \"Promote to primary\".",
+        "errors": {
+          "generic": "Something went wrong. Please try again.",
+          "notFound": "Member not found.",
+          "validation": "Please fix the highlighted fields.",
+          "contactNotFound": "Contact not found.",
+          "cannotRemovePrimary": "Cannot remove the primary contact. Promote another contact first."
+        }
+      },
+      "contactForm": {
+        "title": "Add contact",
+        "editTitle": "Edit contact",
+        "submit": "Save",
+        "submitting": "Saving…",
+        "cancel": "Cancel"
       }
     }
   },
@@ -671,7 +710,8 @@
     "editPlan": "Edit",
     "members": "Members",
     "memberDetail": "Details",
-    "newMember": "New Member"
+    "newMember": "New Member",
+    "editMember": "Edit"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",

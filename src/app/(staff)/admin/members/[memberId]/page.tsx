@@ -13,7 +13,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { ArrowLeftIcon } from 'lucide-react';
+import { ArrowLeftIcon, PencilIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -196,13 +196,22 @@ export default async function MemberDetailPage({ params }: PageProps) {
         title={member.companyName}
         subtitle={tRoot('subtitle')}
         actions={
-          <Link
-            href="/admin/members"
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
-          >
-            <ArrowLeftIcon className="size-4" />
-            {t('notFound.cta')}
-          </Link>
+          <>
+            <Link
+              href="/admin/members"
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              <ArrowLeftIcon className="size-4" />
+              {t('notFound.cta')}
+            </Link>
+            <Link
+              href={`/admin/members/${member.memberId}/edit`}
+              className={buttonVariants({ size: 'sm' })}
+            >
+              <PencilIcon className="size-4" />
+              Edit
+            </Link>
+          </>
         }
       />
 

@@ -465,7 +465,14 @@
         }
       },
       "bundleChangeWarning": {
-        "title": "Plan bundle change"
+        "title": "การเปลี่ยน bundle",
+        "description": "การเปลี่ยนแพ็กเกจจะเปลี่ยน corporate tier ที่ผูกไว้ โดยกระทบ {affectedCount, plural, =0 {ไม่มีสมาชิก} other {# ราย}} บน partnership เดิม",
+        "oldBundle": "Bundle เดิม",
+        "newBundle": "Bundle ใหม่",
+        "affectedCount": "{count, plural, =0 {ไม่มีสมาชิกที่กระทบ} other {กระทบ # ราย}}",
+        "confirm": "ยืนยันการเปลี่ยน bundle",
+        "cancel": "ยกเลิก",
+        "loading": "กำลังคำนวณจำนวนสมาชิกที่กระทบ…"
       },
       "subtitle": "บริษัทสมาชิก + ผู้ติดต่อหลัก",
       "refreshHint": "ค้นหา กรอง หรือเปิดดูรายละเอียดของแต่ละราย",
@@ -610,6 +617,38 @@
         "openExisting": "เปิดข้อมูลเดิม",
         "proceed": "ดำเนินการต่อ",
         "cancel": "ยกเลิก"
+      },
+      "edit": {
+        "pageTitle": "แก้ไข {companyName} · SweCham",
+        "title": "แก้ไขสมาชิก",
+        "subtitle": "ปรับปรุงข้อมูลสมาชิก แพ็กเกจ หรือผู้ติดต่อหลัก",
+        "submit": "บันทึกการเปลี่ยนแปลง",
+        "submitting": "กำลังบันทึก…",
+        "cancel": "ยกเลิก",
+        "success": "อัปเดตสมาชิกสำเร็จ",
+        "contactsHeading": "ผู้ติดต่อ",
+        "addContact": "เพิ่มผู้ติดต่อ",
+        "primary": "หลัก",
+        "promoteLabel": "เลื่อนเป็นผู้ติดต่อหลัก",
+        "removeLabel": "ลบผู้ติดต่อ",
+        "removeConfirmTitle": "ลบผู้ติดต่อ?",
+        "removeConfirmDescription": "จะทำการ soft-delete ผู้ติดต่อนี้ บันทึกจะถูกเก็บไว้สำหรับ audit แต่จะไม่แสดงในระบบ",
+        "removeConfirm": "ลบ",
+        "addHelpTip": "การเปลี่ยนผู้ติดต่อหลักกรณีฉุกเฉิน — \"เพิ่มผู้ติดต่อ\" ก่อนแล้ว \"เลื่อนเป็นผู้ติดต่อหลัก\"",
+        "errors": {
+          "generic": "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง",
+          "notFound": "ไม่พบสมาชิก",
+          "validation": "กรุณาแก้ไขช่องที่ไฮไลท์",
+          "contactNotFound": "ไม่พบผู้ติดต่อ",
+          "cannotRemovePrimary": "ลบผู้ติดต่อหลักไม่ได้ ต้องเลื่อนผู้ติดต่ออื่นเป็นหลักก่อน"
+        }
+      },
+      "contactForm": {
+        "title": "เพิ่มผู้ติดต่อ",
+        "editTitle": "แก้ไขผู้ติดต่อ",
+        "submit": "บันทึก",
+        "submitting": "กำลังบันทึก…",
+        "cancel": "ยกเลิก"
       }
     }
   },
@@ -671,7 +710,8 @@
     "editPlan": "แก้ไข",
     "members": "สมาชิก",
     "memberDetail": "รายละเอียด",
-    "newMember": "เพิ่มสมาชิก"
+    "newMember": "เพิ่มสมาชิก",
+    "editMember": "แก้ไข"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",
