@@ -34,7 +34,7 @@ export function BreadcrumbNav() {
   const tBreadcrumb = useTranslations('breadcrumb');
   const tLayout = useTranslations('layout');
 
-  const staticLabels = buildStaticLabels(tBreadcrumb);
+  const staticLabels = buildStaticLabels(tBreadcrumb, pathname);
   const segments = parseBreadcrumbPath({
     pathname,
     staticLabels,
@@ -106,35 +106,87 @@ function BreadcrumbFragment({
   );
 }
 
-// URL segment → i18n key under `breadcrumb.*`. Segments equal to their key
-// are spelled out for grep-ability rather than synthesised.
+// URL segment → i18n key under `breadcrumb.*`. Non-contextual segments go
+// here; verbs like `new` / `edit` / `clone` resolve contextually below
+// because their human label depends on the parent resource.
 const STATIC_LABEL_KEYS = {
   admin: 'admin',
   dashboard: 'dashboard',
   users: 'users',
   plans: 'plans',
+  members: 'members',
   settings: 'settings',
   fees: 'fees',
   account: 'account',
-  new: 'newPlan',
-  clone: 'clonePlan',
-  edit: 'editPlan',
 } as const;
+
+// Verb segments resolve by parent resource. The outer key is the parent
+// segment (e.g. `/admin/<parent>/<verb>`); the inner key is the verb; the
+// value is the `breadcrumb.*` i18n key.
+const CONTEXTUAL_VERBS: Record<string, Record<string, string>> = {
+  plans: { new: 'newPlan', edit: 'editPlan', clone: 'clonePlan' },
+  members: { new: 'newMember' },
+};
+
+// Match a UUID v4 (32 hex with dashes). When we hit a UUID segment
+// underneath a known parent resource, we show the parent's "detail" label
+// rather than the raw ID — a server-side resolver for the real name
+// (company, plan, etc.) is the future upgrade path.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const DETAIL_LABEL_KEYS_BY_PARENT: Record<string, string> = {
+  members: 'memberDetail',
+};
 
 function buildStaticLabels(
   t: ReturnType<typeof useTranslations<'breadcrumb'>>,
+  pathname: string,
 ): Readonly<Record<string, string>> {
   const result: Record<string, string> = {};
+
+  // 1. Non-contextual base segments.
   for (const [segment, key] of Object.entries(STATIC_LABEL_KEYS)) {
     try {
       result[segment] = t(key as Parameters<typeof t>[0]);
     } catch (err) {
-      // Missing TH/SV labels would otherwise silently fall back to the raw URL
-      // slug on screen. Surface in dev so translators catch gaps before prod.
       if (process.env.NODE_ENV === 'development') {
         console.warn(`[BreadcrumbNav] missing i18n key: breadcrumb.${key}`, err);
       }
     }
   }
+
+  // 2. Verb overrides + UUID-detail overrides — scan current path.
+  //    For each segment, if its parent is known and the segment matches a
+  //    verb or UUID pattern, override `result[segment]` with the contextual
+  //    label. Because the override is keyed by the decoded segment itself,
+  //    parseBreadcrumbPath picks it up without further changes.
+  const parts = pathname.split('?')[0]!.split('/').filter((p) => p.length > 0);
+  for (let i = 1; i < parts.length; i++) {
+    const segment = parts[i]!;
+    const parent = parts[i - 1]!;
+
+    const verbKey = CONTEXTUAL_VERBS[parent]?.[segment];
+    if (verbKey) {
+      try {
+        result[segment] = t(verbKey as Parameters<typeof t>[0]);
+      } catch {
+        /* fallthrough to default */
+      }
+      continue;
+    }
+
+    if (UUID_RE.test(segment)) {
+      const detailKey = DETAIL_LABEL_KEYS_BY_PARENT[parent];
+      if (detailKey) {
+        try {
+          result[segment] = t(detailKey as Parameters<typeof t>[0]);
+        } catch {
+          /* fallthrough */
+        }
+      }
+    }
+  }
+
   return result;
 }
