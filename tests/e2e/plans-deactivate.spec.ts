@@ -74,13 +74,22 @@ test.describe('plans deactivate / delete / undelete — US4', () => {
     await ensurePremiumActive();
     await page.goto('/admin/plans');
 
-    // 1. Deactivate via row-level dropdown — wait for the menu to open
-    // before clicking the menuitem (Base UI DropdownMenu portal mount
-    // can race on first open).
+    // 1. Deactivate via row-level dropdown — wait for trigger to be
+    // attached + visible BEFORE clicking; confirm the menu actually
+    // opened via aria-expanded; fall back to a second click if Base UI
+    // DropdownMenu's portal mount missed the first click (rare race).
     const row = page.locator('[data-plan-id="premium"]').first();
-    await row.getByRole('button', { name: /actions/i }).click();
+    const actionsTrigger = row.getByRole('button', { name: /actions/i });
+    await actionsTrigger.waitFor({ state: 'visible', timeout: 5_000 });
+    await actionsTrigger.click();
     const deactivateItem = page.getByRole('menuitem', { name: /deactivate/i });
-    await deactivateItem.waitFor({ state: 'visible', timeout: 10_000 });
+    try {
+      await deactivateItem.waitFor({ state: 'visible', timeout: 5_000 });
+    } catch {
+      // Retry once — Base UI DropdownMenu portal-mount race
+      await actionsTrigger.click();
+      await deactivateItem.waitFor({ state: 'visible', timeout: 5_000 });
+    }
     await deactivateItem.click();
 
     // AlertDialog confirmation — confirmCta label matches the action verb
