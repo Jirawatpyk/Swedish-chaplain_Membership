@@ -1,0 +1,81 @@
+/**
+ * Serializers for /api/members payloads — convert Domain types
+ * (branded UserId / Email / etc.) to plain JSON shape per
+ * contracts/members-api.md.
+ */
+
+import type { Member, MemberId } from '@/modules/members';
+import type { Contact } from '@/modules/members';
+import type { DirectoryRow } from '@/modules/members';
+
+export function serialiseMember(m: Member) {
+  return {
+    member_id: m.memberId,
+    company_name: m.companyName,
+    legal_entity_type: m.legalEntityType,
+    country: m.country,
+    tax_id: m.taxId,
+    website: m.website,
+    description: m.description,
+    founded_year: m.foundedYear,
+    turnover_thb: m.turnoverThb,
+    plan_id: m.planId,
+    plan_year: m.planYear,
+    registration_date: m.registrationDate.toISOString().slice(0, 10),
+    registration_fee_paid: m.registrationFeePaid,
+    status: m.status,
+    archived_at: m.archivedAt?.toISOString() ?? null,
+    last_activity_at: m.lastActivityAt?.toISOString() ?? null,
+    notes: m.notes,
+    created_at: m.createdAt.toISOString(),
+    updated_at: m.updatedAt.toISOString(),
+  };
+}
+
+export function serialiseContact(
+  c: Contact,
+  opts: { readonly includeDateOfBirth?: boolean } = {},
+) {
+  return {
+    contact_id: c.contactId,
+    member_id: c.memberId,
+    first_name: c.firstName,
+    last_name: c.lastName,
+    email: c.email,
+    phone: c.phone,
+    role_title: c.roleTitle,
+    preferred_language: c.preferredLanguage,
+    is_primary: c.isPrimary,
+    linked_user_id: c.linkedUserId,
+    ...(opts.includeDateOfBirth && {
+      date_of_birth: c.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+    }),
+    removed_at: c.removedAt?.toISOString() ?? null,
+    created_at: c.createdAt.toISOString(),
+    updated_at: c.updatedAt.toISOString(),
+  };
+}
+
+export function serialiseDirectoryRow(row: DirectoryRow) {
+  return {
+    member_id: row.member.memberId,
+    company_name: row.member.companyName,
+    country: row.member.country,
+    plan_id: row.member.planId,
+    plan_year: row.member.planYear,
+    status: row.member.status,
+    member_risk_flag: null, // F8 placeholder (FR-001)
+    last_activity_at: row.member.lastActivityAt?.toISOString() ?? null,
+    primary_contact: row.primaryContact
+      ? {
+          contact_id: row.primaryContact.contactId,
+          first_name: row.primaryContact.firstName,
+          last_name: row.primaryContact.lastName,
+          email: row.primaryContact.email,
+        }
+      : null,
+  };
+}
+
+// Silence unused type import
+void (null as unknown as MemberId);

@@ -94,24 +94,24 @@
 
 ### Tests-first (red)
 
-- [ ] T040 [P] [US1] Author failing contract test `tests/contract/members/create-member.test.ts` for `POST /api/members` matching `contracts/members-api.md § Endpoint 2`
-- [ ] T041 [P] [US1] Author failing integration test `tests/integration/members/create-member.test.ts` covering happy path + override-reason flow + soft-dedupe + plan/turnover/age validations + **FR-032 sub-scenario**: create two members in different tenants with the same contact email → both succeed silently, no warning surfaced, per-tenant unique index holds independently (Principle I privacy guarantee)
+- [X] T040 [P] [US1] Contract test `tests/contract/members/create-member.test.ts` — 6/6 green (201 happy path, 400 missing idempotency key, 400 invalid_body, 404 plan_not_found, 409 soft_duplicate, 422 turnover_warning)
+- [X] T041 [P] [US1] Integration test `tests/integration/members/create-member.test.ts` — 5/5 green on live Neon (happy path: member + primary contact + 2 audit events in same txn; soft-duplicate rejection; confirm_soft_duplicate bypass; invalid email; Thai tax_id bad checksum). FR-032 cross-tenant per-email uniqueness covered in tenant-isolation.test.ts (T012)
 - [ ] T042 [P] [US1] Author failing integration test `tests/integration/members/invitation-bounce.test.ts` (spec edge case) — simulates Resend `email.bounced` webhook; asserts `invitation_bounced` audit + re-send action availability
 - [ ] T043 [P] [US1] Author failing E2E spec `tests/e2e/members-create.spec.ts @f3 @a11y @i18n` covering create happy path across EN/TH/SV + keyboard-only run + axe-core
 
 ### Application + Infrastructure
 
-- [ ] T044 [P] [US1] Implement `src/modules/members/application/use-cases/create-member.ts` — takes `TenantContext` + Member draft + primary contact + optional override; enforces invariants via domain policies; returns `Result<{member_id, contact_id}, E>`
-- [ ] T045 [P] [US1] Implement `src/modules/members/application/use-cases/check-soft-duplicate.ts` for FR-031 (exact company_name + country match within tenant)
+- [X] T044 `src/modules/members/application/use-cases/create-member.ts` — zod parse + Domain value-object validation (Email, Phone, IsoCountryCode, TaxId country-aware, OverrideReason) + Plan-aware validation (turnover band, age eligibility for Thai Alumni, startup-duration) with override_reason bypass (FR-006a). Returns `Result<{memberId, contactId}, CreateMemberError>` with 13 error variants
+- [X] T045 Soft-duplicate check inlined into create-member as `memberRepo.findSoftDuplicate` call + `confirm_soft_duplicate` opt-in flag (FR-031). Kept as a repo method rather than separate use case — the check is tightly coupled to the create transaction
 - [ ] T046 [P] [US1] Implement `src/modules/members/application/use-cases/invite-portal.ts` wrapping F1 invitation port with member-scoped binding
-- [ ] T047 [US1] Implement `src/modules/members/infrastructure/repos/drizzle-member-repo.ts` (create + findSoftDuplicate + audit-aware insert)
-- [ ] T048 [US1] Implement `src/modules/members/infrastructure/repos/drizzle-contact-repo.ts` (create + primary partial-index handling)
+- [X] T047 `src/modules/members/infrastructure/db/drizzle-member-repo.ts` — MemberRepo impl (runInTenant wrapper, row→Domain translation, audit-aware `createWithPrimaryContact` that inserts member + contact + 2 audit rows in ONE txn, FR-031 `findSoftDuplicate`, `updateStatus`, `updateFields`). Also exports `searchDirectory(ctx, filter)` — pg_trgm ILIKE on company_name + contact name/email via EXISTS subquery, DESC last_activity_at + asc member_id ordering, base64 cursor over `(iso, memberId)` with `iso::timestamptz` cast (postgres-js driver rejects JS Date in row-value literals)
+- [X] T048 `src/modules/members/infrastructure/db/drizzle-contact-repo.ts` — ContactRepo impl (listByMember with optional includeRemoved, findById, add/update/remove with matching audit events, `promotePrimary` demote-then-promote pattern mapped to 409 on partial-index race)
 - [ ] T049 [US1] Implement `src/modules/members/infrastructure/adapters/resend-email-port.ts` — outbox-backed dispatch for invitation
-- [ ] T050 [US1] Wire composition root `src/modules/members/members-deps.ts` + export from barrel
+- [X] T050 `src/modules/members/members-deps.ts` — `buildMembersDeps(tenant)` returns `MembersDeps` bag wiring drizzleMemberRepo + drizzleContactRepo + drizzleAuditAdapter + plansBarrelAdapter (B.1 stub — US3 wires real F2 `getPlan`) + systemClock + randomUUID idFactory. Composition root NOT re-exported from barrel (tests use stubs)
 
 ### Presentation
 
-- [ ] T051 [P] [US1] Implement API route `src/app/api/members/route.ts` (POST create) — zod validation, idempotency key, RBAC admin-only
+- [X] T051 API route `src/app/api/members/route.ts` POST — `requireAdminContext(resource='members', action='write')` + Idempotency-Key parsing + classifyIdempotencyRequest replay/conflict + bodyHash + 11-branch error mapping (invalid_body→400, validation_error→400, plan_not_found→404, turnover/age/startup warnings→422, soft_duplicate/conflict→409, audit_failed/server_error→500). 201 response carries `{member_id, primary_contact_id}` per contract
 - [ ] T052 [US1] Implement create page `src/app/(staff)/admin/members/new/page.tsx` with breadcrumb + FR-037 page title
 - [ ] T053 [US1] Implement `src/app/(staff)/admin/members/_components/member-form.tsx` — RHF + zod schema generated from domain types; required fields marked per **FR-035 tri-part indicator** (`aria-required="true"` programmatic + visual asterisk + form-top "* fields are required" note — all three present); **FR-036 autocomplete attrs** explicitly: `given-name` / `family-name` on contact name, `email`, `tel` on phone, `organization` on company name; country Combobox; DOB Calendar visible only when plan = Thai Alumni
 - [ ] T053a [P] [US1] Author unit test `tests/unit/members/presentation/member-form-a11y.test.tsx` asserting FR-035 tri-part indicator rendered for every required field + FR-036 autocomplete attrs present on expected inputs
@@ -131,17 +131,17 @@
 **Independent test**: Type "Fog" in directory, see filtered rows, apply plan-tier filter, click row → detail.
 **US2 requirements covered**: FR-001, FR-004, FR-016, FR-017, FR-021, FR-022 (probe 404), FR-034 (empty states), FR-030 (copy-to-clipboard).
 
-- [ ] T058 [P] [US2] Author failing contract test `tests/contract/members/list-members.test.ts` for `GET /api/members`
-- [ ] T059 [P] [US2] Author failing integration test `tests/integration/members/directory-search.test.ts` — seeds 50 members, asserts substring + filter combinations + pagination cursor
+- [X] T058 [P] [US2] Contract test `tests/contract/members/list-members.test.ts` — 3/3 green (200 envelope shape with items + next_cursor + primary_contact; 400 invalid_query on limit>100; 500 on use-case error)
+- [X] T059 [P] [US2] Integration test `tests/integration/members/directory-search.test.ts` — 5/5 green on live Neon (default status filter returns 3 seeded; q='Fogma' matches company_name via pg_trgm; q='Björn' matches primary contact first_name via contacts EXISTS subquery; cursor pagination limit=2 returns nextCursor + second page succeeds; primary_contact populated on every row). Seeds use ASCII-safe emails — Domain Email VO rejects non-ASCII locals
 - [ ] T060 [P] [US2] Author failing perf test `tests/integration/members/search-perf.test.ts` (gated by `RUN_PERF=1`, critique E5) — seeds 5,000 members under 2 tenants; asserts substring p95 < 500ms (SC-002)
 - [ ] T061 [P] [US2] Author failing E2E spec `tests/e2e/members-directory-search.spec.ts @f3 @a11y @i18n`
-- [ ] T062 [P] [US2] Implement `src/modules/members/application/use-cases/directory-search.ts` — substring search + filter compose + cursor pagination
-- [ ] T063 [US2] Implement API route `src/app/api/members/route.ts` (GET list) with RBAC admin + manager read
+- [X] T062 `src/modules/members/application/use-cases/directory-search.ts` — thin Application-layer wrapper over `searchDirectory` (lives in the repo module because it uses Drizzle EXISTS subqueries that can't be modeled as a pure port method). Clamps limit to 1..100
+- [X] T063 API route `src/app/api/members/route.ts` GET — `requireAdminContext(resource='members', action='read')` (admin + manager read), zod query validation (q, plan_year, plan_id, country, status CSV, show_archived, cursor, limit), default status filter `['active', 'inactive']` or `['active', 'inactive', 'archived']` when show_archived=1; serialise via `serialiseDirectoryRow`
 - [ ] T064 [US2] Implement directory page `src/app/(staff)/admin/members/page.tsx` with shimmer skeleton in final table shape (CLS 0) + the **three distinct FR-034 empty states**: (a) **zero members** (onboarding CTA "Add your first member" + illustration) · (b) **filter yields zero** ("No members match these filters" + Clear-filters CTA) · (c) **server error** (5xx or network — retry button + localized message); inline 4xx errors render as banner, not empty-state page
 - [ ] T065 [US2] Implement `src/app/(staff)/admin/members/_components/members-table.tsx` — TanStack Table v8 headless + shadcn Table visual primitives; placeholder `member_risk_flag` column rendering "—" per FR-001 note + US2 AS5
 - [ ] T066 [US2] Implement `src/app/(staff)/admin/members/_components/directory-filters.tsx` with URL-state sync per US2 AS2 (bookmarkable filters)
 - [ ] T067 [US2] Implement detail page `src/app/(staff)/admin/members/[memberId]/page.tsx` — member info + contacts grouped primary/secondary + FR-030 copy-to-clipboard buttons on member_id/email/tax_id
-- [ ] T068 [US2] Implement API route `src/app/api/members/[memberId]/route.ts` (GET) with FR-022 404 + `member_cross_tenant_probe` audit
+- [X] T068 API route `src/app/api/members/[memberId]/route.ts` GET — uses `getMember` use case which emits `member_cross_tenant_probe` audit on any miss (high-signal per plan.md § Constraints). Response includes nested contacts array; `?include=date_of_birth` opt-in restricted to admin role. Cross-tenant probes return 404 never 403 (FR-022)
 - [ ] T069 [US2] Extend `src/components/command-palette/` with Members group (research § 8) — RBAC-aware visibility; FR-043 ordering (exact → prefix → substring, then recency)
 - [ ] T070 [US2] Fill i18n `admin.members.directory.*`, `admin.members.emptyStates.*` across EN/TH/SV
 

@@ -85,3 +85,27 @@ export {
   isOverrideReasonCode,
   type OverrideReasonError,
 } from './domain/value-objects/override-reason';
+
+// --- Application use cases ----------------------------------------------------
+
+export {
+  createMember,
+  createMemberSchema,
+  type CreateMemberInput,
+  type CreateMemberError,
+  type CreateMemberDeps,
+} from './application/use-cases/create-member';
+
+export {
+  getMember,
+  type GetMemberError,
+  type GetMemberDeps,
+} from './application/use-cases/get-member';
+
+export {
+  directorySearch,
+  type DirectorySearchInput,
+  type DirectorySearchOutput,
+  type DirectorySearchError,
+  type DirectoryRow,
+} from './application/use-cases/directory-search';
