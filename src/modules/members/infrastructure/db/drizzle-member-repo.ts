@@ -11,9 +11,11 @@
  */
 
 import { and, eq, ilike, or, sql, asc } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
+import { membershipPlans } from '@/modules/plans';
 import { members, type MemberRow } from './schema-members';
 import { contacts } from './schema-contacts';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -377,40 +379,50 @@ export async function searchDirectory(
       // we project the English key because it's the canonical display.
       // A tenant-localised lookup can be added later via i18n keys.
       //
-      // Outer-table correlation uses RAW `"members"."tenant_id"` strings
-      // (not Drizzle column-object interpolation) because of a subtle
-      // emission gotcha verified by dumping `.toSQL()` for both
-      // variants:
+      // `mp` is an alias over F2's `membershipPlans` table, imported
+      // from `@/modules/plans` (barrel — exposed as a read-only schema
+      // reference for sibling-module joins). Drizzle's `alias()` forces
+      // both sides of the WHERE to emit table-qualified column
+      // references, which avoids the subquery name-resolution trap
+      // that plagued the initial raw-SQL version:
       //
-      //   interpolation → `mp.tenant_id = "tenant_id"`       (BAD)
-      //   raw           → `mp.tenant_id = "members"."tenant_id"` (GOOD)
+      //   without alias (BAD):
+      //     interpolation → `mp.tenant_id = "tenant_id"`
+      //     → Postgres resolves unqualified "tenant_id" against the
+      //       INNER FROM since both tables define it, collapsing the
+      //       WHERE to always-true, subquery returns any row.
       //
-      // `${members.tenantId}` inside a `sql` template emits the
-      // UNQUALIFIED column name `"tenant_id"` — Drizzle doesn't
-      // table-prefix column refs since the main query's FROM usually
-      // provides unique scope. But in a correlated subquery with a
-      // different FROM (`membership_plans AS mp`), Postgres resolves
-      // the unqualified `"tenant_id"` against the INNER FROM first
-      // (both tables define `tenant_id`), collapsing the WHERE to
-      // `mp.tenant_id = mp.tenant_id AND …` — trivially true, so
-      // the subquery returned any row from membership_plans (observed
-      // "Large Corporate" for a member actually on "regular").
+      //   with alias (GOOD):
+      //     `"mp"."tenant_id" = "members"."tenant_id"` on both sides
+      //     → unambiguous correlation.
       //
-      // The Drizzle-native fix would import `membership_plans` via
-      // `alias(…, 'mp')`, but that requires reaching into
-      // `@/modules/plans/infrastructure/db/**` which violates the
-      // Clean-Architecture module-boundary ESLint rule. Raw SQL here
-      // keeps the boundary clean and the semantics explicit.
+      // Verified by dumping `.toSQL()`. See git log commits 8e71812
+      // (root-cause analysis) and the follow-up that introduces this
+      // alias pattern + exposes `membershipPlans` from the F2 barrel.
+      const mp = alias(membershipPlans, 'mp');
+      // Build the subquery via the Drizzle QUERY BUILDER — `.select()
+      // .from().where(eq(...))` — because Drizzle only auto-qualifies
+      // column references emitted by the builder. Inside a `sql`
+      // template the same column objects emit UNQUALIFIED names,
+      // collapsing the WHERE to trivially-true when both tables share
+      // a column name (see 8e71812 for the full trace).
+      const planNameSubquery = tx
+        .select({ name: sql<string>`${mp.planName}->>'en'` })
+        .from(mp)
+        .where(
+          and(
+            eq(mp.tenantId, members.tenantId),
+            eq(mp.planId, members.planId),
+            eq(mp.planYear, members.planYear),
+          ),
+        )
+        .limit(1);
+
       return tx
         .select({
           row: members,
-          planDisplayName: sql<string | null>`(
-            SELECT plan_name->>'en' FROM membership_plans AS mp
-            WHERE mp.tenant_id = "members"."tenant_id"
-              AND mp.plan_id   = "members"."plan_id"
-              AND mp.plan_year = "members"."plan_year"
-            LIMIT 1
-          )`.as('plan_display_name'),
+          planDisplayName:
+            sql<string | null>`(${planNameSubquery})`.as('plan_display_name'),
         })
         .from(members)
         .where(whereClause)
