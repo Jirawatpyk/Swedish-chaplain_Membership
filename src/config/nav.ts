@@ -7,6 +7,7 @@ import {
   SettingsIcon,
   DollarSignIcon,
   UserCircleIcon,
+  BuildingIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -76,6 +77,12 @@ export const staffNavConfig: NavConfig = {
           icon: FileTextIcon,
           href: '/admin/plans',
           activePattern: '/admin/plans',
+        },
+        {
+          titleKey: 'nav.staff.members',
+          icon: BuildingIcon,
+          href: '/admin/members',
+          activePattern: '/admin/members',
         },
         {
           titleKey: 'nav.staff.users',

@@ -446,7 +446,7 @@
       }
     },
     "members": {
-      "title": "Members",
+      "title": "สมาชิก",
       "overrideReason": {
         "board_approved": "Board approved",
         "pending_renewal_grace": "Pending renewal (grace period)",
@@ -455,6 +455,99 @@
       },
       "bundleChangeWarning": {
         "title": "Plan bundle change"
+      },
+      "subtitle": "บริษัทสมาชิก + ผู้ติดต่อหลัก",
+      "refreshHint": "ค้นหา กรอง หรือเปิดดูรายละเอียดของแต่ละราย",
+      "listHeading": "สมาชิกทั้งหมด",
+      "directory": {
+        "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ชื่อผู้ติดต่อ หรืออีเมล",
+        "searchSrLabel": "ค้นหาสมาชิก",
+        "statusFilter": "สถานะ",
+        "statusActive": "ใช้งาน",
+        "statusInactive": "หยุดใช้งาน",
+        "statusArchived": "จัดเก็บแล้ว",
+        "showArchived": "แสดงสมาชิกที่จัดเก็บ",
+        "clearFilters": "ล้างตัวกรอง",
+        "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
+        "columns": {
+          "company": "บริษัท",
+          "country": "ประเทศ",
+          "plan": "แพ็กเกจ",
+          "year": "ปี",
+          "primaryContact": "ผู้ติดต่อหลัก",
+          "status": "สถานะ",
+          "risk": "ความเสี่ยง",
+          "lastActivity": "กิจกรรมล่าสุด"
+        },
+        "riskPlaceholder": "—",
+        "rowAriaLabel": "เปิดรายละเอียด {company}",
+        "noPrimary": "ไม่มีผู้ติดต่อหลัก",
+        "loadMore": "โหลดเพิ่ม"
+      },
+      "emptyStates": {
+        "zero": {
+          "title": "ยังไม่มีสมาชิก",
+          "description": "เริ่มต้นด้วยการเพิ่มสมาชิกรายแรก",
+          "cta": "เพิ่มสมาชิกรายแรก"
+        },
+        "filtered": {
+          "title": "ไม่พบสมาชิกตามตัวกรอง",
+          "description": "ลองล้างตัวกรองบางส่วน",
+          "cta": "ล้างตัวกรอง"
+        },
+        "error": {
+          "title": "โหลดข้อมูลสมาชิกไม่สำเร็จ",
+          "description": "เกิดข้อผิดพลาดบนเซิร์ฟเวอร์ขณะโหลดรายการ",
+          "cta": "ลองอีกครั้ง"
+        }
+      },
+      "detail": {
+        "title": "{companyName}",
+        "sections": {
+          "company": "ข้อมูลบริษัท",
+          "contacts": "ผู้ติดต่อ",
+          "primary": "ผู้ติดต่อหลัก",
+          "secondary": "ผู้ติดต่ออื่น",
+          "plan": "แพ็กเกจ",
+          "audit": "กิจกรรมล่าสุด"
+        },
+        "fields": {
+          "legalEntityType": "ประเภทนิติบุคคล",
+          "country": "ประเทศ",
+          "taxId": "เลขประจำตัวผู้เสียภาษี",
+          "website": "เว็บไซต์",
+          "description": "คำอธิบาย",
+          "foundedYear": "ปีที่ก่อตั้ง",
+          "turnoverThb": "ยอดขายต่อปี (บาท)",
+          "planId": "รหัสแพ็กเกจ",
+          "planYear": "ปีแพ็กเกจ",
+          "registrationDate": "วันที่สมัคร",
+          "registrationFeePaid": "ค่าสมัคร",
+          "registrationFeePaidYes": "ชำระแล้ว",
+          "registrationFeePaidNo": "ยังไม่ชำระ",
+          "status": "สถานะ",
+          "lastActivityAt": "กิจกรรมล่าสุด",
+          "archivedAt": "วันที่จัดเก็บ",
+          "notes": "หมายเหตุภายใน",
+          "firstName": "ชื่อ",
+          "lastName": "นามสกุล",
+          "email": "อีเมล",
+          "phone": "โทรศัพท์",
+          "roleTitle": "ตำแหน่ง",
+          "preferredLanguage": "ภาษาที่ต้องการ"
+        },
+        "copy": {
+          "copyMemberId": "คัดลอกรหัสสมาชิก",
+          "copyEmail": "คัดลอกอีเมล",
+          "copyTaxId": "คัดลอกเลขภาษี",
+          "copied": "คัดลอกแล้ว"
+        },
+        "notFound": {
+          "title": "ไม่พบสมาชิก",
+          "description": "สมาชิกรายนี้อาจถูกจัดเก็บ หรือ URL ไม่ถูกต้อง",
+          "cta": "กลับไปรายการสมาชิก"
+        },
+        "unknown": "—"
       }
     }
   },
@@ -494,7 +587,8 @@
       },
       "collapse": "ย่อแถบด้านข้าง",
       "expand": "ขยายแถบด้านข้าง",
-      "ariaLabel": "เมนูนำทางสำหรับเจ้าหน้าที่"
+      "ariaLabel": "เมนูนำทางสำหรับเจ้าหน้าที่",
+      "members": "สมาชิก"
     },
     "member": {
       "dashboard": "แดชบอร์ด",
@@ -512,7 +606,9 @@
     "account": "บัญชี",
     "newPlan": "แผนใหม่",
     "clonePlan": "คัดลอกแผน",
-    "editPlan": "แก้ไข"
+    "editPlan": "แก้ไข",
+    "members": "สมาชิก",
+    "memberDetail": "รายละเอียด"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",

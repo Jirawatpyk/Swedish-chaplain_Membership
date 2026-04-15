@@ -446,7 +446,7 @@
       }
     },
     "members": {
-      "title": "Members",
+      "title": "Medlemmar",
       "overrideReason": {
         "board_approved": "Board approved",
         "pending_renewal_grace": "Pending renewal (grace period)",
@@ -455,6 +455,99 @@
       },
       "bundleChangeWarning": {
         "title": "Plan bundle change"
+      },
+      "subtitle": "Medlemsföretag + primära kontakter",
+      "refreshHint": "Sök, filtrera eller öppna en rad för detaljer.",
+      "listHeading": "Alla medlemmar",
+      "directory": {
+        "searchPlaceholder": "Sök på företag, kontaktnamn eller e-post",
+        "searchSrLabel": "Sök medlemmar",
+        "statusFilter": "Status",
+        "statusActive": "Aktiv",
+        "statusInactive": "Inaktiv",
+        "statusArchived": "Arkiverad",
+        "showArchived": "Visa arkiverade",
+        "clearFilters": "Rensa filter",
+        "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
+        "columns": {
+          "company": "Företag",
+          "country": "Land",
+          "plan": "Plan",
+          "year": "År",
+          "primaryContact": "Primär kontakt",
+          "status": "Status",
+          "risk": "Risk",
+          "lastActivity": "Senaste aktivitet"
+        },
+        "riskPlaceholder": "—",
+        "rowAriaLabel": "Öppna {company} detaljer",
+        "noPrimary": "Ingen primär kontakt",
+        "loadMore": "Ladda fler"
+      },
+      "emptyStates": {
+        "zero": {
+          "title": "Inga medlemmar ännu",
+          "description": "Lägg till din första medlem för att komma igång.",
+          "cta": "Lägg till första medlem"
+        },
+        "filtered": {
+          "title": "Inga medlemmar matchar filtren",
+          "description": "Försök rensa ett eller flera filter.",
+          "cta": "Rensa filter"
+        },
+        "error": {
+          "title": "Kunde inte ladda medlemmar",
+          "description": "Ett serverfel förhindrade laddning av katalogen.",
+          "cta": "Försök igen"
+        }
+      },
+      "detail": {
+        "title": "{companyName}",
+        "sections": {
+          "company": "Företag",
+          "contacts": "Kontakter",
+          "primary": "Primär kontakt",
+          "secondary": "Övriga kontakter",
+          "plan": "Plan",
+          "audit": "Senaste aktivitet"
+        },
+        "fields": {
+          "legalEntityType": "Företagstyp",
+          "country": "Land",
+          "taxId": "Org.nr",
+          "website": "Webbplats",
+          "description": "Beskrivning",
+          "foundedYear": "Grundat",
+          "turnoverThb": "Årsomsättning (THB)",
+          "planId": "Plan-ID",
+          "planYear": "Planår",
+          "registrationDate": "Registreringsdatum",
+          "registrationFeePaid": "Registreringsavgift",
+          "registrationFeePaidYes": "Betald",
+          "registrationFeePaidNo": "Obetald",
+          "status": "Status",
+          "lastActivityAt": "Senaste aktivitet",
+          "archivedAt": "Arkiverad den",
+          "notes": "Interna anteckningar",
+          "firstName": "Förnamn",
+          "lastName": "Efternamn",
+          "email": "E-post",
+          "phone": "Telefon",
+          "roleTitle": "Roll",
+          "preferredLanguage": "Föredraget språk"
+        },
+        "copy": {
+          "copyMemberId": "Kopiera medlems-ID",
+          "copyEmail": "Kopiera e-post",
+          "copyTaxId": "Kopiera org.nr",
+          "copied": "Kopierat!"
+        },
+        "notFound": {
+          "title": "Medlem hittades inte",
+          "description": "Medlemmen kan ha arkiverats eller är URL:en felaktig.",
+          "cta": "Tillbaka till medlemmar"
+        },
+        "unknown": "—"
       }
     }
   },
@@ -494,7 +587,8 @@
       },
       "collapse": "Fäll ihop sidofältet",
       "expand": "Expandera sidofältet",
-      "ariaLabel": "Personalnavigering"
+      "ariaLabel": "Personalnavigering",
+      "members": "Medlemmar"
     },
     "member": {
       "dashboard": "Instrumentpanel",
@@ -512,7 +606,9 @@
     "account": "Konto",
     "newPlan": "Ny plan",
     "clonePlan": "Klona plan",
-    "editPlan": "Redigera"
+    "editPlan": "Redigera",
+    "members": "Medlemmar",
+    "memberDetail": "Detaljer"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",

@@ -455,6 +455,99 @@
       },
       "bundleChangeWarning": {
         "title": "Plan bundle change"
+      },
+      "subtitle": "Member companies + primary contacts",
+      "refreshHint": "Search, filter, or open any row for details.",
+      "listHeading": "All members",
+      "directory": {
+        "searchPlaceholder": "Search by company, contact name, or email",
+        "searchSrLabel": "Search members",
+        "statusFilter": "Status",
+        "statusActive": "Active",
+        "statusInactive": "Inactive",
+        "statusArchived": "Archived",
+        "showArchived": "Include archived",
+        "clearFilters": "Clear filters",
+        "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
+        "columns": {
+          "company": "Company",
+          "country": "Country",
+          "plan": "Plan",
+          "year": "Year",
+          "primaryContact": "Primary contact",
+          "status": "Status",
+          "risk": "Risk",
+          "lastActivity": "Last activity"
+        },
+        "riskPlaceholder": "—",
+        "rowAriaLabel": "Open {company} details",
+        "noPrimary": "No primary contact",
+        "loadMore": "Load more"
+      },
+      "emptyStates": {
+        "zero": {
+          "title": "No members yet",
+          "description": "Add your first member to get started.",
+          "cta": "Add your first member"
+        },
+        "filtered": {
+          "title": "No members match these filters",
+          "description": "Try clearing one or more filters.",
+          "cta": "Clear filters"
+        },
+        "error": {
+          "title": "Could not load members",
+          "description": "A server error prevented loading the directory.",
+          "cta": "Retry"
+        }
+      },
+      "detail": {
+        "title": "{companyName}",
+        "sections": {
+          "company": "Company",
+          "contacts": "Contacts",
+          "primary": "Primary contact",
+          "secondary": "Other contacts",
+          "plan": "Plan",
+          "audit": "Recent activity"
+        },
+        "fields": {
+          "legalEntityType": "Legal entity type",
+          "country": "Country",
+          "taxId": "Tax ID",
+          "website": "Website",
+          "description": "Description",
+          "foundedYear": "Founded",
+          "turnoverThb": "Annual turnover (THB)",
+          "planId": "Plan ID",
+          "planYear": "Plan year",
+          "registrationDate": "Registration date",
+          "registrationFeePaid": "Registration fee",
+          "registrationFeePaidYes": "Paid",
+          "registrationFeePaidNo": "Unpaid",
+          "status": "Status",
+          "lastActivityAt": "Last activity",
+          "archivedAt": "Archived at",
+          "notes": "Internal notes",
+          "firstName": "First name",
+          "lastName": "Last name",
+          "email": "Email",
+          "phone": "Phone",
+          "roleTitle": "Role",
+          "preferredLanguage": "Preferred language"
+        },
+        "copy": {
+          "copyMemberId": "Copy member ID",
+          "copyEmail": "Copy email",
+          "copyTaxId": "Copy tax ID",
+          "copied": "Copied!"
+        },
+        "notFound": {
+          "title": "Member not found",
+          "description": "The member may have been archived or the URL is incorrect.",
+          "cta": "Back to members"
+        },
+        "unknown": "—"
       }
     }
   },
@@ -494,7 +587,8 @@
       },
       "collapse": "Collapse sidebar",
       "expand": "Expand sidebar",
-      "ariaLabel": "Staff navigation"
+      "ariaLabel": "Staff navigation",
+      "members": "Members"
     },
     "member": {
       "dashboard": "Dashboard",
@@ -512,7 +606,9 @@
     "account": "Account",
     "newPlan": "New Plan",
     "clonePlan": "Clone Plan",
-    "editPlan": "Edit"
+    "editPlan": "Edit",
+    "members": "Members",
+    "memberDetail": "Details"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
