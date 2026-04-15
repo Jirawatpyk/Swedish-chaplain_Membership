@@ -14,6 +14,11 @@ export type PlanSummary = {
   readonly tenantId: string;
   readonly planId: string;
   readonly planYear: number;
+  /**
+   * English display name of the plan. Canonical admin display — a
+   * tenant-localised lookup can be layered on top later via i18n.
+   */
+  readonly planNameEn: string;
   readonly planCategory: 'corporate' | 'partnership';
   readonly memberTypeScope: 'company' | 'individual' | 'both';
   readonly minTurnoverThb: number | null;

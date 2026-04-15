@@ -111,8 +111,26 @@ export function OverrideReasonDialog({
                 setCode(v as (typeof OVERRIDE_REASON_CODES)[number])
               }
             >
-              <SelectTrigger id="override_code" aria-required="true">
-                <SelectValue placeholder={t('codePlaceholder')} />
+              <SelectTrigger
+                id="override_code"
+                aria-required="true"
+                className="w-full"
+              >
+                <SelectValue placeholder={t('codePlaceholder')}>
+                  {(value: string | null) => {
+                    if (
+                      !value ||
+                      !(OVERRIDE_REASON_CODES as readonly string[]).includes(
+                        value,
+                      )
+                    ) {
+                      return t('codePlaceholder');
+                    }
+                    return t(
+                      `codes.${value}` as Parameters<typeof t>[0],
+                    );
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {OVERRIDE_REASON_CODES.map((c) => (

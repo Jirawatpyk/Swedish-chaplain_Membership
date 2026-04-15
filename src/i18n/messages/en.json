@@ -552,7 +552,8 @@
           "email": "Email",
           "phone": "Phone",
           "roleTitle": "Role",
-          "preferredLanguage": "Preferred language"
+          "preferredLanguage": "Preferred language",
+          "plan": "Plan"
         },
         "copy": {
           "copyMemberId": "Copy member ID",
@@ -649,7 +650,8 @@
         "submit": "Save",
         "submitting": "Saving…",
         "cancel": "Cancel"
-      }
+      },
+      "addMember": "Add member"
     }
   },
   "palette": {

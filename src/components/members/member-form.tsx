@@ -128,10 +128,17 @@ export function MemberForm({
   initialValues,
   mode = 'create',
 }: Props) {
-  const tCreate = useTranslations('admin.members.create');
+  // Shared copy (section headers, required note, field labels) lives
+  // under `admin.members.create.*` since it's identical for create +
+  // edit. Only the submit button + submitting label differ per mode —
+  // those resolve via `submitLabel` / `submittingLabel` below.
+  const t = useTranslations('admin.members.create');
   const tEdit = useTranslations('admin.members.edit');
-  const t = mode === 'edit' ? tEdit : tCreate;
   const tf = useTranslations('admin.members.create.fields');
+  const submitLabel = mode === 'edit' ? tEdit('submit') : t('submit');
+  const submittingLabel =
+    mode === 'edit' ? tEdit('submitting') : t('submitting');
+  const cancelLabel = mode === 'edit' ? tEdit('cancel') : t('cancel');
 
   const {
     register,
@@ -304,8 +311,21 @@ export function MemberForm({
                     id="plan_id"
                     aria-required="true"
                     aria-invalid={Boolean(errors.plan_id)}
+                    className="w-full"
                   >
-                    <SelectValue placeholder={tf('planPlaceholder')} />
+                    {/* base-ui Select.Value doesn't auto-resolve
+                        the matching SelectItem's text — it shows the
+                        raw value unless we pass a render function that
+                        maps value → display. Lookup against the plans
+                        array; fall back to placeholder when unset. */}
+                    <SelectValue placeholder={tf('planPlaceholder')}>
+                      {(value: string | null) => {
+                        const match = value
+                          ? plans.find((p) => p.plan_id === value)
+                          : null;
+                        return match ? match.display_name : tf('planPlaceholder');
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {plans.map((p) => (
@@ -449,8 +469,16 @@ export function MemberForm({
                   value={field.value ?? 'en'}
                   onValueChange={(v) => field.onChange(v)}
                 >
-                  <SelectTrigger id="preferred_language" aria-required="true">
-                    <SelectValue />
+                  <SelectTrigger
+                    id="preferred_language"
+                    aria-required="true"
+                    className="w-full"
+                  >
+                    <SelectValue>
+                      {(value: string | null) =>
+                        (value ?? 'en').toUpperCase()
+                      }
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="en">EN</SelectItem>
@@ -492,11 +520,11 @@ export function MemberForm({
             onClick={onCancel}
             disabled={submitting}
           >
-            {t('cancel')}
+            {cancelLabel}
           </Button>
         )}
         <Button type="submit" disabled={submitting}>
-          {submitting ? t('submitting') : t('submit')}
+          {submitting ? submittingLabel : submitLabel}
         </Button>
       </div>
     </form>

@@ -293,6 +293,16 @@ export type DirectoryFilter = {
 export type DirectoryRow = {
   readonly member: Member;
   readonly primaryContact: Contact | null;
+  /**
+   * English display name of the plan resolved via a correlated subquery
+   * on `membership_plans.plan_name->>'en'`. Denormalized into every row
+   * so the UI doesn't need a second listPlans fetch to map slug →
+   * human name — saves the N+1 round-trip and keeps the module
+   * boundary clean (no schema import from `@/modules/plans`).
+   * `null` when the plan row has been deleted (should not happen for
+   * active members but defensive fallback shows the slug).
+   */
+  readonly planDisplayName: string | null;
 };
 
 /**
@@ -359,8 +369,32 @@ export async function searchDirectory(
         ...conds,
       );
 
+      // Correlated subquery for plan display name — resolved at the DB
+      // layer so the directory endpoint serves human-readable plan
+      // names without a follow-up listPlans call. Uses the composite
+      // PK (tenant_id, plan_id, plan_year) for an index-only lookup.
+      // `plan_name` is a JSONB column with shape `{ en: string, th?, sv? }`;
+      // we project the English key because it's the canonical display.
+      // A tenant-localised lookup can be added later via i18n keys.
+      // Raw SQL for the outer-table correlation — Drizzle's sql template
+      // interpolation of column objects (`${members.tenantId}`) emitted
+      // the OUTER members column references inside the subquery but
+      // Postgres appears to resolve them to the INNER membership_plans
+      // scope first (both tables share the column names), returning
+      // the wrong row. Referring to the outer table by its default
+      // double-quoted name pins the comparison to the correlated
+      // row unambiguously.
       return tx
-        .select()
+        .select({
+          row: members,
+          planDisplayName: sql<string | null>`(
+            SELECT plan_name->>'en' FROM membership_plans AS mp
+            WHERE mp.tenant_id = "members"."tenant_id"
+              AND mp.plan_id   = "members"."plan_id"
+              AND mp.plan_year = "members"."plan_year"
+            LIMIT 1
+          )`.as('plan_display_name'),
+        })
         .from(members)
         .where(whereClause)
         .orderBy(
@@ -374,7 +408,7 @@ export async function searchDirectory(
     const hasMore = rows.length > filter.limit;
 
     // Fetch primary contacts in one query (N+1 guard)
-    const memberIds = page.map((r) => r.memberId);
+    const memberIds = page.map((r) => r.row.memberId);
     const primaryContacts =
       memberIds.length === 0
         ? []
@@ -394,11 +428,12 @@ export async function searchDirectory(
       if (c.removedAt === null) byMember.set(c.memberId, c);
     }
 
-    const items: DirectoryRow[] = page.map((row) => {
-      const m = rowToMember(row);
-      const c = byMember.get(row.memberId) ?? null;
+    const items: DirectoryRow[] = page.map((r) => {
+      const m = rowToMember(r.row);
+      const c = byMember.get(r.row.memberId) ?? null;
       return {
         member: m,
+        planDisplayName: r.planDisplayName,
         primaryContact:
           c === null
             ? null
@@ -424,7 +459,7 @@ export async function searchDirectory(
 
     const nextCursor = hasMore
       ? Buffer.from(
-          `${page[page.length - 1]!.lastActivityAt?.toISOString() ?? ''}|${page[page.length - 1]!.memberId}`,
+          `${page[page.length - 1]!.row.lastActivityAt?.toISOString() ?? ''}|${page[page.length - 1]!.row.memberId}`,
         ).toString('base64')
       : null;
 

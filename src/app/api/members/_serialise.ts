@@ -63,6 +63,9 @@ export function serialiseDirectoryRow(row: DirectoryRow) {
     country: row.member.country,
     plan_id: row.member.planId,
     plan_year: row.member.planYear,
+    // Denormalized English display name from the correlated subquery
+    // in searchDirectory — avoids a client-side slug → label map.
+    plan_display_name: row.planDisplayName,
     status: row.member.status,
     member_risk_flag: null, // F8 placeholder (FR-001)
     last_activity_at: row.member.lastActivityAt?.toISOString() ?? null,

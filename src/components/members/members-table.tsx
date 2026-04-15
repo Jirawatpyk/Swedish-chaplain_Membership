@@ -39,6 +39,12 @@ export type MembersTableRow = {
   readonly country: string;
   readonly plan_id: string;
   readonly plan_year: number;
+  /**
+   * English display name of the plan, resolved at the SQL layer via a
+   * correlated subquery in searchDirectory. Null when the plan row is
+   * missing (defensive fallback — the table renders the slug).
+   */
+  readonly plan_display_name: string | null;
   readonly status: 'active' | 'inactive' | 'archived';
   readonly member_risk_flag: null;
   readonly last_activity_at: string | null;
@@ -91,13 +97,21 @@ export function MembersTable({ rows, nextCursor }: Props) {
       header: () => t('columns.country'),
       cell: (info) => info.getValue(),
     }),
-    columnHelper.accessor('plan_id', {
+    columnHelper.accessor('plan_display_name', {
       header: () => t('columns.plan'),
-      cell: (info) => (
-        <span className="font-mono text-xs text-muted-foreground">
-          {info.getValue()}
-        </span>
-      ),
+      cell: (info) => {
+        const displayName = info.getValue();
+        // Fallback to the slug when the correlated subquery returns
+        // null (plan row missing). Slug stays available as the cell's
+        // title attribute for power users / debugging.
+        const row = info.row.original;
+        const label = displayName ?? row.plan_id;
+        return (
+          <span title={row.plan_id} className="text-sm">
+            {label}
+          </span>
+        );
+      },
     }),
     columnHelper.accessor('plan_year', {
       header: () => t('columns.year'),

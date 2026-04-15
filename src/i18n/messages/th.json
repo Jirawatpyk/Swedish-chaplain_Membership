@@ -552,7 +552,8 @@
           "email": "อีเมล",
           "phone": "โทรศัพท์",
           "roleTitle": "ตำแหน่ง",
-          "preferredLanguage": "ภาษาที่ต้องการ"
+          "preferredLanguage": "ภาษาที่ต้องการ",
+          "plan": "แพ็กเกจ"
         },
         "copy": {
           "copyMemberId": "คัดลอกรหัสสมาชิก",
@@ -649,7 +650,8 @@
         "submit": "บันทึก",
         "submitting": "กำลังบันทึก…",
         "cancel": "ยกเลิก"
-      }
+      },
+      "addMember": "เพิ่มสมาชิก"
     }
   },
   "palette": {

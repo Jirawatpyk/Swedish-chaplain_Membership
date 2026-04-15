@@ -190,6 +190,19 @@ export default async function MemberDetailPage({ params }: PageProps) {
     (c) => !c.isPrimary && c.removedAt === null,
   );
 
+  // Resolve plan display name via PlanLookupPort (single-plan fetch,
+  // no listPlans). Falls back to the slug if the plan row is missing
+  // (defensive — shouldn't happen for an active member, but keeps the
+  // page resilient to data drift).
+  const planLookup = await deps.plans.getPlan(
+    tenant,
+    member.planId,
+    member.planYear,
+  );
+  const planDisplayName = planLookup.ok
+    ? planLookup.value.planNameEn
+    : member.planId;
+
   return (
     <ContentContainer>
       <PageHeader
@@ -287,11 +300,15 @@ export default async function MemberDetailPage({ params }: PageProps) {
                 }
               />
               <Field
+                label={t('fields.plan')}
+                value={planDisplayName}
+              />
+              <Field label={t('fields.planYear')} value={member.planYear} />
+              <Field
                 label={t('fields.planId')}
                 value={member.planId}
                 mono
               />
-              <Field label={t('fields.planYear')} value={member.planYear} />
               <Field
                 label={t('fields.lastActivityAt')}
                 // ISO string ensures server + client render the same text;

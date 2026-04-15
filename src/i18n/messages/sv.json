@@ -552,7 +552,8 @@
           "email": "E-post",
           "phone": "Telefon",
           "roleTitle": "Roll",
-          "preferredLanguage": "Föredraget språk"
+          "preferredLanguage": "Föredraget språk",
+          "plan": "Plan"
         },
         "copy": {
           "copyMemberId": "Kopiera medlems-ID",
@@ -649,7 +650,8 @@
         "submit": "Spara",
         "submitting": "Sparar…",
         "cancel": "Avbryt"
-      }
+      },
+      "addMember": "Lägg till medlem"
     }
   },
   "palette": {

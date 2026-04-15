@@ -68,7 +68,7 @@ export default async function MembersListPage({
               className={buttonVariants({ size: 'sm' })}
             >
               <PlusIcon className="h-3.5 w-3.5" />
-              {t('emptyStates.zero.cta')}
+              {t('addMember')}
             </Link>
           ) : null
         }
@@ -120,6 +120,7 @@ async function MembersDirectoryBody({ query }: { query: SearchParams }) {
     country: row.member.country,
     plan_id: row.member.planId,
     plan_year: row.member.planYear,
+    plan_display_name: row.planDisplayName,
     status: row.member.status,
     member_risk_flag: null,
     last_activity_at: row.member.lastActivityAt?.toISOString() ?? null,

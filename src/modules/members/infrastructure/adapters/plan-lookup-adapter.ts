@@ -45,6 +45,10 @@ export const plansBarrelAdapter: PlanLookupPort = {
         tenantId: plan.tenant_id,
         planId: plan.plan_id,
         planYear: plan.plan_year,
+        // JSONB `plan_name` is `{ en: string, th?: string, sv?: string }`.
+        // English is the canonical admin display name; tenant-localised
+        // lookup can layer on top later via i18n.
+        planNameEn: plan.plan_name.en ?? plan.plan_id,
         planCategory: plan.plan_category,
         memberTypeScope: plan.member_type_scope,
         minTurnoverThb: plan.min_turnover_minor_units,
