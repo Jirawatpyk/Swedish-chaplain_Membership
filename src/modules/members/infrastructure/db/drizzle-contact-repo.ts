@@ -209,6 +209,92 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
+  async linkUser(ctx, contactId, userId, actorUserId, requestId) {
+    try {
+      const rows = await runInTenant(ctx, async (tx) => {
+        // Fetch + check — refuse to overwrite an existing linked user.
+        const [before] = await tx
+          .select({
+            linkedUserId: contacts.linkedUserId,
+            memberId: contacts.memberId,
+          })
+          .from(contacts)
+          .where(eq(contacts.contactId, contactId))
+          .limit(1);
+        if (!before) return null;
+        if (before.linkedUserId) {
+          throw new Error('CONFLICT_LINKED');
+        }
+        const updated = await tx
+          .update(contacts)
+          .set({ linkedUserId: userId, updatedAt: new Date() })
+          .where(eq(contacts.contactId, contactId))
+          .returning();
+        if (updated.length > 0) {
+          await tx.insert(auditLog).values({
+            eventType: 'contact_updated',
+            actorUserId,
+            targetUserId: userId,
+            summary: `linked user for contact ${contactId}`,
+            requestId,
+            tenantId: ctx.slug,
+            payload: {
+              member_id: updated[0]!.memberId,
+              contact_id: contactId,
+              linked_user_id: userId,
+              fields_changed: ['linked_user_id'],
+            },
+          });
+        }
+        return updated;
+      });
+      if (rows === null) return err({ code: 'repo.not_found' });
+      if (rows.length === 0) return err({ code: 'repo.not_found' });
+      return ok(rowToContact(rows[0]!));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === 'CONFLICT_LINKED') {
+        return err({
+          code: 'repo.conflict',
+          reason: 'contact already linked to a user',
+        });
+      }
+      return err(unexpected(e));
+    }
+  },
+
+  async updateEmailInTx(tx, _ctx, contactId, newEmail) {
+    try {
+      // SELECT the current email first — Postgres RETURNING on UPDATE
+      // reflects post-SET values, not pre-SET, so a single UPDATE can
+      // not hand back the old email.
+      const [before] = await tx
+        .select({ email: contacts.email })
+        .from(contacts)
+        .where(eq(contacts.contactId, contactId))
+        .limit(1);
+      if (!before) return err({ code: 'repo.not_found' });
+
+      const updated = await tx
+        .update(contacts)
+        .set({ email: newEmail, updatedAt: new Date() })
+        .where(eq(contacts.contactId, contactId))
+        .returning({ id: contacts.contactId });
+      if (updated.length === 0) return err({ code: 'repo.not_found' });
+
+      return ok({ oldEmail: before.email as typeof newEmail });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/duplicate key|unique constraint/i.test(msg)) {
+        return err({
+          code: 'repo.conflict',
+          reason: 'contact email already used in this tenant',
+        });
+      }
+      return err({ code: 'repo.unexpected', cause: e });
+    }
+  },
+
   async promotePrimary(ctx, memberId, newPrimaryContactId, actorUserId, requestId) {
     try {
       const result = await runInTenant(ctx, async (tx) => {

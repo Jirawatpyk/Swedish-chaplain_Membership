@@ -74,12 +74,13 @@ const RBAC_MAP = {
 
 ## 4. Outbox pattern for email dispatch (verification + invitation + colleague invite)
 
-**Decision**: Reuse the **existing F1 `notifications_outbox` table** (currently used for password-reset emails). Three new `notification_type` enum values: `email_verification`, `member_portal_invite`, `colleague_invite`. A single Vercel Cron Job (every 60s) drains the outbox; up to 5 retries with exponential backoff; permanent failure after 5 attempts logs an `email_dispatch_failed` audit event.
+**Decision**: **Create a new `notifications_outbox` table in F3 migration 0011** — part of the auth-shared schema (co-located with `email_delivery_events`, since the outbox is expected to serve auth flows like password-reset in a future refactor). Audit correction (2026-04-15): F1 does NOT currently have an outbox — F1 password-reset and invitation emails go directly via `resend-client.ts` (synchronous 3-retry send). The F3 outbox is **new infrastructure**, not a reuse. `notification_type` enum values for F3: `member_invitation`, `email_verification`, `email_change_revert`, `email_verification_resent`. A single Vercel Cron Job (every 60s) drains the outbox; up to 5 retries with exponential backoff; permanent failure after 5 attempts logs an `email_dispatch_failed` audit event.
 
 **Rationale**:
-- Reuses already-deployed infrastructure — no new tables, no new cron job, no new monitoring channel.
-- After-commit dispatch decouples DB transaction durability from email service availability (Resend SLO).
+- After-commit dispatch decouples DB transaction durability from email service availability (Resend SLO) — required by FR-012a's 6-step atomic txn.
+- Single table covers both F3 (members) and future auth flows (password-reset migration is a follow-up).
 - Resend itself supports idempotency keys; the outbox row's UUID is the idempotency key.
+- Schema lives in `src/modules/auth/infrastructure/db/schema.ts` (shared location) per 2026-04-15 decision.
 
 **Alternatives considered**:
 - **Direct synchronous Resend call inside the transaction**: rejected — see § 2.

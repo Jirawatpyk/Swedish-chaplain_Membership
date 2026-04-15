@@ -15,11 +15,19 @@ import { drizzleMemberRepo } from './infrastructure/db/drizzle-member-repo';
 import { drizzleContactRepo } from './infrastructure/db/drizzle-contact-repo';
 import { drizzleAuditAdapter } from './infrastructure/audit/audit-adapter';
 import { plansBarrelAdapter } from './infrastructure/adapters/plan-lookup-adapter';
+import { resendEmailPort } from './infrastructure/adapters/resend-email-port';
+import { authSessionRevocationPort } from './infrastructure/adapters/auth-session-revocation-port';
+import { userEmailAdapter } from './infrastructure/adapters/user-email-adapter';
+import { emailChangeTokenAdapter } from './infrastructure/adapters/email-change-token-adapter';
 import type { MemberRepo } from './application/ports/member-repo';
 import type { ContactRepo } from './application/ports/contact-repo';
 import type { AuditPort } from './application/ports/audit-port';
 import type { ClockPort } from './application/ports/clock-port';
 import type { PlanLookupPort } from './application/ports/plan-lookup-port';
+import type { EmailPort } from './application/ports/email-port';
+import type { SessionRevocationPort } from './application/ports/session-revocation-port';
+import type { UserEmailPort } from './application/ports/user-email-port';
+import type { EmailChangeTokenPort } from './application/ports/email-change-token-port';
 import type { MemberId } from './domain/member';
 import type { ContactId } from './domain/contact';
 
@@ -29,6 +37,10 @@ export type MembersDeps = {
   contactRepo: ContactRepo;
   audit: AuditPort;
   plans: PlanLookupPort;
+  emails: EmailPort;
+  sessions: SessionRevocationPort;
+  userEmails: UserEmailPort;
+  tokens: EmailChangeTokenPort;
   clock: ClockPort;
   idFactory: {
     memberId(): MemberId;
@@ -48,6 +60,22 @@ const systemIdFactory = {
   contactId: (): ContactId => randomUUID() as ContactId,
 };
 
+/**
+ * Public-path composition entry — returned value exposes the subset
+ * of adapters that standalone (non-tenant) API routes need:
+ *   - `findActiveToken(tokenId)` for the email-change revert +
+ *     verification endpoints which receive a public URL token and
+ *     have to derive the tenant from the token row.
+ *
+ * Keeps API routes out of direct infrastructure imports (Constitution
+ * Principle III / barrel discipline).
+ */
+export function buildPublicEmailChangeLookup() {
+  return {
+    findActiveToken: emailChangeTokenAdapter.findActiveById,
+  };
+}
+
 export function buildMembersDeps(tenant: TenantContext): MembersDeps {
   return {
     tenant,
@@ -55,6 +83,10 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     contactRepo: drizzleContactRepo,
     audit: drizzleAuditAdapter,
     plans: plansBarrelAdapter,
+    emails: resendEmailPort,
+    sessions: authSessionRevocationPort,
+    userEmails: userEmailAdapter,
+    tokens: emailChangeTokenAdapter,
     clock: systemClock,
     idFactory: systemIdFactory,
   };

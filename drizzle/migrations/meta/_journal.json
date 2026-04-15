@@ -78,6 +78,27 @@
       "when": 1776252600000,
       "tag": "0010_audit_log_f3_extension",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1776252700000,
+      "tag": "0011_notifications_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1776252800000,
+      "tag": "0012_email_change_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1776252900000,
+      "tag": "0013_requires_password_reset",
+      "breakpoints": true
     }
   ]
 }

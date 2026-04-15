@@ -13,7 +13,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { ArrowLeftIcon, PencilIcon } from 'lucide-react';
+import { ArrowLeftIcon, HelpCircleIcon, PencilIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -32,6 +32,12 @@ import { buttonVariants } from '@/components/ui/button';
 import { ContentContainer } from '@/components/layout/content-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
+import { InvitePortalButton } from '@/components/members/invite-portal-button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -99,14 +105,19 @@ function StatusBadge({ status }: { status: 'active' | 'inactive' | 'archived' })
 
 function ContactBlock({
   contact,
+  memberId,
   t,
 }: {
   contact: Contact;
+  memberId: string;
   t: Awaited<ReturnType<typeof getTranslations<'admin.members.detail'>>>;
 }) {
+  // "Invite to portal" is only shown when the contact has an email and
+  // is not already linked to an F1 portal account (FR-012 / T056).
+  const canInvite = Boolean(contact.email) && !contact.linkedUserId;
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
         <CardTitle className="text-base">
           {`${contact.firstName} ${contact.lastName}`.trim()}
           {contact.isPrimary && (
@@ -114,7 +125,15 @@ function ContactBlock({
               {t('sections.primary')}
             </Badge>
           )}
+          {contact.linkedUserId && (
+            <Badge className="ml-2" variant="secondary">
+              {t('portal.linked')}
+            </Badge>
+          )}
         </CardTitle>
+        {canInvite && (
+          <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
+        )}
       </CardHeader>
       <CardContent>
         <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
@@ -352,11 +371,34 @@ export default async function MemberDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        <h2 className="text-h3 text-lg font-semibold mt-4">
-          {t('sections.contacts')}
-        </h2>
+        <div className="mt-4 flex items-center gap-2">
+          <h2 className="text-h3 text-lg font-semibold">
+            {t('sections.contacts')}
+          </h2>
+          {/* T097 — Emergency primary contact transfer helper. Clicking
+              the icon opens a Popover (not a hover Tooltip — we need
+              tap-discoverable on mobile) that explains the two-step
+              procedure per spec Edge Cases: add the new person as a
+              secondary contact, then promote them. */}
+          <Popover>
+            <PopoverTrigger
+              aria-label={t('emergencyPrimary.ariaLabel')}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <HelpCircleIcon className="h-4 w-4" aria-hidden="true" />
+            </PopoverTrigger>
+            <PopoverContent className="max-w-sm text-sm" sideOffset={4}>
+              <p className="font-medium">{t('emergencyPrimary.title')}</p>
+              <p className="mt-2 text-muted-foreground">
+                {t('emergencyPrimary.body')}
+              </p>
+            </PopoverContent>
+          </Popover>
+        </div>
 
-        {primary ? <ContactBlock contact={primary} t={t} /> : null}
+        {primary ? (
+          <ContactBlock contact={primary} memberId={member.memberId} t={t} />
+        ) : null}
 
         {secondary.length > 0 && (
           <>
@@ -364,7 +406,12 @@ export default async function MemberDetailPage({ params }: PageProps) {
               {t('sections.secondary')}
             </h3>
             {secondary.map((c) => (
-              <ContactBlock key={c.contactId} contact={c} t={t} />
+              <ContactBlock
+                key={c.contactId}
+                contact={c}
+                memberId={member.memberId}
+                t={t}
+              />
             ))}
           </>
         )}

@@ -8,6 +8,7 @@
  *
  * F3 notification types (FR-012a + carry-over from F1 invitation).
  */
+import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { RepoError } from './member-repo';
@@ -27,6 +28,18 @@ export type EmailEnqueue = {
 
 export interface EmailPort {
   enqueue(
+    ctx: TenantContext,
+    request: EmailEnqueue,
+  ): Promise<Result<{ outboxRowId: string }, RepoError>>;
+
+  /**
+   * Enqueue inside a caller-provided transaction. Required by the
+   * FR-012a 6-step atomic txn so the outbox row commits atomically
+   * with the state mutations — Resend dispatch failures after commit
+   * are handled by the outbox retry loop, never by a rollback.
+   */
+  enqueueInTx(
+    tx: TenantTx,
     ctx: TenantContext,
     request: EmailEnqueue,
   ): Promise<Result<{ outboxRowId: string }, RepoError>>;

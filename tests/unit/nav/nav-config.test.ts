@@ -13,12 +13,13 @@ describe('staffNavConfig', () => {
     expect(staffNavConfig.sections).toHaveLength(2);
   });
 
-  it('first section has 3 items: Dashboard, Plans, Users', () => {
+  it('first section has 4 items: Dashboard, Plans, Members, Users', () => {
     const mainSection = staffNavConfig.sections[0]!;
-    expect(mainSection.items).toHaveLength(3);
+    expect(mainSection.items).toHaveLength(4);
     expect(mainSection.items[0]!.titleKey).toBe('nav.staff.dashboard');
     expect(mainSection.items[1]!.titleKey).toBe('nav.staff.plans');
-    expect(mainSection.items[2]!.titleKey).toBe('nav.staff.users');
+    expect(mainSection.items[2]!.titleKey).toBe('nav.staff.members');
+    expect(mainSection.items[3]!.titleKey).toBe('nav.staff.users');
   });
 
   it('second section is Settings with a section header', () => {

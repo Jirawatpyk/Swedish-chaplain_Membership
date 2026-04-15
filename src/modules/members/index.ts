@@ -145,3 +145,50 @@ export {
   type AffectedMembersCountError,
   type AffectedMembersCountDeps,
 } from './application/use-cases/affected-members-count';
+
+// --- US1 invite-portal use case ---------------------------------------------
+
+export {
+  invitePortal,
+  type InvitePortalInput,
+  type InvitePortalOutput,
+  type InvitePortalError,
+  type InvitePortalDeps,
+  type CreateUserPort,
+} from './application/use-cases/invite-portal';
+
+// --- US3.b.2 use case -------------------------------------------------------
+
+export {
+  changeContactEmail,
+  type ChangeContactEmailInput,
+  type ChangeContactEmailOutput,
+  type ChangeContactEmailError,
+  type ChangeContactEmailDeps,
+} from './application/use-cases/change-contact-email';
+
+// --- US3.b.3 use cases ------------------------------------------------------
+
+export {
+  verifyContactEmail,
+  type VerifyContactEmailInput,
+  type VerifyContactEmailOutput,
+  type VerifyContactEmailError,
+  type VerifyContactEmailDeps,
+} from './application/use-cases/verify-contact-email';
+
+export {
+  revertContactEmail,
+  type RevertContactEmailInput,
+  type RevertContactEmailOutput,
+  type RevertContactEmailError,
+  type RevertContactEmailDeps,
+} from './application/use-cases/revert-contact-email';
+
+export {
+  resendVerificationEmail,
+  type ResendVerificationInput,
+  type ResendVerificationOutput,
+  type ResendVerificationError,
+  type ResendVerificationDeps,
+} from './application/use-cases/resend-verification-email';

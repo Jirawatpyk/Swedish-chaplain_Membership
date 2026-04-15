@@ -103,6 +103,35 @@
       },
       "contactHeading": "Behöver du hjälp?",
       "contactDescription": "Tills självbetjäning lanseras, mejla oss så hjälper vi dig direkt."
+    },
+    "emailChangeRevert": {
+      "title": "Återställ e-postbyte",
+      "cardDescription": "Kontakt-e-posten på ditt SweCham-konto har ändrats. Om du inte begärde detta, klicka nedan för att återställa den och välja ett nytt lösenord.",
+      "description": "Återställning återställer din tidigare e-post, loggar ut alla aktiva sessioner och kräver att du väljer ett nytt lösenord innan du loggar in igen.",
+      "revert": "Återställ och välj nytt lösenord",
+      "submitting": "Återställer…",
+      "successMessage": "E-postbytet har återställts. Slutför lösenordsåterställningen för att få tillgång igen.",
+      "completePasswordReset": "Slutför lösenordsåterställning",
+      "errors": {
+        "invalidToken": "Denna återställningslänk har upphört att gälla eller har redan använts.",
+        "conflict": "Den tidigare e-postadressen är inte längre tillgänglig. Kontakta din kammaradministratör.",
+        "rateLimited": "För många försök. Försök igen om {seconds}s.",
+        "serverError": "Något gick fel. Försök igen."
+      }
+    },
+    "emailVerification": {
+      "title": "Bekräfta e-postadress",
+      "cardDescription": "Bekräftar din nya e-postadress — ett ögonblick.",
+      "verifying": "Bekräftar din e-postadress…",
+      "successMessage": "E-post bekräftad. Du kan logga in nu.",
+      "signInCta": "Gå till inloggning",
+      "retry": "Försök igen",
+      "errors": {
+        "invalidToken": "Denna bekräftelselänk har upphört att gälla eller har redan använts.",
+        "notYetActive": "Den här länken är inte aktiv ännu. Försök igen om {seconds}s.",
+        "rateLimited": "För många försök. Försök igen om {seconds}s.",
+        "serverError": "Något gick fel. Försök igen."
+      }
     }
   },
   "shell": {
@@ -566,7 +595,15 @@
           "description": "Medlemmen kan ha arkiverats eller är URL:en felaktig.",
           "cta": "Tillbaka till medlemmar"
         },
-        "unknown": "—"
+        "unknown": "—",
+        "emergencyPrimary": {
+          "ariaLabel": "Hjälp — nödöverföring av primär kontakt",
+          "title": "Nödöverföring av primär kontakt",
+          "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Klicka på Lägg till kontakt för att skapa en sekundär kontakt med den nya personens uppgifter och använd sedan Befordra för att göra dem till den nya primära. Den gamla primära nedgraderas automatiskt."
+        },
+        "portal": {
+          "linked": "Portalanslutning"
+        }
       },
       "create": {
         "pageTitle": "Lägg till medlem · SweCham",
@@ -651,30 +688,46 @@
         "submitting": "Sparar…",
         "cancel": "Avbryt"
       },
-      "addMember": "Lägg till medlem"
+      "addMember": "Lägg till medlem",
+      "invitePortal": {
+        "label": "Bjud in till portalen",
+        "submitting": "Skickar…",
+        "success": "Inbjudan skickad.",
+        "errors": {
+          "alreadyLinked": "Den här kontakten är redan ansluten till ett portalkonto.",
+          "noEmail": "Lägg till en e-post för denna kontakt innan du bjuder in.",
+          "invalidEmail": "Kontaktens e-postadress är ogiltig.",
+          "emailTaken": "Denna e-post tillhör redan ett annat konto.",
+          "notFound": "Kontakten hittades inte.",
+          "serverError": "Något gick fel. Försök igen."
+        }
+      }
     }
   },
   "palette": {
     "title": "Kommandopalett",
     "description": "Sök efter ett paket, en åtgärd eller en sida",
-    "placeholder": "Sök paket, åtgärder och sidor…",
+    "placeholder": "Sök planer, medlemmar, åtgärder och sidor…",
     "empty": "Inga resultat.",
     "groups": {
       "plans": "Paket",
       "actions": "Åtgärder",
-      "navigate": "Navigera"
+      "navigate": "Navigera",
+      "members": "Medlemmar"
     },
     "actions": {
       "newPlan": "Skapa nytt paket",
       "cloneYear": "Klona år",
       "editFees": "Redigera avgiftskonfiguration",
-      "viewAuditLog": "Visa revisionslogg"
+      "viewAuditLog": "Visa revisionslogg",
+      "newMember": "Skapa ny medlem"
     },
     "navigate": {
       "plansList": "Paketlista",
       "feeConfig": "Avgiftskonfiguration",
       "usersList": "Användarlista",
-      "dashboard": "Instrumentpanel"
+      "dashboard": "Instrumentpanel",
+      "membersList": "Medlemslista"
     }
   },
   "nav": {

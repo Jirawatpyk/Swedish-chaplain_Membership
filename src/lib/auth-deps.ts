@@ -66,6 +66,11 @@ import type { EnableUserDeps } from '@/modules/auth/application/enable-user';
 import type { ChangeRoleDeps } from '@/modules/auth/application/change-role';
 import type { HeartbeatDeps } from '@/modules/auth/application/heartbeat';
 
+// Re-export the Upstash-backed rate limiter so presentation-layer
+// routes don't need their own deep infrastructure import. `src/lib/**`
+// is the Chamber-OS composition adapter layer (eslint allow-listed).
+export { rateLimiter };
+
 // Shared default clock — single source of truth for "now" across every
 // default deps object. Tests still override `now` via their own stubs;
 // production call sites all share this reference.

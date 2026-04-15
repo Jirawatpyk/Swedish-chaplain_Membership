@@ -103,6 +103,35 @@
       },
       "contactHeading": "Need help?",
       "contactDescription": "Until self-service lands, email us and we'll help directly."
+    },
+    "emailChangeRevert": {
+      "title": "Revert email change",
+      "cardDescription": "The contact email on your SweCham account was changed. If you did not request this, click below to revert it and reset your password.",
+      "description": "Reverting will restore your previous email, sign out every active session, and require you to set a new password before signing in again.",
+      "revert": "Revert and reset password",
+      "submitting": "Reverting…",
+      "successMessage": "Email change reverted. Complete the password reset to regain access.",
+      "completePasswordReset": "Complete password reset",
+      "errors": {
+        "invalidToken": "This revert link has expired or has already been used.",
+        "conflict": "The previous email is no longer available. Contact your chamber administrator.",
+        "rateLimited": "Too many attempts. Try again in {seconds}s.",
+        "serverError": "Something went wrong. Please try again."
+      }
+    },
+    "emailVerification": {
+      "title": "Verify email address",
+      "cardDescription": "Confirming your new email address — one moment.",
+      "verifying": "Verifying your email address…",
+      "successMessage": "Email verified. You can now sign in.",
+      "signInCta": "Go to sign in",
+      "retry": "Try again",
+      "errors": {
+        "invalidToken": "This verification link has expired or has already been used.",
+        "notYetActive": "This link is not active yet. Try again in {seconds}s.",
+        "rateLimited": "Too many attempts. Try again in {seconds}s.",
+        "serverError": "Something went wrong. Please try again."
+      }
     }
   },
   "shell": {
@@ -566,7 +595,15 @@
           "description": "The member may have been archived or the URL is incorrect.",
           "cta": "Back to members"
         },
-        "unknown": "—"
+        "unknown": "—",
+        "emergencyPrimary": {
+          "ariaLabel": "Help — emergency primary contact transfer",
+          "title": "Emergency primary contact transfer",
+          "body": "Need to transfer the primary contact to a new person (e.g. the previous primary has left the company)? Click Add contact to create a secondary contact with the new person's details, then use Promote to make them the new primary. The old primary is automatically demoted."
+        },
+        "portal": {
+          "linked": "Portal linked"
+        }
       },
       "create": {
         "pageTitle": "Add member · SweCham",
@@ -651,30 +688,46 @@
         "submitting": "Saving…",
         "cancel": "Cancel"
       },
-      "addMember": "Add member"
+      "addMember": "Add member",
+      "invitePortal": {
+        "label": "Invite to portal",
+        "submitting": "Sending…",
+        "success": "Invitation sent.",
+        "errors": {
+          "alreadyLinked": "This contact is already linked to a portal account.",
+          "noEmail": "Add an email to this contact before inviting.",
+          "invalidEmail": "The contact email is invalid.",
+          "emailTaken": "This email already belongs to another account.",
+          "notFound": "Contact not found.",
+          "serverError": "Something went wrong. Please try again."
+        }
+      }
     }
   },
   "palette": {
     "title": "Command palette",
     "description": "Search for a plan, action, or page to run",
-    "placeholder": "Search plans, actions, and pages…",
+    "placeholder": "Search plans, members, actions, and pages…",
     "empty": "No results found.",
     "groups": {
       "plans": "Plans",
       "actions": "Actions",
-      "navigate": "Navigate"
+      "navigate": "Navigate",
+      "members": "Members"
     },
     "actions": {
       "newPlan": "Create new plan",
       "cloneYear": "Clone year",
       "editFees": "Edit fee configuration",
-      "viewAuditLog": "View audit log"
+      "viewAuditLog": "View audit log",
+      "newMember": "Create new member"
     },
     "navigate": {
       "plansList": "Plans list",
       "feeConfig": "Fee configuration",
       "usersList": "Users list",
-      "dashboard": "Dashboard"
+      "dashboard": "Dashboard",
+      "membersList": "Members list"
     }
   },
   "nav": {

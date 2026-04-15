@@ -22,6 +22,12 @@ vi.mock('@/modules/plans/plans-deps', () => ({
 vi.mock('@/modules/plans/application/search-plans', () => ({
   searchPlans: (...args: unknown[]) => searchPlansMock(...args),
 }));
+// T069 — the route also calls directorySearch for the members group.
+// In contract tests we stub it to an empty OK response; members-search
+// has its own dedicated tests.
+vi.mock('@/modules/members', async () => ({
+  directorySearch: async () => ok({ items: [], nextCursor: null }),
+}));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
 }));

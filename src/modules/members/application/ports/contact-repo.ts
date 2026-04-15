@@ -1,10 +1,12 @@
 /**
  * Application port — Contact repository.
  */
+import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { Contact, ContactId } from '../../domain/contact';
 import type { MemberId } from '../../domain/member';
+import type { Email } from '../../domain/value-objects/email';
 import type { RepoError } from './member-repo';
 
 export interface ContactRepo {
@@ -56,4 +58,34 @@ export interface ContactRepo {
     actorUserId: string,
     requestId: string,
   ): Promise<Result<{ demoted: Contact; promoted: Contact }, RepoError>>;
+
+  /**
+   * Bind an F1 user account to a contact. Used on invitation acceptance
+   * or when admin invites a contact to the portal via the F3 use case
+   * `invitePortal`. Refuses if the contact already has a linked user —
+   * overwriting would strand the previous account without cleanup.
+   */
+  linkUser(
+    ctx: TenantContext,
+    contactId: ContactId,
+    userId: string,
+    actorUserId: string,
+    requestId: string,
+  ): Promise<Result<Contact, RepoError>>;
+
+  /**
+   * Update only the email column, using the caller's transaction. Part
+   * of the FR-012a 6-step atomic change-contact-email txn. Returns the
+   * previous email (needed for audit + for the revert notification's
+   * `oldEmail` field).
+   *
+   * Conflicts on the `contacts_tenant_email_uniq` partial index
+   * surface as `repo.conflict`.
+   */
+  updateEmailInTx(
+    tx: TenantTx,
+    ctx: TenantContext,
+    contactId: ContactId,
+    newEmail: Email,
+  ): Promise<Result<{ oldEmail: Email }, RepoError>>;
 }

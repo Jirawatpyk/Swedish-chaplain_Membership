@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   index,
   inet,
   integer,
@@ -97,6 +98,24 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'bulk_action_rate_limit_exceeded',
 ]);
 
+export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [
+  'verification',
+  'revert',
+]);
+
+export const notificationTypeEnum = pgEnum('notification_type', [
+  'member_invitation',
+  'email_verification',
+  'email_change_revert',
+  'email_verification_resent',
+]);
+
+export const outboxStatusEnum = pgEnum('outbox_status', [
+  'pending',
+  'sent',
+  'permanently_failed',
+]);
+
 export const emailDeliveryEventTypeEnum = pgEnum('email_delivery_event_type', [
   'sent',
   'delivered',
@@ -126,6 +145,17 @@ export const users = pgTable(
     }),
     failedSignInCount: integer('failed_signin_count').notNull().default(0),
     lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    // F3 US3.b.2 — sign-in is refused when email_verified = false. Flipped
+    // to false by the change-contact-email atomic txn (FR-012a) and back
+    // to true when the verification endpoint consumes the 24h token
+    // (US3.b.3). Default TRUE so existing F1 rows remain sign-in-able.
+    emailVerified: boolean('email_verified').notNull().default(true),
+    // F3 US3.b.3 — flipped to TRUE by the revert-contact-email use case
+    // (FR-012b). F1 sign-in refuses while TRUE; the reset-password flow
+    // flips it back to FALSE on successful password change.
+    requiresPasswordReset: boolean('requires_password_reset')
+      .notNull()
+      .default(false),
   },
   (table) => [
     // Case-insensitive uniqueness on email (spec FR-001 / Q2)
@@ -259,6 +289,103 @@ export const emailDeliveryEvents = pgTable(
   ],
 );
 
+// --- email_change_tokens (F3 US3.b.2 — FR-012a dual-token flow) --------------
+
+/**
+ * Single-use tokens issued by the FR-012a atomic contact-email-change
+ * transaction. Two types:
+ *   - `verification` — sent to the NEW address. Consumption flips
+ *     `users.email_verified` back to TRUE. 24-hour lifetime. Honours a
+ *     5-minute activation delay from issuance (spec § FR-012a) —
+ *     consumption endpoints reject `now() < activated_at`.
+ *   - `revert` — sent to the OLD address. Consumption atomically rolls
+ *     back the email change and flags the user for a password reset
+ *     (FR-012b, US3.b.3). 48-hour lifetime. Activated immediately.
+ *
+ * The `id` column stores the sha256 hex digest of the token value;
+ * the plaintext lives only in the email body. Consumption endpoints
+ * hash the presented token and look up by id — same shape as F1
+ * password_reset_tokens.
+ */
+export const emailChangeTokens = pgTable(
+  'email_change_tokens',
+  {
+    id: text('id').primaryKey(),
+    tenantId: text('tenant_id').notNull(),
+    contactId: uuid('contact_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    type: emailChangeTokenTypeEnum('type').notNull(),
+    oldEmail: text('old_email').notNull(),
+    newEmail: text('new_email').notNull(),
+    activatedAt: timestamp('activated_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('email_change_tokens_user_idx').on(table.userId),
+    // Partial index matches the migration's active-token scan
+    index('email_change_tokens_active_idx')
+      .on(table.userId, table.type)
+      .where(sql`consumed_at IS NULL`),
+  ],
+);
+
+// --- notifications_outbox (F3 migration 0011 — after-commit email dispatch) ---
+
+/**
+ * Transactional outbox for email sends. Written inside the domain
+ * transaction; drained by a Vercel Cron (every 60s) that dispatches
+ * via Resend and flips status. Covers F3 notification types today
+ * (member_invitation, email_verification, email_change_revert,
+ * email_verification_resent); future auth flows (password-reset)
+ * may migrate here — that's why the table lives in the auth-shared
+ * schema file rather than members.
+ *
+ * Retry policy (spec § Security 4.2): up to 5 attempts with
+ * exponential backoff. On attempt 5 failure, status flips to
+ * `permanently_failed` and an `email_dispatch_failed` audit event
+ * is emitted. Admin can trigger a fresh token + new row via the
+ * "Re-send verification" action (FR-012c).
+ *
+ * `tenantId` nullable: future auth flows (password-reset at sign-in)
+ * do not have a tenant context yet. F3 enqueues MUST populate it.
+ */
+export const notificationsOutbox = pgTable(
+  'notifications_outbox',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: text('tenant_id'),
+    notificationType: notificationTypeEnum('notification_type').notNull(),
+    toEmail: text('to_email').notNull(),
+    locale: text('locale').notNull(),
+    contextData: jsonb('context_data').notNull(),
+    status: outboxStatusEnum('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextRetryAt: timestamp('next_retry_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastError: text('last_error'),
+    sentMessageId: text('sent_message_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Dispatcher drain query: pending + ready-to-retry, ordered by next_retry_at.
+    index('outbox_dispatch_idx').on(table.status, table.nextRetryAt),
+    // Tenant-scoped operational queries + RLS policy hit.
+    index('outbox_tenant_idx').on(table.tenantId),
+  ],
+);
+
 // --- Inferred types (for repo translators in src/modules/auth/infrastructure/db/*-repo.ts) ---
 
 export type UserRow = typeof users.$inferSelect;
@@ -273,3 +400,7 @@ export type AuditLogRow = typeof auditLog.$inferSelect;
 export type AuditLogInsert = typeof auditLog.$inferInsert;
 export type EmailDeliveryEventRow = typeof emailDeliveryEvents.$inferSelect;
 export type EmailDeliveryEventInsert = typeof emailDeliveryEvents.$inferInsert;
+export type NotificationsOutboxRow = typeof notificationsOutbox.$inferSelect;
+export type NotificationsOutboxInsert = typeof notificationsOutbox.$inferInsert;
+export type EmailChangeTokenRow = typeof emailChangeTokens.$inferSelect;
+export type EmailChangeTokenInsert = typeof emailChangeTokens.$inferInsert;

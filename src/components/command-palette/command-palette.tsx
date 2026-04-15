@@ -58,6 +58,7 @@ type CommandPaletteProps = {
 
 const EMPTY_RESULTS: PaletteSearchResponse['results'] = {
   plans: [],
+  members: [],
   actions: [],
   navigate: [],
 };
@@ -174,18 +175,22 @@ export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
   // starts blank instead of showing stale prior-query hits.
   const hasQuery = deferredQuery.trim().length > 0;
   const sourceResults = hasQuery ? results : EMPTY_RESULTS;
-  const filteredResults = currentUserRole === 'admin'
-    ? sourceResults
-    : {
-        plans: sourceResults.plans,
-        actions: currentUserRole === 'manager'
-          ? sourceResults.actions.filter((a) => !isAdminOnlyAction(a.id))
-          : [],
-        navigate: currentUserRole === 'member' ? [] : sourceResults.navigate,
-      };
+  const filteredResults: PaletteSearchResponse['results'] =
+    currentUserRole === 'admin'
+      ? sourceResults
+      : {
+          plans: sourceResults.plans,
+          members: sourceResults.members,
+          actions:
+            currentUserRole === 'manager'
+              ? sourceResults.actions.filter((a) => !isAdminOnlyAction(a.id))
+              : [],
+          navigate: currentUserRole === 'member' ? [] : sourceResults.navigate,
+        };
 
   const hasAnyResult =
     filteredResults.plans.length +
+      filteredResults.members.length +
       filteredResults.actions.length +
       filteredResults.navigate.length >
     0;

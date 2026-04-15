@@ -31,6 +31,8 @@ function toDomain(row: UserRow): UserAccount {
     failedSignInCount: row.failedSignInCount,
     lockedUntil: row.lockedUntil,
     displayName: row.displayName,
+    emailVerified: row.emailVerified,
+    requiresPasswordReset: row.requiresPasswordReset,
   };
 }
 
@@ -159,9 +161,17 @@ export const userRepo: UserRepo = {
   },
 
   async setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void> {
+    // Clearing `requiresPasswordReset` here ensures the reset-password
+    // flow (F1) also unblocks users who arrived via the F3 revert link
+    // (FR-012b). The flag is flipped ON by the revert use case; this
+    // is the single place it is flipped OFF.
     await db
       .update(users)
-      .set({ passwordHash: hash, lastPasswordChangedAt: now })
+      .set({
+        passwordHash: hash,
+        lastPasswordChangedAt: now,
+        requiresPasswordReset: false,
+      })
       .where(eq(users.id, id));
   },
 
