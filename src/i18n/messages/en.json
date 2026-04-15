@@ -448,10 +448,21 @@
     "members": {
       "title": "Members",
       "overrideReason": {
-        "board_approved": "Board approved",
-        "pending_renewal_grace": "Pending renewal (grace period)",
-        "data_correction": "Data correction",
-        "other": "Other"
+        "title": "Reason for bypassing validation",
+        "description": "Record why you are proceeding despite the warning. The reason is kept in the audit log.",
+        "codeLabel": "Reason",
+        "codePlaceholder": "Select a reason…",
+        "noteLabel": "Note",
+        "noteRequired": "Note is required when reason is \"Other\".",
+        "notePlaceholder": "Add context (max 500 chars)…",
+        "proceed": "Proceed with override",
+        "cancel": "Cancel",
+        "codes": {
+          "board_approved": "Board approved",
+          "pending_renewal_grace": "Pending renewal (grace period)",
+          "data_correction": "Data correction",
+          "other": "Other"
+        }
       },
       "bundleChangeWarning": {
         "title": "Plan bundle change"
@@ -548,6 +559,57 @@
           "cta": "Back to members"
         },
         "unknown": "—"
+      },
+      "create": {
+        "pageTitle": "Add member · SweCham",
+        "title": "Add member",
+        "subtitle": "Create a member company with its primary contact.",
+        "requiredNote": "* fields are required",
+        "submit": "Create member",
+        "submitting": "Creating…",
+        "cancel": "Cancel",
+        "sections": {
+          "company": "Company",
+          "primaryContact": "Primary contact"
+        },
+        "fields": {
+          "companyName": "Company name",
+          "legalEntityType": "Legal entity type",
+          "country": "Country (ISO code)",
+          "taxId": "Tax ID",
+          "taxIdHintTH": "Thai 13-digit tax ID with checksum",
+          "website": "Website",
+          "description": "Description",
+          "foundedYear": "Founded year",
+          "turnoverThb": "Annual turnover (THB)",
+          "plan": "Plan",
+          "planPlaceholder": "Select a plan…",
+          "planYear": "Plan year",
+          "registrationDate": "Registration date",
+          "firstName": "First name",
+          "lastName": "Last name",
+          "email": "Email",
+          "phone": "Phone (E.164)",
+          "roleTitle": "Role / title",
+          "preferredLanguage": "Preferred language",
+          "dateOfBirth": "Date of birth",
+          "dateOfBirthHint": "Required for Thai Alumni plan"
+        },
+        "errors": {
+          "generic": "Something went wrong. Please try again.",
+          "validation": "Please fix the highlighted fields.",
+          "forbidden": "Only administrators can add members.",
+          "planMissing": "No active plans found — create a plan first."
+        },
+        "success": "Member created."
+      },
+      "softDuplicate": {
+        "title": "Possible duplicate found",
+        "description": "A member with the same company name + country already exists in this directory. Proceed only if this is a distinct entity (e.g. subsidiary, franchise).",
+        "existingLabel": "Existing member",
+        "openExisting": "Open existing member",
+        "proceed": "Proceed anyway",
+        "cancel": "Cancel"
       }
     }
   },
@@ -608,7 +670,8 @@
     "clonePlan": "Clone Plan",
     "editPlan": "Edit",
     "members": "Members",
-    "memberDetail": "Details"
+    "memberDetail": "Details",
+    "newMember": "New Member"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",

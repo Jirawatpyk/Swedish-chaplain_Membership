@@ -448,10 +448,21 @@
     "members": {
       "title": "สมาชิก",
       "overrideReason": {
-        "board_approved": "Board approved",
-        "pending_renewal_grace": "Pending renewal (grace period)",
-        "data_correction": "Data correction",
-        "other": "Other"
+        "title": "เหตุผลในการข้ามการตรวจสอบ",
+        "description": "ระบุเหตุผลที่ดำเนินการต่อแม้มีคำเตือน เหตุผลนี้จะถูกบันทึกใน audit log",
+        "codeLabel": "เหตุผล",
+        "codePlaceholder": "เลือกเหตุผล…",
+        "noteLabel": "หมายเหตุ",
+        "noteRequired": "จำเป็นต้องระบุเมื่อเลือก \"อื่นๆ\"",
+        "notePlaceholder": "เพิ่มรายละเอียด (ไม่เกิน 500 ตัวอักษร)…",
+        "proceed": "ข้ามการตรวจสอบ",
+        "cancel": "ยกเลิก",
+        "codes": {
+          "board_approved": "คณะกรรมการอนุมัติ",
+          "pending_renewal_grace": "รอต่ออายุ (ช่วงผ่อนผัน)",
+          "data_correction": "แก้ไขข้อมูล",
+          "other": "อื่นๆ"
+        }
       },
       "bundleChangeWarning": {
         "title": "Plan bundle change"
@@ -548,6 +559,57 @@
           "cta": "กลับไปรายการสมาชิก"
         },
         "unknown": "—"
+      },
+      "create": {
+        "pageTitle": "เพิ่มสมาชิก · SweCham",
+        "title": "เพิ่มสมาชิก",
+        "subtitle": "สร้างบริษัทสมาชิกพร้อมผู้ติดต่อหลัก",
+        "requiredNote": "* ช่องที่ต้องกรอก",
+        "submit": "สร้างสมาชิก",
+        "submitting": "กำลังบันทึก…",
+        "cancel": "ยกเลิก",
+        "sections": {
+          "company": "ข้อมูลบริษัท",
+          "primaryContact": "ผู้ติดต่อหลัก"
+        },
+        "fields": {
+          "companyName": "ชื่อบริษัท",
+          "legalEntityType": "ประเภทนิติบุคคล",
+          "country": "ประเทศ (ISO alpha-2)",
+          "taxId": "เลขประจำตัวผู้เสียภาษี",
+          "taxIdHintTH": "เลข 13 หลัก พร้อม checksum ตามเกณฑ์สรรพากร",
+          "website": "เว็บไซต์",
+          "description": "คำอธิบาย",
+          "foundedYear": "ปีก่อตั้ง",
+          "turnoverThb": "ยอดขายต่อปี (บาท)",
+          "plan": "แพ็กเกจ",
+          "planPlaceholder": "เลือกแพ็กเกจ…",
+          "planYear": "ปีแพ็กเกจ",
+          "registrationDate": "วันที่สมัคร",
+          "firstName": "ชื่อ",
+          "lastName": "นามสกุล",
+          "email": "อีเมล",
+          "phone": "โทรศัพท์ (รูปแบบ E.164)",
+          "roleTitle": "ตำแหน่ง",
+          "preferredLanguage": "ภาษาที่ต้องการ",
+          "dateOfBirth": "วันเกิด",
+          "dateOfBirthHint": "จำเป็นสำหรับแพ็กเกจ Thai Alumni"
+        },
+        "errors": {
+          "generic": "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง",
+          "validation": "กรุณาแก้ไขช่องที่ไฮไลท์",
+          "forbidden": "เฉพาะผู้ดูแลระบบเท่านั้นที่เพิ่มสมาชิกได้",
+          "planMissing": "ไม่พบแพ็กเกจที่ใช้งานอยู่ — สร้างแพ็กเกจก่อน"
+        },
+        "success": "สร้างสมาชิกสำเร็จ"
+      },
+      "softDuplicate": {
+        "title": "พบข้อมูลที่อาจซ้ำ",
+        "description": "มีสมาชิกที่ใช้ชื่อบริษัทและประเทศเดียวกันในระบบแล้ว กรุณาดำเนินการต่อเมื่อแน่ใจว่าเป็นคนละนิติบุคคล (เช่น บริษัทลูก แฟรนไชส์)",
+        "existingLabel": "สมาชิกที่มีอยู่",
+        "openExisting": "เปิดข้อมูลเดิม",
+        "proceed": "ดำเนินการต่อ",
+        "cancel": "ยกเลิก"
       }
     }
   },
@@ -608,7 +670,8 @@
     "clonePlan": "คัดลอกแผน",
     "editPlan": "แก้ไข",
     "members": "สมาชิก",
-    "memberDetail": "รายละเอียด"
+    "memberDetail": "รายละเอียด",
+    "newMember": "เพิ่มสมาชิก"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",

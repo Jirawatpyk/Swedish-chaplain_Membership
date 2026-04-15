@@ -112,16 +112,16 @@
 ### Presentation
 
 - [X] T051 API route `src/app/api/members/route.ts` POST — `requireAdminContext(resource='members', action='write')` + Idempotency-Key parsing + classifyIdempotencyRequest replay/conflict + bodyHash + 11-branch error mapping (invalid_body→400, validation_error→400, plan_not_found→404, turnover/age/startup warnings→422, soft_duplicate/conflict→409, audit_failed/server_error→500). 201 response carries `{member_id, primary_contact_id}` per contract
-- [ ] T052 [US1] Implement create page `src/app/(staff)/admin/members/new/page.tsx` with breadcrumb + FR-037 page title
-- [ ] T053 [US1] Implement `src/app/(staff)/admin/members/_components/member-form.tsx` — RHF + zod schema generated from domain types; required fields marked per **FR-035 tri-part indicator** (`aria-required="true"` programmatic + visual asterisk + form-top "* fields are required" note — all three present); **FR-036 autocomplete attrs** explicitly: `given-name` / `family-name` on contact name, `email`, `tel` on phone, `organization` on company name; country Combobox; DOB Calendar visible only when plan = Thai Alumni
-- [ ] T053a [P] [US1] Author unit test `tests/unit/members/presentation/member-form-a11y.test.tsx` asserting FR-035 tri-part indicator rendered for every required field + FR-036 autocomplete attrs present on expected inputs
-- [ ] T054 [US1] Implement `src/app/(staff)/admin/members/_components/override-reason-dialog.tsx` — enum select + conditional note textarea (FR-006a)
-- [ ] T055 [US1] Implement `src/app/(staff)/admin/members/_components/soft-duplicate-dialog.tsx` (FR-031) with Proceed / Cancel + "open existing" link
+- [X] T052 Create page `src/app/(staff)/admin/members/new/page.tsx` — Server Component guards admin role, loads active plans via F2 listPlans, FR-037 page title via generateMetadata, renders CreateMemberClient wrapper
+- [X] T053 Member form `src/components/members/member-form.tsx` — RHF + zod + zodResolver. **FR-035 tri-part indicator**: (a) aria-required="true" + required on 8 required inputs, (b) visible red asterisk via RequiredMark, (c) form-top note with id="required-fields-note" + aria-describedby. **FR-036 autocomplete attrs** on 8 inputs (organization / country / url / given-name / family-name / email+type=email / tel+type=tel / organization-title / bday). Country is plain Input w/ alpha-2 pattern (Combobox deferred to US3 polish). DOB gated by member_type_scope==='individual' proxy (PlanListItem doesn't project max_member_age)
+- [X] T053a Unit test `tests/unit/members/presentation/member-form-a11y.test.tsx` — **28/28 green** via it.each matrices covering aria-required on 10 inputs, visible asterisk on 6 required labels, autocomplete attrs on 8 inputs, input types on 3 inputs
+- [X] T054 Override-reason dialog `src/components/members/override-reason-dialog.tsx` — shadcn Dialog + Select + Textarea; OVERRIDE_REASON_CODES inlined (barrel chain would drag drizzle into client bundle — documented in code); Proceed disabled until code set && (code!=='other' || note!==''); aria-live error on missing note
+- [X] T055 Soft-duplicate dialog `src/components/members/soft-duplicate-dialog.tsx` + client wrapper `src/components/members/create-member-client.tsx` owning UUID-v4 idempotency-key (regenerated on 201), 4-branch submit (201→toast+redirect, 409 soft_duplicate→dialog, 422 warning→override dialog, else→sonner toast)
 - [ ] T056 [US1] Add "Invite to portal" action to member detail page (route target US2 T067) — visible only when primary contact has email
 
 ### i18n
 
-- [ ] T057 [US1] Fill i18n keys `admin.members.create.*` + `admin.members.overrideReason.*` + `admin.members.softDuplicate.*` across EN/TH/SV
+- [X] T057 i18n fill EN/TH/SV: `admin.members.create.*` (pageTitle FR-037, requiredNote, 20 fields incl. taxIdHintTH + dateOfBirthHint, 4 errors), `admin.members.overrideReason.*` (full dialog + 4 codes), `admin.members.softDuplicate.*`, `breadcrumb.newMember`. Total 492 keys × 3 locales
 
 ---
 

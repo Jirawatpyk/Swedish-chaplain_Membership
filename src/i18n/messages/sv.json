@@ -448,10 +448,21 @@
     "members": {
       "title": "Medlemmar",
       "overrideReason": {
-        "board_approved": "Board approved",
-        "pending_renewal_grace": "Pending renewal (grace period)",
-        "data_correction": "Data correction",
-        "other": "Other"
+        "title": "Anledning till att kringgå validering",
+        "description": "Registrera varför du fortsätter trots varningen. Anledningen sparas i revisionsloggen.",
+        "codeLabel": "Anledning",
+        "codePlaceholder": "Välj anledning…",
+        "noteLabel": "Anteckning",
+        "noteRequired": "Anteckning krävs när anledning är \"Annat\".",
+        "notePlaceholder": "Lägg till kontext (max 500 tecken)…",
+        "proceed": "Fortsätt ändå",
+        "cancel": "Avbryt",
+        "codes": {
+          "board_approved": "Godkänt av styrelsen",
+          "pending_renewal_grace": "Pågående förnyelse (respitperiod)",
+          "data_correction": "Datakorrigering",
+          "other": "Annat"
+        }
       },
       "bundleChangeWarning": {
         "title": "Plan bundle change"
@@ -548,6 +559,57 @@
           "cta": "Tillbaka till medlemmar"
         },
         "unknown": "—"
+      },
+      "create": {
+        "pageTitle": "Lägg till medlem · SweCham",
+        "title": "Lägg till medlem",
+        "subtitle": "Skapa ett medlemsföretag med primär kontakt.",
+        "requiredNote": "* obligatoriska fält",
+        "submit": "Skapa medlem",
+        "submitting": "Skapar…",
+        "cancel": "Avbryt",
+        "sections": {
+          "company": "Företag",
+          "primaryContact": "Primär kontakt"
+        },
+        "fields": {
+          "companyName": "Företagsnamn",
+          "legalEntityType": "Företagstyp",
+          "country": "Land (ISO-kod)",
+          "taxId": "Org.nr",
+          "taxIdHintTH": "Thailändskt 13-siffrigt org.nr med checksiffra",
+          "website": "Webbplats",
+          "description": "Beskrivning",
+          "foundedYear": "Grundat år",
+          "turnoverThb": "Årsomsättning (THB)",
+          "plan": "Plan",
+          "planPlaceholder": "Välj plan…",
+          "planYear": "Planår",
+          "registrationDate": "Registreringsdatum",
+          "firstName": "Förnamn",
+          "lastName": "Efternamn",
+          "email": "E-post",
+          "phone": "Telefon (E.164)",
+          "roleTitle": "Roll / titel",
+          "preferredLanguage": "Föredraget språk",
+          "dateOfBirth": "Födelsedatum",
+          "dateOfBirthHint": "Krävs för Thai Alumni-planen"
+        },
+        "errors": {
+          "generic": "Något gick fel. Försök igen.",
+          "validation": "Rätta markerade fält.",
+          "forbidden": "Endast administratörer kan lägga till medlemmar.",
+          "planMissing": "Inga aktiva planer hittades — skapa en plan först."
+        },
+        "success": "Medlem skapad."
+      },
+      "softDuplicate": {
+        "title": "Möjlig dubblett hittades",
+        "description": "En medlem med samma företagsnamn + land finns redan i katalogen. Fortsätt endast om detta är en separat enhet (t.ex. dotterbolag, franchise).",
+        "existingLabel": "Befintlig medlem",
+        "openExisting": "Öppna befintlig medlem",
+        "proceed": "Fortsätt ändå",
+        "cancel": "Avbryt"
       }
     }
   },
@@ -608,7 +670,8 @@
     "clonePlan": "Klona plan",
     "editPlan": "Redigera",
     "members": "Medlemmar",
-    "memberDetail": "Detaljer"
+    "memberDetail": "Detaljer",
+    "newMember": "Ny medlem"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",
