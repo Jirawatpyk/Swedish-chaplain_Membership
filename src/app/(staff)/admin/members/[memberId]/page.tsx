@@ -66,10 +66,16 @@ function Field({
     <div className="flex flex-col gap-1 py-2">
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="flex items-center gap-2 text-sm">
-        <span className={mono ? 'font-mono text-xs' : ''}>
-          {v ?? <span className="text-muted-foreground">{fallback}</span>}
-        </span>
-        {v && extra}
+        {v !== null && (
+          <span className={mono ? 'font-mono text-xs' : ''}>{v}</span>
+        )}
+        {v === null && extra === undefined && (
+          <span className="text-muted-foreground">{fallback}</span>
+        )}
+        {/* `extra` always renders — it may be the sole content (e.g. a
+            StatusBadge passed without a value). Previously gated on `v`
+            which hid the badge when the value was null. */}
+        {extra}
       </dd>
     </div>
   );
@@ -279,9 +285,12 @@ export default async function MemberDetailPage({ params }: PageProps) {
               <Field label={t('fields.planYear')} value={member.planYear} />
               <Field
                 label={t('fields.lastActivityAt')}
+                // ISO string ensures server + client render the same text;
+                // localised display belongs in a Client Component hydrated
+                // after mount (deferred to US6 Timeline).
                 value={
                   member.lastActivityAt
-                    ? new Date(member.lastActivityAt).toLocaleString()
+                    ? member.lastActivityAt.toISOString().replace('T', ' ').slice(0, 16)
                     : null
                 }
               />
@@ -290,7 +299,7 @@ export default async function MemberDetailPage({ params }: PageProps) {
                   label={t('fields.archivedAt')}
                   value={
                     member.archivedAt
-                      ? new Date(member.archivedAt).toLocaleString()
+                      ? member.archivedAt.toISOString().replace('T', ' ').slice(0, 16)
                       : null
                   }
                 />

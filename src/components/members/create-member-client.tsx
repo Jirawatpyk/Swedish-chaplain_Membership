@@ -165,6 +165,11 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
     if (!lastValuesRef.current) return;
     setSoftDup(null);
     setSubmitting(true);
+    // Re-submit is a new logical request (different body — adds
+    // confirm_soft_duplicate). Same key + different hash would collide
+    // with the previous 409 response cached under this key and return
+    // idempotency_conflict instead of the new outcome. Regenerate.
+    idemKeyRef.current = uuid();
     try {
       const res = await submit(
         toPayload(lastValuesRef.current, { confirmSoftDuplicate: true }),
@@ -179,6 +184,8 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
     if (!lastValuesRef.current) return;
     setOverride(null);
     setSubmitting(true);
+    // Same rationale as onSoftDupProceed — new logical request payload.
+    idemKeyRef.current = uuid();
     try {
       const res = await submit(
         toPayload(lastValuesRef.current, { overrideReason: result }),

@@ -133,7 +133,12 @@ export function MembersTable({ rows, nextCursor }: Props) {
       cell: (info) => {
         const v = info.getValue();
         if (!v) return <span className="text-muted-foreground">—</span>;
-        return new Date(v).toLocaleDateString();
+        // Deterministic ISO date (YYYY-MM-DD). `toLocaleDateString()` on
+        // this value disagrees between server (Node default en-US) and
+        // client (browser locale, e.g. Thai Buddhist Era) — causes a
+        // hydration mismatch. Localised dates belong in a Client Component
+        // hydrated after mount, or via next-intl's useFormatter server-side.
+        return v.slice(0, 10);
       },
     }),
   ];
