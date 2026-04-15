@@ -376,14 +376,31 @@ export async function searchDirectory(
       // `plan_name` is a JSONB column with shape `{ en: string, th?, sv? }`;
       // we project the English key because it's the canonical display.
       // A tenant-localised lookup can be added later via i18n keys.
-      // Raw SQL for the outer-table correlation — Drizzle's sql template
-      // interpolation of column objects (`${members.tenantId}`) emitted
-      // the OUTER members column references inside the subquery but
-      // Postgres appears to resolve them to the INNER membership_plans
-      // scope first (both tables share the column names), returning
-      // the wrong row. Referring to the outer table by its default
-      // double-quoted name pins the comparison to the correlated
-      // row unambiguously.
+      //
+      // Outer-table correlation uses RAW `"members"."tenant_id"` strings
+      // (not Drizzle column-object interpolation) because of a subtle
+      // emission gotcha verified by dumping `.toSQL()` for both
+      // variants:
+      //
+      //   interpolation → `mp.tenant_id = "tenant_id"`       (BAD)
+      //   raw           → `mp.tenant_id = "members"."tenant_id"` (GOOD)
+      //
+      // `${members.tenantId}` inside a `sql` template emits the
+      // UNQUALIFIED column name `"tenant_id"` — Drizzle doesn't
+      // table-prefix column refs since the main query's FROM usually
+      // provides unique scope. But in a correlated subquery with a
+      // different FROM (`membership_plans AS mp`), Postgres resolves
+      // the unqualified `"tenant_id"` against the INNER FROM first
+      // (both tables define `tenant_id`), collapsing the WHERE to
+      // `mp.tenant_id = mp.tenant_id AND …` — trivially true, so
+      // the subquery returned any row from membership_plans (observed
+      // "Large Corporate" for a member actually on "regular").
+      //
+      // The Drizzle-native fix would import `membership_plans` via
+      // `alias(…, 'mp')`, but that requires reaching into
+      // `@/modules/plans/infrastructure/db/**` which violates the
+      // Clean-Architecture module-boundary ESLint rule. Raw SQL here
+      // keeps the boundary clean and the semantics explicit.
       return tx
         .select({
           row: members,
