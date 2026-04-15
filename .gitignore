@@ -116,6 +116,7 @@ $RECYCLE.BIN/
 # ============================================
 .claude/settings.local.json
 .claude/.credentials.json
+.claude/scheduled_tasks.lock
 CLAUDE.local.md
 
 # ============================================

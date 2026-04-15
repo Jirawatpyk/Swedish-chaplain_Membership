@@ -139,6 +139,20 @@
       },
       "registered_skills": [],
       "installed_at": "2026-04-09T07:40:38.646414+00:00"
+    },
+    "fixit": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:cd7575705b5b8ad6c421840e3bd7dcf3260523b7f7709500bb16afef03515a30",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.fixit.run"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-04-15T01:29:44.600833+00:00"
     }
   }
 }
