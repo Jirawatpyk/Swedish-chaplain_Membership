@@ -4,6 +4,7 @@
  * Infrastructure adapter (Drizzle) implements this; use cases depend on
  * this interface only (Clean Architecture, Principle III).
  */
+import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { Member, MemberId, PlanId } from '../../domain/member';
@@ -104,8 +105,13 @@ export interface MemberRepo {
     ctx: TenantContext,
     memberId: MemberId,
     patch: MemberPatch,
-    actorUserId: string,
-    requestId: string,
+  ): Promise<Result<Member, RepoError>>;
+
+  /** In-transaction variant for atomic persist+audit (COR-8). */
+  updateFieldsInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+    patch: MemberPatch,
   ): Promise<Result<Member, RepoError>>;
 
   /** US2 directory search — substring across company, contact name, email. */

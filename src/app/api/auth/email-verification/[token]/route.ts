@@ -81,6 +81,7 @@ async function handle(
       tenant,
       tokens: deps.tokens,
       userEmails: deps.userEmails,
+      audit: deps.audit,
       clock: deps.clock,
     },
     { tokenId, requestId },

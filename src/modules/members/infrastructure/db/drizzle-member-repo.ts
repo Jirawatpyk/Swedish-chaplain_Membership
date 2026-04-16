@@ -23,6 +23,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type {
   DirectoryFilter,
   DirectoryRow,
+  MemberPatch,
   MemberRepo,
   RepoError,
 } from '../../application/ports/member-repo';
@@ -68,6 +69,37 @@ function rowToMember(row: MemberRow): Member {
 
 function unexpected(cause: unknown): RepoError {
   return { code: 'repo.unexpected', cause };
+}
+
+// --- Shared helpers ---------------------------------------------------------
+
+/** Build and execute the UPDATE + RETURNING for a member patch on any tx. */
+function applyMemberPatch(
+  tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
+  memberId: string,
+  patch: MemberPatch,
+) {
+  // Build a typed SET object — only include fields that are present in
+  // the patch. The Drizzle `.set()` typings under exactOptionalPropertyTypes
+  // require concrete column types, not `unknown`.
+  const set: typeof members.$inferInsert = { updatedAt: new Date() } as typeof members.$inferInsert;
+  if (patch.companyName !== undefined) set.companyName = patch.companyName;
+  if (patch.legalEntityType !== undefined) set.legalEntityType = patch.legalEntityType;
+  if (patch.website !== undefined) set.website = patch.website;
+  if (patch.description !== undefined) set.description = patch.description;
+  if (patch.notes !== undefined) set.notes = patch.notes;
+  if (patch.taxId !== undefined) set.taxId = patch.taxId;
+  if (patch.turnoverThb !== undefined) set.turnoverThb = patch.turnoverThb;
+  if (patch.foundedYear !== undefined) set.foundedYear = patch.foundedYear;
+  if (patch.country !== undefined) set.country = patch.country;
+  if (patch.planId !== undefined) set.planId = patch.planId;
+  if (patch.planYear !== undefined) set.planYear = patch.planYear;
+
+  return tx
+    .update(members)
+    .set(set)
+    .where(eq(members.memberId, memberId))
+    .returning();
 }
 
 // --- Implementation ---------------------------------------------------------
@@ -258,41 +290,18 @@ export const drizzleMemberRepo: MemberRepo = {
   async updateFields(ctx, memberId, patch) {
     try {
       const rows = await runInTenant(ctx, (tx) =>
-        tx
-          .update(members)
-          .set({
-            ...(patch.companyName !== undefined && {
-              companyName: patch.companyName,
-            }),
-            ...(patch.legalEntityType !== undefined && {
-              legalEntityType: patch.legalEntityType,
-            }),
-            ...(patch.website !== undefined && { website: patch.website }),
-            ...(patch.description !== undefined && {
-              description: patch.description,
-            }),
-            ...(patch.notes !== undefined && { notes: patch.notes }),
-            ...(patch.taxId !== undefined && { taxId: patch.taxId }),
-            ...(patch.turnoverThb !== undefined && {
-              turnoverThb: patch.turnoverThb,
-            }),
-            ...(patch.foundedYear !== undefined && {
-              foundedYear: patch.foundedYear,
-            }),
-            ...(patch.country !== undefined && {
-              country: patch.country,
-            }),
-            ...(patch.planId !== undefined && {
-              planId: patch.planId,
-            }),
-            ...(patch.planYear !== undefined && {
-              planYear: patch.planYear,
-            }),
-            updatedAt: new Date(),
-          })
-          .where(eq(members.memberId, memberId))
-          .returning(),
+        applyMemberPatch(tx, memberId, patch),
       );
+      if (rows.length === 0) return err({ code: 'repo.not_found' });
+      return ok(rowToMember(rows[0]!));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async updateFieldsInTx(tx, memberId, patch) {
+    try {
+      const rows = await applyMemberPatch(tx, memberId, patch);
       if (rows.length === 0) return err({ code: 'repo.not_found' });
       return ok(rowToMember(rows[0]!));
     } catch (e) {

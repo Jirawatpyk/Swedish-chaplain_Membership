@@ -198,6 +198,7 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
         tenant: tenant.ctx,
         tokens: deps.tokens,
         userEmails: deps.userEmails,
+        audit: deps.audit,
         clock: { now: () => earlyNow },
       },
       {
@@ -230,6 +231,7 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
         tenant: tenant.ctx,
         tokens: deps.tokens,
         userEmails: deps.userEmails,
+        audit: deps.audit,
         clock: deps.clock,
       },
       {
@@ -253,6 +255,7 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
         tenant: tenant.ctx,
         tokens: deps.tokens,
         userEmails: deps.userEmails,
+        audit: deps.audit,
         clock: { now: () => futureNow },
       },
       {
@@ -273,6 +276,7 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
         tenant: tenant.ctx,
         tokens: deps.tokens,
         userEmails: deps.userEmails,
+        audit: deps.audit,
         clock: { now: () => futureNow },
       },
       {
@@ -314,6 +318,7 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
         tenant: tenant.ctx,
         tokens: deps.tokens,
         userEmails: deps.userEmails,
+        audit: deps.audit,
         clock: { now: () => futureNow },
       },
       {
@@ -334,6 +339,7 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
         tenant: tenant.ctx,
         tokens: deps.tokens,
         userEmails: deps.userEmails,
+        audit: deps.audit,
         clock: deps.clock,
       },
       {

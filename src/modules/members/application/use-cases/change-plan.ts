@@ -182,8 +182,6 @@ export async function changePlan(
       planId: newPlan.value.planId,
       planYear: data.new_plan_year,
     },
-    meta.actorUserId,
-    meta.requestId,
   );
   if (!updated.ok)
     return err({

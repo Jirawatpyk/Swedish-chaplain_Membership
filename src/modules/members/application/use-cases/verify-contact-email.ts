@@ -22,7 +22,7 @@
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import type { AuditPort } from '../ports/audit-port';
 import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
 import type { UserEmailPort } from '../ports/user-email-port';
 import type { ClockPort } from '../ports/clock-port';
@@ -32,6 +32,7 @@ export type VerifyContactEmailDeps = {
   tenant: TenantContext;
   tokens: EmailChangeTokenPort;
   userEmails: UserEmailPort;
+  audit: AuditPort;
   clock: ClockPort;
 };
 
@@ -113,13 +114,11 @@ export async function verifyContactEmail(
         });
       }
 
-      await tx.insert(auditLog).values({
-        eventType: 'email_verification_consumed',
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'email_verification_consumed',
         actorUserId: input.actorUserId ?? 'anonymous',
-        targetUserId: token.userId,
-        summary: `email verification consumed for user ${token.userId}`,
         requestId: input.requestId,
-        tenantId: deps.tenant.slug,
+        summary: `email verification consumed for user ${token.userId}`,
         payload: {
           contact_id: token.contactId,
           user_id: token.userId,
@@ -127,6 +126,9 @@ export async function verifyContactEmail(
           revert_tokens_invalidated: revertInvalidated.value.invalidatedCount,
         },
       });
+      if (!auditResult.ok) {
+        throw new UseCaseAbort({ code: 'server_error', cause: auditResult.error });
+      }
 
       return {
         userId: token.userId,
