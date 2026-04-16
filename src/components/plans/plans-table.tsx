@@ -260,11 +260,13 @@ export function PlansTable({
               <TranslatedSelectValue
                 placeholder={t('filters.category.label')}
                 translate={(v) => {
-                  if (!v || v === 'all') return t('filters.all');
-                  if (v === 'corporate') return t('filters.category.corporate');
-                  if (v === 'partnership')
-                    return t('filters.category.partnership');
-                  return v;
+                  const keys: Record<string, string> = {
+                    all: 'filters.all',
+                    corporate: 'filters.category.corporate',
+                    partnership: 'filters.category.partnership',
+                  };
+                  const key = keys[v || 'all'];
+                  return key ? t(key) : v;
                 }}
               />
             </SelectTrigger>

@@ -36,14 +36,12 @@ describe('formatLocalisedTimestamp (US6 AS1)', () => {
     expect(out).toBe('not-a-date');
   });
 
-  it('falls back gracefully when an unsupported locale is passed', () => {
-    // Invalid BCP47 tag throws inside Intl — catch path must return
-    // the ISO slice, not throw.
-    const out = formatLocalisedTimestamp(iso, '!!!-bad-locale');
-    // Should not throw; output is either the ISO slice or a default
-    // format (depends on Intl's tolerant-mode behaviour).
-    expect(typeof out).toBe('string');
-    expect(out.length).toBeGreaterThan(0);
+  it('falls back to ISO slice for a truly invalid BCP47 tag', () => {
+    // `--not-bcp47--` is grammatically invalid and forces the catch
+    // branch in formatLocalisedTimestamp to fire.
+    const out = formatLocalisedTimestamp(iso, '--not-bcp47--');
+    // The fallback produces "YYYY-MM-DD HH:MM" from the ISO slice.
+    expect(out).toBe('2026-04-10 10:00');
   });
 
   it('th locale uses 24-hour time (hour12 = false)', () => {

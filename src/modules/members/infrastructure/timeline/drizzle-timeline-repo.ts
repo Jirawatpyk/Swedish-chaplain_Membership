@@ -31,28 +31,21 @@ import type {
  * tampered cursor simply resets to page 1 from the API caller's POV).
  */
 function decodeCursor(cursor: string): { ts: string; id: string } | null {
+  const reject = (reason: string, err?: unknown): null => {
+    logger.debug({ cursor, reason, ...(err ? { err } : {}) }, 'timeline.cursor.malformed');
+    return null;
+  };
   try {
     const decoded = Buffer.from(cursor, 'base64url').toString('utf-8');
     const sep = decoded.indexOf('|');
-    if (sep < 0) {
-      logger.debug({ cursor }, 'timeline.cursor.malformed');
-      return null;
-    }
+    if (sep < 0) return reject('no_separator');
     const ts = decoded.slice(0, sep);
     const id = decoded.slice(sep + 1);
-    if (!ts || !id) {
-      logger.debug({ cursor }, 'timeline.cursor.malformed');
-      return null;
-    }
-    // Basic sanity check — ts should be ISO-ish
-    if (Number.isNaN(Date.parse(ts))) {
-      logger.debug({ cursor }, 'timeline.cursor.malformed');
-      return null;
-    }
+    if (!ts || !id) return reject('missing_parts');
+    if (Number.isNaN(Date.parse(ts))) return reject('invalid_timestamp');
     return { ts, id };
-  } catch {
-    logger.debug({ cursor }, 'timeline.cursor.malformed');
-    return null;
+  } catch (e) {
+    return reject('decode_error', e);
   }
 }
 
