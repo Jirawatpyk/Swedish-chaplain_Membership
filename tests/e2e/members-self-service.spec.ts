@@ -9,8 +9,23 @@
  *   3. EN/TH/SV i18n leak check via NEXT_LOCALE cookie
  *   4. Edit form navigates from profile, shows whitelisted fields only
  *
- * NOTE: These tests require a seeded member user in the E2E fixture.
- * If the fixture is not available, tests will be skipped gracefully.
+ * ## Fixture Requirements (CI setup)
+ *
+ * These tests require a seeded E2E fixture with:
+ *   - A user with `role = 'member'` and an active session cookie
+ *   - The user's `linked_user_id` set on a contact row whose parent
+ *     member has `status = 'active'`
+ *   - At least one active membership plan (for the profile plan section)
+ *
+ * If the fixture is not available (e.g. local dev without seed), tests
+ * skip gracefully via the `beforeEach` auth-redirect detection. To run
+ * in CI, either:
+ *   (a) extend `tests/e2e/fixtures/` with a member-seed script, or
+ *   (b) use Playwright's `storageState` to inject an authenticated
+ *       member session cookie.
+ *
+ * See also: `tests/e2e/fixtures/README.md` (if present) for the
+ * canonical fixture setup instructions.
  */
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
