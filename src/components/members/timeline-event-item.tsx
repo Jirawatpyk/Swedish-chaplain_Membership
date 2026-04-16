@@ -10,7 +10,7 @@
  * FR-024: keyboard-accessible, aria-labelled, reduced-motion friendly.
  */
 
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 
 export type TimelineItemProps = {
   readonly id: string;
@@ -23,6 +23,36 @@ export type TimelineItemProps = {
 };
 
 const SYSTEM_ACTORS = new Set(['system', 'system:bootstrap', 'anonymous']);
+
+/**
+ * Locale-aware timestamp formatter (US6 AS1).
+ *
+ * Constitution § Conventions requires Thai Buddhist Era (BE = CE + 543)
+ * for `th-TH` display surfaces. Intl.DateTimeFormat supports it natively
+ * via the `-u-ca-buddhist` locale extension.
+ *
+ * Other locales (`en`, `sv`) use Gregorian — standard for audit logs.
+ * We keep the ISO string in `<time dateTime>` for machine-readable
+ * access + screen readers; the rendered text is purely visual.
+ */
+function formatLocalisedTimestamp(iso: string, locale: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const bcp47 = locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
+  try {
+    return new Intl.DateTimeFormat(bcp47, {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(d);
+  } catch {
+    // Fallback — bad locale, degrade to ISO slice
+    return iso.replace('T', ' ').slice(0, 16);
+  }
+}
 
 /**
  * Format the payload into a compact, human-readable one-liner.
@@ -53,13 +83,23 @@ function formatPayload(
       return null;
     }
     case 'member_plan_changed': {
+      // Prefer resolved plan display names (server-enriched) over raw UUIDs.
+      const oldName = get('old_plan_name');
+      const newName = get('new_plan_name');
+      if (oldName && newName) return `${oldName} → ${newName}`;
+      // Fallback: truncate UUIDs for pre-enrichment rows.
       const oldId = get('old_plan_id');
       const newId = get('new_plan_id');
       if (oldId && newId) {
-        // Show last 6 chars of the plan slug, avoids full UUID wall
         const fmt = (s: string) => (s.length > 10 ? `…${s.slice(-6)}` : s);
         return `${fmt(oldId)} → ${fmt(newId)}`;
       }
+      return null;
+    }
+    case 'plan_bundle_changed': {
+      const oldName = get('old_includes_corporate_plan_name');
+      const newName = get('new_includes_corporate_plan_name');
+      if (oldName && newName) return `${oldName} → ${newName}`;
       return null;
     }
     case 'member_status_changed': {
@@ -105,6 +145,7 @@ export function TimelineEventItem({
 }: TimelineItemProps) {
   const t = useTranslations('admin.members.timeline');
   const tEvent = useTranslations('audit.eventType');
+  const locale = useLocale();
 
   // Defensive: event types not yet in the translation map fall back to
   // the raw enum key rather than throwing (audit log may ship new types
@@ -140,7 +181,7 @@ export function TimelineEventItem({
             className="text-xs text-muted-foreground font-mono"
             suppressHydrationWarning
           >
-            {timestamp.replace('T', ' ').slice(0, 16)}
+            {formatLocalisedTimestamp(timestamp, locale)}
           </time>
         </div>
         {payloadDetail && (

@@ -16,6 +16,7 @@ import { sql, inArray } from 'drizzle-orm';
 import { ok, err } from '@/lib/result';
 import { runInTenant, db } from '@/lib/db';
 import { auditLog, users } from '@/modules/auth/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans';
 import type {
   TimelinePort,
   TimelineFilter,
@@ -134,15 +135,125 @@ export const drizzleTimelineRepo: TimelinePort = {
           }
         }
 
-        const events: TimelineEvent[] = pageRows.map((row) => ({
-          id: row.id,
-          timestamp: row.timestamp,
-          eventType: row.eventType,
-          actorUserId: row.actorUserId,
-          actorDisplayName: actorMap.get(row.actorUserId) ?? null,
-          summary: row.summary,
-          payload: (row.payload as Record<string, unknown>) ?? null,
-        }));
+        // Resolve plan display names — the audit payload stores raw
+        // plan UUIDs (e.g. old_plan_id) that look meaningless in the
+        // UI. Fetch membership_plans once for every (plan_id, plan_year)
+        // tuple across the page and annotate each event payload with
+        // the English display name (th/sv follow the same i18n key as
+        // the plans page). Runs in the SAME runInTenant tx so the
+        // query is tenant-scoped by RLS.
+        const planKeys = new Set<string>();
+        const collectPlan = (
+          id: unknown,
+          year: unknown,
+        ): void => {
+          if (typeof id === 'string' && id.length > 0) {
+            // plan_year is optional in some payloads (e.g. plan_bundle_changed);
+            // we store a wildcard year 0 placeholder that's resolved by
+            // the fallback step below.
+            const yearNum = typeof year === 'number' ? year : 0;
+            planKeys.add(`${id}|${yearNum}`);
+          }
+        };
+        for (const r of pageRows) {
+          const p = (r.payload ?? {}) as Record<string, unknown>;
+          collectPlan(p.old_plan_id, p.old_plan_year);
+          collectPlan(p.new_plan_id, p.new_plan_year);
+          collectPlan(p.plan_id, p.plan_year);
+          collectPlan(p.old_includes_corporate_plan_id, p.old_plan_year);
+          collectPlan(p.new_includes_corporate_plan_id, p.new_plan_year);
+        }
+
+        const planMap = new Map<string, string>();
+        if (planKeys.size > 0) {
+          // Build OR conditions for each (plan_id, plan_year) tuple.
+          // When plan_year is unknown (0 placeholder), match by plan_id
+          // alone — the fallback SELECT DISTINCT ON will pick the latest
+          // year's name which is what we want for bundle display.
+          const keyedTuples = Array.from(planKeys).map((k) => {
+            const [id, yearStr] = k.split('|');
+            return { id: id!, year: Number(yearStr) };
+          });
+          const planIds = Array.from(
+            new Set(keyedTuples.map((t) => t.id)),
+          );
+          if (planIds.length > 0) {
+            const planRows = await tx
+              .select({
+                planId: membershipPlans.planId,
+                planYear: membershipPlans.planYear,
+                planName: membershipPlans.planName,
+              })
+              .from(membershipPlans)
+              .where(inArray(membershipPlans.planId, planIds))
+              .orderBy(sql`${membershipPlans.planYear} DESC`);
+            for (const pr of planRows) {
+              const pn = (pr.planName ?? {}) as Record<string, string>;
+              const display = pn.en ?? pn.th ?? pn.sv ?? pr.planId;
+              // Keyed exact match AND fallback (year 0 = "any year")
+              planMap.set(`${pr.planId}|${pr.planYear}`, display);
+              if (!planMap.has(`${pr.planId}|0`)) {
+                planMap.set(`${pr.planId}|0`, display);
+              }
+            }
+          }
+        }
+
+        const resolvePlanName = (
+          id: unknown,
+          year: unknown,
+        ): string | undefined => {
+          if (typeof id !== 'string' || id.length === 0) return undefined;
+          const yearNum = typeof year === 'number' ? year : 0;
+          return planMap.get(`${id}|${yearNum}`) ?? planMap.get(`${id}|0`);
+        };
+
+        const events: TimelineEvent[] = pageRows.map((row) => {
+          const rawPayload = (row.payload as Record<string, unknown>) ?? null;
+          // Enrich payload with resolved plan display names — keeps raw
+          // ids intact for debugging / auditors who need them.
+          let enriched: Record<string, unknown> | null = rawPayload;
+          if (rawPayload !== null) {
+            const extras: Record<string, string> = {};
+            const oldName = resolvePlanName(
+              rawPayload.old_plan_id,
+              rawPayload.old_plan_year,
+            );
+            if (oldName) extras.old_plan_name = oldName;
+            const newName = resolvePlanName(
+              rawPayload.new_plan_id,
+              rawPayload.new_plan_year,
+            );
+            if (newName) extras.new_plan_name = newName;
+            const planName = resolvePlanName(
+              rawPayload.plan_id,
+              rawPayload.plan_year,
+            );
+            if (planName) extras.plan_name = planName;
+            const oldBundle = resolvePlanName(
+              rawPayload.old_includes_corporate_plan_id,
+              rawPayload.old_plan_year,
+            );
+            if (oldBundle) extras.old_includes_corporate_plan_name = oldBundle;
+            const newBundle = resolvePlanName(
+              rawPayload.new_includes_corporate_plan_id,
+              rawPayload.new_plan_year,
+            );
+            if (newBundle) extras.new_includes_corporate_plan_name = newBundle;
+            if (Object.keys(extras).length > 0) {
+              enriched = { ...rawPayload, ...extras };
+            }
+          }
+          return {
+            id: row.id,
+            timestamp: row.timestamp,
+            eventType: row.eventType,
+            actorUserId: row.actorUserId,
+            actorDisplayName: actorMap.get(row.actorUserId) ?? null,
+            summary: row.summary,
+            payload: enriched,
+          };
+        });
 
         const nextCursor = hasMore && pageRows.length > 0
           ? encodeCursor(
