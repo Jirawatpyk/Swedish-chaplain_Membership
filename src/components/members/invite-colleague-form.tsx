@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -56,6 +56,8 @@ export function InviteColleagueForm() {
     },
   });
 
+  const { errors } = form.formState;
+
   const onSubmit = async (values: InviteFormValues) => {
     setSubmitting(true);
     try {
@@ -86,8 +88,8 @@ export function InviteColleagueForm() {
       }
 
       toast.success(t('sendSuccess'));
+      // S-3: router.push triggers a fresh server render — no refresh() needed
       router.push('/portal/profile');
-      router.refresh();
     } catch {
       toast.error(t('sendError'));
     } finally {
@@ -110,11 +112,13 @@ export function InviteColleagueForm() {
               id="first_name"
               autoComplete="given-name"
               aria-required="true"
+              aria-invalid={Boolean(errors.first_name)}
+              aria-describedby={errors.first_name ? 'first_name-error' : undefined}
               {...form.register('first_name')}
             />
-            {form.formState.errors.first_name && (
-              <p className="mt-1 text-caption text-destructive">
-                {form.formState.errors.first_name.message}
+            {errors.first_name && (
+              <p id="first_name-error" role="alert" className="mt-1 text-caption text-destructive">
+                {errors.first_name.message}
               </p>
             )}
           </div>
@@ -126,11 +130,13 @@ export function InviteColleagueForm() {
               id="last_name"
               autoComplete="family-name"
               aria-required="true"
+              aria-invalid={Boolean(errors.last_name)}
+              aria-describedby={errors.last_name ? 'last_name-error' : undefined}
               {...form.register('last_name')}
             />
-            {form.formState.errors.last_name && (
-              <p className="mt-1 text-caption text-destructive">
-                {form.formState.errors.last_name.message}
+            {errors.last_name && (
+              <p id="last_name-error" role="alert" className="mt-1 text-caption text-destructive">
+                {errors.last_name.message}
               </p>
             )}
           </div>
@@ -143,11 +149,13 @@ export function InviteColleagueForm() {
               type="email"
               autoComplete="email"
               aria-required="true"
+              aria-invalid={Boolean(errors.email)}
+              aria-describedby={errors.email ? 'email-error' : undefined}
               {...form.register('email')}
             />
-            {form.formState.errors.email && (
-              <p className="mt-1 text-caption text-destructive">
-                {form.formState.errors.email.message}
+            {errors.email && (
+              <p id="email-error" role="alert" className="mt-1 text-caption text-destructive">
+                {errors.email.message}
               </p>
             )}
           </div>
@@ -163,21 +171,24 @@ export function InviteColleagueForm() {
             <Label htmlFor="preferred_language">
               {t('fields.preferredLanguage')}
             </Label>
-            <Select
-              value={form.watch('preferred_language')}
-              onValueChange={(v) =>
-                form.setValue('preferred_language', v as 'en' | 'th' | 'sv')
-              }
-            >
-              <SelectTrigger id="preferred_language">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="th">ไทย</SelectItem>
-                <SelectItem value="sv">Svenska</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* W-9: Use Controller for proper RHF integration */}
+            <Controller
+              control={form.control}
+              name="preferred_language"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger id="preferred_language">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {/* W-7: i18n language option labels */}
+                    <SelectItem value="en">{t('languageOptions.en')}</SelectItem>
+                    <SelectItem value="th">{t('languageOptions.th')}</SelectItem>
+                    <SelectItem value="sv">{t('languageOptions.sv')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
         </CardContent>
       </Card>

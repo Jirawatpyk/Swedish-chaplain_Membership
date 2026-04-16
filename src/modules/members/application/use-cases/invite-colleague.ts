@@ -12,8 +12,9 @@
 
 import { z } from 'zod';
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
-import type { MemberId } from '../../domain/member';
+import { asTenantId, type MemberId } from '../../domain/member';
 import type { Contact, ContactId, PreferredLanguage } from '../../domain/contact';
 import { asEmail } from '../../domain/value-objects/email';
 import type { ContactRepo } from '../ports/contact-repo';
@@ -86,6 +87,13 @@ export async function inviteColleague(
       reason: 'only the primary contact may invite colleagues',
     });
   }
+  // B-5: Verify actor belongs to the target member — prevents cross-member bypass
+  if (actorContact.value.memberId !== input.memberId) {
+    return err({
+      type: 'not_primary',
+      reason: 'actor does not belong to the target member',
+    });
+  }
 
   // 2. Validate email
   const emailResult = asEmail(input.body.email);
@@ -94,8 +102,9 @@ export async function inviteColleague(
   }
 
   // 3. Create F1 user with member role
+  // W-1: Use normalized (lowercase) email from emailResult.value
   const created = await deps.createUser({
-    email: input.body.email,
+    email: emailResult.value,
     role: 'member',
     displayName: `${input.body.first_name} ${input.body.last_name}`.trim(),
     actorUserId: input.actorUserId,
@@ -107,13 +116,21 @@ export async function inviteColleague(
     if (created.error.code === 'invalid-input') {
       return err({ type: 'invalid_email' });
     }
-    return err({ type: 'email_taken' });
+    // R2-W4: Only map 'email-taken' explicitly — other failures are server errors
+    if (created.error.code === 'email-taken') {
+      return err({ type: 'email_taken' });
+    }
+    return err({
+      type: 'server_error',
+      message: `createUser: ${created.error.code}`,
+    });
   }
 
   // 4. Add secondary contact to the member
   const newContactId = deps.idFactory.contactId();
   const contactDraft = {
-    tenantId: deps.tenant.slug as Contact['tenantId'],
+    // W-3: Use branded constructor instead of raw `as` cast
+    tenantId: asTenantId(deps.tenant.slug),
     contactId: newContactId,
     memberId: input.memberId,
     firstName: input.body.first_name,
@@ -142,16 +159,45 @@ export async function inviteColleague(
   }
 
   // 5. Link the new user to the new contact
-  await deps.contactRepo.linkUser(
+  // B-2: Check linkUser result — no invitation email in-flight to recover from orphan
+  const linked = await deps.contactRepo.linkUser(
     deps.tenant,
     newContactId,
     created.value.user.id,
     input.actorUserId,
     input.requestId,
   );
+  if (!linked.ok) {
+    logger.error(
+      {
+        contactId: newContactId,
+        userId: created.value.user.id,
+        cause: linked.error,
+        requestId: input.requestId,
+      },
+      'invite-colleague.link_user_failed: orphan user + unlinked contact',
+    );
+    return err({
+      type: 'server_error',
+      message: `link user: ${linked.error.code}`,
+    });
+  }
+
+  // W-2: Emit audit event for PII-touching operation (Constitution Principle I)
+  await deps.audit.record(deps.tenant, {
+    type: 'contact_created',
+    actorUserId: input.actorUserId,
+    requestId: input.requestId,
+    summary: `colleague invited as secondary contact`,
+    payload: {
+      contact_id: newContactId,
+      member_id: input.memberId,
+      user_id: created.value.user.id,
+    },
+  });
 
   return ok({
-    contact: added.value,
+    contact: linked.value,
     userId: created.value.user.id,
   });
 }

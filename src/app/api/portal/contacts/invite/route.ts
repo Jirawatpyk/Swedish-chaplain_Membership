@@ -12,17 +12,19 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   inviteColleague,
   inviteColleagueSchema,
-} from '@/modules/members/application/use-cases/invite-colleague';
+  type CreateUserPort,
+} from '@/modules/members';
 import { parseIdempotencyKey } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
 import { createUser as f1CreateUser } from '@/modules/auth';
-import type { CreateUserPort } from '@/modules/members/application/use-cases/invite-portal';
 
 export async function POST(request: NextRequest) {
   const ctx = await requireMemberContext(request);
   if ('response' in ctx) return ctx.response;
 
-  // Idempotency-Key required
+  // Idempotency-Key required — format validation only.
+  // W-6: Full classify/reserve/remember flow deferred (low-frequency path).
+  // TODO(US5-polish): Wire withIdempotency() for full replay protection.
   const idemResult = parseIdempotencyKey(request.headers);
   if (!idemResult.ok) {
     return NextResponse.json(
@@ -75,7 +77,7 @@ export async function POST(request: NextRequest) {
     {
       memberId: ctx.memberId,
       actorUserId: ctx.current.user.id,
-      actorContactId: ctx.primaryContactId,
+      actorContactId: ctx.ownContactId,
       sourceIp: ctx.sourceIp,
       requestId: ctx.requestId,
       body: parsed.data,

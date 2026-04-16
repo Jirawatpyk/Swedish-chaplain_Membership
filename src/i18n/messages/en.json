@@ -878,7 +878,12 @@
       "saving": "Saving…",
       "saveSuccess": "Profile updated successfully.",
       "saveError": "Could not save changes. Please try again.",
-      "noChanges": "No changes to save."
+      "noChanges": "No changes to save.",
+      "languageOptions": {
+        "en": "English",
+        "th": "ไทย (Thai)",
+        "sv": "Svenska (Swedish)"
+      }
     },
     "invite": {
       "pageTitle": "Invite Colleague",
@@ -898,7 +903,12 @@
       "sending": "Sending…",
       "sendSuccess": "Invitation sent successfully.",
       "sendError": "Could not send invitation. Please try again.",
-      "emailTaken": "This email is already registered."
+      "emailTaken": "This email is already registered.",
+      "languageOptions": {
+        "en": "English",
+        "th": "ไทย (Thai)",
+        "sv": "Svenska (Swedish)"
+      }
     }
   },
   "audit": {

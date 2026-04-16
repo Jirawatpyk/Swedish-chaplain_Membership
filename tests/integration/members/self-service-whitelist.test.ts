@@ -19,8 +19,8 @@ import {
 import type { Member, MemberId } from '@/modules/members/domain/member';
 import type { Contact, ContactId } from '@/modules/members/domain/contact';
 import type { AuditPort, F3AuditEvent } from '@/modules/members/application/ports/audit-port';
-import type { MemberRepo, RepoError, MemberPatch } from '@/modules/members/application/ports/member-repo';
-import type { ContactRepo, ContactPatch } from '@/modules/members/application/ports/contact-repo';
+import type { MemberRepo } from '@/modules/members/application/ports/member-repo';
+import type { ContactRepo } from '@/modules/members/application/ports/contact-repo';
 import type { TenantContext } from '@/modules/tenants';
 
 // ---------------------------------------------------------------------------

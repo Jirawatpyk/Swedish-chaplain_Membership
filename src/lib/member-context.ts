@@ -6,7 +6,7 @@
  *   1. Active session with `role = 'member'`
  *   2. The member record linked to the session user via
  *      `contacts.linked_user_id`
- *   3. The primary contact record of that member
+ *   3. The caller's own contact record (the contact linked to the session user)
  *
  * Returns either a `MemberContext` with all the resolved state, or
  * a `{ response }` wrapping a 401/403/404/500 NextResponse.
@@ -29,8 +29,9 @@ export interface MemberContext {
   readonly tenant: TenantContext;
   readonly member: Member;
   readonly memberId: MemberId;
-  readonly primaryContact: Contact;
-  readonly primaryContactId: ContactId;
+  /** The caller's own contact — NOT necessarily the member's primary contact. */
+  readonly ownContact: Contact;
+  readonly ownContactId: ContactId;
   readonly sourceIp: string;
   readonly requestId: string;
 }
@@ -119,8 +120,8 @@ export async function requireMemberContext(
       tenant,
       member,
       memberId: member.memberId,
-      primaryContact: ownContact,
-      primaryContactId: ownContact.contactId,
+      ownContact,
+      ownContactId: ownContact.contactId,
       sourceIp,
       requestId,
     };

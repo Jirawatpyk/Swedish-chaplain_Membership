@@ -95,7 +95,7 @@ const memberContext = {
     updatedAt: now,
   },
   memberId: 'mem-1',
-  primaryContact: {
+  ownContact: {
     contactId: 'con-1',
     memberId: 'mem-1',
     tenantId: 'test-swecham',
@@ -112,7 +112,7 @@ const memberContext = {
     createdAt: now,
     updatedAt: now,
   },
-  primaryContactId: 'con-1',
+  ownContactId: 'con-1',
   sourceIp: '127.0.0.1',
   requestId: 'req-1',
 };
@@ -153,7 +153,7 @@ describe('contract: GET /api/portal/profile (T114)', () => {
     getMemberMock.mockResolvedValueOnce(
       ok({
         member: memberContext.member,
-        contacts: [memberContext.primaryContact],
+        contacts: [memberContext.ownContact],
       }),
     );
     const { GET } = await import('@/app/api/portal/profile/route');
@@ -202,7 +202,7 @@ describe('contract: PATCH /api/portal/profile (T114)', () => {
     memberSelfUpdateMock.mockResolvedValueOnce(
       ok({
         member: { ...memberContext.member, website: 'https://new.com' },
-        contact: memberContext.primaryContact,
+        contact: memberContext.ownContact,
       }),
     );
     const { PATCH } = await import('@/app/api/portal/profile/route');

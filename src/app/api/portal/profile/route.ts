@@ -9,13 +9,10 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireMemberContext } from '@/lib/member-context';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { getMember } from '@/modules/members';
-import { memberSelfUpdate } from '@/modules/members/application/use-cases/member-self-update';
+import { getMember, memberSelfUpdate } from '@/modules/members';
 import { parseIdempotencyKey } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
-import type { MemberId } from '@/modules/members/domain/member';
 
 // ---------------------------------------------------------------------------
 // Serialisation helpers
@@ -136,7 +133,10 @@ export async function PATCH(request: NextRequest) {
   const ctx = await requireMemberContext(request);
   if ('response' in ctx) return ctx.response;
 
-  // Idempotency-Key required on mutations
+  // Idempotency-Key required on mutations.
+  // W-6: Full classify/reserve/remember flow deferred — portal self-service
+  // is low-frequency; format validation provides basic protection.
+  // TODO(US5-polish): Wire withIdempotency() for full replay protection.
   const idemResult = parseIdempotencyKey(request.headers);
   if (!idemResult.ok) {
     return NextResponse.json(
@@ -166,7 +166,7 @@ export async function PATCH(request: NextRequest) {
     },
     {
       memberId: ctx.memberId,
-      contactId: ctx.primaryContactId,
+      contactId: ctx.ownContactId,
       rawBody,
       actorUserId: ctx.current.user.id,
       requestId: ctx.requestId,

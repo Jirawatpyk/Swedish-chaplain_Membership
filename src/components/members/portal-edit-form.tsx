@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -57,6 +57,8 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
     defaultValues: initialValues,
   });
 
+  const { errors } = form.formState;
+
   const onSubmit = async (values: EditFormValues) => {
     setSubmitting(true);
     try {
@@ -103,8 +105,8 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
       }
 
       toast.success(t('saveSuccess'));
+      // S-3: router.push triggers a fresh server render — no refresh() needed
       router.push('/portal/profile');
-      router.refresh();
     } catch {
       toast.error(t('saveError'));
     } finally {
@@ -129,11 +131,13 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                 id="firstName"
                 autoComplete="given-name"
                 aria-required="true"
+                aria-invalid={Boolean(errors.firstName)}
+                aria-describedby={errors.firstName ? 'firstName-error' : undefined}
                 {...form.register('firstName')}
               />
-              {form.formState.errors.firstName && (
-                <p className="mt-1 text-caption text-destructive">
-                  {form.formState.errors.firstName.message}
+              {errors.firstName && (
+                <p id="firstName-error" role="alert" className="mt-1 text-caption text-destructive">
+                  {errors.firstName.message}
                 </p>
               )}
             </div>
@@ -145,11 +149,13 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                 id="lastName"
                 autoComplete="family-name"
                 aria-required="true"
+                aria-invalid={Boolean(errors.lastName)}
+                aria-describedby={errors.lastName ? 'lastName-error' : undefined}
                 {...form.register('lastName')}
               />
-              {form.formState.errors.lastName && (
-                <p className="mt-1 text-caption text-destructive">
-                  {form.formState.errors.lastName.message}
+              {errors.lastName && (
+                <p id="lastName-error" role="alert" className="mt-1 text-caption text-destructive">
+                  {errors.lastName.message}
                 </p>
               )}
             </div>
@@ -159,28 +165,38 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                 id="phone"
                 type="tel"
                 autoComplete="tel"
+                aria-invalid={Boolean(errors.phone)}
+                aria-describedby={errors.phone ? 'phone-error' : undefined}
                 {...form.register('phone')}
               />
+              {errors.phone && (
+                <p id="phone-error" role="alert" className="mt-1 text-caption text-destructive">
+                  {errors.phone.message}
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="preferredLanguage">
                 {t('fields.preferredLanguage')}
               </Label>
-              <Select
-                value={form.watch('preferredLanguage')}
-                onValueChange={(v) =>
-                  form.setValue('preferredLanguage', v as 'en' | 'th' | 'sv')
-                }
-              >
-                <SelectTrigger id="preferredLanguage">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="th">ไทย</SelectItem>
-                  <SelectItem value="sv">Svenska</SelectItem>
-                </SelectContent>
-              </Select>
+              {/* W-9: Use Controller for proper RHF integration */}
+              <Controller
+                control={form.control}
+                name="preferredLanguage"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger id="preferredLanguage">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {/* W-7: i18n language option labels */}
+                      <SelectItem value="en">{t('languageOptions.en')}</SelectItem>
+                      <SelectItem value="th">{t('languageOptions.th')}</SelectItem>
+                      <SelectItem value="sv">{t('languageOptions.sv')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
           </CardContent>
         </Card>
@@ -198,16 +214,30 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                 type="url"
                 autoComplete="url"
                 placeholder="https://"
+                aria-invalid={Boolean(errors.website)}
+                aria-describedby={errors.website ? 'website-error' : undefined}
                 {...form.register('website')}
               />
+              {errors.website && (
+                <p id="website-error" role="alert" className="mt-1 text-caption text-destructive">
+                  {errors.website.message}
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="description">{t('fields.description')}</Label>
               <Textarea
                 id="description"
                 rows={4}
+                aria-invalid={Boolean(errors.description)}
+                aria-describedby={errors.description ? 'description-error' : undefined}
                 {...form.register('description')}
               />
+              {errors.description && (
+                <p id="description-error" role="alert" className="mt-1 text-caption text-destructive">
+                  {errors.description.message}
+                </p>
+              )}
               <p className="mt-1 text-caption text-muted-foreground">
                 {form.watch('description')?.length ?? 0}/2000
               </p>

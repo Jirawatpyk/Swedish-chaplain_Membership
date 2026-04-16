@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { getTranslations } from 'next-intl/server';
+import { getTranslations, getFormatter } from 'next-intl/server';
 import { PencilIcon, UserPlusIcon } from 'lucide-react';
 import {
   Card,
@@ -70,9 +70,12 @@ export default async function PortalProfilePage() {
 
   const { member: m, contacts } = result.value;
   const activeContacts = contacts.filter((c) => !c.removedAt);
-  const primaryContact = activeContacts.find((c) => c.isPrimary);
-  const secondaryContacts = activeContacts.filter((c) => !c.isPrimary);
-  const isPrimary = String(primaryContact?.linkedUserId) === user.id;
+  // Find the caller's own contact and check if THEY are primary
+  const ownContact = activeContacts.find(
+    (c) => String(c.linkedUserId) === user.id,
+  );
+  const isPrimary = ownContact?.isPrimary === true;
+  const format = await getFormatter();
 
   return (
     <>
@@ -161,7 +164,7 @@ export default async function PortalProfilePage() {
                 {t('fields.registrationDate')}
               </dt>
               <dd className="text-body">
-                {m.registrationDate.toISOString().split('T')[0]}
+                {format.dateTime(m.registrationDate, { dateStyle: 'medium' })}
               </dd>
             </div>
             <div>

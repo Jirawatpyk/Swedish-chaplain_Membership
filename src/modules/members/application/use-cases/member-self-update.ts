@@ -19,12 +19,14 @@ import type { Contact, ContactId, PreferredLanguage } from '../../domain/contact
 import {
   PORTAL_SELF_UPDATE_CONTACT_FIELDS,
   PORTAL_SELF_UPDATE_MEMBER_FIELDS,
+  type PortalSelfUpdateContactField,
+  type PortalSelfUpdateMemberField,
 } from '../../domain/portal-self-update-fields';
-import { asPhone, type Phone } from '../../domain/value-objects/phone';
-import { isPreferredLanguage } from '../../domain/contact';
+import { asPhone } from '../../domain/value-objects/phone';
 import type { MemberRepo, MemberPatch } from '../ports/member-repo';
 import type { ContactRepo, ContactPatch } from '../ports/contact-repo';
 import type { AuditPort } from '../ports/audit-port';
+import { logger } from '@/lib/logger';
 
 // ---------------------------------------------------------------------------
 // Zod schemas generated from the compile-time tuples (FR-014a)
@@ -35,23 +37,29 @@ import type { AuditPort } from '../ports/audit-port';
  * This is the single source of truth — if the tuple changes, the schema
  * changes automatically. T116 unit test asserts key-set parity.
  */
-const contactFieldsSchema = z.object({
+// W-5: `satisfies` ensures compile-time parity with the tuple —
+// adding a field to the tuple without updating the schema is a TS error.
+const _contactFields = {
   firstName: z.string().min(1).max(100).optional(),
   lastName: z.string().min(1).max(100).optional(),
-  phone: z.string().max(20).nullable().optional(),
+  phone: z.string().max(16).nullable().optional(), // E.164 max = +15 digits = 16 chars
   preferredLanguage: z.enum(['en', 'th', 'sv']).optional(),
-});
+} satisfies Record<PortalSelfUpdateContactField, z.ZodTypeAny>;
+const contactFieldsSchema = z.object(_contactFields).strict();
 
-const memberFieldsSchema = z.object({
+const _memberFields = {
   website: z.string().max(200).nullable().optional(),
   description: z.string().max(2000).nullable().optional(),
-});
+} satisfies Record<PortalSelfUpdateMemberField, z.ZodTypeAny>;
+const memberFieldsSchema = z.object(_memberFields).strict();
 
+// S-1: .strict() rejects unknown keys if the schema is used standalone
+// (defence-in-depth — primary guard is detectForbiddenFields).
 export const selfUpdateSchema = z.object({
   primary_contact: contactFieldsSchema.optional(),
   website: memberFieldsSchema.shape.website,
   description: memberFieldsSchema.shape.description,
-});
+}).strict();
 
 /** Exported for T116 key-set parity assertion. */
 export const SELF_UPDATE_CONTACT_SCHEMA_KEYS = Object.keys(
@@ -138,8 +146,8 @@ export async function memberSelfUpdate(
   // 1. Detect forbidden fields BEFORE parsing — reject forged payloads
   const forbidden = detectForbiddenFields(input.rawBody);
   if (forbidden.length > 0) {
-    // Audit the forgery attempt (FR-014)
-    await deps.audit.record(deps.tenant, {
+    // W-4: Audit the forgery attempt (FR-014) — fail-closed if audit fails
+    const auditResult = await deps.audit.record(deps.tenant, {
       type: 'member_self_update_forbidden',
       actorUserId: input.actorUserId,
       requestId: input.requestId,
@@ -149,6 +157,12 @@ export async function memberSelfUpdate(
         attempted_fields: forbidden,
       },
     });
+    if (!auditResult.ok) {
+      logger.error(
+        { requestId: input.requestId, memberId: input.memberId },
+        'member-self-update: audit write failed on forgery path',
+      );
+    }
     return err({
       type: 'forbidden',
       reason: `forbidden fields: ${forbidden.join(', ')}`,
@@ -178,17 +192,38 @@ export async function memberSelfUpdate(
     } as MemberSelfUpdateError);
   }
 
+  // B-1: Verify contactId belongs to this member — prevents IDOR
+  const contactCheck = await deps.contactRepo.findById(
+    deps.tenant,
+    input.contactId,
+  );
+  if (!contactCheck.ok) {
+    return err({
+      type: contactCheck.error.code === 'repo.not_found' ? 'not_found' : 'server_error',
+      ...(contactCheck.error.code !== 'repo.not_found' && {
+        message: contactCheck.error.code,
+      }),
+    } as MemberSelfUpdateError);
+  }
+  if (contactCheck.value.memberId !== input.memberId) {
+    return err({
+      type: 'forbidden',
+      reason: 'contact does not belong to this member',
+    });
+  }
+
   const data = parsed.data;
   const fieldsChanged: string[] = [];
 
   // 4. Update member fields if any changed
+  // B-3: Pass null directly — do NOT coerce to undefined (Drizzle skips undefined)
   const mutableMemberPatch: Record<string, unknown> = {};
   if (data.website !== undefined) {
-    mutableMemberPatch.website = data.website ?? undefined;
+    mutableMemberPatch.website = data.website;
     fieldsChanged.push('website');
   }
   if (data.description !== undefined) {
-    mutableMemberPatch.description = data.description ?? undefined;
+    mutableMemberPatch.description = data.description;
     fieldsChanged.push('description');
   }
   const memberPatch = mutableMemberPatch as MemberPatch;
@@ -242,17 +277,9 @@ export async function memberSelfUpdate(
       }
       fieldsChanged.push('phone');
     }
+    // S-2: zod z.enum(['en','th','sv']) already validates preferredLanguage —
+    // the isPreferredLanguage guard was redundant dead code post-parse.
     if (pc.preferredLanguage !== undefined) {
-      if (!isPreferredLanguage(pc.preferredLanguage)) {
-        return err({
-          type: 'validation_error',
-          issues: [{
-            code: 'custom',
-            path: ['primary_contact', 'preferredLanguage'],
-            message: 'invalid preferred language',
-          }],
-        });
-      }
       mutableContactPatch.preferredLanguage = pc.preferredLanguage as PreferredLanguage;
       fieldsChanged.push('preferredLanguage');
     }
@@ -276,9 +303,9 @@ export async function memberSelfUpdate(
     }
   }
 
-  // 6. Audit the self-update (even if no-op — intentional for visibility)
+  // 6. Audit the self-update — W-4: check result and log on failure
   if (fieldsChanged.length > 0) {
-    await deps.audit.record(deps.tenant, {
+    const auditResult = await deps.audit.record(deps.tenant, {
       type: 'member_self_updated',
       actorUserId: input.actorUserId,
       requestId: input.requestId,
@@ -289,21 +316,18 @@ export async function memberSelfUpdate(
         fields_changed: fieldsChanged,
       },
     });
+    if (!auditResult.ok) {
+      logger.warn(
+        { requestId: input.requestId, memberId: input.memberId },
+        'member-self-update: audit write failed on success path',
+      );
+    }
   }
 
-  // If contact wasn't updated, load it fresh for the response
+  // R2-W3: Reuse the contact loaded by the B-1 ownership check
+  // instead of a redundant DB round-trip.
   if (!updatedContact) {
-    const contactResult = await deps.contactRepo.findById(
-      deps.tenant,
-      input.contactId,
-    );
-    if (!contactResult.ok) {
-      return err({
-        type: 'server_error',
-        message: `contact load: ${contactResult.error.code}`,
-      });
-    }
-    updatedContact = contactResult.value;
+    updatedContact = contactCheck.value;
   }
 
   return ok({ member: updatedMember, contact: updatedContact });

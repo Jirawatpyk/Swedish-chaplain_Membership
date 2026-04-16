@@ -878,7 +878,12 @@
       "saving": "Sparar…",
       "saveSuccess": "Profilen har uppdaterats.",
       "saveError": "Kunde inte spara ändringar. Försök igen.",
-      "noChanges": "Inga ändringar att spara."
+      "noChanges": "Inga ändringar att spara.",
+      "languageOptions": {
+        "en": "English (engelska)",
+        "th": "ไทย (thailändska)",
+        "sv": "Svenska"
+      }
     },
     "invite": {
       "pageTitle": "Bjud in kollega",
@@ -898,7 +903,12 @@
       "sending": "Skickar…",
       "sendSuccess": "Inbjudan har skickats.",
       "sendError": "Kunde inte skicka inbjudan. Försök igen.",
-      "emailTaken": "Denna e-postadress är redan registrerad."
+      "emailTaken": "Denna e-postadress är redan registrerad.",
+      "languageOptions": {
+        "en": "English (engelska)",
+        "th": "ไทย (thailändska)",
+        "sv": "Svenska"
+      }
     }
   },
   "audit": {
