@@ -29,6 +29,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
 import type { UserEmailPort } from '../ports/user-email-port';
 import type { ClockPort } from '../ports/clock-port';
+import { UseCaseAbort } from '../tx-abort';
 
 export type VerifyContactEmailDeps = {
   tenant: TenantContext;
@@ -140,13 +141,7 @@ export async function verifyContactEmail(
 
     return ok(outcome);
   } catch (e) {
-    if (e instanceof UseCaseAbort) return err(e.error);
+    if (e instanceof UseCaseAbort) return err(e.error as VerifyContactEmailError);
     return err({ code: 'server_error', cause: e });
-  }
-}
-
-class UseCaseAbort extends Error {
-  constructor(public readonly error: VerifyContactEmailError) {
-    super(error.code);
   }
 }

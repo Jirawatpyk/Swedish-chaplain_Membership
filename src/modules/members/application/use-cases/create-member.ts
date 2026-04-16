@@ -34,7 +34,8 @@ import {
 import { checkTurnoverBand } from '../../domain/policies/turnover-policy';
 import { checkAgeEligibility } from '../../domain/policies/age-eligibility-policy';
 import { checkStartupDuration } from '../../domain/policies/startup-duration-policy';
-import type { Member, MemberId, PlanId, TenantId } from '../../domain/member';
+import { asPlanId, asTenantId } from '../../domain/member';
+import type { Member, MemberId } from '../../domain/member';
 import type { Contact, ContactId } from '../../domain/contact';
 import type { UserId } from '../../domain/value-objects/user-id';
 import type { MemberRepo } from '../ports/member-repo';
@@ -182,11 +183,11 @@ export async function createMember(
   }
   const overrideAsserted = Boolean(data.override_reason_code);
 
-  // 4. Plan-aware validation via PlanLookupPort
-  // Cast to PlanId at the trust boundary — getPlan validates existence.
+  // 4. Plan-aware validation via PlanLookupPort.
+  // asPlanId() brands the raw input; getPlan validates existence.
   const planResult = await deps.plans.getPlan(
     deps.tenant,
-    data.plan_id as PlanId,
+    asPlanId(data.plan_id),
     data.plan_year,
   );
   if (!planResult.ok) return err({ type: 'plan_not_found' });
@@ -265,7 +266,7 @@ export async function createMember(
   const memberId = deps.idFactory.memberId();
   const contactId = deps.idFactory.contactId();
   const memberDraft: Omit<Member, 'createdAt' | 'updatedAt'> = {
-    tenantId: deps.tenant.slug as TenantId,
+    tenantId: asTenantId(deps.tenant.slug),
     memberId,
     companyName: data.company_name.trim(),
     legalEntityType: data.legal_entity_type ?? null,
@@ -285,7 +286,7 @@ export async function createMember(
     archivedAt: null,
   };
   const contactDraft: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId'> = {
-    tenantId: deps.tenant.slug as TenantId,
+    tenantId: asTenantId(deps.tenant.slug),
     contactId,
     firstName: data.primary_contact.first_name.trim(),
     lastName: data.primary_contact.last_name.trim(),

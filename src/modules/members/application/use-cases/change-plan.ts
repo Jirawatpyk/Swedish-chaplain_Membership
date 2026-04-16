@@ -21,7 +21,8 @@ import {
 } from '../../domain/value-objects/override-reason';
 import { checkTurnoverBand } from '../../domain/policies/turnover-policy';
 import { checkStartupDuration } from '../../domain/policies/startup-duration-policy';
-import type { Member, MemberId, PlanId } from '../../domain/member';
+import { asPlanId } from '../../domain/member';
+import type { Member, MemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { PlanLookupPort } from '../ports/plan-lookup-port';
@@ -121,7 +122,7 @@ export async function changePlan(
   // Load new + old plan metadata
   const [oldPlan, newPlan] = await Promise.all([
     deps.plans.getPlan(deps.tenant, current.planId, current.planYear),
-    deps.plans.getPlan(deps.tenant, data.new_plan_id as PlanId, data.new_plan_year),
+    deps.plans.getPlan(deps.tenant, asPlanId(data.new_plan_id), data.new_plan_year),
   ]);
   if (!newPlan.ok) return err({ type: 'plan_not_found' });
 

@@ -41,6 +41,7 @@ import type { SessionRevocationPort } from '../ports/session-revocation-port';
 import type { UserEmailPort } from '../ports/user-email-port';
 import type { ClockPort } from '../ports/clock-port';
 import { hashEmail } from '../crypto-helpers';
+import { UseCaseAbort } from '../tx-abort';
 
 export type RevertContactEmailDeps = {
   tenant: TenantContext;
@@ -197,13 +198,7 @@ export async function revertContactEmail(
 
     return ok(outcome);
   } catch (e) {
-    if (e instanceof UseCaseAbort) return err(e.error);
+    if (e instanceof UseCaseAbort) return err(e.error as RevertContactEmailError);
     return err({ code: 'server_error', cause: e });
-  }
-}
-
-class UseCaseAbort extends Error {
-  constructor(public readonly error: RevertContactEmailError) {
-    super(error.code);
   }
 }

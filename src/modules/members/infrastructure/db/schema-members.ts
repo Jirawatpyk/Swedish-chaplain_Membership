@@ -1,5 +1,5 @@
 /**
- * F5 Members — Drizzle schema.
+ * F3 Members — Drizzle schema.
  *
  * Single table: `members` (aggregate root; contacts live in a sibling
  * schema file co-located in the same bounded context). See data-model.md § 1.1.

@@ -19,7 +19,6 @@
  *   - 500 `{ error: 'server_error' }`
  */
 
-import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { asTenantContext } from '@/modules/tenants';
 import { revertContactEmail } from '@/modules/members';
@@ -30,18 +29,8 @@ import {
 import { rateLimiter } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
-
-function hashToken(plaintext: string): string {
-  return createHash('sha256').update(plaintext).digest('hex');
-}
-
-function clientIp(request: NextRequest): string {
-  return (
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    request.headers.get('x-real-ip') ??
-    'unknown'
-  );
-}
+import { getClientIp } from '@/lib/client-ip';
+import { sha256Hex } from '@/lib/crypto';
 
 async function handle(
   request: NextRequest,
@@ -51,7 +40,7 @@ async function handle(
   const { token } = await params;
 
   // 1. Rate limit (spec § Security 4.2 — 5-in-10min per IP)
-  const ip = clientIp(request);
+  const ip = getClientIp(request);
   const rl = await rateLimiter.check(
     `email-change-revert:${ip}`,
     5,
@@ -73,7 +62,7 @@ async function handle(
     return NextResponse.json({ error: 'invalid_token' }, { status: 400 });
   }
 
-  const tokenId = hashToken(token);
+  const tokenId = sha256Hex(token);
 
   // 2. Stand-alone lookup (no TenantContext yet — derived from the row)
   const publicLookup = buildPublicEmailChangeLookup();

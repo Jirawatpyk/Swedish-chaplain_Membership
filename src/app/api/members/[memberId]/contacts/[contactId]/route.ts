@@ -116,9 +116,19 @@ export async function PATCH(
       parsed.data.contactId as ContactId,
     );
     if (!contactLookup.ok) {
+      if (contactLookup.error.code === 'repo.not_found') {
+        return NextResponse.json(
+          { error: { code: 'not_found', message: 'Contact not found.' } },
+          { status: 404 },
+        );
+      }
+      logger.error(
+        { requestId: ctx.requestId, err: contactLookup.error },
+        'patch-contact: contact lookup failed',
+      );
       return NextResponse.json(
-        { error: { code: 'not_found', message: 'Contact not found.' } },
-        { status: 404 },
+        { error: { code: 'server_error', message: 'Internal server error.' } },
+        { status: 500 },
       );
     }
     const contact = contactLookup.value;

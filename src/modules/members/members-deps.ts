@@ -2,7 +2,7 @@
  * Members module — composition root (T050).
  *
  * Wires every Infrastructure singleton (drizzle repos, audit adapter,
- * plan-lookup stub) + the default Clock + a UUID v7 id factory into
+ * plan-lookup stub) + the default Clock + a UUID v4 id factory into
  * the `MembersDeps` bag that Application use cases receive.
  *
  * Tests construct their own deps inline with stubs. They never import

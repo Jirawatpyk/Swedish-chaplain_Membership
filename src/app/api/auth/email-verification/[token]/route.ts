@@ -17,7 +17,6 @@
  *   - 500 `{ error: 'server_error' }`
  */
 
-import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { asTenantContext } from '@/modules/tenants';
 import { verifyContactEmail } from '@/modules/members';
@@ -28,18 +27,8 @@ import {
 import { rateLimiter } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
-
-function hashToken(plaintext: string): string {
-  return createHash('sha256').update(plaintext).digest('hex');
-}
-
-function clientIp(request: NextRequest): string {
-  return (
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    request.headers.get('x-real-ip') ??
-    'unknown'
-  );
-}
+import { getClientIp } from '@/lib/client-ip';
+import { sha256Hex } from '@/lib/crypto';
 
 async function handle(
   request: NextRequest,
@@ -48,7 +37,7 @@ async function handle(
   const requestId = requestIdFromHeaders(request.headers);
   const { token } = await params;
 
-  const ip = clientIp(request);
+  const ip = getClientIp(request);
   const rl = await rateLimiter.check(
     `email-verification:${ip}`,
     5,
@@ -70,7 +59,7 @@ async function handle(
     return NextResponse.json({ error: 'invalid_token' }, { status: 400 });
   }
 
-  const tokenId = hashToken(token);
+  const tokenId = sha256Hex(token);
 
   const publicLookup = buildPublicEmailChangeLookup();
   const lookup = await publicLookup.findActiveToken(tokenId);

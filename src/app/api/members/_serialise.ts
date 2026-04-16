@@ -4,7 +4,7 @@
  * contracts/members-api.md.
  */
 
-import type { Member, MemberId } from '@/modules/members';
+import type { Member } from '@/modules/members';
 import type { Contact } from '@/modules/members';
 import type { DirectoryRow } from '@/modules/members';
 
@@ -80,5 +80,3 @@ export function serialiseDirectoryRow(row: DirectoryRow) {
   };
 }
 
-// Silence unused type import
-void (null as unknown as MemberId);

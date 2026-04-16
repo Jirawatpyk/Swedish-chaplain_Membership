@@ -26,7 +26,8 @@ import { asPhone } from '../../domain/value-objects/phone';
 import { asEmail } from '../../domain/value-objects/email';
 import type { TenantContext } from '@/modules/tenants';
 import type { Contact, ContactId } from '../../domain/contact';
-import type { MemberId, TenantId } from '../../domain/member';
+import { asTenantId } from '../../domain/member';
+import type { MemberId } from '../../domain/member';
 import type { Phone } from '../../domain/value-objects/phone';
 import type { ContactRepo } from '../ports/contact-repo';
 
@@ -112,7 +113,7 @@ export async function addContact(
   const r = await deps.contactRepo.add(
     deps.tenant,
     {
-      tenantId: deps.tenant.slug as TenantId,
+      tenantId: asTenantId(deps.tenant.slug),
       contactId: deps.idFactory.contactId(),
       memberId,
       firstName: data.first_name.trim(),

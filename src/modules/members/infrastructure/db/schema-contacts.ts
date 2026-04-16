@@ -1,5 +1,5 @@
 /**
- * F5 Contacts — Drizzle schema.
+ * F3 Contacts — Drizzle schema.
  *
  * Child entity of Member (no independent lifecycle). See data-model.md § 1.2.
  *

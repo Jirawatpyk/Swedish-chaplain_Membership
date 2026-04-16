@@ -70,12 +70,16 @@ export interface MemberRepo {
     requestId: string,
   ): Promise<Result<{ member: Member; contact: Contact }, RepoError>>;
 
+  /**
+   * Persist a status-transition snapshot. Caller is responsible for
+   * emitting `member_status_changed` / `member_archived` / `member_undeleted`
+   * audit events via AuditPort — the repo only writes the row. Archive/
+   * activate use cases will wire this up in US4 (not shipped in US1-US3).
+   */
   updateStatus(
     ctx: TenantContext,
     memberId: MemberId,
     next: Member,
-    actorUserId: string,
-    requestId: string,
   ): Promise<Result<Member, RepoError>>;
 
   updateFields(

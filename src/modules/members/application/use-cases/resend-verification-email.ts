@@ -34,6 +34,7 @@ import {
   VERIFICATION_ACTIVATION_DELAY_MS,
   VERIFICATION_TOKEN_TTL_MS,
 } from '../crypto-helpers';
+import { UseCaseAbort } from '../tx-abort';
 
 export type ResendVerificationDeps = {
   tenant: TenantContext;
@@ -177,13 +178,7 @@ export async function resendVerificationEmail(
       invalidatedPrior: outcome.invalidatedPrior,
     });
   } catch (e) {
-    if (e instanceof UseCaseAbort) return err(e.error);
+    if (e instanceof UseCaseAbort) return err(e.error as ResendVerificationError);
     return err({ code: 'server_error', cause: e });
-  }
-}
-
-class UseCaseAbort extends Error {
-  constructor(public readonly error: ResendVerificationError) {
-    super(error.code);
   }
 }

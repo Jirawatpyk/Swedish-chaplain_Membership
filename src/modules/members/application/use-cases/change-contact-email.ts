@@ -251,8 +251,8 @@ export async function changeContactEmail(
           old_email_hash: hashEmail(userUpdate.value.oldEmail),
           new_email_hash: hashEmail(newEmail as string),
           sessions_revoked: sessionResult.value.revokedCount,
-          verification_outbox_row_id: verificationEnqueue.value.outboxRowId,
-          revert_outbox_row_id: revertEnqueue.value.outboxRowId,
+          verification_enqueued: true,
+          revert_enqueued: true,
         },
       });
 

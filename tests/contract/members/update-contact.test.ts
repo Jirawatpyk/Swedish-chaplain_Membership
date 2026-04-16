@@ -99,6 +99,8 @@ const stubContact = {
   updatedAt: new Date(),
 };
 
+const stubLinkedContact = { ...stubContact, linkedUserId: 'user-123' };
+
 function makeRequest(body: unknown): NextRequest {
   return new NextRequest(
     `http://localhost/api/members/${memberId}/contacts/${contactId}`,
@@ -191,5 +193,103 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
       params: routeParams(),
     });
     expect(res.status).toBe(401);
+  });
+
+  // --- Linked-user email-change branch (FR-012a atomic txn) ------------------
+
+  it('200 on linked-user email change — changeContactEmail success', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValue(ok(stubLinkedContact));
+    changeContactEmailMock.mockResolvedValueOnce(
+      ok({
+        contactId,
+        userId: 'user-123',
+        oldEmail: 'alice@old.example',
+        newEmail: 'alice@new.example',
+        verificationOutboxRowId: 'outbox-v',
+        revertOutboxRowId: 'outbox-r',
+        sessionsRevoked: 2,
+      }),
+    );
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(
+      makeRequest({ email: 'alice@new.example' }),
+      { params: routeParams() },
+    );
+    // After email change the route re-reads the contact for the
+    // response shape. changeContactEmailMock ok → route falls through
+    // to the non-email path which re-fetches via contactRepo.findById.
+    expect(res.status).toBe(200);
+    expect(changeContactEmailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('400 on linked-user email change — invalid_input', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));
+    changeContactEmailMock.mockResolvedValueOnce(
+      err({ code: 'invalid_input', field: 'email' }),
+    );
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(makeRequest({ email: 'not-an-email' }), {
+      params: routeParams(),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('validation_error');
+    expect(body.error.details.field).toBe('email');
+  });
+
+  it('404 on linked-user email change — not_found', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));
+    changeContactEmailMock.mockResolvedValueOnce(err({ code: 'not_found' }));
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(makeRequest({ email: 'alice@new.example' }), {
+      params: routeParams(),
+    });
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe('not_found');
+  });
+
+  it('409 on linked-user email change — conflict (email_taken)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));
+    changeContactEmailMock.mockResolvedValueOnce(
+      err({ code: 'conflict', reason: 'email_taken' }),
+    );
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(makeRequest({ email: 'taken@example.com' }), {
+      params: routeParams(),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('conflict');
+    expect(body.error.reason).toBe('email_taken');
+  });
+
+  it('500 on linked-user email change — server_error', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));
+    changeContactEmailMock.mockResolvedValueOnce(
+      err({ code: 'server_error', cause: new Error('db timeout') }),
+    );
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(makeRequest({ email: 'alice@new.example' }), {
+      params: routeParams(),
+    });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.code).toBe('server_error');
   });
 });

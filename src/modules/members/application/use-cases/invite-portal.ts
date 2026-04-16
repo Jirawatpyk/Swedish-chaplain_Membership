@@ -121,8 +121,8 @@ export async function invitePortal(
   );
   if (!linked.ok) {
     // Orphan created — F1 user exists but contact.linked_user_id is
-    // not set. Return success (invitation email is in flight) but log
-    // for operational reconciliation.
+    // not set. Log for operational reconciliation; return success
+    // because the invitation email is already in flight.
     logger.error(
       {
         contactId: input.contactId,
@@ -132,11 +132,6 @@ export async function invitePortal(
       },
       'invite-portal.link_user_failed: orphan user created; contact not linked',
     );
-    return ok({
-      contactId: input.contactId,
-      userId: created.value.user.id,
-      email: contact.email,
-    });
   }
 
   return ok({

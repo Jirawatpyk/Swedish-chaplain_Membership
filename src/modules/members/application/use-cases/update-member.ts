@@ -18,7 +18,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { asIsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import { asTaxId } from '../../domain/value-objects/tax-id';
-import type { Member, MemberId, TenantId } from '../../domain/member';
+import type { Member, MemberId } from '../../domain/member';
 import type { MemberRepo, MemberPatch } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
@@ -187,6 +187,3 @@ export async function updateMember(
 
   return ok(updated.value);
 }
-
-// Silence unused imports for future hooks
-void (null as unknown as TenantId);
