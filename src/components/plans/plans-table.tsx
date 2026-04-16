@@ -40,7 +40,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -257,7 +257,16 @@ export function PlansTable({
             }}
           >
             <SelectTrigger id="plans-category" className="w-[180px]">
-              <SelectValue placeholder={t('filters.category.label')} />
+              <TranslatedSelectValue
+                placeholder={t('filters.category.label')}
+                translate={(v) => {
+                  if (!v || v === 'all') return t('filters.all');
+                  if (v === 'corporate') return t('filters.category.corporate');
+                  if (v === 'partnership')
+                    return t('filters.category.partnership');
+                  return v;
+                }}
+              />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t('filters.all')}</SelectItem>
