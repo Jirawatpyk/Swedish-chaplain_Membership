@@ -524,7 +524,8 @@
           "primaryContact": "Primär kontakt",
           "status": "Status",
           "risk": "Risk",
-          "lastActivity": "Senaste aktivitet"
+          "lastActivity": "Senaste aktivitet",
+          "notes": "Anteckningar"
         },
         "riskPlaceholder": "—",
         "rowAriaLabel": "Öppna {company} detaljer",
@@ -641,7 +642,10 @@
           "roleTitle": "Roll / titel",
           "preferredLanguage": "Föredraget språk",
           "dateOfBirth": "Födelsedatum",
-          "dateOfBirthHint": "Krävs för Thai Alumni-planen"
+          "dateOfBirthHint": "Krävs för Thai Alumni-planen",
+          "notes": "Anteckningar (endast admin)",
+          "notesPlaceholder": "Interna adminanteckningar…",
+          "notesHint": "Synligt endast för kammarpersonal. Visas inte för medlemmar."
         },
         "errors": {
           "generic": "Något gick fel. Försök igen.",
@@ -735,9 +739,17 @@
         "saveFailed": "Kunde inte spara. Återställd.",
         "saving": "Sparar…",
         "toggleStatus": "Växla status (nuvarande: {current})",
-        "editNotes": "Dubbelklicka för att redigera anteckningar",
+        "editCountry": "Redigera land",
+        "editCountryHint": "Dubbelklicka för att redigera landskod (ISO 3166-1 alpha-2)",
+        "countryUpdated": "Land uppdaterat",
+        "countryInvalid": "Landskod måste vara 2 bokstäver (ISO).",
+        "countryInput": "Landskod (2 bokstäver)",
+        "editNotes": "Redigera anteckningar",
+        "editNotesHint": "Dubbelklicka för att redigera anteckningar",
+        "notesUpdated": "Anteckningar uppdaterade",
         "notesSaved": "Anteckningar sparade",
         "notesInput": "Redigera anteckningar",
+        "notesPlaceholder": "Lägg till anteckningar…",
         "networkError": "Nätverksfel. Kontrollera anslutningen."
       }
     }

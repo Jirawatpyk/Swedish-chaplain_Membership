@@ -5,11 +5,24 @@
  * Whitelisted fields: status, country, notes.
  *
  * RBAC: admin-only (`members` / `write`).
+ *
+ * Round-2 review fixes:
+ *   - I-6: optional `Idempotency-Key` header prevents duplicate audit
+ *     events on client retry. Absent key = idempotency disabled (same
+ *     as F1 pattern for non-critical endpoints).
+ *   - I-3: invalid JSON body returns 400 explicitly.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import {
+  parseIdempotencyKey,
+  classifyIdempotencyRequest,
+  reserveIdempotencyRecord,
+  rememberIdempotentResponse,
+  hashRequestBody,
+} from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
 import { inlineEdit, asMemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -45,6 +58,40 @@ export async function PATCH(
   }
 
   const tenant = resolveTenantFromRequest(request);
+
+  // Optional idempotency — if client supplies a key, honour it. Without
+  // a key, the endpoint behaves as before (idempotency-unaware, but
+  // still safe because inline-edit is a single-field overwrite).
+  const keyCheck = parseIdempotencyKey(request.headers);
+  const idempotencyKey = keyCheck.ok ? keyCheck.key : null;
+  let bodyHash: string | null = null;
+
+  if (idempotencyKey) {
+    bodyHash = hashRequestBody(rawBody, `PATCH /api/members/${rawMemberId}/inline-edit`);
+    const classification = await classifyIdempotencyRequest(
+      tenant,
+      idempotencyKey,
+      bodyHash,
+    );
+    if (classification.kind === 'replay') {
+      return NextResponse.json(classification.previousResponse.body, {
+        status: classification.previousResponse.status,
+      });
+    }
+    if (classification.kind === 'conflict') {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'idempotency_conflict',
+            message: 'Idempotency-Key was reused with a different body.',
+          },
+        },
+        { status: 409 },
+      );
+    }
+    await reserveIdempotencyRecord(tenant, idempotencyKey, bodyHash);
+  }
+
   const deps = buildMembersDeps(tenant);
 
   const result = await inlineEdit(
@@ -63,16 +110,20 @@ export async function PATCH(
   );
 
   if (result.ok) {
-    return NextResponse.json(
-      {
-        member_id: result.value.memberId,
-        status: result.value.status,
-        country: result.value.country,
-        notes: result.value.notes,
-        updated_at: result.value.updatedAt.toISOString(),
-      },
-      { status: 200 },
-    );
+    const body = {
+      member_id: result.value.memberId,
+      status: result.value.status,
+      country: result.value.country,
+      notes: result.value.notes,
+      updated_at: result.value.updatedAt.toISOString(),
+    };
+    if (idempotencyKey && bodyHash) {
+      await rememberIdempotentResponse(tenant, idempotencyKey, bodyHash, {
+        status: 200,
+        body,
+      });
+    }
+    return NextResponse.json(body, { status: 200 });
   }
 
   switch (result.error.type) {

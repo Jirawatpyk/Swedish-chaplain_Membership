@@ -225,8 +225,6 @@ export {
 } from './application/use-cases/inline-edit';
 
 // --- US4 port ---------------------------------------------------------------
-
-export {
-  type RateLimitPort,
-  type RateLimitResult,
-} from './application/ports/rate-limit-port';
+// RateLimitPort removed — rate limiting is a transport-layer concern
+// and lives in the route handler via the F1 UpstashRateLimiter singleton
+// exposed through the auth barrel (round-2 review C-1 / IMPORTANT I-8).

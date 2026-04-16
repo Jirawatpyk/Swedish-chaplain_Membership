@@ -287,6 +287,24 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async updateStatusInTx(tx, memberId, next) {
+    try {
+      const rows = await tx
+        .update(members)
+        .set({
+          status: next.status,
+          archivedAt: next.archivedAt,
+          updatedAt: next.updatedAt,
+        })
+        .where(eq(members.memberId, memberId))
+        .returning();
+      if (rows.length === 0) return err({ code: 'repo.not_found' });
+      return ok(rowToMember(rows[0]!));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async updateFields(ctx, memberId, patch) {
     try {
       const rows = await runInTenant(ctx, (tx) =>

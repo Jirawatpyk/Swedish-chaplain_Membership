@@ -36,6 +36,7 @@ type MemberInitialValues = {
   readonly taxId: string | null;
   readonly website: string | null;
   readonly description: string | null;
+  readonly notes: string | null;
   readonly foundedYear: number | null;
   readonly turnoverThb: number | null;
   readonly planId: string;
@@ -133,6 +134,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     tax_id: values.tax_id?.trim() || null,
     website: values.website?.trim() || null,
     description: values.description?.trim() || null,
+    notes: values.notes?.trim() || null,
     founded_year:
       typeof values.founded_year === 'number' ? values.founded_year : null,
     turnover_thb:
@@ -229,6 +231,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           tax_id: member.taxId ?? undefined,
           website: member.website ?? undefined,
           description: member.description ?? undefined,
+          notes: member.notes ?? undefined,
           founded_year: member.foundedYear ?? undefined,
           turnover_thb: member.turnoverThb ?? undefined,
           plan_id: member.planId,
@@ -279,6 +282,7 @@ function hasFieldDiff(
     (values.tax_id?.trim() ?? null) !== (member.taxId ?? null) ||
     (values.website?.trim() || null) !== (member.website ?? null) ||
     (values.description?.trim() ?? null) !== (member.description ?? null) ||
+    (values.notes?.trim() || null) !== (member.notes ?? null) ||
     (typeof values.founded_year === 'number' ? values.founded_year : null) !==
       (member.foundedYear ?? null) ||
     (typeof values.turnover_thb === 'number' ? values.turnover_thb : null) !==

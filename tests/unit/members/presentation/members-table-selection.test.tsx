@@ -30,6 +30,11 @@ beforeAll(() => {
 });
 
 // Minimal messages for the test
+// Mock sonner so toast calls don't explode in jsdom
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
 const messages = {
   admin: {
     members: {
@@ -46,6 +51,7 @@ const messages = {
           status: 'Status',
           risk: 'Risk',
           lastActivity: 'Last activity',
+          notes: 'Notes',
         },
         statusActive: 'Active',
         statusInactive: 'Inactive',
@@ -60,6 +66,18 @@ const messages = {
         saveFailed: 'Failed',
         saving: 'Saving',
         toggleStatus: 'Toggle ({current})',
+        editCountry: 'Edit country',
+        editCountryHint: 'Double-click to edit',
+        countryUpdated: 'Country updated',
+        countryInvalid: 'Invalid',
+        countryInput: 'Country code',
+        editNotes: 'Edit notes',
+        editNotesHint: 'Double-click notes',
+        notesUpdated: 'Notes updated',
+        notesSaved: 'Notes saved',
+        notesInput: 'Edit notes',
+        notesPlaceholder: 'Add notes',
+        networkError: 'Network error',
       },
     },
   },
@@ -83,6 +101,7 @@ const testRows: MembersTableRow[] = [
     status: 'active',
     member_risk_flag: null,
     last_activity_at: '2026-04-10T00:00:00Z',
+    notes: null,
     primary_contact: {
       contact_id: 'c1',
       first_name: 'Anna',
@@ -100,6 +119,7 @@ const testRows: MembersTableRow[] = [
     status: 'active',
     member_risk_flag: null,
     last_activity_at: null,
+    notes: null,
     primary_contact: null,
   },
 ];
@@ -185,5 +205,46 @@ describe('MembersTable selection (T108 regression)', () => {
 
     const checkboxes = screen.queryAllByRole('checkbox');
     expect(checkboxes).toHaveLength(0);
+  });
+});
+
+describe('MembersTable inline-edit rendering (round-2 review I-6)', () => {
+  it('renders InlineStatusCell button when enableSelection + onInlineEdit provided (admin)', async () => {
+    const { MembersTable } = await import('@/components/members/members-table');
+    const successSave = vi.fn().mockResolvedValue({ ok: true });
+
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable
+          rows={testRows}
+          nextCursor={null}
+          enableSelection={true}
+          onInlineEdit={successSave}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    // Admin sees toggleable status buttons
+    const statusButtons = screen.getAllByRole('button', { name: /Toggle/ });
+    expect(statusButtons.length).toBeGreaterThan(0);
+  });
+
+  it('does NOT render InlineStatusCell when onInlineEdit is undefined (manager read-only)', async () => {
+    const { MembersTable } = await import('@/components/members/members-table');
+
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable
+          rows={testRows}
+          nextCursor={null}
+          enableSelection={true}
+          // onInlineEdit intentionally undefined — manager read-only path
+        />
+      </NextIntlClientProvider>,
+    );
+
+    // Manager sees status badge (no button)
+    const statusButtons = screen.queryAllByRole('button', { name: /Toggle/ });
+    expect(statusButtons).toHaveLength(0);
   });
 });

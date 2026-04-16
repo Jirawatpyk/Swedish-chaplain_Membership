@@ -1,144 +1,177 @@
 /**
- * T101 — Integration test: bulk action rate limit enforcement.
+ * T101 — Integration test: rate-limit audit emission at the route layer.
  *
- * Verifies that the 11th bulk action within a 10-minute window
- * returns `rate_limited` error + emits `bulk_action_rate_limit_exceeded`
- * audit event.
+ * Round-2 review C-1: rate limiting is now enforced at the ROUTE HANDLER
+ * only — use case no longer has RateLimitPort dep. This test verifies
+ * the route handler's rate-limit audit path end-to-end via mocked
+ * rateLimiter.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+import { NextRequest } from 'next/server';
 import { ok } from '@/lib/result';
-import {
-  bulkAction,
-  BULK_RATE_MAX,
-  BULK_RATE_WINDOW_SECONDS,
-  type BulkActionDeps,
-  type BulkActionMeta,
-} from '@/modules/members/application/use-cases/bulk-action';
 
-const meta: BulkActionMeta = {
-  actorUserId: 'admin-rl',
-  requestId: 'req-rl-test',
+const requireAdminContextMock = vi.fn();
+const rateLimitCheckMock = vi.fn();
+const auditRecordMock = vi.fn().mockResolvedValue(ok(undefined));
+const bulkActionMock = vi.fn();
+
+vi.mock('@/lib/admin-context', () => ({
+  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+}));
+vi.mock('@/modules/members/members-deps', () => ({
+  buildMembersDeps: vi.fn(() => ({
+    tenant: { slug: 'test-tenant' },
+    memberRepo: {},
+    contactRepo: {},
+    audit: { record: auditRecordMock, recordInTx: auditRecordMock },
+    plans: {},
+    emails: {},
+    sessions: {},
+    userEmails: {},
+    tokens: {},
+    clock: { now: () => new Date() },
+    idFactory: { memberId: () => 'id', contactId: () => 'id' },
+  })),
+}));
+vi.mock('@/modules/members', async () => {
+  const actual = await vi.importActual<typeof import('@/modules/members')>(
+    '@/modules/members',
+  );
+  return {
+    ...actual,
+    bulkAction: (...args: unknown[]) => bulkActionMock(...args),
+  };
+});
+vi.mock('@/lib/tenant-context', () => ({
+  resolveTenantFromRequest: () => ({ slug: 'test-tenant' }),
+}));
+vi.mock('@/lib/idempotency', () => ({
+  parseIdempotencyKey: () => ({ ok: true, key: 'idem-rl' }),
+  classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
+  reserveIdempotencyRecord: vi.fn(async () => undefined),
+  rememberIdempotentResponse: vi.fn(async () => undefined),
+  hashRequestBody: vi.fn(() => 'hash'),
+}));
+vi.mock('@/lib/logger', () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter', () => ({
+  rateLimiter: { check: (...args: unknown[]) => rateLimitCheckMock(...args) },
+}));
+vi.mock('@/modules/auth', async () => {
+  const actual = await vi.importActual<typeof import('@/modules/auth')>(
+    '@/modules/auth',
+  );
+  return {
+    ...actual,
+    rateLimiter: { check: (...args: unknown[]) => rateLimitCheckMock(...args) },
+  };
+});
+
+const adminContext = {
+  current: {
+    user: { id: 'admin-rl', email: 'a@b.co', role: 'admin', status: 'active', displayName: 'A' },
+    session: { id: 's1' },
+  },
+  sourceIp: '203.0.113.5',
+  requestId: 'req-rl',
 };
 
-function stubDeps(rateLimitSuccess: boolean): BulkActionDeps {
-  return {
-    tenant: { slug: 'test-tenant' } as BulkActionDeps['tenant'],
-    memberRepo: {
-      findById: vi.fn(),
-      findSoftDuplicate: vi.fn(),
-      createWithPrimaryContact: vi.fn(),
-      updateStatus: vi.fn(),
-      updateFields: vi.fn(),
-      updateFieldsInTx: vi.fn(),
-      searchDirectory: vi.fn(),
+function makeRequest(body: unknown): NextRequest {
+  return new NextRequest('http://localhost/api/members/bulk', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'idempotency-key': 'idem-rl',
     },
-    audit: {
-      record: vi.fn().mockResolvedValue(ok(undefined)),
-      recordInTx: vi.fn().mockResolvedValue(ok(undefined)),
-    },
-    clock: { now: () => new Date('2026-04-16T10:00:00Z') },
-    rateLimit: {
-      check: vi.fn().mockResolvedValue({
-        success: rateLimitSuccess,
-        remaining: rateLimitSuccess ? BULK_RATE_MAX - 1 : 0,
-        reset: Date.now() + BULK_RATE_WINDOW_SECONDS * 1000,
-      }),
-    },
-  };
+    body: JSON.stringify(body),
+  });
 }
 
-describe('integration: bulk action rate limit (T101)', () => {
-  it('11th action in 10min → rate_limited error', async () => {
-    const deps = stubDeps(false); // Rate limit exhausted
-    const result = await bulkAction(
-      {
+describe('integration: bulk action rate limit route (T101 / round-2 C-1)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('429 + audit emission when rate-limited at route layer', { timeout: 30_000 }, async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    rateLimitCheckMock.mockResolvedValueOnce({
+      success: false,
+      remaining: 0,
+      reset: Date.now() + 600_000,
+    });
+
+    const { POST } = await import('@/app/api/members/bulk/route');
+    const res = await POST(
+      makeRequest({
         action: 'archive',
         member_ids: ['00000000-0000-0000-0000-000000000001'],
-      },
-      meta,
-      deps,
+      }),
     );
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.type).toBe('rate_limited');
-    }
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error.code).toBe('bulk_rate_limit_exceeded');
+
+    // Verify Retry-After matches the 600s window (round-2 review I-2)
+    expect(res.headers.get('Retry-After')).toBe('600');
 
     // Verify audit event was emitted for the rate-limit breach
-    expect(deps.audit.record).toHaveBeenCalledWith(
-      deps.tenant,
+    expect(auditRecordMock).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({
         type: 'bulk_action_rate_limit_exceeded',
-        actorUserId: meta.actorUserId,
+        actorUserId: 'admin-rl',
         payload: expect.objectContaining({
           action: 'archive',
-          attempted_count: 1,
         }),
       }),
     );
+
+    // Use case MUST NOT be called when rate-limited
+    expect(bulkActionMock).not.toHaveBeenCalled();
   });
 
-  it('rate limit check uses correct key shape (tenant + actor)', async () => {
-    const deps = stubDeps(false);
-    await bulkAction(
-      {
+  it('rate limit check uses correct key shape (bulk:tenant:actor)', { timeout: 30_000 }, async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    rateLimitCheckMock.mockResolvedValueOnce({
+      success: false,
+      remaining: 0,
+      reset: Date.now() + 600_000,
+    });
+
+    const { POST } = await import('@/app/api/members/bulk/route');
+    await POST(
+      makeRequest({
         action: 'archive',
         member_ids: ['00000000-0000-0000-0000-000000000001'],
-      },
-      meta,
-      deps,
-    );
-
-    expect(deps.rateLimit.check).toHaveBeenCalledWith(
-      `bulk:test-tenant:${meta.actorUserId}`,
-      BULK_RATE_MAX,
-      BULK_RATE_WINDOW_SECONDS,
-    );
-  });
-
-  it('allowed action within rate limit proceeds to execution', async () => {
-    const deps = stubDeps(true); // Rate limit OK
-
-    // findById will fail (no DB) but that's after rate limit check
-    (deps.memberRepo.findById as ReturnType<typeof vi.fn>).mockResolvedValue(
-      ok({
-        tenantId: 'test-tenant',
-        memberId: '00000000-0000-0000-0000-000000000001',
-        companyName: 'Test Corp',
-        legalEntityType: null,
-        country: 'TH',
-        taxId: null,
-        website: null,
-        description: null,
-        foundedYear: null,
-        turnoverThb: null,
-        planId: 'plan-1',
-        planYear: 2026,
-        registrationDate: new Date('2026-01-01'),
-        registrationFeePaid: false,
-        lastActivityAt: null,
-        notes: null,
-        status: 'active',
-        archivedAt: null,
-        createdAt: new Date('2026-01-01'),
-        updatedAt: new Date('2026-01-01'),
       }),
     );
 
-    await bulkAction(
-      {
+    expect(rateLimitCheckMock).toHaveBeenCalledWith(
+      'bulk:test-tenant:admin-rl',
+      10,
+      600,
+    );
+  });
+
+  it('round-2 I-5: audit write failure does not mask the 429 response', { timeout: 30_000 }, async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    rateLimitCheckMock.mockResolvedValueOnce({
+      success: false,
+      remaining: 0,
+      reset: Date.now() + 600_000,
+    });
+    // Simulate audit DB outage
+    auditRecordMock.mockRejectedValueOnce(new Error('DB down'));
+
+    const { POST } = await import('@/app/api/members/bulk/route');
+    const res = await POST(
+      makeRequest({
         action: 'archive',
         member_ids: ['00000000-0000-0000-0000-000000000001'],
-      },
-      meta,
-      deps,
+      }),
     );
 
-    // Rate limit check passed — the error will be from runInTenant (no real DB)
-    // but the rate limit audit was NOT emitted (good — not rate limited)
-    expect(deps.audit.record).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ type: 'bulk_action_rate_limit_exceeded' }),
-    );
+    // Still 429 — we prioritise client feedback over audit completeness
+    expect(res.status).toBe(429);
   });
 });

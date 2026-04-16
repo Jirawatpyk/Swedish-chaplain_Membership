@@ -8,7 +8,12 @@
  */
 
 import { useState, useCallback } from 'react';
-import { MembersTable, type MembersTableRow } from '@/components/members/members-table';
+import { useRouter } from 'next/navigation';
+import {
+  MembersTable,
+  type MembersTableRow,
+  type InlineEditResult,
+} from '@/components/members/members-table';
 import { BulkActionBar } from './bulk-action-bar';
 import { useTranslations } from 'next-intl';
 
@@ -20,6 +25,7 @@ type Props = {
 
 export function DirectoryWithBulk({ rows, nextCursor, isAdmin }: Props) {
   const t = useTranslations('admin.members.inlineEdit');
+  const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const selectedCompanyNames = selectedIds
@@ -33,25 +39,38 @@ export function DirectoryWithBulk({ rows, nextCursor, isAdmin }: Props) {
       memberId: string,
       field: 'status' | 'country' | 'notes',
       value: string | null,
-    ): Promise<{ ok: boolean; error?: string }> => {
+    ): Promise<InlineEditResult> => {
       try {
         const res = await fetch(`/api/members/${memberId}/inline-edit`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            // Round-2 review I-6: Idempotency-Key on inline-edit prevents
+            // duplicate audit events when the network times out between
+            // server commit and client response.
+            'Idempotency-Key': crypto.randomUUID(),
+          },
           body: JSON.stringify({ field, value }),
         });
 
         if (res.ok) {
+          // Refresh server component so the directory reflects the new
+          // status/country/notes — without this, the optimistic state
+          // in the cell desyncs from the source of truth on next render.
+          router.refresh();
           return { ok: true };
         }
 
         const body = await res.json();
-        return { ok: false, error: body.error?.message ?? t('saveFailed') };
+        return {
+          ok: false,
+          error: body.error?.message ?? t('saveFailed'),
+        };
       } catch {
         return { ok: false, error: t('networkError') };
       }
     },
-    [t],
+    [t, router],
   );
 
   return (

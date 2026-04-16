@@ -20,7 +20,7 @@
  * cursor.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -43,6 +43,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { PencilIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 export type MembersTableRow = {
@@ -60,6 +61,8 @@ export type MembersTableRow = {
   readonly status: 'active' | 'inactive' | 'archived';
   readonly member_risk_flag: null;
   readonly last_activity_at: string | null;
+  /** Admin-only inline-edit target (FR-040). Visible in the Notes cell. */
+  readonly notes: string | null;
   readonly primary_contact: {
     readonly contact_id: string;
     readonly first_name: string;
@@ -67,6 +70,14 @@ export type MembersTableRow = {
     readonly email: string;
   } | null;
 };
+
+// Round-2 review I-7: InlineEditResult is a discriminated union so
+// `error: string` is required when `ok: false` — avoids the
+// `error?: string` bug under exactOptionalPropertyTypes (which would
+// accept `{ ok: false, error: undefined }` and mask missing messages).
+export type InlineEditResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: string };
 
 type Props = {
   readonly rows: readonly MembersTableRow[];
@@ -80,7 +91,7 @@ type Props = {
     memberId: string,
     field: 'status' | 'country' | 'notes',
     value: string | null,
-  ) => Promise<{ ok: boolean; error?: string }>) | undefined;
+  ) => Promise<InlineEditResult>) | undefined;
 };
 
 const columnHelper = createColumnHelper<MembersTableRow>();
@@ -116,6 +127,13 @@ function InlineStatusCell({
   const [saving, setSaving] = useState(false);
   const [optimistic, setOptimistic] = useState(status);
 
+  // Round-2 review I-4: sync optimistic state when the `status` prop
+  // changes (e.g. after router.refresh() following a bulk action while
+  // the cell is still mounted). Without this, optimistic stays stale.
+  useEffect(() => {
+    setOptimistic(status);
+  }, [status]);
+
   const handleToggle = useCallback(async () => {
     if (!onSave || status === 'archived') return;
     const next = optimistic === 'active' ? 'inactive' : 'active';
@@ -127,7 +145,8 @@ function InlineStatusCell({
       toast.success(t('statusUpdated'));
     } else {
       setOptimistic(status); // rollback
-      toast.error(result.error ?? t('saveFailed'));
+      // Discriminated union — `error` is guaranteed string when !ok.
+      toast.error(result.error);
     }
   }, [memberId, status, optimistic, onSave, t]);
 
@@ -140,14 +159,231 @@ function InlineStatusCell({
       type="button"
       onClick={handleToggle}
       disabled={saving}
-      className="min-h-[24px] min-w-[24px] rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+      title={t('toggleStatus', { current: optimistic })}
+      className="group inline-flex min-h-[28px] min-w-[60px] cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-wait disabled:opacity-60"
       aria-label={t('toggleStatus', { current: optimistic })}
     >
       <StatusBadge status={optimistic} />
+      <PencilIcon
+        className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+        aria-hidden="true"
+      />
       <span className="sr-only" aria-live="polite">
         {saving ? t('saving') : ''}
       </span>
     </button>
+  );
+}
+
+/**
+ * T112 — Inline-editable country cell.
+ *
+ * Double-click the flag/code to enter edit mode. The admin types a new
+ * ISO 3166-1 alpha-2 code (2 letters). Save on Enter or blur; rollback
+ * on Escape. Server-side value-object validation rejects invalid codes.
+ */
+function InlineCountryCell({
+  memberId,
+  country,
+  onSave,
+}: {
+  memberId: string;
+  country: string;
+  onSave?: Props['onInlineEdit'];
+}) {
+  const t = useTranslations('admin.members.inlineEdit');
+  // `editing` is `null` when not editing; holds the draft value while editing.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleSave = useCallback(async () => {
+    if (!onSave || editing === null) return;
+    const normalised = editing.trim().toUpperCase();
+    if (normalised === country) {
+      setEditing(null);
+      return;
+    }
+    if (normalised.length !== 2) {
+      toast.error(t('countryInvalid'));
+      setEditing(null);
+      return;
+    }
+    setSaving(true);
+    const result = await onSave(memberId, 'country', normalised);
+    setSaving(false);
+    if (result.ok) {
+      toast.success(t('countryUpdated'));
+      setEditing(null);
+    } else {
+      toast.error(result.error);
+      setEditing(null);
+    }
+  }, [memberId, country, editing, onSave, t]);
+
+  if (!onSave) {
+    return <span>{country}</span>;
+  }
+
+  if (editing === null) {
+    return (
+      <button
+        type="button"
+        onDoubleClick={() => {
+          setEditing(country);
+          requestAnimationFrame(() => {
+            inputRef.current?.focus();
+            inputRef.current?.select();
+          });
+        }}
+        title={t('editCountryHint')}
+        className="group inline-flex min-h-[28px] min-w-[40px] cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+        aria-label={t('editCountry')}
+      >
+        <span>{country}</span>
+        <PencilIcon
+          className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          aria-hidden="true"
+        />
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <input
+        ref={inputRef}
+        type="text"
+        value={editing}
+        maxLength={2}
+        pattern="[A-Za-z]{2}"
+        onChange={(e) => setEditing(e.target.value.toUpperCase())}
+        onBlur={handleSave}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handleSave();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setEditing(null);
+          }
+        }}
+        disabled={saving}
+        className="h-7 w-14 rounded-sm border border-input bg-background px-2 text-sm uppercase focus-visible:outline-2 focus-visible:outline-ring"
+        aria-label={t('countryInput')}
+      />
+      <span className="sr-only" aria-live="polite">
+        {saving ? t('saving') : ''}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * T112 — Inline-editable notes cell.
+ *
+ * Double-click to enter edit mode (textarea). Blur or Enter saves;
+ * Escape cancels. Content truncated to a short preview in display mode.
+ * Notes content is NOT in the audit diff for privacy — only the
+ * `fields_changed: ['notes']` marker is logged.
+ */
+function InlineNotesCell({
+  memberId,
+  notes,
+  onSave,
+}: {
+  memberId: string;
+  notes: string | null;
+  onSave?: Props['onInlineEdit'];
+}) {
+  const t = useTranslations('admin.members.inlineEdit');
+  // `editing` is `null` when not editing; holds the draft value while editing.
+  // Storing the draft separately from the prop avoids the prop/state sync
+  // problem — when the admin enters edit mode we snapshot `notes` into the
+  // draft. On cancel/save we go back to reading `notes` directly.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleSave = useCallback(async () => {
+    if (!onSave || editing === null) return;
+    const next = editing.trim() || null;
+    if (next === notes) {
+      setEditing(null);
+      return;
+    }
+    setSaving(true);
+    const result = await onSave(memberId, 'notes', next);
+    setSaving(false);
+    if (result.ok) {
+      toast.success(t('notesUpdated'));
+      setEditing(null);
+    } else {
+      toast.error(result.error);
+      setEditing(null);
+    }
+  }, [memberId, notes, editing, onSave, t]);
+
+  if (!onSave) {
+    return (
+      <span
+        className="block max-w-[160px] truncate text-sm text-muted-foreground"
+        title={notes ?? undefined}
+      >
+        {notes ?? '—'}
+      </span>
+    );
+  }
+
+  if (editing === null) {
+    const preview = notes ? (notes.length > 24 ? notes.slice(0, 24) + '…' : notes) : '—';
+    return (
+      <button
+        type="button"
+        onDoubleClick={() => {
+          setEditing(notes ?? '');
+          requestAnimationFrame(() => textareaRef.current?.focus());
+        }}
+        title={notes ?? t('editNotesHint')}
+        className="group inline-flex min-h-[28px] max-w-[180px] cursor-pointer items-center gap-1 truncate rounded-md px-1 py-0.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+        aria-label={t('editNotes')}
+      >
+        <span className="truncate">{preview}</span>
+        <PencilIcon
+          className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+          aria-hidden="true"
+        />
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <textarea
+        ref={textareaRef}
+        value={editing}
+        maxLength={4000}
+        rows={2}
+        onChange={(e) => setEditing(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSave();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setEditing(null);
+          }
+        }}
+        disabled={saving}
+        className="min-h-[28px] w-48 resize-y rounded-sm border border-input bg-background px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+        aria-label={t('notesInput')}
+        placeholder={t('notesPlaceholder')}
+      />
+      <span className="sr-only" aria-live="polite">
+        {saving ? t('saving') : ''}
+      </span>
+    </div>
   );
 }
 
@@ -233,7 +469,16 @@ export function MembersTable({
     }),
     columnHelper.accessor('country', {
       header: () => t('columns.country'),
-      cell: (info) => info.getValue(),
+      cell: (info) =>
+        enableSelection ? (
+          <InlineCountryCell
+            memberId={info.row.original.member_id}
+            country={info.getValue()}
+            onSave={onInlineEdit}
+          />
+        ) : (
+          info.getValue()
+        ),
     }),
     columnHelper.accessor('plan_display_name', {
       header: () => t('columns.plan'),
@@ -293,6 +538,24 @@ export function MembersTable({
         if (!v) return <span className="text-muted-foreground">—</span>;
         return v.slice(0, 10);
       },
+    }),
+    columnHelper.accessor('notes', {
+      header: () => t('columns.notes'),
+      cell: (info) =>
+        enableSelection ? (
+          <InlineNotesCell
+            memberId={info.row.original.member_id}
+            notes={info.getValue()}
+            onSave={onInlineEdit}
+          />
+        ) : (
+          <span
+            className="block max-w-[160px] truncate text-sm text-muted-foreground"
+            title={info.getValue() ?? undefined}
+          >
+            {info.getValue() ?? '—'}
+          </span>
+        ),
     }),
   ];
 

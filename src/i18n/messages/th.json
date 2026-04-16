@@ -524,7 +524,8 @@
           "primaryContact": "ผู้ติดต่อหลัก",
           "status": "สถานะ",
           "risk": "ความเสี่ยง",
-          "lastActivity": "กิจกรรมล่าสุด"
+          "lastActivity": "กิจกรรมล่าสุด",
+          "notes": "โน้ต"
         },
         "riskPlaceholder": "—",
         "rowAriaLabel": "เปิดรายละเอียด {company}",
@@ -641,7 +642,10 @@
           "roleTitle": "ตำแหน่ง",
           "preferredLanguage": "ภาษาที่ต้องการ",
           "dateOfBirth": "วันเกิด",
-          "dateOfBirthHint": "จำเป็นสำหรับแพ็กเกจ Thai Alumni"
+          "dateOfBirthHint": "จำเป็นสำหรับแพ็กเกจ Thai Alumni",
+          "notes": "โน้ต (สำหรับแอดมินเท่านั้น)",
+          "notesPlaceholder": "บันทึกภายในสำหรับแอดมิน…",
+          "notesHint": "มองเห็นได้เฉพาะเจ้าหน้าที่หอการค้า ไม่แสดงต่อสมาชิก"
         },
         "errors": {
           "generic": "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง",
@@ -735,9 +739,17 @@
         "saveFailed": "บันทึกไม่สำเร็จ ย้อนกลับแล้ว",
         "saving": "กำลังบันทึก…",
         "toggleStatus": "สลับสถานะ (ปัจจุบัน: {current})",
-        "editNotes": "ดับเบิลคลิกเพื่อแก้ไขโน้ต",
+        "editCountry": "แก้ไขประเทศ",
+        "editCountryHint": "ดับเบิลคลิกเพื่อแก้ไขรหัสประเทศ (ISO 3166-1 alpha-2)",
+        "countryUpdated": "อัปเดตประเทศแล้ว",
+        "countryInvalid": "รหัสประเทศต้องเป็น 2 ตัวอักษร ISO",
+        "countryInput": "รหัสประเทศ (2 ตัวอักษร)",
+        "editNotes": "แก้ไขโน้ต",
+        "editNotesHint": "ดับเบิลคลิกเพื่อแก้ไขโน้ต",
+        "notesUpdated": "อัปเดตโน้ตแล้ว",
         "notesSaved": "บันทึกโน้ตแล้ว",
         "notesInput": "แก้ไขโน้ต",
+        "notesPlaceholder": "เพิ่มโน้ต…",
         "networkError": "เครือข่ายมีปัญหา ตรวจสอบการเชื่อมต่อ"
       }
     }

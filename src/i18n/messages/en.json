@@ -524,7 +524,8 @@
           "primaryContact": "Primary contact",
           "status": "Status",
           "risk": "Risk",
-          "lastActivity": "Last activity"
+          "lastActivity": "Last activity",
+          "notes": "Notes"
         },
         "riskPlaceholder": "—",
         "rowAriaLabel": "Open {company} details",
@@ -641,7 +642,10 @@
           "roleTitle": "Role / title",
           "preferredLanguage": "Preferred language",
           "dateOfBirth": "Date of birth",
-          "dateOfBirthHint": "Required for Thai Alumni plan"
+          "dateOfBirthHint": "Required for Thai Alumni plan",
+          "notes": "Notes (admin only)",
+          "notesPlaceholder": "Internal admin notes…",
+          "notesHint": "Visible to chamber staff only. Not shown to members."
         },
         "errors": {
           "generic": "Something went wrong. Please try again.",
@@ -735,9 +739,17 @@
         "saveFailed": "Save failed. Reverted.",
         "saving": "Saving…",
         "toggleStatus": "Toggle status (currently {current})",
-        "editNotes": "Double-click to edit notes",
+        "editCountry": "Edit country",
+        "editCountryHint": "Double-click to edit country (ISO 3166-1 alpha-2)",
+        "countryUpdated": "Country updated",
+        "countryInvalid": "Country must be a 2-letter ISO code.",
+        "countryInput": "Country code (2 letters)",
+        "editNotes": "Edit notes",
+        "editNotesHint": "Double-click to edit notes",
+        "notesUpdated": "Notes updated",
         "notesSaved": "Notes saved",
         "notesInput": "Edit notes",
+        "notesPlaceholder": "Add notes…",
         "networkError": "Network error. Check your connection."
       }
     }

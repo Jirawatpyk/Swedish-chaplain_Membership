@@ -6,6 +6,11 @@
  * 10 min (FR-019b), and all-or-nothing transaction semantics (FR-019).
  *
  * RBAC: admin-only (`members:bulk` / `write`).
+ *
+ * Round-2 review fixes:
+ *   - C-1: rate-limit is enforced ONCE here (removed from use case).
+ *   - I-2: `Retry-After` matches the 600s window.
+ *   - I-5: audit write for rate-limit breach is wrapped in try/catch.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -19,9 +24,14 @@ import {
   hashRequestBody,
 } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
-import { bulkAction, BULK_CAP } from '@/modules/members';
+import { bulkAction } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { rateLimiter } from '@/modules/auth';
+import {
+  BULK_CAP,
+  BULK_RATE_MAX,
+  BULK_RATE_WINDOW_SECONDS,
+} from '@/lib/members-bulk-constants';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // 1. RBAC — admin-only, `members:bulk` resource
@@ -108,36 +118,54 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
 
-  // 5. Rate limit check (per-actor token bucket)
+  // 5. Rate limit check (per-actor token bucket — single enforcement point).
   const rateLimitKey = `bulk:${tenant.slug}:${ctx.current.user.id}`;
-  const rl = await rateLimiter.check(rateLimitKey, 10, 600);
+  const rl = await rateLimiter.check(
+    rateLimitKey,
+    BULK_RATE_MAX,
+    BULK_RATE_WINDOW_SECONDS,
+  );
   if (!rl.success) {
-    // Emit rate-limit audit via use case deps
+    // Round-2 review I-5: wrap audit write in try/catch so a failed
+    // audit write doesn't mask the 429 — we still want to respond to
+    // the client and log the audit failure separately.
     const deps = buildMembersDeps(tenant);
-    await deps.audit.record(tenant, {
-      type: 'bulk_action_rate_limit_exceeded',
-      actorUserId: ctx.current.user.id,
-      requestId: ctx.requestId,
-      summary: `bulk rate limit exceeded for actor ${ctx.current.user.id}`,
-      payload: {
-        action: (rawBody as Record<string, unknown>)?.action ?? 'unknown',
-        remaining: rl.remaining,
-        reset: rl.reset,
-      },
-    });
+    try {
+      await deps.audit.record(tenant, {
+        type: 'bulk_action_rate_limit_exceeded',
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+        summary: `bulk rate limit exceeded for actor ${ctx.current.user.id}`,
+        payload: {
+          action: (rawBody as Record<string, unknown>)?.action ?? 'unknown',
+          remaining: rl.remaining,
+          reset: rl.reset,
+        },
+      });
+    } catch (e) {
+      logger.warn(
+        { err: e, requestId: ctx.requestId },
+        'bulk-action: rate-limit audit write failed (non-fatal)',
+      );
+    }
     return NextResponse.json(
       {
         error: {
           code: 'bulk_rate_limit_exceeded',
-          message: 'Rate limit exceeded: maximum 10 bulk operations per 10 minutes.',
+          message: `Rate limit exceeded: maximum ${BULK_RATE_MAX} bulk operations per ${BULK_RATE_WINDOW_SECONDS / 60} minutes.`,
           details: { remaining: rl.remaining, reset: rl.reset },
         },
       },
-      { status: 429, headers: { 'Retry-After': '300' } },
+      {
+        status: 429,
+        // Round-2 review I-2: match the actual window (600s), not 300.
+        headers: { 'Retry-After': String(BULK_RATE_WINDOW_SECONDS) },
+      },
     );
   }
 
-  // 6. Execute bulk action use case
+  // 6. Execute bulk action use case (rate limit NOT passed — single-
+  //    enforcement-point rule per round-2 review C-1).
   const deps = buildMembersDeps(tenant);
   const result = await bulkAction(
     rawBody,
@@ -146,8 +174,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       requestId: ctx.requestId,
     },
     {
-      ...deps,
-      rateLimit: rateLimiter,
+      tenant: deps.tenant,
+      memberRepo: deps.memberRepo,
+      audit: deps.audit,
+      clock: deps.clock,
+      plans: deps.plans,
     },
   );
 
@@ -187,23 +218,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         },
         { status: 400 },
       );
-    case 'rate_limited':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'bulk_rate_limit_exceeded',
-            message: 'Rate limit exceeded.',
-          },
-        },
-        { status: 429, headers: { 'Retry-After': '300' } },
-      );
     case 'not_found':
       return NextResponse.json(
         {
           error: {
             code: 'not_found',
-            message: 'One or more members not found.',
-            details: { missing_ids: result.error.missingIds },
+            message: 'Member not found.',
+            details: { member_id: result.error.memberId },
+          },
+        },
+        { status: 404 },
+      );
+    case 'plan_not_found':
+      return NextResponse.json(
+        {
+          error: {
+            code: 'plan_not_found',
+            message: 'Target plan does not exist in this tenant.',
+            details: { plan_id: result.error.planId },
           },
         },
         { status: 404 },

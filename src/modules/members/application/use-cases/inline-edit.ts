@@ -117,8 +117,12 @@ export async function inlineEdit(
 
       try {
         const updated = await runInTenant(deps.tenant, async (tx) => {
-          const persistResult = await deps.memberRepo.updateStatus(
-            deps.tenant,
+          // Round-2 review C-5: use updateStatusInTx(tx, ...) so the
+          // status update joins the ambient transaction with the audit
+          // row. Passing deps.tenant would open a new connection outside
+          // the tx, creating a partial-state risk if audit write fails.
+          const persistResult = await deps.memberRepo.updateStatusInTx(
+            tx,
             memberId,
             statusResult.value,
           );
@@ -141,9 +145,9 @@ export async function inlineEdit(
           return persistResult.value;
         });
         return ok(updated);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return err({ type: 'server_error', message: msg });
+      } catch {
+        // Sanitize: don't leak internal detail (round-2 review S-2).
+        return err({ type: 'server_error', message: 'inline edit failed' });
       }
     }
 

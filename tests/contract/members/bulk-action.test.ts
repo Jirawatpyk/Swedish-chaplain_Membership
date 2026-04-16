@@ -23,7 +23,17 @@ vi.mock('@/lib/admin-context', () => ({
 const auditRecordMock = vi.fn().mockResolvedValue({ ok: true, value: undefined });
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: vi.fn(() => ({
+    tenant: { slug: 'test' },
+    memberRepo: {},
+    contactRepo: {},
     audit: { record: auditRecordMock, recordInTx: auditRecordMock },
+    plans: {},
+    emails: {},
+    sessions: {},
+    userEmails: {},
+    tokens: {},
+    clock: { now: () => new Date() },
+    idFactory: { memberId: () => 'id', contactId: () => 'id' },
   })),
 }));
 vi.mock('@/modules/members', async () => {

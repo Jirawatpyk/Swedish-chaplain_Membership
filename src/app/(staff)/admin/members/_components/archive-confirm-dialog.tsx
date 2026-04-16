@@ -12,6 +12,7 @@
 
 import { useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
+import { ARCHIVE_TYPED_PHRASE_THRESHOLD } from '@/lib/members-bulk-constants';
 import {
   Dialog,
   DialogContent,
@@ -24,7 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 
-const TYPED_PHRASE_THRESHOLD = 5;
+const TYPED_PHRASE_THRESHOLD = ARCHIVE_TYPED_PHRASE_THRESHOLD;
 
 type Props = {
   readonly open: boolean;
@@ -46,9 +47,12 @@ export function ArchiveConfirmDialog({
   const requiresPhrase = count > TYPED_PHRASE_THRESHOLD;
   const expectedPhrase = t('archivePhrase', { count });
 
+  // Round-2 review I-1: reset phrase in BOTH directions (open AND close).
+  // Prior impl only reset on open, which left a stale phrase after Cancel
+  // that auto-confirmed the next open if admin re-used the dialog.
   const handleOpenChange = useCallback(
     (next: boolean) => {
-      if (next) setTypedPhrase('');
+      setTypedPhrase('');
       onOpenChange(next);
     },
     [onOpenChange],

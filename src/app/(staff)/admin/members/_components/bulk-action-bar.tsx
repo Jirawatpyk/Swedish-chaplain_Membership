@@ -19,11 +19,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
 import { BulkProgressIndicator } from './bulk-progress-indicator';
-
-// Inlined to avoid importing from `@/modules/members` barrel which
-// pulls Drizzle/postgres server-only deps into the client bundle.
-// Keep in sync with `bulk-action.ts` BULK_CAP.
-const BULK_CAP = 100;
+import { BULK_CAP } from '@/lib/members-bulk-constants';
 
 type BulkAction = 'archive' | 'change_plan' | 'send_portal_invite';
 

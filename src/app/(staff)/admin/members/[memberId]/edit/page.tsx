@@ -125,6 +125,7 @@ export default async function EditMemberPage({ params }: PageProps) {
               taxId: member.taxId,
               website: member.website,
               description: member.description,
+              notes: member.notes,
               foundedYear: member.foundedYear,
               turnoverThb: member.turnoverThb,
               planId: member.planId,

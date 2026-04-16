@@ -101,6 +101,18 @@ export interface MemberRepo {
     next: Member,
   ): Promise<Result<Member, RepoError>>;
 
+  /**
+   * In-transaction variant for atomic persist+audit on status changes
+   * (archive, activate, inactivate). Required by US4 bulk-action and
+   * inline-edit use cases to keep the status update + audit row in the
+   * same tx as other mutations in the batch (FR-019 all-or-nothing).
+   */
+  updateStatusInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+    next: Member,
+  ): Promise<Result<Member, RepoError>>;
+
   updateFields(
     ctx: TenantContext,
     memberId: MemberId,

@@ -3,10 +3,17 @@
  *
  * Applies a bulk action (change_plan, archive, send_portal_invite) to
  * ≤100 members in a single all-or-nothing transaction. Per-actor rate
- * limit of 10 ops / 10 min is enforced before the transaction opens.
+ * limit of 10 ops / 10 min is enforced at the ROUTE HANDLER (not here
+ * — use case is a single point of truth for business logic; rate limit
+ * is a transport-layer concern that lives in Presentation — round-2
+ * review C-1).
  *
  * Each affected member produces one audit event; the entire batch
  * commits or rolls back atomically (FR-019 — no partial state).
+ *
+ * `change_plan` validates plan tenant ownership via PlanLookupPort
+ * before assignment (round-2 review I-5 — prevents cross-tenant plan
+ * assignment, Principle I violation).
  */
 
 import { z } from 'zod';
@@ -21,7 +28,7 @@ import {
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
-import type { RateLimitPort } from '../ports/rate-limit-port';
+import type { PlanLookupPort } from '../ports/plan-lookup-port';
 
 // --- Constants ---------------------------------------------------------------
 
@@ -30,7 +37,12 @@ export const BULK_RATE_MAX = 10;
 export const BULK_RATE_WINDOW_SECONDS = 600; // 10 minutes
 
 // --- Input schema ------------------------------------------------------------
-
+//
+// `.superRefine()` enforces that `change_plan` always carries both
+// `new_plan_id` AND `new_plan_year` together (round-2 review C-4).
+// Without this, the runtime guard in the action handler threw a plain
+// Error that bubbled up as `server_error` (500) instead of
+// `invalid_body` (400).
 export const bulkActionSchema = z
   .object({
     action: z.enum(['change_plan', 'archive', 'send_portal_invite']),
@@ -47,7 +59,25 @@ export const bulkActionSchema = z
       })
       .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.action === 'change_plan') {
+      if (!data.params?.new_plan_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['params', 'new_plan_id'],
+          message: 'change_plan requires params.new_plan_id',
+        });
+      }
+      if (!data.params?.new_plan_year) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['params', 'new_plan_year'],
+          message: 'change_plan requires params.new_plan_year',
+        });
+      }
+    }
+  });
 
 export type BulkActionInput = z.infer<typeof bulkActionSchema>;
 
@@ -59,19 +89,22 @@ export type BulkActionError =
       issues: ReadonlyArray<{ path: string; message: string }>;
     }
   | { type: 'bulk_cap_exceeded'; count: number }
-  | { type: 'rate_limited' }
-  | { type: 'not_found'; missingIds: string[] }
+  | { type: 'not_found'; memberId: string }
+  | { type: 'plan_not_found'; planId: string }
   | { type: 'state_error'; memberId: string; code: string }
   | { type: 'server_error'; message: string };
 
 // --- Deps --------------------------------------------------------------------
+//
+// RateLimitPort removed per round-2 review C-1. Rate limiting is a
+// transport-layer concern and lives in the route handler only.
 
 export type BulkActionDeps = {
   tenant: TenantContext;
   memberRepo: MemberRepo;
   audit: AuditPort;
   clock: ClockPort;
-  rateLimit: RateLimitPort;
+  plans: PlanLookupPort;
 };
 
 export type BulkActionMeta = {
@@ -109,28 +142,17 @@ export async function bulkAction(
     return err({ type: 'bulk_cap_exceeded', count: data.member_ids.length });
   }
 
-  // 3. Per-actor rate limit: 10 ops / 10 min per (tenant, actor)
-  const rateLimitKey = `bulk:${deps.tenant.slug}:${meta.actorUserId}`;
-  const rl = await deps.rateLimit.check(
-    rateLimitKey,
-    BULK_RATE_MAX,
-    BULK_RATE_WINDOW_SECONDS,
-  );
-  if (!rl.success) {
-    // Emit audit event for rate-limit breach
-    await deps.audit.record(deps.tenant, {
-      type: 'bulk_action_rate_limit_exceeded',
-      actorUserId: meta.actorUserId,
-      requestId: meta.requestId,
-      summary: `bulk rate limit exceeded for actor ${meta.actorUserId}`,
-      payload: {
-        action: data.action,
-        attempted_count: data.member_ids.length,
-        remaining: rl.remaining,
-        reset: rl.reset,
-      },
-    });
-    return err({ type: 'rate_limited' });
+  // 3. For change_plan: validate plan tenant ownership BEFORE opening
+  //    the transaction (round-2 review I-5 — cross-tenant probe defence).
+  if (data.action === 'change_plan' && data.params?.new_plan_id && data.params.new_plan_year) {
+    const planResult = await deps.plans.getPlan(
+      deps.tenant,
+      asPlanId(data.params.new_plan_id),
+      data.params.new_plan_year,
+    );
+    if (!planResult.ok) {
+      return err({ type: 'plan_not_found', planId: data.params.new_plan_id });
+    }
   }
 
   // 4. Execute all-or-nothing transaction
@@ -161,8 +183,10 @@ export async function bulkAction(
               throw new BulkStateError(rawId, archiveResult.error.code);
             }
             const updated = archiveResult.value;
-            const persistResult = await deps.memberRepo.updateStatus(
-              deps.tenant,
+            // Round-2 review C-2: use updateStatusInTx(tx, ...) so the
+            // DB write joins the ambient transaction with the audit row.
+            const persistResult = await deps.memberRepo.updateStatusInTx(
+              tx,
               memberId,
               updated,
             );
@@ -192,7 +216,10 @@ export async function bulkAction(
           }
 
           case 'change_plan': {
+            // Zod superRefine has already enforced that both fields are
+            // present for change_plan — but narrow TS here explicitly.
             if (!data.params?.new_plan_id || !data.params?.new_plan_year) {
+              // Unreachable in practice — guarded by zod. Defensive only.
               throw new Error('change_plan requires new_plan_id and new_plan_year');
             }
             const newPlanId = asPlanId(data.params.new_plan_id);
@@ -234,10 +261,12 @@ export async function bulkAction(
           }
 
           case 'send_portal_invite': {
-            // Portal invite is a fire-and-forget outbox action per member.
-            // The actual invite sending is delegated to the outbox dispatcher.
-            // For now, we just record the audit event — the invite-portal
-            // use case is invoked per-member after the batch commits.
+            // Round-2 review C-3: send_portal_invite currently only
+            // queues an audit event. The actual invite dispatch is a
+            // forward-looking item (requires wiring invite-portal
+            // use case per-member post-commit). Do NOT increment
+            // `updatedCount` — no state change happened. `auditEventCount`
+            // still reflects the audit row written inside the txn.
             const auditResult = await deps.audit.recordInTx(
               tx,
               deps.tenant,
@@ -250,11 +279,12 @@ export async function bulkAction(
                   member_id: memberId,
                   action: 'send_portal_invite',
                   bulk_request_id: meta.requestId,
+                  note: 'invite dispatch deferred — audit only',
                 },
               },
             );
             if (!auditResult.ok) throw new Error('audit_failed');
-            updatedCount++;
+            // updatedCount NOT incremented — no mutation occurred.
             auditEventCount++;
             break;
           }
@@ -267,13 +297,19 @@ export async function bulkAction(
     return ok(result);
   } catch (e) {
     if (e instanceof BulkNotFoundError) {
-      return err({ type: 'not_found', missingIds: [e.memberId] });
+      // Round-2 review I-11: single memberId, not an array — the
+      // throw-on-first-miss pattern only reports one ID.
+      return err({ type: 'not_found', memberId: e.memberId });
     }
     if (e instanceof BulkStateError) {
       return err({ type: 'state_error', memberId: e.memberId, code: e.stateCode });
     }
-    const msg = e instanceof Error ? e.message : String(e);
-    return err({ type: 'server_error', message: msg });
+    // Round-2 review S-2: sanitize internal detail — don't leak
+    // `persist:fk_violation_plan_id` etc. to callers.
+    return err({
+      type: 'server_error',
+      message: 'bulk operation failed',
+    });
   }
 }
 

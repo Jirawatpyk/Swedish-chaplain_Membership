@@ -13,6 +13,7 @@
  */
 
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon } from 'lucide-react';
@@ -139,6 +140,7 @@ async function MembersDirectoryBody({
     status: row.member.status,
     member_risk_flag: null,
     last_activity_at: row.member.lastActivityAt?.toISOString() ?? null,
+    notes: row.member.notes,
     primary_contact: row.primaryContact
       ? {
           contact_id: row.primaryContact.contactId,
@@ -149,11 +151,16 @@ async function MembersDirectoryBody({
       : null,
   }));
 
+  // Round-2 review I-3: Suspense boundary around the client component
+  // that calls useSearchParams — prevents the whole route from bailing
+  // out of server rendering (Next.js App Router requirement).
   return (
-    <DirectoryWithBulk
-      rows={rows}
-      nextCursor={result.value.nextCursor}
-      isAdmin={isAdmin}
-    />
+    <Suspense fallback={null}>
+      <DirectoryWithBulk
+        rows={rows}
+        nextCursor={result.value.nextCursor}
+        isAdmin={isAdmin}
+      />
+    </Suspense>
   );
 }

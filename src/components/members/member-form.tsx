@@ -63,6 +63,7 @@ export const memberFormSchema = z.object({
   plan_id: z.string().min(1, 'required'),
   plan_year: z.coerce.number().int().min(2020).max(2100),
   registration_date: z.string().optional(),
+  notes: z.string().max(4000).optional(),
   primary_contact: z.object({
     first_name: z.string().trim().min(1, 'required').max(100),
     last_name: z.string().trim().min(1, 'required').max(100),
@@ -291,6 +292,20 @@ export function MemberForm({
             rows={3}
             maxLength={2000}
           />
+        </div>
+
+        <div>
+          <Label htmlFor="notes">{tf('notes')}</Label>
+          <Textarea
+            id="notes"
+            {...register('notes')}
+            rows={3}
+            maxLength={4000}
+            placeholder={tf('notesPlaceholder')}
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            {tf('notesHint')}
+          </p>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
