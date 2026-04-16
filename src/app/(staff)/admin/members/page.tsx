@@ -33,6 +33,7 @@ import { ContentContainer } from '@/components/layout/content-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { DirectoryFilters } from '@/components/members/directory-filters';
 import { type MembersTableRow } from '@/components/members/members-table';
+import { MembersTableSkeleton } from '@/components/members/members-table-skeleton';
 import {
   MembersZeroState,
   MembersFilteredEmptyState,
@@ -151,11 +152,13 @@ async function MembersDirectoryBody({
       : null,
   }));
 
-  // Round-2 review I-3: Suspense boundary around the client component
-  // that calls useSearchParams — prevents the whole route from bailing
-  // out of server rendering (Next.js App Router requirement).
+  // Round-2 review I-3 + round-3 review S-1: Suspense boundary around the
+  // client component that calls useSearchParams — prevents the whole route
+  // from bailing out of server rendering. Fallback renders the same
+  // shimmer skeleton as /members loading.tsx to avoid CLS during
+  // hydration transitions.
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<MembersTableSkeleton />}>
       <DirectoryWithBulk
         rows={rows}
         nextCursor={result.value.nextCursor}

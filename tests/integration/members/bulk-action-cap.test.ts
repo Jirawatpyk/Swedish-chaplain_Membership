@@ -23,6 +23,7 @@ function stubDeps(): BulkActionDeps {
     tenant: { slug: 'test-tenant' } as BulkActionDeps['tenant'],
     memberRepo: {
       findById: vi.fn(),
+      findByIdInTx: vi.fn(),
       findSoftDuplicate: vi.fn(),
       createWithPrimaryContact: vi.fn(),
       updateStatus: vi.fn(),

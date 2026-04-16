@@ -121,6 +121,24 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async findByIdInTx(tx, memberId) {
+    try {
+      // SELECT ... FOR UPDATE — row-level lock within the ambient tx so
+      // concurrent actors must wait. Prevents TOCTOU lost-update (round-3
+      // review N-C1). The lock is released on COMMIT / ROLLBACK.
+      const rows = await tx
+        .select()
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .for('update')
+        .limit(1);
+      if (rows.length === 0) return err({ code: 'repo.not_found' });
+      return ok(rowToMember(rows[0]!));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findSoftDuplicate(ctx, companyName, country) {
     try {
       // Only match active/inactive members — archived members should

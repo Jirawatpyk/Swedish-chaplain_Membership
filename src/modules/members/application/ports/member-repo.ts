@@ -65,6 +65,17 @@ export interface MemberRepo {
     memberId: MemberId,
   ): Promise<Result<Member, RepoError>>;
 
+  /**
+   * In-transaction variant of findById with row-level lock (SELECT ... FOR UPDATE).
+   * Required by inline-edit + other atomic read-modify-write paths to avoid
+   * TOCTOU races where a concurrent actor mutates the row between the read
+   * and the write. Caller already holds an open transaction via runInTenant.
+   */
+  findByIdInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+  ): Promise<Result<Member, RepoError>>;
+
   findSoftDuplicate(
     ctx: TenantContext,
     companyName: string,

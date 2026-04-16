@@ -63,7 +63,15 @@ export const memberFormSchema = z.object({
   plan_id: z.string().min(1, 'required'),
   plan_year: z.coerce.number().int().min(2020).max(2100),
   registration_date: z.string().optional(),
-  notes: z.string().max(4000).optional(),
+  // Round-3 review N-I4: transform empty string to null so the form's
+  // "clear notes" path produces null (matches inline-edit + use case schema
+  // which accepts null). Prevents silent data-integrity divergence between
+  // form + inline-edit write paths.
+  notes: z
+    .string()
+    .max(4000)
+    .optional()
+    .transform((v) => (v === '' || v === undefined ? null : v)),
   primary_contact: z.object({
     first_name: z.string().trim().min(1, 'required').max(100),
     last_name: z.string().trim().min(1, 'required').max(100),

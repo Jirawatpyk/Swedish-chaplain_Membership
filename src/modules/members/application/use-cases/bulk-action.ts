@@ -267,11 +267,14 @@ export async function bulkAction(
             // use case per-member post-commit). Do NOT increment
             // `updatedCount` — no state change happened. `auditEventCount`
             // still reflects the audit row written inside the txn.
+            // Round-3 review N-I3: use dedicated event type so security
+            // monitoring can distinguish portal-invite queueing from
+            // general member_updated events.
             const auditResult = await deps.audit.recordInTx(
               tx,
               deps.tenant,
               {
-                type: 'member_updated',
+                type: 'member_portal_invite_queued',
                 actorUserId: meta.actorUserId,
                 requestId: meta.requestId,
                 summary: `bulk portal invite queued for member ${memberId}`,

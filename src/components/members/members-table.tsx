@@ -216,10 +216,21 @@ function InlineCountryCell({
       toast.success(t('countryUpdated'));
       setEditing(null);
     } else {
+      // Round-3 review N-I1: keep input open on error so user can retry
+      // without retyping. Toast announces the failure; they can Escape to
+      // cancel or fix + retry.
       toast.error(result.error);
-      setEditing(null);
     }
   }, [memberId, country, editing, onSave, t]);
+
+  // Round-3 N-I6: focus via useEffect on editing state change — more
+  // reliable than requestAnimationFrame under React 19 concurrent rendering.
+  useEffect(() => {
+    if (editing !== null) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
 
   if (!onSave) {
     return <span>{country}</span>;
@@ -229,13 +240,7 @@ function InlineCountryCell({
     return (
       <button
         type="button"
-        onDoubleClick={() => {
-          setEditing(country);
-          requestAnimationFrame(() => {
-            inputRef.current?.focus();
-            inputRef.current?.select();
-          });
-        }}
+        onDoubleClick={() => setEditing(country)}
         title={t('editCountryHint')}
         className="group inline-flex min-h-[28px] min-w-[40px] cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
         aria-label={t('editCountry')}
@@ -319,10 +324,17 @@ function InlineNotesCell({
       toast.success(t('notesUpdated'));
       setEditing(null);
     } else {
+      // Round-3 N-I1: keep textarea open so user doesn't lose their draft.
       toast.error(result.error);
-      setEditing(null);
     }
   }, [memberId, notes, editing, onSave, t]);
+
+  // Round-3 N-I6: focus via useEffect on editing state change.
+  useEffect(() => {
+    if (editing !== null) {
+      textareaRef.current?.focus();
+    }
+  }, [editing]);
 
   if (!onSave) {
     return (
@@ -340,10 +352,7 @@ function InlineNotesCell({
     return (
       <button
         type="button"
-        onDoubleClick={() => {
-          setEditing(notes ?? '');
-          requestAnimationFrame(() => textareaRef.current?.focus());
-        }}
+        onDoubleClick={() => setEditing(notes ?? '')}
         title={notes ?? t('editNotesHint')}
         className="group inline-flex min-h-[28px] max-w-[180px] cursor-pointer items-center gap-1 truncate rounded-md px-1 py-0.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
         aria-label={t('editNotes')}

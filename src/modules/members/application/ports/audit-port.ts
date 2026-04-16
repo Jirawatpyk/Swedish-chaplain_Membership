@@ -36,7 +36,8 @@ export type F3AuditEventType =
   | 'email_verification_resent'
   | 'email_dispatch_failed'
   | 'invitation_bounced'
-  | 'bulk_action_rate_limit_exceeded';
+  | 'bulk_action_rate_limit_exceeded'
+  | 'member_portal_invite_queued';
 
 export type F3AuditEvent = {
   readonly type: F3AuditEventType;

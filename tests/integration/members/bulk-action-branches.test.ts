@@ -43,6 +43,7 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
     tenant: { slug: 'test-tenant' } as BulkActionDeps['tenant'],
     memberRepo: {
       findById: vi.fn().mockResolvedValue(ok(stubMember)),
+      findByIdInTx: vi.fn().mockResolvedValue(ok(stubMember)),
       findSoftDuplicate: vi.fn(),
       createWithPrimaryContact: vi.fn(),
       updateStatus: vi.fn(),
@@ -88,11 +89,11 @@ describe('integration: bulk send_portal_invite branch (round-2 review C-6)', () 
       deps,
     );
 
-    // Note: this runs against stubbed runInTenant which throws in test env,
-    // so we assert the error type is NOT 'invalid_body' (zod accepted) and
-    // that the audit recordInTx attempt happened.
+    // Round-3 T4: assertions MUST enforce result.ok === true so that a
+    // silently-failing runInTenant or repo stub doesn't mask the bug.
+    expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.updatedCount).toBe(0); // key assertion: no mutation counted
+      expect(result.value.updatedCount).toBe(0); // no mutation counted
       expect(result.value.auditEventCount).toBe(1); // audit still emitted
     }
   });
@@ -114,6 +115,7 @@ describe('integration: bulk send_portal_invite branch (round-2 review C-6)', () 
       deps,
     );
 
+    expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.updatedCount).toBe(0);
       expect(result.value.auditEventCount).toBe(3);
@@ -208,5 +210,45 @@ describe('integration: bulk all-or-nothing rollback (round-2 review C-7 / FR-019
         expect(result.error.message).not.toContain('fk_violation');
       }
     }
+  });
+
+  it('round-3 T5: audit recordInTx failure mid-batch → entire batch rolls back', async () => {
+    const deps = stubDeps();
+    let auditCallCount = 0;
+    (deps.audit.recordInTx as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      auditCallCount++;
+      // Second audit write in the batch fails (simulating Neon hiccup
+      // or constraint violation mid-batch).
+      if (auditCallCount === 2) {
+        return Promise.resolve(err({ code: 'repo.unexpected', cause: 'audit write failed' }));
+      }
+      return Promise.resolve(ok(undefined));
+    });
+
+    const result = await bulkAction(
+      {
+        action: 'archive',
+        member_ids: [
+          '11111111-2222-3333-4444-555555555555',
+          '22222222-3333-4444-5555-666666666666',
+          '33333333-4444-5555-6666-777777777777',
+        ],
+      },
+      meta,
+      deps,
+    );
+
+    // Batch MUST fail — entire tx rolls back, no partial audit persisted.
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('server_error');
+      // Sanitized — no internal audit detail leaked.
+      if (result.error.type === 'server_error') {
+        expect(result.error.message).toBe('bulk operation failed');
+      }
+    }
+
+    // 3rd member's recordInTx NEVER called — loop threw on 2nd.
+    expect(auditCallCount).toBe(2);
   });
 });

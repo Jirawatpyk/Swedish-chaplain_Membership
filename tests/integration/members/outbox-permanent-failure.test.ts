@@ -32,6 +32,7 @@ import {
   auditLog,
   emailChangeTokens,
   notificationsOutbox,
+  users,
 } from '@/modules/auth/infrastructure/db/schema';
 import {
   membershipPlans,
@@ -194,6 +195,14 @@ describe('outbox permanent failure + admin re-send (T074, FR-012c)', () => {
   it('admin resend creates a fresh token + outbox row + audit row', async () => {
     const s = await seedContact();
     const deps = buildMembersDeps(tenant.ctx);
+
+    // Simulate post-email-change state — `email_verified` is flipped to
+    // false by FR-012a. `resendVerificationEmail` refuses when the user
+    // is already verified, so we unset it here to match real workflow.
+    await db
+      .update(users)
+      .set({ emailVerified: false })
+      .where(eq(users.id, s.linkedUser.userId));
 
     // Seed a prior active verification token so we can assert the
     // use case invalidates it.

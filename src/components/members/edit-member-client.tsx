@@ -134,7 +134,9 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     tax_id: values.tax_id?.trim() || null,
     website: values.website?.trim() || null,
     description: values.description?.trim() || null,
-    notes: values.notes?.trim() || null,
+    // `values.notes` is already `string | null` after the form's zod
+    // transform (round-3 N-I4). Safe to trim only when string.
+    notes: values.notes ? values.notes.trim() || null : null,
     founded_year:
       typeof values.founded_year === 'number' ? values.founded_year : null,
     turnover_thb:
@@ -231,7 +233,9 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           tax_id: member.taxId ?? undefined,
           website: member.website ?? undefined,
           description: member.description ?? undefined,
-          notes: member.notes ?? undefined,
+          // After the zod .transform() schema change (N-I4) the output
+          // type is `string | null`. Pass the DB value directly.
+          notes: member.notes,
           founded_year: member.foundedYear ?? undefined,
           turnover_thb: member.turnoverThb ?? undefined,
           plan_id: member.planId,
@@ -281,8 +285,11 @@ function hasFieldDiff(
     (values.legal_entity_type?.trim() ?? null) !== (member.legalEntityType ?? null) ||
     (values.tax_id?.trim() ?? null) !== (member.taxId ?? null) ||
     (values.website?.trim() || null) !== (member.website ?? null) ||
-    (values.description?.trim() ?? null) !== (member.description ?? null) ||
-    (values.notes?.trim() || null) !== (member.notes ?? null) ||
+    // Round-3 N-I5: use `|| null` consistently so empty string is treated
+    // the same way as the fieldPayload builder (line 137) — otherwise the
+    // diff says "changed" but the payload sends `null` (no-op PATCH).
+    (values.description?.trim() || null) !== (member.description ?? null) ||
+    (values.notes ? values.notes.trim() || null : null) !== (member.notes ?? null) ||
     (typeof values.founded_year === 'number' ? values.founded_year : null) !==
       (member.foundedYear ?? null) ||
     (typeof values.turnover_thb === 'number' ? values.turnover_thb : null) !==

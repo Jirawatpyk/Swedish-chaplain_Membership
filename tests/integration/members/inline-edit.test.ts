@@ -48,6 +48,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
     tenant: { slug: 'test-tenant' } as InlineEditDeps['tenant'],
     memberRepo: {
       findById: vi.fn().mockResolvedValue(ok(stubMember)),
+      findByIdInTx: vi.fn().mockResolvedValue(ok(stubMember)),
       findSoftDuplicate: vi.fn(),
       createWithPrimaryContact: vi.fn(),
       updateStatus: vi.fn().mockResolvedValue(ok({ ...stubMember, status: 'inactive' })),
@@ -152,10 +153,11 @@ describe('integration: inline edit (T102)', () => {
   });
 
   it('returns not_found when member does not exist', async () => {
+    // Round-3 N-C1: inline-edit now uses findByIdInTx inside runInTenant.
     const deps = stubDeps({
       memberRepo: {
         ...stubDeps().memberRepo,
-        findById: vi.fn().mockResolvedValue(err({ code: 'repo.not_found' })),
+        findByIdInTx: vi.fn().mockResolvedValue(err({ code: 'repo.not_found' })),
       } as InlineEditDeps['memberRepo'],
     });
     const result = await inlineEdit(
@@ -174,7 +176,7 @@ describe('integration: inline edit (T102)', () => {
     const deps = stubDeps({
       memberRepo: {
         ...stubDeps().memberRepo,
-        findById: vi.fn().mockResolvedValue(
+        findByIdInTx: vi.fn().mockResolvedValue(
           ok({ ...stubMember, status: 'archived', archivedAt: new Date('2026-04-01') }),
         ),
       } as InlineEditDeps['memberRepo'],

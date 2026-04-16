@@ -97,6 +97,8 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'email_dispatch_failed',
   'invitation_bounced',
   'bulk_action_rate_limit_exceeded',
+  // --- Round-3 review N-I3 — added by migration 0014 ---
+  'member_portal_invite_queued',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [
