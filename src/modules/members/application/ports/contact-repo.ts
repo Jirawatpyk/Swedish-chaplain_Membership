@@ -7,7 +7,21 @@ import type { TenantContext } from '@/modules/tenants';
 import type { Contact, ContactId } from '../../domain/contact';
 import type { MemberId } from '../../domain/member';
 import type { Email } from '../../domain/value-objects/email';
+import type { Phone } from '../../domain/value-objects/phone';
 import type { RepoError } from './member-repo';
+
+/**
+ * Narrowed patch type for contact updates — only mutable fields.
+ * Identity fields (tenantId, contactId, memberId, createdAt) are excluded.
+ */
+export type ContactPatch = Partial<
+  Pick<
+    Contact,
+    'firstName' | 'lastName' | 'roleTitle' | 'preferredLanguage' | 'dateOfBirth'
+  > & {
+    phone: Phone | null;
+  }
+>;
 
 export interface ContactRepo {
   listByMember(
@@ -31,7 +45,7 @@ export interface ContactRepo {
   update(
     ctx: TenantContext,
     contactId: ContactId,
-    patch: Partial<Contact>,
+    patch: ContactPatch,
     actorUserId: string,
     requestId: string,
   ): Promise<Result<Contact, RepoError>>;

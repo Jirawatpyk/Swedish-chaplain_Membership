@@ -35,7 +35,6 @@
  *   - `server_error`      — anything else (rolled back)
  */
 
-import { createHash, randomBytes } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -52,6 +51,13 @@ import type { EmailPort } from '../ports/email-port';
 import type { SessionRevocationPort } from '../ports/session-revocation-port';
 import type { UserEmailPort } from '../ports/user-email-port';
 import type { ClockPort } from '../ports/clock-port';
+import {
+  generateToken,
+  hashEmail,
+  VERIFICATION_ACTIVATION_DELAY_MS,
+  VERIFICATION_TOKEN_TTL_MS,
+  REVERT_TOKEN_TTL_MS,
+} from '../crypto-helpers';
 
 export type ChangeContactEmailDeps = {
   tenant: TenantContext;
@@ -86,20 +92,6 @@ export type ChangeContactEmailOutput = {
   readonly revertOutboxRowId: string;
   readonly sessionsRevoked: number;
 };
-
-// Activation delay on the verification token per spec FR-012a — the
-// 5-minute window gives the legitimate user a moment to notice the
-// change via the revert email to their OLD address before the NEW
-// address can claim the account.
-const VERIFICATION_ACTIVATION_DELAY_MS = 5 * 60 * 1000;
-const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
-const REVERT_TOKEN_TTL_MS = 48 * 60 * 60 * 1000;
-
-function generateToken(): { plaintext: string; hash: string } {
-  const plaintext = randomBytes(32).toString('hex');
-  const hash = createHash('sha256').update(plaintext).digest('hex');
-  return { plaintext, hash };
-}
 
 export async function changeContactEmail(
   deps: ChangeContactEmailDeps,
@@ -253,11 +245,11 @@ export async function changeContactEmail(
           member_id: contact.memberId,
           contact_id: input.contactId,
           user_id: userId,
-          // NOTE: emails are NOT hashed here because audit_log already
-          // lives in the PII-tightened schema (§ 4 data-model). Logging
-          // at PII boundaries (pino) strips them per plan.md § T038.
-          old_email: userUpdate.value.oldEmail,
-          new_email: newEmail as string,
+          // Emails hashed per data-model.md § 4 — audit_log is
+          // append-only with ≥5-year retention; plaintext PII violates
+          // PDPA § 37 + GDPR Art 5(1)(c) data minimisation.
+          old_email_hash: hashEmail(userUpdate.value.oldEmail),
+          new_email_hash: hashEmail(newEmail as string),
           sessions_revoked: sessionResult.value.revokedCount,
           verification_outbox_row_id: verificationEnqueue.value.outboxRowId,
           revert_outbox_row_id: revertEnqueue.value.outboxRowId,

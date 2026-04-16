@@ -112,7 +112,7 @@ export async function changePlan(
 
   // Short-circuit: no-op plan change
   if (
-    current.planId === (data.new_plan_id as PlanId) &&
+    (current.planId as string) === data.new_plan_id &&
     current.planYear === data.new_plan_year
   ) {
     return ok(current);
@@ -121,7 +121,7 @@ export async function changePlan(
   // Load new + old plan metadata
   const [oldPlan, newPlan] = await Promise.all([
     deps.plans.getPlan(deps.tenant, current.planId, current.planYear),
-    deps.plans.getPlan(deps.tenant, data.new_plan_id, data.new_plan_year),
+    deps.plans.getPlan(deps.tenant, data.new_plan_id as PlanId, data.new_plan_year),
   ]);
   if (!newPlan.ok) return err({ type: 'plan_not_found' });
 
@@ -178,7 +178,7 @@ export async function changePlan(
     deps.tenant,
     memberId,
     {
-      planId: data.new_plan_id as PlanId,
+      planId: newPlan.value.planId,
       planYear: data.new_plan_year,
     },
     meta.actorUserId,

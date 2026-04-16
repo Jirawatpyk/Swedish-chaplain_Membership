@@ -23,7 +23,7 @@ import type { Email } from '../../domain/value-objects/email';
 import type { Phone } from '../../domain/value-objects/phone';
 import type { UserId } from '../../domain/value-objects/user-id';
 
-function rowToContact(c: typeof contacts.$inferSelect): Contact {
+export function rowToContact(c: typeof contacts.$inferSelect): Contact {
   return {
     tenantId: c.tenantId as TenantId,
     contactId: c.contactId as ContactId,

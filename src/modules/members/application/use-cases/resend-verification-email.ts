@@ -20,7 +20,6 @@
  * takeover opportunity beyond the spec's 48h ceiling.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -30,6 +29,11 @@ import type { ContactRepo } from '../ports/contact-repo';
 import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
 import type { EmailPort } from '../ports/email-port';
 import type { ClockPort } from '../ports/clock-port';
+import {
+  generateToken,
+  VERIFICATION_ACTIVATION_DELAY_MS,
+  VERIFICATION_TOKEN_TTL_MS,
+} from '../crypto-helpers';
 
 export type ResendVerificationDeps = {
   tenant: TenantContext;
@@ -58,15 +62,6 @@ export type ResendVerificationOutput = {
   readonly outboxRowId: string;
   readonly invalidatedPrior: number;
 };
-
-const VERIFICATION_ACTIVATION_DELAY_MS = 5 * 60 * 1000;
-const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
-
-function generateToken(): { plaintext: string; hash: string } {
-  const plaintext = randomBytes(32).toString('hex');
-  const hash = createHash('sha256').update(plaintext).digest('hex');
-  return { plaintext, hash };
-}
 
 export async function resendVerificationEmail(
   deps: ResendVerificationDeps,

@@ -67,27 +67,39 @@ export async function POST(
   if (!result.ok) {
     switch (result.error.code) {
       case 'not_found':
-        return NextResponse.json({ error: 'not_found' }, { status: 404 });
+        return NextResponse.json(
+          { error: { code: 'not_found', message: 'Contact not found.' } },
+          { status: 404 },
+        );
       case 'already_linked':
         return NextResponse.json(
-          { error: 'already_linked' },
+          { error: { code: 'already_linked', message: 'Contact already has a portal account.' } },
           { status: 409 },
         );
       case 'no_email':
-        return NextResponse.json({ error: 'no_email' }, { status: 400 });
+        return NextResponse.json(
+          { error: { code: 'no_email', message: 'Contact has no email address.' } },
+          { status: 400 },
+        );
       case 'invalid_email':
         return NextResponse.json(
-          { error: 'invalid_email' },
+          { error: { code: 'invalid_email', message: 'Contact email is not valid.' } },
           { status: 400 },
         );
       case 'email_taken':
-        return NextResponse.json({ error: 'email_taken' }, { status: 409 });
+        return NextResponse.json(
+          { error: { code: 'email_taken', message: 'Email already in use by another account.' } },
+          { status: 409 },
+        );
       default:
         logger.error(
           { requestId, err: result.error },
           'members.invite_portal.server_error',
         );
-        return NextResponse.json({ error: 'server_error' }, { status: 500 });
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
     }
   }
 

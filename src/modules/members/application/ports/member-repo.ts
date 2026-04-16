@@ -6,13 +6,39 @@
  */
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import type { Member, MemberId } from '../../domain/member';
+import type { Member, MemberId, PlanId } from '../../domain/member';
 import type { Contact } from '../../domain/contact';
+import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
+import type { TaxId } from '../../domain/value-objects/tax-id';
 
 export type RepoError =
   | { code: 'repo.not_found' }
   | { code: 'repo.conflict'; reason: string }
   | { code: 'repo.unexpected'; cause?: unknown };
+
+/**
+ * Narrowed patch type for `updateFields` — only fields that are safe
+ * to mutate via a partial update. Identity fields (`tenantId`, `memberId`,
+ * `createdAt`, etc.) are intentionally excluded so callers cannot
+ * accidentally pass them and have them silently ignored.
+ */
+export type MemberPatch = Partial<
+  Pick<
+    Member,
+    | 'companyName'
+    | 'legalEntityType'
+    | 'website'
+    | 'description'
+    | 'notes'
+    | 'foundedYear'
+    | 'turnoverThb'
+  > & {
+    country: IsoCountryCode;
+    taxId: TaxId | null;
+    planId: PlanId;
+    planYear: number;
+  }
+>;
 
 export interface MemberRepo {
   findById(
@@ -55,7 +81,7 @@ export interface MemberRepo {
   updateFields(
     ctx: TenantContext,
     memberId: MemberId,
-    patch: Partial<Member>,
+    patch: MemberPatch,
     actorUserId: string,
     requestId: string,
   ): Promise<Result<Member, RepoError>>;

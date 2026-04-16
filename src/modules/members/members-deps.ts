@@ -53,9 +53,8 @@ const systemClock: ClockPort = {
 };
 
 const systemIdFactory = {
-  // Node.js built-in UUID v4; v7 (time-ordered) lands when Node's crypto
-  // adds it (post-22). UUID v4 remains deterministic-enough for audit
-  // ordering purposes in B.1 — primary keys use the DB timestamp.
+  // Node.js built-in UUID v4 (crypto.randomUUID). Primary key ordering
+  // relies on the DB-generated `created_at` timestamp, not UUID sort order.
   memberId: (): MemberId => randomUUID() as MemberId,
   contactId: (): ContactId => randomUUID() as ContactId,
 };

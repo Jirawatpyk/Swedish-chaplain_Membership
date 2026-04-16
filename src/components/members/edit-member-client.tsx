@@ -56,12 +56,7 @@ type Props = {
   };
 };
 
-function uuid(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
-}
+import { uuid } from '@/lib/uuid';
 
 export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const t = useTranslations('admin.members.edit');

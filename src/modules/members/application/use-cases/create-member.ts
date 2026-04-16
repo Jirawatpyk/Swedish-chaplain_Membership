@@ -183,9 +183,10 @@ export async function createMember(
   const overrideAsserted = Boolean(data.override_reason_code);
 
   // 4. Plan-aware validation via PlanLookupPort
+  // Cast to PlanId at the trust boundary — getPlan validates existence.
   const planResult = await deps.plans.getPlan(
     deps.tenant,
-    data.plan_id,
+    data.plan_id as PlanId,
     data.plan_year,
   );
   if (!planResult.ok) return err({ type: 'plan_not_found' });
@@ -274,7 +275,7 @@ export async function createMember(
     description: data.description ?? null,
     foundedYear: data.founded_year ?? null,
     turnoverThb: data.turnover_thb ?? null,
-    planId: data.plan_id as PlanId,
+    planId: plan.planId,
     planYear: data.plan_year,
     registrationDate: regDate,
     registrationFeePaid: false,

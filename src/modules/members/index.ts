@@ -18,6 +18,9 @@
 export {
   MEMBER_STATUSES,
   ARCHIVE_UNDELETE_WINDOW_DAYS,
+  asTenantId,
+  asPlanId,
+  asMemberId,
   type Member,
   type MemberId,
   type MemberStatus,

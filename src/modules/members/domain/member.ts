@@ -30,6 +30,30 @@ declare const PlanIdBrand: unique symbol;
 export type PlanId = string & { readonly [PlanIdBrand]: true };
 
 /**
+ * Brand a raw string as a TenantId. Used at trust boundaries (adapters,
+ * route handlers, tests) where the value has been validated externally.
+ */
+export function asTenantId(raw: string): TenantId {
+  return raw as TenantId;
+}
+
+/**
+ * Brand a raw string as a PlanId. Used at trust boundaries (adapters,
+ * route handlers, tests) where the value has been validated externally
+ * — e.g. confirmed to exist in the plans catalogue via getPlan.
+ */
+export function asPlanId(raw: string): PlanId {
+  return raw as PlanId;
+}
+
+/**
+ * Brand a raw string as a MemberId. Used at trust boundaries.
+ */
+export function asMemberId(raw: string): MemberId {
+  return raw as MemberId;
+}
+
+/**
  * Immutable Member aggregate. Mutations return a new Member instance via
  * the state-transition functions below — the Application layer persists
  * via the repo port.

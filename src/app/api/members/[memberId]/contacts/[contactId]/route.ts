@@ -188,30 +188,9 @@ export async function PATCH(
         }
       }
     } else {
-      // No linked user — a plain email-only update is safe. We use
-      // the existing `updateContactFields` body shape by NOT passing
-      // email; instead we issue a direct repo call through the
-      // adapter (the use case doesn't accept email; documented gap).
-      // Single-field in-tx write preserves audit trail via the
-      // repo's own `contact_updated` path.
-      const directUpdate = await deps.contactRepo.update(
-        tenant,
-        parsed.data.contactId as ContactId,
-        // `Partial<Contact>` — we only send email; the repo update
-        // uses `email` when present. Note: the current drizzle-contact-
-        // repo's `update` only handles non-email fields; for
-        // parity-today we fall back to rejecting the request with a
-        // clear error pointing admins to the primary-contact flow.
-        {},
-        ctx.current.user.id,
-        ctx.requestId,
-      );
-      if (!directUpdate.ok) {
-        logger.error(
-          { requestId: ctx.requestId, err: directUpdate.error },
-          'update-contact-email-no-user: unhandled',
-        );
-      }
+      // No linked user — email change requires the FR-012a atomic
+      // transaction (session revocation + dual-channel email) which
+      // needs a linked user. Reject with a clear message.
       return NextResponse.json(
         {
           error: {

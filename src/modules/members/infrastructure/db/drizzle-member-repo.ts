@@ -18,6 +18,7 @@ import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
 import { members, type MemberRow } from './schema-members';
 import { contacts } from './schema-contacts';
+import { rowToContact } from './drizzle-contact-repo';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type { MemberRepo, RepoError } from '../../application/ports/member-repo';
 import type {
@@ -267,6 +268,15 @@ export const drizzleMemberRepo: MemberRepo = {
             ...(patch.foundedYear !== undefined && {
               foundedYear: patch.foundedYear,
             }),
+            ...(patch.country !== undefined && {
+              country: patch.country,
+            }),
+            ...(patch.planId !== undefined && {
+              planId: patch.planId,
+            }),
+            ...(patch.planYear !== undefined && {
+              planYear: patch.planYear,
+            }),
             updatedAt: new Date(),
           })
           .where(eq(members.memberId, memberId))
@@ -463,26 +473,7 @@ export async function searchDirectory(
       return {
         member: m,
         planDisplayName: r.planDisplayName,
-        primaryContact:
-          c === null
-            ? null
-            : {
-                tenantId: c.tenantId as TenantId,
-                contactId: c.contactId as ContactId,
-                memberId: c.memberId as MemberId,
-                firstName: c.firstName,
-                lastName: c.lastName,
-                email: c.email as Email,
-                phone: c.phone as Phone | null,
-                roleTitle: c.roleTitle,
-                preferredLanguage: c.preferredLanguage as 'en' | 'th' | 'sv',
-                isPrimary: c.isPrimary,
-                dateOfBirth: c.dateOfBirth ? new Date(c.dateOfBirth) : null,
-                linkedUserId: c.linkedUserId as UserId | null,
-                removedAt: c.removedAt,
-                createdAt: c.createdAt,
-                updatedAt: c.updatedAt,
-              },
+        primaryContact: c === null ? null : rowToContact(c),
       };
     });
 

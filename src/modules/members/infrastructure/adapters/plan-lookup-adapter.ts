@@ -25,6 +25,7 @@ import { runInTenant } from '@/lib/db';
 import { members } from '../db/schema-members';
 import { asPlanSlug, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
+import { asPlanId, asTenantId } from '../../domain/member';
 import type {
   PlanLookupPort,
   PlanSummary,
@@ -42,8 +43,8 @@ export const plansBarrelAdapter: PlanLookupPort = {
       if (!plan) return err({ code: 'repo.not_found' });
 
       const summary: PlanSummary = {
-        tenantId: plan.tenant_id,
-        planId: plan.plan_id,
+        tenantId: asTenantId(plan.tenant_id),
+        planId: asPlanId(plan.plan_id),
         planYear: plan.plan_year,
         // JSONB `plan_name` is `{ en: string, th?: string, sv?: string }`.
         // English is the canonical admin display name; tenant-localised
@@ -55,7 +56,9 @@ export const plansBarrelAdapter: PlanLookupPort = {
         maxTurnoverThb: plan.max_turnover_minor_units,
         maxDurationYears: plan.max_duration_years,
         maxMemberAge: plan.max_member_age,
-        includesCorporatePlanId: plan.includes_corporate_plan_id,
+        includesCorporatePlanId: plan.includes_corporate_plan_id
+          ? asPlanId(plan.includes_corporate_plan_id)
+          : null,
       };
       return ok(summary);
     } catch (e) {

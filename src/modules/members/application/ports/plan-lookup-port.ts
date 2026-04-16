@@ -8,11 +8,12 @@
  */
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
+import type { PlanId, TenantId } from '../../domain/member';
 import type { RepoError } from './member-repo';
 
 export type PlanSummary = {
-  readonly tenantId: string;
-  readonly planId: string;
+  readonly tenantId: TenantId;
+  readonly planId: PlanId;
   readonly planYear: number;
   /**
    * English display name of the plan. Canonical admin display — a
@@ -26,13 +27,13 @@ export type PlanSummary = {
   readonly maxDurationYears: number | null;
   readonly maxMemberAge: number | null;
   /** For partnership tiers, the corporate tier it bundles. */
-  readonly includesCorporatePlanId: string | null;
+  readonly includesCorporatePlanId: PlanId | null;
 };
 
 export interface PlanLookupPort {
   getPlan(
     ctx: TenantContext,
-    planId: string,
+    planId: PlanId,
     planYear: number,
   ): Promise<Result<PlanSummary, RepoError>>;
 
@@ -42,7 +43,7 @@ export interface PlanLookupPort {
    */
   countAffectedMembers(
     ctx: TenantContext,
-    planId: string,
+    planId: PlanId,
     planYear: number,
   ): Promise<Result<{ count: number }, RepoError>>;
 }

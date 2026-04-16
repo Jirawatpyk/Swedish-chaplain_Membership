@@ -1,5 +1,5 @@
 /**
- * F3 Contacts — Drizzle schema.
+ * F5 Contacts — Drizzle schema.
  *
  * Child entity of Member (no independent lifecycle). See data-model.md § 1.2.
  *
@@ -40,7 +40,7 @@ export const contacts = pgTable(
     // Tenancy (denormalized from parent member for RLS)
     tenantId: text('tenant_id').notNull(),
 
-    // Identity — UUID v7
+    // Identity — UUID v4
     contactId: uuid('contact_id').notNull(),
 
     // Parent member (composite FK enforced at migration layer)

@@ -19,7 +19,7 @@ import type { TenantContext } from '@/modules/tenants';
 import { asIsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import { asTaxId } from '../../domain/value-objects/tax-id';
 import type { Member, MemberId, TenantId } from '../../domain/member';
-import type { MemberRepo } from '../ports/member-repo';
+import type { MemberRepo, MemberPatch } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 
@@ -72,15 +72,16 @@ export type UpdateMemberCallMeta = {
 /** Diff helper: record only fields present in the patch that changed value. */
 function buildDiff(
   current: Member,
-  patch: Partial<Member>,
+  patch: MemberPatch,
 ): { fieldsChanged: string[]; diff: Record<string, { old: unknown; new: unknown }> } {
   const fieldsChanged: string[] = [];
   const diff: Record<string, { old: unknown; new: unknown }> = {};
-  for (const key of Object.keys(patch) as (keyof Member)[]) {
+  for (const key of Object.keys(patch) as (keyof MemberPatch)[]) {
     if (patch[key] === undefined) continue;
-    if (current[key] !== patch[key]) {
+    const currentVal = current[key as keyof Member];
+    if (currentVal !== patch[key]) {
       fieldsChanged.push(key as string);
-      diff[key as string] = { old: current[key], new: patch[key] };
+      diff[key as string] = { old: currentVal, new: patch[key] };
     }
   }
   return { fieldsChanged, diff };
@@ -120,8 +121,8 @@ export async function updateMember(
   // 3. Domain value-object re-validation for fields that carry brands.
   //    Build patch in a writable intermediate then cast to Partial<Member>;
   //    the Member type is deeply readonly so we can't assign into it directly.
-  type MutableMember = { -readonly [K in keyof Member]?: Member[K] };
-  const draft: MutableMember = {};
+  type MutablePatch = { -readonly [K in keyof MemberPatch]?: MemberPatch[K] };
+  const draft: MutablePatch = {};
   if (data.company_name !== undefined) draft.companyName = data.company_name.trim();
   if (data.legal_entity_type !== undefined)
     draft.legalEntityType = data.legal_entity_type;
@@ -145,7 +146,7 @@ export async function updateMember(
   if (data.founded_year !== undefined) draft.foundedYear = data.founded_year;
   if (data.turnover_thb !== undefined) draft.turnoverThb = data.turnover_thb;
   if (data.notes !== undefined) draft.notes = data.notes;
-  const patch = draft as Partial<Member>;
+  const patch = draft as MemberPatch;
 
   // 4. Diff vs current
   const { fieldsChanged, diff } = buildDiff(current, patch);
@@ -169,7 +170,7 @@ export async function updateMember(
     });
 
   // 6. Audit
-  await deps.audit.record(deps.tenant, {
+  const auditResult = await deps.audit.record(deps.tenant, {
     type: 'member_updated',
     actorUserId: meta.actorUserId,
     requestId: meta.requestId,
@@ -180,6 +181,9 @@ export async function updateMember(
       diff,
     },
   });
+  if (!auditResult.ok) {
+    return err({ type: 'server_error', message: 'audit_failed' });
+  }
 
   return ok(updated.value);
 }

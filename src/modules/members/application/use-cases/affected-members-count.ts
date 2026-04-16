@@ -14,10 +14,11 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
+import type { PlanId } from '../../domain/member';
 import type { PlanLookupPort } from '../ports/plan-lookup-port';
 
 export type AffectedMembersCountInput = {
-  readonly planId: string;
+  readonly planId: PlanId;
   readonly planYear: number;
 };
 

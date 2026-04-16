@@ -182,14 +182,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (!payload) {
       // Row we can't render — push retry by 5 minutes and log once.
       // A future deploy with richer template support can drain it.
-      await db
-        .update(notificationsOutbox)
-        .set({
-          nextRetryAt: new Date(now.getTime() + 5 * 60 * 1000),
-          lastError: 'no_template_handler',
-          updatedAt: new Date(),
-        })
-        .where(eq(notificationsOutbox.id, row.id));
+      try {
+        await db
+          .update(notificationsOutbox)
+          .set({
+            nextRetryAt: new Date(now.getTime() + 5 * 60 * 1000),
+            lastError: 'no_template_handler',
+            updatedAt: new Date(),
+          })
+          .where(eq(notificationsOutbox.id, row.id));
+      } catch (dbError) {
+        logger.error(
+          { requestId, outboxRowId: row.id, err: dbError },
+          'cron.outbox_dispatch.db_update_failed',
+        );
+      }
       continue;
     }
 
@@ -201,14 +208,23 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
 
     if (result.ok) {
-      await db
-        .update(notificationsOutbox)
-        .set({
-          status: 'sent',
-          sentMessageId: result.value.messageId,
-          updatedAt: new Date(),
-        })
-        .where(eq(notificationsOutbox.id, row.id));
+      try {
+        await db
+          .update(notificationsOutbox)
+          .set({
+            status: 'sent',
+            sentMessageId: result.value.messageId,
+            updatedAt: new Date(),
+          })
+          .where(eq(notificationsOutbox.id, row.id));
+      } catch (dbError) {
+        // Email sent but status not updated — row will be retried on
+        // next tick. Resend deduplicates so this is safe.
+        logger.error(
+          { requestId, outboxRowId: row.id, err: dbError },
+          'cron.outbox_dispatch.db_update_failed_after_send',
+        );
+      }
       sent += 1;
       continue;
     }
@@ -222,15 +238,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       nextAttempt >= MAX_ATTEMPTS || result.error.code === 'invalid-recipient';
 
     if (isPermanent) {
-      await db
-        .update(notificationsOutbox)
-        .set({
-          status: 'permanently_failed',
-          attempts: nextAttempt,
-          lastError: result.error.message,
-          updatedAt: new Date(),
-        })
-        .where(eq(notificationsOutbox.id, row.id));
+      try {
+        await db
+          .update(notificationsOutbox)
+          .set({
+            status: 'permanently_failed',
+            attempts: nextAttempt,
+            lastError: result.error.message,
+            updatedAt: new Date(),
+          })
+          .where(eq(notificationsOutbox.id, row.id));
+      } catch (dbError) {
+        logger.error(
+          { requestId, outboxRowId: row.id, err: dbError },
+          'cron.outbox_dispatch.db_update_failed',
+        );
+      }
       permanent += 1;
       logger.error(
         {
@@ -278,15 +301,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       ]!;
     const nextRetryAt = new Date(now.getTime() + backoffSeconds * 1000);
 
-    await db
-      .update(notificationsOutbox)
-      .set({
-        attempts: nextAttempt,
-        nextRetryAt,
-        lastError: result.error.message,
-        updatedAt: new Date(),
-      })
-      .where(eq(notificationsOutbox.id, row.id));
+    try {
+      await db
+        .update(notificationsOutbox)
+        .set({
+          attempts: nextAttempt,
+          nextRetryAt,
+          lastError: result.error.message,
+          updatedAt: new Date(),
+        })
+        .where(eq(notificationsOutbox.id, row.id));
+    } catch (dbError) {
+      logger.error(
+        { requestId, outboxRowId: row.id, err: dbError },
+        'cron.outbox_dispatch.db_update_failed',
+      );
+    }
     retried += 1;
     logger.warn(
       {

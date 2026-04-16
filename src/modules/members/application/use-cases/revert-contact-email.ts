@@ -40,6 +40,7 @@ import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
 import type { SessionRevocationPort } from '../ports/session-revocation-port';
 import type { UserEmailPort } from '../ports/user-email-port';
 import type { ClockPort } from '../ports/clock-port';
+import { hashEmail } from '../crypto-helpers';
 
 export type RevertContactEmailDeps = {
   tenant: TenantContext;
@@ -179,7 +180,7 @@ export async function revertContactEmail(
         payload: {
           contact_id: token.contactId,
           user_id: token.userId,
-          reverted_to_email: token.oldEmail,
+          reverted_to_email_hash: hashEmail(token.oldEmail),
           verification_tokens_invalidated:
             invalidated.value.invalidatedCount,
           sessions_revoked: sessionsResult.value.revokedCount,

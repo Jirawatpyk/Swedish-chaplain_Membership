@@ -1,5 +1,5 @@
 /**
- * F3 Members — Drizzle schema.
+ * F5 Members — Drizzle schema.
  *
  * Single table: `members` (aggregate root; contacts live in a sibling
  * schema file co-located in the same bounded context). See data-model.md § 1.1.
@@ -43,7 +43,7 @@ export const members = pgTable(
     // Tenancy (MTA+STD — F2 pattern, no FK to a tenants table yet)
     tenantId: text('tenant_id').notNull(),
 
-    // Identity — UUID v7 (time-ordered) generated client-side by Domain
+    // Identity — UUID v4 generated client-side by Domain (via crypto.randomUUID)
     memberId: uuid('member_id').notNull(),
 
     // Legal entity

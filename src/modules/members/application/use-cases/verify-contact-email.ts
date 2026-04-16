@@ -14,11 +14,12 @@
  *   4. Flip users.email_verified = TRUE
  *   5. Invalidate any still-active revert token for the same user —
  *      the 48h revert window closes once verification completes
- *   6. Append `email_verification_sent`-paired audit event using a
- *      dedicated `email_verification_sent` event type (data-model.md
- *      § 4 says this type already exists in migration 0010). This is
- *      semantically a consumption success — the event was enqueued
- *      earlier and the consumption CLOSES the loop.
+ *   6. Append audit event. NOTE: reuses `email_verification_sent`
+ *      event type (migration 0010) rather than adding a new
+ *      `email_verification_consumed` type — the `summary` field
+ *      disambiguates ("email verification consumed for user …").
+ *      A dedicated type can be added in a future migration if
+ *      audit queries need to distinguish send from consumption.
  */
 
 import { runInTenant } from '@/lib/db';

@@ -41,9 +41,9 @@ export function InvitePortalButton({ memberId, contactId }: Props) {
         return;
       }
       const body = (await response.json().catch(() => ({}))) as {
-        error?: string;
+        error?: { code?: string };
       };
-      switch (body.error) {
+      switch (body.error?.code) {
         case 'already_linked':
           toast.error(t('errors.alreadyLinked'));
           break;

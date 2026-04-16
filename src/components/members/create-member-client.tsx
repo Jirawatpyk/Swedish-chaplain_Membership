@@ -39,15 +39,7 @@ type OverrideState = {
   readonly message: string;
 };
 
-// Small helper to generate a UUID v4 (idempotency key). Uses the Web
-// Crypto API which is available in modern browsers + Node 19+.
-function uuid(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  // Fallback — acceptable for F3 B.2.b where randomUUID is universally present.
-  return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
-}
+import { uuid } from '@/lib/uuid';
 
 function toPayload(
   values: MemberFormValues,

@@ -12,7 +12,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
-import { affectedMembersCount } from '@/modules/members';
+import { affectedMembersCount, type MemberPlanId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import {
@@ -80,7 +80,7 @@ describe('affected-members-count — SC-008 (T076)', () => {
   it('returns 0 when no members on the plan', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const result = await affectedMembersCount(
-      { planId: 'premium', planYear: 2026 },
+      { planId: 'premium' as MemberPlanId, planYear: 2026 },
       { tenant: tenant.ctx, plans: deps.plans },
     );
     expect(result.ok).toBe(true);
@@ -112,7 +112,7 @@ describe('affected-members-count — SC-008 (T076)', () => {
     });
 
     const result = await affectedMembersCount(
-      { planId: 'premium', planYear: 2026 },
+      { planId: 'premium' as MemberPlanId, planYear: 2026 },
       { tenant: tenant.ctx, plans: deps.plans },
     );
     expect(result.ok).toBe(true);
@@ -148,7 +148,7 @@ describe('affected-members-count — SC-008 (T076)', () => {
       const runOnce = async () => {
         const t0 = performance.now();
         await affectedMembersCount(
-          { planId: 'premium', planYear: 2026 },
+          { planId: 'premium' as MemberPlanId, planYear: 2026 },
           { tenant: tenant.ctx, plans: deps.plans },
         );
         return performance.now() - t0;

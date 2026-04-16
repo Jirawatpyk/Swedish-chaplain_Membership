@@ -17,6 +17,7 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { affectedMembersCount } from '@/modules/members';
+import type { MemberPlanId as PlanId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 
 const paramsSchema = z.object({
@@ -46,7 +47,7 @@ export async function GET(
   const tenant = resolveTenantFromRequest(request);
   const deps = buildMembersDeps(tenant);
   const result = await affectedMembersCount(
-    { planId: parsed.data.planId, planYear: parsed.data.year },
+    { planId: parsed.data.planId as PlanId, planYear: parsed.data.year },
     { tenant, plans: deps.plans },
   );
 
