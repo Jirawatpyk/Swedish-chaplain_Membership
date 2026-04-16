@@ -159,12 +159,10 @@ export async function updateMember(
   // 5. Persist + Audit in one transaction (COR-8: atomic persist+audit)
   try {
     const updated = await runInTenant(deps.tenant, async (tx) => {
-      const persistResult = await deps.memberRepo.updateFields(
-        deps.tenant,
+      const persistResult = await deps.memberRepo.updateFieldsInTx(
+        tx,
         memberId,
         patch,
-        meta.actorUserId,
-        meta.requestId,
       );
       if (!persistResult.ok) {
         throw new Error(`update:${persistResult.error.code}`);
