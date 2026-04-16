@@ -62,15 +62,18 @@ const adminContext = {
   requestId: 'req-1',
 };
 
+const MEMBER_ID = '11111111-1111-1111-1111-111111111111';
+const CONTACT_ID = '22222222-2222-2222-2222-222222222222';
+
 function makeRequest(): NextRequest {
   return new NextRequest(
-    'http://localhost:3100/api/members/m1/contacts/c1/invite-portal',
+    `http://localhost:3100/api/members/${MEMBER_ID}/contacts/${CONTACT_ID}/invite-portal`,
     { method: 'POST' },
   );
 }
 
 /** Resolved params Promise the route handler expects. */
-const resolvedParams = Promise.resolve({ memberId: 'm1', contactId: 'c1' });
+const resolvedParams = Promise.resolve({ memberId: MEMBER_ID, contactId: CONTACT_ID });
 
 // ---------------------------------------------------------------------------
 // Tests

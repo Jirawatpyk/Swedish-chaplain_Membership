@@ -64,8 +64,8 @@ const adminContext = {
   requestId: 'req-1',
 };
 
-const memberId = 'm1';
-const contactId = 'c1';
+const memberId = '11111111-1111-1111-1111-111111111111';
+const contactId = '22222222-2222-2222-2222-222222222222';
 
 function makeRequest(): NextRequest {
   return new NextRequest(

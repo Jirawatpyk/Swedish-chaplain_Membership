@@ -20,6 +20,11 @@ import type { MemberId, TenantId } from './member';
 declare const ContactIdBrand: unique symbol;
 export type ContactId = string & { readonly [ContactIdBrand]: true };
 
+/** Brand a raw string as a ContactId. Used at trust boundaries. */
+export function asContactId(raw: string): ContactId {
+  return raw as ContactId;
+}
+
 export const PREFERRED_LANGUAGES = ['en', 'th', 'sv'] as const;
 export type PreferredLanguage = (typeof PREFERRED_LANGUAGES)[number];
 

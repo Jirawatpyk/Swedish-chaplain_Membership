@@ -192,7 +192,7 @@ export async function changePlan(
     });
 
   // Audit: member_plan_changed + (conditional) plan_bundle_changed
-  await deps.audit.record(deps.tenant, {
+  const auditResult = await deps.audit.record(deps.tenant, {
     type: 'member_plan_changed',
     actorUserId: meta.actorUserId,
     requestId: meta.requestId,
@@ -209,9 +209,12 @@ export async function changePlan(
       }),
     },
   });
+  if (!auditResult.ok) {
+    return err({ type: 'server_error', message: 'audit_failed' });
+  }
 
   if (bundleChanged) {
-    await deps.audit.record(deps.tenant, {
+    const bundleAudit = await deps.audit.record(deps.tenant, {
       type: 'plan_bundle_changed',
       actorUserId: meta.actorUserId,
       requestId: meta.requestId,
@@ -223,6 +226,9 @@ export async function changePlan(
         new_includes_corporate_plan_id: newBundle,
       },
     });
+    if (!bundleAudit.ok) {
+      return err({ type: 'server_error', message: 'audit_failed' });
+    }
   }
 
   return ok(updated.value);

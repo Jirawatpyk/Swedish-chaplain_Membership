@@ -30,6 +30,7 @@ export {
 
 export {
   PREFERRED_LANGUAGES,
+  asContactId,
   type Contact,
   type ContactId,
   type PreferredLanguage,

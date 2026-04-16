@@ -7,6 +7,7 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
+import { z } from 'zod';
 import {
   invitePortal,
   type ContactId,
@@ -17,6 +18,11 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
 import { createUser as f1CreateUser } from '@/modules/auth';
+
+const paramsSchema = z.object({
+  memberId: z.string().uuid(),
+  contactId: z.string().uuid(),
+});
 
 // Adapt F1 createUser to the narrowed port the use case expects. The
 // port constrains `role` to `'member'` so admins cannot accidentally
@@ -50,14 +56,21 @@ export async function POST(
   if ('response' in gate) return gate.response;
   const { current, sourceIp, requestId } = gate;
 
-  const { contactId } = await params;
+  const resolved = await params;
+  const parsed = paramsSchema.safeParse(resolved);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: { code: 'not_found', message: 'Contact not found.' } },
+      { status: 404 },
+    );
+  }
   const tenant = resolveTenantFromRequest(request);
   const deps = buildMembersDeps(tenant);
 
   const result = await invitePortal(
     { tenant, contactRepo: deps.contactRepo, createUser: createUserPort },
     {
-      contactId: contactId as ContactId,
+      contactId: parsed.data.contactId as ContactId,
       actorUserId: current.user.id,
       sourceIp,
       requestId,

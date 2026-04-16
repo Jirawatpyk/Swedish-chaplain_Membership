@@ -34,6 +34,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asEmail } from '../../domain/value-objects/email';
+import { asContactId } from '../../domain/contact';
 import type { ContactId } from '../../domain/contact';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
@@ -102,7 +103,7 @@ export async function revertContactEmail(
       const contactRestore = await deps.contactRepo.updateEmailInTx(
         tx,
         deps.tenant,
-        token.contactId as ContactId,
+        asContactId(token.contactId),
         oldEmailVo.value,
       );
       if (!contactRestore.ok) {
@@ -190,7 +191,7 @@ export async function revertContactEmail(
 
       return {
         userId: token.userId,
-        contactId: token.contactId as ContactId,
+        contactId: asContactId(token.contactId),
         restoredEmail: token.oldEmail,
         sessionsRevoked: sessionsResult.value.revokedCount,
       };

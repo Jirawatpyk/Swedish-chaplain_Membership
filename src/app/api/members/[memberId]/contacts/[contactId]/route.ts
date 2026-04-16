@@ -105,6 +105,7 @@ export async function PATCH(
     typeof body.email === 'string' ? body.email.trim() : undefined;
   const nonEmailBody: Record<string, unknown> = { ...body };
   delete nonEmailBody.email;
+  delete nonEmailBody.locale; // consumed by changeContactEmail, not a contact field
   const hasNonEmail = Object.keys(nonEmailBody).length > 0;
 
   // 1) Email change first (if present) — atomic with session revocation

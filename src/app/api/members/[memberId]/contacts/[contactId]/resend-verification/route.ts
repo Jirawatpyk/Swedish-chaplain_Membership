@@ -11,6 +11,7 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
+import { z } from 'zod';
 import {
   resendVerificationEmail,
   type ContactId,
@@ -19,6 +20,11 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
+
+const paramsSchema = z.object({
+  memberId: z.string().uuid(),
+  contactId: z.string().uuid(),
+});
 
 export async function POST(
   request: NextRequest,
@@ -31,7 +37,15 @@ export async function POST(
   if ('response' in gate) return gate.response;
   const { current, requestId } = gate;
 
-  const { contactId } = await params;
+  const resolved = await params;
+  const parsed = paramsSchema.safeParse(resolved);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: { code: 'not_found', message: 'Contact not found.' } },
+      { status: 404 },
+    );
+  }
+  const { contactId } = parsed.data;
   const tenant = resolveTenantFromRequest(request);
   const deps = buildMembersDeps(tenant);
 
