@@ -11,6 +11,24 @@ import type { Contact } from '../../domain/contact';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
 
+// --- Directory search types (US2) -------------------------------------------
+
+export type DirectoryFilter = {
+  readonly q?: string;
+  readonly status?: readonly ('active' | 'inactive' | 'archived')[];
+  readonly planYear?: number;
+  readonly country?: string;
+  readonly planId?: string;
+  readonly limit: number;
+  readonly cursor?: string;
+};
+
+export type DirectoryRow = {
+  readonly member: Member;
+  readonly primaryContact: Contact | null;
+  readonly planDisplayName: string | null;
+};
+
 export type RepoError =
   | { code: 'repo.not_found' }
   | { code: 'repo.conflict'; reason: string }
@@ -89,4 +107,15 @@ export interface MemberRepo {
     actorUserId: string,
     requestId: string,
   ): Promise<Result<Member, RepoError>>;
+
+  /** US2 directory search — substring across company, contact name, email. */
+  searchDirectory(
+    ctx: TenantContext,
+    filter: DirectoryFilter,
+  ): Promise<
+    Result<
+      { readonly items: DirectoryRow[]; readonly nextCursor: string | null },
+      RepoError
+    >
+  >;
 }

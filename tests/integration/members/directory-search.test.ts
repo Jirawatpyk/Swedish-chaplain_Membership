@@ -34,6 +34,7 @@ const MATRIX: BenefitMatrix = {
 describe('directory-search integration (T059, US2)', () => {
   let tenant: TestTenant;
   let user: TestUser;
+  let deps: ReturnType<typeof buildMembersDeps>;
   const planId = 'dir-plan';
 
   beforeAll(async () => {
@@ -71,7 +72,7 @@ describe('directory-search integration (T059, US2)', () => {
     });
 
     // Seed three distinct members
-    const deps = buildMembersDeps(tenant.ctx);
+    deps = buildMembersDeps(tenant.ctx);
     const cases = [
       { company: 'Fogmaker International', first: 'Anna' },
       { company: 'Volvo Group', first: 'Björn' },
@@ -110,14 +111,14 @@ describe('directory-search integration (T059, US2)', () => {
   });
 
   it('returns all seeded members with default status filter', async () => {
-    const r = await directorySearch(tenant.ctx, {});
+    const r = await directorySearch({ tenant: tenant.ctx, memberRepo: deps.memberRepo }, {});
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.items.length).toBeGreaterThanOrEqual(3);
   });
 
   it('substring q matches company_name', async () => {
-    const r = await directorySearch(tenant.ctx, { q: 'Fogma' });
+    const r = await directorySearch({ tenant: tenant.ctx, memberRepo: deps.memberRepo }, { q: 'Fogma' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.items).toHaveLength(1);
@@ -125,7 +126,7 @@ describe('directory-search integration (T059, US2)', () => {
   });
 
   it('substring q matches primary contact first_name', async () => {
-    const r = await directorySearch(tenant.ctx, { q: 'Björn' });
+    const r = await directorySearch({ tenant: tenant.ctx, memberRepo: deps.memberRepo }, { q: 'Björn' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.items.length).toBeGreaterThanOrEqual(1);
@@ -135,13 +136,13 @@ describe('directory-search integration (T059, US2)', () => {
   });
 
   it('cursor pagination: limit 2 returns nextCursor; second page returns remainder', async () => {
-    const first = await directorySearch(tenant.ctx, { limit: 2 });
+    const first = await directorySearch({ tenant: tenant.ctx, memberRepo: deps.memberRepo }, { limit: 2 });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
     expect(first.value.items).toHaveLength(2);
     expect(first.value.nextCursor).not.toBeNull();
 
-    const next = await directorySearch(tenant.ctx, {
+    const next = await directorySearch({ tenant: tenant.ctx, memberRepo: deps.memberRepo }, {
       limit: 2,
       ...(first.value.nextCursor ? { cursor: first.value.nextCursor } : {}),
     });
@@ -152,7 +153,7 @@ describe('directory-search integration (T059, US2)', () => {
   });
 
   it('primary contact payload is populated on each row', async () => {
-    const r = await directorySearch(tenant.ctx, { q: 'Fogma' });
+    const r = await directorySearch({ tenant: tenant.ctx, memberRepo: deps.memberRepo }, { q: 'Fogma' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.items[0]!.primaryContact).not.toBeNull();

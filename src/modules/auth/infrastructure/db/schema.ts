@@ -90,6 +90,7 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'member_contact_email_changed',
   'user_sessions_revoked',
   'email_verification_sent',
+  'email_verification_consumed',
   'email_change_notification_sent_to_old_address',
   'member_email_change_reverted',
   'email_verification_resent',

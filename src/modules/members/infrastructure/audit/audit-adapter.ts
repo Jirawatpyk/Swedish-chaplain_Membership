@@ -14,9 +14,23 @@ import type { AuditPort } from '../../application/ports/audit-port';
 export const drizzleAuditAdapter: AuditPort = {
   async record(ctx, event) {
     try {
-      // audit_log has a permissive RLS policy (NULL tenant_id OR match) so we
-      // write from the owner role — no runInTenant wrapper needed.
       await db.insert(auditLog).values({
+        eventType: event.type,
+        actorUserId: event.actorUserId,
+        summary: event.summary,
+        requestId: event.requestId,
+        tenantId: ctx.slug,
+        payload: event.payload,
+      });
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'repo.unexpected', cause: e });
+    }
+  },
+
+  async recordInTx(tx, ctx, event) {
+    try {
+      await tx.insert(auditLog).values({
         eventType: event.type,
         actorUserId: event.actorUserId,
         summary: event.summary,

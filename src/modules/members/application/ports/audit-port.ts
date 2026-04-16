@@ -7,6 +7,7 @@
  *
  * Payloads conform to data-model.md § 4 (23 F3 event types).
  */
+import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { RepoError } from './member-repo';
@@ -29,6 +30,7 @@ export type F3AuditEventType =
   | 'member_contact_email_changed'
   | 'user_sessions_revoked'
   | 'email_verification_sent'
+  | 'email_verification_consumed'
   | 'email_change_notification_sent_to_old_address'
   | 'member_email_change_reverted'
   | 'email_verification_resent'
@@ -46,6 +48,13 @@ export type F3AuditEvent = {
 
 export interface AuditPort {
   record(
+    ctx: TenantContext,
+    event: F3AuditEvent,
+  ): Promise<Result<undefined, RepoError>>;
+
+  /** Record inside an existing transaction — for atomic persist+audit. */
+  recordInTx(
+    tx: TenantTx,
     ctx: TenantContext,
     event: F3AuditEvent,
   ): Promise<Result<undefined, RepoError>>;

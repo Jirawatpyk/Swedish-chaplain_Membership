@@ -19,6 +19,7 @@ import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { directorySearch } from '@/modules/members';
+import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   Card,
   CardContent,
@@ -99,12 +100,16 @@ async function MembersDirectoryBody({ query }: { query: SearchParams }) {
     ? (['active', 'inactive', 'archived'] as const)
     : (['active', 'inactive'] as const);
 
-  const result = await directorySearch(tenant, {
-    ...(query.q?.trim() ? { q: query.q.trim() } : {}),
-    ...(query.cursor ? { cursor: query.cursor } : {}),
-    status: [...statuses],
-    limit: 50,
-  });
+  const deps = buildMembersDeps(tenant);
+  const result = await directorySearch(
+    { tenant, memberRepo: deps.memberRepo },
+    {
+      ...(query.q?.trim() ? { q: query.q.trim() } : {}),
+      ...(query.cursor ? { cursor: query.cursor } : {}),
+      status: [...statuses],
+      limit: 50,
+    },
+  );
 
   if (!result.ok) {
     return <MembersErrorState />;

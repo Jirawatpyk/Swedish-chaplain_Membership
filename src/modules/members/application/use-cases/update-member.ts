@@ -14,6 +14,7 @@
  */
 
 import { z } from 'zod';
+import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { asIsoCountryCode } from '../../domain/value-objects/iso-country-code';
@@ -155,35 +156,41 @@ export async function updateMember(
     return ok(current);
   }
 
-  // 5. Persist
-  const updated = await deps.memberRepo.updateFields(
-    deps.tenant,
-    memberId,
-    patch,
-    meta.actorUserId,
-    meta.requestId,
-  );
-  if (!updated.ok)
-    return err({
-      type: 'server_error',
-      message: `update: ${updated.error.code}`,
+  // 5. Persist + Audit in one transaction (COR-8: atomic persist+audit)
+  try {
+    const updated = await runInTenant(deps.tenant, async (tx) => {
+      const persistResult = await deps.memberRepo.updateFields(
+        deps.tenant,
+        memberId,
+        patch,
+        meta.actorUserId,
+        meta.requestId,
+      );
+      if (!persistResult.ok) {
+        throw new Error(`update:${persistResult.error.code}`);
+      }
+
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_updated',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `member_updated ${memberId} (${fieldsChanged.length} fields)`,
+        payload: {
+          member_id: memberId,
+          fields_changed: fieldsChanged,
+          diff,
+        },
+      });
+      if (!auditResult.ok) {
+        throw new Error('audit_failed');
+      }
+
+      return persistResult.value;
     });
 
-  // 6. Audit
-  const auditResult = await deps.audit.record(deps.tenant, {
-    type: 'member_updated',
-    actorUserId: meta.actorUserId,
-    requestId: meta.requestId,
-    summary: `member_updated ${memberId} (${fieldsChanged.length} fields)`,
-    payload: {
-      member_id: memberId,
-      fields_changed: fieldsChanged,
-      diff,
-    },
-  });
-  if (!auditResult.ok) {
-    return err({ type: 'server_error', message: 'audit_failed' });
+    return ok(updated);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return err({ type: 'server_error', message: msg });
   }
-
-  return ok(updated.value);
 }

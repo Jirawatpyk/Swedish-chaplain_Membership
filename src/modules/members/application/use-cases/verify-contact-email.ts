@@ -14,12 +14,9 @@
  *   4. Flip users.email_verified = TRUE
  *   5. Invalidate any still-active revert token for the same user —
  *      the 48h revert window closes once verification completes
- *   6. Append audit event. NOTE: reuses `email_verification_sent`
- *      event type (migration 0010) rather than adding a new
- *      `email_verification_consumed` type — the `summary` field
- *      disambiguates ("email verification consumed for user …").
- *      A dedicated type can be added in a future migration if
- *      audit queries need to distinguish send from consumption.
+ *   6. Append audit event `email_verification_consumed` — distinct
+ *      from `email_verification_sent` so audit queries can
+ *      programmatically distinguish send from consumption.
  */
 
 import { runInTenant } from '@/lib/db';
@@ -117,7 +114,7 @@ export async function verifyContactEmail(
       }
 
       await tx.insert(auditLog).values({
-        eventType: 'email_verification_sent',
+        eventType: 'email_verification_consumed',
         actorUserId: input.actorUserId ?? 'anonymous',
         targetUserId: token.userId,
         summary: `email verification consumed for user ${token.userId}`,

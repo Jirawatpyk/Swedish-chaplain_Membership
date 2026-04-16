@@ -12,8 +12,11 @@
 
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import { searchDirectory, type DirectoryFilter, type DirectoryRow } from
-  '../../infrastructure/db/drizzle-member-repo';
+import type {
+  DirectoryFilter,
+  DirectoryRow,
+  MemberRepo,
+} from '../ports/member-repo';
 
 export type DirectorySearchInput = Omit<DirectoryFilter, 'limit' | 'cursor'> & {
   readonly limit?: number;
@@ -28,12 +31,17 @@ export type DirectorySearchOutput = {
 export type DirectorySearchError =
   | { type: 'server_error'; message: string };
 
+export type DirectorySearchDeps = {
+  tenant: TenantContext;
+  memberRepo: MemberRepo;
+};
+
 export async function directorySearch(
-  ctx: TenantContext,
+  deps: DirectorySearchDeps,
   input: DirectorySearchInput,
 ): Promise<Result<DirectorySearchOutput, DirectorySearchError>> {
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
-  const result = await searchDirectory(ctx, {
+  const result = await deps.memberRepo.searchDirectory(deps.tenant, {
     ...input,
     limit,
   } as DirectoryFilter);
@@ -45,5 +53,5 @@ export async function directorySearch(
   return ok(result.value);
 }
 
-// Re-export row type for the API serialiser
-export type { DirectoryRow } from '../../infrastructure/db/drizzle-member-repo';
+// Re-export types from the port for consumers
+export type { DirectoryRow, DirectoryFilter } from '../ports/member-repo';

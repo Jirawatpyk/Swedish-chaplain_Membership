@@ -76,17 +76,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       ? (['active', 'inactive', 'archived'] as const)
       : (['active', 'inactive'] as const);
 
-  const result = await directorySearch(tenant, {
-    ...(parsed.data.q !== undefined && { q: parsed.data.q }),
-    ...(parsed.data.plan_year !== undefined && {
-      planYear: parsed.data.plan_year,
-    }),
-    ...(parsed.data.plan_id !== undefined && { planId: parsed.data.plan_id }),
-    ...(parsed.data.country !== undefined && { country: parsed.data.country }),
-    ...(parsed.data.cursor !== undefined && { cursor: parsed.data.cursor }),
-    ...(parsed.data.limit !== undefined && { limit: parsed.data.limit }),
-    status: [...statuses],
-  });
+  const deps = buildMembersDeps(tenant);
+  const result = await directorySearch(
+    { tenant, memberRepo: deps.memberRepo },
+    {
+      ...(parsed.data.q !== undefined && { q: parsed.data.q }),
+      ...(parsed.data.plan_year !== undefined && {
+        planYear: parsed.data.plan_year,
+      }),
+      ...(parsed.data.plan_id !== undefined && { planId: parsed.data.plan_id }),
+      ...(parsed.data.country !== undefined && { country: parsed.data.country }),
+      ...(parsed.data.cursor !== undefined && { cursor: parsed.data.cursor }),
+      ...(parsed.data.limit !== undefined && { limit: parsed.data.limit }),
+      status: [...statuses],
+    },
+  );
 
   if (!result.ok) {
     logger.error(

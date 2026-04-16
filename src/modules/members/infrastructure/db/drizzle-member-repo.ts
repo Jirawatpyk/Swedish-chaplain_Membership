@@ -20,7 +20,12 @@ import { members, type MemberRow } from './schema-members';
 import { contacts } from './schema-contacts';
 import { rowToContact } from './drizzle-contact-repo';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
-import type { MemberRepo, RepoError } from '../../application/ports/member-repo';
+import type {
+  DirectoryFilter,
+  DirectoryRow,
+  MemberRepo,
+  RepoError,
+} from '../../application/ports/member-repo';
 import type {
   Member,
   MemberId,
@@ -294,42 +299,12 @@ export const drizzleMemberRepo: MemberRepo = {
       return err(unexpected(e));
     }
   },
-};
 
-// --- Directory search (US2) --------------------------------------------------
-
-export type DirectoryFilter = {
-  readonly q?: string;
-  readonly status?: readonly ('active' | 'inactive' | 'archived')[];
-  readonly planYear?: number;
-  readonly country?: string;
-  readonly planId?: string;
-  readonly limit: number;
-  readonly cursor?: string;
-};
-
-export type DirectoryRow = {
-  readonly member: Member;
-  readonly primaryContact: Contact | null;
-  /**
-   * English display name of the plan resolved via a correlated subquery
-   * on `membership_plans.plan_name->>'en'`. Denormalized into every row
-   * so the UI doesn't need a second listPlans fetch to map slug →
-   * human name — saves the N+1 round-trip and keeps the module
-   * boundary clean (no schema import from `@/modules/plans`).
-   * `null` when the plan row has been deleted (should not happen for
-   * active members but defensive fallback shows the slug).
-   */
-  readonly planDisplayName: string | null;
-};
-
-/**
- * Directory search — substring q across company_name + primary contact
- * name + email. Uses pg_trgm GIN indexes for p95 < 500 ms on ≤5k rows.
- * Cursor is an opaque `last_activity_at|member_id` tuple (base64) so
- * pagination remains stable across inserts.
- */
-export async function searchDirectory(
+  // --- Directory search (US2) ------------------------------------------------
+  // Substring q across company_name + primary contact name + email.
+  // Uses pg_trgm GIN indexes for p95 < 500 ms on ≤5k rows.
+  // Cursor is an opaque `last_activity_at|member_id` tuple (base64).
+  async searchDirectory(
   ctx: TenantContext,
   filter: DirectoryFilter,
 ): Promise<
@@ -506,4 +481,5 @@ export async function searchDirectory(
   } catch (e) {
     return err(unexpected(e));
   }
-}
+  },
+};

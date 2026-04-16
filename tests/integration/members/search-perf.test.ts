@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { directorySearch } from '@/modules/members';
+import { buildMembersDeps } from '@/modules/members/members-deps';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import {
@@ -145,7 +146,7 @@ describe('directory search perf — SC-002 (T060)', () => {
       const runOnce = async () => {
         const q = queries[Math.floor(Math.random() * queries.length)]!;
         const t0 = performance.now();
-        const result = await directorySearch(tenant.ctx, { q, limit: 50 });
+        const result = await directorySearch({ tenant: tenant.ctx, memberRepo: buildMembersDeps(tenant.ctx).memberRepo }, { q, limit: 50 });
         const elapsed = performance.now() - t0;
         expect(result.ok).toBe(true);
         return elapsed;
@@ -180,7 +181,7 @@ describe('directory search perf — SC-002 (T060)', () => {
         status: 'active',
       });
     });
-    const result = await directorySearch(tenant.ctx, { q: 'Nordic', limit: 10 });
+    const result = await directorySearch({ tenant: tenant.ctx, memberRepo: buildMembersDeps(tenant.ctx).memberRepo }, { q: 'Nordic', limit: 10 });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.items.length).toBeGreaterThanOrEqual(1);
   }, 30_000);

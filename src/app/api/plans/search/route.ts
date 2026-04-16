@@ -14,6 +14,7 @@ import { searchPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import type { LocaleKey } from '@/modules/plans';
 import { directorySearch } from '@/modules/members';
+import { buildMembersDeps } from '@/modules/members/members-deps';
 import type { PaletteMemberEntity } from '@/components/command-palette/registry';
 
 const querySchema = z.object({
@@ -78,10 +79,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // reaching this surface).
     let members: readonly PaletteMemberEntity[] = [];
     try {
-      const membersResult = await directorySearch(tenant, {
-        q: parsed.data.q,
-        limit: parsed.data.limit ?? 10,
-      });
+      const membersDeps = buildMembersDeps(tenant);
+      const membersResult = await directorySearch(
+        { tenant, memberRepo: membersDeps.memberRepo },
+        {
+          q: parsed.data.q,
+          limit: parsed.data.limit ?? 10,
+        },
+      );
       if (membersResult.ok) {
         members = membersResult.value.items.map((row) => ({
           member_id: row.member.memberId,

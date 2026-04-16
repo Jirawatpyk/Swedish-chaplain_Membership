@@ -111,6 +111,7 @@ export {
   type DirectorySearchInput,
   type DirectorySearchOutput,
   type DirectorySearchError,
+  type DirectorySearchDeps,
   type DirectoryRow,
 } from './application/use-cases/directory-search';
 
