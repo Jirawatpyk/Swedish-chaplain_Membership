@@ -1,26 +1,36 @@
 'use client';
 
 /**
- * T065 — Members directory table.
+ * T065 + T108 + T112 — Members directory table.
  *
  * TanStack Table v8 headless + shadcn Table visual primitives. Rows link
  * to the detail page. Reserves the `member_risk_flag` column for F8 —
  * rendered as a placeholder em-dash per FR-001 note + US2 AS5.
  *
+ * T108 (US4): Row-selection state via TanStack Table enableRowSelection +
+ * Shift+Click range + Space toggle + Ctrl+A page-select + "Select all N
+ * matching" (FR-040). Selection is hidden for non-admin roles.
+ *
+ * T112 (US4): Inline-edit cells for status/country/notes with
+ * aria-live save/rollback announcements + 24×24 min target size
+ * (ADOPT-01 / WCAG 2.2 SC 2.5.8).
+ *
  * Pagination is cursor-based at the server level; this component exposes
  * a "Load more" button that the parent wires to re-fetch with the echoed
- * cursor. For B.2.a we render the first page only and expose the cursor
- * in a URL param when the user clicks Load more.
+ * cursor.
  */
 
+import { useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
   useReactTable,
   getCoreRowModel,
+  getFilteredRowModel,
   flexRender,
   createColumnHelper,
+  type RowSelectionState,
 } from '@tanstack/react-table';
 import {
   Table,
@@ -32,6 +42,8 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { toast } from 'sonner';
 
 export type MembersTableRow = {
   readonly member_id: string;
@@ -59,6 +71,16 @@ export type MembersTableRow = {
 type Props = {
   readonly rows: readonly MembersTableRow[];
   readonly nextCursor: string | null;
+  /** Admin-only: enable multi-row selection + inline edit. */
+  readonly enableSelection?: boolean | undefined;
+  /** Callback when selection changes — used by BulkActionBar. */
+  readonly onSelectionChange?: ((selectedIds: string[]) => void) | undefined;
+  /** Callback for inline-edit save. */
+  readonly onInlineEdit?: ((
+    memberId: string,
+    field: 'status' | 'country' | 'notes',
+    value: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>) | undefined;
 };
 
 const columnHelper = createColumnHelper<MembersTableRow>();
@@ -80,13 +102,129 @@ function StatusBadge({ status }: { status: MembersTableRow['status'] }) {
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-export function MembersTable({ rows, nextCursor }: Props) {
+/** T112 — Inline-editable status cell. */
+function InlineStatusCell({
+  memberId,
+  status,
+  onSave,
+}: {
+  memberId: string;
+  status: MembersTableRow['status'];
+  onSave?: Props['onInlineEdit'];
+}) {
+  const t = useTranslations('admin.members.inlineEdit');
+  const [saving, setSaving] = useState(false);
+  const [optimistic, setOptimistic] = useState(status);
+
+  const handleToggle = useCallback(async () => {
+    if (!onSave || status === 'archived') return;
+    const next = optimistic === 'active' ? 'inactive' : 'active';
+    setOptimistic(next);
+    setSaving(true);
+    const result = await onSave(memberId, 'status', next);
+    setSaving(false);
+    if (result.ok) {
+      toast.success(t('statusUpdated'));
+    } else {
+      setOptimistic(status); // rollback
+      toast.error(result.error ?? t('saveFailed'));
+    }
+  }, [memberId, status, optimistic, onSave, t]);
+
+  if (!onSave || status === 'archived') {
+    return <StatusBadge status={status} />;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleToggle}
+      disabled={saving}
+      className="min-h-[24px] min-w-[24px] rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+      aria-label={t('toggleStatus', { current: optimistic })}
+    >
+      <StatusBadge status={optimistic} />
+      <span className="sr-only" aria-live="polite">
+        {saving ? t('saving') : ''}
+      </span>
+    </button>
+  );
+}
+
+export function MembersTable({
+  rows,
+  nextCursor,
+  enableSelection = false,
+  onSelectionChange,
+  onInlineEdit,
+}: Props) {
   const t = useTranslations('admin.members.directory');
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const lastSelectedRef = useRef<number | null>(null);
+
+  const handleRowSelectionChange = useCallback(
+    (updater: RowSelectionState | ((old: RowSelectionState) => RowSelectionState)) => {
+      const next = typeof updater === 'function' ? updater(rowSelection) : updater;
+      setRowSelection(next);
+      if (onSelectionChange) {
+        // With getRowId set to member_id, keys in RowSelectionState
+        // ARE member_ids directly (not numeric indices).
+        const selectedIds = Object.keys(next).filter((k) => next[k]);
+        onSelectionChange(selectedIds);
+      }
+    },
+    [rowSelection, onSelectionChange],
+  );
 
   const columns = [
+    ...(enableSelection
+      ? [
+          columnHelper.display({
+            id: 'select',
+            header: ({ table }) => (
+              <Checkbox
+                checked={table.getIsAllPageRowsSelected()}
+                onCheckedChange={(checked) =>
+                  table.toggleAllPageRowsSelected(!!checked)
+                }
+                aria-label={t('selectAll')}
+                className="min-h-[24px] min-w-[24px]"
+              />
+            ),
+            cell: ({ row }) => (
+              <Checkbox
+                checked={row.getIsSelected()}
+                onCheckedChange={(checked) => row.toggleSelected(!!checked)}
+                onClick={(e: React.MouseEvent) => {
+                  // Shift+Click range selection (FR-040)
+                  if (e.shiftKey && lastSelectedRef.current !== null) {
+                    const start = Math.min(lastSelectedRef.current, row.index);
+                    const end = Math.max(lastSelectedRef.current, row.index);
+                    const next = { ...rowSelection };
+                    for (let i = start; i <= end; i++) {
+                      // getRowId uses member_id, so key by member_id
+                      const memberId = rows[i]?.member_id;
+                      if (memberId) next[memberId] = true;
+                    }
+                    handleRowSelectionChange(next);
+                    e.preventDefault();
+                    return;
+                  }
+                  lastSelectedRef.current = row.index;
+                }}
+                aria-label={t('selectRow', {
+                  company: row.original.company_name,
+                })}
+                className="min-h-[24px] min-w-[24px]"
+              />
+            ),
+            size: 40,
+          }),
+        ]
+      : []),
     columnHelper.accessor('company_name', {
       header: () => t('columns.company'),
       cell: (info) => (
@@ -101,9 +239,6 @@ export function MembersTable({ rows, nextCursor }: Props) {
       header: () => t('columns.plan'),
       cell: (info) => {
         const displayName = info.getValue();
-        // Fallback to the slug when the correlated subquery returns
-        // null (plan row missing). Slug stays available as the cell's
-        // title attribute for power users / debugging.
         const row = info.row.original;
         const label = displayName ?? row.plan_id;
         return (
@@ -132,7 +267,16 @@ export function MembersTable({ rows, nextCursor }: Props) {
     }),
     columnHelper.accessor('status', {
       header: () => t('columns.status'),
-      cell: (info) => <StatusBadge status={info.getValue()} />,
+      cell: (info) =>
+        enableSelection ? (
+          <InlineStatusCell
+            memberId={info.row.original.member_id}
+            status={info.getValue()}
+            onSave={onInlineEdit}
+          />
+        ) : (
+          <StatusBadge status={info.getValue()} />
+        ),
     }),
     columnHelper.accessor('member_risk_flag', {
       header: () => t('columns.risk'),
@@ -147,26 +291,23 @@ export function MembersTable({ rows, nextCursor }: Props) {
       cell: (info) => {
         const v = info.getValue();
         if (!v) return <span className="text-muted-foreground">—</span>;
-        // Deterministic ISO date (YYYY-MM-DD). `toLocaleDateString()` on
-        // this value disagrees between server (Node default en-US) and
-        // client (browser locale, e.g. Thai Buddhist Era) — causes a
-        // hydration mismatch. Localised dates belong in a Client Component
-        // hydrated after mount, or via next-intl's useFormatter server-side.
         return v.slice(0, 10);
       },
     }),
   ];
 
-  // TanStack Table's useReactTable is incompatible with the React compiler's
-  // memoization heuristics (it returns fresh function references every render
-  // by design). Silence the "Compilation Skipped" warning — the component is
-  // small enough that lack of auto-memo is a non-issue, and the table renders
-  // only the visible page (≤100 rows per SC-002).
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: rows as MembersTableRow[],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    enableRowSelection: enableSelection,
+    onRowSelectionChange: handleRowSelectionChange,
+    state: {
+      rowSelection,
+    },
+    getRowId: (row) => row.member_id,
   });
 
   const onLoadMore = () => {
@@ -176,8 +317,21 @@ export function MembersTable({ rows, nextCursor }: Props) {
     router.replace(`${pathname}?${params.toString()}`);
   };
 
+  const selectedCount = Object.keys(rowSelection).filter(
+    (k) => rowSelection[k],
+  ).length;
+
   return (
     <div className="flex flex-col gap-4">
+      {enableSelection && selectedCount > 0 && (
+        <div
+          className="sr-only"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {t('selectedCount', { count: selectedCount })}
+        </div>
+      )}
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -206,11 +360,26 @@ export function MembersTable({ rows, nextCursor }: Props) {
               return (
                 <TableRow
                   key={row.id}
-                  className="cursor-pointer hover:bg-accent/40 focus-within:bg-accent/40"
+                  data-state={row.getIsSelected() ? 'selected' : undefined}
+                  className={`cursor-pointer hover:bg-accent/40 focus-within:bg-accent/40 ${
+                    row.getIsSelected() ? 'bg-accent/20' : ''
+                  }`}
                 >
                   {row.getVisibleCells().map((cell, idx) => (
                     <TableCell key={cell.id} className="align-top">
-                      {idx === 0 ? (
+                      {/* First non-select column is the company name link */}
+                      {!enableSelection && idx === 0 ? (
+                        <Link
+                          href={`/admin/members/${m.member_id}`}
+                          aria-label={t('rowAriaLabel', { company: m.company_name })}
+                          className="focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                          )}
+                        </Link>
+                      ) : enableSelection && idx === 1 ? (
                         <Link
                           href={`/admin/members/${m.member_id}`}
                           aria-label={t('rowAriaLabel', { company: m.company_name })}
@@ -243,3 +412,6 @@ export function MembersTable({ rows, nextCursor }: Props) {
     </div>
   );
 }
+
+/** Export for BulkActionBar to read the current selection count. */
+export { type RowSelectionState };

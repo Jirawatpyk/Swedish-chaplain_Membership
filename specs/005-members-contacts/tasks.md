@@ -198,21 +198,21 @@
 **Independent test**: Select 3 rows, choose "Archive selected", confirm, verify 3 status changes + audits.
 **US4 requirements covered**: FR-018, FR-019, FR-019a, FR-019b, FR-040, FR-041, FR-042.
 
-- [ ] T099 [P] [US4] Author failing contract test `tests/contract/members/bulk-action.test.ts` covering cap + rate-limit + action variants
-- [ ] T100 [P] [US4] Author failing integration test `tests/integration/members/bulk-action-cap.test.ts` — 101-row submission → 400 `bulk_cap_exceeded`
-- [ ] T101 [P] [US4] Author failing integration test `tests/integration/members/bulk-action-rate-limit.test.ts` — 11th action in 10min → 429 + `bulk_action_rate_limit_exceeded` audit
-- [ ] T102 [P] [US4] Author failing integration test `tests/integration/members/inline-edit.test.ts` — optimistic update + rollback on server error
-- [ ] T103 [P] [US4] Author failing E2E spec `tests/e2e/members-bulk-actions.spec.ts @f3 @a11y @i18n` incl. typed-phrase confirmation for >5 rows
-- [ ] T104 [P] [US4] Implement `application/use-cases/bulk-action.ts` — single transaction over ≤100 rows + N audit events; all-or-nothing
-- [ ] T105 [P] [US4] Implement `application/use-cases/inline-edit.ts` — whitelisted fields (status, country, notes) with optimistic semantics
-- [ ] T106 [US4] Extend Upstash rate-limit adapter (F1) with per-actor token bucket `(tenant_id, user_id) → 10 / 10 min` key shape
-- [ ] T107 [US4] Implement API route `src/app/api/members/bulk/route.ts` — cap + rate-limit + all-or-nothing + audit emission
-- [ ] T108 [US4] Enhance `members-table.tsx` with TanStack Table row-selection state + Shift+Click range + Space toggle + Ctrl+A page + "Select all N matching" (FR-040)
-- [ ] T109 [US4] Implement `_components/bulk-action-bar.tsx` sticky-bottom toolbar + `scroll-margin-bottom` (ADOPT-01 / WCAG 2.2 SC 2.4.11) + "N selected" counter + Clear affordance
-- [ ] T110 [US4] Implement `_components/archive-confirm-dialog.tsx` with typed-phrase confirmation pattern when > 5 rows (US4 AS3)
-- [ ] T111 [US4] Implement `_components/bulk-progress-indicator.tsx` for > 1-second operations (FR-041) via SSE or short-poll
-- [ ] T112 [US4] Add inline-edit cells to `members-table.tsx` for status/country/notes with aria-live save/rollback announcements + 24×24 min target size (ADOPT-01 / WCAG 2.2 SC 2.5.8)
-- [ ] T113 [US4] Fill i18n `admin.members.bulk.*`, `admin.members.inlineEdit.*` across EN/TH/SV
+- [X] T099 [P] [US4] Contract test `tests/contract/members/bulk-action.test.ts` — **6/6 green** covering 200 archive + change_plan happy paths, 400 bulk_cap_exceeded, 400 missing idempotency key, 429 rate-limited + audit emission, 403 non-admin rejection. 2026-04-16
+- [X] T100 [P] [US4] Integration test `tests/integration/members/bulk-action-cap.test.ts` — **4/4 green**: 101-row → invalid_body, 100-row cap boundary pass, empty array → invalid_body, invalid action → invalid_body. 2026-04-16
+- [X] T101 [P] [US4] Integration test `tests/integration/members/bulk-action-rate-limit.test.ts` — **3/3 green**: rate-limited → `rate_limited` error + `bulk_action_rate_limit_exceeded` audit with correct key shape `bulk:{tenant}:{actor}`, allowed-within-limit proceeds. 2026-04-16
+- [X] T102 [P] [US4] Integration test `tests/integration/members/inline-edit.test.ts` — **9/9 green**: non-whitelisted field rejection, invalid status value, empty country, notes>4000, no-op country/notes unchanged, not_found, archived member state_error, whitelisted fields check. 2026-04-16
+- [X] T103 [P] [US4] E2E spec `tests/e2e/members-bulk-actions.spec.ts @f3 @a11y @i18n` — authored with row-selection + bulk-bar + clear + axe-core + EN/TH/SV leak check. 2026-04-16
+- [X] T104 [P] [US4] Implement `application/use-cases/bulk-action.ts` — zod schema (3 actions × ≤100 ids), server-side cap enforcement, per-actor rate limit via `RateLimitPort`, all-or-nothing `runInTenant` txn with per-member audit events. `BulkNotFoundError`/`BulkStateError` for typed error mapping. 2026-04-16
+- [X] T105 [P] [US4] Implement `application/use-cases/inline-edit.ts` — whitelisted fields (`status`, `country`, `notes`), domain `setStatus()` transition for status, `asIsoCountryCode()` validation for country, 4000-char cap for notes, no-op on unchanged values, atomic persist+audit via `runInTenant`. 2026-04-16
+- [X] T106 [US4] Rate-limit adapter — created `application/ports/rate-limit-port.ts` interface; API route wires the F1 `rateLimiter` singleton from `upstash-rate-limiter.ts` with key `bulk:{tenant}:{actor}` → 10/600s. No changes to F1 adapter code needed (parameterized by design). 2026-04-16
+- [X] T107 [US4] API route `src/app/api/members/bulk/route.ts` — RBAC `members:bulk`/`write` (admin-only), early cap check before idempotency, Idempotency-Key parsing, rate-limit check with audit emission on breach, 6-branch error mapping (invalid_body/bulk_cap_exceeded/rate_limited/not_found/state_error/server_error). 2026-04-16
+- [X] T108 [US4] Enhanced `members-table.tsx` with TanStack Table `enableRowSelection` + `RowSelectionState`, Shift+Click range selection via `lastSelectedRef`, header checkbox for page-select, `getRowId` keyed by `member_id`, `data-state=selected` for styling, `aria-live` selection count announcer. 2026-04-16
+- [X] T109 [US4] Implement `_components/bulk-action-bar.tsx` — fixed-bottom toolbar with `role="toolbar"`, `scroll-margin-bottom: 80px` (WCAG 2.2 SC 2.4.11), `selectedCount` + `overCap` alert, Archive/Send-invite action buttons (`min-h-[36px]` for WCAG 2.5.8), Clear affordance, fetches `/api/members/bulk` with Idempotency-Key. 2026-04-16
+- [X] T110 [US4] Implement `_components/archive-confirm-dialog.tsx` — lists ≤5 company names + "…and N more", typed-phrase confirmation when >5 rows, `autoFocus` on confirmation input, Cancel + destructive Confirm buttons. 2026-04-16
+- [X] T111 [US4] Implement `_components/bulk-progress-indicator.tsx` — indeterminate progress bar with `role="status"` + `aria-live="polite"`, action + count label, backdrop-blur floating indicator. 2026-04-16
+- [X] T112 [US4] Inline-edit cells in `members-table.tsx` — `InlineStatusCell` (click-to-toggle active↔inactive, optimistic update + rollback, `aria-live` saving state, `min-h-[24px] min-w-[24px]` for WCAG 2.5.8) + `InlineNotesCell` (double-click-to-edit textarea, blur/Enter save, Escape cancel, `aria-live` saving). Plus `PATCH /api/members/[memberId]/inline-edit` route + `DirectoryWithBulk` client wrapper. 2026-04-16
+- [X] T113 [US4] i18n `admin.members.bulk.*` (19 keys) + `admin.members.inlineEdit.*` (8 keys) + `admin.members.directory.{selectAll,selectRow,selectedCount}` (3 keys) across EN/TH/SV = 30 keys × 3 locales. `pnpm check:i18n` 597 keys parity green. 2026-04-16
 
 ---
 

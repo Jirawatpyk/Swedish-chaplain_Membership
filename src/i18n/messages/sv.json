@@ -529,7 +529,10 @@
         "riskPlaceholder": "—",
         "rowAriaLabel": "Öppna {company} detaljer",
         "noPrimary": "Ingen primär kontakt",
-        "loadMore": "Ladda fler"
+        "loadMore": "Ladda fler",
+        "selectAll": "Markera alla rader",
+        "selectRow": "Markera {company}",
+        "selectedCount": "{count, plural, one {# rad vald} other {# rader valda}}"
       },
       "emptyStates": {
         "zero": {
@@ -701,6 +704,41 @@
           "notFound": "Kontakten hittades inte.",
           "serverError": "Något gick fel. Försök igen."
         }
+      },
+      "bulk": {
+        "toolbarLabel": "Massåtgärder",
+        "selectedCount": "{count, plural, one {# vald} other {# valda}}",
+        "overCap": "Max {max} medlemmar per omgång. Dela upp urvalet.",
+        "actions": {
+          "archive": "Arkivera",
+          "change_plan": "Byt plan",
+          "send_portal_invite": "Skicka inbjudan"
+        },
+        "clear": "Rensa urval",
+        "archiveTitle": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
+        "archiveDescription": "Arkiverade medlemmar döljs i katalogen och anslutna portalkonton återkallas. Ångra inom 90 dagar.",
+        "affectedMembers": "Berörda medlemmar",
+        "andMore": "…och {count} till",
+        "typeToConfirm": "Skriv \"{phrase}\" för att bekräfta",
+        "archivePhrase": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
+        "cancel": "Avbryt",
+        "confirmArchive": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
+        "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
+        "rateLimited": "För många massåtgärder. Vänta och försök igen.",
+        "unknownError": "Något gick fel.",
+        "networkError": "Nätverksfel. Kontrollera anslutningen.",
+        "progressLabel": "Massåtgärd pågår",
+        "progressMessage": "{action} {count, plural, one {# medlem} other {# medlemmar}}…"
+      },
+      "inlineEdit": {
+        "statusUpdated": "Status uppdaterad",
+        "saveFailed": "Kunde inte spara. Återställd.",
+        "saving": "Sparar…",
+        "toggleStatus": "Växla status (nuvarande: {current})",
+        "editNotes": "Dubbelklicka för att redigera anteckningar",
+        "notesSaved": "Anteckningar sparade",
+        "notesInput": "Redigera anteckningar",
+        "networkError": "Nätverksfel. Kontrollera anslutningen."
       }
     }
   },

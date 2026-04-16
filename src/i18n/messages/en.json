@@ -529,7 +529,10 @@
         "riskPlaceholder": "—",
         "rowAriaLabel": "Open {company} details",
         "noPrimary": "No primary contact",
-        "loadMore": "Load more"
+        "loadMore": "Load more",
+        "selectAll": "Select all rows",
+        "selectRow": "Select {company}",
+        "selectedCount": "{count, plural, one {# row selected} other {# rows selected}}"
       },
       "emptyStates": {
         "zero": {
@@ -701,6 +704,41 @@
           "notFound": "Contact not found.",
           "serverError": "Something went wrong. Please try again."
         }
+      },
+      "bulk": {
+        "toolbarLabel": "Bulk actions",
+        "selectedCount": "{count, plural, one {# selected} other {# selected}}",
+        "overCap": "Maximum {max} members per batch. Split the selection.",
+        "actions": {
+          "archive": "Archive",
+          "change_plan": "Change plan",
+          "send_portal_invite": "Send invite"
+        },
+        "clear": "Clear selection",
+        "archiveTitle": "Archive {count, plural, one {# member} other {# members}}",
+        "archiveDescription": "Archived members are hidden from the directory and linked portal accounts are revoked. Undelete within 90 days.",
+        "affectedMembers": "Affected members",
+        "andMore": "…and {count} more",
+        "typeToConfirm": "Type \"{phrase}\" to confirm",
+        "archivePhrase": "Archive {count, plural, one {# member} other {# members}}",
+        "cancel": "Cancel",
+        "confirmArchive": "Archive {count, plural, one {# member} other {# members}}",
+        "success": "{count, plural, one {# member} other {# members}} {action}",
+        "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
+        "unknownError": "Something went wrong.",
+        "networkError": "Network error. Check your connection.",
+        "progressLabel": "Bulk operation in progress",
+        "progressMessage": "{action} {count, plural, one {# member} other {# members}}…"
+      },
+      "inlineEdit": {
+        "statusUpdated": "Status updated",
+        "saveFailed": "Save failed. Reverted.",
+        "saving": "Saving…",
+        "toggleStatus": "Toggle status (currently {current})",
+        "editNotes": "Double-click to edit notes",
+        "notesSaved": "Notes saved",
+        "notesInput": "Edit notes",
+        "networkError": "Network error. Check your connection."
       }
     }
   },

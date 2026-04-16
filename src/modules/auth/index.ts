@@ -203,3 +203,11 @@ export {
   type PasswordHash,
   type AuditEventId,
 } from './domain/branded';
+
+// --- Infrastructure: shared adapters -----------------------------------------
+
+export {
+  rateLimiter,
+  type RateLimiter,
+  type RateLimitResult,
+} from './infrastructure/rate-limit/upstash-rate-limiter';

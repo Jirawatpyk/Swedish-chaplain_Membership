@@ -529,7 +529,10 @@
         "riskPlaceholder": "—",
         "rowAriaLabel": "เปิดรายละเอียด {company}",
         "noPrimary": "ไม่มีผู้ติดต่อหลัก",
-        "loadMore": "โหลดเพิ่ม"
+        "loadMore": "โหลดเพิ่ม",
+        "selectAll": "เลือกทุกแถว",
+        "selectRow": "เลือก {company}",
+        "selectedCount": "เลือกแล้ว {count} แถว"
       },
       "emptyStates": {
         "zero": {
@@ -701,6 +704,41 @@
           "notFound": "ไม่พบผู้ติดต่อ",
           "serverError": "เกิดข้อผิดพลาด โปรดลองอีกครั้ง"
         }
+      },
+      "bulk": {
+        "toolbarLabel": "ดำเนินการเป็นชุด",
+        "selectedCount": "เลือกแล้ว {count} รายการ",
+        "overCap": "สูงสุด {max} สมาชิกต่อชุด กรุณาแบ่งรายการ",
+        "actions": {
+          "archive": "ย้ายไปถังเก็บ",
+          "change_plan": "เปลี่ยนแพ็กเกจ",
+          "send_portal_invite": "ส่งคำเชิญ"
+        },
+        "clear": "ล้างการเลือก",
+        "archiveTitle": "ย้าย {count} สมาชิก ไปถังเก็บ",
+        "archiveDescription": "สมาชิกที่อยู่ในถังเก็บจะถูกซ่อนจากรายชื่อ และบัญชีพอร์ทัลที่เชื่อมจะถูกเพิกถอน กู้คืนได้ภายใน 90 วัน",
+        "affectedMembers": "สมาชิกที่ได้รับผลกระทบ",
+        "andMore": "…และอีก {count} ราย",
+        "typeToConfirm": "พิมพ์ \"{phrase}\" เพื่อยืนยัน",
+        "archivePhrase": "ย้าย {count} สมาชิก ไปถังเก็บ",
+        "cancel": "ยกเลิก",
+        "confirmArchive": "ย้าย {count} สมาชิก ไปถังเก็บ",
+        "success": "ดำเนินการ {action} สำเร็จ {count} สมาชิก",
+        "rateLimited": "ดำเนินการเป็นชุดมากเกินไป รอสักครู่แล้วลองใหม่",
+        "unknownError": "เกิดข้อผิดพลาด",
+        "networkError": "เครือข่ายมีปัญหา ตรวจสอบการเชื่อมต่อ",
+        "progressLabel": "กำลังดำเนินการเป็นชุด",
+        "progressMessage": "กำลัง{action} {count} สมาชิก…"
+      },
+      "inlineEdit": {
+        "statusUpdated": "อัปเดตสถานะแล้ว",
+        "saveFailed": "บันทึกไม่สำเร็จ ย้อนกลับแล้ว",
+        "saving": "กำลังบันทึก…",
+        "toggleStatus": "สลับสถานะ (ปัจจุบัน: {current})",
+        "editNotes": "ดับเบิลคลิกเพื่อแก้ไขโน้ต",
+        "notesSaved": "บันทึกโน้ตแล้ว",
+        "notesInput": "แก้ไขโน้ต",
+        "networkError": "เครือข่ายมีปัญหา ตรวจสอบการเชื่อมต่อ"
       }
     }
   },

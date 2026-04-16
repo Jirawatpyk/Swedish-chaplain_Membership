@@ -31,12 +31,13 @@ import { buttonVariants } from '@/components/ui/button';
 import { ContentContainer } from '@/components/layout/content-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { DirectoryFilters } from '@/components/members/directory-filters';
-import { MembersTable, type MembersTableRow } from '@/components/members/members-table';
+import { type MembersTableRow } from '@/components/members/members-table';
 import {
   MembersZeroState,
   MembersFilteredEmptyState,
   MembersErrorState,
 } from '@/components/members/empty-states';
+import { DirectoryWithBulk } from './_components/directory-with-bulk';
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: 'Members · SweCham' };
@@ -82,14 +83,23 @@ export default async function MembersListPage({
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <DirectoryFilters />
-          <MembersDirectoryBody query={query} />
+          <MembersDirectoryBody
+            query={query}
+            isAdmin={currentUser.role === 'admin'}
+          />
         </CardContent>
       </Card>
     </ContentContainer>
   );
 }
 
-async function MembersDirectoryBody({ query }: { query: SearchParams }) {
+async function MembersDirectoryBody({
+  query,
+  isAdmin,
+}: {
+  query: SearchParams;
+  isAdmin: boolean;
+}) {
   const tenant = resolveTenantFromRequest();
 
   const hasFilters =
@@ -139,5 +149,11 @@ async function MembersDirectoryBody({ query }: { query: SearchParams }) {
       : null,
   }));
 
-  return <MembersTable rows={rows} nextCursor={result.value.nextCursor} />;
+  return (
+    <DirectoryWithBulk
+      rows={rows}
+      nextCursor={result.value.nextCursor}
+      isAdmin={isAdmin}
+    />
+  );
 }

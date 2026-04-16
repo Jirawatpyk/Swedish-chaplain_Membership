@@ -197,3 +197,36 @@ export {
   type ResendVerificationError,
   type ResendVerificationDeps,
 } from './application/use-cases/resend-verification-email';
+
+// --- US4 use cases ----------------------------------------------------------
+
+export {
+  bulkAction,
+  bulkActionSchema,
+  BULK_CAP,
+  BULK_RATE_MAX,
+  BULK_RATE_WINDOW_SECONDS,
+  type BulkActionInput,
+  type BulkActionOutput,
+  type BulkActionError,
+  type BulkActionDeps,
+  type BulkActionMeta,
+} from './application/use-cases/bulk-action';
+
+export {
+  inlineEdit,
+  inlineEditSchema,
+  INLINE_EDIT_FIELDS,
+  type InlineEditInput,
+  type InlineEditError,
+  type InlineEditDeps,
+  type InlineEditMeta,
+  type InlineEditField,
+} from './application/use-cases/inline-edit';
+
+// --- US4 port ---------------------------------------------------------------
+
+export {
+  type RateLimitPort,
+  type RateLimitResult,
+} from './application/ports/rate-limit-port';
