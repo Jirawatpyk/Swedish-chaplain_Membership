@@ -23,7 +23,8 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
+import { formatRelativeTime } from '@/lib/relative-time';
 import {
   useReactTable,
   getCoreRowModel,
@@ -98,12 +99,7 @@ const columnHelper = createColumnHelper<MembersTableRow>();
 
 function StatusBadge({ status }: { status: MembersTableRow['status'] }) {
   const t = useTranslations('admin.members.directory');
-  const label =
-    status === 'active'
-      ? t('statusActive')
-      : status === 'inactive'
-        ? t('statusInactive')
-        : t('statusArchived');
+  const label = t(`filters.status.${status}`);
   const variant: 'default' | 'secondary' | 'outline' =
     status === 'active'
       ? 'default'
@@ -442,6 +438,7 @@ export function MembersTable({
   onInlineEdit,
 }: Props) {
   const t = useTranslations('admin.members.directory');
+  const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -586,7 +583,15 @@ export function MembersTable({
       cell: (info) => {
         const v = info.getValue();
         if (!v) return <span className="text-muted-foreground">—</span>;
-        return v.slice(0, 10);
+        return (
+          <time
+            dateTime={v}
+            title={v.replace('T', ' ').slice(0, 16)}
+            suppressHydrationWarning
+          >
+            {formatRelativeTime(v, locale)}
+          </time>
+        );
       },
     }),
     columnHelper.accessor('notes', {
@@ -607,7 +612,7 @@ export function MembersTable({
           </span>
         ),
     }),
-  ], [enableSelection, onInlineEdit, t, rows, rowSelection, handleRowSelectionChange]);
+  ], [enableSelection, onInlineEdit, t, locale, rows, rowSelection, handleRowSelectionChange]);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table v8 hook
   const table = useReactTable({
@@ -731,18 +736,18 @@ export function MembersTable({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() ? 'selected' : undefined}
-                  className={`cursor-pointer hover:bg-accent/40 focus-within:bg-accent/40 ${
+                  className={`hover:bg-accent/40 focus-within:bg-accent/40 ${
                     row.getIsSelected() ? 'bg-accent/20' : ''
                   }`}
                 >
                   {row.getVisibleCells().map((cell, idx) => (
-                    <TableCell key={cell.id} className="align-top">
+                    <TableCell key={cell.id} className="align-middle">
                       {/* First non-select column is the company name link */}
                       {!enableSelection && idx === 0 ? (
                         <Link
                           href={`/admin/members/${m.member_id}`}
                           aria-label={t('rowAriaLabel', { company: m.company_name })}
-                          className="focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                          className="cursor-pointer hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                         >
                           {flexRender(
                             cell.column.columnDef.cell,
@@ -753,7 +758,7 @@ export function MembersTable({
                         <Link
                           href={`/admin/members/${m.member_id}`}
                           aria-label={t('rowAriaLabel', { company: m.company_name })}
-                          className="focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                          className="cursor-pointer hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                         >
                           {flexRender(
                             cell.column.columnDef.cell,

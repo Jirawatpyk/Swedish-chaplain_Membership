@@ -11,6 +11,7 @@
  */
 
 import { useTranslations, useLocale } from 'next-intl';
+import { formatRelativeTime } from '@/lib/relative-time';
 
 export type TimelineItemProps = {
   readonly id: string;
@@ -183,10 +184,11 @@ export function TimelineEventItem({
           <span className="font-medium text-sm">{eventLabel}</span>
           <time
             dateTime={timestamp}
-            className="text-xs text-muted-foreground font-mono"
+            title={formatLocalisedTimestamp(timestamp, locale)}
+            className="text-xs text-muted-foreground"
             suppressHydrationWarning
           >
-            {formatLocalisedTimestamp(timestamp, locale)}
+            {formatRelativeTime(timestamp, locale)}
           </time>
         </div>
         {payloadDetail && (

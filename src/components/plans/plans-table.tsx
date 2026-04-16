@@ -24,7 +24,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, SearchIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -229,7 +229,11 @@ export function PlansTable({
         role="region"
         aria-label={t('filters.search.label')}
       >
-        <div className="flex-1">
+        <div className="relative flex-1 min-w-0">
+          <SearchIcon
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+            aria-hidden
+          />
           <Label htmlFor="plans-search" className="sr-only">
             {t('filters.search.label')}
           </Label>
@@ -241,6 +245,7 @@ export function PlansTable({
             onChange={(e) => setQ(e.target.value)}
             onBlur={() => updateFilter({ q: q || null })}
             disabled={isPending}
+            className="pl-9"
           />
         </div>
 
@@ -288,7 +293,7 @@ export function PlansTable({
               updateFilter({ activeOnly: v ? 'true' : null });
             }}
           />
-          <Label htmlFor="plans-active-only" id="plans-active-only-label">
+          <Label htmlFor="plans-active-only" id="plans-active-only-label" >
             {t('filters.activeOnly')}
           </Label>
         </div>
@@ -304,7 +309,7 @@ export function PlansTable({
                 updateFilter({ showDeleted: v ? 'true' : null });
               }}
             />
-            <Label htmlFor="plans-show-deleted" id="plans-show-deleted-label">
+            <Label htmlFor="plans-show-deleted" id="plans-show-deleted-label" >
               {t('filters.showDeleted')}
             </Label>
           </div>

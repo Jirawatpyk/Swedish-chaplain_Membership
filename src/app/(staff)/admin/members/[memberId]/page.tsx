@@ -194,7 +194,7 @@ export default async function MemberDetailPage({ params }: PageProps) {
               </p>
               <Link
                 href="/admin/members"
-                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                className={buttonVariants({ variant: 'outline' })}
               >
                 <ArrowLeftIcon className="size-4" />
                 {t('notFound.cta')}
@@ -236,21 +236,21 @@ export default async function MemberDetailPage({ params }: PageProps) {
           <>
             <Link
               href="/admin/members"
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              className={buttonVariants({ variant: 'outline' })}
             >
               <ArrowLeftIcon className="size-4" />
               {t('notFound.cta')}
             </Link>
             <Link
               href={`/admin/members/${member.memberId}/timeline`}
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              className={buttonVariants({ variant: 'outline' })}
             >
               <ClockIcon className="size-4" />
               {t('sections.audit')}
             </Link>
             <Link
               href={`/admin/members/${member.memberId}/edit`}
-              className={buttonVariants({ size: 'sm' })}
+              className={buttonVariants()}
             >
               <PencilIcon className="size-4" />
               Edit

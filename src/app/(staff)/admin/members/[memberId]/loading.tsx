@@ -19,7 +19,7 @@ export default async function Loading() {
         actions={
           <div className="flex gap-2">
             {/* Back to members */}
-            <Skeleton className="h-9 w-40" />
+            <Skeleton className="h-9 w-36" />
             {/* Timeline (US6) */}
             <Skeleton className="h-9 w-28" />
             {/* Edit */}

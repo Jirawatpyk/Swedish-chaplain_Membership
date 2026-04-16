@@ -40,10 +40,24 @@ export function parseBreadcrumbPath({
 
   const decodedParts = rawParts.map(safeDecode);
   const lastIndex = rawParts.length - 1;
+
+  // Detect plan-year segments: /admin/plans/<year>/<planId> — the year
+  // segment has no corresponding route page (plans list is at
+  // /admin/plans?year=<year>), so we rewrite its href to a query param.
+  const isPlansYear = (idx: number): boolean => {
+    if (idx < 2) return false;
+    const parent = decodedParts[idx - 1];
+    const segment = decodedParts[idx];
+    return parent === 'plans' && /^\d{4}$/.test(segment ?? '');
+  };
+
   return rawParts.map((rawSegment, index) => {
     const decoded = decodedParts[index] ?? rawSegment;
+    const href = isPlansYear(index)
+      ? `/admin/plans?year=${decoded}`
+      : '/' + rawParts.slice(0, index + 1).join('/');
     return {
-      href: '/' + rawParts.slice(0, index + 1).join('/'),
+      href,
       segment: decoded,
       label: dynamicLabels.get(decoded) ?? staticLabels[decoded] ?? decoded,
       isCurrent: index === lastIndex,

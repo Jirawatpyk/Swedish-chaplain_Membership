@@ -42,7 +42,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 // Client component — same rationale as `idle-warning-dialog.tsx`:
 // the `@/modules/auth` barrel transitively loads Node-only
@@ -137,7 +137,7 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          <Button variant="outline" size="sm" disabled={disabled}>
+          <Button disabled={disabled}>
             <UserPlusIcon className="size-4" aria-hidden />
             {tActions('invite')}
           </Button>
@@ -174,7 +174,9 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
                 }}
               >
                 <SelectTrigger id="invite-role" className="w-full">
-                  <SelectValue />
+                  <TranslatedSelectValue
+                    translate={(v) => (v ? t(`roles.${v}`) : t('roleLabel'))}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {ROLES.map((r) => (

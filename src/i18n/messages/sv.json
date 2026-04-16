@@ -519,12 +519,20 @@
       "directory": {
         "searchPlaceholder": "Sök på företag, kontaktnamn eller e-post",
         "searchSrLabel": "Sök medlemmar",
-        "statusFilter": "Status",
-        "statusActive": "Aktiv",
-        "statusInactive": "Inaktiv",
-        "statusArchived": "Arkiverad",
-        "showArchived": "Visa arkiverade",
         "clearFilters": "Rensa filter",
+        "filters": {
+          "status": {
+            "label": "Status",
+            "all": "Alla statusar",
+            "active": "Aktiv",
+            "inactive": "Inaktiv",
+            "archived": "Arkiverad"
+          },
+          "plan": {
+            "label": "Paket",
+            "all": "Alla paket"
+          }
+        },
         "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
         "columns": {
           "company": "Företag",

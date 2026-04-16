@@ -55,14 +55,14 @@ export default async function PlansListPage({
             <>
               <Link
                 href="/admin/plans/clone"
-                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                className={buttonVariants({ variant: 'outline' })}
               >
                 <CopyIcon className="h-3.5 w-3.5" />
                 {t('actions.cloneYear')}
               </Link>
               <Link
                 href="/admin/plans/new"
-                className={buttonVariants({ size: 'sm' })}
+                className={buttonVariants()}
               >
                 <PlusIcon className="h-3.5 w-3.5" />
                 {t('actions.new')}

@@ -90,7 +90,7 @@ export default async function NewMemberPage() {
         actions={
           <Link
             href="/admin/members"
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            className={buttonVariants({ variant: 'outline' })}
           >
             <ArrowLeftIcon className="size-4" />
             {t('cancel')}

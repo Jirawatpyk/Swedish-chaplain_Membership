@@ -17,17 +17,18 @@ export default async function Loading() {
         title={t('title')}
         subtitle={t('subtitle')}
         // Placeholder for the admin-only "Add your first member" CTA
-        actions={<Skeleton className="h-9 w-44" />}
+        actions={<Skeleton className="h-9 w-32" />}
       />
       <Card>
         <CardContent className="flex flex-col gap-4">
-          {/* Filter bar shell — search input + checkbox */}
+          {/* Filter bar — matches DirectoryFilters: search + status select + plan select */}
           <div
             className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4"
             aria-hidden
           >
             <Skeleton className="h-9 w-full sm:flex-1" />
-            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-9 w-[140px]" />
+            <Skeleton className="h-9 w-[180px]" />
           </div>
           <MembersTableSkeleton />
         </CardContent>

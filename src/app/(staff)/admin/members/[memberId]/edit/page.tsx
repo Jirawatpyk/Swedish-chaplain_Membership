@@ -104,7 +104,7 @@ export default async function EditMemberPage({ params }: PageProps) {
         actions={
           <Link
             href={`/admin/members/${memberId}`}
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            className={buttonVariants({ variant: 'outline' })}
           >
             <ArrowLeftIcon className="size-4" />
             {t('cancel')}

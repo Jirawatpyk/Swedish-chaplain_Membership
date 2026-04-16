@@ -84,7 +84,7 @@ export default async function MemberTimelinePage({ params }: PageProps) {
               </p>
               <Link
                 href="/admin/members"
-                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                className={buttonVariants({ variant: 'outline' })}
               >
                 <ArrowLeftIcon className="size-4" />
                 {tDetail('notFound.cta')}
@@ -137,7 +137,7 @@ export default async function MemberTimelinePage({ params }: PageProps) {
         actions={
           <Link
             href={`/admin/members/${member.memberId}`}
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            className={buttonVariants({ variant: 'outline' })}
           >
             <ArrowLeftIcon className="size-4" />
             {t('backToDetail')}

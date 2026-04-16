@@ -519,12 +519,20 @@
       "directory": {
         "searchPlaceholder": "Search by company, contact name, or email",
         "searchSrLabel": "Search members",
-        "statusFilter": "Status",
-        "statusActive": "Active",
-        "statusInactive": "Inactive",
-        "statusArchived": "Archived",
-        "showArchived": "Include archived",
         "clearFilters": "Clear filters",
+        "filters": {
+          "status": {
+            "label": "Status",
+            "all": "All statuses",
+            "active": "Active",
+            "inactive": "Inactive",
+            "archived": "Archived"
+          },
+          "plan": {
+            "label": "Plan",
+            "all": "All plans"
+          }
+        },
         "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
         "columns": {
           "company": "Company",

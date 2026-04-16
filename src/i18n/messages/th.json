@@ -519,12 +519,20 @@
       "directory": {
         "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ชื่อผู้ติดต่อ หรืออีเมล",
         "searchSrLabel": "ค้นหาสมาชิก",
-        "statusFilter": "สถานะ",
-        "statusActive": "ใช้งาน",
-        "statusInactive": "หยุดใช้งาน",
-        "statusArchived": "จัดเก็บแล้ว",
-        "showArchived": "แสดงสมาชิกที่จัดเก็บ",
         "clearFilters": "ล้างตัวกรอง",
+        "filters": {
+          "status": {
+            "label": "สถานะ",
+            "all": "ทุกสถานะ",
+            "active": "ใช้งาน",
+            "inactive": "หยุดใช้งาน",
+            "archived": "จัดเก็บแล้ว"
+          },
+          "plan": {
+            "label": "แพ็กเกจ",
+            "all": "ทุกแพ็กเกจ"
+          }
+        },
         "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
         "columns": {
           "company": "บริษัท",

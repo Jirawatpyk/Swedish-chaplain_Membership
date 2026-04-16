@@ -21,11 +21,16 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { directorySearchWithCount } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { listPlans } from '@/modules/plans';
+import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { ContentContainer } from '@/components/layout/content-container';
 import { PageHeader } from '@/components/layout/page-header';
-import { DirectoryFilters } from '@/components/members/directory-filters';
+import {
+  DirectoryFilters,
+  type PlanOption,
+} from '@/components/members/directory-filters';
 import { type MembersTableRow } from '@/components/members/members-table';
 import { MembersTableSkeleton } from '@/components/members/members-table-skeleton';
 import {
@@ -41,9 +46,13 @@ export async function generateMetadata(): Promise<Metadata> {
 
 interface SearchParams {
   readonly q?: string;
+  readonly status?: string;
+  readonly plan_id?: string;
   readonly show_archived?: string;
   readonly page?: string;
 }
+
+const VALID_STATUSES = new Set(['active', 'inactive', 'archived']);
 
 const PAGE_SIZE = 50;
 
@@ -65,7 +74,7 @@ export default async function MembersListPage({
           currentUser.role === 'admin' ? (
             <Link
               href="/admin/members/new"
-              className={buttonVariants({ size: 'sm' })}
+              className={buttonVariants()}
             >
               <PlusIcon className="h-3.5 w-3.5" />
               {t('addMember')}
@@ -76,7 +85,6 @@ export default async function MembersListPage({
 
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <DirectoryFilters />
           <MembersDirectoryBody
             query={query}
             isAdmin={currentUser.role === 'admin'}
@@ -96,36 +104,82 @@ async function MembersDirectoryBody({
 }) {
   const tenant = resolveTenantFromRequest();
 
+  // Resolve status filter — support new ?status= param + legacy ?show_archived=
+  let statuses: readonly ('active' | 'inactive' | 'archived')[];
+  if (query.status && VALID_STATUSES.has(query.status)) {
+    statuses = [query.status as 'active' | 'inactive' | 'archived'];
+  } else if (query.show_archived === '1') {
+    statuses = ['active', 'inactive', 'archived'];
+  } else {
+    statuses = ['active', 'inactive'];
+  }
+
   const hasFilters =
     (query.q !== undefined && query.q.trim().length > 0) ||
+    (query.status !== undefined && query.status !== 'all') ||
+    (query.plan_id !== undefined && query.plan_id !== 'all') ||
     query.show_archived === '1';
-
-  const statuses = query.show_archived === '1'
-    ? (['active', 'inactive', 'archived'] as const)
-    : (['active', 'inactive'] as const);
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page =
     Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
   const offset = (page - 1) * PAGE_SIZE;
 
+  // Load plan list for the filter dropdown (parallel with directory query)
+  const plansDeps = buildPlansDeps(tenant);
   const deps = buildMembersDeps(tenant);
-  const result = await directorySearchWithCount(
-    { tenant, memberRepo: deps.memberRepo },
-    {
-      ...(query.q?.trim() ? { q: query.q.trim() } : {}),
-      status: [...statuses],
-      limit: PAGE_SIZE,
-      offset,
-    },
-  );
+
+  const [result, plansResult] = await Promise.all([
+    directorySearchWithCount(
+      { tenant, memberRepo: deps.memberRepo },
+      {
+        ...(query.q?.trim() ? { q: query.q.trim() } : {}),
+        ...(query.plan_id && query.plan_id !== 'all'
+          ? { planId: query.plan_id }
+          : {}),
+        status: [...statuses],
+        limit: PAGE_SIZE,
+        offset,
+      },
+    ),
+    listPlans(
+      { filter: {} },
+      {
+        tenant: plansDeps.tenant,
+        planRepo: plansDeps.planRepo,
+        feeConfigRepo: plansDeps.feeConfigRepo,
+        clock: plansDeps.clock,
+      },
+    ),
+  ]);
+
+  // Build plan options for the filter dropdown
+  const planOptions: PlanOption[] = plansResult.ok
+    ? plansResult.value.data.map((p) => ({
+        id: p.plan_id,
+        label:
+          (p.plan_name as Record<string, string>).en ??
+          (p.plan_name as Record<string, string>).th ??
+          p.plan_id,
+      }))
+    : [];
 
   if (!result.ok) {
-    return <MembersErrorState />;
+    return (
+      <>
+        <DirectoryFilters plans={planOptions} />
+        <MembersErrorState />
+      </>
+    );
   }
 
   if (result.value.items.length === 0) {
-    return hasFilters ? <MembersFilteredEmptyState /> : <MembersZeroState />;
+    return (
+      <>
+        <DirectoryFilters plans={planOptions} />
+        {hasFilters ? <MembersFilteredEmptyState /> : <MembersZeroState />}
+      </>
+    );
   }
 
   const rows: MembersTableRow[] = result.value.items.map((row) => ({
@@ -155,14 +209,17 @@ async function MembersDirectoryBody({
   // shimmer skeleton as /members loading.tsx to avoid CLS during
   // hydration transitions.
   return (
-    <Suspense fallback={<MembersTableSkeleton />}>
-      <DirectoryWithBulk
-        rows={rows}
-        page={page}
-        pageSize={PAGE_SIZE}
-        total={result.value.total}
-        isAdmin={isAdmin}
-      />
-    </Suspense>
+    <>
+      <DirectoryFilters plans={planOptions} />
+      <Suspense fallback={<MembersTableSkeleton />}>
+        <DirectoryWithBulk
+          rows={rows}
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={result.value.total}
+          isAdmin={isAdmin}
+        />
+      </Suspense>
+    </>
   );
 }
