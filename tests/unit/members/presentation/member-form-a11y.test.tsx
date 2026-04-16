@@ -132,3 +132,55 @@ describe('MemberForm FR-036 autocomplete attrs', () => {
     expect(url.getAttribute('type')).toBe('url');
   });
 });
+
+/**
+ * T2 (round-3 review): member-form notes field coverage.
+ *
+ * `notes` is admin-only metadata (max 4000 chars). It is intentionally
+ * NOT required — so no aria-required and no asterisk marker — but the
+ * textarea still needs to be:
+ *   - reachable by id (for label association),
+ *   - labelled via `<label for>`,
+ *   - capped by `maxLength={4000}` so the browser prevents over-long
+ *     drafts before server-side validation.
+ * The optional-field treatment also matches FR-035 (tri-part indicator
+ * only applies to required fields).
+ */
+describe('MemberForm notes field (T2 — round-3)', () => {
+  it('renders a textarea with id="notes"', () => {
+    const { container } = renderForm();
+    const notes = container.querySelector<HTMLTextAreaElement>('#notes');
+    expect(notes).not.toBeNull();
+    expect(notes?.tagName).toBe('TEXTAREA');
+  });
+
+  it('is NOT aria-required (optional admin metadata)', () => {
+    const { container } = renderForm();
+    const notes = container.querySelector<HTMLTextAreaElement>('#notes');
+    expect(notes?.getAttribute('aria-required')).not.toBe('true');
+  });
+
+  it('enforces maxLength=4000 on the textarea', () => {
+    const { container } = renderForm();
+    const notes = container.querySelector<HTMLTextAreaElement>('#notes');
+    expect(notes?.maxLength).toBe(4000);
+  });
+
+  it('has a <label> associated via `for="notes"`', () => {
+    const { container } = renderForm();
+    const label = container.querySelector('label[for="notes"]');
+    expect(label).not.toBeNull();
+    // Optional field — label MUST NOT have the red asterisk marker.
+    expect(label?.textContent ?? '').not.toContain('*');
+  });
+
+  it('exposes a placeholder (via i18n key)', () => {
+    const { container } = renderForm();
+    const notes = container.querySelector<HTMLTextAreaElement>('#notes');
+    // useTranslations mock returns the key verbatim — we assert the
+    // placeholder attribute exists (content is i18n-owned, not tested here).
+    // The `tf` translator is scoped to admin.members.create.fields, so
+    // the mock returns the last segment of the key.
+    expect(notes?.placeholder).toBe('notesPlaceholder');
+  });
+});
