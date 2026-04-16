@@ -196,4 +196,112 @@ describe('integration: inline edit (T102)', () => {
   it('allows all whitelisted fields', () => {
     expect(INLINE_EDIT_FIELDS).toEqual(['status', 'country', 'notes']);
   });
+
+  // --- Round-4 T2 — audit_failed branch coverage per field ----------------
+
+  it('R4-T2 status: audit failure returns sanitized server_error', async () => {
+    const deps = stubDeps({
+      memberRepo: {
+        ...stubDeps().memberRepo,
+        findByIdInTx: vi.fn().mockResolvedValue(ok(stubMember)),
+      } as InlineEditDeps['memberRepo'],
+      audit: {
+        record: vi.fn().mockResolvedValue(ok(undefined)),
+        recordInTx: vi.fn().mockResolvedValue(err({ code: 'repo.unexpected' })),
+      },
+    });
+    const result = await inlineEdit(
+      memberId,
+      { field: 'status', value: 'inactive' },
+      meta,
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('server_error');
+      if (result.error.type === 'server_error') {
+        expect(result.error.message).toBe('inline edit failed');
+      }
+    }
+  });
+
+  it('R4-T2 country: audit failure returns sanitized server_error', async () => {
+    const deps = stubDeps({
+      memberRepo: {
+        ...stubDeps().memberRepo,
+        findByIdInTx: vi.fn().mockResolvedValue(ok(stubMember)),
+        updateFieldsInTx: vi
+          .fn()
+          .mockResolvedValue(ok({ ...stubMember, country: 'DE' })),
+      } as InlineEditDeps['memberRepo'],
+      audit: {
+        record: vi.fn().mockResolvedValue(ok(undefined)),
+        recordInTx: vi.fn().mockResolvedValue(err({ code: 'repo.unexpected' })),
+      },
+    });
+    const result = await inlineEdit(
+      memberId,
+      { field: 'country', value: 'DE' },
+      meta,
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('server_error');
+    }
+  });
+
+  it('R4-T2 notes: audit failure returns sanitized server_error', async () => {
+    const deps = stubDeps({
+      memberRepo: {
+        ...stubDeps().memberRepo,
+        findByIdInTx: vi.fn().mockResolvedValue(ok(stubMember)),
+        updateFieldsInTx: vi
+          .fn()
+          .mockResolvedValue(ok({ ...stubMember, notes: 'new' })),
+      } as InlineEditDeps['memberRepo'],
+      audit: {
+        record: vi.fn().mockResolvedValue(ok(undefined)),
+        recordInTx: vi.fn().mockResolvedValue(err({ code: 'repo.unexpected' })),
+      },
+    });
+    const result = await inlineEdit(
+      memberId,
+      { field: 'notes', value: 'new' },
+      meta,
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('server_error');
+    }
+  });
+
+  // --- Round-4 T3 — lookup_failed branch coverage --------------------------
+
+  it('R4-T3: DB error (not not_found) returns sanitized server_error', async () => {
+    const deps = stubDeps({
+      memberRepo: {
+        ...stubDeps().memberRepo,
+        findByIdInTx: vi
+          .fn()
+          .mockResolvedValue(err({ code: 'repo.unexpected' })),
+      } as InlineEditDeps['memberRepo'],
+    });
+    const result = await inlineEdit(
+      memberId,
+      { field: 'status', value: 'inactive' },
+      meta,
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // NOT `not_found` — must be `server_error` (the N-I2 fix)
+      expect(result.error.type).toBe('server_error');
+      if (result.error.type === 'server_error') {
+        expect(result.error.message).toBe('inline edit failed');
+        expect(result.error.message).not.toContain('repo.unexpected');
+      }
+    }
+  });
 });

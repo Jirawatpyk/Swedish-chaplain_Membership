@@ -16,6 +16,7 @@
 
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -125,6 +126,19 @@ export async function inlineEdit(
         if (currentResult.error.code === 'repo.not_found') {
           throw new InlineEditNotFoundError();
         }
+        // Round-4 R4-I5: log the root cause before throwing generic
+        // server_error. Without this, production incidents can't be
+        // diagnosed — we sanitize the client response but must preserve
+        // observability server-side.
+        logger.error(
+          {
+            err: currentResult.error,
+            memberId,
+            requestId: meta.requestId,
+            field,
+          },
+          'inline-edit: findByIdInTx unexpected error',
+        );
         throw new Error('lookup_failed');
       }
       const current = currentResult.value;

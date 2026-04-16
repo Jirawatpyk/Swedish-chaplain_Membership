@@ -196,30 +196,40 @@ function InlineCountryCell({
   const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Round-4 review R4-I1: `saving` state update is async — if user presses
+  // Enter then blur fires immediately, both handlers read `saving=false`
+  // and submit twice. A ref is synchronous so a second concurrent call
+  // short-circuits before the DB roundtrip.
+  const savingRef = useRef(false);
 
   const handleSave = useCallback(async () => {
-    if (!onSave || editing === null) return;
-    const normalised = editing.trim().toUpperCase();
-    if (normalised === country) {
-      setEditing(null);
-      return;
-    }
-    if (normalised.length !== 2) {
-      toast.error(t('countryInvalid'));
-      setEditing(null);
-      return;
-    }
-    setSaving(true);
-    const result = await onSave(memberId, 'country', normalised);
-    setSaving(false);
-    if (result.ok) {
-      toast.success(t('countryUpdated'));
-      setEditing(null);
-    } else {
-      // Round-3 review N-I1: keep input open on error so user can retry
-      // without retyping. Toast announces the failure; they can Escape to
-      // cancel or fix + retry.
-      toast.error(result.error);
+    if (!onSave || editing === null || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const normalised = editing.trim().toUpperCase();
+      if (normalised === country) {
+        setEditing(null);
+        return;
+      }
+      if (normalised.length !== 2) {
+        toast.error(t('countryInvalid'));
+        setEditing(null);
+        return;
+      }
+      setSaving(true);
+      const result = await onSave(memberId, 'country', normalised);
+      setSaving(false);
+      if (result.ok) {
+        toast.success(t('countryUpdated'));
+        setEditing(null);
+      } else {
+        // Round-3 review N-I1: keep input open on error so user can retry
+        // without retyping. Toast announces the failure; they can Escape to
+        // cancel or fix + retry.
+        toast.error(result.error);
+      }
+    } finally {
+      savingRef.current = false;
     }
   }, [memberId, country, editing, onSave, t]);
 
@@ -309,23 +319,30 @@ function InlineNotesCell({
   const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Round-4 R4-I1: sync guard against onBlur + Enter double-fire race.
+  const savingRef = useRef(false);
 
   const handleSave = useCallback(async () => {
-    if (!onSave || editing === null) return;
-    const next = editing.trim() || null;
-    if (next === notes) {
-      setEditing(null);
-      return;
-    }
-    setSaving(true);
-    const result = await onSave(memberId, 'notes', next);
-    setSaving(false);
-    if (result.ok) {
-      toast.success(t('notesUpdated'));
-      setEditing(null);
-    } else {
-      // Round-3 N-I1: keep textarea open so user doesn't lose their draft.
-      toast.error(result.error);
+    if (!onSave || editing === null || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const next = editing.trim() || null;
+      if (next === notes) {
+        setEditing(null);
+        return;
+      }
+      setSaving(true);
+      const result = await onSave(memberId, 'notes', next);
+      setSaving(false);
+      if (result.ok) {
+        toast.success(t('notesUpdated'));
+        setEditing(null);
+      } else {
+        // Round-3 N-I1: keep textarea open so user doesn't lose their draft.
+        toast.error(result.error);
+      }
+    } finally {
+      savingRef.current = false;
     }
   }, [memberId, notes, editing, onSave, t]);
 

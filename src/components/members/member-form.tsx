@@ -63,15 +63,19 @@ export const memberFormSchema = z.object({
   plan_id: z.string().min(1, 'required'),
   plan_year: z.coerce.number().int().min(2020).max(2100),
   registration_date: z.string().optional(),
-  // Round-3 review N-I4: transform empty string to null so the form's
-  // "clear notes" path produces null (matches inline-edit + use case schema
-  // which accepts null). Prevents silent data-integrity divergence between
-  // form + inline-edit write paths.
+  // Round-3 N-I4 + round-4 R4-I3: accept `null` / `undefined` / `''` on
+  // input and emit `null` on output. The edit form seeds defaults from
+  // the DB row (nullable), but react-hook-form's defaultValues bypass
+  // the .transform() — so the INPUT type must tolerate `null` to avoid a
+  // zod type mismatch on imperative `trigger('notes')`.
   notes: z
     .string()
     .max(4000)
+    .nullable()
     .optional()
-    .transform((v) => (v === '' || v === undefined ? null : v)),
+    .transform((v) =>
+      v === '' || v === undefined || v === null ? null : v,
+    ),
   primary_contact: z.object({
     first_name: z.string().trim().min(1, 'required').max(100),
     last_name: z.string().trim().min(1, 'required').max(100),

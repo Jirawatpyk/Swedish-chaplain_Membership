@@ -233,8 +233,10 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           tax_id: member.taxId ?? undefined,
           website: member.website ?? undefined,
           description: member.description ?? undefined,
-          // After the zod .transform() schema change (N-I4) the output
-          // type is `string | null`. Pass the DB value directly.
+          // Round-4 R4-I3: the form schema now accepts `null` on input
+          // (via `.nullable().optional()`) and transforms to `null` on
+          // submit. Passing `member.notes` directly (string | null) is
+          // safe — imperative `trigger('notes')` no longer fails.
           notes: member.notes,
           founded_year: member.foundedYear ?? undefined,
           turnover_thb: member.turnoverThb ?? undefined,
