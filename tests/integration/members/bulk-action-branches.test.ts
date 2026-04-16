@@ -54,6 +54,7 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
         return ok(map);
       }),
       findSoftDuplicate: vi.fn(),
+      findByLinkedUserId: vi.fn(),
       createWithPrimaryContact: vi.fn(),
       updateStatus: vi.fn(),
       updateStatusInTx: vi.fn().mockResolvedValue(ok({ ...stubMember, status: 'archived' })),

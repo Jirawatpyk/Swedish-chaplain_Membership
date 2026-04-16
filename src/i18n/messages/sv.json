@@ -800,6 +800,7 @@
     },
     "member": {
       "dashboard": "Instrumentpanel",
+      "profile": "Profil",
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering"
     }
@@ -830,7 +831,74 @@
   },
   "portal": {
     "profile": {
-      "title": "My profile"
+      "title": "Min profil",
+      "pageTitle": "Min profil",
+      "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
+      "loadError": "Kunde inte ladda din profil. Försök igen.",
+      "editButton": "Redigera profil",
+      "companySection": "Företagsinformation",
+      "planSection": "Medlemsplan",
+      "contactsSection": "Kontakter",
+      "inviteColleague": "Bjud in kollega",
+      "primaryBadge": "Primär",
+      "portalLinked": "Portalkopplad",
+      "noContacts": "Inga kontakter hittades.",
+      "fields": {
+        "companyName": "Företagsnamn",
+        "legalEntityType": "Juridisk form",
+        "country": "Land",
+        "website": "Webbplats",
+        "description": "Beskrivning",
+        "planYear": "Planår",
+        "registrationDate": "Registreringsdatum",
+        "status": "Status"
+      },
+      "status": {
+        "active": "Aktiv",
+        "inactive": "Inaktiv",
+        "archived": "Arkiverad"
+      }
+    },
+    "edit": {
+      "pageTitle": "Redigera profil",
+      "notLinked": "Ditt konto är inte kopplat till en medlem.",
+      "loadError": "Kunde inte ladda din profil.",
+      "contactSection": "Din kontaktinformation",
+      "companySection": "Företagsinformation",
+      "fields": {
+        "firstName": "Förnamn",
+        "lastName": "Efternamn",
+        "phone": "Telefon",
+        "preferredLanguage": "Föredraget språk",
+        "website": "Webbplats",
+        "description": "Beskrivning"
+      },
+      "saveButton": "Spara ändringar",
+      "cancelButton": "Avbryt",
+      "saving": "Sparar…",
+      "saveSuccess": "Profilen har uppdaterats.",
+      "saveError": "Kunde inte spara ändringar. Försök igen.",
+      "noChanges": "Inga ändringar att spara."
+    },
+    "invite": {
+      "pageTitle": "Bjud in kollega",
+      "notLinked": "Ditt konto är inte kopplat till en medlem.",
+      "loadError": "Kunde inte ladda din profil.",
+      "notPrimary": "Endast den primära kontakten kan bjuda in kollegor.",
+      "formTitle": "Kollegauppgifter",
+      "fields": {
+        "firstName": "Förnamn",
+        "lastName": "Efternamn",
+        "email": "E-post",
+        "roleTitle": "Roll / Titel",
+        "preferredLanguage": "Föredraget språk"
+      },
+      "sendButton": "Skicka inbjudan",
+      "cancelButton": "Avbryt",
+      "sending": "Skickar…",
+      "sendSuccess": "Inbjudan har skickats.",
+      "sendError": "Kunde inte skicka inbjudan. Försök igen.",
+      "emailTaken": "Denna e-postadress är redan registrerad."
     }
   },
   "audit": {

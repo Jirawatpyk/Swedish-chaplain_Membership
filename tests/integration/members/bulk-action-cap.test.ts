@@ -26,6 +26,7 @@ function stubDeps(): BulkActionDeps {
       findByIdInTx: vi.fn(),
       findManyByIdsInTx: vi.fn(),
       findSoftDuplicate: vi.fn(),
+      findByLinkedUserId: vi.fn(),
       createWithPrimaryContact: vi.fn(),
       updateStatus: vi.fn(),
       updateStatusInTx: vi.fn(),

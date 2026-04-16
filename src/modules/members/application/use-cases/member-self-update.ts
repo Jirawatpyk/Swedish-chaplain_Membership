@@ -1,0 +1,310 @@
+/**
+ * `member-self-update` use case — FR-014, FR-014a (T118).
+ *
+ * Enforces the compile-time whitelist from `portal-self-update-fields.ts`:
+ *   - Member fields: website, description
+ *   - Contact fields: firstName, lastName, phone, preferredLanguage
+ *
+ * Any field outside the whitelist in the incoming payload triggers a 403
+ * with `member_self_update_forbidden` audit event (FR-014 forged-payload
+ * guard). The zod schema is generated FROM the tuple so adding/removing
+ * a field is a single-source-change.
+ */
+
+import { z } from 'zod';
+import { err, ok, type Result } from '@/lib/result';
+import type { TenantContext } from '@/modules/tenants';
+import type { Member, MemberId } from '../../domain/member';
+import type { Contact, ContactId, PreferredLanguage } from '../../domain/contact';
+import {
+  PORTAL_SELF_UPDATE_CONTACT_FIELDS,
+  PORTAL_SELF_UPDATE_MEMBER_FIELDS,
+} from '../../domain/portal-self-update-fields';
+import { asPhone, type Phone } from '../../domain/value-objects/phone';
+import { isPreferredLanguage } from '../../domain/contact';
+import type { MemberRepo, MemberPatch } from '../ports/member-repo';
+import type { ContactRepo, ContactPatch } from '../ports/contact-repo';
+import type { AuditPort } from '../ports/audit-port';
+
+// ---------------------------------------------------------------------------
+// Zod schemas generated from the compile-time tuples (FR-014a)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a zod object schema whose keys are exactly the whitelist tuple.
+ * This is the single source of truth — if the tuple changes, the schema
+ * changes automatically. T116 unit test asserts key-set parity.
+ */
+const contactFieldsSchema = z.object({
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().min(1).max(100).optional(),
+  phone: z.string().max(20).nullable().optional(),
+  preferredLanguage: z.enum(['en', 'th', 'sv']).optional(),
+});
+
+const memberFieldsSchema = z.object({
+  website: z.string().max(200).nullable().optional(),
+  description: z.string().max(2000).nullable().optional(),
+});
+
+export const selfUpdateSchema = z.object({
+  primary_contact: contactFieldsSchema.optional(),
+  website: memberFieldsSchema.shape.website,
+  description: memberFieldsSchema.shape.description,
+});
+
+/** Exported for T116 key-set parity assertion. */
+export const SELF_UPDATE_CONTACT_SCHEMA_KEYS = Object.keys(
+  contactFieldsSchema.shape,
+).sort() as string[];
+
+export const SELF_UPDATE_MEMBER_SCHEMA_KEYS = Object.keys(
+  memberFieldsSchema.shape,
+).sort() as string[];
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type MemberSelfUpdateInput = {
+  readonly memberId: MemberId;
+  readonly contactId: ContactId;
+  readonly rawBody: Record<string, unknown>;
+  readonly actorUserId: string;
+  readonly requestId: string;
+};
+
+export type MemberSelfUpdateError =
+  | { type: 'not_found' }
+  | { type: 'forbidden'; reason: string }
+  | { type: 'validation_error'; issues: z.ZodIssue[] }
+  | { type: 'server_error'; message: string };
+
+export type MemberSelfUpdateDeps = {
+  readonly tenant: TenantContext;
+  readonly memberRepo: MemberRepo;
+  readonly contactRepo: ContactRepo;
+  readonly audit: AuditPort;
+};
+
+// ---------------------------------------------------------------------------
+// Whitelist enforcement
+// ---------------------------------------------------------------------------
+
+const ALLOWED_TOP_LEVEL_KEYS = new Set([
+  ...PORTAL_SELF_UPDATE_MEMBER_FIELDS,
+  'primary_contact',
+]);
+
+const ALLOWED_CONTACT_KEYS = new Set<string>(
+  PORTAL_SELF_UPDATE_CONTACT_FIELDS,
+);
+
+/**
+ * Returns forbidden field names if ANY key in the raw body is not in the
+ * whitelist. This catches forged payloads that include `plan_id`, `status`,
+ * `tax_id`, etc.
+ */
+function detectForbiddenFields(
+  raw: Record<string, unknown>,
+): string[] {
+  const forbidden: string[] = [];
+  for (const key of Object.keys(raw)) {
+    if (!ALLOWED_TOP_LEVEL_KEYS.has(key)) {
+      forbidden.push(key);
+    }
+  }
+  const contactObj = raw['primary_contact'];
+  if (contactObj && typeof contactObj === 'object' && contactObj !== null) {
+    for (const key of Object.keys(contactObj)) {
+      if (!ALLOWED_CONTACT_KEYS.has(key)) {
+        forbidden.push(`primary_contact.${key}`);
+      }
+    }
+  }
+  return forbidden;
+}
+
+// ---------------------------------------------------------------------------
+// Use case
+// ---------------------------------------------------------------------------
+
+export async function memberSelfUpdate(
+  deps: MemberSelfUpdateDeps,
+  input: MemberSelfUpdateInput,
+): Promise<
+  Result<{ member: Member; contact: Contact }, MemberSelfUpdateError>
+> {
+  // 1. Detect forbidden fields BEFORE parsing — reject forged payloads
+  const forbidden = detectForbiddenFields(input.rawBody);
+  if (forbidden.length > 0) {
+    // Audit the forgery attempt (FR-014)
+    await deps.audit.record(deps.tenant, {
+      type: 'member_self_update_forbidden',
+      actorUserId: input.actorUserId,
+      requestId: input.requestId,
+      summary: `forged fields: ${forbidden.join(', ')}`,
+      payload: {
+        member_id: input.memberId,
+        attempted_fields: forbidden,
+      },
+    });
+    return err({
+      type: 'forbidden',
+      reason: `forbidden fields: ${forbidden.join(', ')}`,
+    });
+  }
+
+  // 2. Parse the whitelisted payload
+  const parsed = selfUpdateSchema.safeParse(input.rawBody);
+  if (!parsed.success) {
+    return err({
+      type: 'validation_error',
+      issues: parsed.error.issues,
+    });
+  }
+
+  // 3. Load existing member to verify ownership
+  const memberResult = await deps.memberRepo.findById(
+    deps.tenant,
+    input.memberId,
+  );
+  if (!memberResult.ok) {
+    return err({
+      type: memberResult.error.code === 'repo.not_found' ? 'not_found' : 'server_error',
+      ...(memberResult.error.code !== 'repo.not_found' && {
+        message: memberResult.error.code,
+      }),
+    } as MemberSelfUpdateError);
+  }
+
+  const data = parsed.data;
+  const fieldsChanged: string[] = [];
+
+  // 4. Update member fields if any changed
+  const mutableMemberPatch: Record<string, unknown> = {};
+  if (data.website !== undefined) {
+    mutableMemberPatch.website = data.website ?? undefined;
+    fieldsChanged.push('website');
+  }
+  if (data.description !== undefined) {
+    mutableMemberPatch.description = data.description ?? undefined;
+    fieldsChanged.push('description');
+  }
+  const memberPatch = mutableMemberPatch as MemberPatch;
+
+  let updatedMember = memberResult.value;
+  if (Object.keys(mutableMemberPatch).length > 0) {
+    const updateResult = await deps.memberRepo.updateFields(
+      deps.tenant,
+      input.memberId,
+      memberPatch,
+    );
+    if (!updateResult.ok) {
+      return err({
+        type: 'server_error',
+        message: `member update: ${updateResult.error.code}`,
+      });
+    }
+    updatedMember = updateResult.value;
+  }
+
+  // 5. Update contact fields if any changed
+  let updatedContact: Contact | null = null;
+  if (data.primary_contact) {
+    const mutableContactPatch: Record<string, unknown> = {};
+    const pc = data.primary_contact;
+
+    if (pc.firstName !== undefined) {
+      mutableContactPatch.firstName = pc.firstName;
+      fieldsChanged.push('firstName');
+    }
+    if (pc.lastName !== undefined) {
+      mutableContactPatch.lastName = pc.lastName;
+      fieldsChanged.push('lastName');
+    }
+    if (pc.phone !== undefined) {
+      if (pc.phone === null) {
+        mutableContactPatch.phone = null;
+      } else {
+        const phoneResult = asPhone(pc.phone);
+        if (!phoneResult.ok) {
+          return err({
+            type: 'validation_error',
+            issues: [{
+              code: 'custom',
+              path: ['primary_contact', 'phone'],
+              message: `invalid phone: ${phoneResult.error.code}`,
+            }],
+          });
+        }
+        mutableContactPatch.phone = phoneResult.value;
+      }
+      fieldsChanged.push('phone');
+    }
+    if (pc.preferredLanguage !== undefined) {
+      if (!isPreferredLanguage(pc.preferredLanguage)) {
+        return err({
+          type: 'validation_error',
+          issues: [{
+            code: 'custom',
+            path: ['primary_contact', 'preferredLanguage'],
+            message: 'invalid preferred language',
+          }],
+        });
+      }
+      mutableContactPatch.preferredLanguage = pc.preferredLanguage as PreferredLanguage;
+      fieldsChanged.push('preferredLanguage');
+    }
+    const contactPatch = mutableContactPatch as ContactPatch;
+
+    if (Object.keys(mutableContactPatch).length > 0) {
+      const contactUpdateResult = await deps.contactRepo.update(
+        deps.tenant,
+        input.contactId,
+        contactPatch,
+        input.actorUserId,
+        input.requestId,
+      );
+      if (!contactUpdateResult.ok) {
+        return err({
+          type: 'server_error',
+          message: `contact update: ${contactUpdateResult.error.code}`,
+        });
+      }
+      updatedContact = contactUpdateResult.value;
+    }
+  }
+
+  // 6. Audit the self-update (even if no-op — intentional for visibility)
+  if (fieldsChanged.length > 0) {
+    await deps.audit.record(deps.tenant, {
+      type: 'member_self_updated',
+      actorUserId: input.actorUserId,
+      requestId: input.requestId,
+      summary: `self-updated: ${fieldsChanged.join(', ')}`,
+      payload: {
+        member_id: input.memberId,
+        contact_id: input.contactId,
+        fields_changed: fieldsChanged,
+      },
+    });
+  }
+
+  // If contact wasn't updated, load it fresh for the response
+  if (!updatedContact) {
+    const contactResult = await deps.contactRepo.findById(
+      deps.tenant,
+      input.contactId,
+    );
+    if (!contactResult.ok) {
+      return err({
+        type: 'server_error',
+        message: `contact load: ${contactResult.error.code}`,
+      });
+    }
+    updatedContact = contactResult.value;
+  }
+
+  return ok({ member: updatedMember, contact: updatedContact });
+}

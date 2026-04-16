@@ -800,6 +800,7 @@
     },
     "member": {
       "dashboard": "Dashboard",
+      "profile": "Profile",
       "account": "Account",
       "ariaLabel": "Member navigation"
     }
@@ -830,7 +831,74 @@
   },
   "portal": {
     "profile": {
-      "title": "My profile"
+      "title": "My profile",
+      "pageTitle": "My Profile",
+      "notLinked": "Your account is not linked to a member. Please contact your administrator.",
+      "loadError": "Could not load your profile. Please try again.",
+      "editButton": "Edit Profile",
+      "companySection": "Company Information",
+      "planSection": "Membership Plan",
+      "contactsSection": "Contacts",
+      "inviteColleague": "Invite Colleague",
+      "primaryBadge": "Primary",
+      "portalLinked": "Portal linked",
+      "noContacts": "No contacts found.",
+      "fields": {
+        "companyName": "Company Name",
+        "legalEntityType": "Legal Entity Type",
+        "country": "Country",
+        "website": "Website",
+        "description": "Description",
+        "planYear": "Plan Year",
+        "registrationDate": "Registration Date",
+        "status": "Status"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "archived": "Archived"
+      }
+    },
+    "edit": {
+      "pageTitle": "Edit Profile",
+      "notLinked": "Your account is not linked to a member.",
+      "loadError": "Could not load your profile.",
+      "contactSection": "Your Contact Information",
+      "companySection": "Company Information",
+      "fields": {
+        "firstName": "First Name",
+        "lastName": "Last Name",
+        "phone": "Phone",
+        "preferredLanguage": "Preferred Language",
+        "website": "Website",
+        "description": "Description"
+      },
+      "saveButton": "Save Changes",
+      "cancelButton": "Cancel",
+      "saving": "Saving…",
+      "saveSuccess": "Profile updated successfully.",
+      "saveError": "Could not save changes. Please try again.",
+      "noChanges": "No changes to save."
+    },
+    "invite": {
+      "pageTitle": "Invite Colleague",
+      "notLinked": "Your account is not linked to a member.",
+      "loadError": "Could not load your profile.",
+      "notPrimary": "Only the primary contact can invite colleagues.",
+      "formTitle": "Colleague Details",
+      "fields": {
+        "firstName": "First Name",
+        "lastName": "Last Name",
+        "email": "Email",
+        "roleTitle": "Role / Title",
+        "preferredLanguage": "Preferred Language"
+      },
+      "sendButton": "Send Invitation",
+      "cancelButton": "Cancel",
+      "sending": "Sending…",
+      "sendSuccess": "Invitation sent successfully.",
+      "sendError": "Could not send invitation. Please try again.",
+      "emailTaken": "This email is already registered."
     }
   },
   "audit": {

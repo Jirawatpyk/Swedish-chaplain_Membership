@@ -128,6 +128,12 @@ export const memberNavConfig: NavConfig = {
           activePattern: 'exact:/portal',
         },
         {
+          titleKey: 'nav.member.profile',
+          icon: BuildingIcon,
+          href: '/portal/profile',
+          activePattern: '/portal/profile',
+        },
+        {
           titleKey: 'nav.member.account',
           icon: UserCircleIcon,
           href: '/portal/account',

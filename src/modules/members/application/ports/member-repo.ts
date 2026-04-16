@@ -159,6 +159,18 @@ export interface MemberRepo {
     patch: MemberPatch,
   ): Promise<Result<Member, RepoError>>;
 
+  /**
+   * Resolve member by a linked contact's user_id. Used by portal
+   * self-service (US5) to derive the member from the session user.
+   * Returns the member whose contact has `linked_user_id = userId`
+   * and `removed_at IS NULL`. Returns `repo.not_found` if no such
+   * link exists within the tenant.
+   */
+  findByLinkedUserId(
+    ctx: TenantContext,
+    userId: string,
+  ): Promise<Result<Member, RepoError>>;
+
   /** US2 directory search — substring across company, contact name, email. */
   searchDirectory(
     ctx: TenantContext,

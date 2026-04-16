@@ -198,6 +198,26 @@ export {
   type ResendVerificationDeps,
 } from './application/use-cases/resend-verification-email';
 
+// --- US5 use cases ----------------------------------------------------------
+
+export {
+  memberSelfUpdate,
+  selfUpdateSchema,
+  SELF_UPDATE_CONTACT_SCHEMA_KEYS,
+  SELF_UPDATE_MEMBER_SCHEMA_KEYS,
+  type MemberSelfUpdateInput,
+  type MemberSelfUpdateError,
+  type MemberSelfUpdateDeps,
+} from './application/use-cases/member-self-update';
+
+export {
+  inviteColleague,
+  inviteColleagueSchema,
+  type InviteColleagueInput,
+  type InviteColleagueError,
+  type InviteColleagueDeps,
+} from './application/use-cases/invite-colleague';
+
 // --- US4 use cases ----------------------------------------------------------
 
 export {

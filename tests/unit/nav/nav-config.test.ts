@@ -60,12 +60,13 @@ describe('staffNavConfig', () => {
 });
 
 describe('memberNavConfig', () => {
-  it('has exactly 1 section with 2 items: Dashboard, Account', () => {
+  it('has exactly 1 section with 3 items: Dashboard, Profile, Account', () => {
     expect(memberNavConfig.sections).toHaveLength(1);
     const section = memberNavConfig.sections[0]!;
-    expect(section.items).toHaveLength(2);
+    expect(section.items).toHaveLength(3);
     expect(section.items[0]!.titleKey).toBe('nav.member.dashboard');
-    expect(section.items[1]!.titleKey).toBe('nav.member.account');
+    expect(section.items[1]!.titleKey).toBe('nav.member.profile');
+    expect(section.items[2]!.titleKey).toBe('nav.member.account');
   });
 
   it('no NavGroups in member config', () => {

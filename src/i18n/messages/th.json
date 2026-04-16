@@ -800,6 +800,7 @@
     },
     "member": {
       "dashboard": "แดชบอร์ด",
+      "profile": "โปรไฟล์",
       "account": "บัญชีของฉัน",
       "ariaLabel": "เมนูนำทางสำหรับสมาชิก"
     }
@@ -830,7 +831,74 @@
   },
   "portal": {
     "profile": {
-      "title": "My profile"
+      "title": "โปรไฟล์ของฉัน",
+      "pageTitle": "โปรไฟล์ของฉัน",
+      "notLinked": "บัญชีของคุณยังไม่ได้เชื่อมต่อกับสมาชิก กรุณาติดต่อผู้ดูแลระบบ",
+      "loadError": "ไม่สามารถโหลดโปรไฟล์ได้ กรุณาลองใหม่อีกครั้ง",
+      "editButton": "แก้ไขโปรไฟล์",
+      "companySection": "ข้อมูลบริษัท",
+      "planSection": "แผนสมาชิกภาพ",
+      "contactsSection": "ผู้ติดต่อ",
+      "inviteColleague": "เชิญเพื่อนร่วมงาน",
+      "primaryBadge": "หลัก",
+      "portalLinked": "เชื่อมต่อพอร์ทัลแล้ว",
+      "noContacts": "ไม่พบผู้ติดต่อ",
+      "fields": {
+        "companyName": "ชื่อบริษัท",
+        "legalEntityType": "ประเภทนิติบุคคล",
+        "country": "ประเทศ",
+        "website": "เว็บไซต์",
+        "description": "รายละเอียด",
+        "planYear": "ปีแผน",
+        "registrationDate": "วันที่ลงทะเบียน",
+        "status": "สถานะ"
+      },
+      "status": {
+        "active": "ใช้งาน",
+        "inactive": "ไม่ใช้งาน",
+        "archived": "เก็บถาวร"
+      }
+    },
+    "edit": {
+      "pageTitle": "แก้ไขโปรไฟล์",
+      "notLinked": "บัญชีของคุณยังไม่ได้เชื่อมต่อกับสมาชิก",
+      "loadError": "ไม่สามารถโหลดโปรไฟล์ได้",
+      "contactSection": "ข้อมูลผู้ติดต่อของคุณ",
+      "companySection": "ข้อมูลบริษัท",
+      "fields": {
+        "firstName": "ชื่อ",
+        "lastName": "นามสกุล",
+        "phone": "โทรศัพท์",
+        "preferredLanguage": "ภาษาที่ต้องการ",
+        "website": "เว็บไซต์",
+        "description": "รายละเอียด"
+      },
+      "saveButton": "บันทึกการเปลี่ยนแปลง",
+      "cancelButton": "ยกเลิก",
+      "saving": "กำลังบันทึก…",
+      "saveSuccess": "อัปเดตโปรไฟล์เรียบร้อยแล้ว",
+      "saveError": "ไม่สามารถบันทึกการเปลี่ยนแปลงได้ กรุณาลองใหม่",
+      "noChanges": "ไม่มีการเปลี่ยนแปลง"
+    },
+    "invite": {
+      "pageTitle": "เชิญเพื่อนร่วมงาน",
+      "notLinked": "บัญชีของคุณยังไม่ได้เชื่อมต่อกับสมาชิก",
+      "loadError": "ไม่สามารถโหลดโปรไฟล์ได้",
+      "notPrimary": "เฉพาะผู้ติดต่อหลักเท่านั้นที่สามารถเชิญเพื่อนร่วมงานได้",
+      "formTitle": "รายละเอียดเพื่อนร่วมงาน",
+      "fields": {
+        "firstName": "ชื่อ",
+        "lastName": "นามสกุล",
+        "email": "อีเมล",
+        "roleTitle": "ตำแหน่ง",
+        "preferredLanguage": "ภาษาที่ต้องการ"
+      },
+      "sendButton": "ส่งคำเชิญ",
+      "cancelButton": "ยกเลิก",
+      "sending": "กำลังส่ง…",
+      "sendSuccess": "ส่งคำเชิญเรียบร้อยแล้ว",
+      "sendError": "ไม่สามารถส่งคำเชิญได้ กรุณาลองใหม่",
+      "emailTaken": "อีเมลนี้ถูกลงทะเบียนแล้ว"
     }
   },
   "audit": {

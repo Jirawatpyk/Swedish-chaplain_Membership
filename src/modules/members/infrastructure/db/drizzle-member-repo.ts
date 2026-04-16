@@ -164,6 +164,36 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async findByLinkedUserId(ctx, userId) {
+    try {
+      // Join contacts → members to find the member whose contact has
+      // linked_user_id = userId and removed_at IS NULL (US5 portal).
+      const rows = await runInTenant(ctx, (tx) =>
+        tx
+          .select({ member: members })
+          .from(members)
+          .innerJoin(
+            contacts,
+            and(
+              eq(contacts.memberId, members.memberId),
+              eq(contacts.tenantId, members.tenantId),
+            ),
+          )
+          .where(
+            and(
+              eq(contacts.linkedUserId, userId),
+              sql`${contacts.removedAt} IS NULL`,
+            ),
+          )
+          .limit(1),
+      );
+      if (rows.length === 0) return err({ code: 'repo.not_found' });
+      return ok(rowToMember(rows[0]!.member));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findSoftDuplicate(ctx, companyName, country) {
     try {
       // Only match active/inactive members — archived members should

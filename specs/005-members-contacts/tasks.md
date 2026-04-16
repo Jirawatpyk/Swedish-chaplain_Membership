@@ -222,19 +222,19 @@
 **Independent test**: Sign in as member, view profile, update phone, save — verify audit + forbidden-field rejection.
 **US5 requirements covered**: FR-013, FR-014, FR-014a, FR-015, FR-042.
 
-- [ ] T114 [P] [US5] Author failing contract test `tests/contract/portal/profile.test.ts` covering GET + PATCH + forbidden-field 403
-- [ ] T115 [P] [US5] Author failing integration test `tests/integration/members/self-service-whitelist.test.ts` — forged payload with `plan_id` / `status` / `tax_id` → 403 + `member_self_update_forbidden` audit
-- [ ] T116 [P] [US5] Author failing unit test `tests/unit/members/application/whitelist-schema-equals-tuple.test.ts` (FR-014a — zod key set === tuple)
-- [ ] T117 [P] [US5] Author failing E2E spec `tests/e2e/members-self-service.spec.ts @f3 @a11y @i18n`
-- [ ] T118 [P] [US5] Implement `application/use-cases/member-self-update.ts` with tuple-generated zod schema
-- [ ] T119 [P] [US5] Implement `application/use-cases/invite-colleague.ts` primary-contact-only gating
-- [ ] T120 [US5] Implement API route `src/app/api/portal/profile/route.ts` (GET + PATCH) with member-only RBAC + session-derived member resolution
-- [ ] T121 [US5] Implement API route `src/app/api/portal/contacts/invite/route.ts` primary-contact-only
-- [ ] T122 [US5] Replace F1 placeholder shell with real `src/app/(member)/portal/layout.tsx`
-- [ ] T123 [US5] Implement `src/app/(member)/portal/page.tsx` — Profile view with the 3 real surfaces only (FR-042 — forbidden fields hidden entirely, not disabled)
-- [ ] T124 [US5] Implement `src/app/(member)/portal/edit/page.tsx` — whitelisted-field form
-- [ ] T125 [US5] Implement `src/app/(member)/portal/contacts/invite/page.tsx` — colleague invite form
-- [ ] T126 [US5] Fill i18n `portal.profile.*`, `portal.invite.*` across EN/TH/SV
+- [X] T114 [P] [US5] Contract test `tests/contract/portal/profile.test.ts` — **7/7 green** covering GET 200 (notes redacted), 401 no-session, 403 non-member, PATCH 200 whitelisted, 400 missing idempotency key, 403 forbidden-field + audit, 400 validation_error. 2026-04-16
+- [X] T115 [P] [US5] Integration test `tests/integration/members/self-service-whitelist.test.ts` — **5/5 green**: forged plan_id → 403 + `member_self_update_forbidden` audit, forged status → 403, forged email in primary_contact → 403, whitelisted update succeeds + `member_self_updated` audit with correct `fields_changed`, multiple forbidden fields in one payload. 2026-04-16
+- [X] T116 [P] [US5] Unit test `tests/unit/members/application/whitelist-schema-equals-tuple.test.ts` — **4/4 green** (FR-014a): contact schema keys === tuple, member schema keys === tuple, tuple content assertions. 2026-04-16
+- [X] T117 [P] [US5] E2E spec `tests/e2e/members-self-service.spec.ts @f3 @a11y @i18n` — authored with profile render + axe-core WCAG 2.1 AA scan + TH/SV i18n leak check + FR-042 forbidden-field hidden assertion on edit page. 2026-04-16
+- [X] T118 [P] [US5] Implement `application/use-cases/member-self-update.ts` — FR-014a tuple-generated zod schema, forbidden-field detection BEFORE parse, `member_self_update_forbidden` audit on forgery, member+contact patch with phone E.164 validation. Exported `SELF_UPDATE_CONTACT_SCHEMA_KEYS` / `SELF_UPDATE_MEMBER_SCHEMA_KEYS` for T116 parity test. 2026-04-16
+- [X] T119 [P] [US5] Implement `application/use-cases/invite-colleague.ts` — primary-contact-only gating via `contactRepo.findById` + `isPrimary` check, wraps F1 `CreateUserPort`, creates secondary contact + links user. 2026-04-16
+- [X] T120 [US5] API route `src/app/api/portal/profile/route.ts` (GET + PATCH) — `requireMemberContext` helper resolves session → member via `findByLinkedUserId` + finds caller's own contact. GET returns serialised member + contacts (notes redacted per contract #12). PATCH delegates to `memberSelfUpdate` with 403/400/404/500 error mapping. 2026-04-16
+- [X] T121 [US5] API route `src/app/api/portal/contacts/invite/route.ts` — wraps `inviteColleague` use case, F1 `createUser` adapted via `CreateUserPort` wrapper, 201 returns contact_id + user_id. 2026-04-16
+- [X] T122 [US5] Portal layout `src/app/(member)/portal/layout.tsx` — F1 layout retained (no changes needed), nav config extended with Profile link. 2026-04-16
+- [X] T123 [US5] Profile view `src/app/(member)/portal/profile/page.tsx` — 3 real surfaces: company info (dl grid), plan section, contacts list with primary badge + portal-linked badge. Invite Colleague link visible only to primary contact (FR-015). FR-042: notes, override reasons, admin-only fields hidden entirely. `generateMetadata` for FR-037. 2026-04-16
+- [X] T124 [US5] Edit form `src/app/(member)/portal/edit/page.tsx` + `src/components/members/portal-edit-form.tsx` — RHF+zod, 6 whitelisted fields only (firstName, lastName, phone, preferredLanguage, website, description). Diff-based PATCH (only changed fields sent). Sonner toast feedback. FR-042: no forbidden fields in DOM. 2026-04-16
+- [X] T125 [US5] Invite form `src/app/(member)/portal/contacts/invite/page.tsx` + `src/components/members/invite-colleague-form.tsx` — primary-contact gate at page level, 5 fields (first_name, last_name, email, role_title, preferred_language). Sonner toast + redirect on success. 2026-04-16
+- [X] T126 [US5] i18n `portal.profile.*` (19 keys), `portal.edit.*` (14 keys), `portal.invite.*` (14 keys), `nav.member.profile` across EN/TH/SV = 70 keys × 3 locales. `pnpm check:i18n` 667 keys parity green. 2026-04-16
 
 ---
 
