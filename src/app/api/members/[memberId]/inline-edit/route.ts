@@ -11,6 +11,17 @@
  *     events on client retry. Absent key = idempotency disabled (same
  *     as F1 pattern for non-critical endpoints).
  *   - I-3: invalid JSON body returns 400 explicitly.
+ *
+ * Staff-review SS-3 — Idempotency-Key semantics:
+ *   • Header is OPTIONAL. Clients that omit it trade duplicate-protection
+ *     for simpler code; the endpoint still short-circuits no-op edits
+ *     (country/notes unchanged) so duplicate audit events from retries
+ *     are rare in practice.
+ *   • Clients that send a key get full replay/conflict semantics
+ *     (`idempotency_conflict` on key+body mismatch, replay on match).
+ *   • The current admin UI sends a fresh `crypto.randomUUID()` per save
+ *     (see `directory-with-bulk.tsx`), so the server-side replay path is
+ *     exercised only by external clients that deliberately reuse keys.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';

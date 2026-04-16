@@ -70,11 +70,33 @@ export interface MemberRepo {
    * Required by inline-edit + other atomic read-modify-write paths to avoid
    * TOCTOU races where a concurrent actor mutates the row between the read
    * and the write. Caller already holds an open transaction via runInTenant.
+   *
+   * SS-5: the `*InTx` variants intentionally take only `tx` (not `ctx`). The
+   * transaction session already carries tenant scope via the
+   * `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant` statements
+   * issued by `runInTenant` — RLS filters rows automatically. This contrasts
+   * with `audit.recordInTx(tx, ctx, event)` where `ctx` is required because
+   * `audit_log` has an explicit `tenant_id` column (not RLS-scoped).
    */
   findByIdInTx(
     tx: TenantTx,
     memberId: MemberId,
   ): Promise<Result<Member, RepoError>>;
+
+  /**
+   * Batched in-transaction lookup with row-level locks on ALL returned rows.
+   * Backs the US4 bulk-action use case (SB-1 + SW-1): one
+   * `SELECT ... WHERE member_id = ANY($1) FOR UPDATE` instead of N serial
+   * round-trips. Locks are released on COMMIT / ROLLBACK of the ambient tx.
+   *
+   * Returns a `Map<MemberId, Member>` for O(1) per-item access in the caller.
+   * Missing ids are absent from the Map; caller is responsible for
+   * enumerating the expected vs found set and raising `not_found` as needed.
+   */
+  findManyByIdsInTx(
+    tx: TenantTx,
+    memberIds: readonly MemberId[],
+  ): Promise<Result<ReadonlyMap<MemberId, Member>, RepoError>>;
 
   findSoftDuplicate(
     ctx: TenantContext,

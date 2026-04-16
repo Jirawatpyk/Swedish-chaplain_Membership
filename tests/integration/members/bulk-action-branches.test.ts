@@ -44,6 +44,15 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
     memberRepo: {
       findById: vi.fn().mockResolvedValue(ok(stubMember)),
       findByIdInTx: vi.fn().mockResolvedValue(ok(stubMember)),
+      // Staff-review SB-1 + SW-1: batched lookup is the new default path
+      // for bulk-action. Returns a Map<MemberId, Member> keyed by id.
+      findManyByIdsInTx: vi.fn().mockImplementation(async (_tx, ids) => {
+        const map = new Map();
+        for (const id of ids) {
+          map.set(id, { ...stubMember, memberId: id });
+        }
+        return ok(map);
+      }),
       findSoftDuplicate: vi.fn(),
       createWithPrimaryContact: vi.fn(),
       updateStatus: vi.fn(),
@@ -124,17 +133,16 @@ describe('integration: bulk send_portal_invite branch (round-2 review C-6)', () 
 });
 
 describe('integration: bulk all-or-nothing rollback (round-2 review C-7 / FR-019)', () => {
-  it('partial failure mid-batch → entire batch rolls back, no audit persisted', async () => {
+  it('missing id in batched lookup → not_found, no writes (staff-review SB-1)', async () => {
     const deps = stubDeps();
-    let findCallCount = 0;
-    (deps.memberRepo.findById as ReturnType<typeof vi.fn>).mockImplementation(() => {
-      findCallCount++;
-      // 2nd member in batch → not found
-      if (findCallCount === 2) {
-        return Promise.resolve(err({ code: 'repo.not_found' }));
-      }
-      return Promise.resolve(ok(stubMember));
-    });
+    // Return a Map that is missing the 2nd id — caller's "verify all
+    // requested ids returned" loop must throw BulkNotFoundError.
+    (deps.memberRepo.findManyByIdsInTx as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ok(new Map([
+        ['11111111-2222-3333-4444-555555555555', stubMember],
+        ['33333333-4444-5555-6666-777777777777', { ...stubMember, memberId: '33333333-4444-5555-6666-777777777777' }],
+      ])),
+    );
 
     const result = await bulkAction(
       {
@@ -151,22 +159,22 @@ describe('integration: bulk all-or-nothing rollback (round-2 review C-7 / FR-019
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      // Returns the first missing member's id (throw-on-first-miss pattern)
       expect(result.error.type).toBe('not_found');
       if (result.error.type === 'not_found') {
         expect(result.error.memberId).toBe('22222222-3333-4444-5555-666666666666');
       }
     }
-
-    // The 3rd member's findById MUST NOT have been called — loop threw on 2nd.
-    expect(findCallCount).toBe(2);
+    // No writes attempted — entire batch short-circuits on missing id.
+    expect(deps.memberRepo.updateStatusInTx).not.toHaveBeenCalled();
+    expect(deps.audit.recordInTx).not.toHaveBeenCalled();
   });
 
-  it('state error mid-batch → entire batch fails with state_error', async () => {
+  it('state error on archived member → state_error returned, no writes', async () => {
     const deps = stubDeps();
-    // First member is already archived → archive() returns state error
     const archivedMember = { ...stubMember, status: 'archived' as const, archivedAt: new Date() };
-    (deps.memberRepo.findById as ReturnType<typeof vi.fn>).mockResolvedValueOnce(ok(archivedMember));
+    (deps.memberRepo.findManyByIdsInTx as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ok(new Map([['11111111-2222-3333-4444-555555555555', archivedMember]])),
+    );
 
     const result = await bulkAction(
       {
@@ -250,5 +258,69 @@ describe('integration: bulk all-or-nothing rollback (round-2 review C-7 / FR-019
 
     // 3rd member's recordInTx NEVER called — loop threw on 2nd.
     expect(auditCallCount).toBe(2);
+  });
+});
+
+// --- Staff-review SW-2 + SW-5 new coverage ----------------------------------
+
+describe('integration: bulk SW-2 duplicate member_ids rejected', () => {
+  it('duplicate ids in batch → invalid_body (no DB work)', async () => {
+    const deps = stubDeps();
+    const duplicatedIds = [
+      '11111111-2222-3333-4444-555555555555',
+      '11111111-2222-3333-4444-555555555555', // duplicate
+      '33333333-4444-5555-6666-777777777777',
+    ];
+
+    const result = await bulkAction(
+      { action: 'archive', member_ids: duplicatedIds },
+      meta,
+      deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('invalid_body');
+    }
+    // Zod gate rejects BEFORE any DB call
+    expect(deps.memberRepo.findManyByIdsInTx).not.toHaveBeenCalled();
+  });
+});
+
+describe('integration: bulk SW-5 change_plan on archived member rejected', () => {
+  it('change_plan on archived member → state_error', async () => {
+    const deps = stubDeps();
+    const archivedMember = {
+      ...stubMember,
+      status: 'archived' as const,
+      archivedAt: new Date('2026-01-05'),
+    };
+    (deps.memberRepo.findManyByIdsInTx as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ok(new Map([['11111111-2222-3333-4444-555555555555', archivedMember]])),
+    );
+
+    const result = await bulkAction(
+      {
+        action: 'change_plan',
+        member_ids: ['11111111-2222-3333-4444-555555555555'],
+        params: {
+          new_plan_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+          new_plan_year: 2026,
+        },
+      },
+      meta,
+      deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('state_error');
+      if (result.error.type === 'state_error') {
+        expect(result.error.code).toBe('state.cannot_change_plan_archived');
+        expect(result.error.memberId).toBe('11111111-2222-3333-4444-555555555555');
+      }
+    }
+    // No write attempted — archived check runs before updateFieldsInTx.
+    expect(deps.memberRepo.updateFieldsInTx).not.toHaveBeenCalled();
   });
 });

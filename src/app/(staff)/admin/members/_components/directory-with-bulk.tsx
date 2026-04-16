@@ -7,7 +7,7 @@
  * Manager users get a read-only table (FR-018 AS5: hidden, not disabled).
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   MembersTable,
@@ -28,9 +28,17 @@ export function DirectoryWithBulk({ rows, nextCursor, isAdmin }: Props) {
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const selectedCompanyNames = selectedIds
-    .map((id) => rows.find((r) => r.member_id === id)?.company_name)
-    .filter(Boolean) as string[];
+  // Staff-review SS-1: memoise to avoid O(N·M) recomputation on every render.
+  // Also index rows by id for O(1) lookup during mapping.
+  const selectedCompanyNames = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const row of rows) {
+      byId.set(row.member_id, row.company_name);
+    }
+    return selectedIds
+      .map((id) => byId.get(id))
+      .filter((name): name is string => Boolean(name));
+  }, [rows, selectedIds]);
 
   const handleClear = useCallback(() => setSelectedIds([]), []);
 

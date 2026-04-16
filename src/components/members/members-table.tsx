@@ -201,9 +201,14 @@ function InlineCountryCell({
   // and submit twice. A ref is synchronous so a second concurrent call
   // short-circuits before the DB roundtrip.
   const savingRef = useRef(false);
+  // Staff-review SW-6: Escape+blur race — when user presses Escape, the
+  // input unmounts and some browsers fire a blur event before unmount,
+  // triggering handleSave with the stale closure. A sync cancelling flag
+  // lets the Escape branch short-circuit the queued blur's handleSave.
+  const cancellingRef = useRef(false);
 
   const handleSave = useCallback(async () => {
-    if (!onSave || editing === null || savingRef.current) return;
+    if (cancellingRef.current || !onSave || editing === null || savingRef.current) return;
     savingRef.current = true;
     try {
       const normalised = editing.trim().toUpperCase();
@@ -280,7 +285,15 @@ function InlineCountryCell({
             handleSave();
           } else if (e.key === 'Escape') {
             e.preventDefault();
+            // Staff-review SW-6: set sync flag BEFORE clearing state so
+            // any queued blur-triggered handleSave short-circuits.
+            cancellingRef.current = true;
             setEditing(null);
+            // Reset the flag on next tick — by then the blur has flushed
+            // and any subsequent enter-edit-mode cycle starts clean.
+            queueMicrotask(() => {
+              cancellingRef.current = false;
+            });
           }
         }}
         disabled={saving}
@@ -321,9 +334,11 @@ function InlineNotesCell({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Round-4 R4-I1: sync guard against onBlur + Enter double-fire race.
   const savingRef = useRef(false);
+  // Staff-review SW-6: sync guard against Escape+blur draft loss.
+  const cancellingRef = useRef(false);
 
   const handleSave = useCallback(async () => {
-    if (!onSave || editing === null || savingRef.current) return;
+    if (cancellingRef.current || !onSave || editing === null || savingRef.current) return;
     savingRef.current = true;
     try {
       const next = editing.trim() || null;
@@ -398,7 +413,13 @@ function InlineNotesCell({
             handleSave();
           } else if (e.key === 'Escape') {
             e.preventDefault();
+            // Staff-review SW-6: block queued-blur handleSave from the
+            // stale closure before clearing state.
+            cancellingRef.current = true;
             setEditing(null);
+            queueMicrotask(() => {
+              cancellingRef.current = false;
+            });
           }
         }}
         disabled={saving}
@@ -426,6 +447,7 @@ export function MembersTable({
   const searchParams = useSearchParams();
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const lastSelectedRef = useRef<number | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const handleRowSelectionChange = useCallback(
     (updater: RowSelectionState | ((old: RowSelectionState) => RowSelectionState)) => {
@@ -610,8 +632,34 @@ export function MembersTable({
     (k) => rowSelection[k],
   ).length;
 
+  const allPageSelected =
+    enableSelection && rows.length > 0 && selectedCount === rows.length;
+  const hasMorePages = enableSelection && nextCursor !== null;
+
+  // Staff-review SW-4: Ctrl+A / Cmd+A within the table selects all rows
+  // on the current page (FR-040). Scoped to the table container so the
+  // shortcut doesn't conflict with browser-wide text selection outside.
+  useEffect(() => {
+    if (!enableSelection) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        const active = document.activeElement;
+        if (
+          tableContainerRef.current &&
+          (tableContainerRef.current.contains(active) ||
+            active === document.body)
+        ) {
+          e.preventDefault();
+          table.toggleAllPageRowsSelected(true);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [enableSelection, table]);
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" ref={tableContainerRef}>
       {enableSelection && selectedCount > 0 && (
         <div
           className="sr-only"
@@ -619,6 +667,33 @@ export function MembersTable({
           aria-atomic="true"
         >
           {t('selectedCount', { count: selectedCount })}
+        </div>
+      )}
+      {/* Staff-review SW-4: "Select all N matching" affordance when the
+          whole current page is selected AND more matching rows exist on
+          subsequent pages. Clicking the text loads the next page — full
+          cross-page ids batch-select requires an API endpoint (deferred). */}
+      {allPageSelected && hasMorePages && (
+        <div
+          className="rounded-md border border-accent bg-accent/40 px-4 py-2 text-sm"
+          role="status"
+        >
+          {t.rich('selectAllMatchingHint', {
+            count: selectedCount,
+            loadMore: (chunks) => (
+              <button
+                type="button"
+                className="ml-2 font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+                onClick={() => {
+                  const params = new URLSearchParams(searchParams.toString());
+                  if (nextCursor) params.set('cursor', nextCursor);
+                  router.replace(`${pathname}?${params.toString()}`);
+                }}
+              >
+                {chunks}
+              </button>
+            ),
+          })}
         </div>
       )}
       <div className="rounded-md border">

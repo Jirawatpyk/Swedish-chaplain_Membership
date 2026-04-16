@@ -533,7 +533,8 @@
         "loadMore": "โหลดเพิ่ม",
         "selectAll": "เลือกทุกแถว",
         "selectRow": "เลือก {company}",
-        "selectedCount": "เลือกแล้ว {count} แถว"
+        "selectedCount": "เลือกแล้ว {count} แถว",
+        "selectAllMatchingHint": "เลือก {count} รายการในหน้านี้ <loadMore>โหลดหน้าถัดไป</loadMore> เพื่อเลือกเพิ่ม"
       },
       "emptyStates": {
         "zero": {
@@ -732,7 +733,8 @@
         "unknownError": "เกิดข้อผิดพลาด",
         "networkError": "เครือข่ายมีปัญหา ตรวจสอบการเชื่อมต่อ",
         "progressLabel": "กำลังดำเนินการเป็นชุด",
-        "progressMessage": "กำลัง{action} {count} สมาชิก…"
+        "progressMessage": "กำลัง{action} {count} สมาชิก…",
+        "elapsedSeconds": "เวลาที่ใช้ไป: {seconds} วินาที"
       },
       "inlineEdit": {
         "statusUpdated": "อัปเดตสถานะแล้ว",

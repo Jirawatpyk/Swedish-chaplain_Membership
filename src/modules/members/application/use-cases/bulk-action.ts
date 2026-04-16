@@ -18,6 +18,7 @@
 
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -76,6 +77,18 @@ export const bulkActionSchema = z
           message: 'change_plan requires params.new_plan_year',
         });
       }
+    }
+    // Staff-review SW-2: duplicate member_ids cause audit bloat (same change
+    // logged twice) and subtle all-or-nothing oddities (e.g. archive fails
+    // on 2nd iter because 1st iter already moved state to 'archived').
+    // Reject duplicates early at the validation layer.
+    const unique = new Set(data.member_ids);
+    if (unique.size !== data.member_ids.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['member_ids'],
+        message: 'member_ids must be unique',
+      });
     }
   });
 
@@ -162,25 +175,43 @@ export async function bulkAction(
       let updatedCount = 0;
       let auditEventCount = 0;
 
-      for (const rawId of data.member_ids) {
-        const memberId = asMemberId(rawId);
+      const memberIds = data.member_ids.map(asMemberId);
 
-        // Fetch current member state
-        const currentResult = await deps.memberRepo.findById(
-          deps.tenant,
-          memberId,
+      // Staff-review SB-1 + SW-1: single batched SELECT with row locks
+      // instead of N serial findById calls (which previously opened their
+      // own transactions, causing TOCTOU lost-update + audit-diff lies).
+      // `findManyByIdsInTx` uses `WHERE member_id = ANY($1) FOR UPDATE` —
+      // all rows locked in one round-trip; locks released on COMMIT / ROLLBACK.
+      const lookupResult = await deps.memberRepo.findManyByIdsInTx(
+        tx,
+        memberIds,
+      );
+      if (!lookupResult.ok) {
+        logger.error(
+          { err: lookupResult.error, requestId: meta.requestId },
+          'bulk-action: findManyByIdsInTx unexpected error',
         );
-        if (!currentResult.ok) {
-          throw new BulkNotFoundError(rawId);
+        throw new Error('lookup_failed');
+      }
+      const membersMap = lookupResult.value;
+
+      // Verify every requested id was returned (throw on first miss, same
+      // behavior as the old serial loop — round-2 review I-11).
+      for (const id of memberIds) {
+        if (!membersMap.has(id)) {
+          throw new BulkNotFoundError(id);
         }
-        const current = currentResult.value;
+      }
+
+      for (const memberId of memberIds) {
+        const current = membersMap.get(memberId)!;
 
         // Apply action
         switch (data.action) {
           case 'archive': {
             const archiveResult = archive(current, now);
             if (!archiveResult.ok) {
-              throw new BulkStateError(rawId, archiveResult.error.code);
+              throw new BulkStateError(memberId, archiveResult.error.code);
             }
             const updated = archiveResult.value;
             // Round-2 review C-2: use updateStatusInTx(tx, ...) so the
@@ -221,6 +252,15 @@ export async function bulkAction(
             if (!data.params?.new_plan_id || !data.params?.new_plan_year) {
               // Unreachable in practice — guarded by zod. Defensive only.
               throw new Error('change_plan requires new_plan_id and new_plan_year');
+            }
+            // Staff-review SW-5: archived members MUST NOT be re-planned
+            // in bulk — consistent with inline-edit's state_error on
+            // archived members + domain `archive()`'s re-archive guard.
+            if (current.status === 'archived') {
+              throw new BulkStateError(
+                memberId,
+                'state.cannot_change_plan_archived',
+              );
             }
             const newPlanId = asPlanId(data.params.new_plan_id);
             const patch = {

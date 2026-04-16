@@ -139,6 +139,31 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async findManyByIdsInTx(tx, memberIds) {
+    try {
+      if (memberIds.length === 0) {
+        return ok(new Map() as ReadonlyMap<MemberId, Member>);
+      }
+      // Staff-review SB-1 + SW-1: one batched SELECT with ANY($1) FOR UPDATE
+      // replaces the N serial findById calls that previously held a
+      // transaction open for ~300 RTT on a 100-row bulk. Each returned
+      // row still carries a row-level lock until COMMIT / ROLLBACK.
+      const rows = await tx
+        .select()
+        .from(members)
+        .where(inArray(members.memberId, [...memberIds] as string[]))
+        .for('update');
+      const result = new Map<MemberId, Member>();
+      for (const row of rows) {
+        const member = rowToMember(row);
+        result.set(member.memberId, member);
+      }
+      return ok(result);
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findSoftDuplicate(ctx, companyName, country) {
     try {
       // Only match active/inactive members — archived members should

@@ -533,7 +533,8 @@
         "loadMore": "Ladda fler",
         "selectAll": "Markera alla rader",
         "selectRow": "Markera {company}",
-        "selectedCount": "{count, plural, one {# rad vald} other {# rader valda}}"
+        "selectedCount": "{count, plural, one {# rad vald} other {# rader valda}}",
+        "selectAllMatchingHint": "{count} markerade på denna sida. <loadMore>Ladda nästa sida</loadMore> för att utöka markeringen."
       },
       "emptyStates": {
         "zero": {
@@ -732,7 +733,8 @@
         "unknownError": "Något gick fel.",
         "networkError": "Nätverksfel. Kontrollera anslutningen.",
         "progressLabel": "Massåtgärd pågår",
-        "progressMessage": "{action} {count, plural, one {# medlem} other {# medlemmar}}…"
+        "progressMessage": "{action} {count, plural, one {# medlem} other {# medlemmar}}…",
+        "elapsedSeconds": "Förflutit: {seconds}s"
       },
       "inlineEdit": {
         "statusUpdated": "Status uppdaterad",

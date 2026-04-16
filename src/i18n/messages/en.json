@@ -533,7 +533,8 @@
         "loadMore": "Load more",
         "selectAll": "Select all rows",
         "selectRow": "Select {company}",
-        "selectedCount": "{count, plural, one {# row selected} other {# rows selected}}"
+        "selectedCount": "{count, plural, one {# row selected} other {# rows selected}}",
+        "selectAllMatchingHint": "{count} selected on this page. <loadMore>Load the next page</loadMore> to extend the selection."
       },
       "emptyStates": {
         "zero": {
@@ -732,7 +733,8 @@
         "unknownError": "Something went wrong.",
         "networkError": "Network error. Check your connection.",
         "progressLabel": "Bulk operation in progress",
-        "progressMessage": "{action} {count, plural, one {# member} other {# members}}…"
+        "progressMessage": "{action} {count, plural, one {# member} other {# members}}…",
+        "elapsedSeconds": "Elapsed: {seconds}s"
       },
       "inlineEdit": {
         "statusUpdated": "Status updated",

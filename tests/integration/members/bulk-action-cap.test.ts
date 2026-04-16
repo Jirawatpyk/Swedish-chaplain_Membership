@@ -24,6 +24,7 @@ function stubDeps(): BulkActionDeps {
     memberRepo: {
       findById: vi.fn(),
       findByIdInTx: vi.fn(),
+      findManyByIdsInTx: vi.fn(),
       findSoftDuplicate: vi.fn(),
       createWithPrimaryContact: vi.fn(),
       updateStatus: vi.fn(),

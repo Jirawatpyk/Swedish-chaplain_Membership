@@ -8,6 +8,14 @@
 -- Dedicated event type enables accurate audit queries + alerts.
 --
 -- Idempotent DO block — same pattern as 0010_audit_log_f3_extension.sql.
+--
+-- SS-4 convention note: DO-block enum-value additions do NOT change
+-- `schema.ts`-inferred structure, so `drizzle-kit generate` produces no
+-- snapshot JSON for them. This mirrors 0002 / 0003 / 0004 / 0010 which
+-- are also snapshot-less by design. The `_journal.json` entry + this SQL
+-- file are sufficient for migration replay — drift verification is
+-- covered by the live-Neon integration suite (`tests/integration/
+-- members/migration-schema.test.ts`).
 -- ---------------------------------------------------------------------------
 
 DO $$

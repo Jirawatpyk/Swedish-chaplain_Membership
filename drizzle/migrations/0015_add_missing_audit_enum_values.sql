@@ -11,6 +11,10 @@
 --   "email_verification_consumed"
 --
 -- This migration adds the missing value idempotently — safe to re-run.
+--
+-- SS-4 convention note: DO-block enum-value additions do NOT change
+-- `schema.ts`-inferred structure, so no drizzle snapshot is generated.
+-- Same convention as 0010 / 0014 (also snapshot-less by design).
 -- ---------------------------------------------------------------------------
 
 DO $$
