@@ -18,7 +18,6 @@ export type TimelineItemProps = {
   readonly eventType: string;
   readonly actorUserId: string;
   readonly actorDisplayName: string | null;
-  readonly summary: string;
   readonly payload: Record<string, unknown> | null;
 };
 
@@ -35,7 +34,7 @@ const SYSTEM_ACTORS = new Set(['system', 'system:bootstrap', 'anonymous']);
  * We keep the ISO string in `<time dateTime>` for machine-readable
  * access + screen readers; the rendered text is purely visual.
  */
-function formatLocalisedTimestamp(iso: string, locale: string): string {
+export function formatLocalisedTimestamp(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const bcp47 = locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
@@ -57,11 +56,16 @@ function formatLocalisedTimestamp(iso: string, locale: string): string {
 /**
  * Format the payload into a compact, human-readable one-liner.
  * Avoids showing raw UUIDs unless they are the actual target of the event.
- * Returns null when nothing useful to show — UI falls back to the summary.
+ * Returns null when nothing useful to show — UI falls back to the
+ * localised event-type heading alone.
+ *
+ * `tPayload` is the localised `admin.members.timeline.payload.*` namespace
+ * so secondary labels are i18n'd consistently with the rest of the UI.
  */
 function formatPayload(
   eventType: string,
   payload: Record<string, unknown> | null,
+  tPayload: (key: 'primary' | 'primaryContactPromoted') => string,
 ): string | null {
   if (!payload) return null;
 
@@ -115,7 +119,7 @@ function formatPayload(
         return `${fields.join(', ')}`;
       }
       const isPrimary = payload.is_primary;
-      if (isPrimary === true) return 'primary';
+      if (isPrimary === true) return tPayload('primary');
       return null;
     }
     case 'member_self_updated': {
@@ -126,7 +130,7 @@ function formatPayload(
       return null;
     }
     case 'member_primary_contact_changed': {
-      return 'primary contact promoted';
+      return tPayload('primaryContactPromoted');
     }
     case 'member_archived':
     case 'member_undeleted':
@@ -144,6 +148,7 @@ export function TimelineEventItem({
   payload,
 }: TimelineItemProps) {
   const t = useTranslations('admin.members.timeline');
+  const tPayload = useTranslations('admin.members.timeline.payload');
   const tEvent = useTranslations('audit.eventType');
   const locale = useLocale();
 
@@ -161,7 +166,7 @@ export function TimelineEventItem({
     ? t('actorSystem')
     : (actorDisplayName ?? t('actorSystem'));
 
-  const payloadDetail = formatPayload(eventType, payload);
+  const payloadDetail = formatPayload(eventType, payload, tPayload);
 
   return (
     <li

@@ -73,7 +73,6 @@ describe('contract: GET /api/members/[memberId]/timeline (T127)', () => {
             eventType: 'member_created',
             actorUserId: 'admin-1',
             actorDisplayName: 'Admin One',
-            summary: 'Member created',
             payload: { member_id: validMemberId },
           },
         ],

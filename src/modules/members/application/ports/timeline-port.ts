@@ -21,7 +21,6 @@ export type TimelineEvent = {
    * and the UI falls back to a localized "System" label.
    */
   readonly actorDisplayName: string | null;
-  readonly summary: string;
   readonly payload: Record<string, unknown> | null;
 };
 

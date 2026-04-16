@@ -10,6 +10,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
 import { runInTenant, db } from '@/lib/db';
 import { createMember, timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -125,12 +126,49 @@ async function insertSyntheticEvent(
   });
 }
 
+/**
+ * Seed a second membership plan on an existing tenant (used for the
+ * plan-name enrichment test).
+ */
+async function seedSecondaryPlan(
+  tenant: TestTenant,
+  user: TestUser,
+  planName: string,
+): Promise<string> {
+  const planId = `timeline-plan2-${randomUUID().slice(0, 6)}`;
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx.insert(membershipPlans).values({
+      tenantId: tenant.ctx.slug,
+      planId,
+      planYear: 2026,
+      planName: { en: planName },
+      description: { en: '' },
+      sortOrder: 20,
+      planCategory: 'corporate',
+      memberTypeScope: 'company',
+      annualFeeMinorUnits: 1_000_000,
+      includesCorporatePlanId: null,
+      minTurnoverMinorUnits: null,
+      maxTurnoverMinorUnits: null,
+      maxDurationYears: null,
+      maxMemberAge: null,
+      benefitMatrix: MATRIX,
+      isActive: true,
+      createdBy: user.userId,
+      updatedBy: user.userId,
+    });
+  });
+  return planId;
+}
+
 describe('timeline integration (T128, US6)', () => {
   let tenantA: TestTenant;
   let tenantB: TestTenant;
   let user: TestUser;
   let memberIdA: string;
   let memberIdB: string;
+  let planAOld: string;
+  let planANew: string;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -141,12 +179,40 @@ describe('timeline integration (T128, US6)', () => {
     memberIdA = await seedPlanAndMember(tenantA, user, 'Timeline AB');
     memberIdB = await seedPlanAndMember(tenantB, user, 'Timeline CD');
 
-    // Seed extra synthetic events on memberA with override_reason (for redaction test)
+    // Discover the original plan slug seeded for memberA (needed by the
+    // plan-name enrichment test). Any member_created event payload has
+    // the new_plan_id — read it from audit_log.
+    const createdRows = await db
+      .select({ payload: auditLog.payload })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenantA.ctx.slug),
+          eq(auditLog.eventType, 'member_created'),
+        ),
+      );
+    const firstCreatePayload = createdRows[0]?.payload as
+      | { plan_id?: string }
+      | null;
+    planAOld = firstCreatePayload?.plan_id ?? '';
+
+    // Seed a second plan on tenantA (for the enrichment assertion)
+    planANew = await seedSecondaryPlan(tenantA, user, 'Timeline Premium Plan');
+
+    // Insert a synthetic plan-change event that references real plan
+    // UUIDs so the repo's JOIN can resolve display names (US6 E2).
     await insertSyntheticEvent(
       tenantA,
       memberIdA,
       'member_plan_changed',
-      { override_reason_code: 'other', override_reason_note: 'secret' },
+      {
+        old_plan_id: planAOld,
+        old_plan_year: 2026,
+        new_plan_id: planANew,
+        new_plan_year: 2026,
+        override_reason_code: 'other',
+        override_reason_note: 'secret',
+      },
     );
     await insertSyntheticEvent(
       tenantA,
@@ -339,5 +405,40 @@ describe('timeline integration (T128, US6)', () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error.type).toBe('not_found');
+  });
+
+  it('E2 enrichment — member_plan_changed payload includes resolved old/new_plan_name', async () => {
+    // Sanity-check the seeded slugs so the assertion message is
+    // debuggable if seeding changes in the future.
+    expect(planAOld.length).toBeGreaterThan(0);
+    expect(planANew.length).toBeGreaterThan(0);
+
+    const deps = buildMembersDeps(tenantA.ctx);
+    const r = await timelineList(
+      { memberId: memberIdA, limit: 50 },
+      {
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        requestId: 'test-e2',
+      },
+      tenantA.ctx,
+      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    const planChanged = r.value.events.find(
+      (e) => e.eventType === 'member_plan_changed',
+    );
+    expect(planChanged, 'expected a member_plan_changed event').toBeTruthy();
+    expect(planChanged?.payload).not.toBeNull();
+    if (!planChanged?.payload) return;
+
+    // Raw UUIDs stay in payload for auditors...
+    expect(planChanged.payload.old_plan_id).toBe(planAOld);
+    expect(planChanged.payload.new_plan_id).toBe(planANew);
+    // ...AND resolved display names are injected alongside.
+    expect(planChanged.payload.old_plan_name).toBe('Timeline Plan');
+    expect(planChanged.payload.new_plan_name).toBe('Timeline Premium Plan');
   });
 });

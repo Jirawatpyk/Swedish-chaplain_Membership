@@ -63,7 +63,6 @@ export function TimelineClient({
             event_type: string;
             actor_user_id: string;
             actor_display_name: string | null;
-            summary: string;
             payload: Record<string, unknown> | null;
           }>;
           next_cursor: string | null;
@@ -75,7 +74,6 @@ export function TimelineClient({
           eventType: i.event_type,
           actorUserId: i.actor_user_id,
           actorDisplayName: i.actor_display_name,
-          summary: i.summary,
           payload: i.payload,
         }));
 

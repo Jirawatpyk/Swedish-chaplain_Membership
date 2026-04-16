@@ -631,7 +631,11 @@
         "actorSystem": "System",
         "eventAt": "{date}",
         "backToDetail": "Tillbaka till medlem",
-        "totalEvents": "{count, plural, one {# händelse} other {# händelser}}"
+        "totalEvents": "{count, plural, one {# händelse} other {# händelser}}",
+        "payload": {
+          "primary": "primär",
+          "primaryContactPromoted": "primär kontakt befordrad"
+        }
       },
       "create": {
         "pageTitle": "Lägg till medlem · SweCham",

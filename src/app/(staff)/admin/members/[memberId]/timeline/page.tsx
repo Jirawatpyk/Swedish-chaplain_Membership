@@ -121,7 +121,6 @@ export default async function MemberTimelinePage({ params }: PageProps) {
         eventType: e.eventType,
         actorUserId: e.actorUserId,
         actorDisplayName: e.actorDisplayName,
-        summary: e.summary,
         payload: e.payload,
       }))
     : [];

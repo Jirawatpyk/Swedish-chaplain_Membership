@@ -15,6 +15,7 @@
 import { sql, inArray } from 'drizzle-orm';
 import { ok, err } from '@/lib/result';
 import { runInTenant, db } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { auditLog, users } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans';
 import type {
@@ -33,14 +34,24 @@ function decodeCursor(cursor: string): { ts: string; id: string } | null {
   try {
     const decoded = Buffer.from(cursor, 'base64url').toString('utf-8');
     const sep = decoded.indexOf('|');
-    if (sep < 0) return null;
+    if (sep < 0) {
+      logger.debug({ cursor }, 'timeline.cursor.malformed');
+      return null;
+    }
     const ts = decoded.slice(0, sep);
     const id = decoded.slice(sep + 1);
-    if (!ts || !id) return null;
+    if (!ts || !id) {
+      logger.debug({ cursor }, 'timeline.cursor.malformed');
+      return null;
+    }
     // Basic sanity check — ts should be ISO-ish
-    if (Number.isNaN(Date.parse(ts))) return null;
+    if (Number.isNaN(Date.parse(ts))) {
+      logger.debug({ cursor }, 'timeline.cursor.malformed');
+      return null;
+    }
     return { ts, id };
   } catch {
+    logger.debug({ cursor }, 'timeline.cursor.malformed');
     return null;
   }
 }
@@ -81,14 +92,16 @@ export const drizzleTimelineRepo: TimelinePort = {
           (acc, cond, i) => (i === 0 ? cond : sql`${acc} AND ${cond}`),
         );
 
-        // Fetch limit+1 to determine if there's a next page
+        // Fetch limit+1 to determine if there's a next page.
+        // `summary` is intentionally NOT selected — the UI renders a
+        // localised event-type label + payload diff instead; keeping
+        // summary in the response was dead weight (reviewer S-5).
         const rows = await tx
           .select({
             id: auditLog.id,
             timestamp: auditLog.timestamp,
             eventType: auditLog.eventType,
             actorUserId: auditLog.actorUserId,
-            summary: auditLog.summary,
             payload: auditLog.payload,
           })
           .from(auditLog)
@@ -119,9 +132,15 @@ export const drizzleTimelineRepo: TimelinePort = {
 
         const actorMap = new Map<string, string>();
         if (uuidActorIds.length > 0) {
-          // Use the outer db (NOT the tx) because users live in the auth
-          // schema with its own RLS-bypassing chamber_app grant — the
-          // SET LOCAL app.current_tenant does not apply to users queries.
+          // Use the outer db (NOT the tx) because `users` is a platform-
+          // level table with no `tenant_id` column — RLS does not apply.
+          //
+          // Safety: the UUIDs in `uuidActorIds` were read from audit_log
+          // rows that WERE tenant-scoped by RLS in the `pageRows` select
+          // above. So every UUID here is an actor who acted against
+          // THIS tenant's records. Resolving their display_name/email
+          // cannot leak cross-tenant identity beyond what the audit
+          // row already exposed.
           const rows = await db
             .select({
               id: users.id,
@@ -250,7 +269,6 @@ export const drizzleTimelineRepo: TimelinePort = {
             eventType: row.eventType,
             actorUserId: row.actorUserId,
             actorDisplayName: actorMap.get(row.actorUserId) ?? null,
-            summary: row.summary,
             payload: enriched,
           };
         });

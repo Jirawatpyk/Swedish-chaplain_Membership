@@ -631,7 +631,11 @@
         "actorSystem": "ระบบ",
         "eventAt": "{date}",
         "backToDetail": "กลับไปยังสมาชิก",
-        "totalEvents": "{count, plural, other {# เหตุการณ์}}"
+        "totalEvents": "{count, plural, other {# เหตุการณ์}}",
+        "payload": {
+          "primary": "ผู้ติดต่อหลัก",
+          "primaryContactPromoted": "เลื่อนขึ้นเป็นผู้ติดต่อหลัก"
+        }
       },
       "create": {
         "pageTitle": "เพิ่มสมาชิก · SweCham",

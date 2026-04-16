@@ -119,7 +119,6 @@ export async function GET(
       event_type: e.eventType,
       actor_user_id: e.actorUserId,
       actor_display_name: e.actorDisplayName,
-      summary: e.summary,
       payload: e.payload,
     })),
     next_cursor: result.value.nextCursor,

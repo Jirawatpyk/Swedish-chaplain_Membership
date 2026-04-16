@@ -631,7 +631,11 @@
         "actorSystem": "System",
         "eventAt": "{date}",
         "backToDetail": "Back to member",
-        "totalEvents": "{count, plural, one {# event} other {# events}}"
+        "totalEvents": "{count, plural, one {# event} other {# events}}",
+        "payload": {
+          "primary": "primary",
+          "primaryContactPromoted": "primary contact promoted"
+        }
       },
       "create": {
         "pageTitle": "Add member · SweCham",
