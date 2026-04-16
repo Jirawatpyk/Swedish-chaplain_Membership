@@ -181,6 +181,15 @@ export const drizzleContactRepo: ContactRepo = {
   async remove(ctx, contactId, actorUserId, requestId) {
     try {
       const rows = await runInTenant(ctx, async (tx) => {
+        // Capture isPrimary BEFORE the UPDATE — RETURNING reflects
+        // post-SET values, and SET forces isPrimary=false.
+        const [before] = await tx
+          .select({ isPrimary: contacts.isPrimary })
+          .from(contacts)
+          .where(eq(contacts.contactId, contactId))
+          .limit(1);
+        const wasPrimary = before?.isPrimary ?? false;
+
         const updated = await tx
           .update(contacts)
           .set({ removedAt: new Date(), isPrimary: false })
@@ -196,7 +205,7 @@ export const drizzleContactRepo: ContactRepo = {
             payload: {
               member_id: updated[0]!.memberId,
               contact_id: contactId,
-              was_primary: updated[0]!.isPrimary,
+              was_primary: wasPrimary,
             },
           });
         }
@@ -313,7 +322,12 @@ export const drizzleContactRepo: ContactRepo = {
         const promoted = await tx
           .update(contacts)
           .set({ isPrimary: true, updatedAt: new Date() })
-          .where(eq(contacts.contactId, newPrimaryContactId))
+          .where(
+            and(
+              eq(contacts.contactId, newPrimaryContactId),
+              eq(contacts.memberId, memberId),
+            ),
+          )
           .returning();
         if (promoted.length === 0) {
           throw new Error('target contact not found');

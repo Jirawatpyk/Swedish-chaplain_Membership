@@ -55,6 +55,7 @@ export async function POST(
       contactRepo: deps.contactRepo,
       tokens: deps.tokens,
       emails: deps.emails,
+      userEmails: deps.userEmails,
       clock: deps.clock,
     },
     {

@@ -28,6 +28,7 @@ import type { ContactId } from '../../domain/contact';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
 import type { EmailPort } from '../ports/email-port';
+import type { UserEmailPort } from '../ports/user-email-port';
 import type { ClockPort } from '../ports/clock-port';
 import {
   generateToken,
@@ -41,6 +42,7 @@ export type ResendVerificationDeps = {
   contactRepo: ContactRepo;
   tokens: EmailChangeTokenPort;
   emails: EmailPort;
+  userEmails: UserEmailPort;
   clock: ClockPort;
 };
 
@@ -84,6 +86,12 @@ export async function resendVerificationEmail(
     return err({ code: 'not_eligible', reason: 'no_linked_user' });
   }
   const userId = contact.linkedUserId;
+
+  // Guard: do not re-issue verification tokens for already-verified users
+  const verifiedCheck = await deps.userEmails.isEmailVerified(userId);
+  if (verifiedCheck.ok && verifiedCheck.value) {
+    return err({ code: 'not_eligible', reason: 'email_verified' });
+  }
 
   const now = deps.clock.now();
   const token = generateToken();

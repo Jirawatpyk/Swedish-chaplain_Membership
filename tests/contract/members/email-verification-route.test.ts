@@ -146,15 +146,15 @@ describe('contract: GET|POST /api/auth/email-verification/[token]', () => {
   });
 
   // 2 -----------------------------------------------------------------------
-  it('200 — GET happy path: same handler exported as GET', async () => {
-    findActiveTokenMock.mockResolvedValueOnce(ok(stubTokenRow));
-    verifyContactEmailMock.mockResolvedValueOnce(ok({ userId: 'user-abc' }));
+  it('405 — GET returns method_not_allowed (SEC-1: prefetch safety)', async () => {
+    const res = await GET();
 
-    const res = await GET(makeRequest(VALID_TOKEN, 'GET'), makeParams(VALID_TOKEN));
-
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(405);
     const body = await res.json();
-    expect(body.ok).toBe(true);
+    expect(body.error).toBe('method_not_allowed');
+    expect(res.headers.get('allow')).toBe('POST');
+    // Verify use case must NOT be called on GET
+    expect(verifyContactEmailMock).not.toHaveBeenCalled();
   });
 
   // 3 -----------------------------------------------------------------------

@@ -9,7 +9,7 @@
  * Both must return `invalid-credentials` (same as wrong password) to
  * avoid leaking account state.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { users } from '@/modules/auth/infrastructure/db/schema';
@@ -27,17 +27,20 @@ describe('integration: sign-in F3 security guards', () => {
     user = await createActiveTestUser('member');
   });
 
-  afterAll(async () => {
-    // Restore flags before cleanup so the user is in a valid state
+  // Restore flags in afterEach — if an assertion fails, inline restore
+  // would be skipped, leaking state to subsequent tests (TEST-2 fix).
+  afterEach(async () => {
     await db
       .update(users)
       .set({ emailVerified: true, requiresPasswordReset: false })
       .where(eq(users.id, user.userId));
+  });
+
+  afterAll(async () => {
     await deleteTestUser(user);
   });
 
   it('rejects sign-in when emailVerified = false (FR-012a)', async () => {
-    // Set the flag directly on the DB row
     await db
       .update(users)
       .set({ emailVerified: false })
@@ -55,12 +58,6 @@ describe('integration: sign-in F3 security guards', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('invalid-credentials');
     }
-
-    // Restore for next test
-    await db
-      .update(users)
-      .set({ emailVerified: true })
-      .where(eq(users.id, user.userId));
   }, 30_000);
 
   it('rejects sign-in when requiresPasswordReset = true (FR-012b)', async () => {
@@ -81,12 +78,6 @@ describe('integration: sign-in F3 security guards', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('invalid-credentials');
     }
-
-    // Restore
-    await db
-      .update(users)
-      .set({ requiresPasswordReset: false })
-      .where(eq(users.id, user.userId));
   }, 30_000);
 
   it('allows sign-in after flags are cleared', async () => {

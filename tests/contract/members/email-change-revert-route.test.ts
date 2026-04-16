@@ -145,22 +145,19 @@ describe('contract: POST|GET /api/auth/email-change/revert/[token]', () => {
     expect(body.ok).toBe(true);
   });
 
-  // 2. ------------------------------------------------------------------ 200
-  it('200 — GET happy path: GET is the same handler as POST', async () => {
-    rateLimiterMock.check.mockResolvedValueOnce(RATE_LIMIT_PASS);
-    findActiveTokenMock.mockResolvedValueOnce(ok(ACTIVE_REVERT_TOKEN));
-    revertContactEmailMock.mockResolvedValueOnce(ok(REVERT_SUCCESS));
-
-    const { GET: handle } = await import(
+  // 2. ------------------------------------------------------------------ 405
+  it('405 — GET returns method_not_allowed (SEC-1: prefetch safety)', async () => {
+    const { GET } = await import(
       '@/app/api/auth/email-change/revert/[token]/route'
     );
-    const res = await handle(makeRequest(VALID_TOKEN, 'GET'), {
-      params: Promise.resolve({ token: VALID_TOKEN }),
-    });
+    const res = await GET();
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(405);
     const body = await res.json();
-    expect(body.ok).toBe(true);
+    expect(body.error).toBe('method_not_allowed');
+    expect(res.headers.get('allow')).toBe('POST');
+    // Revert use case must NOT be called on GET
+    expect(revertContactEmailMock).not.toHaveBeenCalled();
   });
 
   // 3. ------------------------------------------------------------------ 429

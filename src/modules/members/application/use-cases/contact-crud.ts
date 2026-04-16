@@ -144,6 +144,7 @@ export async function addContact(
 // --- update ------------------------------------------------------------------
 
 export async function updateContactFields(
+  memberId: MemberId,
   contactId: ContactId,
   input: unknown,
   meta: ContactCrudCallMeta,
@@ -179,6 +180,17 @@ export async function updateContactFields(
     draft.preferredLanguage = data.preferred_language;
   const patch = draft as Partial<Contact>;
 
+  // Ownership check: verify contactId belongs to memberId (SEC-3 IDOR guard)
+  const existing = await deps.contactRepo.findById(deps.tenant, contactId);
+  if (!existing.ok) {
+    if (existing.error.code === 'repo.not_found')
+      return err({ type: 'not_found' });
+    return err({ type: 'server_error', message: `lookup: ${existing.error.code}` });
+  }
+  if (existing.value.memberId !== memberId) {
+    return err({ type: 'not_found' });
+  }
+
   const r = await deps.contactRepo.update(
     deps.tenant,
     contactId,
@@ -200,6 +212,7 @@ export async function updateContactFields(
 // --- remove ------------------------------------------------------------------
 
 export async function removeContact(
+  memberId: MemberId,
   contactId: ContactId,
   meta: ContactCrudCallMeta,
   deps: ContactCrudDeps,
@@ -215,6 +228,9 @@ export async function removeContact(
       type: 'server_error',
       message: `lookup: ${existing.error.code}`,
     });
+  }
+  if (existing.value.memberId !== memberId) {
+    return err({ type: 'not_found' });
   }
   if (existing.value.isPrimary)
     return err({ type: 'cannot_remove_primary' });

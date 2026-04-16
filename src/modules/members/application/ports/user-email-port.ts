@@ -55,4 +55,13 @@ export interface UserEmailPort {
       readonly requiresPasswordReset?: boolean;
     },
   ): Promise<Result<undefined, RepoError>>;
+
+  /**
+   * Read-only check: is the user's email already verified?
+   * Used by `resendVerificationEmail` to guard against re-issuing
+   * tokens for already-verified users (COR-2).
+   */
+  isEmailVerified(
+    userId: string,
+  ): Promise<Result<boolean, RepoError>>;
 }

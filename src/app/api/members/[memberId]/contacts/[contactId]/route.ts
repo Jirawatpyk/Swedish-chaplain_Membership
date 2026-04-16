@@ -30,7 +30,7 @@ import {
   removeContact,
   updateContactFields,
 } from '@/modules/members';
-import type { ContactId } from '@/modules/members';
+import type { ContactId, MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { serialiseContact } from '../../../_serialise';
 
@@ -219,6 +219,7 @@ export async function PATCH(
   //    we still re-fetch so the response shape is identical).
   const result = hasNonEmail
     ? await updateContactFields(
+        parsed.data.memberId as MemberId,
         parsed.data.contactId as ContactId,
         nonEmailBody,
         { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
@@ -311,6 +312,7 @@ export async function DELETE(
   const tenant = resolveTenantFromRequest(request);
   const deps = buildMembersDeps(tenant);
   const result = await removeContact(
+    parsed.data.memberId as MemberId,
     parsed.data.contactId as ContactId,
     { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
     deps,

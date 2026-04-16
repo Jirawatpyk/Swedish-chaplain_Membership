@@ -153,11 +153,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const now = new Date();
 
-  // Pick up to BATCH_SIZE ready rows. The cron runs every 60s so
-  // under-selecting is fine — the next tick catches the tail.
-  // FOR UPDATE SKIP LOCKED would be ideal for concurrency but is
-  // deferred to US3.b.2; for now we rely on Vercel's 1-concurrent-
-  // cron-per-schedule guarantee.
+  // Pick up to BATCH_SIZE ready rows with FOR UPDATE SKIP LOCKED.
+  // Vercel Cron guarantees "at least once" delivery — two instances can
+  // overlap. SKIP LOCKED ensures each row is processed by exactly one
+  // dispatcher, preventing duplicate email delivery.
   const ready = await db
     .select()
     .from(notificationsOutbox)
@@ -167,7 +166,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         lte(notificationsOutbox.nextRetryAt, now),
       ),
     )
-    .limit(BATCH_SIZE);
+    .limit(BATCH_SIZE)
+    .for('update', { skipLocked: true });
 
   if (ready.length === 0) {
     return NextResponse.json({ ok: true, dispatched: 0 }, { status: 200 });
@@ -182,15 +182,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (!payload) {
       // Row we can't render — push retry by 5 minutes and log once.
       // A future deploy with richer template support can drain it.
+      const nextAttemptStub = row.attempts + 1;
+      const isStubPermanent = nextAttemptStub >= MAX_ATTEMPTS;
       try {
         await db
           .update(notificationsOutbox)
           .set({
-            nextRetryAt: new Date(now.getTime() + 5 * 60 * 1000),
+            attempts: nextAttemptStub,
+            ...(isStubPermanent
+              ? { status: 'permanently_failed' as const }
+              : { nextRetryAt: new Date(now.getTime() + 5 * 60 * 1000) }),
             lastError: 'no_template_handler',
             updatedAt: new Date(),
           })
           .where(eq(notificationsOutbox.id, row.id));
+        if (isStubPermanent) permanent += 1;
       } catch (dbError) {
         logger.error(
           { requestId, outboxRowId: row.id, err: dbError },

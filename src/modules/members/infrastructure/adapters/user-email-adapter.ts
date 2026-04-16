@@ -14,6 +14,7 @@
  */
 
 import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 // Direct schema import to reuse the caller's transaction; same escape
 // hatch auth-session-revocation-port uses. Wrapping in a public F1 use
@@ -58,6 +59,20 @@ export const userEmailAdapter: UserEmailPort = {
       if (/duplicate key|unique constraint/i.test(msg)) {
         return err({ code: 'repo.conflict', reason: 'email already taken' });
       }
+      return err({ code: 'repo.unexpected', cause: e });
+    }
+  },
+
+  async isEmailVerified(userId) {
+    try {
+      const [row] = await db
+        .select({ emailVerified: users.emailVerified })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (!row) return err({ code: 'repo.not_found' });
+      return ok(row.emailVerified);
+    } catch (e) {
       return err({ code: 'repo.unexpected', cause: e });
     }
   },

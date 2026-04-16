@@ -10,7 +10,7 @@
  * inferred row shape never leaks into Application per Principle III.
  */
 
-import { and, eq, ilike, or, sql, asc } from 'drizzle-orm';
+import { and, eq, ilike, inArray, or, sql, asc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
@@ -86,6 +86,8 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findSoftDuplicate(ctx, companyName, country) {
     try {
+      // Only match active/inactive members — archived members should
+      // not block creation of a legitimate replacement (COR-4).
       const rows = await runInTenant(ctx, (tx) =>
         tx
           .select()
@@ -94,6 +96,10 @@ export const drizzleMemberRepo: MemberRepo = {
             and(
               ilike(members.companyName, companyName),
               eq(members.country, country),
+              or(
+                eq(members.status, 'active'),
+                eq(members.status, 'inactive'),
+              )!,
             ),
           )
           .limit(1),
@@ -344,18 +350,26 @@ export async function searchDirectory(
       if (filter.planId !== undefined)
         conds.push(eq(members.planId, filter.planId));
 
-      // Cursor: decode base64 → "<iso>|<memberId>"
+      // Cursor: decode base64 → "<iso>|<memberId>" or "NULL|<memberId>"
       if (filter.cursor) {
         try {
           const decoded = Buffer.from(filter.cursor, 'base64').toString('utf8');
           const [iso, memberIdPart] = decoded.split('|');
-          if (iso && memberIdPart) {
-            // (last_activity_at, member_id) < (cursorTs, cursorId) — DESC ordering.
-            // Cast the ISO string inside SQL so postgres-js doesn't try to
-            // serialize a JS Date (driver rejects Date in row-value literals).
-            conds.push(
-              sql`(${members.lastActivityAt}, ${members.memberId}) < (${iso}::timestamptz, ${memberIdPart})`,
-            );
+          if (memberIdPart) {
+            if (iso === 'NULL') {
+              // NULL lastActivityAt — compare only by memberId within the
+              // NULLS LAST tail segment (DESC ordering).
+              conds.push(
+                sql`(${members.lastActivityAt} IS NULL AND ${members.memberId} > ${memberIdPart})`,
+              );
+            } else if (iso) {
+              // (last_activity_at, member_id) < (cursorTs, cursorId) — DESC ordering.
+              // Cast the ISO string inside SQL so postgres-js doesn't try to
+              // serialize a JS Date (driver rejects Date in row-value literals).
+              conds.push(
+                sql`(${members.lastActivityAt}, ${members.memberId}) < (${iso}::timestamptz, ${memberIdPart})`,
+              );
+            }
           }
         } catch {
           /* malformed cursor → ignore */
@@ -428,7 +442,7 @@ export async function searchDirectory(
         )
         .limit(1);
 
-      return tx
+      const memberRows = await tx
         .select({
           row: members,
           planDisplayName:
@@ -441,27 +455,32 @@ export async function searchDirectory(
           asc(members.memberId),
         )
         .limit(filter.limit + 1);
-    });
 
-    const page = rows.slice(0, filter.limit);
-    const hasMore = rows.length > filter.limit;
+      const page = memberRows.slice(0, filter.limit);
 
-    // Fetch primary contacts in one query (N+1 guard)
-    const memberIds = page.map((r) => r.row.memberId);
-    const primaryContacts =
-      memberIds.length === 0
-        ? []
-        : await runInTenant(ctx, (tx) =>
-            tx
+      // Fetch primary contacts in the SAME runInTenant call (single
+      // connection setup, consistent snapshot). Uses inArray() instead
+      // of or() chain for better query-plan performance.
+      const memberIds = page.map((r) => r.row.memberId);
+      const primaryContacts =
+        memberIds.length === 0
+          ? []
+          : await tx
               .select()
               .from(contacts)
               .where(
                 and(
                   eq(contacts.isPrimary, true),
-                  or(...memberIds.map((id) => eq(contacts.memberId, id)))!,
+                  inArray(contacts.memberId, memberIds),
                 ),
-              ),
-          );
+              );
+
+      return { memberRows, page, primaryContacts };
+    });
+
+    const { memberRows, page, primaryContacts } = rows;
+    const hasMore = memberRows.length > filter.limit;
+
     const byMember = new Map<string, (typeof primaryContacts)[number]>();
     for (const c of primaryContacts) {
       if (c.removedAt === null) byMember.set(c.memberId, c);
@@ -479,7 +498,7 @@ export async function searchDirectory(
 
     const nextCursor = hasMore
       ? Buffer.from(
-          `${page[page.length - 1]!.row.lastActivityAt?.toISOString() ?? ''}|${page[page.length - 1]!.row.memberId}`,
+          `${page[page.length - 1]!.row.lastActivityAt?.toISOString() ?? 'NULL'}|${page[page.length - 1]!.row.memberId}`,
         ).toString('base64')
       : null;
 

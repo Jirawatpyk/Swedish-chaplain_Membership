@@ -83,6 +83,9 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
 
   async findActiveByIdInTx(tx, tokenId) {
     try {
+      // FOR UPDATE prevents double-consume race under READ COMMITTED:
+      // two concurrent requests cannot both pass the consumedAt IS NULL
+      // check — the second blocks until the first commits/rolls back.
       const [row] = await tx
         .select()
         .from(emailChangeTokens)
@@ -93,6 +96,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
             gt(emailChangeTokens.expiresAt, sql`now()`),
           ),
         )
+        .for('update')
         .limit(1);
       if (!row) return err({ code: 'repo.not_found' });
       const active: ActiveToken = {
@@ -114,10 +118,22 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
 
   async markConsumedInTx(tx, tokenId, consumedAt) {
     try {
-      await tx
+      // Idempotent guard: only consume if not already consumed.
+      // Combined with FOR UPDATE in findActiveByIdInTx, this is
+      // belt-and-suspenders against double-consume.
+      const updated = await tx
         .update(emailChangeTokens)
         .set({ consumedAt })
-        .where(eq(emailChangeTokens.id, tokenId));
+        .where(
+          and(
+            eq(emailChangeTokens.id, tokenId),
+            isNull(emailChangeTokens.consumedAt),
+          ),
+        )
+        .returning({ id: emailChangeTokens.id });
+      if (updated.length === 0) {
+        return err({ code: 'repo.not_found' });
+      }
       return ok(undefined);
     } catch (e) {
       return err({ code: 'repo.unexpected', cause: e });

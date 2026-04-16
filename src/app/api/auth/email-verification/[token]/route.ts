@@ -119,5 +119,16 @@ async function handle(
   return NextResponse.json({ ok: true }, { status: 200 });
 }
 
-export const GET = handle;
 export const POST = handle;
+
+// GET must NOT consume tokens — email-client prefetchers (Gmail Safe
+// Browsing, Apple Mail Privacy Protection, Outlook Link Preview) send
+// GET requests before the user clicks. The client-side page at
+// /email-verification/[token]/page.tsx renders a confirmation UI that
+// POSTs to this endpoint.
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json(
+    { error: 'method_not_allowed', message: 'Use POST to consume the verification token.' },
+    { status: 405, headers: { Allow: 'POST' } },
+  );
+}

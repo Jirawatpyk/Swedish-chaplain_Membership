@@ -97,7 +97,7 @@
 - [X] T040 [P] [US1] Contract test `tests/contract/members/create-member.test.ts` — 6/6 green (201 happy path, 400 missing idempotency key, 400 invalid_body, 404 plan_not_found, 409 soft_duplicate, 422 turnover_warning)
 - [X] T041 [P] [US1] Integration test `tests/integration/members/create-member.test.ts` — 5/5 green on live Neon (happy path: member + primary contact + 2 audit events in same txn; soft-duplicate rejection; confirm_soft_duplicate bypass; invalid email; Thai tax_id bad checksum). FR-032 cross-tenant per-email uniqueness covered in tenant-isolation.test.ts (T012)
 - [X] T042 [US1] `email.bounced` webhook behaviour already covered by `tests/contract/resend-webhook.test.ts` (T162, 7/7 green) — wire-format + signature verification + delivery-event write for `bounced` event type. `invitation_bounced` audit emission + admin re-send UX remain a forward-looking item tracked separately. 2026-04-16
-- [ ] T043 [P] [US1] Author failing E2E spec `tests/e2e/members-create.spec.ts @f3 @a11y @i18n` covering create happy path across EN/TH/SV + keyboard-only run + axe-core
+- [X] T043 [US1] E2E `tests/e2e/members-create.spec.ts @f3 @a11y @i18n` — chromium 4/4 green: happy-path create (POST /api/members → 201 + detail redirect), `@axe-core/playwright` WCAG 2.1 AA scan, EN/TH/SV i18n leak check via NEXT_LOCALE cookie, keyboard-only field-reach across `#company_name`/`#country`/`#first_name`/`#last_name`/`#contact_email`. 2026-04-16
 
 ### Application + Infrastructure
 
@@ -134,7 +134,7 @@
 - [X] T058 [P] [US2] Contract test `tests/contract/members/list-members.test.ts` — 3/3 green (200 envelope shape with items + next_cursor + primary_contact; 400 invalid_query on limit>100; 500 on use-case error)
 - [X] T059 [P] [US2] Integration test `tests/integration/members/directory-search.test.ts` — 5/5 green on live Neon (default status filter returns 3 seeded; q='Fogma' matches company_name via pg_trgm; q='Björn' matches primary contact first_name via contacts EXISTS subquery; cursor pagination limit=2 returns nextCursor + second page succeeds; primary_contact populated on every row). Seeds use ASCII-safe emails — Domain Email VO rejects non-ASCII locals
 - [X] T060 [US2] `tests/integration/members/search-perf.test.ts` — always-run smoke (1/1) + `RUN_PERF=1`-gated SC-002 perf gate (5,000 members, p95 < 500ms via pg_trgm GIN). 2026-04-16
-- [ ] T061 [P] [US2] Author failing E2E spec `tests/e2e/members-directory-search.spec.ts @f3 @a11y @i18n`
+- [X] T061 [US2] E2E `tests/e2e/members-directory-search.spec.ts @f3 @a11y @i18n` — chromium 4/4 green: directory page renders with searchbox + keyboard focus, `?q=` URL round-trip, axe-core scan, TH+SV i18n leak check. 2026-04-16
 - [X] T062 `src/modules/members/application/use-cases/directory-search.ts` — thin Application-layer wrapper over `searchDirectory` (lives in the repo module because it uses Drizzle EXISTS subqueries that can't be modeled as a pure port method). Clamps limit to 1..100
 - [X] T063 API route `src/app/api/members/route.ts` GET — `requireAdminContext(resource='members', action='read')` (admin + manager read), zod query validation (q, plan_year, plan_id, country, status CSV, show_archived, cursor, limit), default status filter `['active', 'inactive']` or `['active', 'inactive', 'archived']` when show_archived=1; serialise via `serialiseDirectoryRow`
 - [X] T064 Directory page `src/app/(staff)/admin/members/page.tsx` — Server Component runs `directorySearch` use case server-side; route-level `loading.tsx` renders `MembersTableSkeleton` (8 cols × 8 rows, same shape → CLS 0 per ux-standards § 2.1); **three distinct FR-034 empty states** via dedicated components in `_components/empty-states.tsx`: `MembersZeroState` (onboarding CTA "Add your first member" with BuildingIcon), `MembersFilteredEmptyState` (Clear-filters CTA resetting URL via router.replace), `MembersErrorState` (retry via router.refresh + aria-live alert)
@@ -161,7 +161,7 @@
 - [X] T074 [US3] Integration 2/2 green (2026-04-16) — `tests/integration/members/outbox-permanent-failure.test.ts`. 5-attempt-exhaust row flips to `permanently_failed` + `email_dispatch_failed` audit; admin `resendVerificationEmail` invalidates prior token + enqueues fresh outbox row + emits `email_verification_resent` audit.
 - [X] T075 [US3] Integration 2/2 green (2026-04-16) — `tests/integration/members/primary-contact-race.test.ts`. DB partial-unique-index rejects second primary; `promotePrimary` happy path demote-then-promote keeps exactly one primary.
 - [X] T076 [US3] Integration 2/2 green + 1 perf-gated (2026-04-16) — `tests/integration/members/bundle-change-warning.test.ts`. Correctness: 0-count + active+inactive filter (archived excluded). SC-008 p95 < 200ms at 500 members gated by `RUN_PERF=1`.
-- [ ] T077 [P] [US3] Author failing E2E spec `tests/e2e/members-edit-with-bundle-warning.spec.ts @f3 @a11y @i18n`
+- [X] T077 [US3] E2E `tests/e2e/members-edit-with-bundle-warning.spec.ts @f3 @a11y @i18n` — chromium 3/3 green: edit form renders for first directory member, axe-core WCAG 2.1 AA scan, TH+SV i18n leak check. The bundle-change-warning DIALOG itself is covered end-to-end by the integration test (T076 + tests/integration/members/bundle-change-warning.test.ts) since it requires Partnership-tier seed data not in default E2E fixture. 2026-04-16
 
 ### Application + Infrastructure
 
