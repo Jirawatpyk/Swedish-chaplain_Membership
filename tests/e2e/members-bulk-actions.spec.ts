@@ -10,12 +10,38 @@
  *   4. axe-core WCAG 2.1 AA scan on directory + bulk bar
  *   5. EN/TH/SV i18n leak check
  */
-import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test, fillField } from './fixtures';
+import { clearE2ERateLimits } from './helpers/rate-limit';
 import AxeBuilder from '@axe-core/playwright';
 
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+
+async function signIn(page: Page): Promise<void> {
+  await clearE2ERateLimits();
+  await page.goto('/admin/sign-in');
+  await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
+  await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
+  await page.getByRole('button', { name: /sign in/i }).click();
+  // Wait for redirect AWAY from sign-in (same pattern as plans-list.spec.ts)
+  await page.waitForURL(
+    (u) => {
+      const p = new URL(u).pathname;
+      return /^\/admin(\/|$)/.test(p) && !p.startsWith('/admin/sign-in');
+    },
+    { timeout: 15_000 },
+  );
+}
+
 test.describe('members bulk actions @f3', () => {
+  test.skip(
+    !ADMIN_EMAIL || !ADMIN_PASSWORD,
+    'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',
+  );
+
   test.beforeEach(async ({ page }) => {
-    // Sign in as admin — assumes E2E auth fixture
+    await signIn(page);
     await page.goto('/admin/members');
     await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
   });
@@ -61,11 +87,17 @@ test.describe('members bulk actions @f3', () => {
 });
 
 test.describe('members bulk actions i18n @f3 @i18n', () => {
+  test.skip(
+    !ADMIN_EMAIL || !ADMIN_PASSWORD,
+    'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',
+  );
+
   for (const locale of ['en', 'th', 'sv'] as const) {
     test(`${locale} locale renders without i18n leak`, async ({ page }) => {
       await page.context().addCookies([
         { name: 'NEXT_LOCALE', value: locale, domain: 'localhost', path: '/' },
       ]);
+      await signIn(page);
       await page.goto('/admin/members');
       await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
       // Check no raw i18n keys (admin.members.* pattern) leak into the page
