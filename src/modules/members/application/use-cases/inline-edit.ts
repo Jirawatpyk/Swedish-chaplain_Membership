@@ -185,6 +185,11 @@ export async function inlineEdit(
         }
 
         case 'country': {
+          // Round-6 W-1: archived members are immutable (except undelete).
+          // Consistent with bulk change_plan's archived guard (SW-5).
+          if (current.status === 'archived') {
+            throw new InlineEditStateError('state.cannot_edit_archived');
+          }
           if (value === null || value === '') {
             throw new InlineEditInvalidFieldError(
               'country',
@@ -230,6 +235,10 @@ export async function inlineEdit(
         }
 
         case 'notes': {
+          // Round-6 W-1: archived members are immutable (except undelete).
+          if (current.status === 'archived') {
+            throw new InlineEditStateError('state.cannot_edit_archived');
+          }
           if (value !== null && value.length > 4000) {
             throw new InlineEditInvalidFieldError(
               'notes',

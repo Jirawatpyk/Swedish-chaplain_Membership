@@ -191,7 +191,9 @@ export async function bulkAction(
           { err: lookupResult.error, requestId: meta.requestId },
           'bulk-action: findManyByIdsInTx unexpected error',
         );
-        throw new Error('lookup_failed');
+        // Round-6 S-1: preserve error code so catch block can distinguish
+        // repo.unexpected from other lookup failures without parsing logs.
+        throw new Error(`lookup_failed:${lookupResult.error.code}`);
       }
       const membersMap = lookupResult.value;
 

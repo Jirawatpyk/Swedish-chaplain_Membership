@@ -20,7 +20,7 @@
  * cursor.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -463,7 +463,9 @@ export function MembersTable({
     [rowSelection, onSelectionChange],
   );
 
-  const columns = [
+  // Round-6 W-2: memoize columns so TanStack Table v8 doesn't
+  // trigger a full table reconciliation on every render.
+  const columns = useMemo(() => [
     ...(enableSelection
       ? [
           columnHelper.display({
@@ -605,9 +607,9 @@ export function MembersTable({
           </span>
         ),
     }),
-  ];
+  ], [enableSelection, onInlineEdit, t, rows, rowSelection, handleRowSelectionChange]);
 
-  // eslint-disable-next-line react-hooks/incompatible-library
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table v8 hook
   const table = useReactTable({
     data: rows as MembersTableRow[],
     columns,
@@ -636,6 +638,11 @@ export function MembersTable({
     enableSelection && rows.length > 0 && selectedCount === rows.length;
   const hasMorePages = enableSelection && nextCursor !== null;
 
+  // Round-6 W-3: store table in a ref so the Ctrl+A effect has a stable
+  // dependency (table object is rebuilt every render by useReactTable).
+  const tableRef = useRef(table);
+  tableRef.current = table;
+
   // Staff-review SW-4: Ctrl+A / Cmd+A within the table selects all rows
   // on the current page (FR-040). Scoped to the table container so the
   // shortcut doesn't conflict with browser-wide text selection outside.
@@ -650,13 +657,13 @@ export function MembersTable({
             active === document.body)
         ) {
           e.preventDefault();
-          table.toggleAllPageRowsSelected(true);
+          tableRef.current.toggleAllPageRowsSelected(true);
         }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [enableSelection, table]);
+  }, [enableSelection]);
 
   return (
     <div className="flex flex-col gap-4" ref={tableContainerRef}>

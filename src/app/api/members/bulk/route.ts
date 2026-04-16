@@ -53,7 +53,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // 3. Pre-validation: cap check before idempotency (no point reserving
-  //    a key for an obviously invalid request)
+  //    a key for an obviously invalid request).
+  //    Round-6 S-2: intentionally duplicates zod's `.max(BULK_CAP)` for
+  //    defense-in-depth — rejects oversized payloads before the idempotency
+  //    key is reserved (avoids wasting a key slot on invalid requests).
   if (
     rawBody &&
     typeof rawBody === 'object' &&
@@ -187,10 +190,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       updated_count: result.value.updatedCount,
       audit_event_count: result.value.auditEventCount,
     };
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-      status: 200,
-      body,
-    });
+    // Round-6 S-3: wrap in try/catch so a Redis/cache failure doesn't
+    // prevent the client from receiving its 200 — the mutation already
+    // committed. A missed replay-cache write only means a future retry
+    // with the same key won't short-circuit (acceptable degradation).
+    try {
+      await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
+        status: 200,
+        body,
+      });
+    } catch (e) {
+      logger.warn(
+        { err: e, requestId: ctx.requestId },
+        'bulk-action: rememberIdempotentResponse failed (non-fatal)',
+      );
+    }
     return NextResponse.json(body, { status: 200 });
   }
 

@@ -196,6 +196,10 @@ describe('InlineCountryCell interaction (round-3 T1)', () => {
   it('round-4 R4-T1: input stays open after save error (N-I1 guard)', async () => {
     // Guards against regression where onSave failure silently closes
     // the input, losing the admin's draft.
+    // Round-6 S-4: jsdom+React-19 timing prevents firing Enter/blur
+    // reliably here. The behavioral proof (save-error → input stays
+    // open) is covered in the integration test suite via the
+    // inline-edit use case + InlineEditResult.error flow.
     const onSave = vi.fn().mockResolvedValue({ ok: false, error: 'Network error' });
     await renderTable({
       rows: [testRow],

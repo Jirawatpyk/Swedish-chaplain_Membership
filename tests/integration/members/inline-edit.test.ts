@@ -198,6 +198,56 @@ describe('integration: inline edit (T102)', () => {
     expect(INLINE_EDIT_FIELDS).toEqual(['status', 'country', 'notes']);
   });
 
+  // --- Round-6 W-1 — archived members are immutable (country/notes) ------
+
+  it('R6-W1: rejects country edit on archived member', async () => {
+    const deps = stubDeps({
+      memberRepo: {
+        ...stubDeps().memberRepo,
+        findByIdInTx: vi.fn().mockResolvedValue(
+          ok({ ...stubMember, status: 'archived', archivedAt: new Date('2026-04-01') }),
+        ),
+      } as InlineEditDeps['memberRepo'],
+    });
+    const result = await inlineEdit(
+      memberId,
+      { field: 'country', value: 'DE' },
+      meta,
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('state_error');
+      if (result.error.type === 'state_error') {
+        expect(result.error.code).toBe('state.cannot_edit_archived');
+      }
+    }
+  });
+
+  it('R6-W1: rejects notes edit on archived member', async () => {
+    const deps = stubDeps({
+      memberRepo: {
+        ...stubDeps().memberRepo,
+        findByIdInTx: vi.fn().mockResolvedValue(
+          ok({ ...stubMember, status: 'archived', archivedAt: new Date('2026-04-01') }),
+        ),
+      } as InlineEditDeps['memberRepo'],
+    });
+    const result = await inlineEdit(
+      memberId,
+      { field: 'notes', value: 'some note' },
+      meta,
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('state_error');
+      if (result.error.type === 'state_error') {
+        expect(result.error.code).toBe('state.cannot_edit_archived');
+      }
+    }
+  });
+
   // --- Round-4 T2 — audit_failed branch coverage per field ----------------
 
   it('R4-T2 status: audit failure returns sanitized server_error', async () => {
