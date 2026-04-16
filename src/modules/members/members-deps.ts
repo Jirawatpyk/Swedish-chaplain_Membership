@@ -14,6 +14,7 @@ import type { TenantContext } from '@/modules/tenants';
 import { drizzleMemberRepo } from './infrastructure/db/drizzle-member-repo';
 import { drizzleContactRepo } from './infrastructure/db/drizzle-contact-repo';
 import { drizzleAuditAdapter } from './infrastructure/audit/audit-adapter';
+import { drizzleTimelineRepo } from './infrastructure/timeline/drizzle-timeline-repo';
 import { plansBarrelAdapter } from './infrastructure/adapters/plan-lookup-adapter';
 import { resendEmailPort } from './infrastructure/adapters/resend-email-port';
 import { authSessionRevocationPort } from './infrastructure/adapters/auth-session-revocation-port';
@@ -28,6 +29,7 @@ import type { EmailPort } from './application/ports/email-port';
 import type { SessionRevocationPort } from './application/ports/session-revocation-port';
 import type { UserEmailPort } from './application/ports/user-email-port';
 import type { EmailChangeTokenPort } from './application/ports/email-change-token-port';
+import type { TimelinePort } from './application/ports/timeline-port';
 import type { MemberId } from './domain/member';
 import type { ContactId } from './domain/contact';
 
@@ -41,6 +43,7 @@ export type MembersDeps = {
   sessions: SessionRevocationPort;
   userEmails: UserEmailPort;
   tokens: EmailChangeTokenPort;
+  timeline: TimelinePort;
   clock: ClockPort;
   idFactory: {
     memberId(): MemberId;
@@ -86,6 +89,7 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     sessions: authSessionRevocationPort,
     userEmails: userEmailAdapter,
     tokens: emailChangeTokenAdapter,
+    timeline: drizzleTimelineRepo,
     clock: systemClock,
     idFactory: systemIdFactory,
   };

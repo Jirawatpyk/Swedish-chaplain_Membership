@@ -14,6 +14,7 @@ import { ok, err, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   DirectoryFilter,
+  DirectoryOffsetFilter,
   DirectoryRow,
   MemberRepo,
 } from '../ports/member-repo';
@@ -53,5 +54,51 @@ export async function directorySearch(
   return ok(result.value);
 }
 
+// ---------------------------------------------------------------------------
+// Offset-paginated variant (numbered pagination + total count)
+// ---------------------------------------------------------------------------
+
+export type DirectorySearchWithCountInput = Omit<
+  DirectoryOffsetFilter,
+  'limit' | 'offset'
+> & {
+  readonly limit?: number;
+  readonly offset?: number;
+};
+
+export type DirectorySearchWithCountOutput = {
+  readonly items: readonly DirectoryRow[];
+  readonly total: number;
+};
+
+/**
+ * Numbered-pagination variant of directorySearch — returns the matching
+ * page + a total count so the UI can render "Showing 1–50 of 131".
+ * Uses `LIMIT/OFFSET` rather than a cursor because admin workflows
+ * benefit from jump-to-page + bookmarkable `?page=N` URLs.
+ */
+export async function directorySearchWithCount(
+  deps: DirectorySearchDeps,
+  input: DirectorySearchWithCountInput,
+): Promise<Result<DirectorySearchWithCountOutput, DirectorySearchError>> {
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+  const offset = Math.max(0, input.offset ?? 0);
+  const result = await deps.memberRepo.searchDirectoryWithCount(deps.tenant, {
+    ...input,
+    limit,
+    offset,
+  } as DirectoryOffsetFilter);
+  if (!result.ok)
+    return err({
+      type: 'server_error',
+      message: `directory: ${result.error.code}`,
+    });
+  return ok(result.value);
+}
+
 // Re-export types from the port for consumers
-export type { DirectoryRow, DirectoryFilter } from '../ports/member-repo';
+export type {
+  DirectoryRow,
+  DirectoryFilter,
+  DirectoryOffsetFilter,
+} from '../ports/member-repo';

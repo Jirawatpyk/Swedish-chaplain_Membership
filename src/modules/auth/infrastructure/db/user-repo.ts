@@ -5,7 +5,7 @@
  * code (sign-in, change-password, account lifecycle) only depends on
  * the interface declared here, never on Drizzle directly.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { users, type UserRow } from './schema';
 import {
@@ -16,8 +16,31 @@ import {
   type PasswordHash,
   type UserId,
 } from '@/modules/auth/domain/branded';
-import type { UserAccount } from '@/modules/auth/domain/user';
+import type { UserAccount, UserStatus } from '@/modules/auth/domain/user';
 import type { Role } from '@/modules/auth/domain/role';
+
+/** Filter shape used by the admin users list page (search + role + status). */
+export interface UserListFilter {
+  readonly q?: string;
+  readonly role?: Role;
+  readonly status?: UserStatus;
+}
+
+function buildFilterConditions(filter: UserListFilter): SQL | undefined {
+  const conds: SQL[] = [];
+  if (filter.q && filter.q.trim().length > 0) {
+    const term = `%${filter.q.trim()}%`;
+    const qCondition = or(
+      ilike(users.email, term),
+      ilike(users.displayName, term),
+    );
+    if (qCondition) conds.push(qCondition);
+  }
+  if (filter.role) conds.push(eq(users.role, filter.role));
+  if (filter.status) conds.push(eq(users.status, filter.status));
+  if (conds.length === 0) return undefined;
+  return and(...conds);
+}
 
 function toDomain(row: UserRow): UserAccount {
   return {
@@ -62,6 +85,17 @@ export interface UserRepo {
   list(limit: number, offset: number): Promise<readonly UserAccount[]>;
   /** Total user count for pagination header. */
   countAll(): Promise<number>;
+  /**
+   * Filtered + paginated list. Search `q` matches email OR display_name
+   * (case-insensitive substring); `role` + `status` are exact matches.
+   */
+  listWithFilter(
+    filter: UserListFilter,
+    limit: number,
+    offset: number,
+  ): Promise<readonly UserAccount[]>;
+  /** Total count matching the same filter — powers pagination UI. */
+  countWithFilter(filter: UserListFilter): Promise<number>;
 }
 
 // Object-literal implementation — no class wrapper; see audit-repo.ts
@@ -211,6 +245,25 @@ export const userRepo: UserRepo = {
     const rows = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(users);
+    return rows[0]?.count ?? 0;
+  },
+
+  async listWithFilter(filter, limit, offset) {
+    const where = buildFilterConditions(filter);
+    const baseQuery = db.select().from(users);
+    const rows = await (where ? baseQuery.where(where) : baseQuery)
+      .orderBy(sql`${users.createdAt} DESC`)
+      .limit(limit)
+      .offset(offset);
+    return rows.map(toDomain);
+  },
+
+  async countWithFilter(filter) {
+    const where = buildFilterConditions(filter);
+    const baseQuery = db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(users);
+    const rows = await (where ? baseQuery.where(where) : baseQuery);
     return rows[0]?.count ?? 0;
   },
 };

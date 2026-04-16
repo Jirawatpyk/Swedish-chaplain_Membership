@@ -13,7 +13,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { ArrowLeftIcon, HelpCircleIcon, PencilIcon } from 'lucide-react';
+import {
+  ArrowLeftIcon,
+  HelpCircleIcon,
+  PencilIcon,
+  ClockIcon,
+} from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -235,6 +240,13 @@ export default async function MemberDetailPage({ params }: PageProps) {
             >
               <ArrowLeftIcon className="size-4" />
               {t('notFound.cta')}
+            </Link>
+            <Link
+              href={`/admin/members/${member.memberId}/timeline`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              <ClockIcon className="size-4" />
+              {t('sections.audit')}
             </Link>
             <Link
               href={`/admin/members/${member.memberId}/edit`}

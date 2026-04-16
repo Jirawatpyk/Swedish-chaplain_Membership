@@ -108,10 +108,13 @@ export {
 
 export {
   directorySearch,
+  directorySearchWithCount,
   type DirectorySearchInput,
   type DirectorySearchOutput,
   type DirectorySearchError,
   type DirectorySearchDeps,
+  type DirectorySearchWithCountInput,
+  type DirectorySearchWithCountOutput,
   type DirectoryRow,
 } from './application/use-cases/directory-search';
 
@@ -243,6 +246,23 @@ export {
   type InlineEditMeta,
   type InlineEditField,
 } from './application/use-cases/inline-edit';
+
+// --- US6 use cases ----------------------------------------------------------
+
+export {
+  timelineList,
+  timelineListSchema,
+  type TimelineListInput,
+  type TimelineListOutput,
+  type TimelineListError,
+  type TimelineListDeps,
+} from './application/use-cases/timeline-list';
+
+export type {
+  TimelineEvent,
+  TimelineResult,
+  TimelinePort,
+} from './application/ports/timeline-port';
 
 // --- US4 port ---------------------------------------------------------------
 // RateLimitPort removed — rate limiting is a transport-layer concern

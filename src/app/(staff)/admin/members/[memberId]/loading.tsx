@@ -18,7 +18,11 @@ export default async function Loading() {
         subtitle={t('subtitle')}
         actions={
           <div className="flex gap-2">
+            {/* Back to members */}
             <Skeleton className="h-9 w-40" />
+            {/* Timeline (US6) */}
+            <Skeleton className="h-9 w-28" />
+            {/* Edit */}
             <Skeleton className="h-9 w-20" />
           </div>
         }

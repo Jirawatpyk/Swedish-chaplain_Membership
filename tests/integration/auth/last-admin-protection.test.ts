@@ -67,6 +67,9 @@ function oneAdminRepo(): UserRepo {
     setRole: (id, role) => userRepo.setRole(id, role),
     list: (limit, offset) => userRepo.list(limit, offset),
     countAll: () => userRepo.countAll(),
+    listWithFilter: (filter, limit, offset) =>
+      userRepo.listWithFilter(filter, limit, offset),
+    countWithFilter: (filter) => userRepo.countWithFilter(filter),
   };
 }
 

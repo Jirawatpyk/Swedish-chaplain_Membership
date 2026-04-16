@@ -15,15 +15,24 @@ import {
   type InlineEditResult,
 } from '@/components/members/members-table';
 import { BulkActionBar } from './bulk-action-bar';
+import { TablePagination } from '@/components/layout/table-pagination';
 import { useTranslations } from 'next-intl';
 
 type Props = {
   readonly rows: readonly MembersTableRow[];
-  readonly nextCursor: string | null;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
   readonly isAdmin: boolean;
 };
 
-export function DirectoryWithBulk({ rows, nextCursor, isAdmin }: Props) {
+export function DirectoryWithBulk({
+  rows,
+  page,
+  pageSize,
+  total,
+  isAdmin,
+}: Props) {
   const t = useTranslations('admin.members.inlineEdit');
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -85,11 +94,12 @@ export function DirectoryWithBulk({ rows, nextCursor, isAdmin }: Props) {
     <>
       <MembersTable
         rows={rows}
-        nextCursor={nextCursor}
+        nextCursor={null}
         enableSelection={isAdmin}
         onSelectionChange={isAdmin ? setSelectedIds : undefined}
         onInlineEdit={isAdmin ? handleInlineEdit : undefined}
       />
+      <TablePagination page={page} pageSize={pageSize} total={total} />
       {isAdmin && (
         <BulkActionBar
           selectedIds={selectedIds}

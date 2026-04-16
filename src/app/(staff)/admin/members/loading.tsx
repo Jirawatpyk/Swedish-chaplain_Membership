@@ -3,13 +3,7 @@
  * in the final table shape for CLS 0 (ux-standards § 2.1).
  */
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ContentContainer } from '@/components/layout/content-container';
 import { PageHeader } from '@/components/layout/page-header';
@@ -26,10 +20,6 @@ export default async function Loading() {
         actions={<Skeleton className="h-9 w-44" />}
       />
       <Card>
-        <CardHeader>
-          <CardTitle>{t('listHeading')}</CardTitle>
-          <CardDescription>{t('refreshHint')}</CardDescription>
-        </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {/* Filter bar shell — search input + checkbox */}
           <div

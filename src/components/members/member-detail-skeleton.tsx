@@ -3,7 +3,8 @@
  * transitions. Used by `/admin/members/[memberId]/loading.tsx` so the
  * fallback doesn't inherit the parent segment's table skeleton.
  *
- * Structure mirrors the real detail page:
+ * Structure mirrors the real detail page BODY (the route `loading.tsx`
+ * owns the `<PageHeader>` shell + its action-button skeletons):
  *   - Company card: dt/dd grid (3 cols on lg) with ~13 fields
  *   - Contacts heading
  *   - Primary contact card: 4-field dl grid

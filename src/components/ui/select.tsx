@@ -28,6 +28,46 @@ function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
   )
 }
 
+/**
+ * Translating wrapper around `<SelectValue>` for the common case where
+ * each `<SelectItem value="x">` has a localised label and we want the
+ * trigger to show the SAME label (not Base UI's default raw `value`).
+ *
+ * Base UI's `Select.Value` shows the raw `value` string by default,
+ * NOT the rendered children of the selected `<SelectItem>`. This
+ * differs from Radix UI. Passing a render function lets us translate
+ * the raw value back into a localised label.
+ *
+ * Usage:
+ *   <TranslatedSelectValue
+ *     placeholder={t('role.label')}
+ *     translate={(v) => v === 'all' ? t('role.all') : t(`role.${v}`)}
+ *   />
+ *
+ * The `translate` callback receives the raw `value` string (or empty
+ * string when nothing is selected) and must return the displayable
+ * label for that value. Returning `null`/`undefined` falls through to
+ * the placeholder.
+ */
+function TranslatedSelectValue({
+  placeholder,
+  translate,
+  className,
+}: {
+  placeholder?: string
+  translate: (value: string) => React.ReactNode
+  className?: string
+}) {
+  return (
+    <SelectValue placeholder={placeholder} className={className}>
+      {(value: string) => {
+        if (!value) return placeholder ?? null
+        return translate(value)
+      }}
+    </SelectValue>
+  )
+}
+
 function SelectTrigger({
   className,
   size = "default",
@@ -207,4 +247,5 @@ export {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
+  TranslatedSelectValue,
 }

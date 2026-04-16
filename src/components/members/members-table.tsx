@@ -703,17 +703,16 @@ export function MembersTable({
           })}
         </div>
       )}
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead
-                    key={header.id}
-                    scope="col"
-                    className="text-xs uppercase tracking-wide text-muted-foreground"
-                  >
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead
+                  key={header.id}
+                  scope="col"
+                  className="text-xs uppercase tracking-wide text-muted-foreground"
+                >
                     {header.isPlaceholder
                       ? null
                       : flexRender(
@@ -769,9 +768,8 @@ export function MembersTable({
                 </TableRow>
               );
             })}
-          </TableBody>
-        </Table>
-      </div>
+        </TableBody>
+      </Table>
 
       {nextCursor && (
         <div className="flex justify-center">

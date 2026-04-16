@@ -28,14 +28,10 @@ import { requireSession } from '@/lib/auth-session';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { Role } from '@/modules/auth';
 import { UserListTable } from '@/components/auth/user-list-table';
-import { Badge } from '@/components/ui/badge';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { UsersFilters } from '@/components/auth/users-filters';
+import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
+import { TablePagination } from '@/components/layout/table-pagination';
+import { Card, CardContent } from '@/components/ui/card';
 import { ContentContainer } from '@/components/layout/content-container';
 import { PageHeader } from '@/components/layout/page-header';
 
@@ -43,28 +39,50 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: 'Users · SweCham' };
 }
 
-export default async function AdminUsersPage() {
+const USERS_PAGE_SIZE = 50;
+
+interface SearchParams {
+  readonly page?: string;
+  readonly q?: string;
+  readonly role?: string;
+  readonly status?: string;
+}
+
+const VALID_ROLES = new Set(['admin', 'manager', 'member']);
+const VALID_STATUSES = new Set(['active', 'disabled', 'pending']);
+
+export default async function AdminUsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   const { user: currentUser } = await requireSession('staff');
   const t = await getTranslations('admin.users');
+  const query = await searchParams;
+  const rawPage = Number.parseInt(query.page ?? '1', 10);
+  const page =
+    Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
+  const q = query.q?.trim() || undefined;
+  const role =
+    query.role && VALID_ROLES.has(query.role)
+      ? (query.role as Role)
+      : undefined;
+  const status =
+    query.status && VALID_STATUSES.has(query.status)
+      ? (query.status as 'active' | 'disabled' | 'pending')
+      : undefined;
 
   return (
     <ContentContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('pageSubtitle')}
-        actions={
-          <Badge variant="secondary">
-            {t('viewingAs', { role: currentUser.role })}
-          </Badge>
-        }
+        actions={<InviteUserDialog disabled={currentUser.role !== 'admin'} />}
       />
 
       <Card>
-        <CardHeader>
-          <CardTitle>{t('listHeading')}</CardTitle>
-          <CardDescription>{t('listDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
+          <UsersFilters />
           {/*
             No internal <Suspense> — route-level loading.tsx is the only
             Suspense boundary. Double-wrapping caused the skeleton
@@ -74,6 +92,10 @@ export default async function AdminUsersPage() {
           <UsersDataSection
             currentUserId={currentUser.id}
             currentUserRole={currentUser.role}
+            page={page}
+            {...(q !== undefined ? { q } : {})}
+            {...(role !== undefined ? { role } : {})}
+            {...(status !== undefined ? { status } : {})}
           />
         </CardContent>
       </Card>
@@ -92,21 +114,31 @@ export default async function AdminUsersPage() {
 async function UsersDataSection({
   currentUserId,
   currentUserRole,
+  page,
+  q,
+  role,
+  status,
 }: {
   currentUserId: string;
   currentUserRole: Role;
+  page: number;
+  q?: string;
+  role?: Role;
+  status?: 'active' | 'disabled' | 'pending';
 }) {
+  const offset = (page - 1) * USERS_PAGE_SIZE;
+  const filter = {
+    ...(q !== undefined ? { q } : {}),
+    ...(role !== undefined ? { role } : {}),
+    ...(status !== undefined ? { status } : {}),
+  };
   const [users, total] = await Promise.all([
-    userRepo.list(50, 0),
-    userRepo.countAll(),
+    userRepo.listWithFilter(filter, USERS_PAGE_SIZE, offset),
+    userRepo.countWithFilter(filter),
   ]);
-  const t = await getTranslations('admin.users');
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-caption text-muted-foreground">
-        {t('subtitle', { total })}
-      </p>
       <UserListTable
         users={users.map((u) => ({
           id: u.id,
@@ -118,6 +150,7 @@ async function UsersDataSection({
         currentUserId={currentUserId}
         currentUserRole={currentUserRole}
       />
+      <TablePagination page={page} pageSize={USERS_PAGE_SIZE} total={total} />
     </div>
   );
 }

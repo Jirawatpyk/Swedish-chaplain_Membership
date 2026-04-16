@@ -186,13 +186,27 @@
     },
     "users": {
       "title": "ผู้ใช้",
-      "subtitle": "ทั้งหมด {total} บัญชี",
       "pageSubtitle": "จัดการบัญชีเจ้าหน้าที่และสมาชิก สิทธิ์ และสถานะการใช้งาน",
-      "viewingAs": "กำลังดูในฐานะ {role}",
-      "listHeading": "บัญชีทั้งหมด",
-      "listDescription": "เชิญ ระงับ เปิดใช้งาน หรือเปลี่ยนสิทธิ์ การทำรายการที่มีผลกระทบต้องยืนยันก่อน",
       "empty": "ยังไม่มีผู้ใช้ เชิญคนแรกเพื่อเริ่มต้น",
-      "refreshHint": "การเปลี่ยนแปลงจะมีผลทันทีหลังยืนยัน",
+      "filters": {
+        "searchPlaceholder": "ค้นหาด้วยอีเมลหรือชื่อที่แสดง",
+        "searchSrLabel": "ค้นหาผู้ใช้",
+        "role": {
+          "label": "สิทธิ์",
+          "all": "ทุกสิทธิ์",
+          "admin": "ผู้ดูแลระบบ",
+          "manager": "ผู้จัดการ",
+          "member": "สมาชิก"
+        },
+        "status": {
+          "label": "สถานะ",
+          "all": "ทุกสถานะ",
+          "active": "ใช้งาน",
+          "disabled": "ระงับ",
+          "pending": "รอดำเนินการ"
+        },
+        "clear": "ล้างตัวกรอง"
+      },
       "columns": {
         "email": "อีเมล",
         "name": "ชื่อ",
@@ -251,7 +265,6 @@
     "plans": {
       "title": "แพ็กเกจสมาชิก",
       "subtitle": "มีแพ็กเกจทั้งหมด {total} รายการในปี {year}",
-      "listHeading": "แคตตาล็อกแพ็กเกจ",
       "listDescription": "จัดการคำจำกัดความของแต่ละระดับสมาชิก ค่าธรรมเนียมรายปี และตารางสิทธิประโยชน์ แพ็กเกจของปีก่อนถูกล็อกบางส่วนเพื่อรักษาความถูกต้องของการตรวจสอบ",
       "empty": {
         "title": "ยังไม่มีแพ็กเกจสำหรับปีนี้",
@@ -259,7 +272,6 @@
         "newCta": "สร้างแพ็กเกจ",
         "cloneCta": "คัดลอก {sourceYear} → {targetYear}"
       },
-      "refreshHint": "การเปลี่ยนแปลงมีผลทันทีและถูกบันทึกในประวัติการตรวจสอบ",
       "columns": {
         "name": "ชื่อแพ็กเกจ",
         "category": "ประเภท",
@@ -504,8 +516,6 @@
         "loading": "กำลังคำนวณจำนวนสมาชิกที่กระทบ…"
       },
       "subtitle": "บริษัทสมาชิก + ผู้ติดต่อหลัก",
-      "refreshHint": "ค้นหา กรอง หรือเปิดดูรายละเอียดของแต่ละราย",
-      "listHeading": "สมาชิกทั้งหมด",
       "directory": {
         "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ชื่อผู้ติดต่อ หรืออีเมล",
         "searchSrLabel": "ค้นหาสมาชิก",
@@ -609,6 +619,19 @@
         "portal": {
           "linked": "เชื่อมบัญชีพอร์ทัล"
         }
+      },
+      "timeline": {
+        "pageTitle": "ไทม์ไลน์ · {companyName} · SweCham",
+        "title": "ไทม์ไลน์",
+        "subtitle": "ประวัติกิจกรรมของสมาชิกรายนี้",
+        "empty": "ยังไม่มีกิจกรรมที่บันทึกไว้",
+        "loadMore": "โหลดเหตุการณ์เก่ากว่า",
+        "loading": "กำลังโหลดไทม์ไลน์…",
+        "actor": "โดย {actor}",
+        "actorSystem": "ระบบ",
+        "eventAt": "{date}",
+        "backToDetail": "กลับไปยังสมาชิก",
+        "totalEvents": "{count, plural, other {# เหตุการณ์}}"
       },
       "create": {
         "pageTitle": "เพิ่มสมาชิก · SweCham",
@@ -937,5 +960,12 @@
       "invitation_bounced": "Invitation bounced",
       "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
     }
+  },
+  "pagination": {
+    "summary": "แสดง {from}–{to} จาก {total}",
+    "emptyCount": "ไม่มีรายการ",
+    "previous": "ก่อนหน้า",
+    "next": "ถัดไป",
+    "page": "หน้า {page}"
   }
 }

@@ -61,6 +61,7 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
       updateFields: vi.fn(),
       updateFieldsInTx: vi.fn().mockResolvedValue(ok(stubMember)),
       searchDirectory: vi.fn(),
+      searchDirectoryWithCount: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

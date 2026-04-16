@@ -24,6 +24,22 @@ export type DirectoryFilter = {
   readonly cursor?: string;
 };
 
+/**
+ * Offset-based filter for numbered pagination — used by admin lists
+ * that need a total count + jump-to-page-N UX (instead of cursor
+ * load-more). Offset pagination is fine here because admin tables
+ * cap at ~1,000 rows per tenant.
+ */
+export type DirectoryOffsetFilter = {
+  readonly q?: string;
+  readonly status?: readonly ('active' | 'inactive' | 'archived')[];
+  readonly planYear?: number;
+  readonly country?: string;
+  readonly planId?: string;
+  readonly limit: number;
+  readonly offset: number;
+};
+
 export type DirectoryRow = {
   readonly member: Member;
   readonly primaryContact: Contact | null;
@@ -178,6 +194,23 @@ export interface MemberRepo {
   ): Promise<
     Result<
       { readonly items: DirectoryRow[]; readonly nextCursor: string | null },
+      RepoError
+    >
+  >;
+
+  /**
+   * Offset-based directory search with total count — powers numbered
+   * pagination on `/admin/members`. Two queries in one transaction:
+   *   1. `COUNT(*) OVER ()` using the same filters
+   *   2. Paged SELECT with `LIMIT + OFFSET`
+   * Total count lets the UI show "Showing 1–50 of 131".
+   */
+  searchDirectoryWithCount(
+    ctx: TenantContext,
+    filter: DirectoryOffsetFilter,
+  ): Promise<
+    Result<
+      { readonly items: DirectoryRow[]; readonly total: number },
       RepoError
     >
   >;

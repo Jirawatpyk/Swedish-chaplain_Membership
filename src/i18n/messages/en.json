@@ -186,13 +186,27 @@
     },
     "users": {
       "title": "Users",
-      "subtitle": "{total} accounts total",
       "pageSubtitle": "Manage staff and member accounts, roles, and status.",
-      "viewingAs": "Viewing as {role}",
-      "listHeading": "All accounts",
-      "listDescription": "Invite, disable, enable, or change roles. Destructive actions require confirmation.",
       "empty": "No users yet. Invite the first one to get started.",
-      "refreshHint": "Changes apply immediately after confirmation.",
+      "filters": {
+        "searchPlaceholder": "Search by email or display name",
+        "searchSrLabel": "Search users",
+        "role": {
+          "label": "Role",
+          "all": "All roles",
+          "admin": "Admin",
+          "manager": "Manager",
+          "member": "Member"
+        },
+        "status": {
+          "label": "Status",
+          "all": "All statuses",
+          "active": "Active",
+          "disabled": "Disabled",
+          "pending": "Pending"
+        },
+        "clear": "Clear filters"
+      },
       "columns": {
         "email": "Email",
         "name": "Name",
@@ -251,7 +265,6 @@
     "plans": {
       "title": "Membership Plans",
       "subtitle": "{total} plans in {year}",
-      "listHeading": "Plan catalogue",
       "listDescription": "Manage tier definitions, annual fees, and benefit matrices. Prior-year plans are partially locked for audit integrity.",
       "empty": {
         "title": "No plans for this year",
@@ -259,7 +272,6 @@
         "newCta": "New plan",
         "cloneCta": "Clone {sourceYear} → {targetYear}"
       },
-      "refreshHint": "Changes apply immediately and appear in the audit log.",
       "columns": {
         "name": "Name",
         "category": "Category",
@@ -504,8 +516,6 @@
         "loading": "Calculating affected members…"
       },
       "subtitle": "Member companies + primary contacts",
-      "refreshHint": "Search, filter, or open any row for details.",
-      "listHeading": "All members",
       "directory": {
         "searchPlaceholder": "Search by company, contact name, or email",
         "searchSrLabel": "Search members",
@@ -609,6 +619,19 @@
         "portal": {
           "linked": "Portal linked"
         }
+      },
+      "timeline": {
+        "pageTitle": "Timeline · {companyName} · SweCham",
+        "title": "Timeline",
+        "subtitle": "Activity history for this member",
+        "empty": "No activity recorded yet.",
+        "loadMore": "Load older events",
+        "loading": "Loading timeline…",
+        "actor": "by {actor}",
+        "actorSystem": "System",
+        "eventAt": "{date}",
+        "backToDetail": "Back to member",
+        "totalEvents": "{count, plural, one {# event} other {# events}}"
       },
       "create": {
         "pageTitle": "Add member · SweCham",
@@ -937,5 +960,12 @@
       "invitation_bounced": "Invitation bounced",
       "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
     }
+  },
+  "pagination": {
+    "summary": "Showing {from}–{to} of {total}",
+    "emptyCount": "No records",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {page}"
   }
 }

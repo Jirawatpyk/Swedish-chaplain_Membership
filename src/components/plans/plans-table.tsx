@@ -223,9 +223,9 @@ export function PlansTable({
 
   return (
     <div className="space-y-4" data-plans-table>
-      {/* Filter bar */}
+      {/* Filter bar — flat, matches members/directory-filters.tsx style */}
       <div
-        className="flex flex-col gap-3 rounded-lg border border-border bg-card/50 p-3 md:flex-row md:items-center md:gap-4"
+        className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4"
         role="region"
         aria-label={t('filters.search.label')}
       >
@@ -300,23 +300,36 @@ export function PlansTable({
         ) : null}
       </div>
 
-      {/* Table */}
+      {/* Table — matches /admin/members style (uppercase muted header
+          + hover row). No outer border: parent <Card> is the container. */}
       <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('columns.name')}</TableHead>
-            <TableHead>{t('columns.category')}</TableHead>
-            <TableHead>{t('columns.annualFee')}</TableHead>
-            <TableHead>{t('columns.memberType')}</TableHead>
-            <TableHead>{t('columns.year')}</TableHead>
-            <TableHead>{t('columns.status')}</TableHead>
-            {isAdmin ? (
-              <TableHead className="w-[48px]">
-                <span className="sr-only">{t('columns.actions')}</span>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.name')}
               </TableHead>
-            ) : null}
-          </TableRow>
-        </TableHeader>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.category')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.annualFee')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.memberType')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.year')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.status')}
+              </TableHead>
+              {isAdmin ? (
+                <TableHead className="w-[48px] text-xs uppercase tracking-wide text-muted-foreground">
+                  <span className="sr-only">{t('columns.actions')}</span>
+                </TableHead>
+              ) : null}
+            </TableRow>
+          </TableHeader>
         <TableBody>
           {sorted.length === 0 ? (
             <TableRow>
@@ -333,6 +346,7 @@ export function PlansTable({
               return (
                 <TableRow
                   key={`${plan.plan_year}-${plan.plan_id}`}
+                  className="hover:bg-accent/40"
                   data-plan-id={plan.plan_id}
                   data-plan-year={plan.plan_year}
                 >

@@ -19,15 +19,9 @@ import { getTranslations } from 'next-intl/server';
 import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { directorySearch } from '@/modules/members';
+import { directorySearchWithCount } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { ContentContainer } from '@/components/layout/content-container';
 import { PageHeader } from '@/components/layout/page-header';
@@ -48,8 +42,10 @@ export async function generateMetadata(): Promise<Metadata> {
 interface SearchParams {
   readonly q?: string;
   readonly show_archived?: string;
-  readonly cursor?: string;
+  readonly page?: string;
 }
+
+const PAGE_SIZE = 50;
 
 export default async function MembersListPage({
   searchParams,
@@ -79,10 +75,6 @@ export default async function MembersListPage({
       />
 
       <Card>
-        <CardHeader>
-          <CardTitle>{t('listHeading')}</CardTitle>
-          <CardDescription>{t('refreshHint')}</CardDescription>
-        </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <DirectoryFilters />
           <MembersDirectoryBody
@@ -112,14 +104,19 @@ async function MembersDirectoryBody({
     ? (['active', 'inactive', 'archived'] as const)
     : (['active', 'inactive'] as const);
 
+  const rawPage = Number.parseInt(query.page ?? '1', 10);
+  const page =
+    Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
+  const offset = (page - 1) * PAGE_SIZE;
+
   const deps = buildMembersDeps(tenant);
-  const result = await directorySearch(
+  const result = await directorySearchWithCount(
     { tenant, memberRepo: deps.memberRepo },
     {
       ...(query.q?.trim() ? { q: query.q.trim() } : {}),
-      ...(query.cursor ? { cursor: query.cursor } : {}),
       status: [...statuses],
-      limit: 50,
+      limit: PAGE_SIZE,
+      offset,
     },
   );
 
@@ -161,7 +158,9 @@ async function MembersDirectoryBody({
     <Suspense fallback={<MembersTableSkeleton />}>
       <DirectoryWithBulk
         rows={rows}
-        nextCursor={result.value.nextCursor}
+        page={page}
+        pageSize={PAGE_SIZE}
+        total={result.value.total}
         isAdmin={isAdmin}
       />
     </Suspense>

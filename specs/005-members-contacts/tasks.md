@@ -244,13 +244,13 @@
 **Independent test**: Perform 5 actions on a member, open Timeline, see 5 events newest-first with proper localization.
 **US6 requirements covered**: FR-020, FR-023, FR-024 (a11y).
 
-- [ ] T127 [P] [US6] Author failing contract test `tests/contract/members/timeline.test.ts`
-- [ ] T128 [P] [US6] Author failing integration test `tests/integration/members/timeline.test.ts` covering cursor pagination + member-role redaction + reduced-motion
-- [ ] T129 [P] [US6] Author failing E2E spec `tests/e2e/members-timeline.spec.ts @f3 @a11y @i18n`
-- [ ] T130 [P] [US6] Implement `application/use-cases/timeline-list.ts` — queries `audit_log` with `payload->>'member_id' = $1` + cursor pagination
-- [ ] T131 [US6] Implement API route `src/app/api/members/[memberId]/timeline/route.ts`
-- [ ] T132 [US6] Implement timeline page `src/app/(staff)/admin/members/[memberId]/timeline/page.tsx` using Cache Components + `cacheTag('member', memberId)` per research § 9; reduced-motion fallback per FR-044
-- [ ] T133 [US6] Fill i18n `audit.eventType.*` display strings for all 20+ audit event types across EN/TH/SV
+- [X] T127 [P] [US6] Contract test `tests/contract/members/timeline.test.ts` — **6/6 green** (200 happy path with items+next_cursor, 404 invalid memberId, 404 use-case not_found, 400 invalid limit, 403 non-admin, 500 server_error). 2026-04-16
+- [X] T128 [P] [US6] Integration test `tests/integration/members/timeline.test.ts` — **6/6 green on live Neon**: newest-first ordering, cursor pagination with no-overlap, member-role redaction of override_reason_*, admin-role payload preserved, tenant isolation (memberB invisible from tenantA), 404 on invalid memberId. 2026-04-16
+- [X] T129 [P] [US6] E2E spec `tests/e2e/members-timeline.spec.ts @f3 @a11y @i18n` — authored with page render + axe-core WCAG 2.1 AA scan + EN/TH/SV i18n leak check + reduced-motion static-dot assertion. 2026-04-16
+- [X] T130 [P] [US6] Implement `application/use-cases/timeline-list.ts` — zod input validation, member existence check (404 on cross-tenant), timeline query via `TimelinePort.listByMember`, **member-role payload redaction** (override_reason_code, override_reason_note, notes stripped). 2026-04-16
+- [X] T131 [US6] Implement API route `src/app/api/members/[memberId]/timeline/route.ts` — GET, admin+manager read via `requireAdminContext`, cursor+limit query validation, 6-branch error mapping (403/404/400/500). Response includes `actor_display_name` resolved from `users.display_name || users.email`. 2026-04-16
+- [X] T132 [US6] Implement timeline page `src/app/(staff)/admin/members/[memberId]/timeline/page.tsx` — Server Component loads first page server-side, hands to `TimelineClient` (Client Component) with "Load more" cursor button + `aria-live="polite"` for new-event announcements. `TimelineEventItem` resolves actor UUIDs to human-readable names + formats payload diff (not raw UUIDs). Route-level `loading.tsx` renders `TimelineSkeleton`. Static dot markers honour `prefers-reduced-motion` (no animation class). Linked from member detail page via new "Timeline" button. 2026-04-16
+- [X] T133 [US6] i18n `admin.members.timeline.*` (9 keys — pageTitle, title, subtitle, empty, loadMore, loading, actor, actorSystem, backToDetail) across EN/TH/SV = 27 keys. `audit.eventType.*` was already filled in Phase 2 foundational setup. `pnpm check:i18n` 683 keys parity green. 2026-04-16
 
 ---
 

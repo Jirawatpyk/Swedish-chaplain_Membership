@@ -58,6 +58,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
       updateFields: vi.fn(),
       updateFieldsInTx: vi.fn().mockResolvedValue(ok({ ...stubMember, notes: 'updated' })),
       searchDirectory: vi.fn(),
+      searchDirectoryWithCount: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

@@ -582,4 +582,119 @@ export const drizzleMemberRepo: MemberRepo = {
     return err(unexpected(e));
   }
   },
+
+  // --- Offset-paginated directory search with total count ------------------
+  // Powers numbered pagination on /admin/members. Runs two queries in one
+  // runInTenant transaction: COUNT(*) for the total + LIMIT/OFFSET page.
+  // Both use identical WHERE clauses so the count is always consistent
+  // with what the page shows (same RLS-scoped snapshot).
+  async searchDirectoryWithCount(ctx, filter) {
+    try {
+      const statuses = filter.status ?? ['active', 'inactive'];
+      const result = await runInTenant(ctx, async (tx) => {
+        const conds = [] as ReturnType<typeof eq>[];
+        if (filter.planYear !== undefined)
+          conds.push(eq(members.planYear, filter.planYear));
+        if (filter.country !== undefined)
+          conds.push(eq(members.country, filter.country));
+        if (filter.planId !== undefined)
+          conds.push(eq(members.planId, filter.planId));
+
+        const whereClause = and(
+          or(...statuses.map((s) => eq(members.status, s)))!,
+          ...(filter.q
+            ? [
+                or(
+                  ilike(members.companyName, `%${filter.q}%`),
+                  sql`EXISTS (SELECT 1 FROM contacts c
+                             WHERE c.tenant_id = ${members.tenantId}
+                               AND c.member_id = ${members.memberId}
+                               AND c.removed_at IS NULL
+                               AND (c.first_name ILIKE ${'%' + filter.q + '%'}
+                                    OR c.last_name ILIKE ${'%' + filter.q + '%'}
+                                    OR c.email ILIKE ${'%' + filter.q + '%'}))`,
+                )!,
+              ]
+            : []),
+          ...conds,
+        );
+
+        // Count query — same filters, tenant-scoped via RLS
+        const countRows = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(members)
+          .where(whereClause);
+        const total = countRows[0]?.n ?? 0;
+
+        // Page query with correlated plan-name subquery (same pattern
+        // as cursor searchDirectory above — see comments there for why
+        // the `alias()` is required).
+        const mp = alias(membershipPlans, 'mp');
+        const planNameSubquery = tx
+          .select({ name: sql<string>`${mp.planName}->>'en'` })
+          .from(mp)
+          .where(
+            and(
+              eq(mp.tenantId, members.tenantId),
+              eq(mp.planId, members.planId),
+              eq(mp.planYear, members.planYear),
+            ),
+          )
+          .limit(1);
+
+        const memberRows = await tx
+          .select({
+            row: members,
+            planDisplayName:
+              sql<string | null>`(${planNameSubquery})`.as('plan_display_name'),
+          })
+          .from(members)
+          .where(whereClause)
+          .orderBy(
+            sql`${members.lastActivityAt} DESC NULLS LAST`,
+            asc(members.memberId),
+          )
+          .limit(filter.limit)
+          .offset(Math.max(0, filter.offset));
+
+        const memberIds = memberRows.map((r) => r.row.memberId);
+        const primaryContacts =
+          memberIds.length === 0
+            ? []
+            : await tx
+                .select()
+                .from(contacts)
+                .where(
+                  and(
+                    eq(contacts.isPrimary, true),
+                    inArray(contacts.memberId, memberIds),
+                  ),
+                );
+
+        return { memberRows, primaryContacts, total };
+      });
+
+      const byMember = new Map<
+        string,
+        (typeof result.primaryContacts)[number]
+      >();
+      for (const c of result.primaryContacts) {
+        if (c.removedAt === null) byMember.set(c.memberId, c);
+      }
+
+      const items: DirectoryRow[] = result.memberRows.map((r) => {
+        const m = rowToMember(r.row);
+        const c = byMember.get(r.row.memberId) ?? null;
+        return {
+          member: m,
+          planDisplayName: r.planDisplayName,
+          primaryContact: c === null ? null : rowToContact(c),
+        };
+      });
+
+      return ok({ items, total: result.total });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
 };

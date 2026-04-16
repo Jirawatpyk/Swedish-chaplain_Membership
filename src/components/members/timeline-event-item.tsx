@@ -1,0 +1,155 @@
+/**
+ * T132 — Timeline event item (US6).
+ *
+ * Renders a single audit event row with:
+ *   - Localised event-type label
+ *   - Human-readable actor attribution (resolved display name or "System")
+ *   - Localised timestamp
+ *   - Meaningful payload diff/summary (not raw UUIDs)
+ *
+ * FR-024: keyboard-accessible, aria-labelled, reduced-motion friendly.
+ */
+
+import { useTranslations } from 'next-intl';
+
+export type TimelineItemProps = {
+  readonly id: string;
+  readonly timestamp: string;
+  readonly eventType: string;
+  readonly actorUserId: string;
+  readonly actorDisplayName: string | null;
+  readonly summary: string;
+  readonly payload: Record<string, unknown> | null;
+};
+
+const SYSTEM_ACTORS = new Set(['system', 'system:bootstrap', 'anonymous']);
+
+/**
+ * Format the payload into a compact, human-readable one-liner.
+ * Avoids showing raw UUIDs unless they are the actual target of the event.
+ * Returns null when nothing useful to show — UI falls back to the summary.
+ */
+function formatPayload(
+  eventType: string,
+  payload: Record<string, unknown> | null,
+): string | null {
+  if (!payload) return null;
+
+  const get = (k: string): string | null => {
+    const v = payload[k];
+    return typeof v === 'string' && v.length > 0 ? v : null;
+  };
+
+  switch (eventType) {
+    case 'member_created': {
+      const company = get('company_name');
+      return company ? `“${company}”` : null;
+    }
+    case 'member_updated': {
+      const fields = payload.fields_changed;
+      if (Array.isArray(fields) && fields.length > 0) {
+        return `${fields.join(', ')}`;
+      }
+      return null;
+    }
+    case 'member_plan_changed': {
+      const oldId = get('old_plan_id');
+      const newId = get('new_plan_id');
+      if (oldId && newId) {
+        // Show last 6 chars of the plan slug, avoids full UUID wall
+        const fmt = (s: string) => (s.length > 10 ? `…${s.slice(-6)}` : s);
+        return `${fmt(oldId)} → ${fmt(newId)}`;
+      }
+      return null;
+    }
+    case 'member_status_changed': {
+      const oldS = get('old_status');
+      const newS = get('new_status');
+      return oldS && newS ? `${oldS} → ${newS}` : null;
+    }
+    case 'contact_created':
+    case 'contact_updated':
+    case 'contact_removed': {
+      const fields = payload.fields_changed;
+      if (Array.isArray(fields) && fields.length > 0) {
+        return `${fields.join(', ')}`;
+      }
+      const isPrimary = payload.is_primary;
+      if (isPrimary === true) return 'primary';
+      return null;
+    }
+    case 'member_self_updated': {
+      const fields = payload.fields_changed;
+      if (Array.isArray(fields) && fields.length > 0) {
+        return `${fields.join(', ')}`;
+      }
+      return null;
+    }
+    case 'member_primary_contact_changed': {
+      return 'primary contact promoted';
+    }
+    case 'member_archived':
+    case 'member_undeleted':
+      return null; // Event type label is self-explanatory
+    default:
+      return null;
+  }
+}
+
+export function TimelineEventItem({
+  timestamp,
+  eventType,
+  actorUserId,
+  actorDisplayName,
+  payload,
+}: TimelineItemProps) {
+  const t = useTranslations('admin.members.timeline');
+  const tEvent = useTranslations('audit.eventType');
+
+  // Defensive: event types not yet in the translation map fall back to
+  // the raw enum key rather than throwing (audit log may ship new types
+  // ahead of i18n keys during rollouts).
+  let eventLabel: string;
+  try {
+    eventLabel = tEvent(eventType);
+  } catch {
+    eventLabel = eventType;
+  }
+
+  const actorDisplay = SYSTEM_ACTORS.has(actorUserId)
+    ? t('actorSystem')
+    : (actorDisplayName ?? t('actorSystem'));
+
+  const payloadDetail = formatPayload(eventType, payload);
+
+  return (
+    <li
+      className="relative border-l-2 border-muted pl-6 py-3"
+      data-event-type={eventType}
+    >
+      {/* Dot marker — reduced-motion friendly (static, no pulse) */}
+      <span
+        aria-hidden
+        className="absolute -left-[5px] top-5 h-2 w-2 rounded-full bg-primary"
+      />
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <span className="font-medium text-sm">{eventLabel}</span>
+          <time
+            dateTime={timestamp}
+            className="text-xs text-muted-foreground font-mono"
+            suppressHydrationWarning
+          >
+            {timestamp.replace('T', ' ').slice(0, 16)}
+          </time>
+        </div>
+        {payloadDetail && (
+          <p className="text-sm text-muted-foreground">{payloadDetail}</p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {t('actor', { actor: actorDisplay })}
+        </p>
+      </div>
+    </li>
+  );
+}

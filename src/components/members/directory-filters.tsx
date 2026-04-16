@@ -38,9 +38,12 @@ export function DirectoryFilters() {
         if (value === null || value === '') params.delete(key);
         else params.set(key, value);
       }
-      // Clear pagination cursor whenever filters change — stale cursor
-      // from a different filter set is meaningless.
+      // Clear pagination state whenever filters change — stale page
+      // number from a different filter set is meaningless (user lands
+      // on page past the new last page or on a cursor from another
+      // filter snapshot).
       params.delete('cursor');
+      params.delete('page');
       const query = params.toString();
       startTransition(() => {
         router.replace(query ? `${pathname}?${query}` : pathname);

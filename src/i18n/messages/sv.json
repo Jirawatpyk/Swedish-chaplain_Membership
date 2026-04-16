@@ -186,13 +186,27 @@
     },
     "users": {
       "title": "Användare",
-      "subtitle": "{total} konton totalt",
       "pageSubtitle": "Hantera personal- och medlemskonton, roller och status.",
-      "viewingAs": "Visar som {role}",
-      "listHeading": "Alla konton",
-      "listDescription": "Bjud in, inaktivera, återaktivera eller byt roll. Destruktiva åtgärder kräver bekräftelse.",
       "empty": "Inga användare ännu. Bjud in den första för att komma igång.",
-      "refreshHint": "Ändringar träder i kraft direkt efter bekräftelse.",
+      "filters": {
+        "searchPlaceholder": "Sök på e-post eller visningsnamn",
+        "searchSrLabel": "Sök användare",
+        "role": {
+          "label": "Roll",
+          "all": "Alla roller",
+          "admin": "Admin",
+          "manager": "Manager",
+          "member": "Medlem"
+        },
+        "status": {
+          "label": "Status",
+          "all": "Alla statusar",
+          "active": "Aktiv",
+          "disabled": "Inaktiverad",
+          "pending": "Väntande"
+        },
+        "clear": "Rensa filter"
+      },
       "columns": {
         "email": "E-post",
         "name": "Namn",
@@ -251,7 +265,6 @@
     "plans": {
       "title": "Medlemspaket",
       "subtitle": "{total} paket år {year}",
-      "listHeading": "Paketkatalog",
       "listDescription": "Hantera nivådefinitioner, årliga avgifter och förmånsmatriser. Föregående års paket är delvis låsta för revisionsintegritet.",
       "empty": {
         "title": "Inga paket för detta år",
@@ -259,7 +272,6 @@
         "newCta": "Nytt paket",
         "cloneCta": "Klona {sourceYear} → {targetYear}"
       },
-      "refreshHint": "Ändringar tillämpas omedelbart och visas i revisionsloggen.",
       "columns": {
         "name": "Namn",
         "category": "Kategori",
@@ -504,8 +516,6 @@
         "loading": "Beräknar berörda medlemmar…"
       },
       "subtitle": "Medlemsföretag + primära kontakter",
-      "refreshHint": "Sök, filtrera eller öppna en rad för detaljer.",
-      "listHeading": "Alla medlemmar",
       "directory": {
         "searchPlaceholder": "Sök på företag, kontaktnamn eller e-post",
         "searchSrLabel": "Sök medlemmar",
@@ -609,6 +619,19 @@
         "portal": {
           "linked": "Portalanslutning"
         }
+      },
+      "timeline": {
+        "pageTitle": "Tidslinje · {companyName} · SweCham",
+        "title": "Tidslinje",
+        "subtitle": "Aktivitetshistorik för denna medlem",
+        "empty": "Ingen aktivitet har registrerats än.",
+        "loadMore": "Läs in äldre händelser",
+        "loading": "Läser in tidslinje…",
+        "actor": "av {actor}",
+        "actorSystem": "System",
+        "eventAt": "{date}",
+        "backToDetail": "Tillbaka till medlem",
+        "totalEvents": "{count, plural, one {# händelse} other {# händelser}}"
       },
       "create": {
         "pageTitle": "Lägg till medlem · SweCham",
@@ -937,5 +960,12 @@
       "invitation_bounced": "Invitation bounced",
       "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
     }
+  },
+  "pagination": {
+    "summary": "Visar {from}–{to} av {total}",
+    "emptyCount": "Inga poster",
+    "previous": "Föregående",
+    "next": "Nästa",
+    "page": "Sida {page}"
   }
 }

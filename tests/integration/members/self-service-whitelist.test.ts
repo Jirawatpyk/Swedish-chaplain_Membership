@@ -86,6 +86,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     updateFields: async (_ctx, _id, patch) => ok({ ...baseMember, ...patch } as Member),
     updateFieldsInTx: async () => ok(baseMember),
     searchDirectory: async () => ok({ items: [], nextCursor: null }),
+    searchDirectoryWithCount: async () => ok({ items: [], total: 0 }),
   };
 
   const contactRepo: ContactRepo = {

@@ -33,6 +33,7 @@ function stubDeps(): BulkActionDeps {
       updateFields: vi.fn(),
       updateFieldsInTx: vi.fn(),
       searchDirectory: vi.fn(),
+      searchDirectoryWithCount: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),
