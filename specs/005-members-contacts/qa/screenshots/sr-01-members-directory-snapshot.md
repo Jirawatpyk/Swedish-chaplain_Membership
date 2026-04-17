@@ -1,0 +1,91 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e4]:
+    - navigation "Staff navigation" [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e10]: S
+        - generic [ref=e11]:
+          - list [ref=e13]:
+            - listitem [ref=e14]:
+              - link "Dashboard" [ref=e15] [cursor=pointer]:
+                - /url: /admin
+                - img [ref=e16]
+                - generic: Dashboard
+            - listitem [ref=e21]:
+              - link "Plans" [ref=e22] [cursor=pointer]:
+                - /url: /admin/plans
+                - img [ref=e23]
+                - generic: Plans
+            - listitem [ref=e26]:
+              - link "Members" [ref=e27] [cursor=pointer]:
+                - /url: /admin/members
+                - img [ref=e28]
+                - generic: Members
+            - listitem [ref=e31]:
+              - link "Users" [ref=e32] [cursor=pointer]:
+                - /url: /admin/users
+                - img [ref=e33]
+                - generic: Users
+          - generic [ref=e38]:
+            - generic [ref=e39]: Settings
+            - list [ref=e40]:
+              - listitem [ref=e41]:
+                - link "Fee Configuration" [ref=e42] [cursor=pointer]:
+                  - /url: /admin/settings/fees
+        - list [ref=e47]:
+          - listitem [ref=e48]:
+            - button "Expand sidebar" [ref=e49] [cursor=pointer]:
+              - img [ref=e50]
+              - generic: Expand sidebar
+        - button "Toggle Sidebar" [ref=e53] [cursor=pointer]
+    - main [ref=e54]:
+      - generic [ref=e56]:
+        - button "Toggle theme" [ref=e57] [cursor=pointer]:
+          - img
+        - button "Account menu" [ref=e58] [cursor=pointer]:
+          - generic [ref=e60]: J
+      - main [ref=e61]:
+        - generic [ref=e62]:
+          - generic [ref=e63]:
+            - generic [ref=e64]:
+              - heading "Members" [level=1] [ref=e66]
+              - generic [ref=e67]: Member companies + primary contacts
+            - link "Add member" [ref=e69] [cursor=pointer]:
+              - /url: /admin/members/new
+              - img
+              - text: Add member
+          - generic [ref=e71]:
+            - search [ref=e72]:
+              - generic [ref=e73]:
+                - img
+                - searchbox "Search members" [ref=e74]
+              - combobox "Status" [ref=e75] [cursor=pointer]:
+                - generic [ref=e76]: All statuses
+                - img: ▼
+              - textbox [ref=e77]: all
+              - combobox "Plan" [ref=e78] [cursor=pointer]:
+                - generic [ref=e79]: All plans
+                - img: ▼
+              - textbox [ref=e80]: all
+            - table [ref=e83]:
+              - rowgroup [ref=e84]:
+                - row "Select all rows Company Country Plan Year Primary contact Status Risk Last activity Notes" [ref=e85]
+              - rowgroup [ref=e98]:
+                - row "Select Fogmaker Thailand Demo Open Fogmaker Thailand Demo details Edit country Regular Corporate 2026 Anna Andersson anna.demo@fogmaker.example Toggle status (currently active) placeholder 1 hour ago Edit notes" [ref=e99]
+                - row "Select E2E Portal Corp mo1ito87 Open E2E Portal Corp mo1ito87 details Edit country Diamond Partnership 2026 Portal User e2e-portal-mo1ito87@swecham.test Toggle status (currently active) placeholder 10 hours ago Edit notes" [ref=e133]
+                - row "Select E2E Portal Corp mo1irxr5 Open E2E Portal Corp mo1irxr5 details Edit country Diamond Partnership 2026 Portal User e2e-portal-mo1irxr5@swecham.test Toggle status (currently active) placeholder 15 hours ago Edit notes" [ref=e167]
+                - row "Select E2E Portal Corp mo1irc82 Open E2E Portal Corp mo1irc82 details Edit country Diamond Partnership 2026 Portal User e2e-portal-mo1irc82@swecham.test Toggle status (currently active) placeholder 15 hours ago Edit notes" [ref=e201]
+                - row "Select E2E Portal Corp mo1iqs6t Open E2E Portal Corp mo1iqs6t details Edit country Diamond Partnership 2026 Portal User e2e-portal-mo1iqs6t@swecham.test Toggle status (currently active) placeholder 15 hours ago Edit notes" [ref=e235]
+                - row "Select E2E Portal Corp mo1iowy4 Open E2E Portal Corp mo1iowy4 details Edit country Diamond Partnership 2026 Portal User e2e-portal-mo1iowy4@swecham.test Toggle status (currently active) placeholder 15 hours ago Edit notes" [ref=e269]
+                - row "Select E2E Portal Corp mo1ioeo8 Open E2E Portal Corp mo1ioeo8 details Edit country Diamond Partnership 2026 Portal User e2e-portal-mo1ioeo8@swecham.test Toggle status (currently active) placeholder 15 hours ago Edit notes" [ref=e303]
+                - row "Select E2E Portal Corp mo1inuxa Open E2E Portal Corp mo1inuxa details Edit country Diamond Partnership 2026 Portal User e2e-portal-mo1inuxa@swecham.test Toggle status (currently active) placeholder 15 hours ago Edit notes" [ref=e337]
+                - row "Select E2E Portal Corp mo1ijndk Open E2E Portal Corp mo1ijndk details Edit country Diamond Partnership 2026 E2E Member e2e-member@swecham.test Toggle status (currently active) placeholder 15 hours ago Edit notes" [ref=e371]
+            - paragraph [ref=e406]: Showing 1–9 of 9
+    - generic [ref=e407]:
+      - heading "Command palette" [level=2] [ref=e408]
+      - paragraph [ref=e409]: Search for a plan, action, or page to run
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e415] [cursor=pointer]:
+    - img [ref=e416]
+  - alert [ref=e419]

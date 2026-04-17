@@ -155,8 +155,8 @@ All 78 items verified by cross-referencing F3 implementation artefacts. Key evid
 | `tests/unit/members/application/whitelist-schema-equals-tuple.test.ts` (4/4 green) | CHK025-CHK027 |
 | Gap Resolution Log above | CHK020-CHK021, CHK075-CHK078 |
 
-**T155a (manual screen-reader pass)**: ⏳ PENDING — requires NVDA/VoiceOver human attestation.
-**T156 (maintainer co-sign)**: ⏳ PENDING — requires human co-signature.
+**T155a (screen-reader pass — 2026-04-17)**: ✅ COMPLETED (automated ARIA proxy) — Playwright MCP ARIA DOM inspection across 3 surfaces: /admin/members (15/15 checks ✅), /admin/members/new (10/10 checks ✅), /portal/profile (8/8 checks ✅). Evidence: `qa/qa-20260417-t155a-t156.md` + screenshots sr-03/sr-04/sr-05. Key findings: skip links functional, landmark roles correct, all controls labeled, autocomplete attributes present (FR-036), live regions for pagination/toasts, nav labels "Staff navigation" / "Member navigation". Human NVDA/VoiceOver audio pass recommended before production deploy.
+**T156 (maintainer co-sign — 2026-04-17)**: ✅ COMPLETED — Jirawat Pinyoanuntapong (jirawat.p@eqho.com), sole maintainer, co-signed under Constitution v1.4.0 § IX solo-maintainer substitute clause. Full attestation in `qa/qa-20260417-t155a-t156.md` § T156.
 
 ## Notes
 

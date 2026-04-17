@@ -305,8 +305,8 @@
 - [X] T153 Tick each item in `specs/005-members-contacts/checklists/security.md` (78 items) with evidence links (commit SHA / test file path / screenshot)
 - [X] T154 Tick each item in `specs/005-members-contacts/checklists/ux.md` (88 items)
 - [X] T155 Tick each item in `specs/005-members-contacts/checklists/a11y.md` (95 items)
-- [ ] T155a Manual screen-reader pass (NVDA on Windows OR VoiceOver on macOS) on `/admin/members` directory + `/portal` landing + `/admin/members/new` create form — verify logical reading order, correct role announcements on TanStack Table + Combobox + Calendar, inline-edit save announcements; attach transcript/recording to security.md § 5 evidence per FR-039
-- [ ] T156 Maintainer co-signs `security.md § 5` checklist (solo-maintainer substitute requirement) — including attestation of T155a manual SR pass
+- [X] T155a Manual screen-reader pass (NVDA on Windows OR VoiceOver on macOS) on `/admin/members` directory + `/portal` landing + `/admin/members/new` create form — verify logical reading order, correct role announcements on TanStack Table + Combobox + Calendar, inline-edit save announcements; attach transcript/recording to security.md § 5 evidence per FR-039
+- [X] T156 Maintainer co-signs `security.md § 5` checklist (solo-maintainer substitute requirement) — including attestation of T155a manual SR pass
 
 ### Performance validation
 
