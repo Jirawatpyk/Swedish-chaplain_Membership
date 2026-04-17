@@ -12,7 +12,6 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { contacts } from './schema-contacts';
-import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type {
   ContactRepo,
 } from '../../application/ports/contact-repo';
@@ -89,43 +88,27 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
-  async add(ctx, draft, actorUserId, requestId) {
+  async addInTx(tx, draft) {
     try {
-      const inserted = await runInTenant(ctx, async (tx) => {
-        const rows = await tx
-          .insert(contacts)
-          .values({
-            tenantId: draft.tenantId,
-            contactId: draft.contactId,
-            memberId: draft.memberId,
-            firstName: draft.firstName,
-            lastName: draft.lastName,
-            email: draft.email,
-            phone: draft.phone,
-            roleTitle: draft.roleTitle,
-            preferredLanguage: draft.preferredLanguage,
-            isPrimary: draft.isPrimary,
-            dateOfBirth: draft.dateOfBirth?.toISOString().slice(0, 10) ?? null,
-            linkedUserId: draft.linkedUserId,
-            removedAt: null,
-          })
-          .returning();
-        const c = rows[0]!;
-        await tx.insert(auditLog).values({
-          eventType: 'contact_created',
-          actorUserId,
-          summary: `contact_created for member ${c.memberId}`,
-          requestId,
-          tenantId: ctx.slug,
-          payload: {
-            member_id: c.memberId,
-            contact_id: c.contactId,
-            is_primary: c.isPrimary,
-          },
-        });
-        return c;
-      });
-      return ok(rowToContact(inserted));
+      const rows = await tx
+        .insert(contacts)
+        .values({
+          tenantId: draft.tenantId,
+          contactId: draft.contactId,
+          memberId: draft.memberId,
+          firstName: draft.firstName,
+          lastName: draft.lastName,
+          email: draft.email,
+          phone: draft.phone,
+          roleTitle: draft.roleTitle,
+          preferredLanguage: draft.preferredLanguage,
+          isPrimary: draft.isPrimary,
+          dateOfBirth: draft.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+          linkedUserId: draft.linkedUserId,
+          removedAt: null,
+        })
+        .returning();
+      return ok(rowToContact(rows[0]!));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/duplicate key|unique constraint/i.test(msg)) {
@@ -138,136 +121,78 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
-  async update(ctx, contactId, patch, actorUserId, requestId) {
+  async updateInTx(tx, contactId, patch) {
     try {
-      const rows = await runInTenant(ctx, async (tx) => {
-        const updated = await tx
-          .update(contacts)
-          .set({
-            ...(patch.firstName !== undefined && { firstName: patch.firstName }),
-            ...(patch.lastName !== undefined && { lastName: patch.lastName }),
-            ...(patch.phone !== undefined && { phone: patch.phone }),
-            ...(patch.roleTitle !== undefined && { roleTitle: patch.roleTitle }),
-            ...(patch.preferredLanguage !== undefined && {
-              preferredLanguage: patch.preferredLanguage,
-            }),
-            updatedAt: new Date(),
-          })
-          .where(eq(contacts.contactId, contactId))
-          .returning();
-        if (updated.length > 0) {
-          await tx.insert(auditLog).values({
-            eventType: 'contact_updated',
-            actorUserId,
-            summary: `contact_updated ${contactId}`,
-            requestId,
-            tenantId: ctx.slug,
-            payload: {
-              member_id: updated[0]!.memberId,
-              contact_id: contactId,
-              fields_changed: Object.keys(patch),
-            },
-          });
-        }
-        return updated;
-      });
-      if (rows.length === 0) return err({ code: 'repo.not_found' });
-      return ok(rowToContact(rows[0]!));
+      const updated = await tx
+        .update(contacts)
+        .set({
+          ...(patch.firstName !== undefined && { firstName: patch.firstName }),
+          ...(patch.lastName !== undefined && { lastName: patch.lastName }),
+          ...(patch.phone !== undefined && { phone: patch.phone }),
+          ...(patch.roleTitle !== undefined && { roleTitle: patch.roleTitle }),
+          ...(patch.preferredLanguage !== undefined && {
+            preferredLanguage: patch.preferredLanguage,
+          }),
+          updatedAt: new Date(),
+        })
+        .where(eq(contacts.contactId, contactId))
+        .returning();
+      if (updated.length === 0) return err({ code: 'repo.not_found' });
+      return ok(rowToContact(updated[0]!));
     } catch (e) {
       return err(unexpected(e));
     }
   },
 
-  async remove(ctx, contactId, actorUserId, requestId) {
+  async removeInTx(tx, contactId) {
     try {
-      const rows = await runInTenant(ctx, async (tx) => {
-        // Capture isPrimary BEFORE the UPDATE — RETURNING reflects
-        // post-SET values, and SET forces isPrimary=false.
-        const [before] = await tx
-          .select({ isPrimary: contacts.isPrimary })
-          .from(contacts)
-          .where(eq(contacts.contactId, contactId))
-          .limit(1);
-        const wasPrimary = before?.isPrimary ?? false;
+      // Capture isPrimary BEFORE the UPDATE — RETURNING reflects
+      // post-SET values, and SET forces isPrimary=false.
+      const [before] = await tx
+        .select({ isPrimary: contacts.isPrimary })
+        .from(contacts)
+        .where(eq(contacts.contactId, contactId))
+        .limit(1);
+      const wasPrimary = before?.isPrimary ?? false;
 
-        const updated = await tx
-          .update(contacts)
-          .set({ removedAt: new Date(), isPrimary: false })
-          .where(eq(contacts.contactId, contactId))
-          .returning();
-        if (updated.length > 0) {
-          await tx.insert(auditLog).values({
-            eventType: 'contact_removed',
-            actorUserId,
-            summary: `contact_removed ${contactId}`,
-            requestId,
-            tenantId: ctx.slug,
-            payload: {
-              member_id: updated[0]!.memberId,
-              contact_id: contactId,
-              was_primary: wasPrimary,
-            },
-          });
-        }
-        return updated;
-      });
-      if (rows.length === 0) return err({ code: 'repo.not_found' });
-      return ok(rowToContact(rows[0]!));
+      const updated = await tx
+        .update(contacts)
+        .set({ removedAt: new Date(), isPrimary: false })
+        .where(eq(contacts.contactId, contactId))
+        .returning();
+      if (updated.length === 0) return err({ code: 'repo.not_found' });
+      return ok({ contact: rowToContact(updated[0]!), wasPrimary });
     } catch (e) {
       return err(unexpected(e));
     }
   },
 
-  async linkUser(ctx, contactId, userId, actorUserId, requestId) {
+  async linkUserInTx(tx, contactId, userId) {
     try {
-      const rows = await runInTenant(ctx, async (tx) => {
-        // Fetch + check — refuse to overwrite an existing linked user.
-        const [before] = await tx
-          .select({
-            linkedUserId: contacts.linkedUserId,
-            memberId: contacts.memberId,
-          })
-          .from(contacts)
-          .where(eq(contacts.contactId, contactId))
-          .limit(1);
-        if (!before) return null;
-        if (before.linkedUserId) {
-          throw new Error('CONFLICT_LINKED');
-        }
-        const updated = await tx
-          .update(contacts)
-          .set({ linkedUserId: userId, updatedAt: new Date() })
-          .where(eq(contacts.contactId, contactId))
-          .returning();
-        if (updated.length > 0) {
-          await tx.insert(auditLog).values({
-            eventType: 'contact_updated',
-            actorUserId,
-            targetUserId: userId,
-            summary: `linked user for contact ${contactId}`,
-            requestId,
-            tenantId: ctx.slug,
-            payload: {
-              member_id: updated[0]!.memberId,
-              contact_id: contactId,
-              linked_user_id: userId,
-              fields_changed: ['linked_user_id'],
-            },
-          });
-        }
-        return updated;
-      });
-      if (rows === null) return err({ code: 'repo.not_found' });
-      if (rows.length === 0) return err({ code: 'repo.not_found' });
-      return ok(rowToContact(rows[0]!));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg === 'CONFLICT_LINKED') {
+      // Fetch + check — refuse to overwrite an existing linked user.
+      const [before] = await tx
+        .select({
+          linkedUserId: contacts.linkedUserId,
+          memberId: contacts.memberId,
+        })
+        .from(contacts)
+        .where(eq(contacts.contactId, contactId))
+        .limit(1);
+      if (!before) return err({ code: 'repo.not_found' });
+      if (before.linkedUserId) {
         return err({
           code: 'repo.conflict',
           reason: 'contact already linked to a user',
         });
       }
+      const updated = await tx
+        .update(contacts)
+        .set({ linkedUserId: userId, updatedAt: new Date() })
+        .where(eq(contacts.contactId, contactId))
+        .returning();
+      if (updated.length === 0) return err({ code: 'repo.not_found' });
+      return ok(rowToContact(updated[0]!));
+    } catch (e) {
       return err(unexpected(e));
     }
   },
@@ -319,54 +244,42 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
-  async promotePrimary(ctx, memberId, newPrimaryContactId, actorUserId, requestId) {
+  async promotePrimaryInTx(tx, memberId, newPrimaryContactId) {
     try {
-      const result = await runInTenant(ctx, async (tx) => {
-        // Demote current primary FIRST (partial unique index constraint)
-        const demoted = await tx
-          .update(contacts)
-          .set({ isPrimary: false, updatedAt: new Date() })
-          .where(
-            and(
-              eq(contacts.memberId, memberId),
-              eq(contacts.isPrimary, true),
-              sql`${contacts.removedAt} IS NULL`,
-            ),
-          )
-          .returning();
-        const promoted = await tx
-          .update(contacts)
-          .set({ isPrimary: true, updatedAt: new Date() })
-          .where(
-            and(
-              eq(contacts.contactId, newPrimaryContactId),
-              eq(contacts.memberId, memberId),
-            ),
-          )
-          .returning();
-        if (promoted.length === 0) {
-          throw new Error('target contact not found');
-        }
-        await tx.insert(auditLog).values({
-          eventType: 'member_primary_contact_changed',
-          actorUserId,
-          summary: `primary_contact_changed for ${memberId}`,
-          requestId,
-          tenantId: ctx.slug,
-          payload: {
-            member_id: memberId,
-            old_primary_contact_id: demoted[0]?.contactId ?? null,
-            new_primary_contact_id: newPrimaryContactId,
-          },
+      // Demote current primary FIRST (partial unique index constraint)
+      const demoted = await tx
+        .update(contacts)
+        .set({ isPrimary: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(contacts.memberId, memberId),
+            eq(contacts.isPrimary, true),
+            sql`${contacts.removedAt} IS NULL`,
+          ),
+        )
+        .returning();
+      const promoted = await tx
+        .update(contacts)
+        .set({ isPrimary: true, updatedAt: new Date() })
+        .where(
+          and(
+            eq(contacts.contactId, newPrimaryContactId),
+            eq(contacts.memberId, memberId),
+          ),
+        )
+        .returning();
+      if (promoted.length === 0) {
+        return err({
+          code: 'repo.not_found',
         });
-        return { demoted: demoted[0], promoted: promoted[0]! };
-      });
-      const demotedRow = result.demoted;
-      if (!demotedRow)
+      }
+      const demotedRow = demoted[0];
+      if (!demotedRow) {
         return err({ code: 'repo.conflict', reason: 'no current primary' });
+      }
       return ok({
         demoted: rowToContact(demotedRow),
-        promoted: rowToContact(result.promoted),
+        promoted: rowToContact(promoted[0]!),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

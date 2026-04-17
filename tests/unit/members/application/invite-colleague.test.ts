@@ -4,6 +4,12 @@ import { ok, err } from '@/lib/result';
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+// S1 refactor — runInTenant is mocked to invoke the callback synchronously
+// with a dummy tx; the use case's orchestration logic (port calls +
+// audit.recordInTx) is what the tests assert against.
+vi.mock('@/lib/db', () => ({
+  runInTenant: vi.fn(async (_ctx, fn) => fn({} as never)),
+}));
 
 import {
   inviteColleague,
@@ -75,19 +81,16 @@ function makeDeps(overrides: DepsOverrides = {}): InviteColleagueDeps {
       if (r) return ok(r);
       return ok(makeContact());
     }),
-    add: vi.fn(async () => {
+    addInTx: vi.fn(async () => {
       const r = overrides.addResult;
       if (r instanceof Error) return err({ code: 'repo.unexpected' as const });
       return ok(r ?? makeLinkedContact());
     }),
-    linkUser: vi.fn(async () => {
+    linkUserInTx: vi.fn(async () => {
       const r = overrides.linkUserResult;
       if (r instanceof Error) return err({ code: 'repo.unexpected' as const });
       return ok(r ?? makeLinkedContact());
     }),
-    findByMember: vi.fn(),
-    remove: vi.fn(),
-    update: vi.fn(),
   };
 
   const createUser = vi.fn(async () => {
@@ -98,11 +101,11 @@ function makeDeps(overrides: DepsOverrides = {}): InviteColleagueDeps {
   });
 
   const audit = {
-    record: vi.fn(async () => {
+    record: vi.fn(async () => ok(undefined)),
+    recordInTx: vi.fn(async () => {
       if (overrides.auditFail) return err({ code: 'repo.unexpected' as const });
       return ok(undefined);
     }),
-    recordInTx: vi.fn(),
   };
 
   return {
@@ -208,6 +211,6 @@ describe('inviteColleague use case', () => {
       expect(result.value.contact).toBe(linked);
       expect(result.value.userId).toBe('new-user-uuid');
     }
-    expect(deps.audit.record).toHaveBeenCalledTimes(1);
+    expect(deps.audit.recordInTx).toHaveBeenCalledTimes(1);
   });
 });

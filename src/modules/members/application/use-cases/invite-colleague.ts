@@ -11,6 +11,7 @@
  */
 
 import { z } from 'zod';
+import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
@@ -148,80 +149,57 @@ export async function inviteColleague(
     removedAt: null,
   };
 
-  const added = await deps.contactRepo.add(
-    deps.tenant,
-    contactDraft,
-    input.actorUserId,
-    input.requestId,
-  );
-  if (!added.ok) {
-    return err({
-      type: 'server_error',
-      message: `add contact: ${added.error.code}`,
-    });
-  }
+  // S1 — Add + linkUser + audit inside a single tenant-scoped tx so all
+  // three land or none do. Previously each port call owned its own tx
+  // which could leave an orphan contact if linkUser failed after add.
+  const outcome = await runInTenant(deps.tenant, async (tx) => {
+    const added = await deps.contactRepo.addInTx(tx, contactDraft);
+    if (!added.ok) return added;
 
-  // 5. Link the new user to the new contact
-  // B-2: Check linkUser result — no invitation email in-flight to recover from orphan
-  const linked = await deps.contactRepo.linkUser(
-    deps.tenant,
-    newContactId,
-    created.value.user.id,
-    input.actorUserId,
-    input.requestId,
-  );
-  if (!linked.ok) {
-    logger.error(
-      {
-        contactId: newContactId,
-        userId: created.value.user.id,
-        cause: linked.error,
-        requestId: input.requestId,
-      },
-      'invite-colleague.link_user_failed: orphan user + unlinked contact',
+    const linked = await deps.contactRepo.linkUserInTx(
+      tx,
+      newContactId,
+      created.value.user.id,
     );
-    return err({
-      type: 'server_error',
-      message: `link user: ${linked.error.code}`,
-    });
-  }
+    if (!linked.ok) return linked;
 
-  // W-2: Emit audit event for PII-touching operation (Constitution Principle I).
-  // Principle VIII: check the result — a silent audit-write failure on a
-  // completed state change is a compliance gap. If the write fails we
-  // return server_error so the route surfaces the issue; the caller can
-  // reconcile the orphan audit via the log entry. State is already
-  // committed (add + linkUser ran their own txs) so this cannot roll it
-  // back, but the typed failure preserves audit-gap visibility.
-  const auditResult = await deps.audit.record(deps.tenant, {
-    type: 'contact_created',
-    actorUserId: input.actorUserId,
-    requestId: input.requestId,
-    summary: `colleague invited as secondary contact`,
-    payload: {
-      contact_id: newContactId,
-      member_id: input.memberId,
-      user_id: created.value.user.id,
-    },
+    // W-2: PII-touching operation audit (Constitution Principle I).
+    const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+      type: 'contact_created',
+      actorUserId: input.actorUserId,
+      targetUserId: created.value.user.id,
+      requestId: input.requestId,
+      summary: `colleague invited as secondary contact`,
+      payload: {
+        contact_id: newContactId,
+        member_id: input.memberId,
+        user_id: created.value.user.id,
+        is_primary: false,
+      },
+    });
+    if (!auditResult.ok) return err(auditResult.error);
+
+    return ok(linked.value);
   });
-  if (!auditResult.ok) {
+
+  if (!outcome.ok) {
     logger.error(
       {
         contactId: newContactId,
         userId: created.value.user.id,
-        cause: auditResult.error,
+        cause: outcome.error,
         requestId: input.requestId,
       },
-      'invite-colleague.audit_failed: state persisted without contact_created event',
+      'invite-colleague.tx_failed: contact + link + audit rolled back',
     );
     return err({
       type: 'server_error',
-      message: `audit: ${auditResult.error.code}`,
+      message: `invite-colleague tx: ${outcome.error.code}`,
     });
   }
 
   return ok({
-    contact: linked.value,
+    contact: outcome.value,
     userId: created.value.user.id,
   });
 }

@@ -80,7 +80,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     findManyByIdsInTx: async () => ok(new Map()),
     findByLinkedUserId: async () => ok(baseMember),
     findSoftDuplicate: async () => ok(null),
-    createWithPrimaryContact: async () => err({ code: 'repo.unexpected' as const }),
+    createWithPrimaryContactInTx: async () => err({ code: 'repo.unexpected' as const }),
     updateStatus: async () => ok(baseMember),
     updateStatusInTx: async () => ok(baseMember),
     updateFields: async (_ctx, _id, patch) => ok({ ...baseMember, ...patch } as Member),
@@ -92,13 +92,14 @@ function makeStubDeps(): MemberSelfUpdateDeps {
   const contactRepo: ContactRepo = {
     listByMember: async () => ok([baseContact]),
     findById: async () => ok(baseContact),
-    add: async () => err({ code: 'repo.unexpected' as const }),
-    update: async (_ctx, _id, patch) =>
+    addInTx: async () => err({ code: 'repo.unexpected' as const }),
+    updateInTx: async (_tx, _id, patch) =>
       ok({ ...baseContact, ...patch } as Contact),
-    remove: async () => err({ code: 'repo.unexpected' as const }),
-    promotePrimary: async () =>
+    removeInTx: async () =>
+      ok({ contact: baseContact, wasPrimary: false }),
+    promotePrimaryInTx: async () =>
       err({ code: 'repo.unexpected' as const }),
-    linkUser: async () => ok(baseContact),
+    linkUserInTx: async () => ok(baseContact),
     updateEmailInTx: async () => ok({ oldEmail: baseContact.email }),
     listLinkedUserIdsForMemberInTx: async () => [],
   };
@@ -206,9 +207,19 @@ describe('US5 self-service whitelist enforcement (T115)', () => {
     if (result.ok) {
       expect(result.value.member.website).toBe('https://new.com');
     }
-    expect(auditEvents).toHaveLength(1);
-    expect(auditEvents[0]!.type).toBe('member_self_updated');
-    expect(auditEvents[0]!.payload.fields_changed).toEqual(
+    // S1 refactor — contact update now routes through AuditPort.recordInTx
+    // so the Application-layer spy sees both `contact_updated` AND
+    // `member_self_updated`. Previously `contact_updated` was emitted by
+    // the Infrastructure adapter directly to the auditLog table (skipping
+    // the spy), so the test only saw 1 event.
+    expect(auditEvents).toHaveLength(2);
+    const memberSelfEvent = auditEvents.find(
+      (e) => e.type === 'member_self_updated',
+    );
+    const contactEvent = auditEvents.find((e) => e.type === 'contact_updated');
+    expect(memberSelfEvent).toBeDefined();
+    expect(contactEvent).toBeDefined();
+    expect(memberSelfEvent!.payload.fields_changed).toEqual(
       expect.arrayContaining(['website', 'phone']),
     );
   });

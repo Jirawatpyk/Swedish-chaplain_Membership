@@ -125,8 +125,14 @@ export interface MemberRepo {
    * and the matching `member_created` audit row in one DB transaction.
    * Returns the persisted Member + Contact (with DB-generated timestamps).
    */
-  createWithPrimaryContact(
-    ctx: TenantContext,
+  /**
+   * Insert member + primary contact rows inside the caller's transaction.
+   * Does NOT emit audit events — caller emits `member_created` +
+   * `contact_created` via `AuditPort.recordInTx` so Application-layer
+   * ownership of audit emission is preserved (Principle III, S1).
+   */
+  createWithPrimaryContactInTx(
+    tx: TenantTx,
     draft: {
       readonly member: Omit<Member, 'createdAt' | 'updatedAt'>;
       readonly primaryContact: Omit<
@@ -134,8 +140,6 @@ export interface MemberRepo {
         'createdAt' | 'updatedAt' | 'memberId'
       >;
     },
-    actorUserId: string,
-    requestId: string,
   ): Promise<Result<{ member: Member; contact: Contact }, RepoError>>;
 
   /**

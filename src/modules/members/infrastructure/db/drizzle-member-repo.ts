@@ -19,7 +19,6 @@ import { membershipPlans } from '@/modules/plans';
 import { members, type MemberRow } from './schema-members';
 import { contacts } from './schema-contacts';
 import { rowToContact } from './drizzle-contact-repo';
-import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type {
   DirectoryFilter,
   DirectoryRow,
@@ -220,91 +219,59 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async createWithPrimaryContact(ctx, draft, actorUserId, requestId) {
+  async createWithPrimaryContactInTx(tx, draft) {
     try {
-      const result = await runInTenant(ctx, async (tx) => {
-        // 1. Insert member
-        const insertedMembers = await tx
-          .insert(members)
-          .values({
-            tenantId: draft.member.tenantId,
-            memberId: draft.member.memberId,
-            companyName: draft.member.companyName,
-            legalEntityType: draft.member.legalEntityType,
-            country: draft.member.country,
-            taxId: draft.member.taxId,
-            website: draft.member.website,
-            description: draft.member.description,
-            foundedYear: draft.member.foundedYear,
-            turnoverThb: draft.member.turnoverThb,
-            planId: draft.member.planId,
-            planYear: draft.member.planYear,
-            registrationDate: draft.member.registrationDate
-              .toISOString()
-              .slice(0, 10),
-            registrationFeePaid: draft.member.registrationFeePaid,
-            notes: draft.member.notes,
-            status: draft.member.status,
-            archivedAt: draft.member.archivedAt,
-          })
-          .returning();
-        const memberRow = insertedMembers[0]!;
+      // 1. Insert member
+      const insertedMembers = await tx
+        .insert(members)
+        .values({
+          tenantId: draft.member.tenantId,
+          memberId: draft.member.memberId,
+          companyName: draft.member.companyName,
+          legalEntityType: draft.member.legalEntityType,
+          country: draft.member.country,
+          taxId: draft.member.taxId,
+          website: draft.member.website,
+          description: draft.member.description,
+          foundedYear: draft.member.foundedYear,
+          turnoverThb: draft.member.turnoverThb,
+          planId: draft.member.planId,
+          planYear: draft.member.planYear,
+          registrationDate: draft.member.registrationDate
+            .toISOString()
+            .slice(0, 10),
+          registrationFeePaid: draft.member.registrationFeePaid,
+          notes: draft.member.notes,
+          status: draft.member.status,
+          archivedAt: draft.member.archivedAt,
+        })
+        .returning();
+      const memberRow = insertedMembers[0]!;
 
-        // 2. Insert primary contact (bound to the inserted member's id)
-        const insertedContacts = await tx
-          .insert(contacts)
-          .values({
-            tenantId: draft.primaryContact.tenantId,
-            contactId: draft.primaryContact.contactId,
-            memberId: memberRow.memberId,
-            firstName: draft.primaryContact.firstName,
-            lastName: draft.primaryContact.lastName,
-            email: draft.primaryContact.email,
-            phone: draft.primaryContact.phone,
-            roleTitle: draft.primaryContact.roleTitle,
-            preferredLanguage: draft.primaryContact.preferredLanguage,
-            isPrimary: true,
-            dateOfBirth:
-              draft.primaryContact.dateOfBirth?.toISOString().slice(0, 10) ??
-              null,
-            linkedUserId: draft.primaryContact.linkedUserId,
-            removedAt: null,
-          })
-          .returning();
-        const contactRow = insertedContacts[0]!;
+      // 2. Insert primary contact (bound to the inserted member's id)
+      const insertedContacts = await tx
+        .insert(contacts)
+        .values({
+          tenantId: draft.primaryContact.tenantId,
+          contactId: draft.primaryContact.contactId,
+          memberId: memberRow.memberId,
+          firstName: draft.primaryContact.firstName,
+          lastName: draft.primaryContact.lastName,
+          email: draft.primaryContact.email,
+          phone: draft.primaryContact.phone,
+          roleTitle: draft.primaryContact.roleTitle,
+          preferredLanguage: draft.primaryContact.preferredLanguage,
+          isPrimary: true,
+          dateOfBirth:
+            draft.primaryContact.dateOfBirth?.toISOString().slice(0, 10) ??
+            null,
+          linkedUserId: draft.primaryContact.linkedUserId,
+          removedAt: null,
+        })
+        .returning();
+      const contactRow = insertedContacts[0]!;
 
-        // 3. Audit events (member_created + contact_created) in the SAME tx
-        await tx.insert(auditLog).values([
-          {
-            eventType: 'member_created',
-            actorUserId,
-            summary: `member_created ${memberRow.companyName}`,
-            requestId,
-            tenantId: ctx.slug,
-            payload: {
-              member_id: memberRow.memberId,
-              company_name: memberRow.companyName,
-              plan_id: memberRow.planId,
-              plan_year: memberRow.planYear,
-              primary_contact_id: contactRow.contactId,
-            },
-          },
-          {
-            eventType: 'contact_created',
-            actorUserId,
-            summary: `contact_created for member ${memberRow.memberId}`,
-            requestId,
-            tenantId: ctx.slug,
-            payload: {
-              member_id: memberRow.memberId,
-              contact_id: contactRow.contactId,
-              is_primary: true,
-            },
-          },
-        ]);
-
-        return { memberRow, contactRow };
-      });
+      const result = { memberRow, contactRow };
 
       const persistedMember = rowToMember(result.memberRow);
       const persistedContact: Contact = {

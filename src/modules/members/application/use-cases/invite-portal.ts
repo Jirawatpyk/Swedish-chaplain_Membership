@@ -21,6 +21,7 @@
  * `contact_updated` with the `linked_user_id` delta.
  */
 
+import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
@@ -116,13 +117,9 @@ export async function invitePortal(
     return err({ code: 'server_error', cause: created.error.code });
   }
 
-  // 3. Link user_id to the contact
-  const linked = await deps.contactRepo.linkUser(
-    deps.tenant,
-    input.contactId,
-    created.value.user.id,
-    input.actorUserId,
-    input.requestId,
+  // 3. Link user_id to the contact (short tenant-scoped tx — S1 refactor)
+  const linked = await runInTenant(deps.tenant, (tx) =>
+    deps.contactRepo.linkUserInTx(tx, input.contactId, created.value.user.id),
   );
   if (!linked.ok) {
     // Orphan created — F1 user exists but contact.linked_user_id is

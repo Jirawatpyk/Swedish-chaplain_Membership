@@ -12,6 +12,7 @@
  */
 
 import { z } from 'zod';
+import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { Member, MemberId } from '../../domain/member';
@@ -286,20 +287,39 @@ export async function memberSelfUpdate(
     const contactPatch = mutableContactPatch as ContactPatch;
 
     if (Object.keys(mutableContactPatch).length > 0) {
-      const contactUpdateResult = await deps.contactRepo.update(
-        deps.tenant,
-        input.contactId,
-        contactPatch,
-        input.actorUserId,
-        input.requestId,
-      );
-      if (!contactUpdateResult.ok) {
+      // S1 — contact update + per-contact audit in one tenant-scoped tx.
+      // Preserves the previous behaviour where the Infrastructure adapter
+      // emitted a `contact_updated` audit alongside the write.
+      const contactOutcome = await runInTenant(deps.tenant, async (tx) => {
+        const updated = await deps.contactRepo.updateInTx(
+          tx,
+          input.contactId,
+          contactPatch,
+        );
+        if (!updated.ok) return updated;
+
+        const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'contact_updated',
+          actorUserId: input.actorUserId,
+          requestId: input.requestId,
+          summary: `contact_updated ${input.contactId}`,
+          payload: {
+            member_id: updated.value.memberId,
+            contact_id: input.contactId,
+            fields_changed: Object.keys(contactPatch),
+          },
+        });
+        if (!auditResult.ok) return err(auditResult.error);
+
+        return ok(updated.value);
+      });
+      if (!contactOutcome.ok) {
         return err({
           type: 'server_error',
-          message: `contact update: ${contactUpdateResult.error.code}`,
+          message: `contact update: ${contactOutcome.error.code}`,
         });
       }
-      updatedContact = contactUpdateResult.value;
+      updatedContact = contactOutcome.value;
     }
   }
 

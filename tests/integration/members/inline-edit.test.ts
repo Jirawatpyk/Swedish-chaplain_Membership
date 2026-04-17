@@ -52,7 +52,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
       findManyByIdsInTx: vi.fn().mockResolvedValue(ok(new Map())),
       findSoftDuplicate: vi.fn(),
       findByLinkedUserId: vi.fn(),
-      createWithPrimaryContact: vi.fn(),
+      createWithPrimaryContactInTx: vi.fn(),
       updateStatus: vi.fn().mockResolvedValue(ok({ ...stubMember, status: 'inactive' })),
       updateStatusInTx: vi.fn().mockResolvedValue(ok({ ...stubMember, status: 'inactive' })),
       updateFields: vi.fn(),

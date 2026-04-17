@@ -21,6 +21,7 @@
  */
 
 import { z } from 'zod';
+import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { asEmail } from '../../domain/value-objects/email';
@@ -302,12 +303,43 @@ export async function createMember(
     removedAt: null,
   };
 
-  const createResult = await deps.memberRepo.createWithPrimaryContact(
-    deps.tenant,
-    { member: memberDraft, primaryContact: contactDraft },
-    meta.actorUserId,
-    meta.requestId,
-  );
+  const createResult = await runInTenant(deps.tenant, async (tx) => {
+    const created = await deps.memberRepo.createWithPrimaryContactInTx(tx, {
+      member: memberDraft,
+      primaryContact: contactDraft,
+    });
+    if (!created.ok) return created;
+
+    const memberAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+      type: 'member_created',
+      actorUserId: meta.actorUserId,
+      requestId: meta.requestId,
+      summary: `member_created ${created.value.member.companyName}`,
+      payload: {
+        member_id: created.value.member.memberId,
+        company_name: created.value.member.companyName,
+        plan_id: created.value.member.planId,
+        plan_year: created.value.member.planYear,
+        primary_contact_id: created.value.contact.contactId,
+      },
+    });
+    if (!memberAudit.ok) return err(memberAudit.error);
+
+    const contactAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+      type: 'contact_created',
+      actorUserId: meta.actorUserId,
+      requestId: meta.requestId,
+      summary: `contact_created for member ${created.value.member.memberId}`,
+      payload: {
+        member_id: created.value.member.memberId,
+        contact_id: created.value.contact.contactId,
+        is_primary: true,
+      },
+    });
+    if (!contactAudit.ok) return err(contactAudit.error);
+
+    return ok(created.value);
+  });
 
   if (!createResult.ok) {
     if (createResult.error.code === 'repo.conflict') {

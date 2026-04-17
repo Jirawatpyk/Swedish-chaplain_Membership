@@ -21,6 +21,7 @@
  */
 
 import { z } from 'zod';
+import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { asPhone } from '../../domain/value-objects/phone';
 import { asEmail } from '../../domain/value-objects/email';
@@ -29,6 +30,7 @@ import type { Contact, ContactId } from '../../domain/contact';
 import { asTenantId } from '../../domain/member';
 import type { MemberId } from '../../domain/member';
 import type { Phone } from '../../domain/value-objects/phone';
+import type { AuditPort } from '../ports/audit-port';
 import type { ContactRepo } from '../ports/contact-repo';
 
 // --- Schemas -----------------------------------------------------------------
@@ -72,6 +74,7 @@ export type ContactCrudError =
 export type ContactCrudDeps = {
   tenant: TenantContext;
   contactRepo: ContactRepo;
+  audit: AuditPort;
   idFactory: { contactId(): ContactId };
 };
 
@@ -110,11 +113,11 @@ export async function addContact(
     phone = r.value;
   }
 
-  const r = await deps.contactRepo.add(
-    deps.tenant,
-    {
+  const contactId = deps.idFactory.contactId();
+  const outcome = await runInTenant(deps.tenant, async (tx) => {
+    const added = await deps.contactRepo.addInTx(tx, {
       tenantId: asTenantId(deps.tenant.slug),
-      contactId: deps.idFactory.contactId(),
+      contactId,
       memberId,
       firstName: data.first_name.trim(),
       lastName: data.last_name.trim(),
@@ -126,19 +129,34 @@ export async function addContact(
       dateOfBirth: data.date_of_birth ? new Date(data.date_of_birth) : null,
       linkedUserId: null,
       removedAt: null,
-    },
-    meta.actorUserId,
-    meta.requestId,
-  );
-  if (!r.ok) {
-    if (r.error.code === 'repo.conflict')
-      return err({ type: 'conflict', reason: r.error.reason });
+    });
+    if (!added.ok) return added;
+
+    const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+      type: 'contact_created',
+      actorUserId: meta.actorUserId,
+      requestId: meta.requestId,
+      summary: `contact_created for member ${memberId}`,
+      payload: {
+        member_id: memberId,
+        contact_id: added.value.contactId,
+        is_primary: added.value.isPrimary,
+      },
+    });
+    if (!auditResult.ok) return err(auditResult.error);
+
+    return ok(added.value);
+  });
+
+  if (!outcome.ok) {
+    if (outcome.error.code === 'repo.conflict')
+      return err({ type: 'conflict', reason: outcome.error.reason });
     return err({
       type: 'server_error',
-      message: `add: ${r.error.code}`,
+      message: `add: ${outcome.error.code}`,
     });
   }
-  return ok(r.value);
+  return ok(outcome.value);
 }
 
 // --- update ------------------------------------------------------------------
@@ -191,22 +209,35 @@ export async function updateContactFields(
     return err({ type: 'not_found' });
   }
 
-  const r = await deps.contactRepo.update(
-    deps.tenant,
-    contactId,
-    patch,
-    meta.actorUserId,
-    meta.requestId,
-  );
-  if (!r.ok) {
-    if (r.error.code === 'repo.not_found')
+  const outcome = await runInTenant(deps.tenant, async (tx) => {
+    const updated = await deps.contactRepo.updateInTx(tx, contactId, patch);
+    if (!updated.ok) return updated;
+
+    const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+      type: 'contact_updated',
+      actorUserId: meta.actorUserId,
+      requestId: meta.requestId,
+      summary: `contact_updated ${contactId}`,
+      payload: {
+        member_id: updated.value.memberId,
+        contact_id: contactId,
+        fields_changed: Object.keys(patch),
+      },
+    });
+    if (!auditResult.ok) return err(auditResult.error);
+
+    return ok(updated.value);
+  });
+
+  if (!outcome.ok) {
+    if (outcome.error.code === 'repo.not_found')
       return err({ type: 'not_found' });
     return err({
       type: 'server_error',
-      message: `update: ${r.error.code}`,
+      message: `update: ${outcome.error.code}`,
     });
   }
-  return ok(r.value);
+  return ok(outcome.value);
 }
 
 // --- remove ------------------------------------------------------------------
@@ -235,21 +266,35 @@ export async function removeContact(
   if (existing.value.isPrimary)
     return err({ type: 'cannot_remove_primary' });
 
-  const r = await deps.contactRepo.remove(
-    deps.tenant,
-    contactId,
-    meta.actorUserId,
-    meta.requestId,
-  );
-  if (!r.ok) {
-    if (r.error.code === 'repo.not_found')
+  const outcome = await runInTenant(deps.tenant, async (tx) => {
+    const removed = await deps.contactRepo.removeInTx(tx, contactId);
+    if (!removed.ok) return removed;
+
+    const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+      type: 'contact_removed',
+      actorUserId: meta.actorUserId,
+      requestId: meta.requestId,
+      summary: `contact_removed ${contactId}`,
+      payload: {
+        member_id: removed.value.contact.memberId,
+        contact_id: contactId,
+        was_primary: removed.value.wasPrimary,
+      },
+    });
+    if (!auditResult.ok) return err(auditResult.error);
+
+    return ok(removed.value.contact);
+  });
+
+  if (!outcome.ok) {
+    if (outcome.error.code === 'repo.not_found')
       return err({ type: 'not_found' });
     return err({
       type: 'server_error',
-      message: `remove: ${r.error.code}`,
+      message: `remove: ${outcome.error.code}`,
     });
   }
-  return ok(r.value);
+  return ok(outcome.value);
 }
 
 // --- promote primary ---------------------------------------------------------
@@ -262,22 +307,39 @@ export async function promotePrimary(
 ): Promise<
   Result<{ demoted: Contact; promoted: Contact }, ContactCrudError>
 > {
-  const r = await deps.contactRepo.promotePrimary(
-    deps.tenant,
-    memberId,
-    newPrimaryContactId,
-    meta.actorUserId,
-    meta.requestId,
-  );
-  if (!r.ok) {
-    if (r.error.code === 'repo.not_found')
+  const outcome = await runInTenant(deps.tenant, async (tx) => {
+    const promoted = await deps.contactRepo.promotePrimaryInTx(
+      tx,
+      memberId,
+      newPrimaryContactId,
+    );
+    if (!promoted.ok) return promoted;
+
+    const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+      type: 'member_primary_contact_changed',
+      actorUserId: meta.actorUserId,
+      requestId: meta.requestId,
+      summary: `primary_contact_changed for ${memberId}`,
+      payload: {
+        member_id: memberId,
+        old_primary_contact_id: promoted.value.demoted.contactId,
+        new_primary_contact_id: newPrimaryContactId,
+      },
+    });
+    if (!auditResult.ok) return err(auditResult.error);
+
+    return ok(promoted.value);
+  });
+
+  if (!outcome.ok) {
+    if (outcome.error.code === 'repo.not_found')
       return err({ type: 'not_found' });
-    if (r.error.code === 'repo.conflict')
-      return err({ type: 'conflict', reason: r.error.reason });
+    if (outcome.error.code === 'repo.conflict')
+      return err({ type: 'conflict', reason: outcome.error.reason });
     return err({
       type: 'server_error',
-      message: `promote: ${r.error.code}`,
+      message: `promote: ${outcome.error.code}`,
     });
   }
-  return ok(r.value);
+  return ok(outcome.value);
 }
