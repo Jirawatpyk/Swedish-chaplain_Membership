@@ -5,7 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ContentContainer } from '@/components/layout/content-container';
+import { FormContainer } from '@/components/layout/form-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanFormWizardSkeleton } from '@/components/plans/plan-form-wizard-skeleton';
 import {
@@ -23,7 +23,7 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <ContentContainer>
+      <FormContainer>
         <PageHeader title={t('edit.titleGeneric')} />
         <Card>
           <CardHeader>
@@ -35,7 +35,7 @@ export default async function Loading() {
             <PlanFormWizardSkeleton />
           </CardContent>
         </Card>
-      </ContentContainer>
+      </FormContainer>
     </PageSkeletonShell>
   );
 }

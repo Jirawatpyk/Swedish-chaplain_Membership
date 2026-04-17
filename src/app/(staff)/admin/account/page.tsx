@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
-import { ContentContainer } from '@/components/layout/content-container';
+import { FormContainer } from '@/components/layout/form-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 
@@ -30,7 +30,7 @@ export default async function StaffAccountPage() {
   const tShell = await getTranslations('shell.roleBadge');
 
   return (
-    <ContentContainer>
+    <FormContainer>
       <PageHeader
         title={t('title')}
         subtitle={user.email}
@@ -48,6 +48,6 @@ export default async function StaffAccountPage() {
           <ChangePasswordForm />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </FormContainer>
   );
 }

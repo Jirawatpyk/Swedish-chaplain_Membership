@@ -16,7 +16,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { asPlanSlug, asPlanYear, getPlan, type PlanSchemaInput } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ContentContainer } from '@/components/layout/content-container';
+import { FormContainer } from '@/components/layout/form-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EditPlanClient } from './edit-plan-client';
@@ -96,7 +96,7 @@ export default async function EditPlanPage({
   };
 
   return (
-    <ContentContainer>
+    <FormContainer>
       <PlanBreadcrumbLabel segment={plan.plan_id} label={plan.plan_name.en} />
       <PageHeader title={t('title', { planName: plan.plan_name.en })} />
       <Card>
@@ -113,6 +113,6 @@ export default async function EditPlanPage({
           />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </FormContainer>
   );
 }

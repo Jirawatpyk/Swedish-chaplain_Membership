@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { ChangePasswordFormSkeleton } from '@/components/auth/change-password-form-skeleton';
-import { ContentContainer } from '@/components/layout/content-container';
+import { FormContainer } from '@/components/layout/form-container';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   PageSkeletonShell,
@@ -19,7 +19,7 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <ContentContainer>
+      <FormContainer>
         <PageHeader
           title={t('title')}
           subtitle={<SkeletonBlock className="h-4 w-56" />}
@@ -34,7 +34,7 @@ export default async function Loading() {
             <ChangePasswordFormSkeleton />
           </CardContent>
         </Card>
-      </ContentContainer>
+      </FormContainer>
     </PageSkeletonShell>
   );
 }

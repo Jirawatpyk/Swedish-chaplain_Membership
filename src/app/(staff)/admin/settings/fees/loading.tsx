@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ContentContainer } from '@/components/layout/content-container';
+import { FormContainer } from '@/components/layout/form-container';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   PageSkeletonShell,
@@ -23,7 +23,7 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <ContentContainer>
+      <FormContainer>
         <PageHeader
           title={t('title')}
           subtitle={t('subtitle')}
@@ -54,7 +54,7 @@ export default async function Loading() {
             </div>
           </CardContent>
         </Card>
-      </ContentContainer>
+      </FormContainer>
     </PageSkeletonShell>
   );
 }

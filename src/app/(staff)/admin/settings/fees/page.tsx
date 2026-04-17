@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { FeeConfigForm } from '@/components/plans/fee-config-form';
-import { ContentContainer } from '@/components/layout/content-container';
+import { FormContainer } from '@/components/layout/form-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { logger } from '@/lib/logger';
 
@@ -58,19 +58,19 @@ export default async function FeeConfigPage() {
       'fee_config_load_failed',
     );
     return (
-      <ContentContainer>
+      <FormContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <p className="text-body text-destructive" role="alert">
           {t('errors.generic')}
         </p>
-      </ContentContainer>
+      </FormContainer>
     );
   }
 
   const feeConfig = result.value;
 
   return (
-    <ContentContainer>
+    <FormContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
@@ -93,6 +93,6 @@ export default async function FeeConfigPage() {
           />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </FormContainer>
   );
 }

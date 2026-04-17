@@ -10,14 +10,14 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ContentContainer } from '@/components/layout/content-container';
+import { FormContainer } from '@/components/layout/form-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { MemberFormSkeleton } from '@/components/members/member-form-skeleton';
 
 export default async function Loading() {
   const t = await getTranslations('admin.members.edit');
   return (
-    <ContentContainer>
+    <FormContainer>
       <PageHeader
         title={t('title')}
         actions={<Skeleton className="h-9 w-20" />}
@@ -32,6 +32,6 @@ export default async function Loading() {
           <MemberFormSkeleton />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </FormContainer>
   );
 }
