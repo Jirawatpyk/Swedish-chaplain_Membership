@@ -1,3 +1,4 @@
+import { isMainThread } from 'worker_threads';
 import pino, { type LoggerOptions } from 'pino';
 import { env } from './env';
 
@@ -105,7 +106,10 @@ const baseOptions: LoggerOptions = {
   },
 };
 
-const transport: LoggerOptions['transport'] = env.isDevelopment
+// pino-pretty spawns its own worker thread; skip it when we are already
+// inside a worker (e.g. Next.js generateStaticParams / Turbopack workers)
+// to avoid ERR_WORKER_INIT_FAILED on Windows.
+const transport: LoggerOptions['transport'] = (env.isDevelopment && isMainThread)
   ? {
       target: 'pino-pretty',
       options: {

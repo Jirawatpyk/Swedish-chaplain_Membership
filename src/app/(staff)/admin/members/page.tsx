@@ -41,7 +41,8 @@ import {
 import { DirectoryWithBulk } from './_components/directory-with-bulk';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'Members · SweCham' };
+  const t = await getTranslations('admin.members');
+  return { title: `${t('title')} · SweCham` };
 }
 
 interface SearchParams {
