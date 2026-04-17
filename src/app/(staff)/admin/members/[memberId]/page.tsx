@@ -257,6 +257,15 @@ export default async function MemberDetailPage({ params }: PageProps) {
             </Link>
             {member.status !== 'archived' && (
               <>
+                {/* Destructive action sits LEFT of the primary — Fitts's
+                    Law: rightmost button is easiest to click, so Edit
+                    (primary + frequent) stays rightmost and Archive
+                    (destructive) is one step further from the natural
+                    click target. Matches GitHub/Stripe admin convention. */}
+                <ArchiveMemberButton
+                  memberId={member.memberId}
+                  companyName={member.companyName}
+                />
                 <Link
                   href={`/admin/members/${member.memberId}/edit`}
                   className={buttonVariants()}
@@ -264,10 +273,6 @@ export default async function MemberDetailPage({ params }: PageProps) {
                   <PencilIcon className="size-4" />
                   {t('editCta')}
                 </Link>
-                <ArchiveMemberButton
-                  memberId={member.memberId}
-                  companyName={member.companyName}
-                />
               </>
             )}
           </>

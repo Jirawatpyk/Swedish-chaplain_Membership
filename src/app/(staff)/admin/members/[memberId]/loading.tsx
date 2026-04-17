@@ -20,9 +20,11 @@ export default async function Loading() {
           <div className="flex gap-2">
             {/* Back to members */}
             <Skeleton className="h-9 w-36" />
-            {/* Timeline (US6) */}
-            <Skeleton className="h-9 w-28" />
-            {/* Edit */}
+            {/* Recent activity (US6 timeline) */}
+            <Skeleton className="h-9 w-36" />
+            {/* Archive member (US7) — destructive, left of primary */}
+            <Skeleton className="h-9 w-36" />
+            {/* Edit (primary, rightmost per Fitts's Law) */}
             <Skeleton className="h-9 w-20" />
           </div>
         }
