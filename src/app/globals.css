@@ -154,8 +154,11 @@
   --sidebar-ring: oklch(0.708 0 0);
 
   /* --- Page layout tokens --- */
-  --content-max-width-admin: 72rem;   /* 1152px */
-  --content-max-width-portal: 64rem;  /* 1024px */
+  --content-max-width-admin: 72rem;   /* 1152px — legacy, removed in F5 Phase 6 */
+  --content-max-width-portal: 64rem;  /* 1024px — legacy, removed in F5 Phase 6 */
+  --layout-max-width-form: 42rem;     /* 672px — FormContainer (F5) */
+  --layout-max-width-detail: 72rem;   /* 1152px — DetailContainer (F5) */
+  --layout-max-width-table: 96rem;    /* 1536px — TableContainer (F5) */
   --page-padding-x: 1.5rem;           /* 24px */
   --page-padding-y: 1.5rem;           /* 24px */
   --page-header-gap: 1.5rem;          /* 24px — gap between PageHeader and content */
@@ -287,6 +290,12 @@ body {
 .text-caption {
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
+}
+
+/* Thai line-break hedge — prefer word-boundary breaking when ICU lib is available. */
+:lang(th) {
+  line-break: loose;
+  word-break: normal;
 }
 
 /* Thai script needs more vertical clearance for diacritics above/below base characters. */
