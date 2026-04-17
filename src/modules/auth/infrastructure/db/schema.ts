@@ -386,6 +386,11 @@ export const notificationsOutbox = pgTable(
     index('outbox_dispatch_idx').on(table.status, table.nextRetryAt),
     // Tenant-scoped operational queries + RLS policy hit.
     index('outbox_tenant_idx').on(table.tenantId),
+    // OutboxHealthBadge permanent-failed lookup — see migration 0018.
+    // Partial index (WHERE status='permanently_failed') keeps it small.
+    index('outbox_permanent_updated_idx')
+      .on(table.updatedAt)
+      .where(sql`${table.status} = 'permanently_failed'`),
   ],
 );
 
