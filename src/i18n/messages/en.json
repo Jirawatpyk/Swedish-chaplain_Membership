@@ -84,10 +84,6 @@
       "roadmapHeading": "What's coming next",
       "roadmapDescription": "Your upcoming member experience by phase.",
       "roadmap": {
-        "profile": {
-          "title": "Your profile",
-          "description": "View and update your membership details (coming in F3)."
-        },
         "invoices": {
           "title": "Invoices & receipts",
           "description": "Tax-compliant Thai invoices and payment history (F4)."
