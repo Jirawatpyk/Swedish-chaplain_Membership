@@ -156,8 +156,8 @@ test.describe('members WCAG 2.2 SC 2.5.8 target sizes @f3 @a11y', () => {
     if (!archiveVisible) return;
     await archiveBtn.click();
 
-    // Check dialog close button
-    const closeBtn = page.getByRole('dialog').getByRole('button', { name: /cancel/i });
+    // Check dialog close button — uses AlertDialog (role="alertdialog")
+    const closeBtn = page.getByRole('alertdialog').getByRole('button', { name: /cancel/i });
     await expect(closeBtn).toBeVisible({ timeout: 5_000 });
     const box = await closeBtn.boundingBox();
     expect(box).not.toBeNull();
