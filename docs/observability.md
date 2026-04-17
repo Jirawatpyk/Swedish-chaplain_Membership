@@ -507,3 +507,56 @@ GROUP BY 1;
 - `specs/005-members-contacts/data-model.md § 4` (23 F3 audit event types + payload shapes)
 - Constitution Principle I clause 4 (audit severity for cross-tenant probes)
 - Constitution Principle VII (Performance & Observability SLOs)
+
+---
+
+## 15. Post-F3 observability backlog
+
+Non-blocking items deferred from F3 ship. Track against the F2+ observability roadmap (Grafana Cloud / Datadog migration).
+
+### 15.1 `auth_invitation_enqueue_failed_total` — dashboard + alert wiring
+
+**Context**: Metric counter added in F3 round-3 follow-up (commit `9a47c44`) to surface a silent-success bug — admin invites a user via `POST /api/auth/invite`, the `createUser` use case succeeds on the F1 side, but the `notifications_outbox` enqueue insert fails (DB error, unique race, etc.). The admin sees `201 Created` but the invitation email will **never be sent** because the dispatcher cron only drains rows that made it into the outbox table.
+
+**Current mitigation (log-only)**:
+- Code path: `src/modules/auth/application/create-user.ts:174-184` emits `logger.error('create_user.invitation_enqueue_failed', { errCode, errCause })` + calls `authMetrics.invitationEnqueueFailed(role, reason)`.
+- Operator workflow: grep Vercel Logs for the log tag:
+  ```bash
+  vercel logs <deployment-url> | grep "create_user.invitation_enqueue_failed"
+  ```
+- Reactive only — operator finds issues after the fact, not proactively.
+
+**Backlog item — when Grafana Cloud lands (F2+)**:
+
+1. **Panel**: add to the "Auth metrics" dashboard.
+   - Query: `sum(rate(auth_invitation_enqueue_failed_total[5m])) by (role, reason)`
+   - Viz: time-series line chart, stacked by `reason` label (`enqueue_failed` | `no_row_returned`).
+   - Threshold line at 0 (any non-zero rate is actionable).
+2. **Alert rule**:
+   - Condition: `sum(rate(auth_invitation_enqueue_failed_total[5m])) > 0` sustained for 5 min.
+   - Severity: P2 (admin-facing silent-success bug).
+   - Notification: on-call engineer via PagerDuty / Opsgenie / Slack.
+   - Runbook link: this section (§ 15.1).
+3. **Resolve-incident runbook**:
+   ```
+   1. Identify affected users: grep audit_log for `account_created` events within the
+      5-min spike window where the matching `notifications_outbox` row is missing.
+   2. Manually insert the outbox row OR invalidate the invitation + re-invite via
+      admin UI (which re-runs the same createUser flow — idempotent on email).
+   3. Root-cause the enqueue failure via pino logs — typical causes: Neon
+      connection pool exhaustion, unique-constraint race on concurrent invite,
+      statement_timeout on the INSERT.
+   4. If > 5 users affected: post-mortem + file F10 ticket for "resend invitation"
+      admin action (currently absent — mentioned as future work in create-user.ts:18).
+   ```
+
+**Estimated effort**: ~30 min once Grafana Cloud is provisioned + dashboard access is granted.
+
+**Not a ship blocker for F3** because:
+- Admin-invite flow volume is low (tens of events per day per tenant).
+- `logger.error` captures full context — operators can find issues via log search.
+- Grafana Cloud is explicitly F2+ roadmap per § 2 observability stack table.
+
+### 15.2 Future backlog items
+
+Add future post-ship observability follow-ups here (format: subsection 15.N with context, current mitigation, target state, effort estimate, and ship-blocker justification).
