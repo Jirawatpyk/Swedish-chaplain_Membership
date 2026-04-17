@@ -1,0 +1,26 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/members/archive-cascade.test.ts" "tests/integration/members/undelete-window.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/integration/members/archive-cascade.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 8176[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22marchives a member: flips status + sets archived_at + audit row [33m1340[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22mcascade: revokes sessions of linked F1 user on archive [33m990[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22mre-archive returns state_error [33m697[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22mcascade: dedupes same F1 user linked to multiple contacts (R002) [33m947[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22mcascade: soft-consumes pending unredeemed invitations for linked users [33m948[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22mcross-tenant archive returns not_found (RLS) [33m714[2mms[22m[39m
+ [32m✓[39m tests/integration/members/undelete-window.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 2665[2mms[22m[39m
+   [33m[2m✓[22m[39m undelete-member integration (T136, US7)[2m > [22mundeletes a member within 90-day window [33m635[2mms[22m[39m
+   [33m[2m✓[22m[39m undelete-member integration (T136, US7)[2m > [22mrejects undelete beyond 90-day window [33m474[2mms[22m[39m
+   [33m[2m✓[22m[39m undelete-member integration (T136, US7)[2m > [22mrejects undelete on a non-archived (active) member [33m316[2mms[22m[39m
+   [33m[2m✓[22m[39m undelete-member integration (T136, US7)[2m > [22mcross-tenant undelete returns not_found (RLS) [33m634[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m10 passed[39m[22m[90m (10)[39m
+[2m   Start at [22m 10:35:38
+[2m   Duration [22m 13.47s[2m (transform 510ms, setup 25ms, collect 1.45s, tests 10.84s, environment 0ms, prepare 94ms)[22m
+
