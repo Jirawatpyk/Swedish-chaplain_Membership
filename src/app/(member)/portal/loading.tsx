@@ -26,7 +26,7 @@ export default async function Loading() {
         subtitle={tPortal('intro')}
         badge={<SkeletonBlock className="h-6 w-40" />}
       />
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
         <Card>
           <CardHeader>
             <CardTitle>{tPortal('roadmapHeading')}</CardTitle>
@@ -34,7 +34,7 @@ export default async function Loading() {
           </CardHeader>
           <CardContent>
             <div className="grid gap-3">
-              {Array.from({ length: 4 }).map((_, i) => (
+              {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <SkeletonBlock className="size-6 shrink-0 rounded-full" />
                   <div className="flex flex-col gap-1.5">
