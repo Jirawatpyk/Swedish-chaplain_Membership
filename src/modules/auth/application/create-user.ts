@@ -100,14 +100,6 @@ export interface EnqueueInvitationError {
 }
 
 /**
- * Non-tx enqueue — retained for callers that already commit their own
- * state separately. The Path C atomic flow uses `EnqueueInvitationInTxFn`.
- */
-export type EnqueueInvitationFn = (
-  request: EnqueueInvitationRequest,
-) => Promise<Result<{ outboxRowId: string }, EnqueueInvitationError>>;
-
-/**
  * Tx-scoped enqueue used by the atomic `createUser` flow. Inserts on
  * the caller's tx handle so the outbox row commits with the rest of
  * the flow (or rolls back together).
@@ -121,7 +113,6 @@ export interface CreateUserDeps {
   readonly users: UserRepo;
   readonly tokens: TokenRepo;
   readonly audit: AuditRepo;
-  readonly enqueueInvitation: EnqueueInvitationFn;
   readonly enqueueInvitationInTx: EnqueueInvitationInTxFn;
   readonly now: () => Date;
 }

@@ -115,7 +115,6 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
     appendInTx: vi.fn().mockResolvedValue(undefined),
   } as unknown as CreateUserDeps['audit'];
 
-  const enqueueInvitation = vi.fn();
   const enqueueInvitationInTx = vi
     .fn()
     .mockResolvedValue(ok({ outboxRowId: 'outbox-row-1' }));
@@ -124,7 +123,6 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
     users,
     tokens,
     audit,
-    enqueueInvitation,
     enqueueInvitationInTx,
     now: () => FROZEN_NOW,
     ...overrides,

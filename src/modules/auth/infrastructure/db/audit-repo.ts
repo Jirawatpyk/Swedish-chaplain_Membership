@@ -39,39 +39,34 @@ export interface AuditRepo {
   appendInTx(tx: DbTx, event: AppendAuditEvent): Promise<void>;
 }
 
+/**
+ * Shared row-builder — keeps the truncation policy + field mapping in
+ * one place so `append` and `appendInTx` cannot drift (S2 review).
+ */
+function buildAuditRow(event: AppendAuditEvent) {
+  const summary =
+    event.summary.length > AUDIT_SUMMARY_MAX_LENGTH
+      ? event.summary.slice(0, AUDIT_SUMMARY_MAX_LENGTH)
+      : event.summary;
+  return {
+    eventType: event.eventType,
+    actorUserId: event.actorUserId,
+    targetUserId: event.targetUserId ?? null,
+    sourceIp: event.sourceIp ?? null,
+    summary,
+    requestId: event.requestId,
+  };
+}
+
 // Object-literal implementation — no class wrapper because the repo
 // has no internal state and the interface has exactly one
 // implementation. Matches the rest of the codebase's adapter style.
 export const auditRepo: AuditRepo = {
   async append(event: AppendAuditEvent): Promise<void> {
-    const summary =
-      event.summary.length > AUDIT_SUMMARY_MAX_LENGTH
-        ? event.summary.slice(0, AUDIT_SUMMARY_MAX_LENGTH)
-        : event.summary;
-
-    await db.insert(auditLog).values({
-      eventType: event.eventType,
-      actorUserId: event.actorUserId,
-      targetUserId: event.targetUserId ?? null,
-      sourceIp: event.sourceIp ?? null,
-      summary,
-      requestId: event.requestId,
-    });
+    await db.insert(auditLog).values(buildAuditRow(event));
   },
 
   async appendInTx(tx, event) {
-    const summary =
-      event.summary.length > AUDIT_SUMMARY_MAX_LENGTH
-        ? event.summary.slice(0, AUDIT_SUMMARY_MAX_LENGTH)
-        : event.summary;
-
-    await tx.insert(auditLog).values({
-      eventType: event.eventType,
-      actorUserId: event.actorUserId,
-      targetUserId: event.targetUserId ?? null,
-      sourceIp: event.sourceIp ?? null,
-      summary,
-      requestId: event.requestId,
-    });
+    await tx.insert(auditLog).values(buildAuditRow(event));
   },
 };

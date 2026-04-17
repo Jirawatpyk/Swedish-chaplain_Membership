@@ -46,11 +46,10 @@ import { checkPasswordPolicy } from '@/modules/auth/application/password-policy'
 // created without a tenant context); the outbox table has no RLS
 // (operational data — see migration 0011 header) so a direct insert
 // is the correct integration point.
-import { db, type DbTx } from '@/lib/db';
+import type { DbTx } from '@/lib/db';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { err, ok, type Result } from '@/lib/result';
 import type {
-  EnqueueInvitationFn,
   EnqueueInvitationInTxFn,
   EnqueueInvitationError,
 } from '@/modules/auth/application/create-user';
@@ -137,48 +136,14 @@ export const defaultChangePasswordDeps: ChangePasswordDeps = {
 };
 
 /**
- * Default invitation-outbox enqueue. Inserts directly into
- * `notifications_outbox` with `notification_type='member_invitation'`,
- * `tenant_id=null` (F1 invitation flow is cross-tenant). The
- * dispatcher cron (`/api/cron/outbox-dispatch`) renders + sends within
- * its next ≤60s tick. `cause` is sanitised to a string to prevent raw
- * DB exception leakage into upstream loggers.
- */
-const enqueueInvitation: EnqueueInvitationFn = async (
-  req,
-): Promise<Result<{ outboxRowId: string }, EnqueueInvitationError>> => {
-  try {
-    const [row] = await db
-      .insert(notificationsOutbox)
-      .values({
-        tenantId: null,
-        notificationType: 'member_invitation',
-        toEmail: req.toEmail.toLowerCase(),
-        locale: req.locale ?? 'en',
-        contextData: {
-          token: req.token as string,
-          role: req.role,
-        },
-      })
-      .returning({ id: notificationsOutbox.id });
-    if (!row) {
-      return err({ code: 'no_row_returned' });
-    }
-    return ok({ outboxRowId: row.id });
-  } catch (e) {
-    return err({
-      code: 'enqueue_failed',
-      cause: e instanceof Error ? e.message : String(e),
-    });
-  }
-};
-
-/**
- * Path C variant — inserts the outbox row on the caller's tx handle
- * instead of the global db client. Used by the atomic `createUser`
- * flow so user + invitation + outbox rows commit together (or roll
- * back together on any error). Semantics of the Result payload match
- * `enqueueInvitation`.
+ * Default invitation-outbox enqueue — Path C atomic variant. Inserts
+ * into `notifications_outbox` with `notification_type='member_invitation'`,
+ * `tenant_id=null` (F1 invitation flow is cross-tenant) using the
+ * caller's tx handle so user + invitation + outbox rows commit
+ * together (or roll back together on any error). The dispatcher cron
+ * (`/api/cron/outbox-dispatch`) renders + sends within its next ≤60s
+ * tick. `cause` is sanitised to a string to prevent raw DB exception
+ * leakage into upstream loggers.
  */
 const enqueueInvitationInTx: EnqueueInvitationInTxFn = async (
   tx: DbTx,
@@ -214,7 +179,6 @@ export const defaultCreateUserDeps: CreateUserDeps = {
   users: userRepo,
   tokens: tokenRepo,
   audit: auditRepo,
-  enqueueInvitation,
   enqueueInvitationInTx,
   now: wallClock,
 };
