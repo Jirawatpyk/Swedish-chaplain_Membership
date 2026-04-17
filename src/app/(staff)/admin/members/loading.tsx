@@ -5,14 +5,14 @@
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ContentContainer } from '@/components/layout/content-container';
+import { TableContainer } from '@/components/layout/table-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { MembersTableSkeleton } from '@/components/members/members-table-skeleton';
 
 export default async function Loading() {
   const t = await getTranslations('admin.members');
   return (
-    <ContentContainer>
+    <TableContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
@@ -33,6 +33,6 @@ export default async function Loading() {
           <MembersTableSkeleton />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </TableContainer>
   );
 }

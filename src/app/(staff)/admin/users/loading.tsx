@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
-import { ContentContainer } from '@/components/layout/content-container';
+import { TableContainer } from '@/components/layout/table-container';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   PageSkeletonShell,
@@ -20,7 +20,7 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingTable')}>
-      <ContentContainer>
+      <TableContainer>
         <PageHeader
           title={t('title')}
           subtitle={t('pageSubtitle')}
@@ -48,7 +48,7 @@ export default async function Loading() {
             </div>
           </CardContent>
         </Card>
-      </ContentContainer>
+      </TableContainer>
     </PageSkeletonShell>
   );
 }

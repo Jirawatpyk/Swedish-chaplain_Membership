@@ -25,7 +25,7 @@ import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
-import { ContentContainer } from '@/components/layout/content-container';
+import { TableContainer } from '@/components/layout/table-container';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   DirectoryFilters,
@@ -67,7 +67,7 @@ export default async function MembersListPage({
   const t = await getTranslations('admin.members');
 
   return (
-    <ContentContainer>
+    <TableContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
@@ -92,7 +92,7 @@ export default async function MembersListPage({
           />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </TableContainer>
   );
 }
 

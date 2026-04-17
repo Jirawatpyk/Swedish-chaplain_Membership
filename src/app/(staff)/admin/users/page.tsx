@@ -32,7 +32,7 @@ import { UsersFilters } from '@/components/auth/users-filters';
 import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Card, CardContent } from '@/components/ui/card';
-import { ContentContainer } from '@/components/layout/content-container';
+import { TableContainer } from '@/components/layout/table-container';
 import { PageHeader } from '@/components/layout/page-header';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -73,7 +73,7 @@ export default async function AdminUsersPage({
       : undefined;
 
   return (
-    <ContentContainer>
+    <TableContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('pageSubtitle')}
@@ -99,7 +99,7 @@ export default async function AdminUsersPage({
           />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </TableContainer>
   );
 }
 
