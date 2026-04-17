@@ -22,6 +22,7 @@ import { and, count, eq, gte, lt } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 /* eslint-enable no-restricted-imports */
+import { logger } from '@/lib/logger';
 import {
   Tooltip,
   TooltipContent,
@@ -30,34 +31,45 @@ import {
 
 export async function OutboxHealthBadge() {
   noStore();
-  // eslint-disable-next-line react-hooks/purity -- RSC reads wall-clock time for dynamic DB thresholds; noStore() opts out of caching.
   const now = Date.now();
   const last24h = new Date(now - 24 * 60 * 60_000);
   const stuckThreshold = new Date(now - 30 * 60_000);
 
-  const [[pf], [sp]] = await Promise.all([
-    db
-      .select({ n: count() })
-      .from(notificationsOutbox)
-      .where(
-        and(
-          eq(notificationsOutbox.status, 'permanently_failed'),
-          gte(notificationsOutbox.updatedAt, last24h),
+  // Suspense does NOT catch thrown errors — without try/catch a DB outage
+  // would propagate to the route-level error.tsx and blank the entire admin
+  // shell. This widget is observability-only, so we swallow failures and
+  // render null (same as the "healthy" outcome). The accompanying pino log
+  // line keeps the fault visible to operators via Vercel logs + the L2
+  // `outbox_stuck_rows_total` metric (which also paths through the cron).
+  let permanentFailed = 0;
+  let stuckPending = 0;
+  try {
+    const [[pf], [sp]] = await Promise.all([
+      db
+        .select({ n: count() })
+        .from(notificationsOutbox)
+        .where(
+          and(
+            eq(notificationsOutbox.status, 'permanently_failed'),
+            gte(notificationsOutbox.updatedAt, last24h),
+          ),
         ),
-      ),
-    db
-      .select({ n: count() })
-      .from(notificationsOutbox)
-      .where(
-        and(
-          eq(notificationsOutbox.status, 'pending'),
-          lt(notificationsOutbox.nextRetryAt, stuckThreshold),
+      db
+        .select({ n: count() })
+        .from(notificationsOutbox)
+        .where(
+          and(
+            eq(notificationsOutbox.status, 'pending'),
+            lt(notificationsOutbox.nextRetryAt, stuckThreshold),
+          ),
         ),
-      ),
-  ]);
-
-  const permanentFailed = pf?.n ?? 0;
-  const stuckPending = sp?.n ?? 0;
+    ]);
+    permanentFailed = pf?.n ?? 0;
+    stuckPending = sp?.n ?? 0;
+  } catch (err) {
+    logger.warn({ err }, 'outbox_health_badge.db_query_failed');
+    return null;
+  }
 
   if (permanentFailed === 0 && stuckPending === 0) return null;
 

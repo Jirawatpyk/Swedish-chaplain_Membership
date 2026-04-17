@@ -246,21 +246,30 @@ export const outboxMetrics = {
   /**
    * An outbox row reached `permanently_failed` after exhausting all retries
    * (or hit an unrenderable template). Fired once per row, labelled by
-   * `notification_type` so alerts can distinguish verification vs revert
-   * failures. Alert threshold: any non-zero rate for 5 minutes.
+   * `notification_type` + `reason` so alerts can distinguish verification vs
+   * revert failures, and max_retries vs invalid_recipient vs unrenderable.
+   * Alert threshold: any non-zero rate for 5 minutes. Names mirrored in
+   * docs/observability.md § 4 (F3 metrics table).
    */
-  permanentFailure(notificationType: string): void {
+  permanentFailure(
+    notificationType: string,
+    reason: 'max_retries' | 'invalid_recipient' | 'no_template_handler',
+  ): void {
     counter(
       'outbox_permanent_failures_total',
       'Outbox rows permanently failed — alert on any non-zero rate',
-    ).add(1, { notification_type: notificationType });
+    ).add(1, { notification_type: notificationType, reason });
   },
 
   /**
    * Rows stuck in `pending` state with `next_retry_at` already past.
    * Indicates the cron is not running, crashed, or lost its CRON_SECRET.
    * Fired once per cron tick where stuck rows are detected; `count` is
-   * the number of affected rows. Alert threshold: count > 0 for 5 minutes.
+   * the number of affected rows. Emitted as a counter whose **rate** is
+   * the alert signal: `rate(outbox_stuck_rows_total[5m]) > 0` fires while
+   * the cron keeps seeing stuck rows and clears on its own once ticks
+   * stop reporting. (We intentionally do NOT emit `.add(0)` on healthy
+   * ticks — the absence of rate is the "healthy" signal.)
    */
   stuckRows(count: number): void {
     counter(

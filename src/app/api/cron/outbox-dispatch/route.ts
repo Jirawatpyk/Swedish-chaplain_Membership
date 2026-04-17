@@ -199,7 +199,10 @@ async function dispatchOne(
             reason: 'no_template_handler',
           },
         });
-        outboxMetrics.permanentFailure(row.notificationType);
+        outboxMetrics.permanentFailure(
+          row.notificationType,
+          'no_template_handler',
+        );
         return 'permanent';
       }
 
@@ -291,7 +294,12 @@ async function dispatchOne(
           last_error: result.error.message,
         },
       });
-      outboxMetrics.permanentFailure(row.notificationType);
+      outboxMetrics.permanentFailure(
+        row.notificationType,
+        result.error.code === 'invalid-recipient'
+          ? 'invalid_recipient'
+          : 'max_retries',
+      );
       return 'permanent';
     }
 
@@ -363,6 +371,38 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     )
     .limit(BATCH_SIZE);
 
+  // Level 2 — stuck-rows check: pending rows whose next_retry_at is > 30 min
+  // overdue indicate the cron has been down or lost CRON_SECRET. Runs BEFORE
+  // the `ready.length === 0` early return because the exact failure mode it
+  // is designed to catch (cron hasn't dispatched anything) produces zero
+  // ready rows. Wrapped in try/catch so an observability failure never
+  // breaks the dispatch summary.
+  try {
+    const stuckThreshold = new Date(Date.now() - 30 * 60_000);
+    const [stuckResult] = await db
+      .select({ stuckCount: count() })
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.status, 'pending'),
+          lt(notificationsOutbox.nextRetryAt, stuckThreshold),
+        ),
+      );
+    const stuckCount = stuckResult?.stuckCount ?? 0;
+    if (stuckCount > 0) {
+      outboxMetrics.stuckRows(stuckCount);
+      logger.error(
+        { requestId, stuckCount },
+        'cron.outbox_dispatch.stuck_rows_detected',
+      );
+    }
+  } catch (healthErr) {
+    logger.warn(
+      { requestId, err: healthErr },
+      'cron.outbox_dispatch.health_check_failed',
+    );
+  }
+
   if (ready.length === 0) {
     return NextResponse.json({ ok: true, dispatched: 0 }, { status: 200 });
   }
@@ -387,28 +427,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         'cron.outbox_dispatch.tx_failed',
       );
     }
-  }
-
-  // Level 2 — stuck-rows check: pending rows whose next_retry_at is > 30 min
-  // overdue indicate the cron has been down or lost CRON_SECRET. Alert
-  // threshold: any non-zero rate sustained for 5 minutes.
-  const stuckThreshold = new Date(Date.now() - 30 * 60_000);
-  const [stuckResult] = await db
-    .select({ stuckCount: count() })
-    .from(notificationsOutbox)
-    .where(
-      and(
-        eq(notificationsOutbox.status, 'pending'),
-        lt(notificationsOutbox.nextRetryAt, stuckThreshold),
-      ),
-    );
-  const stuckCount = stuckResult?.stuckCount ?? 0;
-  if (stuckCount > 0) {
-    outboxMetrics.stuckRows(stuckCount);
-    logger.error(
-      { requestId, stuckCount },
-      'cron.outbox_dispatch.stuck_rows_detected',
-    );
   }
 
   logger.info(

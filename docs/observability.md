@@ -384,7 +384,8 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | `members.email_change.count` | counter | `{event}` (`initiated`/`verified`/`reverted`/`failed`) | email-change lifecycle events |
 | `members.bundle_warning.latency_ms` | histogram | `{plan_id}` | `/api/plans/[year]/[planId]/affected-members` |
 | `outbox.dispatch.latency_ms` | histogram | `{notification_type, attempt}` | member-email outbox cron dispatcher |
-| `outbox.dispatch.failures_total` | counter | `{notification_type, reason}` | `permanently_failed` flips after 5 retries |
+| `outbox_permanent_failures_total` | counter | `{notification_type, reason}` where `reason ∈ {max_retries, invalid_recipient, no_template_handler}` | `permanently_failed` flips after 5 retries or unrenderable payload |
+| `outbox_stuck_rows_total` | counter (rate-alerted) | — | pending rows > 30 min past `next_retry_at` at cron tick time; rate > 0 = cron is down or lost `CRON_SECRET` |
 | `members.invite.count` | counter | `{outcome}` (`sent`/`already_linked`/`no_email`) | portal invite events |
 | `members.archive.count` | counter | `{cascade_sessions}` (`0`/`1`/`2+`) | archive cascade cardinality signal |
 
@@ -408,6 +409,8 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | `member_cross_tenant_probe` | ≥ 1 event in 5 min | Alarm → incident; isolate tenant, rotate session tokens, audit affected member IDs. Time-to-triage: 5 min. |
 | `member_cross_tenant_probe` | ≥ 5 events in 1 h | Escalate to security incident — potential systematic enumeration attack. |
 | `email_dispatch_failed` (critical type) | ≥ 1 `permanently_failed` for `email_verification` or `email_change_revert` | Alarm → triage Resend outage vs. bad template vs. invalid address. Time-to-triage: 15 min. |
+| `outbox_permanent_failures_total` | `rate > 0` sustained 5 min | Proactive Vercel Alert — admin sees `201 Created` but email never sends. Check Resend status, template integrity, and row `last_error` column. |
+| `outbox_stuck_rows_total` | `rate > 0` sustained 5 min | Cron dispatcher is down or lost `CRON_SECRET`. Verify Vercel Cron schedule + env var + recent function logs for `cron.outbox_dispatch.*`. |
 | `members.api.latency_ms` p95 | > 1 s for 5 consecutive min | Alarm → check Neon query plan, pg_trgm index health. |
 
 #### Medium severity (notify on-call, investigate next business hour)
@@ -415,7 +418,7 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | Event / Metric | Threshold | Action |
 |---|---|---|
 | `member_self_update_forbidden` | ≥ 5 events in 10 min per actor | Investigate forged portal payload; possible script or compromised member session. Time-to-triage: 10 min. |
-| `outbox.dispatch.failures_total` | ≥ 3 failures in 30 min | Check Resend rate limits and outbox `retry_count` distribution. |
+| `outbox_permanent_failures_total` | ≥ 3 failures in 30 min | Check Resend rate limits and outbox `last_error` distribution. |
 | `members.bulk.rows_per_action` p95 | > 8 s for 100-row action | Bulk endpoint degraded — profile DB query + RLS policy latency. |
 
 #### Info (log and monitor, no page)
