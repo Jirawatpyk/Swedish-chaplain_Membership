@@ -231,3 +231,41 @@ export const authMetrics = {
     ).add(1, { event_type: eventType });
   },
 } as const;
+
+// --- F3 outbox metrics -------------------------------------------------------
+//
+// Mirrors the `invitationEnqueueFailed` pattern above. Alert threshold for
+// both counters: any non-zero rate sustained for 5 minutes.
+//
+// Why a separate export: the outbox dispatcher is operational infrastructure
+// shared across F1 (invitation) + F3 (email verification, revert) — keeping
+// it separate from `authMetrics` avoids misleading the auth bounded context
+// with F3 concerns, and lets the cron import only what it needs.
+
+export const outboxMetrics = {
+  /**
+   * An outbox row reached `permanently_failed` after exhausting all retries
+   * (or hit an unrenderable template). Fired once per row, labelled by
+   * `notification_type` so alerts can distinguish verification vs revert
+   * failures. Alert threshold: any non-zero rate for 5 minutes.
+   */
+  permanentFailure(notificationType: string): void {
+    counter(
+      'outbox_permanent_failures_total',
+      'Outbox rows permanently failed — alert on any non-zero rate',
+    ).add(1, { notification_type: notificationType });
+  },
+
+  /**
+   * Rows stuck in `pending` state with `next_retry_at` already past.
+   * Indicates the cron is not running, crashed, or lost its CRON_SECRET.
+   * Fired once per cron tick where stuck rows are detected; `count` is
+   * the number of affected rows. Alert threshold: count > 0 for 5 minutes.
+   */
+  stuckRows(count: number): void {
+    counter(
+      'outbox_stuck_rows_total',
+      'Outbox rows stuck in pending past their next_retry_at window',
+    ).add(count);
+  },
+} as const;

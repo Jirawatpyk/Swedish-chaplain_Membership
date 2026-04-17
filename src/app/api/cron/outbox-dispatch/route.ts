@@ -33,7 +33,7 @@
  * event emission (FR-012c parity for unrenderable rows).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { and, eq, lte } from 'drizzle-orm';
+import { and, count, eq, lt, lte } from 'drizzle-orm';
 import { db } from '@/lib/db';
 /* eslint-disable no-restricted-imports --
  * Cron job: direct UPDATE on `notifications_outbox` + auditLog — this
@@ -47,6 +47,7 @@ import {
 /* eslint-enable no-restricted-imports */
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { outboxMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 /* eslint-disable no-restricted-imports --
  * Cron dispatcher is operational infrastructure — the same escape
@@ -198,6 +199,7 @@ async function dispatchOne(
             reason: 'no_template_handler',
           },
         });
+        outboxMetrics.permanentFailure(row.notificationType);
         return 'permanent';
       }
 
@@ -289,6 +291,7 @@ async function dispatchOne(
           last_error: result.error.message,
         },
       });
+      outboxMetrics.permanentFailure(row.notificationType);
       return 'permanent';
     }
 
@@ -384,6 +387,28 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         'cron.outbox_dispatch.tx_failed',
       );
     }
+  }
+
+  // Level 2 — stuck-rows check: pending rows whose next_retry_at is > 30 min
+  // overdue indicate the cron has been down or lost CRON_SECRET. Alert
+  // threshold: any non-zero rate sustained for 5 minutes.
+  const stuckThreshold = new Date(Date.now() - 30 * 60_000);
+  const [stuckResult] = await db
+    .select({ stuckCount: count() })
+    .from(notificationsOutbox)
+    .where(
+      and(
+        eq(notificationsOutbox.status, 'pending'),
+        lt(notificationsOutbox.nextRetryAt, stuckThreshold),
+      ),
+    );
+  const stuckCount = stuckResult?.stuckCount ?? 0;
+  if (stuckCount > 0) {
+    outboxMetrics.stuckRows(stuckCount);
+    logger.error(
+      { requestId, stuckCount },
+      'cron.outbox_dispatch.stuck_rows_detected',
+    );
   }
 
   logger.info(

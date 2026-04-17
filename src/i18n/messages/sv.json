@@ -818,6 +818,11 @@
         "success": "Medlemmen har återställts.",
         "error": "Kunde inte återställa. Försök igen."
       }
+    },
+    "outboxHealth": {
+      "label": "Problem med e-postleverans hittades",
+      "permanentFailed": "{count, plural, one {# e-post misslyckades permanent} other {# e-postmeddelanden misslyckades permanent}} de senaste 24 h",
+      "stuckPending": "{count, plural, one {# e-post fastnad} other {# e-postmeddelanden fastnade}} i kön (cron kanske är nere)"
     }
   },
   "palette": {

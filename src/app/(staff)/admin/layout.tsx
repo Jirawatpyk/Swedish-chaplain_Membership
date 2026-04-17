@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
+import { Suspense } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { CommandPaletteRoot } from '@/components/shell/command-palette-root';
+import { OutboxHealthBadge } from '@/components/shell/outbox-health-badge';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
 import { BreadcrumbNav } from '@/components/layout/breadcrumb-nav';
@@ -55,6 +57,9 @@ export default async function StaffLayout({ children }: { children: ReactNode })
             {/* Hamburger trigger — visible on mobile only (md:hidden is built into SidebarTrigger) */}
             <SidebarTrigger className="-ml-1 md:hidden" />
             <div className="flex flex-1 items-center justify-end gap-2">
+              <Suspense fallback={null}>
+                <OutboxHealthBadge />
+              </Suspense>
               <ThemeToggle />
               <UserMenu
                 displayName={user.displayName}

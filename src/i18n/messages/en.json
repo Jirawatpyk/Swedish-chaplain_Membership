@@ -818,6 +818,11 @@
         "success": "Member restored.",
         "error": "Could not restore. Please try again."
       }
+    },
+    "outboxHealth": {
+      "label": "Email delivery issues detected",
+      "permanentFailed": "{count, plural, one {# email permanently failed} other {# emails permanently failed}} in the last 24 h",
+      "stuckPending": "{count, plural, one {# email stuck} other {# emails stuck}} in queue (cron may be down)"
     }
   },
   "palette": {
