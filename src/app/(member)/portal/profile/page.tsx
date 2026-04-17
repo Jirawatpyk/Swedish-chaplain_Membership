@@ -83,15 +83,16 @@ export default async function PortalProfilePage() {
         title={t('pageTitle')}
         subtitle={m.companyName}
         actions={
-          <Link href="/portal/edit" className={buttonVariants({ size: 'sm' })}>
-            <PencilIcon className="mr-1.5 size-4" aria-hidden />
+          <Link href="/portal/edit" className={buttonVariants()}>
+            <PencilIcon className="size-4" aria-hidden />
             {t('editButton')}
           </Link>
         }
       />
 
-      {/* Company Info */}
-      <Card>
+      <div className="flex flex-col gap-4">
+        {/* Company Info */}
+        <Card>
         <CardHeader>
           <CardTitle>{t('companySection')}</CardTitle>
         </CardHeader>
@@ -190,9 +191,9 @@ export default async function PortalProfilePage() {
           {isPrimary && (
             <Link
               href="/portal/contacts/invite"
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              className={buttonVariants({ variant: 'outline' })}
             >
-              <UserPlusIcon className="mr-1.5 size-4" aria-hidden />
+              <UserPlusIcon className="size-4" aria-hidden />
               {t('inviteColleague')}
             </Link>
           )}
@@ -240,6 +241,7 @@ export default async function PortalProfilePage() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </>
   );
 }

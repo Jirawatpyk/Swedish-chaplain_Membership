@@ -84,10 +84,6 @@
       "roadmapHeading": "Det som kommer härnäst",
       "roadmapDescription": "Din kommande medlemsupplevelse per fas.",
       "roadmap": {
-        "profile": {
-          "title": "Din profil",
-          "description": "Visa och uppdatera dina medlemsuppgifter (kommer i F3)."
-        },
         "invoices": {
           "title": "Fakturor & kvitton",
           "description": "Thailändska skattekvalificerade fakturor och betalningshistorik (F4)."
