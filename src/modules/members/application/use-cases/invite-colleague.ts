@@ -19,8 +19,10 @@ import { asTenantId, type MemberId } from '../../domain/member';
 import type { Contact, ContactId, PreferredLanguage } from '../../domain/contact';
 import { asEmail } from '../../domain/value-objects/email';
 import type { ContactRepo } from '../ports/contact-repo';
+import type { RepoError } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { CreateUserPort } from './invite-portal';
+import { UseCaseAbort } from '../tx-abort';
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -149,57 +151,63 @@ export async function inviteColleague(
     removedAt: null,
   };
 
-  // S1 — Add + linkUser + audit inside a single tenant-scoped tx so all
-  // three land or none do. Previously each port call owned its own tx
-  // which could leave an orphan contact if linkUser failed after add.
-  const outcome = await runInTenant(deps.tenant, async (tx) => {
-    const added = await deps.contactRepo.addInTx(tx, contactDraft);
-    if (!added.ok) return added;
+  // S1 + W1 — Add + linkUser + audit in ONE tx with throw-to-rollback
+  // so all three land atomically. `return err(...)` would commit the
+  // preceding writes; only `throw` triggers Drizzle rollback.
+  try {
+    const contact = await runInTenant(deps.tenant, async (tx) => {
+      const added = await deps.contactRepo.addInTx(tx, contactDraft);
+      if (!added.ok) throw new UseCaseAbort<RepoError>(added.error);
 
-    const linked = await deps.contactRepo.linkUserInTx(
-      tx,
-      newContactId,
-      created.value.user.id,
-    );
-    if (!linked.ok) return linked;
+      const linked = await deps.contactRepo.linkUserInTx(
+        tx,
+        newContactId,
+        created.value.user.id,
+      );
+      if (!linked.ok) throw new UseCaseAbort<RepoError>(linked.error);
 
-    // W-2: PII-touching operation audit (Constitution Principle I).
-    const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
-      type: 'contact_created',
-      actorUserId: input.actorUserId,
-      targetUserId: created.value.user.id,
-      requestId: input.requestId,
-      summary: `colleague invited as secondary contact`,
-      payload: {
-        contact_id: newContactId,
-        member_id: input.memberId,
-        user_id: created.value.user.id,
-        is_primary: false,
-      },
+      // W-2: PII-touching operation audit (Constitution Principle I).
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'contact_created',
+        actorUserId: input.actorUserId,
+        targetUserId: created.value.user.id,
+        requestId: input.requestId,
+        summary: `colleague invited as secondary contact`,
+        payload: {
+          contact_id: newContactId,
+          member_id: input.memberId,
+          user_id: created.value.user.id,
+          is_primary: false,
+        },
+      });
+      if (!auditResult.ok)
+        throw new UseCaseAbort<RepoError>(auditResult.error);
+
+      return linked.value;
     });
-    if (!auditResult.ok) return err(auditResult.error);
 
-    return ok(linked.value);
-  });
-
-  if (!outcome.ok) {
+    return ok({ contact, userId: created.value.user.id });
+  } catch (e) {
+    const cause = e instanceof UseCaseAbort ? e.error : e;
     logger.error(
       {
         contactId: newContactId,
         userId: created.value.user.id,
-        cause: outcome.error,
+        cause,
         requestId: input.requestId,
       },
       'invite-colleague.tx_failed: contact + link + audit rolled back',
     );
+    if (e instanceof UseCaseAbort) {
+      const re = e.error as RepoError;
+      return err({
+        type: 'server_error',
+        message: `invite-colleague tx: ${re.code}`,
+      });
+    }
     return err({
       type: 'server_error',
-      message: `invite-colleague tx: ${outcome.error.code}`,
+      message: 'invite-colleague tx: unexpected',
     });
   }
-
-  return ok({
-    contact: outcome.value,
-    userId: created.value.user.id,
-  });
 }

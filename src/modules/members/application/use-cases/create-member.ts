@@ -39,10 +39,11 @@ import { asPlanId, asTenantId } from '../../domain/member';
 import type { Member, MemberId } from '../../domain/member';
 import type { Contact, ContactId } from '../../domain/contact';
 import type { UserId } from '../../domain/value-objects/user-id';
-import type { MemberRepo } from '../ports/member-repo';
+import type { MemberRepo, RepoError } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { PlanLookupPort } from '../ports/plan-lookup-port';
+import { UseCaseAbort } from '../tx-abort';
 
 // --- Input schema ------------------------------------------------------------
 
@@ -303,58 +304,59 @@ export async function createMember(
     removedAt: null,
   };
 
-  const createResult = await runInTenant(deps.tenant, async (tx) => {
-    const created = await deps.memberRepo.createWithPrimaryContactInTx(tx, {
-      member: memberDraft,
-      primaryContact: contactDraft,
+  // W1: throw-to-rollback — state + 2 audit rows atomic across the tx.
+  try {
+    const created = await runInTenant(deps.tenant, async (tx) => {
+      const result = await deps.memberRepo.createWithPrimaryContactInTx(tx, {
+        member: memberDraft,
+        primaryContact: contactDraft,
+      });
+      if (!result.ok) throw new UseCaseAbort<RepoError>(result.error);
+
+      const memberAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_created',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `member_created ${result.value.member.companyName}`,
+        payload: {
+          member_id: result.value.member.memberId,
+          company_name: result.value.member.companyName,
+          plan_id: result.value.member.planId,
+          plan_year: result.value.member.planYear,
+          primary_contact_id: result.value.contact.contactId,
+        },
+      });
+      if (!memberAudit.ok) throw new UseCaseAbort<RepoError>(memberAudit.error);
+
+      const contactAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'contact_created',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `contact_created for member ${result.value.member.memberId}`,
+        payload: {
+          member_id: result.value.member.memberId,
+          contact_id: result.value.contact.contactId,
+          is_primary: true,
+        },
+      });
+      if (!contactAudit.ok) throw new UseCaseAbort<RepoError>(contactAudit.error);
+
+      return result.value;
     });
-    if (!created.ok) return created;
 
-    const memberAudit = await deps.audit.recordInTx(tx, deps.tenant, {
-      type: 'member_created',
-      actorUserId: meta.actorUserId,
-      requestId: meta.requestId,
-      summary: `member_created ${created.value.member.companyName}`,
-      payload: {
-        member_id: created.value.member.memberId,
-        company_name: created.value.member.companyName,
-        plan_id: created.value.member.planId,
-        plan_year: created.value.member.planYear,
-        primary_contact_id: created.value.contact.contactId,
-      },
+    return ok({
+      memberId: created.member.memberId,
+      contactId: created.contact.contactId,
     });
-    if (!memberAudit.ok) return err(memberAudit.error);
-
-    const contactAudit = await deps.audit.recordInTx(tx, deps.tenant, {
-      type: 'contact_created',
-      actorUserId: meta.actorUserId,
-      requestId: meta.requestId,
-      summary: `contact_created for member ${created.value.member.memberId}`,
-      payload: {
-        member_id: created.value.member.memberId,
-        contact_id: created.value.contact.contactId,
-        is_primary: true,
-      },
-    });
-    if (!contactAudit.ok) return err(contactAudit.error);
-
-    return ok(created.value);
-  });
-
-  if (!createResult.ok) {
-    if (createResult.error.code === 'repo.conflict') {
-      return err({ type: 'conflict', reason: createResult.error.reason });
+  } catch (e) {
+    if (e instanceof UseCaseAbort) {
+      const re = e.error as RepoError;
+      if (re.code === 'repo.conflict')
+        return err({ type: 'conflict', reason: re.reason });
+      return err({ type: 'server_error', message: `create: ${re.code}` });
     }
-    return err({
-      type: 'server_error',
-      message: `create: ${createResult.error.code}`,
-    });
+    return err({ type: 'server_error', message: 'create: unexpected' });
   }
-
-  return ok({
-    memberId: createResult.value.member.memberId,
-    contactId: createResult.value.contact.contactId,
-  });
 }
 
 // Silence unused-type warnings from the phantom Result<infer> helpers above.

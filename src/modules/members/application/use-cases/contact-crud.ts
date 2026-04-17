@@ -32,6 +32,8 @@ import type { MemberId } from '../../domain/member';
 import type { Phone } from '../../domain/value-objects/phone';
 import type { AuditPort } from '../ports/audit-port';
 import type { ContactRepo } from '../ports/contact-repo';
+import type { RepoError } from '../ports/member-repo';
+import { UseCaseAbort } from '../tx-abort';
 
 // --- Schemas -----------------------------------------------------------------
 
@@ -114,49 +116,55 @@ export async function addContact(
   }
 
   const contactId = deps.idFactory.contactId();
-  const outcome = await runInTenant(deps.tenant, async (tx) => {
-    const added = await deps.contactRepo.addInTx(tx, {
-      tenantId: asTenantId(deps.tenant.slug),
-      contactId,
-      memberId,
-      firstName: data.first_name.trim(),
-      lastName: data.last_name.trim(),
-      email: email.value,
-      phone,
-      roleTitle: data.role_title ?? null,
-      preferredLanguage: data.preferred_language,
-      isPrimary: false,
-      dateOfBirth: data.date_of_birth ? new Date(data.date_of_birth) : null,
-      linkedUserId: null,
-      removedAt: null,
-    });
-    if (!added.ok) return added;
+  try {
+    const contact = await runInTenant(deps.tenant, async (tx) => {
+      const added = await deps.contactRepo.addInTx(tx, {
+        tenantId: asTenantId(deps.tenant.slug),
+        contactId,
+        memberId,
+        firstName: data.first_name.trim(),
+        lastName: data.last_name.trim(),
+        email: email.value,
+        phone,
+        roleTitle: data.role_title ?? null,
+        preferredLanguage: data.preferred_language,
+        isPrimary: false,
+        dateOfBirth: data.date_of_birth ? new Date(data.date_of_birth) : null,
+        linkedUserId: null,
+        removedAt: null,
+      });
+      // W1: throw-to-rollback — a `return err(...)` here would commit
+      // the (non-existent) writes; only `throw` triggers Drizzle tx
+      // rollback. Pattern mirrors archive-member.ts + change-plan.ts.
+      if (!added.ok) throw new UseCaseAbort<RepoError>(added.error);
 
-    const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
-      type: 'contact_created',
-      actorUserId: meta.actorUserId,
-      requestId: meta.requestId,
-      summary: `contact_created for member ${memberId}`,
-      payload: {
-        member_id: memberId,
-        contact_id: added.value.contactId,
-        is_primary: added.value.isPrimary,
-      },
-    });
-    if (!auditResult.ok) return err(auditResult.error);
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'contact_created',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `contact_created for member ${memberId}`,
+        payload: {
+          member_id: memberId,
+          contact_id: added.value.contactId,
+          is_primary: added.value.isPrimary,
+        },
+      });
+      // W1: rollback the `addInTx` row if audit write fails — keeps
+      // state + audit atomic (Principle VIII audit-with-state).
+      if (!auditResult.ok) throw new UseCaseAbort<RepoError>(auditResult.error);
 
-    return ok(added.value);
-  });
-
-  if (!outcome.ok) {
-    if (outcome.error.code === 'repo.conflict')
-      return err({ type: 'conflict', reason: outcome.error.reason });
-    return err({
-      type: 'server_error',
-      message: `add: ${outcome.error.code}`,
+      return added.value;
     });
+    return ok(contact);
+  } catch (e) {
+    if (e instanceof UseCaseAbort) {
+      const re = e.error as RepoError;
+      if (re.code === 'repo.conflict')
+        return err({ type: 'conflict', reason: re.reason });
+      return err({ type: 'server_error', message: `add: ${re.code}` });
+    }
+    return err({ type: 'server_error', message: 'add: unexpected' });
   }
-  return ok(outcome.value);
 }
 
 // --- update ------------------------------------------------------------------
@@ -209,35 +217,35 @@ export async function updateContactFields(
     return err({ type: 'not_found' });
   }
 
-  const outcome = await runInTenant(deps.tenant, async (tx) => {
-    const updated = await deps.contactRepo.updateInTx(tx, contactId, patch);
-    if (!updated.ok) return updated;
+  try {
+    const contact = await runInTenant(deps.tenant, async (tx) => {
+      const updated = await deps.contactRepo.updateInTx(tx, contactId, patch);
+      if (!updated.ok) throw new UseCaseAbort<RepoError>(updated.error);
 
-    const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
-      type: 'contact_updated',
-      actorUserId: meta.actorUserId,
-      requestId: meta.requestId,
-      summary: `contact_updated ${contactId}`,
-      payload: {
-        member_id: updated.value.memberId,
-        contact_id: contactId,
-        fields_changed: Object.keys(patch),
-      },
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'contact_updated',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `contact_updated ${contactId}`,
+        payload: {
+          member_id: updated.value.memberId,
+          contact_id: contactId,
+          fields_changed: Object.keys(patch),
+        },
+      });
+      if (!auditResult.ok) throw new UseCaseAbort<RepoError>(auditResult.error);
+
+      return updated.value;
     });
-    if (!auditResult.ok) return err(auditResult.error);
-
-    return ok(updated.value);
-  });
-
-  if (!outcome.ok) {
-    if (outcome.error.code === 'repo.not_found')
-      return err({ type: 'not_found' });
-    return err({
-      type: 'server_error',
-      message: `update: ${outcome.error.code}`,
-    });
+    return ok(contact);
+  } catch (e) {
+    if (e instanceof UseCaseAbort) {
+      const re = e.error as RepoError;
+      if (re.code === 'repo.not_found') return err({ type: 'not_found' });
+      return err({ type: 'server_error', message: `update: ${re.code}` });
+    }
+    return err({ type: 'server_error', message: 'update: unexpected' });
   }
-  return ok(outcome.value);
 }
 
 // --- remove ------------------------------------------------------------------
@@ -266,35 +274,35 @@ export async function removeContact(
   if (existing.value.isPrimary)
     return err({ type: 'cannot_remove_primary' });
 
-  const outcome = await runInTenant(deps.tenant, async (tx) => {
-    const removed = await deps.contactRepo.removeInTx(tx, contactId);
-    if (!removed.ok) return removed;
+  try {
+    const contact = await runInTenant(deps.tenant, async (tx) => {
+      const removed = await deps.contactRepo.removeInTx(tx, contactId);
+      if (!removed.ok) throw new UseCaseAbort<RepoError>(removed.error);
 
-    const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
-      type: 'contact_removed',
-      actorUserId: meta.actorUserId,
-      requestId: meta.requestId,
-      summary: `contact_removed ${contactId}`,
-      payload: {
-        member_id: removed.value.contact.memberId,
-        contact_id: contactId,
-        was_primary: removed.value.wasPrimary,
-      },
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'contact_removed',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `contact_removed ${contactId}`,
+        payload: {
+          member_id: removed.value.contact.memberId,
+          contact_id: contactId,
+          was_primary: removed.value.wasPrimary,
+        },
+      });
+      if (!auditResult.ok) throw new UseCaseAbort<RepoError>(auditResult.error);
+
+      return removed.value.contact;
     });
-    if (!auditResult.ok) return err(auditResult.error);
-
-    return ok(removed.value.contact);
-  });
-
-  if (!outcome.ok) {
-    if (outcome.error.code === 'repo.not_found')
-      return err({ type: 'not_found' });
-    return err({
-      type: 'server_error',
-      message: `remove: ${outcome.error.code}`,
-    });
+    return ok(contact);
+  } catch (e) {
+    if (e instanceof UseCaseAbort) {
+      const re = e.error as RepoError;
+      if (re.code === 'repo.not_found') return err({ type: 'not_found' });
+      return err({ type: 'server_error', message: `remove: ${re.code}` });
+    }
+    return err({ type: 'server_error', message: 'remove: unexpected' });
   }
-  return ok(outcome.value);
 }
 
 // --- promote primary ---------------------------------------------------------
@@ -307,39 +315,39 @@ export async function promotePrimary(
 ): Promise<
   Result<{ demoted: Contact; promoted: Contact }, ContactCrudError>
 > {
-  const outcome = await runInTenant(deps.tenant, async (tx) => {
-    const promoted = await deps.contactRepo.promotePrimaryInTx(
-      tx,
-      memberId,
-      newPrimaryContactId,
-    );
-    if (!promoted.ok) return promoted;
+  try {
+    const result = await runInTenant(deps.tenant, async (tx) => {
+      const promoted = await deps.contactRepo.promotePrimaryInTx(
+        tx,
+        memberId,
+        newPrimaryContactId,
+      );
+      if (!promoted.ok) throw new UseCaseAbort<RepoError>(promoted.error);
 
-    const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
-      type: 'member_primary_contact_changed',
-      actorUserId: meta.actorUserId,
-      requestId: meta.requestId,
-      summary: `primary_contact_changed for ${memberId}`,
-      payload: {
-        member_id: memberId,
-        old_primary_contact_id: promoted.value.demoted.contactId,
-        new_primary_contact_id: newPrimaryContactId,
-      },
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_primary_contact_changed',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `primary_contact_changed for ${memberId}`,
+        payload: {
+          member_id: memberId,
+          old_primary_contact_id: promoted.value.demoted.contactId,
+          new_primary_contact_id: newPrimaryContactId,
+        },
+      });
+      if (!auditResult.ok) throw new UseCaseAbort<RepoError>(auditResult.error);
+
+      return promoted.value;
     });
-    if (!auditResult.ok) return err(auditResult.error);
-
-    return ok(promoted.value);
-  });
-
-  if (!outcome.ok) {
-    if (outcome.error.code === 'repo.not_found')
-      return err({ type: 'not_found' });
-    if (outcome.error.code === 'repo.conflict')
-      return err({ type: 'conflict', reason: outcome.error.reason });
-    return err({
-      type: 'server_error',
-      message: `promote: ${outcome.error.code}`,
-    });
+    return ok(result);
+  } catch (e) {
+    if (e instanceof UseCaseAbort) {
+      const re = e.error as RepoError;
+      if (re.code === 'repo.not_found') return err({ type: 'not_found' });
+      if (re.code === 'repo.conflict')
+        return err({ type: 'conflict', reason: re.reason });
+      return err({ type: 'server_error', message: `promote: ${re.code}` });
+    }
+    return err({ type: 'server_error', message: 'promote: unexpected' });
   }
-  return ok(outcome.value);
 }
