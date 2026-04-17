@@ -16,6 +16,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import type { IsoCountryCode } from './value-objects/iso-country-code';
 import type { TaxId } from './value-objects/tax-id';
+import { isUuid } from './value-objects/uuid';
 
 export const MEMBER_STATUSES = ['active', 'inactive', 'archived'] as const;
 export type MemberStatus = (typeof MEMBER_STATUSES)[number];
@@ -65,10 +66,6 @@ export function tryPlanId(raw: unknown): Result<PlanId, { code: 'invalid_plan_id
   return ok(raw as PlanId);
 }
 
-/** UUID v4-ish pattern (accepts any RFC 4122 variant; route params are always lowercase hex). */
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Brand a raw string as a MemberId. Used at trust boundaries. Prefer
  * `tryMemberId` for untrusted input — MemberIds are UUIDs so a format
@@ -80,7 +77,7 @@ export function asMemberId(raw: string): MemberId {
 
 /** Validated MemberId brander — UUID format check. */
 export function tryMemberId(raw: unknown): Result<MemberId, { code: 'invalid_member_id' }> {
-  if (typeof raw !== 'string' || !UUID_RE.test(raw)) {
+  if (!isUuid(raw)) {
     return err({ code: 'invalid_member_id' });
   }
   return ok(raw.toLowerCase() as MemberId);

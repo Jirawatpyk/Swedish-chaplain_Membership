@@ -130,59 +130,6 @@ function buildPayload(row: NotificationsOutboxRow): BuiltPayload | null {
   }
 }
 
-/**
- * Emit `email_dispatch_failed` audit. Rows with `tenant_id=null` (cross-
- * tenant F1 invitations) cannot land on a tenant-scoped audit partition;
- * we log at error level instead so a platform-wide alert can catch them.
- * See Constitution Principle I — tenant-scoped audit is the default; the
- * null case is an explicit documented escape hatch for the F1 cross-tenant
- * invitation flow. When F1 migrates to a tenant model this branch can be
- * removed.
- */
-async function emitDispatchFailedAudit(args: {
-  requestId: string;
-  row: NotificationsOutboxRow;
-  attempts: number;
-  reason: string;
-}): Promise<void> {
-  const { requestId, row, attempts, reason } = args;
-
-  if (!row.tenantId) {
-    logger.error(
-      {
-        requestId,
-        outboxRowId: row.id,
-        notificationType: row.notificationType,
-        attempts,
-        reason,
-      },
-      'cron.outbox_dispatch.permanent_failure_no_tenant',
-    );
-    return;
-  }
-
-  try {
-    await db.insert(auditLog).values({
-      eventType: 'email_dispatch_failed',
-      actorUserId: 'system:cron',
-      summary: `outbox row ${row.id} permanently failed (${reason}) after ${attempts} attempts`,
-      requestId,
-      tenantId: row.tenantId,
-      payload: {
-        outbox_row_id: row.id,
-        notification_type: row.notificationType,
-        attempts,
-        last_error: reason,
-      },
-    });
-  } catch (auditError) {
-    logger.error(
-      { requestId, err: auditError, outboxRowId: row.id },
-      'cron.outbox_dispatch.audit_write_failed',
-    );
-  }
-}
-
 type DispatchOutcome = 'sent' | 'retried' | 'permanent' | 'skipped';
 
 /**
@@ -262,11 +209,18 @@ async function dispatchOne(
         return 'permanent';
       }
 
+      // Same exponential schedule as the send-failure path (FR-012c):
+      // 60s / 5m / 30m / 3h / 12h. Keeps retry cadence uniform across
+      // transient-template and transient-send failures.
+      const noTplBackoffSeconds =
+        RETRY_BACKOFF_SECONDS[
+          Math.min(nextAttempt - 1, RETRY_BACKOFF_SECONDS.length - 1)
+        ]!;
       await tx
         .update(notificationsOutbox)
         .set({
           attempts: nextAttempt,
-          nextRetryAt: new Date(now.getTime() + 5 * 60 * 1000),
+          nextRetryAt: new Date(now.getTime() + noTplBackoffSeconds * 1000),
           lastError: 'no_template_handler',
           updatedAt: now,
         })
@@ -446,7 +400,3 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 // POST mirror so alternative schedulers that use POST also work.
 export const POST = GET;
-
-// Re-exported only so tests can verify the audit-helper contract without
-// spinning up the whole cron. Not part of the public API.
-export { emitDispatchFailedAudit };

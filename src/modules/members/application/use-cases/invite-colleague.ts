@@ -116,10 +116,13 @@ export async function inviteColleague(
     if (created.error.code === 'invalid-input') {
       return err({ type: 'invalid_email' });
     }
-    // R2-W4: Only map 'email-taken' explicitly — other failures are server errors
     if (created.error.code === 'email-taken') {
       return err({ type: 'email_taken' });
     }
+    // `invitation-create-failed` — F1 create-user already ran its
+    // compensating `users.deletePending`, so no state leaks here.
+    // Surface as server_error so the route returns 500 and the admin
+    // can retry.
     return err({
       type: 'server_error',
       message: `createUser: ${created.error.code}`,

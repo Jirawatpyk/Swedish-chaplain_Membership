@@ -16,6 +16,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type { Email } from './value-objects/email';
 import type { Phone } from './value-objects/phone';
 import type { UserId } from './value-objects/user-id';
+import { isUuid } from './value-objects/uuid';
 import type { MemberId, TenantId } from './member';
 
 declare const ContactIdBrand: unique symbol;
@@ -32,13 +33,9 @@ export function asContactId(raw: string): ContactId {
   return raw as ContactId;
 }
 
-/** UUID format check shared with member.ts — repeated locally to avoid a Domain-internal import. */
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Validated ContactId brander for untrusted input. */
+/** Validated ContactId brander for untrusted input. Uses shared UUID regex. */
 export function tryContactId(raw: unknown): Result<ContactId, { code: 'invalid_contact_id' }> {
-  if (typeof raw !== 'string' || !UUID_RE.test(raw)) {
+  if (!isUuid(raw)) {
     return err({ code: 'invalid_contact_id' });
   }
   return ok(raw.toLowerCase() as ContactId);
