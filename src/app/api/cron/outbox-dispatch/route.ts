@@ -33,7 +33,7 @@
  * event emission (FR-012c parity for unrenderable rows).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { and, eq, lte, sql } from 'drizzle-orm';
+import { and, eq, lte } from 'drizzle-orm';
 import { db } from '@/lib/db';
 /* eslint-disable no-restricted-imports --
  * Cron job: direct UPDATE on `notifications_outbox` + auditLog — this
@@ -178,34 +178,26 @@ async function dispatchOne(
           })
           .where(eq(notificationsOutbox.id, row.id));
 
-        // H3 — audit emission parity with send-failure permanent path.
-        // Emitted inside the tx so it commits atomically with the status flip.
-        if (row.tenantId) {
-          await tx.insert(auditLog).values({
-            eventType: 'email_dispatch_failed',
-            actorUserId: 'system:cron',
-            summary: `outbox row ${row.id} permanently failed (no_template_handler) after ${nextAttempt} attempts`,
-            requestId,
-            tenantId: row.tenantId,
-            payload: {
-              outbox_row_id: row.id,
-              notification_type: row.notificationType,
-              attempts: nextAttempt,
-              reason: 'no_template_handler',
-            },
-          });
-        } else {
-          logger.error(
-            {
-              requestId,
-              outboxRowId: row.id,
-              notificationType: row.notificationType,
-              attempts: nextAttempt,
-              reason: 'no_template_handler',
-            },
-            'cron.outbox_dispatch.permanent_failure_no_tenant',
-          );
-        }
+        // S1 — audit emission parity with send-failure permanent path.
+        // Emitted inside the tx so it commits atomically with the status
+        // flip. `auditLog.tenantId` is nullable (schema.ts:256) — for
+        // cross-tenant platform rows (F1 invitation flow with
+        // tenant_id=null) we still insert the audit row with tenantId
+        // null so compliance evidence lives in the append-only table
+        // rather than only in pino logs.
+        await tx.insert(auditLog).values({
+          eventType: 'email_dispatch_failed',
+          actorUserId: 'system:cron',
+          summary: `outbox row ${row.id} permanently failed (no_template_handler) after ${nextAttempt} attempts`,
+          requestId,
+          tenantId: row.tenantId,
+          payload: {
+            outbox_row_id: row.id,
+            notification_type: row.notificationType,
+            attempts: nextAttempt,
+            reason: 'no_template_handler',
+          },
+        });
         return 'permanent';
       }
 
@@ -281,22 +273,22 @@ async function dispatchOne(
         'cron.outbox_dispatch.permanent_failure',
       );
 
-      // H2+H3 — tenant-scoped audit inside tx; null-tenant falls back to log.
-      if (row.tenantId) {
-        await tx.insert(auditLog).values({
-          eventType: 'email_dispatch_failed',
-          actorUserId: 'system:cron',
-          summary: `outbox row ${row.id} permanently failed after ${nextAttempt} attempts`,
-          requestId,
-          tenantId: row.tenantId,
-          payload: {
-            outbox_row_id: row.id,
-            notification_type: row.notificationType,
-            attempts: nextAttempt,
-            last_error: result.error.message,
-          },
-        });
-      }
+      // S1 — always insert audit inside tx (tenantId nullable in schema).
+      // Cross-tenant platform rows (F1 invitation, tenant_id=null) now
+      // land in auditLog for compliance parity with tenant-scoped rows.
+      await tx.insert(auditLog).values({
+        eventType: 'email_dispatch_failed',
+        actorUserId: 'system:cron',
+        summary: `outbox row ${row.id} permanently failed after ${nextAttempt} attempts`,
+        requestId,
+        tenantId: row.tenantId,
+        payload: {
+          outbox_row_id: row.id,
+          notification_type: row.notificationType,
+          attempts: nextAttempt,
+          last_error: result.error.message,
+        },
+      });
       return 'permanent';
     }
 
@@ -344,6 +336,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   } else if (!env.isDevelopment) {
     logger.error({ requestId }, 'cron.outbox_dispatch.no_secret_configured');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  } else {
+    // S3 — loud warning so an accidental dev-mode deploy is immediately
+    // visible in aggregated logs. Dev-mode + missing CRON_SECRET means
+    // any unauthenticated caller can drain the outbox.
+    logger.warn(
+      { requestId },
+      'cron.outbox_dispatch.dev_mode_unauthenticated_drain',
+    );
   }
 
   const now = new Date();
@@ -385,8 +385,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       );
     }
   }
-
-  void sql; // silence unused import — transitively required
 
   logger.info(
     { requestId, inspected: ready.length, sent, retried, permanent, skipped },

@@ -21,6 +21,7 @@ vi.mock('@/lib/log-id', () => ({ hashId: vi.fn((s: string) => s) }));
 vi.mock('@/lib/metrics', () => ({
   authMetrics: {
     invitationSent: vi.fn(),
+    invitationEnqueueFailed: vi.fn(),
   },
 }));
 // Prevent defaultCreateUserDeps from pulling Drizzle at test boot.

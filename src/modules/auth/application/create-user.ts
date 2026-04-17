@@ -180,6 +180,8 @@ export async function createUser(
       },
       'create_user.invitation_enqueue_failed',
     );
+    // W1 — surface as metric so ops can alert on silent-success.
+    authMetrics.invitationEnqueueFailed(input.role, enqueueResult.error.code);
   }
 
   // 6. Audit

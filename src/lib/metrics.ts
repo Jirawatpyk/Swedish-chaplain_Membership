@@ -138,6 +138,21 @@ export const authMetrics = {
       'Invitation redemption failures by reason',
     ).add(1, { reason });
   },
+  /**
+   * Invitation row failed to land in `notifications_outbox`.
+   * Signals a silent-success bug where the admin sees ok but no email
+   * will ever be sent — the dispatcher only drains rows that made it
+   * into the outbox. Alert threshold: any non-zero rate for 5 min.
+   */
+  invitationEnqueueFailed(
+    role: 'admin' | 'manager' | 'member',
+    reason: 'enqueue_failed' | 'no_row_returned',
+  ): void {
+    counter(
+      'auth_invitation_enqueue_failed_total',
+      'Invitation outbox enqueue failures by role and reason',
+    ).add(1, { role, reason });
+  },
 
   // --- Sessions --------------------------------------------------------------
   idleWarningShown(outcome: 'stayed' | 'timed_out'): void {
