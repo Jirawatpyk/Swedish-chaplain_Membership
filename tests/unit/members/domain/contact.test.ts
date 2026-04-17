@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPreferredLanguage } from '@/modules/members/domain/contact';
+import { asContactId, isPreferredLanguage } from '@/modules/members/domain/contact';
 
 describe('isPreferredLanguage', () => {
   it('accepts en / th / sv', () => {
@@ -13,3 +13,11 @@ describe('isPreferredLanguage', () => {
     expect(isPreferredLanguage(42)).toBe(false);
   });
 });
+
+describe('asContactId', () => {
+  it('brands a raw string as ContactId', () => {
+    const id = asContactId('c-001');
+    expect(id).toBe('c-001');
+  });
+});
+

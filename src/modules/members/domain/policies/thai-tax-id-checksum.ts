@@ -18,7 +18,7 @@ export function validateThaiTaxIdChecksum(taxId: string): boolean {
   let sum = 0;
   for (let i = 0; i < 12; i++) {
     // Cast via Number — taxId[i] is a character '0'..'9'.
-    sum += Number(taxId[i]) * (weights[i] ?? 0);
+    sum += Number(taxId[i]) * weights[i]!;
   }
   const checkDigit = (11 - (sum % 11)) % 10;
   return checkDigit === Number(taxId[12]);

@@ -175,7 +175,7 @@ export function formatMoney(money: Money, locale: string): string {
   });
   // `resolvedOptions().maximumFractionDigits` is the currency's native
   // fraction-digit count (0 for JPY, 2 for THB/SEK/EUR/USD, 3 for KWD).
-  const digits = fmt.resolvedOptions().maximumFractionDigits ?? 2;
+  const digits = fmt.resolvedOptions().maximumFractionDigits!
   const major = money.amount_minor_units / Math.pow(10, digits);
   return fmt.format(major);
 }

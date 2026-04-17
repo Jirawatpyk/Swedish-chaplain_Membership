@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   archive,
-  setStatus,
-  undelete,
+  asMemberId,
+  asPlanId,
+  asTenantId,
   ARCHIVE_UNDELETE_WINDOW_DAYS,
   isMemberStatus,
+  MEMBER_STATUSES,
+  setStatus,
+  undelete,
   type Member,
 } from '@/modules/members/domain/member';
 
@@ -147,3 +151,24 @@ describe('isMemberStatus type-guard', () => {
     expect(isMemberStatus(null)).toBe(false);
   });
 });
+
+describe('MEMBER_STATUSES', () => {
+  it('contains exactly active, inactive, archived', () => {
+    expect([...MEMBER_STATUSES].sort()).toEqual(['active', 'archived', 'inactive']);
+  });
+});
+
+describe('Brand constructors', () => {
+  it('asTenantId brands a raw string', () => {
+    expect(asTenantId('swecham')).toBe('swecham');
+  });
+
+  it('asPlanId brands a raw string', () => {
+    expect(asPlanId('premium-2026')).toBe('premium-2026');
+  });
+
+  it('asMemberId brands a raw string', () => {
+    expect(asMemberId('m-001')).toBe('m-001');
+  });
+});
+

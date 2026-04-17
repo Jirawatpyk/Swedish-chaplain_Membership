@@ -192,4 +192,73 @@ describe('planPatchSchema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('rejects partnership category patch without includes_corporate_plan_id', () => {
+    expect(
+      planPatchSchema.safeParse({
+        plan_category: 'partnership',
+        includes_corporate_plan_id: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts partnership patch with includes_corporate_plan_id present', () => {
+    expect(
+      planPatchSchema.safeParse({
+        plan_category: 'partnership',
+        includes_corporate_plan_id: 'premium',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects corporate patch with includes_corporate_plan_id set', () => {
+    expect(
+      planPatchSchema.safeParse({
+        plan_category: 'corporate',
+        includes_corporate_plan_id: 'premium',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts corporate patch with includes_corporate_plan_id undefined', () => {
+    expect(
+      planPatchSchema.safeParse({
+        plan_category: 'corporate',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects partnership patch with null benefit_matrix.partnership', () => {
+    expect(
+      planPatchSchema.safeParse({
+        plan_category: 'partnership',
+        includes_corporate_plan_id: 'premium',
+        benefit_matrix: {
+          ...validCorporateInput.benefit_matrix,
+          partnership: null,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects corporate patch with non-null benefit_matrix.partnership', () => {
+    expect(
+      planPatchSchema.safeParse({
+        plan_category: 'corporate',
+        benefit_matrix: {
+          ...validCorporateInput.benefit_matrix,
+          partnership: validPartnershipInput.benefit_matrix.partnership,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts partnership patch when benefit_matrix is omitted', () => {
+    expect(
+      planPatchSchema.safeParse({
+        plan_category: 'partnership',
+        includes_corporate_plan_id: 'premium',
+      }).success,
+    ).toBe(true);
+  });
 });
