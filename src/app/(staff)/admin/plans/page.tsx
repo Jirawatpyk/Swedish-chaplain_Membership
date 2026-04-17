@@ -18,13 +18,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { PlansTable } from '@/components/plans/plans-table';
 import { ContentContainer } from '@/components/layout/content-container';
@@ -61,14 +55,14 @@ export default async function PlansListPage({
             <>
               <Link
                 href="/admin/plans/clone"
-                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                className={buttonVariants({ variant: 'outline' })}
               >
                 <CopyIcon className="h-3.5 w-3.5" />
                 {t('actions.cloneYear')}
               </Link>
               <Link
                 href="/admin/plans/new"
-                className={buttonVariants({ size: 'sm' })}
+                className={buttonVariants()}
               >
                 <PlusIcon className="h-3.5 w-3.5" />
                 {t('actions.new')}
@@ -79,10 +73,6 @@ export default async function PlansListPage({
       />
 
       <Card>
-        <CardHeader>
-          <CardTitle>{t('listHeading')}</CardTitle>
-          <CardDescription>{t('refreshHint')}</CardDescription>
-        </CardHeader>
         <CardContent>
           {/*
             No internal <Suspense> wrapper — the route-level loading.tsx

@@ -36,8 +36,20 @@ export async function generateMetadata({
 }: {
   params: Promise<{ year: string; planId: string }>;
 }): Promise<Metadata> {
-  const { planId } = await params;
-  return { title: `${planId} · Plans · SweCham` };
+  const { year, planId } = await params;
+  const yearNum = Number(year);
+  if (!Number.isInteger(yearNum) || !/^[a-z0-9-]{1,63}$/.test(planId)) {
+    return { title: 'Plan · SweCham' };
+  }
+  const tenant = resolveTenantFromRequest();
+  const deps = buildPlansDeps(tenant);
+  const plan = await deps.planRepo.findOne(
+    tenant,
+    asPlanSlug(planId),
+    asPlanYear(yearNum),
+  );
+  const displayName = plan?.plan_name.en ?? planId;
+  return { title: `${displayName} · Plans · SweCham` };
 }
 
 export default async function PlanDetailPage({
@@ -86,8 +98,20 @@ export default async function PlanDetailPage({
 
   const planDisplayName = plan.plan_name.en ?? planId;
 
+  // Resolve includes_corporate_plan_id slug → display name
+  let bundledPlanName: string | null = null;
+  if (plan.includes_corporate_plan_id) {
+    const linked = await deps.planRepo.findOne(
+      tenant,
+      asPlanSlug(plan.includes_corporate_plan_id),
+      asPlanYear(plan.plan_year),
+    );
+    bundledPlanName = linked?.plan_name.en ?? null;
+  }
+
   return (
-    <ContentContainer>
+    <ContentContainer className="flex flex-col gap-4">
+      <PlanBreadcrumbLabel segment={year} label={String(plan.plan_year)} />
       <PlanBreadcrumbLabel segment={planId} label={planDisplayName} />
       <PageHeader
         title={
@@ -146,7 +170,7 @@ export default async function PlanDetailPage({
                 <dt className="text-xs font-medium uppercase text-muted-foreground">
                   {t('create.labels.includesCorporatePlanId')}
                 </dt>
-                <dd className="text-lg font-semibold">{plan.includes_corporate_plan_id}</dd>
+                <dd className="text-lg font-semibold">{bundledPlanName ?? plan.includes_corporate_plan_id}</dd>
               </div>
             ) : null}
             {plan.min_turnover_minor_units !== null ? (
@@ -189,7 +213,7 @@ export default async function PlanDetailPage({
               Brand Visibility
             </h2>
             <dl className="mt-2 grid grid-cols-1 gap-2 text-body md:grid-cols-2">
-              <KV label="E-blast per year" value={String(plan.benefit_matrix.eblast_per_year)} />
+              <KV label="E-blast per year" value={String(plan.benefit_matrix.eblast_per_year)} raw />
               <KV
                 label="Website page type"
                 value={plan.benefit_matrix.website_page_type ?? '—'}
@@ -214,10 +238,12 @@ export default async function PlanDetailPage({
               <KV
                 label="Co-branded access"
                 value={plan.benefit_matrix.events_cobranded_access ? 'Yes' : 'No'}
+                raw
               />
               <KV
                 label="Cultural tickets/year"
                 value={String(plan.benefit_matrix.cultural_tickets_per_year)}
+                raw
               />
             </dl>
           </section>
@@ -232,18 +258,22 @@ export default async function PlanDetailPage({
                   <KV
                     label="Event tickets"
                     value={String(plan.benefit_matrix.partnership.event_tickets_included)}
+                    raw
                   />
                   <KV
                     label="Video duration"
                     value={`${plan.benefit_matrix.partnership.video_duration_minutes} min`}
+                    raw
                   />
                   <KV
                     label="Website logo months"
                     value={String(plan.benefit_matrix.partnership.website_logo_months)}
+                    raw
                   />
                   <KV
                     label="Banner per year"
                     value={String(plan.benefit_matrix.partnership.banner_per_year)}
+                    raw
                   />
                   <KV
                     label="Directory ad"
@@ -259,11 +289,17 @@ export default async function PlanDetailPage({
   );
 }
 
-function KV({ label, value }: { label: string; value: string }) {
+function humanize(s: string): string {
+  return s
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function KV({ label, value, raw = false }: { label: string; value: string; raw?: boolean }) {
   return (
     <div className="flex justify-between border-b border-border/50 py-1 last:border-b-0">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{value}</dd>
+      <dd className="font-medium">{raw ? value : humanize(value)}</dd>
     </div>
   );
 }

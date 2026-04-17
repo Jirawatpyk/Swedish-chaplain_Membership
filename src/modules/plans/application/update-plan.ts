@@ -99,20 +99,17 @@ export type UpdatePlanDeps = {
 
 /**
  * Recursive deep-equal comparison for audit diff computation.
- * Handles primitives, arrays, and plain objects. Avoids
- * `JSON.stringify` which is sensitive to property ordering
- * and cannot handle Date objects or circular references safely.
+ * Plan fields are never arrays (only scalars, nulls, LocaleText objects,
+ * and BenefitMatrix JSONB) — array values are treated as changed.
+ * Avoids `JSON.stringify` which is sensitive to property ordering.
  */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || b === null) return false;
   if (typeof a !== typeof b) return false;
   if (typeof a !== 'object') return false;
-
-  if (Array.isArray(a)) {
-    if (!Array.isArray(b) || a.length !== b.length) return false;
-    return a.every((item, i) => deepEqual(item, b[i]));
-  }
+  // Plan locked/diff fields are never arrays — treat any array value as changed.
+  if (Array.isArray(a) || Array.isArray(b)) return false;
 
   const keysA = Object.keys(a as Record<string, unknown>);
   const keysB = Object.keys(b as Record<string, unknown>);

@@ -1,0 +1,220 @@
+'use client';
+
+/**
+ * T052 — Client wrapper for the /admin/members/new page.
+ *
+ * Owns:
+ *   - Idempotency-Key generation (one per form instance — regenerated on
+ *     successful 201 to avoid replay on next submit).
+ *   - Form submit → POST /api/members with 4 branches:
+ *       201 → toast success → redirect to detail page
+ *       409 soft_duplicate → show SoftDuplicateDialog; on Proceed,
+ *         re-submit with confirm_soft_duplicate=true
+ *       422 turnover/age/startup warning → show OverrideReasonDialog;
+ *         on confirm, re-submit with override_reason_{code,note}
+ *       anything else → sonner toast with localized error message
+ */
+
+import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
+import { MemberForm, type MemberFormValues, type PlanOption } from './member-form';
+import {
+  OverrideReasonDialog,
+  type OverrideReasonResult,
+} from './override-reason-dialog';
+import { SoftDuplicateDialog } from './soft-duplicate-dialog';
+
+type Props = {
+  readonly plans: readonly PlanOption[];
+  readonly defaultPlanYear: number;
+};
+
+type SoftDupState = {
+  readonly existing: { readonly member_id: string; readonly company_name: string };
+};
+
+type OverrideState = {
+  readonly message: string;
+};
+
+import { uuid } from '@/lib/uuid';
+
+function toPayload(
+  values: MemberFormValues,
+  opts: {
+    confirmSoftDuplicate?: boolean;
+    overrideReason?: OverrideReasonResult | null;
+  } = {},
+) {
+  const payload: Record<string, unknown> = {
+    company_name: values.company_name.trim(),
+    legal_entity_type: values.legal_entity_type?.trim() || null,
+    country: values.country.toUpperCase(),
+    tax_id: values.tax_id?.trim() || null,
+    website: values.website?.trim() || null,
+    description: values.description?.trim() || null,
+    founded_year:
+      typeof values.founded_year === 'number' ? values.founded_year : null,
+    turnover_thb:
+      typeof values.turnover_thb === 'number' ? values.turnover_thb : null,
+    plan_id: values.plan_id,
+    plan_year: values.plan_year,
+    registration_date: values.registration_date || undefined,
+    primary_contact: {
+      first_name: values.primary_contact.first_name.trim(),
+      last_name: values.primary_contact.last_name.trim(),
+      email: values.primary_contact.email.trim(),
+      phone: values.primary_contact.phone?.trim() || null,
+      role_title: values.primary_contact.role_title?.trim() || null,
+      preferred_language: values.primary_contact.preferred_language,
+      date_of_birth: values.primary_contact.date_of_birth || null,
+    },
+  };
+  if (opts.confirmSoftDuplicate) payload.confirm_soft_duplicate = true;
+  if (opts.overrideReason) {
+    payload.override_reason_code = opts.overrideReason.code;
+    payload.override_reason_note = opts.overrideReason.note;
+  }
+  return payload;
+}
+
+export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
+  const t = useTranslations('admin.members.create');
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
+  const [softDup, setSoftDup] = useState<SoftDupState | null>(null);
+  const [override, setOverride] = useState<OverrideState | null>(null);
+  const lastValuesRef = useRef<MemberFormValues | null>(null);
+  const idemKeyRef = useRef<string>(uuid());
+
+  const submit = async (
+    payload: Record<string, unknown>,
+  ): Promise<Response> => {
+    return fetch('/api/members', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': idemKeyRef.current,
+      },
+      body: JSON.stringify(payload),
+    });
+  };
+
+  const handleCreated = (memberId: string) => {
+    toast.success(t('success'));
+    idemKeyRef.current = uuid();
+    router.push(`/admin/members/${memberId}`);
+  };
+
+  const handleResponse = async (res: Response) => {
+    if (res.status === 201) {
+      const body = await res.json();
+      handleCreated(body.member_id);
+      return;
+    }
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 409 && body?.error?.code === 'soft_duplicate') {
+      const details = body.error.details ?? {};
+      setSoftDup({
+        existing: {
+          member_id: details.existingMemberId,
+          company_name: details.existingCompanyName,
+        },
+      });
+      return;
+    }
+    if (res.status === 422) {
+      const details = body.error?.details ?? {};
+      const msg = JSON.stringify(details);
+      setOverride({ message: msg });
+      return;
+    }
+    if (res.status === 403) {
+      toast.error(t('errors.forbidden'));
+      return;
+    }
+    if (res.status === 400) {
+      toast.error(t('errors.validation'));
+      return;
+    }
+    toast.error(t('errors.generic'));
+  };
+
+  const onSubmit = async (values: MemberFormValues) => {
+    lastValuesRef.current = values;
+    setSubmitting(true);
+    try {
+      const res = await submit(toPayload(values));
+      await handleResponse(res);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const onSoftDupProceed = async () => {
+    if (!lastValuesRef.current) return;
+    setSoftDup(null);
+    setSubmitting(true);
+    // Re-submit is a new logical request (different body — adds
+    // confirm_soft_duplicate). Same key + different hash would collide
+    // with the previous 409 response cached under this key and return
+    // idempotency_conflict instead of the new outcome. Regenerate.
+    idemKeyRef.current = uuid();
+    try {
+      const res = await submit(
+        toPayload(lastValuesRef.current, { confirmSoftDuplicate: true }),
+      );
+      await handleResponse(res);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const onOverrideConfirm = async (result: OverrideReasonResult) => {
+    if (!lastValuesRef.current) return;
+    setOverride(null);
+    setSubmitting(true);
+    // Same rationale as onSoftDupProceed — new logical request payload.
+    idemKeyRef.current = uuid();
+    try {
+      const res = await submit(
+        toPayload(lastValuesRef.current, { overrideReason: result }),
+      );
+      await handleResponse(res);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <MemberForm
+        plans={plans}
+        defaultPlanYear={defaultPlanYear}
+        onSubmit={onSubmit}
+        submitting={submitting}
+        onCancel={() => router.push('/admin/members')}
+      />
+
+      <SoftDuplicateDialog
+        open={softDup !== null}
+        onOpenChange={(next) => {
+          if (!next) setSoftDup(null);
+        }}
+        existing={softDup?.existing ?? null}
+        onProceed={onSoftDupProceed}
+      />
+
+      <OverrideReasonDialog
+        open={override !== null}
+        onOpenChange={(next) => {
+          if (!next) setOverride(null);
+        }}
+        warningMessage={override?.message ?? null}
+        onConfirm={onOverrideConfirm}
+      />
+    </>
+  );
+}

@@ -363,3 +363,203 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 - F1 security metrics tie-in: `specs/001-auth-rbac/security.md` § 6 (review gate uses metrics from § 4 here)
 - F2 plan observability: `specs/002-membership-plans/plan.md` § I (Tenant Isolation) + § VII (Observability)
 - F2 cross-tenant probe design: critique E6 + E9 (2026-04-11)
+
+---
+
+## 14. F3 Members & Contacts
+
+**Status**: Fleshed out in Polish phase (T147). All US1–US7 shipped and green.
+**Source refs**: `specs/005-members-contacts/plan.md § Constitution Check VII`, `security.md § 4`, `data-model.md § 4`.
+
+### 14.1 Metrics catalogue
+
+| Metric | Type | Labels | Source |
+|---|---|---|---|
+| `members.api.latency_ms` | histogram | `{method, route}` | every `/api/members/**` + `/api/portal/**` handler via `@vercel/otel` span duration |
+| `members.api.requests_total` | counter | `{method, route, status_class}` | every `/api/members/**` response (2xx/4xx/5xx) |
+| `members.search.latency_ms` | histogram | `{has_query, status}` | `GET /api/members?q=…` — pg_trgm GIN path |
+| `members.bulk.rows_per_action` | histogram | `{action, outcome}` | `POST /api/members/bulk` |
+| `members.cross_tenant_probe.count` | counter | `{actor_tenant, route}` | emitted on each `member_cross_tenant_probe` audit event |
+| `members.self_update_forbidden.count` | counter | `{attempted_fields}` | emitted on each `member_self_update_forbidden` audit event |
+| `members.email_change.count` | counter | `{event}` (`initiated`/`verified`/`reverted`/`failed`) | email-change lifecycle events |
+| `members.bundle_warning.latency_ms` | histogram | `{plan_id}` | `/api/plans/[year]/[planId]/affected-members` |
+| `outbox.dispatch.latency_ms` | histogram | `{notification_type, attempt}` | member-email outbox cron dispatcher |
+| `outbox_permanent_failures_total` | counter | `{notification_type, reason}` where `reason ∈ {max_retries, invalid_recipient, no_template_handler}` | `permanently_failed` flips after 5 retries or unrenderable payload |
+| `outbox_stuck_rows_total` | counter (rate-alerted) | — | pending rows > 30 min past `next_retry_at` at cron tick time; rate > 0 = cron is down or lost `CRON_SECRET` |
+| `members.invite.count` | counter | `{outcome}` (`sent`/`already_linked`/`no_email`) | portal invite events |
+| `members.archive.count` | counter | `{cascade_sessions}` (`0`/`1`/`2+`) | archive cascade cardinality signal |
+
+### 14.2 SLO targets
+
+| SLO | Target | Error budget | Measured by |
+|---|---|---|---|
+| Members API p95 | < 400 ms | 1 % per month | `members.api.latency_ms` p95 over 5 min windows |
+| Members API p99 | < 800 ms | 0.1 % per month | `members.api.latency_ms` p99 |
+| Substring search p95 (SC-002) | < 500 ms @ 5 k rows | 1 % per month | `members.search.latency_ms` p95 |
+| Bulk 100-row p95 (SC-004) | < 5 s | 0.1 % per month | `members.bulk.rows_per_action` + latency span |
+| Bundle-warning fetch p95 (SC-008) | < 200 ms @ 500 members | 1 % per month | `members.bundle_warning.latency_ms` p95 |
+| Core Web Vitals (LCP / INP / CLS) | < 2.5 s / < 200 ms / < 0.1 | per-release Lighthouse CI gate | Vercel Speed Insights |
+
+### 14.3 Alerting thresholds
+
+#### High severity (page immediately)
+
+| Event / Metric | Threshold | Action |
+|---|---|---|
+| `member_cross_tenant_probe` | ≥ 1 event in 5 min | Alarm → incident; isolate tenant, rotate session tokens, audit affected member IDs. Time-to-triage: 5 min. |
+| `member_cross_tenant_probe` | ≥ 5 events in 1 h | Escalate to security incident — potential systematic enumeration attack. |
+| `email_dispatch_failed` (critical type) | ≥ 1 `permanently_failed` for `email_verification` or `email_change_revert` | Alarm → triage Resend outage vs. bad template vs. invalid address. Time-to-triage: 15 min. |
+| `outbox_permanent_failures_total` | `rate > 0` sustained 5 min | Proactive Vercel Alert — admin sees `201 Created` but email never sends. Check Resend status, template integrity, and row `last_error` column. |
+| `outbox_stuck_rows_total` | `rate > 0` sustained 5 min | Cron dispatcher is down or lost `CRON_SECRET`. Verify Vercel Cron schedule + env var + recent function logs for `cron.outbox_dispatch.*`. |
+| `members.api.latency_ms` p95 | > 1 s for 5 consecutive min | Alarm → check Neon query plan, pg_trgm index health. |
+
+#### Medium severity (notify on-call, investigate next business hour)
+
+| Event / Metric | Threshold | Action |
+|---|---|---|
+| `member_self_update_forbidden` | ≥ 5 events in 10 min per actor | Investigate forged portal payload; possible script or compromised member session. Time-to-triage: 10 min. |
+| `outbox_permanent_failures_total` | ≥ 3 failures in 30 min | Check Resend rate limits and outbox `last_error` distribution. |
+| `members.bulk.rows_per_action` p95 | > 8 s for 100-row action | Bulk endpoint degraded — profile DB query + RLS policy latency. |
+
+#### Info (log and monitor, no page)
+
+| Event | Notes |
+|---|---|
+| `member_email_change_reverted` | Any occurrence → audit review for admin-impersonation ATO pattern. |
+| `bulk_action_rate_limit_exceeded` | 1 per actor per 10 min budget — verify not scripted abuse. |
+| `members.invite.count` outcome=`already_linked` | Elevated rate may indicate double-click bug on the Invite button. |
+
+### 14.4 Runbooks
+
+#### R-M01: Cross-tenant probe alarm
+
+```
+1. Pull audit_log rows: SELECT * FROM audit_log WHERE event_type = 'member_cross_tenant_probe'
+   AND timestamp > NOW() - INTERVAL '1 hour' ORDER BY timestamp DESC;
+2. Identify actor_user_id + actor_tenant_id in the payload.
+3. Check actor session freshness: SELECT * FROM sessions WHERE user_id = '<actor>';
+4. If pattern is systematic (sequential member IDs), revoke all sessions for actor + notify legal.
+5. If isolated (single probe, then stops), log as false-positive — likely stale frontend link.
+6. Close incident after 24 h no recurrence.
+```
+
+#### R-M02: Email dispatch failed (critical)
+
+```
+1. Check outbox: SELECT * FROM notifications_outbox WHERE permanently_failed = true
+   AND updated_at > NOW() - INTERVAL '2 hours';
+2. Inspect failed_reason column for pattern (SMTP 5xx vs. network timeout vs. template error).
+3. If Resend outage: monitor status.resend.com, retry via admin UI once restored.
+4. If bad template: patch template → redeploy → manually re-enqueue via:
+   UPDATE notifications_outbox SET permanently_failed = false, retry_count = 0
+   WHERE id = '<row_id>';
+5. For email_verification failures: contact affected member via alternate channel (admin-to-admin).
+6. Emit post-mortem if > 5 members affected.
+```
+
+#### R-M03: Admin-compromise scenario
+
+```
+1. Lock account: UPDATE users SET disabled = true WHERE id = '<compromised_admin_id>';
+2. Revoke all sessions: DELETE FROM sessions WHERE user_id = '<compromised_admin_id>';
+3. Audit affected member writes: SELECT * FROM audit_log WHERE actor_user_id = '<id>'
+   AND timestamp > '<compromise_window_start>' ORDER BY timestamp;
+4. Notify affected members of any PII changes (email/phone/plan changes).
+5. Rotate RESEND_API_KEY + UPSTASH_REDIS_REST_TOKEN if admin had infrastructure access.
+6. Engage legal/DPO for PDPA/GDPR 72-hour notification assessment.
+```
+
+### 14.5 PII redaction (T038)
+
+`src/lib/logger.ts` REDACT_PATHS extended with: `email`, `toEmail`, `phone`, `date_of_birth`,
+`dateOfBirth`, `tax_id`, `taxId` — top-level + one-level-deep `*.` variants. Censor value: `[REDACTED]`.
+
+Invariant test: `tests/unit/lib/logger-pii.test.ts` (authored alongside first use-case logging).
+
+### 14.6 Dashboard queries (Vercel Logs / future Grafana)
+
+```sql
+-- Cross-tenant probes in last 24 h
+SELECT DATE_TRUNC('hour', timestamp) AS hour, COUNT(*) AS probes
+FROM audit_log
+WHERE event_type = 'member_cross_tenant_probe'
+  AND timestamp > NOW() - INTERVAL '24 hours'
+GROUP BY 1 ORDER BY 1;
+
+-- Outbox health
+SELECT notification_type,
+       COUNT(*) FILTER (WHERE permanently_failed) AS failed,
+       COUNT(*) FILTER (WHERE sent_at IS NULL AND NOT permanently_failed) AS pending,
+       AVG(retry_count) AS avg_retries
+FROM notifications_outbox
+WHERE created_at > NOW() - INTERVAL '7 days'
+GROUP BY 1;
+
+-- Bulk action usage (last 7 days)
+SELECT payload->>'action' AS action, COUNT(*) AS total
+FROM audit_log
+WHERE event_type = 'member_bulk_action_completed'
+  AND timestamp > NOW() - INTERVAL '7 days'
+GROUP BY 1;
+```
+
+### 14.7 Reference
+
+- `specs/005-members-contacts/plan.md § Constitution Check VII`
+- `specs/005-members-contacts/security.md § 4` (runbook requirements CHK068–CHK070, CHK077)
+- `specs/005-members-contacts/data-model.md § 4` (23 F3 audit event types + payload shapes)
+- Constitution Principle I clause 4 (audit severity for cross-tenant probes)
+- Constitution Principle VII (Performance & Observability SLOs)
+
+---
+
+## 15. Post-F3 observability backlog
+
+Non-blocking items deferred from F3 ship. Track against the F2+ observability roadmap (Grafana Cloud / Datadog migration).
+
+### 15.1 `auth_invitation_enqueue_failed_total` — dashboard + alert wiring
+
+**Context**: Metric counter added in F3 round-3 follow-up (commit `9a47c44`) to surface a silent-success bug — admin invites a user via `POST /api/auth/invite`, the `createUser` use case succeeds on the F1 side, but the `notifications_outbox` enqueue insert fails (DB error, unique race, etc.). The admin sees `201 Created` but the invitation email will **never be sent** because the dispatcher cron only drains rows that made it into the outbox table.
+
+**Current mitigation (log-only)**:
+- Code path: `src/modules/auth/application/create-user.ts:174-184` emits `logger.error('create_user.invitation_enqueue_failed', { errCode, errCause })` + calls `authMetrics.invitationEnqueueFailed(role, reason)`.
+- Operator workflow: grep Vercel Logs for the log tag:
+  ```bash
+  vercel logs <deployment-url> | grep "create_user.invitation_enqueue_failed"
+  ```
+- Reactive only — operator finds issues after the fact, not proactively.
+
+**Backlog item — when Grafana Cloud lands (F2+)**:
+
+1. **Panel**: add to the "Auth metrics" dashboard.
+   - Query: `sum(rate(auth_invitation_enqueue_failed_total[5m])) by (role, reason)`
+   - Viz: time-series line chart, stacked by `reason` label (`enqueue_failed` | `no_row_returned`).
+   - Threshold line at 0 (any non-zero rate is actionable).
+2. **Alert rule**:
+   - Condition: `sum(rate(auth_invitation_enqueue_failed_total[5m])) > 0` sustained for 5 min.
+   - Severity: P2 (admin-facing silent-success bug).
+   - Notification: on-call engineer via PagerDuty / Opsgenie / Slack.
+   - Runbook link: this section (§ 15.1).
+3. **Resolve-incident runbook**:
+   ```
+   1. Identify affected users: grep audit_log for `account_created` events within the
+      5-min spike window where the matching `notifications_outbox` row is missing.
+   2. Manually insert the outbox row OR invalidate the invitation + re-invite via
+      admin UI (which re-runs the same createUser flow — idempotent on email).
+   3. Root-cause the enqueue failure via pino logs — typical causes: Neon
+      connection pool exhaustion, unique-constraint race on concurrent invite,
+      statement_timeout on the INSERT.
+   4. If > 5 users affected: post-mortem + file F10 ticket for "resend invitation"
+      admin action (currently absent — mentioned as future work in create-user.ts:18).
+   ```
+
+**Estimated effort**: ~30 min once Grafana Cloud is provisioned + dashboard access is granted.
+
+**Not a ship blocker for F3** because:
+- Admin-invite flow volume is low (tens of events per day per tenant).
+- `logger.error` captures full context — operators can find issues via log search.
+- Grafana Cloud is explicitly F2+ roadmap per § 2 observability stack table.
+
+### 15.2 Future backlog items
+
+Add future post-ship observability follow-ups here (format: subsection 15.N with context, current mitigation, target state, effort estimate, and ship-blocker justification).

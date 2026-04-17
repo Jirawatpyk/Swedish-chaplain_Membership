@@ -96,6 +96,13 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     url: '/admin/audit',
     requires: 'read',
   },
+  // F3 T069 — member surfaces reachable from the palette.
+  {
+    id: 'member.new',
+    label: 'palette.actions.newMember',
+    url: '/admin/members/new',
+    requires: 'admin',
+  },
 ];
 
 const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
@@ -121,6 +128,12 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.dashboard',
     label: 'palette.navigate.dashboard',
     url: '/admin',
+    requires: 'read',
+  },
+  {
+    id: 'nav.members',
+    label: 'palette.navigate.membersList',
+    url: '/admin/members',
     requires: 'read',
   },
 ];

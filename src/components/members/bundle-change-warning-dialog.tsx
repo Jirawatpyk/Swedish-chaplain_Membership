@@ -1,0 +1,146 @@
+'use client';
+
+/**
+ * T095 — Bundle-change warning dialog (FR-010, SC-008).
+ *
+ * Fetches the live affected-member count from
+ * GET /api/plans/[year]/[planId]/affected-members when opened, then
+ * shows the old/new bundle corporate_plan_ids + the count. Admin must
+ * confirm before the parent re-submits the PATCH with
+ * `confirm_bundle_change: true`.
+ */
+
+import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+
+export type BundleChangePayload = {
+  readonly oldBundleCorporatePlanId: string | null;
+  readonly newBundleCorporatePlanId: string | null;
+  /** The plan_id of the OLD partnership tier — we count members on THIS plan. */
+  readonly oldPlanId: string;
+  readonly oldPlanYear: number;
+};
+
+type Props = {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly payload: BundleChangePayload | null;
+  readonly onConfirm: () => void;
+};
+
+export function BundleChangeWarningDialog({
+  open,
+  onOpenChange,
+  payload,
+  onConfirm,
+}: Props) {
+  const t = useTranslations('admin.members.bundleChangeWarning');
+  const [loading, setLoading] = useState(false);
+  const [count, setCount] = useState<number | null>(null);
+
+  /* eslint-disable react-hooks/set-state-in-effect --
+   * Fetch the affected-member count when the dialog opens against a
+   * new payload. Legitimate data-fetching effect — the count depends
+   * on the current payload AND the server's live state, not props
+   * alone, so a pure-function / use-memo alternative doesn't apply. */
+  useEffect(() => {
+    if (!open || !payload) return;
+    let cancelled = false;
+    setLoading(true);
+    fetch(
+      `/api/plans/${payload.oldPlanYear}/${encodeURIComponent(payload.oldPlanId)}/affected-members`,
+    )
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((json) => {
+        if (!cancelled) setCount(json.count);
+      })
+      .catch(() => {
+        if (!cancelled) setCount(0);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, payload]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('title')}</DialogTitle>
+          {count !== null && (
+            <DialogDescription>
+              {t('description', { affectedCount: count })}
+            </DialogDescription>
+          )}
+        </DialogHeader>
+
+        {payload && (
+          <div className="grid grid-cols-2 gap-4 rounded-md border bg-muted/30 p-3 text-sm">
+            <div>
+              <div className="text-xs text-muted-foreground">
+                {t('oldBundle')}
+              </div>
+              <div className="font-mono text-xs">
+                {payload.oldBundleCorporatePlanId ?? '—'}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">
+                {t('newBundle')}
+              </div>
+              <div className="font-mono text-xs">
+                {payload.newBundleCorporatePlanId ?? '—'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div
+          className="text-sm"
+          role="status"
+          aria-live="polite"
+        >
+          {loading ? (
+            <span className="flex items-center gap-2 text-muted-foreground">
+              <Loader2Icon className="size-4 animate-spin" />
+              {t('loading')}
+            </span>
+          ) : count !== null ? (
+            <span className="font-medium">{t('affectedCount', { count })}</span>
+          ) : null}
+        </div>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            {t('cancel')}
+          </Button>
+          <Button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+          >
+            {t('confirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

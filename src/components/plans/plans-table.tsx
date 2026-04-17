@@ -24,7 +24,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, SearchIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,7 +40,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -223,13 +223,17 @@ export function PlansTable({
 
   return (
     <div className="space-y-4" data-plans-table>
-      {/* Filter bar */}
+      {/* Filter bar — flat, matches members/directory-filters.tsx style */}
       <div
-        className="flex flex-col gap-3 rounded-lg border border-border bg-card/50 p-3 md:flex-row md:items-center md:gap-4"
+        className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4"
         role="region"
         aria-label={t('filters.search.label')}
       >
-        <div className="flex-1">
+        <div className="relative flex-1 min-w-0">
+          <SearchIcon
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+            aria-hidden
+          />
           <Label htmlFor="plans-search" className="sr-only">
             {t('filters.search.label')}
           </Label>
@@ -241,6 +245,7 @@ export function PlansTable({
             onChange={(e) => setQ(e.target.value)}
             onBlur={() => updateFilter({ q: q || null })}
             disabled={isPending}
+            className="pl-9"
           />
         </div>
 
@@ -257,7 +262,18 @@ export function PlansTable({
             }}
           >
             <SelectTrigger id="plans-category" className="w-[180px]">
-              <SelectValue placeholder={t('filters.category.label')} />
+              <TranslatedSelectValue
+                placeholder={t('filters.category.label')}
+                translate={(v) => {
+                  const keys: Record<string, string> = {
+                    all: 'filters.all',
+                    corporate: 'filters.category.corporate',
+                    partnership: 'filters.category.partnership',
+                  };
+                  const key = keys[v || 'all'];
+                  return key ? t(key) : v;
+                }}
+              />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t('filters.all')}</SelectItem>
@@ -277,7 +293,7 @@ export function PlansTable({
               updateFilter({ activeOnly: v ? 'true' : null });
             }}
           />
-          <Label htmlFor="plans-active-only" id="plans-active-only-label">
+          <Label htmlFor="plans-active-only" id="plans-active-only-label" >
             {t('filters.activeOnly')}
           </Label>
         </div>
@@ -293,30 +309,43 @@ export function PlansTable({
                 updateFilter({ showDeleted: v ? 'true' : null });
               }}
             />
-            <Label htmlFor="plans-show-deleted" id="plans-show-deleted-label">
+            <Label htmlFor="plans-show-deleted" id="plans-show-deleted-label" >
               {t('filters.showDeleted')}
             </Label>
           </div>
         ) : null}
       </div>
 
-      {/* Table */}
+      {/* Table — matches /admin/members style (uppercase muted header
+          + hover row). No outer border: parent <Card> is the container. */}
       <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('columns.name')}</TableHead>
-            <TableHead>{t('columns.category')}</TableHead>
-            <TableHead>{t('columns.annualFee')}</TableHead>
-            <TableHead>{t('columns.memberType')}</TableHead>
-            <TableHead>{t('columns.year')}</TableHead>
-            <TableHead>{t('columns.status')}</TableHead>
-            {isAdmin ? (
-              <TableHead className="w-[48px]">
-                <span className="sr-only">{t('columns.actions')}</span>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.name')}
               </TableHead>
-            ) : null}
-          </TableRow>
-        </TableHeader>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.category')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.annualFee')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.memberType')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.year')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.status')}
+              </TableHead>
+              {isAdmin ? (
+                <TableHead className="w-[48px] text-xs uppercase tracking-wide text-muted-foreground">
+                  <span className="sr-only">{t('columns.actions')}</span>
+                </TableHead>
+              ) : null}
+            </TableRow>
+          </TableHeader>
         <TableBody>
           {sorted.length === 0 ? (
             <TableRow>
@@ -333,6 +362,7 @@ export function PlansTable({
               return (
                 <TableRow
                   key={`${plan.plan_year}-${plan.plan_id}`}
+                  className="hover:bg-accent/40"
                   data-plan-id={plan.plan_id}
                   data-plan-year={plan.plan_year}
                 >

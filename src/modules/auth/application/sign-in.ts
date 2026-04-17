@@ -225,6 +225,41 @@ async function signInImpl(
     return err({ code: 'invalid-credentials' });
   }
 
+  // 3d. F3 FR-012a — email change is pending verification on the NEW
+  // address. Refuse sign-in until the verification token is consumed,
+  // which flips `email_verified` back to TRUE. Same neutral response
+  // as the pending-account branch so the state is not leaked.
+  if (!user.emailVerified) {
+    await deps.hasher.verifyDummy(input.password);
+    await deps.audit.append({
+      eventType: 'sign_in_failure',
+      actorUserId: user.id,
+      targetUserId: user.id,
+      sourceIp: input.sourceIp,
+      summary: 'sign-in attempt on unverified email (F3 FR-012a)',
+      requestId: input.requestId,
+    });
+    return err({ code: 'invalid-credentials' });
+  }
+
+  // 3e. F3 FR-012b — a revert fired after a suspicious email change.
+  // Sign-in stays blocked until the user completes a password reset.
+  // `account-disabled` is the nearest F1 error code; the reset-password
+  // landing page reached from the revert-notification email guides
+  // them through recovery.
+  if (user.requiresPasswordReset) {
+    await deps.hasher.verifyDummy(input.password);
+    await deps.audit.append({
+      eventType: 'sign_in_failure',
+      actorUserId: user.id,
+      targetUserId: user.id,
+      sourceIp: input.sourceIp,
+      summary: 'sign-in attempt on user flagged requires_password_reset (F3 FR-012b)',
+      requestId: input.requestId,
+    });
+    return err({ code: 'invalid-credentials' });
+  }
+
   // 4. Lockout check — `isLocked` narrows the type so `lockedUntil` is
   //    `Date`, not `Date | null`. No non-null assertion needed.
   if (isLocked(user, now)) {

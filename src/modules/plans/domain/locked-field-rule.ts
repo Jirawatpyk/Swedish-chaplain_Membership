@@ -83,14 +83,8 @@ function deepEqual(a: unknown, b: unknown): boolean {
   if (a === null || b === null) return false;
   if (typeof a !== typeof b) return false;
   if (typeof a !== 'object') return false;
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i += 1) {
-      if (!deepEqual(a[i], b[i])) return false;
-    }
-    return true;
-  }
+  // Plan locked fields are never arrays — only scalars, nulls, and BenefitMatrix objects.
+  if (Array.isArray(a) || Array.isArray(b)) return false;
   const aKeys = Object.keys(a as Record<string, unknown>);
   const bKeys = Object.keys(b as Record<string, unknown>);
   if (aKeys.length !== bKeys.length) return false;

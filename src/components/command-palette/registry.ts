@@ -51,15 +51,30 @@ export type PaletteNavigateEntry = {
   readonly requires: PaletteRoleRequirement;
 };
 
+// --- Member entity hit shape -------------------------------------------------
+
+export type PaletteMemberEntity = {
+  readonly member_id: string;
+  readonly company_name: string;
+  readonly primary_contact_name: string | null;
+  readonly status: 'active' | 'inactive' | 'archived';
+  readonly url: string;
+};
+
 // --- Server-response contract ------------------------------------------------
 
 /**
  * Shape returned by GET /api/plans/search — matches contracts/plans-api.md § 11.
  * Actions + navigate entries are already role-filtered by the server.
+ *
+ * `members` is populated when the signed-in actor has members:read and
+ * the query returned hits. Empty array when none — the client renders
+ * a heading only when length > 0.
  */
 export type PaletteSearchResponse = {
   readonly results: {
     readonly plans: ReadonlyArray<PalettePlanEntity>;
+    readonly members: ReadonlyArray<PaletteMemberEntity>;
     readonly actions: ReadonlyArray<{
       readonly id: string;
       readonly label: string;

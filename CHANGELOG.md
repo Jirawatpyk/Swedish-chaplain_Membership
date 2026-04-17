@@ -13,6 +13,152 @@ spec / plan / tasks / review / retrospective for each release lives under
 
 ---
 
+## [F3] Members & Contacts — 2026-04-17
+
+**Spec**: [`specs/005-members-contacts/spec.md`](specs/005-members-contacts/spec.md)
+**Plan**: [`specs/005-members-contacts/plan.md`](specs/005-members-contacts/plan.md)
+**Final review**: [`specs/005-members-contacts/reviews/staff-review-20260417-190106-full-round4.md`](specs/005-members-contacts/reviews/staff-review-20260417-190106-full-round4.md) — ✅ APPROVED
+**Final QA**: [`specs/005-members-contacts/qa/qa-20260417-191145.md`](specs/005-members-contacts/qa/qa-20260417-191145.md) — ✅ 473/473 tests pass
+**Spec adherence**: 163/164 tasks (T158 staging perf is human-gated post-ship)
+**Test baseline**: 244 unit + 123 integration (live Neon `ap-southeast-1`) + 106 contract + 13 E2E specs · 722 i18n keys × EN/TH/SV · typecheck + lint clean
+
+### Added
+
+- **Member CRUD (US1–US3)** — company legal-entity records with 20+ fields
+  (tax ID with per-country Thai 13-digit + Luhn-8 + generic checksum validators,
+  turnover/age/startup-duration policy gates, soft-delete with 90-day undelete
+  window). Admin directory with TanStack Table v8 (server-side pagination,
+  substring search via pg_trgm GIN, multi-column filter + sort, URL-synced
+  query state, bulk actions ≤100 rows with rate limit 10-per-10-min per actor).
+- **Contact CRUD with primary-contact invariant** — exactly one primary per
+  member enforced by Postgres partial unique index + atomic demote-before-
+  promote use case. Up to 5 additional secondary contacts.
+- **US3.b email-change flow** — 6-step atomic Postgres transaction: update
+  contact email + flip user `email_verified=false` + revoke all sessions +
+  insert verification token + insert revert token + enqueue two outbox emails.
+  Dual-channel revert-notification to the old address gives 48h takeover
+  recovery window. Revert token resets password + re-verifies email.
+- **Member invitation + portal access (US4)** — admin invites existing contact
+  via F1 invitation flow, outbox dispatcher delivers email, F1 redeem binds
+  `users.id` to `contacts.linked_user_id`. Secondary contacts can invite
+  colleagues (US4 AS4 — primary-only gate).
+- **Member self-service portal (US5)** — signed-in member sees own company +
+  editable contact profile. Whitelist-enforced patch (firstName, lastName,
+  phone, preferredLanguage only — any attempt to touch plan, status,
+  `tenant_id`, `company_name`, etc. emits `member_self_update_forbidden`
+  audit event + 403 response).
+- **Member plan change (US6)** — admin-only `POST /api/members/[id]/change-plan`
+  with turnover + startup-duration re-validation against the NEW plan,
+  override-reason bypass for mid-year adjustments, bundle-change confirmation
+  flow (Partnership tier → different corporate bundle requires explicit
+  `confirm_bundle_change: true` after fetching affected count).
+- **Archive + undelete with session/invitation cascade (US7)** — soft-delete
+  with 90-day undelete window. Archive cascade atomically revokes all F1
+  sessions of linked users + soft-consumes pending invitations (column-level
+  SELECT grant on `invitations.id` prevents raw token exposure per R001).
+  Deduped `user_sessions_revoked` audit per unique linked user (R002).
+- **Timeline** — per-member event feed (joins `audit_log` + F1 `users` via
+  tenant-scoped adapter), paginated.
+- **Smart features** — command palette (extends F2 cmdk), inline + bulk edit,
+  at-risk detection via `members.last_activity_at` (SECURITY DEFINER trigger
+  bumps on every audit event with `member_id` in payload).
+- **23 new F3 audit event types** (see `data-model.md § 4`).
+- **Proactive outbox health observability (L1–L3)**:
+  - **L1 metrics** — new `outboxMetrics.permanentFailure(notificationType)`
+    emitted by the cron dispatcher on every `permanently_failed` flip
+    (both `no_template_handler` + send-failure paths). Counters for alerting.
+  - **L2 stuck-rows check** — inline in the same cron tick, queries
+    `pending` rows whose `next_retry_at` is > 30 min past and emits
+    `outboxMetrics.stuckRows(count)` + `logger.error('cron.outbox_dispatch.stuck_rows_detected')`.
+    Catches "cron is down / CRON_SECRET rotated" class of outage.
+  - **L3 `<OutboxHealthBadge>`** — async Server Component in the admin
+    header (wrapped in `<Suspense fallback={null}>`). Amber alert icon +
+    i18n tooltip (EN/TH/SV, 5 new keys) when `permanently_failed > 0`
+    (last 24 h) or `stuck_pending > 0`. Renders nothing when healthy
+    (zero noise). Gives admins visibility of email-delivery issues without
+    requiring operator log-grep.
+
+### Changed
+
+- **T049 F1 invitation email flow** — migrated from synchronous Resend send
+  inside `createUser` to outbox-backed async dispatch via
+  `notifications_outbox` + `/api/cron/outbox-dispatch` (60s tick, 5 retries
+  with exponential backoff 60s/5m/30m/3h/12h per FR-012c). Eliminates the
+  "admin invite succeeds, email delivery fails silently" class of bug.
+  Compensating `users.deletePending` rolls back the pending user row if
+  invitation-row insert fails, so admin can retry with the same email.
+- **F3 audit ownership consolidated in Application layer** — all 6
+  previously-Infrastructure `tx.insert(auditLog)` sites in
+  `drizzle-member-repo.ts` + `drizzle-contact-repo.ts` moved to their calling
+  use cases via `AuditPort.recordInTx`. Repo ports are now pure CRUD;
+  Application owns audit emission via `throw new UseCaseAbort` pattern for
+  atomic state + audit rollback (Principle VIII).
+- **`invite-colleague` atomicity upgrade** — add + linkUser + audit now in
+  ONE tenant-scoped tx (previously 3 separate txs → orphan contact risk if
+  linkUser failed after add committed).
+
+### Fixed
+
+- **Principle III violations in 4 Application files** — `change-contact-email`,
+  `revert-contact-email`, `resend-verification-email`, `archive-member`
+  previously imported Drizzle schemas directly from `@/modules/auth/infrastructure`.
+  Now all route through ports (`AuditPort.recordInTx`,
+  `ContactRepo.listLinkedUserIdsForMemberInTx`,
+  `InvitationCascadePort.softConsumePendingForUsersInTx`).
+- **W1 audit atomicity regression** — `runInTenant` callbacks used
+  `return err(...)` on sub-step failures, which commits the tx in Drizzle
+  instead of rolling back. Pattern unified to `throw new UseCaseAbort` +
+  outer try/catch across `contact-crud`, `create-member`, `invite-colleague`,
+  `member-self-update`. 9 regression guards locked in via
+  `w1-tx-rollback.test.ts`.
+- **Round-3 outbox hardening** — retry backoff parity between
+  `no_template_handler` and send-failure paths (both now use
+  `RETRY_BACKOFF_SECONDS[]` table, not hardcoded 300s). Null-tenant audit
+  rows now land in the append-only table (was log-only). Dead `sql` import
+  removed. Dev-mode unauthenticated drain now emits loud warn log.
+- **Clear-test-data script FK handling** — explicit `DELETE FROM invitations
+  WHERE user_id IN (...) OR invited_by_user_id IN (...)` before user delete
+  (fixes `ON DELETE restrict` FK failure on `invitations_invited_by_user_id`).
+- **E2E suite stability** — locale detection in `i18n/request.ts`, logger
+  worker safety on Playwright boot, reduced-motion + target-size assertions,
+  title-race fixes across 4 spec files.
+
+### Technical Notes
+
+- **2 new DB tables** (`members`, `contacts`) + migrations 0009–0017 (including
+  RLS+FORCE policies, `pg_trgm` GIN index on `company_name` for SC-002 p95
+  = 258 ms < 500 ms @ 5 k rows, `SECURITY DEFINER` trigger bumping
+  `members.last_activity_at` from any audit event carrying `member_id` in
+  payload, invitations column-level SELECT grant tightening for R001).
+- **Constitution v1.4.0 Principle I Review-Gate** — 14/14 cross-tenant
+  integration tests green (`tenant-isolation.test.ts`). Two-layer isolation:
+  `runInTenant(ctx, fn)` application-layer wrapper + `SET LOCAL app.current_tenant`
+  + `SET LOCAL ROLE chamber_app` (NOBYPASSRLS) + FORCE RLS policies on
+  every tenant-scoped table.
+- **New bounded-context module** `src/modules/members/` with Domain (entities,
+  value objects, policies), Application (19 use cases, 10 ports), Infrastructure
+  (Drizzle repos, Resend + outbox adapters, audit adapter, timeline repo).
+  Public barrel `src/modules/members/index.ts` re-exports types + use cases.
+- **New ports added this feature**: `ContactRepo` (6 InTx methods after S1),
+  `AuditPort` (F3 event union of 23 types + `targetUserId` opt-in),
+  `PlanLookupPort`, `EmailPort` (outbox-enqueue variant), `EmailChangeTokenPort`,
+  `UserEmailPort`, `SessionRevocationPort`, `InvitationCascadePort`,
+  `TimelinePort`, `ClockPort`.
+- **WCAG 2.2 opportunistic adoption** — SC 2.4.11 (Focus Not Obscured) + SC
+  2.5.8 (Target Size ≥24×24px) asserted via E2E specs. Button height raised
+  32→36 px project-wide as part of F4 prerequisite.
+- **Observability** — 12 new F3 metrics (members API latency, search latency,
+  bulk rows-per-action, cross-tenant-probe counter, self-update-forbidden
+  counter, email-change lifecycle counter, bundle-warning latency, outbox
+  dispatch latency/failures, invite count, archive cascade cardinality) + 6
+  new F3 SLOs + 3 runbooks (R-M01 member-data leak, R-M02 outbox poison-pill,
+  R-M03 admin-compromise scenario) documented in `docs/observability.md § 14`.
+- **Post-F3 backlog** — `auth_invitation_enqueue_failed_total` dashboard +
+  alert wiring deferred until Grafana Cloud provisioned (F2+ roadmap),
+  documented in `docs/observability.md § 15`.
+
+---
+
 ## [F4] Page Layout Enterprise Standardization — 2026-04-13
 
 **Spec**: [`specs/004-page-layout-standard/spec.md`](specs/004-page-layout-standard/spec.md)

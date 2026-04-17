@@ -50,9 +50,14 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 
-const stubEmailSender = {
-  send: async () => ok({ messageId: 'stub' }),
-};
+// T049 + Path C: createUser now enqueues an outbox row inside the
+// same db.transaction(...) that wraps user + invitation inserts. Stub
+// matches the EnqueueInvitationInTxFn signature (takes tx + request,
+// returns Result<T,E>). The tx argument is ignored — the stub just
+// records a synthetic outbox id so we exercise the post-enqueue code
+// path without hitting notifications_outbox.
+const stubEnqueueInvitationInTx = async () =>
+  ok({ outboxRowId: 'stub-outbox-id' });
 
 const unlimitedLimiter = {
   check: async () => ({
@@ -90,7 +95,7 @@ describe('integration: invitation flow (happy path + replay)', () => {
         sourceIp: '203.0.113.11',
         requestId: inviteRequestId,
       },
-      { ...defaultCreateUserDeps, email: stubEmailSender },
+      { ...defaultCreateUserDeps, enqueueInvitationInTx: stubEnqueueInvitationInTx },
     );
     expect(inviteResult.ok).toBe(true);
     if (!inviteResult.ok) return;

@@ -264,3 +264,15 @@ export {
   type UpdateFeeConfigError,
   type UpdateFeeConfigDeps,
 } from './application/update-fee-config';
+
+// --- Schema tables (read-only, for sibling-module joins) --------------------
+//
+// Expose the Drizzle table object so sibling modules (F3 members, future
+// F4 invoices, etc.) can alias + JOIN against plans in their own queries
+// without duplicating the column definitions or reaching into
+// `./infrastructure/db/**` (ESLint-blocked). This is a deliberate
+// architectural decision: the table shape IS the plans module's
+// public read contract. Mutations still go through the Application-
+// layer use cases; sibling modules MUST NOT call INSERT/UPDATE on
+// this handle.
+export { membershipPlans } from './infrastructure/db/schema';

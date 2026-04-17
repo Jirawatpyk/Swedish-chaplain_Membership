@@ -1,0 +1,2 @@
+{"error":"csrf-rejected","reason":"missing-origin"}
+HTTP: 403

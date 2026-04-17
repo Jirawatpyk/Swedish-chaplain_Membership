@@ -23,6 +23,7 @@ vi.mock('@/lib/env', () => ({
   env: {
     isDevelopment: true,
     flags: { readOnlyMode: true },
+    features: { f3Members: true },
     app: { allowedOrigins: ['http://localhost:3100'] },
   },
 }));
@@ -91,5 +92,18 @@ describe('integration: proxy READ_ONLY_MODE (T044, FR-007)', () => {
     const response = proxy(makeRequest('POST'));
     expect(response.headers.get('strict-transport-security')).toContain('max-age');
     expect(response.headers.get('x-frame-options')).toBe('DENY');
+  });
+
+  // US5 AS5 — portal paths honour READ_ONLY_MODE the same as auth paths.
+  it('PATCH /api/portal/profile → 503 read-only-mode (US5 AS5)', async () => {
+    const response = proxy(makeRequest('PATCH', '/api/portal/profile'));
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body.error).toBe('read-only-mode');
+  });
+
+  it('GET /api/portal/profile → passes through in read-only mode (US5 AS5)', async () => {
+    const response = proxy(makeRequest('GET', '/api/portal/profile'));
+    expect(response.status).toBe(200);
   });
 });

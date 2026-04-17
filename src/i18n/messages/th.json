@@ -103,6 +103,35 @@
       },
       "contactHeading": "ต้องการความช่วยเหลือ?",
       "contactDescription": "จนกว่าระบบบริการตนเองจะพร้อม กรุณาส่งอีเมลถึงเรา เราจะช่วยคุณโดยตรง"
+    },
+    "emailChangeRevert": {
+      "title": "ย้อนกลับการเปลี่ยนอีเมล",
+      "cardDescription": "อีเมลติดต่อในบัญชี SweCham ของคุณถูกเปลี่ยนแปลง หากคุณไม่ได้เป็นผู้ขอ คลิกด้านล่างเพื่อย้อนกลับและตั้งรหัสผ่านใหม่",
+      "description": "การย้อนกลับจะคืนอีเมลเดิม ออกจากระบบทุกเซสชันที่ใช้งาน และกำหนดให้คุณตั้งรหัสผ่านใหม่ก่อนเข้าสู่ระบบอีกครั้ง",
+      "revert": "ย้อนกลับและตั้งรหัสผ่านใหม่",
+      "submitting": "กำลังย้อนกลับ…",
+      "successMessage": "ย้อนกลับการเปลี่ยนอีเมลเรียบร้อยแล้ว ทำการรีเซ็ตรหัสผ่านให้เสร็จเพื่อกลับมาใช้งาน",
+      "completePasswordReset": "ทำการรีเซ็ตรหัสผ่าน",
+      "errors": {
+        "invalidToken": "ลิงก์ย้อนกลับนี้หมดอายุหรือถูกใช้ไปแล้ว",
+        "conflict": "อีเมลเดิมไม่พร้อมใช้งานแล้ว โปรดติดต่อผู้ดูแลหอการค้าของคุณ",
+        "rateLimited": "พยายามมากเกินไป ลองอีกครั้งใน {seconds} วินาที",
+        "serverError": "เกิดข้อผิดพลาด โปรดลองอีกครั้ง"
+      }
+    },
+    "emailVerification": {
+      "title": "ยืนยันที่อยู่อีเมล",
+      "cardDescription": "กำลังยืนยันที่อยู่อีเมลใหม่ของคุณ — โปรดรอสักครู่",
+      "verifying": "กำลังยืนยันที่อยู่อีเมลของคุณ…",
+      "successMessage": "ยืนยันอีเมลเรียบร้อย คุณสามารถเข้าสู่ระบบได้แล้ว",
+      "signInCta": "ไปที่หน้าเข้าสู่ระบบ",
+      "retry": "ลองใหม่",
+      "errors": {
+        "invalidToken": "ลิงก์ยืนยันนี้หมดอายุหรือถูกใช้ไปแล้ว",
+        "notYetActive": "ลิงก์นี้ยังไม่พร้อมใช้งาน ลองอีกครั้งใน {seconds} วินาที",
+        "rateLimited": "พยายามมากเกินไป ลองอีกครั้งใน {seconds} วินาที",
+        "serverError": "เกิดข้อผิดพลาด โปรดลองอีกครั้ง"
+      }
     }
   },
   "shell": {
@@ -157,13 +186,27 @@
     },
     "users": {
       "title": "ผู้ใช้",
-      "subtitle": "ทั้งหมด {total} บัญชี",
       "pageSubtitle": "จัดการบัญชีเจ้าหน้าที่และสมาชิก สิทธิ์ และสถานะการใช้งาน",
-      "viewingAs": "กำลังดูในฐานะ {role}",
-      "listHeading": "บัญชีทั้งหมด",
-      "listDescription": "เชิญ ระงับ เปิดใช้งาน หรือเปลี่ยนสิทธิ์ การทำรายการที่มีผลกระทบต้องยืนยันก่อน",
       "empty": "ยังไม่มีผู้ใช้ เชิญคนแรกเพื่อเริ่มต้น",
-      "refreshHint": "การเปลี่ยนแปลงจะมีผลทันทีหลังยืนยัน",
+      "filters": {
+        "searchPlaceholder": "ค้นหาด้วยอีเมลหรือชื่อที่แสดง",
+        "searchSrLabel": "ค้นหาผู้ใช้",
+        "role": {
+          "label": "สิทธิ์",
+          "all": "ทุกสิทธิ์",
+          "admin": "ผู้ดูแลระบบ",
+          "manager": "ผู้จัดการ",
+          "member": "สมาชิก"
+        },
+        "status": {
+          "label": "สถานะ",
+          "all": "ทุกสถานะ",
+          "active": "ใช้งาน",
+          "disabled": "ระงับ",
+          "pending": "รอดำเนินการ"
+        },
+        "clear": "ล้างตัวกรอง"
+      },
       "columns": {
         "email": "อีเมล",
         "name": "ชื่อ",
@@ -222,7 +265,6 @@
     "plans": {
       "title": "แพ็กเกจสมาชิก",
       "subtitle": "มีแพ็กเกจทั้งหมด {total} รายการในปี {year}",
-      "listHeading": "แคตตาล็อกแพ็กเกจ",
       "listDescription": "จัดการคำจำกัดความของแต่ละระดับสมาชิก ค่าธรรมเนียมรายปี และตารางสิทธิประโยชน์ แพ็กเกจของปีก่อนถูกล็อกบางส่วนเพื่อรักษาความถูกต้องของการตรวจสอบ",
       "empty": {
         "title": "ยังไม่มีแพ็กเกจสำหรับปีนี้",
@@ -230,7 +272,6 @@
         "newCta": "สร้างแพ็กเกจ",
         "cloneCta": "คัดลอก {sourceYear} → {targetYear}"
       },
-      "refreshHint": "การเปลี่ยนแปลงมีผลทันทีและถูกบันทึกในประวัติการตรวจสอบ",
       "columns": {
         "name": "ชื่อแพ็กเกจ",
         "category": "ประเภท",
@@ -444,29 +485,370 @@
           "validation": "กรุณาแก้ไขฟิลด์ที่ถูกทำเครื่องหมายไว้"
         }
       }
+    },
+    "members": {
+      "title": "สมาชิก",
+      "overrideReason": {
+        "title": "เหตุผลในการข้ามการตรวจสอบ",
+        "description": "ระบุเหตุผลที่ดำเนินการต่อแม้มีคำเตือน เหตุผลนี้จะถูกบันทึกใน audit log",
+        "codeLabel": "เหตุผล",
+        "codePlaceholder": "เลือกเหตุผล…",
+        "noteLabel": "หมายเหตุ",
+        "noteRequired": "จำเป็นต้องระบุเมื่อเลือก \"อื่นๆ\"",
+        "notePlaceholder": "เพิ่มรายละเอียด (ไม่เกิน 500 ตัวอักษร)…",
+        "proceed": "ข้ามการตรวจสอบ",
+        "cancel": "ยกเลิก",
+        "codes": {
+          "board_approved": "คณะกรรมการอนุมัติ",
+          "pending_renewal_grace": "รอต่ออายุ (ช่วงผ่อนผัน)",
+          "data_correction": "แก้ไขข้อมูล",
+          "other": "อื่นๆ"
+        }
+      },
+      "bundleChangeWarning": {
+        "title": "การเปลี่ยน bundle",
+        "description": "การเปลี่ยนแพ็กเกจจะเปลี่ยน corporate tier ที่ผูกไว้ โดยกระทบ {affectedCount, plural, =0 {ไม่มีสมาชิก} other {# ราย}} บน partnership เดิม",
+        "oldBundle": "Bundle เดิม",
+        "newBundle": "Bundle ใหม่",
+        "affectedCount": "{count, plural, =0 {ไม่มีสมาชิกที่กระทบ} other {กระทบ # ราย}}",
+        "confirm": "ยืนยันการเปลี่ยน bundle",
+        "cancel": "ยกเลิก",
+        "loading": "กำลังคำนวณจำนวนสมาชิกที่กระทบ…"
+      },
+      "subtitle": "บริษัทสมาชิก + ผู้ติดต่อหลัก",
+      "directory": {
+        "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ชื่อผู้ติดต่อ หรืออีเมล",
+        "searchSrLabel": "ค้นหาสมาชิก",
+        "clearFilters": "ล้างตัวกรอง",
+        "filters": {
+          "status": {
+            "label": "สถานะ",
+            "all": "ทุกสถานะ",
+            "active": "ใช้งาน",
+            "inactive": "หยุดใช้งาน",
+            "archived": "จัดเก็บแล้ว"
+          },
+          "plan": {
+            "label": "แพ็กเกจ",
+            "all": "ทุกแพ็กเกจ"
+          }
+        },
+        "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
+        "columns": {
+          "company": "บริษัท",
+          "country": "ประเทศ",
+          "plan": "แพ็กเกจ",
+          "year": "ปี",
+          "primaryContact": "ผู้ติดต่อหลัก",
+          "status": "สถานะ",
+          "risk": "ความเสี่ยง",
+          "lastActivity": "กิจกรรมล่าสุด",
+          "notes": "โน้ต"
+        },
+        "riskPlaceholder": "—",
+        "rowAriaLabel": "เปิดรายละเอียด {company}",
+        "noPrimary": "ไม่มีผู้ติดต่อหลัก",
+        "loadMore": "โหลดเพิ่ม",
+        "selectAll": "เลือกทุกแถว",
+        "selectRow": "เลือก {company}",
+        "selectedCount": "เลือกแล้ว {count} แถว",
+        "selectAllMatchingHint": "เลือก {count} รายการในหน้านี้ <loadMore>โหลดหน้าถัดไป</loadMore> เพื่อเลือกเพิ่ม"
+      },
+      "emptyStates": {
+        "zero": {
+          "title": "ยังไม่มีสมาชิก",
+          "description": "เริ่มต้นด้วยการเพิ่มสมาชิกรายแรก",
+          "cta": "เพิ่มสมาชิกรายแรก"
+        },
+        "filtered": {
+          "title": "ไม่พบสมาชิกตามตัวกรอง",
+          "description": "ลองล้างตัวกรองบางส่วน",
+          "cta": "ล้างตัวกรอง"
+        },
+        "error": {
+          "title": "โหลดข้อมูลสมาชิกไม่สำเร็จ",
+          "description": "เกิดข้อผิดพลาดบนเซิร์ฟเวอร์ขณะโหลดรายการ",
+          "cta": "ลองอีกครั้ง"
+        }
+      },
+      "detail": {
+        "title": "{companyName}",
+        "sections": {
+          "company": "ข้อมูลบริษัท",
+          "contacts": "ผู้ติดต่อ",
+          "primary": "ผู้ติดต่อหลัก",
+          "secondary": "ผู้ติดต่ออื่น",
+          "plan": "แพ็กเกจ",
+          "audit": "กิจกรรมล่าสุด"
+        },
+        "fields": {
+          "legalEntityType": "ประเภทนิติบุคคล",
+          "country": "ประเทศ",
+          "taxId": "เลขประจำตัวผู้เสียภาษี",
+          "website": "เว็บไซต์",
+          "description": "คำอธิบาย",
+          "foundedYear": "ปีที่ก่อตั้ง",
+          "turnoverThb": "ยอดขายต่อปี (บาท)",
+          "planId": "รหัสแพ็กเกจ",
+          "planYear": "ปีแพ็กเกจ",
+          "registrationDate": "วันที่สมัคร",
+          "registrationFeePaid": "ค่าสมัคร",
+          "registrationFeePaidYes": "ชำระแล้ว",
+          "registrationFeePaidNo": "ยังไม่ชำระ",
+          "status": "สถานะ",
+          "lastActivityAt": "กิจกรรมล่าสุด",
+          "archivedAt": "วันที่จัดเก็บ",
+          "notes": "หมายเหตุภายใน",
+          "firstName": "ชื่อ",
+          "lastName": "นามสกุล",
+          "email": "อีเมล",
+          "phone": "โทรศัพท์",
+          "roleTitle": "ตำแหน่ง",
+          "preferredLanguage": "ภาษาที่ต้องการ",
+          "plan": "แพ็กเกจ"
+        },
+        "copy": {
+          "copyMemberId": "คัดลอกรหัสสมาชิก",
+          "copyEmail": "คัดลอกอีเมล",
+          "copyTaxId": "คัดลอกเลขภาษี",
+          "copied": "คัดลอกแล้ว"
+        },
+        "notFound": {
+          "title": "ไม่พบสมาชิก",
+          "description": "สมาชิกรายนี้อาจถูกจัดเก็บ หรือ URL ไม่ถูกต้อง",
+          "cta": "กลับไปรายการสมาชิก"
+        },
+        "unknown": "—",
+        "emergencyPrimary": {
+          "ariaLabel": "ช่วยเหลือ — การโอนผู้ติดต่อหลักฉุกเฉิน",
+          "title": "การโอนผู้ติดต่อหลักฉุกเฉิน",
+          "body": "ต้องการโอนผู้ติดต่อหลักไปยังบุคคลใหม่ (เช่น ผู้ติดต่อหลักคนก่อนลาออก) ใช่หรือไม่? คลิก \"เพิ่มผู้ติดต่อ\" เพื่อสร้างผู้ติดต่อรองด้วยข้อมูลของบุคคลใหม่ จากนั้นใช้ \"เลื่อนขั้น\" เพื่อทำให้เป็นผู้ติดต่อหลักใหม่ ผู้ติดต่อหลักเดิมจะถูกลดระดับอัตโนมัติ"
+        },
+        "portal": {
+          "linked": "เชื่อมบัญชีพอร์ทัล"
+        },
+        "editCta": "แก้ไข"
+      },
+      "timeline": {
+        "pageTitle": "ไทม์ไลน์ · {companyName} · SweCham",
+        "title": "ไทม์ไลน์",
+        "subtitle": "ประวัติกิจกรรมของสมาชิกรายนี้",
+        "empty": "ยังไม่มีกิจกรรมที่บันทึกไว้",
+        "loadMore": "โหลดเหตุการณ์เก่ากว่า",
+        "loading": "กำลังโหลดไทม์ไลน์…",
+        "actor": "โดย {actor}",
+        "actorSystem": "ระบบ",
+        "eventAt": "{date}",
+        "backToDetail": "กลับไปยังสมาชิก",
+        "totalEvents": "{count, plural, other {# เหตุการณ์}}",
+        "payload": {
+          "primary": "ผู้ติดต่อหลัก",
+          "primaryContactPromoted": "เลื่อนขึ้นเป็นผู้ติดต่อหลัก"
+        }
+      },
+      "create": {
+        "pageTitle": "เพิ่มสมาชิก · SweCham",
+        "title": "เพิ่มสมาชิก",
+        "subtitle": "สร้างบริษัทสมาชิกพร้อมผู้ติดต่อหลัก",
+        "requiredNote": "* ช่องที่ต้องกรอก",
+        "submit": "สร้างสมาชิก",
+        "submitting": "กำลังบันทึก…",
+        "cancel": "ยกเลิก",
+        "sections": {
+          "company": "ข้อมูลบริษัท",
+          "primaryContact": "ผู้ติดต่อหลัก"
+        },
+        "fields": {
+          "companyName": "ชื่อบริษัท",
+          "legalEntityType": "ประเภทนิติบุคคล",
+          "country": "ประเทศ (ISO alpha-2)",
+          "taxId": "เลขประจำตัวผู้เสียภาษี",
+          "taxIdHintTH": "เลข 13 หลัก พร้อม checksum ตามเกณฑ์สรรพากร",
+          "website": "เว็บไซต์",
+          "description": "คำอธิบาย",
+          "foundedYear": "ปีก่อตั้ง",
+          "turnoverThb": "ยอดขายต่อปี (บาท)",
+          "plan": "แพ็กเกจ",
+          "planPlaceholder": "เลือกแพ็กเกจ…",
+          "planYear": "ปีแพ็กเกจ",
+          "registrationDate": "วันที่สมัคร",
+          "firstName": "ชื่อ",
+          "lastName": "นามสกุล",
+          "email": "อีเมล",
+          "phone": "โทรศัพท์ (รูปแบบ E.164)",
+          "roleTitle": "ตำแหน่ง",
+          "preferredLanguage": "ภาษาที่ต้องการ",
+          "dateOfBirth": "วันเกิด",
+          "dateOfBirthHint": "จำเป็นสำหรับแพ็กเกจ Thai Alumni",
+          "notes": "โน้ต (สำหรับแอดมินเท่านั้น)",
+          "notesPlaceholder": "บันทึกภายในสำหรับแอดมิน…",
+          "notesHint": "มองเห็นได้เฉพาะเจ้าหน้าที่หอการค้า ไม่แสดงต่อสมาชิก"
+        },
+        "errors": {
+          "generic": "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง",
+          "validation": "กรุณาแก้ไขช่องที่ไฮไลท์",
+          "forbidden": "เฉพาะผู้ดูแลระบบเท่านั้นที่เพิ่มสมาชิกได้",
+          "planMissing": "ไม่พบแพ็กเกจที่ใช้งานอยู่ — สร้างแพ็กเกจก่อน"
+        },
+        "success": "สร้างสมาชิกสำเร็จ"
+      },
+      "softDuplicate": {
+        "title": "พบข้อมูลที่อาจซ้ำ",
+        "description": "มีสมาชิกที่ใช้ชื่อบริษัทและประเทศเดียวกันในระบบแล้ว กรุณาดำเนินการต่อเมื่อแน่ใจว่าเป็นคนละนิติบุคคล (เช่น บริษัทลูก แฟรนไชส์)",
+        "existingLabel": "สมาชิกที่มีอยู่",
+        "openExisting": "เปิดข้อมูลเดิม",
+        "proceed": "ดำเนินการต่อ",
+        "cancel": "ยกเลิก"
+      },
+      "edit": {
+        "pageTitle": "แก้ไข {companyName} · SweCham",
+        "title": "แก้ไขสมาชิก",
+        "subtitle": "ปรับปรุงข้อมูลสมาชิก แพ็กเกจ หรือผู้ติดต่อหลัก",
+        "submit": "บันทึกการเปลี่ยนแปลง",
+        "submitting": "กำลังบันทึก…",
+        "cancel": "ยกเลิก",
+        "success": "อัปเดตสมาชิกสำเร็จ",
+        "contactsHeading": "ผู้ติดต่อ",
+        "addContact": "เพิ่มผู้ติดต่อ",
+        "primary": "หลัก",
+        "promoteLabel": "เลื่อนเป็นผู้ติดต่อหลัก",
+        "removeLabel": "ลบผู้ติดต่อ",
+        "removeConfirmTitle": "ลบผู้ติดต่อ?",
+        "removeConfirmDescription": "จะทำการ soft-delete ผู้ติดต่อนี้ บันทึกจะถูกเก็บไว้สำหรับ audit แต่จะไม่แสดงในระบบ",
+        "removeConfirm": "ลบ",
+        "addHelpTip": "การเปลี่ยนผู้ติดต่อหลักกรณีฉุกเฉิน — \"เพิ่มผู้ติดต่อ\" ก่อนแล้ว \"เลื่อนเป็นผู้ติดต่อหลัก\"",
+        "errors": {
+          "generic": "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง",
+          "notFound": "ไม่พบสมาชิก",
+          "validation": "กรุณาแก้ไขช่องที่ไฮไลท์",
+          "contactNotFound": "ไม่พบผู้ติดต่อ",
+          "cannotRemovePrimary": "ลบผู้ติดต่อหลักไม่ได้ ต้องเลื่อนผู้ติดต่ออื่นเป็นหลักก่อน"
+        }
+      },
+      "contactForm": {
+        "title": "เพิ่มผู้ติดต่อ",
+        "editTitle": "แก้ไขผู้ติดต่อ",
+        "submit": "บันทึก",
+        "submitting": "กำลังบันทึก…",
+        "cancel": "ยกเลิก"
+      },
+      "addMember": "เพิ่มสมาชิก",
+      "invitePortal": {
+        "label": "เชิญเข้าพอร์ทัล",
+        "submitting": "กำลังส่ง…",
+        "success": "ส่งคำเชิญเรียบร้อยแล้ว",
+        "errors": {
+          "alreadyLinked": "ผู้ติดต่อนี้เชื่อมบัญชีพอร์ทัลไว้แล้ว",
+          "noEmail": "กรุณาเพิ่มอีเมลให้ผู้ติดต่อนี้ก่อนเชิญ",
+          "invalidEmail": "อีเมลของผู้ติดต่อไม่ถูกต้อง",
+          "emailTaken": "อีเมลนี้ถูกใช้งานโดยบัญชีอื่นแล้ว",
+          "notFound": "ไม่พบผู้ติดต่อ",
+          "serverError": "เกิดข้อผิดพลาด โปรดลองอีกครั้ง"
+        }
+      },
+      "bulk": {
+        "toolbarLabel": "ดำเนินการเป็นชุด",
+        "selectedCount": "เลือกแล้ว {count} รายการ",
+        "overCap": "สูงสุด {max} สมาชิกต่อชุด กรุณาแบ่งรายการ",
+        "actions": {
+          "archive": "ย้ายไปถังเก็บ",
+          "change_plan": "เปลี่ยนแพ็กเกจ",
+          "send_portal_invite": "ส่งคำเชิญ"
+        },
+        "clear": "ล้างการเลือก",
+        "archiveTitle": "ย้าย {count} สมาชิก ไปถังเก็บ",
+        "archiveDescription": "สมาชิกที่อยู่ในถังเก็บจะถูกซ่อนจากรายชื่อ และบัญชีพอร์ทัลที่เชื่อมจะถูกเพิกถอน กู้คืนได้ภายใน 90 วัน",
+        "affectedMembers": "สมาชิกที่ได้รับผลกระทบ",
+        "andMore": "…และอีก {count} ราย",
+        "typeToConfirm": "พิมพ์ \"{phrase}\" เพื่อยืนยัน",
+        "archivePhrase": "ย้าย {count} สมาชิก ไปถังเก็บ",
+        "cancel": "ยกเลิก",
+        "confirmArchive": "ย้าย {count} สมาชิก ไปถังเก็บ",
+        "success": "ดำเนินการ {action} สำเร็จ {count} สมาชิก",
+        "rateLimited": "ดำเนินการเป็นชุดมากเกินไป รอสักครู่แล้วลองใหม่",
+        "unknownError": "เกิดข้อผิดพลาด",
+        "networkError": "เครือข่ายมีปัญหา ตรวจสอบการเชื่อมต่อ",
+        "progressLabel": "กำลังดำเนินการเป็นชุด",
+        "progressMessage": "กำลัง{action} {count} สมาชิก…",
+        "elapsedSeconds": "เวลาที่ใช้ไป: {seconds} วินาที"
+      },
+      "inlineEdit": {
+        "statusUpdated": "อัปเดตสถานะแล้ว",
+        "saveFailed": "บันทึกไม่สำเร็จ ย้อนกลับแล้ว",
+        "saving": "กำลังบันทึก…",
+        "toggleStatus": "สลับสถานะ (ปัจจุบัน: {current})",
+        "editCountry": "แก้ไขประเทศ",
+        "editCountryHint": "ดับเบิลคลิกเพื่อแก้ไขรหัสประเทศ (ISO 3166-1 alpha-2)",
+        "countryUpdated": "อัปเดตประเทศแล้ว",
+        "countryInvalid": "รหัสประเทศต้องเป็น 2 ตัวอักษร ISO",
+        "countryInput": "รหัสประเทศ (2 ตัวอักษร)",
+        "editNotes": "แก้ไขโน้ต",
+        "editNotesHint": "ดับเบิลคลิกเพื่อแก้ไขโน้ต",
+        "notesUpdated": "อัปเดตโน้ตแล้ว",
+        "notesSaved": "บันทึกโน้ตแล้ว",
+        "notesInput": "แก้ไขโน้ต",
+        "notesPlaceholder": "เพิ่มโน้ต…",
+        "networkError": "เครือข่ายมีปัญหา ตรวจสอบการเชื่อมต่อ"
+      },
+      "archive": {
+        "archiveCta": "เก็บถาวรสมาชิก",
+        "confirmTitle": "เก็บถาวร {companyName}?",
+        "confirmDescription": "การเก็บถาวรจะซ่อนสมาชิกออกจากไดเรกทอรีหลักและยกเลิกเซสชันพอร์ทัลที่เชื่อมโยง คุณสามารถกู้คืนได้ภายใน 90 วัน",
+        "reasonLabel": "เหตุผล (ไม่บังคับ)",
+        "reasonPlaceholder": "เช่น บริษัทปิดกิจการ ยกเลิกสมาชิก",
+        "reasonHelper": "สูงสุด 500 อักขระ ผู้ดูแลระบบอื่นจะเห็นในบันทึกตรวจสอบ",
+        "cancel": "ยกเลิก",
+        "confirmCta": "เก็บถาวร",
+        "archivingInProgress": "กำลังเก็บถาวร…",
+        "archiveSuccess": "เก็บถาวร {companyName} แล้ว",
+        "archiveError": "ไม่สามารถเก็บถาวรได้ โปรดลองใหม่อีกครั้ง",
+        "bannerTitle": "เก็บถาวรเมื่อ {date}",
+        "withinWindow": "เหลือ {daysRemaining} วันในช่วง 90 วันสำหรับการกู้คืน",
+        "windowExpired": "เก็บถาวรเมื่อ {daysSinceArchive} วันก่อน เกินช่วง 90 วันสำหรับการกู้คืนแล้ว",
+        "windowExpiredTooltip": "เก็บถาวรเกิน 90 วัน กรุณาติดต่อผู้ดูแลแพลตฟอร์มเพื่อกู้คืน",
+        "undeleteCta": "กู้คืน",
+        "undeleteSuccess": "กู้คืนสมาชิกแล้ว",
+        "undeleteError": "ไม่สามารถกู้คืนได้ โปรดลองใหม่อีกครั้ง",
+        "windowExpiredToast": "ช่วงเวลากู้คืน (90 วัน) หมดแล้ว กรุณาติดต่อผู้ดูแลแพลตฟอร์มเพื่อกู้คืน"
+      },
+      "undelete": {
+        "cta": "กู้คืน",
+        "confirmTitle": "กู้คืนสมาชิก?",
+        "confirmDescription": "การกู้คืนจะเปิดใช้งานข้อมูลสมาชิกอีกครั้ง ผู้ใช้พอร์ทัลที่เชื่อมโยงต้องเข้าสู่ระบบใหม่",
+        "success": "กู้คืนสมาชิกแล้ว",
+        "error": "ไม่สามารถกู้คืนได้ โปรดลองใหม่อีกครั้ง"
+      }
+    },
+    "outboxHealth": {
+      "label": "ตรวจพบปัญหาการส่งอีเมล",
+      "permanentFailed": "{count, plural, one {อีเมล # ฉบับส่งไม่สำเร็จถาวร} other {อีเมล # ฉบับส่งไม่สำเร็จถาวร}} ใน 24 ชั่วโมงที่ผ่านมา",
+      "stuckPending": "{count, plural, one {อีเมล # ฉบับค้างอยู่} other {อีเมล # ฉบับค้างอยู่}} ในคิว (อาจมีปัญหากับ cron)"
     }
   },
   "palette": {
     "title": "คอมมานด์พาเลตต์",
     "description": "ค้นหาแพ็กเกจ การดำเนินการ หรือหน้าเพื่อเรียกใช้",
-    "placeholder": "ค้นหาแพ็กเกจ การดำเนินการ และหน้า…",
+    "placeholder": "ค้นหาแผน สมาชิก การกระทำ และหน้า…",
     "empty": "ไม่พบผลลัพธ์",
     "groups": {
       "plans": "แพ็กเกจ",
       "actions": "การดำเนินการ",
-      "navigate": "ไปยัง"
+      "navigate": "ไปยัง",
+      "members": "สมาชิก"
     },
     "actions": {
       "newPlan": "สร้างแพ็กเกจใหม่",
       "cloneYear": "คัดลอกปี",
       "editFees": "แก้ไขการตั้งค่าค่าธรรมเนียม",
-      "viewAuditLog": "ดูประวัติการตรวจสอบ"
+      "viewAuditLog": "ดูประวัติการตรวจสอบ",
+      "newMember": "สร้างสมาชิกใหม่"
     },
     "navigate": {
       "plansList": "รายการแพ็กเกจ",
       "feeConfig": "การตั้งค่าค่าธรรมเนียม",
       "usersList": "รายการผู้ใช้",
-      "dashboard": "แดชบอร์ด"
+      "dashboard": "แดชบอร์ด",
+      "membersList": "รายการสมาชิก"
     }
   },
   "nav": {
@@ -482,10 +864,12 @@
       },
       "collapse": "ย่อแถบด้านข้าง",
       "expand": "ขยายแถบด้านข้าง",
-      "ariaLabel": "เมนูนำทางสำหรับเจ้าหน้าที่"
+      "ariaLabel": "เมนูนำทางสำหรับเจ้าหน้าที่",
+      "members": "สมาชิก"
     },
     "member": {
       "dashboard": "แดชบอร์ด",
+      "profile": "โปรไฟล์",
       "account": "บัญชีของฉัน",
       "ariaLabel": "เมนูนำทางสำหรับสมาชิก"
     }
@@ -500,7 +884,11 @@
     "account": "บัญชี",
     "newPlan": "แผนใหม่",
     "clonePlan": "คัดลอกแผน",
-    "editPlan": "แก้ไข"
+    "editPlan": "แก้ไข",
+    "members": "สมาชิก",
+    "memberDetail": "รายละเอียด",
+    "newMember": "เพิ่มสมาชิก",
+    "editMember": "แก้ไข"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",
@@ -509,5 +897,121 @@
     "loadingPage": "กำลังโหลดเนื้อหา",
     "loadingTable": "กำลังโหลดตารางข้อมูล",
     "loadingForm": "กำลังโหลดแบบฟอร์ม"
+  },
+  "portal": {
+    "profile": {
+      "title": "โปรไฟล์ของฉัน",
+      "pageTitle": "โปรไฟล์ของฉัน",
+      "notLinked": "บัญชีของคุณยังไม่ได้เชื่อมต่อกับสมาชิก กรุณาติดต่อผู้ดูแลระบบ",
+      "loadError": "ไม่สามารถโหลดโปรไฟล์ได้ กรุณาลองใหม่อีกครั้ง",
+      "editButton": "แก้ไขโปรไฟล์",
+      "companySection": "ข้อมูลบริษัท",
+      "planSection": "แผนสมาชิกภาพ",
+      "contactsSection": "ผู้ติดต่อ",
+      "inviteColleague": "เชิญเพื่อนร่วมงาน",
+      "primaryBadge": "หลัก",
+      "portalLinked": "เชื่อมต่อพอร์ทัลแล้ว",
+      "noContacts": "ไม่พบผู้ติดต่อ",
+      "fields": {
+        "companyName": "ชื่อบริษัท",
+        "legalEntityType": "ประเภทนิติบุคคล",
+        "country": "ประเทศ",
+        "website": "เว็บไซต์",
+        "description": "รายละเอียด",
+        "planYear": "ปีแผน",
+        "registrationDate": "วันที่ลงทะเบียน",
+        "status": "สถานะ"
+      },
+      "status": {
+        "active": "ใช้งาน",
+        "inactive": "ไม่ใช้งาน",
+        "archived": "เก็บถาวร"
+      }
+    },
+    "edit": {
+      "pageTitle": "แก้ไขโปรไฟล์",
+      "notLinked": "บัญชีของคุณยังไม่ได้เชื่อมต่อกับสมาชิก",
+      "loadError": "ไม่สามารถโหลดโปรไฟล์ได้",
+      "contactSection": "ข้อมูลผู้ติดต่อของคุณ",
+      "companySection": "ข้อมูลบริษัท",
+      "fields": {
+        "firstName": "ชื่อ",
+        "lastName": "นามสกุล",
+        "phone": "โทรศัพท์",
+        "preferredLanguage": "ภาษาที่ต้องการ",
+        "website": "เว็บไซต์",
+        "description": "รายละเอียด"
+      },
+      "saveButton": "บันทึกการเปลี่ยนแปลง",
+      "cancelButton": "ยกเลิก",
+      "saving": "กำลังบันทึก…",
+      "saveSuccess": "อัปเดตโปรไฟล์เรียบร้อยแล้ว",
+      "saveError": "ไม่สามารถบันทึกการเปลี่ยนแปลงได้ กรุณาลองใหม่",
+      "noChanges": "ไม่มีการเปลี่ยนแปลง",
+      "languageOptions": {
+        "en": "English (อังกฤษ)",
+        "th": "ไทย",
+        "sv": "Svenska (สวีเดน)"
+      }
+    },
+    "invite": {
+      "pageTitle": "เชิญเพื่อนร่วมงาน",
+      "notLinked": "บัญชีของคุณยังไม่ได้เชื่อมต่อกับสมาชิก",
+      "loadError": "ไม่สามารถโหลดโปรไฟล์ได้",
+      "notPrimary": "เฉพาะผู้ติดต่อหลักเท่านั้นที่สามารถเชิญเพื่อนร่วมงานได้",
+      "formTitle": "รายละเอียดเพื่อนร่วมงาน",
+      "fields": {
+        "firstName": "ชื่อ",
+        "lastName": "นามสกุล",
+        "email": "อีเมล",
+        "roleTitle": "ตำแหน่ง",
+        "preferredLanguage": "ภาษาที่ต้องการ"
+      },
+      "sendButton": "ส่งคำเชิญ",
+      "cancelButton": "ยกเลิก",
+      "sending": "กำลังส่ง…",
+      "sendSuccess": "ส่งคำเชิญเรียบร้อยแล้ว",
+      "sendError": "ไม่สามารถส่งคำเชิญได้ กรุณาลองใหม่",
+      "emailTaken": "อีเมลนี้ถูกลงทะเบียนแล้ว",
+      "languageOptions": {
+        "en": "English (อังกฤษ)",
+        "th": "ไทย",
+        "sv": "Svenska (สวีเดน)"
+      }
+    }
+  },
+  "audit": {
+    "eventType": {
+      "member_created": "Member created",
+      "member_updated": "Member updated",
+      "member_plan_changed": "Plan changed",
+      "member_primary_contact_changed": "Primary contact changed",
+      "member_status_changed": "Status changed",
+      "member_archived": "Member archived",
+      "member_undeleted": "Member undeleted",
+      "contact_created": "Contact added",
+      "contact_updated": "Contact updated",
+      "contact_removed": "Contact removed",
+      "member_self_updated": "Profile updated by member",
+      "member_self_update_forbidden": "Forbidden self-update blocked",
+      "member_cross_tenant_probe": "Cross-tenant probe detected",
+      "plan_bundle_changed": "Plan bundle changed",
+      "member_contact_email_changed": "Contact email changed",
+      "user_sessions_revoked": "Sessions revoked",
+      "email_verification_sent": "Email verification sent",
+      "email_change_notification_sent_to_old_address": "Email-change notice sent to old address",
+      "member_email_change_reverted": "Email change reverted",
+      "email_verification_resent": "Verification email resent",
+      "email_dispatch_failed": "Email dispatch failed",
+      "invitation_bounced": "Invitation bounced",
+      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
+    }
+  },
+  "pagination": {
+    "summary": "แสดง {from}–{to} จาก {total}",
+    "emptyCount": "ไม่มีรายการ",
+    "previous": "ก่อนหน้า",
+    "next": "ถัดไป",
+    "page": "หน้า {page}"
   }
 }

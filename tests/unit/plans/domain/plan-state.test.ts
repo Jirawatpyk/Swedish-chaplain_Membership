@@ -42,6 +42,11 @@ describe('canTransition', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('inactive → soft_deleted ok when ctx.activeMemberCount is omitted (defaults to 0)', () => {
+    const result = canTransition('inactive', 'soft_deleted', {});
+    expect(result.ok).toBe(true);
+  });
+
   it('inactive → soft_deleted err when active members > 0', () => {
     const result = canTransition('inactive', 'soft_deleted', {
       activeMemberCount: 3,

@@ -20,10 +20,13 @@
  * `defaultXxxDeps` (value) from here, and this file imports the
  * `XxxDeps` interfaces (type-only) from each use case. Type-only
  * imports are compile-time erased — there is NO runtime cycle.
- * Two exceptions: `checkPasswordPolicy` and `buildInvitationEmail`
+ * Two exceptions: `checkPasswordPolicy` and `buildResetPasswordEmail`
  * are imported as VALUES because they are pure functions with no
  * Infrastructure dependencies (no DB, no network, no Drizzle) — see
- * the block comment below the imports for details.
+ * the block comment below the imports for details. The previous
+ * `buildInvitationEmail` value-import was removed in T049 (2026-04-17)
+ * when create-user migrated from synchronous send to outbox enqueue;
+ * the template builder is now invoked from the outbox dispatcher.
  *
  * Tests and route handlers that want the default deps object can
  * import from either path: this file OR the re-export at the bottom
@@ -36,16 +39,27 @@ import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import { emailSender } from '@/modules/auth/infrastructure/email/resend-client';
-import { buildInvitationEmail } from '@/modules/auth/infrastructure/email/invitation-email';
 import { buildResetPasswordEmail } from '@/modules/auth/infrastructure/email/reset-password-email';
 import { checkPasswordPolicy } from '@/modules/auth/application/password-policy';
+// Outbox enqueue for invitation emails (T049 close-out). Bypasses
+// runInTenant because F1 invitation flow is cross-tenant (admin staff
+// created without a tenant context); the outbox table has no RLS
+// (operational data — see migration 0011 header) so a direct insert
+// is the correct integration point.
+import type { DbTx } from '@/lib/db';
+import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
+import { err, ok, type Result } from '@/lib/result';
+import type {
+  EnqueueInvitationInTxFn,
+  EnqueueInvitationError,
+} from '@/modules/auth/application/create-user';
 
 // `checkPasswordPolicy` is imported as a value (not type-only) because it
 // is a pure Application-layer function with no Infrastructure dependencies.
 // This does NOT create a runtime cycle: password-policy.ts imports only
-// the logger and Node crypto, never auth-deps. `buildInvitationEmail`
-// and `buildResetPasswordEmail` follow the same rule — pure template
-// builders, no DB or network, so injecting the value is safe even
+// the logger and Node crypto, never auth-deps. `buildResetPasswordEmail`
+// follows the same rule — pure template builder, no DB or network,
+// so injecting the value is safe even
 // though they ship from the Infrastructure folder (the physical
 // location is legacy; functionally they are Application concerns).
 // The composition root is the only place these values appear; the use
@@ -65,6 +79,11 @@ import type { DisableUserDeps } from '@/modules/auth/application/disable-user';
 import type { EnableUserDeps } from '@/modules/auth/application/enable-user';
 import type { ChangeRoleDeps } from '@/modules/auth/application/change-role';
 import type { HeartbeatDeps } from '@/modules/auth/application/heartbeat';
+
+// Re-export the Upstash-backed rate limiter so presentation-layer
+// routes don't need their own deep infrastructure import. `src/lib/**`
+// is the Chamber-OS composition adapter layer (eslint allow-listed).
+export { rateLimiter };
 
 // Shared default clock — single source of truth for "now" across every
 // default deps object. Tests still override `now` via their own stubs;
@@ -116,12 +135,51 @@ export const defaultChangePasswordDeps: ChangePasswordDeps = {
   now: wallClock,
 };
 
+/**
+ * Default invitation-outbox enqueue — Path C atomic variant. Inserts
+ * into `notifications_outbox` with `notification_type='member_invitation'`,
+ * `tenant_id=null` (F1 invitation flow is cross-tenant) using the
+ * caller's tx handle so user + invitation + outbox rows commit
+ * together (or roll back together on any error). The dispatcher cron
+ * (`/api/cron/outbox-dispatch`) renders + sends within its next ≤60s
+ * tick. `cause` is sanitised to a string to prevent raw DB exception
+ * leakage into upstream loggers.
+ */
+const enqueueInvitationInTx: EnqueueInvitationInTxFn = async (
+  tx: DbTx,
+  req,
+): Promise<Result<{ outboxRowId: string }, EnqueueInvitationError>> => {
+  try {
+    const [row] = await tx
+      .insert(notificationsOutbox)
+      .values({
+        tenantId: null,
+        notificationType: 'member_invitation',
+        toEmail: req.toEmail.toLowerCase(),
+        locale: req.locale ?? 'en',
+        contextData: {
+          token: req.token as string,
+          role: req.role,
+        },
+      })
+      .returning({ id: notificationsOutbox.id });
+    if (!row) {
+      return err({ code: 'no_row_returned' });
+    }
+    return ok({ outboxRowId: row.id });
+  } catch (e) {
+    return err({
+      code: 'enqueue_failed',
+      cause: e instanceof Error ? e.message : String(e),
+    });
+  }
+};
+
 export const defaultCreateUserDeps: CreateUserDeps = {
   users: userRepo,
   tokens: tokenRepo,
   audit: auditRepo,
-  email: emailSender,
-  buildInvitationEmail,
+  enqueueInvitationInTx,
   now: wallClock,
 };
 

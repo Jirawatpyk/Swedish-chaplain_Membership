@@ -113,6 +113,26 @@ export function proxy(request: NextRequest): NextResponse {
     return applySecurityHeaders(response);
   }
 
+  // 1b. FEATURE_F3_MEMBERS kill-switch (T036) — when false, every member /
+  //     portal route returns 503 read_only_mode without a code deploy.
+  //     Applies to BOTH reads and writes on the F3 surfaces because the
+  //     whole feature is disabled, not just mutations.
+  const isF3Path =
+    nextUrl.pathname.startsWith('/api/members') ||
+    nextUrl.pathname.startsWith('/api/portal');
+  if (!env.features.f3Members && isF3Path) {
+    const response = NextResponse.json(
+      {
+        error: 'read_only_mode',
+        message: 'Member directory is temporarily unavailable.',
+      },
+      { status: 503 },
+    );
+    response.headers.set(REQUEST_ID_HEADER, requestId);
+    response.headers.set('Retry-After', '300');
+    return applySecurityHeaders(response);
+  }
+
   // 2. CSRF Origin allow-list for /api/* state-changing requests
   const csrfDecision = checkCsrf(method, nextUrl.pathname, request.headers.get('origin'));
   if (csrfDecision.action === 'reject') {

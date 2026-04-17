@@ -27,6 +27,9 @@ export default defineConfig({
     './src/modules/auth/infrastructure/db/schema.ts',
     // F2: plans + fee config schema (002-membership-plans)
     './src/modules/plans/infrastructure/db/schema.ts',
+    // F3: members + contacts schema (005-members-contacts)
+    './src/modules/members/infrastructure/db/schema-members.ts',
+    './src/modules/members/infrastructure/db/schema-contacts.ts',
   ],
   out: './drizzle/migrations',
   dialect: 'postgresql',

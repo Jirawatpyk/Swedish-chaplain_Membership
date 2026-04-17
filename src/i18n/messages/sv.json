@@ -103,6 +103,35 @@
       },
       "contactHeading": "Behöver du hjälp?",
       "contactDescription": "Tills självbetjäning lanseras, mejla oss så hjälper vi dig direkt."
+    },
+    "emailChangeRevert": {
+      "title": "Återställ e-postbyte",
+      "cardDescription": "Kontakt-e-posten på ditt SweCham-konto har ändrats. Om du inte begärde detta, klicka nedan för att återställa den och välja ett nytt lösenord.",
+      "description": "Återställning återställer din tidigare e-post, loggar ut alla aktiva sessioner och kräver att du väljer ett nytt lösenord innan du loggar in igen.",
+      "revert": "Återställ och välj nytt lösenord",
+      "submitting": "Återställer…",
+      "successMessage": "E-postbytet har återställts. Slutför lösenordsåterställningen för att få tillgång igen.",
+      "completePasswordReset": "Slutför lösenordsåterställning",
+      "errors": {
+        "invalidToken": "Denna återställningslänk har upphört att gälla eller har redan använts.",
+        "conflict": "Den tidigare e-postadressen är inte längre tillgänglig. Kontakta din kammaradministratör.",
+        "rateLimited": "För många försök. Försök igen om {seconds}s.",
+        "serverError": "Något gick fel. Försök igen."
+      }
+    },
+    "emailVerification": {
+      "title": "Bekräfta e-postadress",
+      "cardDescription": "Bekräftar din nya e-postadress — ett ögonblick.",
+      "verifying": "Bekräftar din e-postadress…",
+      "successMessage": "E-post bekräftad. Du kan logga in nu.",
+      "signInCta": "Gå till inloggning",
+      "retry": "Försök igen",
+      "errors": {
+        "invalidToken": "Denna bekräftelselänk har upphört att gälla eller har redan använts.",
+        "notYetActive": "Den här länken är inte aktiv ännu. Försök igen om {seconds}s.",
+        "rateLimited": "För många försök. Försök igen om {seconds}s.",
+        "serverError": "Något gick fel. Försök igen."
+      }
     }
   },
   "shell": {
@@ -157,13 +186,27 @@
     },
     "users": {
       "title": "Användare",
-      "subtitle": "{total} konton totalt",
       "pageSubtitle": "Hantera personal- och medlemskonton, roller och status.",
-      "viewingAs": "Visar som {role}",
-      "listHeading": "Alla konton",
-      "listDescription": "Bjud in, inaktivera, återaktivera eller byt roll. Destruktiva åtgärder kräver bekräftelse.",
       "empty": "Inga användare ännu. Bjud in den första för att komma igång.",
-      "refreshHint": "Ändringar träder i kraft direkt efter bekräftelse.",
+      "filters": {
+        "searchPlaceholder": "Sök på e-post eller visningsnamn",
+        "searchSrLabel": "Sök användare",
+        "role": {
+          "label": "Roll",
+          "all": "Alla roller",
+          "admin": "Admin",
+          "manager": "Manager",
+          "member": "Medlem"
+        },
+        "status": {
+          "label": "Status",
+          "all": "Alla statusar",
+          "active": "Aktiv",
+          "disabled": "Inaktiverad",
+          "pending": "Väntande"
+        },
+        "clear": "Rensa filter"
+      },
       "columns": {
         "email": "E-post",
         "name": "Namn",
@@ -222,7 +265,6 @@
     "plans": {
       "title": "Medlemspaket",
       "subtitle": "{total} paket år {year}",
-      "listHeading": "Paketkatalog",
       "listDescription": "Hantera nivådefinitioner, årliga avgifter och förmånsmatriser. Föregående års paket är delvis låsta för revisionsintegritet.",
       "empty": {
         "title": "Inga paket för detta år",
@@ -230,7 +272,6 @@
         "newCta": "Nytt paket",
         "cloneCta": "Klona {sourceYear} → {targetYear}"
       },
-      "refreshHint": "Ändringar tillämpas omedelbart och visas i revisionsloggen.",
       "columns": {
         "name": "Namn",
         "category": "Kategori",
@@ -444,29 +485,370 @@
           "validation": "Korrigera de markerade fälten."
         }
       }
+    },
+    "members": {
+      "title": "Medlemmar",
+      "overrideReason": {
+        "title": "Anledning till att kringgå validering",
+        "description": "Registrera varför du fortsätter trots varningen. Anledningen sparas i revisionsloggen.",
+        "codeLabel": "Anledning",
+        "codePlaceholder": "Välj anledning…",
+        "noteLabel": "Anteckning",
+        "noteRequired": "Anteckning krävs när anledning är \"Annat\".",
+        "notePlaceholder": "Lägg till kontext (max 500 tecken)…",
+        "proceed": "Fortsätt ändå",
+        "cancel": "Avbryt",
+        "codes": {
+          "board_approved": "Godkänt av styrelsen",
+          "pending_renewal_grace": "Pågående förnyelse (respitperiod)",
+          "data_correction": "Datakorrigering",
+          "other": "Annat"
+        }
+      },
+      "bundleChangeWarning": {
+        "title": "Planpaket-ändring",
+        "description": "Att byta plan ändrar det paketerade corporate-nivån för {affectedCount, plural, =0 {inga} one {# medlem} other {# medlemmar}} på det gamla partnerskapet.",
+        "oldBundle": "Gammalt paket",
+        "newBundle": "Nytt paket",
+        "affectedCount": "{count, plural, =0 {Inga medlemmar påverkas} one {# medlem påverkas} other {# medlemmar påverkas}}",
+        "confirm": "Bekräfta paketändring",
+        "cancel": "Avbryt",
+        "loading": "Beräknar berörda medlemmar…"
+      },
+      "subtitle": "Medlemsföretag + primära kontakter",
+      "directory": {
+        "searchPlaceholder": "Sök på företag, kontaktnamn eller e-post",
+        "searchSrLabel": "Sök medlemmar",
+        "clearFilters": "Rensa filter",
+        "filters": {
+          "status": {
+            "label": "Status",
+            "all": "Alla statusar",
+            "active": "Aktiv",
+            "inactive": "Inaktiv",
+            "archived": "Arkiverad"
+          },
+          "plan": {
+            "label": "Paket",
+            "all": "Alla paket"
+          }
+        },
+        "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
+        "columns": {
+          "company": "Företag",
+          "country": "Land",
+          "plan": "Plan",
+          "year": "År",
+          "primaryContact": "Primär kontakt",
+          "status": "Status",
+          "risk": "Risk",
+          "lastActivity": "Senaste aktivitet",
+          "notes": "Anteckningar"
+        },
+        "riskPlaceholder": "—",
+        "rowAriaLabel": "Öppna {company} detaljer",
+        "noPrimary": "Ingen primär kontakt",
+        "loadMore": "Ladda fler",
+        "selectAll": "Markera alla rader",
+        "selectRow": "Markera {company}",
+        "selectedCount": "{count, plural, one {# rad vald} other {# rader valda}}",
+        "selectAllMatchingHint": "{count} markerade på denna sida. <loadMore>Ladda nästa sida</loadMore> för att utöka markeringen."
+      },
+      "emptyStates": {
+        "zero": {
+          "title": "Inga medlemmar ännu",
+          "description": "Lägg till din första medlem för att komma igång.",
+          "cta": "Lägg till första medlem"
+        },
+        "filtered": {
+          "title": "Inga medlemmar matchar filtren",
+          "description": "Försök rensa ett eller flera filter.",
+          "cta": "Rensa filter"
+        },
+        "error": {
+          "title": "Kunde inte ladda medlemmar",
+          "description": "Ett serverfel förhindrade laddning av katalogen.",
+          "cta": "Försök igen"
+        }
+      },
+      "detail": {
+        "title": "{companyName}",
+        "sections": {
+          "company": "Företag",
+          "contacts": "Kontakter",
+          "primary": "Primär kontakt",
+          "secondary": "Övriga kontakter",
+          "plan": "Plan",
+          "audit": "Senaste aktivitet"
+        },
+        "fields": {
+          "legalEntityType": "Företagstyp",
+          "country": "Land",
+          "taxId": "Org.nr",
+          "website": "Webbplats",
+          "description": "Beskrivning",
+          "foundedYear": "Grundat",
+          "turnoverThb": "Årsomsättning (THB)",
+          "planId": "Plan-ID",
+          "planYear": "Planår",
+          "registrationDate": "Registreringsdatum",
+          "registrationFeePaid": "Registreringsavgift",
+          "registrationFeePaidYes": "Betald",
+          "registrationFeePaidNo": "Obetald",
+          "status": "Status",
+          "lastActivityAt": "Senaste aktivitet",
+          "archivedAt": "Arkiverad den",
+          "notes": "Interna anteckningar",
+          "firstName": "Förnamn",
+          "lastName": "Efternamn",
+          "email": "E-post",
+          "phone": "Telefon",
+          "roleTitle": "Roll",
+          "preferredLanguage": "Föredraget språk",
+          "plan": "Plan"
+        },
+        "copy": {
+          "copyMemberId": "Kopiera medlems-ID",
+          "copyEmail": "Kopiera e-post",
+          "copyTaxId": "Kopiera org.nr",
+          "copied": "Kopierat!"
+        },
+        "notFound": {
+          "title": "Medlem hittades inte",
+          "description": "Medlemmen kan ha arkiverats eller är URL:en felaktig.",
+          "cta": "Tillbaka till medlemmar"
+        },
+        "unknown": "—",
+        "emergencyPrimary": {
+          "ariaLabel": "Hjälp — nödöverföring av primär kontakt",
+          "title": "Nödöverföring av primär kontakt",
+          "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Klicka på Lägg till kontakt för att skapa en sekundär kontakt med den nya personens uppgifter och använd sedan Befordra för att göra dem till den nya primära. Den gamla primära nedgraderas automatiskt."
+        },
+        "portal": {
+          "linked": "Portalanslutning"
+        },
+        "editCta": "Redigera"
+      },
+      "timeline": {
+        "pageTitle": "Tidslinje · {companyName} · SweCham",
+        "title": "Tidslinje",
+        "subtitle": "Aktivitetshistorik för denna medlem",
+        "empty": "Ingen aktivitet har registrerats än.",
+        "loadMore": "Läs in äldre händelser",
+        "loading": "Läser in tidslinje…",
+        "actor": "av {actor}",
+        "actorSystem": "System",
+        "eventAt": "{date}",
+        "backToDetail": "Tillbaka till medlem",
+        "totalEvents": "{count, plural, one {# händelse} other {# händelser}}",
+        "payload": {
+          "primary": "primär",
+          "primaryContactPromoted": "primär kontakt befordrad"
+        }
+      },
+      "create": {
+        "pageTitle": "Lägg till medlem · SweCham",
+        "title": "Lägg till medlem",
+        "subtitle": "Skapa ett medlemsföretag med primär kontakt.",
+        "requiredNote": "* obligatoriska fält",
+        "submit": "Skapa medlem",
+        "submitting": "Skapar…",
+        "cancel": "Avbryt",
+        "sections": {
+          "company": "Företag",
+          "primaryContact": "Primär kontakt"
+        },
+        "fields": {
+          "companyName": "Företagsnamn",
+          "legalEntityType": "Företagstyp",
+          "country": "Land (ISO-kod)",
+          "taxId": "Org.nr",
+          "taxIdHintTH": "Thailändskt 13-siffrigt org.nr med checksiffra",
+          "website": "Webbplats",
+          "description": "Beskrivning",
+          "foundedYear": "Grundat år",
+          "turnoverThb": "Årsomsättning (THB)",
+          "plan": "Plan",
+          "planPlaceholder": "Välj plan…",
+          "planYear": "Planår",
+          "registrationDate": "Registreringsdatum",
+          "firstName": "Förnamn",
+          "lastName": "Efternamn",
+          "email": "E-post",
+          "phone": "Telefon (E.164)",
+          "roleTitle": "Roll / titel",
+          "preferredLanguage": "Föredraget språk",
+          "dateOfBirth": "Födelsedatum",
+          "dateOfBirthHint": "Krävs för Thai Alumni-planen",
+          "notes": "Anteckningar (endast admin)",
+          "notesPlaceholder": "Interna adminanteckningar…",
+          "notesHint": "Synligt endast för kammarpersonal. Visas inte för medlemmar."
+        },
+        "errors": {
+          "generic": "Något gick fel. Försök igen.",
+          "validation": "Rätta markerade fält.",
+          "forbidden": "Endast administratörer kan lägga till medlemmar.",
+          "planMissing": "Inga aktiva planer hittades — skapa en plan först."
+        },
+        "success": "Medlem skapad."
+      },
+      "softDuplicate": {
+        "title": "Möjlig dubblett hittades",
+        "description": "En medlem med samma företagsnamn + land finns redan i katalogen. Fortsätt endast om detta är en separat enhet (t.ex. dotterbolag, franchise).",
+        "existingLabel": "Befintlig medlem",
+        "openExisting": "Öppna befintlig medlem",
+        "proceed": "Fortsätt ändå",
+        "cancel": "Avbryt"
+      },
+      "edit": {
+        "pageTitle": "Redigera {companyName} · SweCham",
+        "title": "Redigera medlem",
+        "subtitle": "Uppdatera medlemsdetaljer, plan eller primär kontakt.",
+        "submit": "Spara ändringar",
+        "submitting": "Sparar…",
+        "cancel": "Avbryt",
+        "success": "Medlem uppdaterad.",
+        "contactsHeading": "Kontakter",
+        "addContact": "Lägg till kontakt",
+        "primary": "Primär",
+        "promoteLabel": "Befordra till primär",
+        "removeLabel": "Ta bort kontakt",
+        "removeConfirmTitle": "Ta bort kontakt?",
+        "removeConfirmDescription": "Detta raderar kontakten mjukt. Posten bevaras för revision men kontakten visas inte längre i katalogen.",
+        "removeConfirm": "Ta bort",
+        "addHelpTip": "Akut primär kontakt-överföring — använd \"Lägg till kontakt\" och sedan \"Befordra till primär\".",
+        "errors": {
+          "generic": "Något gick fel. Försök igen.",
+          "notFound": "Medlem hittades inte.",
+          "validation": "Rätta markerade fält.",
+          "contactNotFound": "Kontakt hittades inte.",
+          "cannotRemovePrimary": "Kan inte ta bort primär kontakt. Befordra en annan kontakt först."
+        }
+      },
+      "contactForm": {
+        "title": "Lägg till kontakt",
+        "editTitle": "Redigera kontakt",
+        "submit": "Spara",
+        "submitting": "Sparar…",
+        "cancel": "Avbryt"
+      },
+      "addMember": "Lägg till medlem",
+      "invitePortal": {
+        "label": "Bjud in till portalen",
+        "submitting": "Skickar…",
+        "success": "Inbjudan skickad.",
+        "errors": {
+          "alreadyLinked": "Den här kontakten är redan ansluten till ett portalkonto.",
+          "noEmail": "Lägg till en e-post för denna kontakt innan du bjuder in.",
+          "invalidEmail": "Kontaktens e-postadress är ogiltig.",
+          "emailTaken": "Denna e-post tillhör redan ett annat konto.",
+          "notFound": "Kontakten hittades inte.",
+          "serverError": "Något gick fel. Försök igen."
+        }
+      },
+      "bulk": {
+        "toolbarLabel": "Massåtgärder",
+        "selectedCount": "{count, plural, one {# vald} other {# valda}}",
+        "overCap": "Max {max} medlemmar per omgång. Dela upp urvalet.",
+        "actions": {
+          "archive": "Arkivera",
+          "change_plan": "Byt plan",
+          "send_portal_invite": "Skicka inbjudan"
+        },
+        "clear": "Rensa urval",
+        "archiveTitle": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
+        "archiveDescription": "Arkiverade medlemmar döljs i katalogen och anslutna portalkonton återkallas. Ångra inom 90 dagar.",
+        "affectedMembers": "Berörda medlemmar",
+        "andMore": "…och {count} till",
+        "typeToConfirm": "Skriv \"{phrase}\" för att bekräfta",
+        "archivePhrase": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
+        "cancel": "Avbryt",
+        "confirmArchive": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
+        "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
+        "rateLimited": "För många massåtgärder. Vänta och försök igen.",
+        "unknownError": "Något gick fel.",
+        "networkError": "Nätverksfel. Kontrollera anslutningen.",
+        "progressLabel": "Massåtgärd pågår",
+        "progressMessage": "{action} {count, plural, one {# medlem} other {# medlemmar}}…",
+        "elapsedSeconds": "Förflutit: {seconds}s"
+      },
+      "inlineEdit": {
+        "statusUpdated": "Status uppdaterad",
+        "saveFailed": "Kunde inte spara. Återställd.",
+        "saving": "Sparar…",
+        "toggleStatus": "Växla status (nuvarande: {current})",
+        "editCountry": "Redigera land",
+        "editCountryHint": "Dubbelklicka för att redigera landskod (ISO 3166-1 alpha-2)",
+        "countryUpdated": "Land uppdaterat",
+        "countryInvalid": "Landskod måste vara 2 bokstäver (ISO).",
+        "countryInput": "Landskod (2 bokstäver)",
+        "editNotes": "Redigera anteckningar",
+        "editNotesHint": "Dubbelklicka för att redigera anteckningar",
+        "notesUpdated": "Anteckningar uppdaterade",
+        "notesSaved": "Anteckningar sparade",
+        "notesInput": "Redigera anteckningar",
+        "notesPlaceholder": "Lägg till anteckningar…",
+        "networkError": "Nätverksfel. Kontrollera anslutningen."
+      },
+      "archive": {
+        "archiveCta": "Arkivera medlem",
+        "confirmTitle": "Arkivera {companyName}?",
+        "confirmDescription": "Arkivering döljer medlemmen från standardkatalogen och återkallar kopplade portalsessioner. Du kan återställa inom 90 dagar.",
+        "reasonLabel": "Orsak (valfritt)",
+        "reasonPlaceholder": "t.ex. företaget har lagts ned, medlemskapet har sagts upp",
+        "reasonHelper": "Upp till 500 tecken. Synligt för andra administratörer i granskningsloggen.",
+        "cancel": "Avbryt",
+        "confirmCta": "Arkivera",
+        "archivingInProgress": "Arkiverar…",
+        "archiveSuccess": "{companyName} arkiverad.",
+        "archiveError": "Kunde inte arkivera. Försök igen.",
+        "bannerTitle": "Arkiverad {date}",
+        "withinWindow": "{daysRemaining, plural, one {# dag kvar} other {# dagar kvar}} i 90-dagars återställningsfönstret.",
+        "windowExpired": "Arkiverad för {daysSinceArchive} dagar sedan — utanför 90-dagars återställningsfönstret.",
+        "windowExpiredTooltip": "Arkiverad > 90 dagar — kontakta plattformsadministratören för att återställa.",
+        "undeleteCta": "Återställ",
+        "undeleteSuccess": "Medlemmen har återställts.",
+        "undeleteError": "Kunde inte återställa. Försök igen.",
+        "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta plattformsadministratören för att återställa."
+      },
+      "undelete": {
+        "cta": "Återställ",
+        "confirmTitle": "Återställ medlem?",
+        "confirmDescription": "Återställning återaktiverar medlemsposten. Kopplade portalanvändare måste logga in igen.",
+        "success": "Medlemmen har återställts.",
+        "error": "Kunde inte återställa. Försök igen."
+      }
+    },
+    "outboxHealth": {
+      "label": "Problem med e-postleverans hittades",
+      "permanentFailed": "{count, plural, one {# e-post misslyckades permanent} other {# e-postmeddelanden misslyckades permanent}} de senaste 24 h",
+      "stuckPending": "{count, plural, one {# e-post fastnad} other {# e-postmeddelanden fastnade}} i kön (cron kanske är nere)"
     }
   },
   "palette": {
     "title": "Kommandopalett",
     "description": "Sök efter ett paket, en åtgärd eller en sida",
-    "placeholder": "Sök paket, åtgärder och sidor…",
+    "placeholder": "Sök planer, medlemmar, åtgärder och sidor…",
     "empty": "Inga resultat.",
     "groups": {
       "plans": "Paket",
       "actions": "Åtgärder",
-      "navigate": "Navigera"
+      "navigate": "Navigera",
+      "members": "Medlemmar"
     },
     "actions": {
       "newPlan": "Skapa nytt paket",
       "cloneYear": "Klona år",
       "editFees": "Redigera avgiftskonfiguration",
-      "viewAuditLog": "Visa revisionslogg"
+      "viewAuditLog": "Visa revisionslogg",
+      "newMember": "Skapa ny medlem"
     },
     "navigate": {
       "plansList": "Paketlista",
       "feeConfig": "Avgiftskonfiguration",
       "usersList": "Användarlista",
-      "dashboard": "Instrumentpanel"
+      "dashboard": "Instrumentpanel",
+      "membersList": "Medlemslista"
     }
   },
   "nav": {
@@ -482,10 +864,12 @@
       },
       "collapse": "Fäll ihop sidofältet",
       "expand": "Expandera sidofältet",
-      "ariaLabel": "Personalnavigering"
+      "ariaLabel": "Personalnavigering",
+      "members": "Medlemmar"
     },
     "member": {
       "dashboard": "Instrumentpanel",
+      "profile": "Profil",
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering"
     }
@@ -500,7 +884,11 @@
     "account": "Konto",
     "newPlan": "Ny plan",
     "clonePlan": "Klona plan",
-    "editPlan": "Redigera"
+    "editPlan": "Redigera",
+    "members": "Medlemmar",
+    "memberDetail": "Detaljer",
+    "newMember": "Ny medlem",
+    "editMember": "Redigera"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",
@@ -509,5 +897,121 @@
     "loadingPage": "Laddar sidinnehåll",
     "loadingTable": "Laddar tabelldata",
     "loadingForm": "Laddar formulär"
+  },
+  "portal": {
+    "profile": {
+      "title": "Min profil",
+      "pageTitle": "Min profil",
+      "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
+      "loadError": "Kunde inte ladda din profil. Försök igen.",
+      "editButton": "Redigera profil",
+      "companySection": "Företagsinformation",
+      "planSection": "Medlemsplan",
+      "contactsSection": "Kontakter",
+      "inviteColleague": "Bjud in kollega",
+      "primaryBadge": "Primär",
+      "portalLinked": "Portalkopplad",
+      "noContacts": "Inga kontakter hittades.",
+      "fields": {
+        "companyName": "Företagsnamn",
+        "legalEntityType": "Juridisk form",
+        "country": "Land",
+        "website": "Webbplats",
+        "description": "Beskrivning",
+        "planYear": "Planår",
+        "registrationDate": "Registreringsdatum",
+        "status": "Status"
+      },
+      "status": {
+        "active": "Aktiv",
+        "inactive": "Inaktiv",
+        "archived": "Arkiverad"
+      }
+    },
+    "edit": {
+      "pageTitle": "Redigera profil",
+      "notLinked": "Ditt konto är inte kopplat till en medlem.",
+      "loadError": "Kunde inte ladda din profil.",
+      "contactSection": "Din kontaktinformation",
+      "companySection": "Företagsinformation",
+      "fields": {
+        "firstName": "Förnamn",
+        "lastName": "Efternamn",
+        "phone": "Telefon",
+        "preferredLanguage": "Föredraget språk",
+        "website": "Webbplats",
+        "description": "Beskrivning"
+      },
+      "saveButton": "Spara ändringar",
+      "cancelButton": "Avbryt",
+      "saving": "Sparar…",
+      "saveSuccess": "Profilen har uppdaterats.",
+      "saveError": "Kunde inte spara ändringar. Försök igen.",
+      "noChanges": "Inga ändringar att spara.",
+      "languageOptions": {
+        "en": "English (engelska)",
+        "th": "ไทย (thailändska)",
+        "sv": "Svenska"
+      }
+    },
+    "invite": {
+      "pageTitle": "Bjud in kollega",
+      "notLinked": "Ditt konto är inte kopplat till en medlem.",
+      "loadError": "Kunde inte ladda din profil.",
+      "notPrimary": "Endast den primära kontakten kan bjuda in kollegor.",
+      "formTitle": "Kollegauppgifter",
+      "fields": {
+        "firstName": "Förnamn",
+        "lastName": "Efternamn",
+        "email": "E-post",
+        "roleTitle": "Roll / Titel",
+        "preferredLanguage": "Föredraget språk"
+      },
+      "sendButton": "Skicka inbjudan",
+      "cancelButton": "Avbryt",
+      "sending": "Skickar…",
+      "sendSuccess": "Inbjudan har skickats.",
+      "sendError": "Kunde inte skicka inbjudan. Försök igen.",
+      "emailTaken": "Denna e-postadress är redan registrerad.",
+      "languageOptions": {
+        "en": "English (engelska)",
+        "th": "ไทย (thailändska)",
+        "sv": "Svenska"
+      }
+    }
+  },
+  "audit": {
+    "eventType": {
+      "member_created": "Member created",
+      "member_updated": "Member updated",
+      "member_plan_changed": "Plan changed",
+      "member_primary_contact_changed": "Primary contact changed",
+      "member_status_changed": "Status changed",
+      "member_archived": "Member archived",
+      "member_undeleted": "Member undeleted",
+      "contact_created": "Contact added",
+      "contact_updated": "Contact updated",
+      "contact_removed": "Contact removed",
+      "member_self_updated": "Profile updated by member",
+      "member_self_update_forbidden": "Forbidden self-update blocked",
+      "member_cross_tenant_probe": "Cross-tenant probe detected",
+      "plan_bundle_changed": "Plan bundle changed",
+      "member_contact_email_changed": "Contact email changed",
+      "user_sessions_revoked": "Sessions revoked",
+      "email_verification_sent": "Email verification sent",
+      "email_change_notification_sent_to_old_address": "Email-change notice sent to old address",
+      "member_email_change_reverted": "Email change reverted",
+      "email_verification_resent": "Verification email resent",
+      "email_dispatch_failed": "Email dispatch failed",
+      "invitation_bounced": "Invitation bounced",
+      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
+    }
+  },
+  "pagination": {
+    "summary": "Visar {from}–{to} av {total}",
+    "emptyCount": "Inga poster",
+    "previous": "Föregående",
+    "next": "Nästa",
+    "page": "Sida {page}"
   }
 }

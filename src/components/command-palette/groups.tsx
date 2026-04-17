@@ -53,6 +53,25 @@ export function PaletteGroups({ results, onAfterNavigate }: GroupsProps) {
         </CommandGroup>
       )}
 
+      {results.members.length > 0 && (
+        <CommandGroup heading={t('groups.members')}>
+          {results.members.map((m) => (
+            <CommandItem
+              key={`member-${m.member_id}`}
+              value={`member ${m.company_name} ${m.primary_contact_name ?? ''}`}
+              onSelect={() => handleNavigate(m.url)}
+            >
+              <span className="truncate">{m.company_name}</span>
+              {m.primary_contact_name ? (
+                <span className="ml-auto max-w-[12rem] truncate text-xs text-muted-foreground">
+                  {m.primary_contact_name}
+                </span>
+              ) : null}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      )}
+
       {results.actions.length > 0 && (
         <CommandGroup heading={t('groups.actions')}>
           {results.actions.map((action) => (

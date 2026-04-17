@@ -12,11 +12,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import {
-  BanIcon,
-  CircleCheckIcon,
-  RefreshCwIcon,
-} from 'lucide-react';
+import { BanIcon, CircleCheckIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,7 +24,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
-import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
 
 type Role = 'admin' | 'manager' | 'member';
 type Status = 'pending' | 'active' | 'disabled';
@@ -118,41 +113,59 @@ export function UserListTable({
 
   return (
     <>
+      {/* Matches /admin/members table style — uppercase muted header
+          + hover feedback. No outer border: the parent <Card> is the
+          container. */}
       <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('columns.email')}</TableHead>
-            <TableHead>{t('columns.name')}</TableHead>
-            <TableHead>{t('columns.role')}</TableHead>
-            <TableHead>{t('columns.status')}</TableHead>
-            <TableHead className="text-right">{t('columns.actions')}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {users.map((user) => {
-            const isSelf = user.id === currentUserId;
-            const canDisable = isAdmin && !isSelf && user.status === 'active';
-            const canEnable = isAdmin && user.status === 'disabled';
-            const busy = busyId === user.id;
-            return (
-              <TableRow
-                key={user.id}
-                // Data attrs for deterministic E2E selectors — the
-                // session-revocation spec (T-05) needs to find a
-                // specific user's id by email without scraping the
-                // visible text.
-                data-user-id={user.id}
-                data-user-email={user.email.toLowerCase()}
-              >
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.email')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.name')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.role')}
+              </TableHead>
+              <TableHead className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.status')}
+              </TableHead>
+              <TableHead className="text-right text-xs uppercase tracking-wide text-muted-foreground">
+                {t('columns.actions')}
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((user) => {
+              const isSelf = user.id === currentUserId;
+              const canDisable = isAdmin && !isSelf && user.status === 'active';
+              const canEnable = isAdmin && user.status === 'disabled';
+              const busy = busyId === user.id;
+              return (
+                <TableRow
+                  key={user.id}
+                  className="hover:bg-accent/40"
+                  // Data attrs for deterministic E2E selectors — the
+                  // session-revocation spec (T-05) needs to find a
+                  // specific user's id by email without scraping the
+                  // visible text.
+                  data-user-id={user.id}
+                  data-user-email={user.email.toLowerCase()}
+                >
                 <TableCell>{user.email}</TableCell>
                 <TableCell className="text-muted-foreground">
                   {user.displayName ?? '—'}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={roleVariant[user.role]}>{user.role}</Badge>
+                  <Badge variant={roleVariant[user.role]}>
+                    {t(`filters.role.${user.role}`)}
+                  </Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={statusVariant[user.status]}>{user.status}</Badge>
+                  <Badge variant={statusVariant[user.status]}>
+                    {t(`filters.status.${user.status}`)}
+                  </Badge>
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-2">
@@ -188,23 +201,15 @@ export function UserListTable({
               </TableRow>
             );
           })}
-          {users.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
-                {t('empty')}
-              </TableCell>
-            </TableRow>
-          ) : null}
+            {users.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                  {t('empty')}
+                </TableCell>
+              </TableRow>
+            ) : null}
         </TableBody>
       </Table>
-
-      <div className="mt-6 flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          <RefreshCwIcon className="mr-1 inline size-3" aria-hidden />
-          {t('refreshHint')}
-        </p>
-        <InviteUserDialog disabled={!isAdmin} />
-      </div>
 
       <ConfirmationDialog
         open={pending !== null}

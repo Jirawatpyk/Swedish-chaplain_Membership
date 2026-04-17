@@ -94,6 +94,41 @@ const eslintConfig = defineConfig([
               "Application layer must not depend on Next.js, React, or a specific ORM. " +
               "Use Infrastructure adapters via dependency injection.",
           })),
+          patterns: [
+            {
+              // Path C hardening — B1-class regression guard.
+              // Round 3 staff review found 4 Application files importing
+              // Drizzle schema VALUES directly from
+              // `@/modules/*/infrastructure/**`. The package-name rule
+              // above (drizzle-orm, next, …) did not cover project-local
+              // infrastructure paths.
+              //
+              // `allowTypeImports: true` — `import type { ... }` lines
+              // erase at compile time and create no runtime coupling.
+              // F1 use cases (sign-in.ts, reset-password.ts, etc.)
+              // legitimately import port INTERFACES via `import type`
+              // for DI wiring; blocking those would force duplicate
+              // type definitions. What B1 caught was VALUE imports
+              // (`import { auditLog } ...` → `tx.insert(auditLog)`),
+              // which this rule still blocks.
+              group: [
+                "@/modules/*/infrastructure/**",
+                "./*/infrastructure/**",
+                "./infrastructure/**",
+                "../infrastructure/**",
+                "../../infrastructure/**",
+                "../../../infrastructure/**",
+              ],
+              allowTypeImports: true,
+              message:
+                "Application layer must NOT import Infrastructure VALUES directly. " +
+                "Define a Port interface in application/ports/ and inject " +
+                "the Infrastructure adapter via the composition root " +
+                "(src/lib/auth-deps.ts, src/modules/<name>/<name>-deps.ts). " +
+                "Type-only imports (`import type { ... }`) are allowed for DI wiring. " +
+                "Constitution Principle III (NON-NEGOTIABLE).",
+            },
+          ],
         },
       ],
     },
@@ -116,6 +151,7 @@ const eslintConfig = defineConfig([
       "src/modules/auth/**",
       "src/modules/plans/**",
       "src/modules/tenants/**",
+      "src/modules/members/**",
       // `src/lib/**` is the shared composition adapter layer.
       // Files here provide the glue between module internals and
       // Next.js route handlers (cookies, session lookup, db client,
@@ -173,6 +209,22 @@ const eslintConfig = defineConfig([
                 "Cross-module import must go through the tenants public barrel (`@/modules/tenants`). " +
                 "Deep imports into domain from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
             },
+            {
+              group: [
+                "@/modules/members/domain/**",
+                "@/modules/members/application/**",
+                "@/modules/members/infrastructure/**",
+                "./modules/members/domain/**",
+                "./modules/members/application/**",
+                "./modules/members/infrastructure/**",
+                "../modules/members/domain/**",
+                "../modules/members/application/**",
+                "../modules/members/infrastructure/**",
+              ],
+              message:
+                "Cross-module import must go through the members public barrel (`@/modules/members`). " +
+                "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
           ],
         },
       ],
@@ -205,6 +257,35 @@ const eslintConfig = defineConfig([
           // `export default () => (<Root className=".." />)` — expression body
           selector: `ExportDefaultDeclaration > ArrowFunctionExpression > JSXElement > JSXOpeningElement > ${PAGE_ROOT_CLASS_ATTR}`,
           message: PAGE_ROOT_MESSAGE,
+        },
+      ],
+    },
+  },
+  {
+    // F3 Plan E2 — members module must not depend on auth Domain types.
+    // `linked_user_id` is modelled as a branded opaque `UserId` inside
+    // members/domain/. Importing `@/modules/auth/domain/**` from anywhere
+    // under members/** couples Member Domain to Auth Domain and defeats
+    // the opaque-type boundary. The cross-module barrel rule above
+    // ignores `src/modules/members/**`, so this dedicated rule is needed.
+    files: ["src/modules/members/**/*.ts", "src/modules/members/**/*.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/modules/auth/domain/**",
+                "./modules/auth/domain/**",
+                "../modules/auth/domain/**",
+                "../../modules/auth/domain/**",
+              ],
+              message:
+                "F3 Plan E2 — members module must not import `@/modules/auth/domain/**`. " +
+                "Model `linked_user_id` as a branded opaque `UserId` in members/domain/ instead.",
+            },
+          ],
         },
       ],
     },

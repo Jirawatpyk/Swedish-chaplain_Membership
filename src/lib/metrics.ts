@@ -138,6 +138,21 @@ export const authMetrics = {
       'Invitation redemption failures by reason',
     ).add(1, { reason });
   },
+  /**
+   * Invitation row failed to land in `notifications_outbox`.
+   * Signals a silent-success bug where the admin sees ok but no email
+   * will ever be sent — the dispatcher only drains rows that made it
+   * into the outbox. Alert threshold: any non-zero rate for 5 min.
+   */
+  invitationEnqueueFailed(
+    role: 'admin' | 'manager' | 'member',
+    reason: 'enqueue_failed' | 'no_row_returned',
+  ): void {
+    counter(
+      'auth_invitation_enqueue_failed_total',
+      'Invitation outbox enqueue failures by role and reason',
+    ).add(1, { role, reason });
+  },
 
   // --- Sessions --------------------------------------------------------------
   idleWarningShown(outcome: 'stayed' | 'timed_out'): void {
@@ -214,5 +229,52 @@ export const authMetrics = {
       'auth_audit_missing_total',
       'Expected audit events that failed to commit',
     ).add(1, { event_type: eventType });
+  },
+} as const;
+
+// --- F3 outbox metrics -------------------------------------------------------
+//
+// Mirrors the `invitationEnqueueFailed` pattern above. Alert threshold for
+// both counters: any non-zero rate sustained for 5 minutes.
+//
+// Why a separate export: the outbox dispatcher is operational infrastructure
+// shared across F1 (invitation) + F3 (email verification, revert) — keeping
+// it separate from `authMetrics` avoids misleading the auth bounded context
+// with F3 concerns, and lets the cron import only what it needs.
+
+export const outboxMetrics = {
+  /**
+   * An outbox row reached `permanently_failed` after exhausting all retries
+   * (or hit an unrenderable template). Fired once per row, labelled by
+   * `notification_type` + `reason` so alerts can distinguish verification vs
+   * revert failures, and max_retries vs invalid_recipient vs unrenderable.
+   * Alert threshold: any non-zero rate for 5 minutes. Names mirrored in
+   * docs/observability.md § 4 (F3 metrics table).
+   */
+  permanentFailure(
+    notificationType: string,
+    reason: 'max_retries' | 'invalid_recipient' | 'no_template_handler',
+  ): void {
+    counter(
+      'outbox_permanent_failures_total',
+      'Outbox rows permanently failed — alert on any non-zero rate',
+    ).add(1, { notification_type: notificationType, reason });
+  },
+
+  /**
+   * Rows stuck in `pending` state with `next_retry_at` already past.
+   * Indicates the cron is not running, crashed, or lost its CRON_SECRET.
+   * Fired once per cron tick where stuck rows are detected; `count` is
+   * the number of affected rows. Emitted as a counter whose **rate** is
+   * the alert signal: `rate(outbox_stuck_rows_total[5m]) > 0` fires while
+   * the cron keeps seeing stuck rows and clears on its own once ticks
+   * stop reporting. (We intentionally do NOT emit `.add(0)` on healthy
+   * ticks — the absence of rate is the "healthy" signal.)
+   */
+  stuckRows(count: number): void {
+    counter(
+      'outbox_stuck_rows_total',
+      'Outbox rows stuck in pending past their next_retry_at window',
+    ).add(count);
   },
 } as const;

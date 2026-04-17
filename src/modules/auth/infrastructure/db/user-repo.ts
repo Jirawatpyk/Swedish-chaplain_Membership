@@ -5,8 +5,8 @@
  * code (sign-in, change-password, account lifecycle) only depends on
  * the interface declared here, never on Drizzle directly.
  */
-import { eq, sql } from 'drizzle-orm';
-import { db } from '@/lib/db';
+import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
+import { db, type DbTx } from '@/lib/db';
 import { users, type UserRow } from './schema';
 import {
   asEmailAddress,
@@ -16,8 +16,31 @@ import {
   type PasswordHash,
   type UserId,
 } from '@/modules/auth/domain/branded';
-import type { UserAccount } from '@/modules/auth/domain/user';
+import type { UserAccount, UserStatus } from '@/modules/auth/domain/user';
 import type { Role } from '@/modules/auth/domain/role';
+
+/** Filter shape used by the admin users list page (search + role + status). */
+export interface UserListFilter {
+  readonly q?: string;
+  readonly role?: Role;
+  readonly status?: UserStatus;
+}
+
+function buildFilterConditions(filter: UserListFilter): SQL | undefined {
+  const conds: SQL[] = [];
+  if (filter.q && filter.q.trim().length > 0) {
+    const term = `%${filter.q.trim()}%`;
+    const qCondition = or(
+      ilike(users.email, term),
+      ilike(users.displayName, term),
+    );
+    if (qCondition) conds.push(qCondition);
+  }
+  if (filter.role) conds.push(eq(users.role, filter.role));
+  if (filter.status) conds.push(eq(users.status, filter.status));
+  if (conds.length === 0) return undefined;
+  return and(...conds);
+}
 
 function toDomain(row: UserRow): UserAccount {
   return {
@@ -31,11 +54,25 @@ function toDomain(row: UserRow): UserAccount {
     failedSignInCount: row.failedSignInCount,
     lockedUntil: row.lockedUntil,
     displayName: row.displayName,
+    emailVerified: row.emailVerified,
+    requiresPasswordReset: row.requiresPasswordReset,
   };
 }
 
 export interface UserRepo {
   findByEmail(email: EmailAddress): Promise<{ user: UserAccount; passwordHash: PasswordHash | null } | null>;
+  /**
+   * Tx-scoped variant of `findByEmail`. Used by `createUser` so the
+   * duplicate check shares the same transaction as the subsequent
+   * INSERT — prevents the TOCTOU race that would let two concurrent
+   * admin invites both pass the dup check and both commit the user
+   * row. Pre-Path-C the check ran in a separate connection; now it
+   * holds the row lock for the rest of the tx.
+   */
+  findByEmailInTx(
+    tx: DbTx,
+    email: EmailAddress,
+  ): Promise<{ user: UserAccount; passwordHash: PasswordHash | null } | null>;
   findById(id: UserId): Promise<UserAccount | null>;
   updateLastSignIn(id: UserId, at: Date): Promise<void>;
   incrementFailedCount(id: UserId): Promise<number>;
@@ -48,6 +85,28 @@ export interface UserRepo {
     role: Role;
     displayName?: string | null;
   }): Promise<UserAccount>;
+  /**
+   * Tx-scoped variant of `createPending`. Used by `createUser` so the
+   * insert shares the tx with the subsequent invitation + outbox
+   * inserts — failure in any later step rolls this row back without
+   * needing the compensating-delete dance.
+   */
+  createPendingInTx(
+    tx: DbTx,
+    args: {
+      email: EmailAddress;
+      role: Role;
+      displayName?: string | null;
+    },
+  ): Promise<UserAccount>;
+  /**
+   * Compensating delete for `createPending` — used when a downstream
+   * step (e.g. invitation row insert) fails after the user row has
+   * already committed. Refuses to delete unless the row is still
+   * `status='pending'` so a race with a successful redemption cannot
+   * destroy an active account.
+   */
+  deletePending(id: UserId): Promise<void>;
   setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void>;
   activate(id: UserId, now: Date): Promise<void>;
   /** Transition active → disabled. */
@@ -60,6 +119,17 @@ export interface UserRepo {
   list(limit: number, offset: number): Promise<readonly UserAccount[]>;
   /** Total user count for pagination header. */
   countAll(): Promise<number>;
+  /**
+   * Filtered + paginated list. Search `q` matches email OR display_name
+   * (case-insensitive substring); `role` + `status` are exact matches.
+   */
+  listWithFilter(
+    filter: UserListFilter,
+    limit: number,
+    offset: number,
+  ): Promise<readonly UserAccount[]>;
+  /** Total count matching the same filter — powers pagination UI. */
+  countWithFilter(filter: UserListFilter): Promise<number>;
 }
 
 // Object-literal implementation — no class wrapper; see audit-repo.ts
@@ -69,6 +139,23 @@ export const userRepo: UserRepo = {
     email: EmailAddress,
   ): Promise<{ user: UserAccount; passwordHash: PasswordHash | null } | null> {
     const rows = await db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.email}) = ${email}`)
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      user: toDomain(row),
+      passwordHash: row.passwordHash ? asPasswordHash(row.passwordHash) : null,
+    };
+  },
+
+  async findByEmailInTx(
+    tx,
+    email,
+  ) {
+    const rows = await tx
       .select()
       .from(users)
       .where(sql`lower(${users.email}) = ${email}`)
@@ -158,10 +245,42 @@ export const userRepo: UserRepo = {
     return toDomain(row);
   },
 
+  async createPendingInTx(tx, args) {
+    const rows = await tx
+      .insert(users)
+      .values({
+        email: args.email,
+        role: args.role,
+        status: 'pending',
+        displayName: args.displayName ?? null,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) throw new Error('user-repo.createPendingInTx: no row returned');
+    return toDomain(row);
+  },
+
+  async deletePending(id: UserId): Promise<void> {
+    // Guard: only delete if still pending. This prevents a race where
+    // create-user's compensation fires AFTER an invitation was redeemed
+    // (user flipped to active) from destroying a live account.
+    await db
+      .delete(users)
+      .where(and(eq(users.id, id), eq(users.status, 'pending')));
+  },
+
   async setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void> {
+    // Clearing `requiresPasswordReset` here ensures the reset-password
+    // flow (F1) also unblocks users who arrived via the F3 revert link
+    // (FR-012b). The flag is flipped ON by the revert use case; this
+    // is the single place it is flipped OFF.
     await db
       .update(users)
-      .set({ passwordHash: hash, lastPasswordChangedAt: now })
+      .set({
+        passwordHash: hash,
+        lastPasswordChangedAt: now,
+        requiresPasswordReset: false,
+      })
       .where(eq(users.id, id));
   },
 
@@ -201,6 +320,25 @@ export const userRepo: UserRepo = {
     const rows = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(users);
+    return rows[0]?.count ?? 0;
+  },
+
+  async listWithFilter(filter, limit, offset) {
+    const where = buildFilterConditions(filter);
+    const baseQuery = db.select().from(users);
+    const rows = await (where ? baseQuery.where(where) : baseQuery)
+      .orderBy(sql`${users.createdAt} DESC`)
+      .limit(limit)
+      .offset(offset);
+    return rows.map(toDomain);
+  },
+
+  async countWithFilter(filter) {
+    const where = buildFilterConditions(filter);
+    const baseQuery = db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(users);
+    const rows = await (where ? baseQuery.where(where) : baseQuery);
     return rows[0]?.count ?? 0;
   },
 };

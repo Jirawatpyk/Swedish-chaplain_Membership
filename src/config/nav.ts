@@ -7,6 +7,7 @@ import {
   SettingsIcon,
   DollarSignIcon,
   UserCircleIcon,
+  BuildingIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,12 @@ export const staffNavConfig: NavConfig = {
           activePattern: '/admin/plans',
         },
         {
+          titleKey: 'nav.staff.members',
+          icon: BuildingIcon,
+          href: '/admin/members',
+          activePattern: '/admin/members',
+        },
+        {
           titleKey: 'nav.staff.users',
           icon: UsersIcon,
           href: '/admin/users',
@@ -119,6 +126,12 @@ export const memberNavConfig: NavConfig = {
           icon: LayoutDashboardIcon,
           href: '/portal',
           activePattern: 'exact:/portal',
+        },
+        {
+          titleKey: 'nav.member.profile',
+          icon: BuildingIcon,
+          href: '/portal/profile',
+          activePattern: '/portal/profile',
         },
         {
           titleKey: 'nav.member.account',

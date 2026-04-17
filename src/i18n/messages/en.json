@@ -103,6 +103,35 @@
       },
       "contactHeading": "Need help?",
       "contactDescription": "Until self-service lands, email us and we'll help directly."
+    },
+    "emailChangeRevert": {
+      "title": "Revert email change",
+      "cardDescription": "The contact email on your SweCham account was changed. If you did not request this, click below to revert it and reset your password.",
+      "description": "Reverting will restore your previous email, sign out every active session, and require you to set a new password before signing in again.",
+      "revert": "Revert and reset password",
+      "submitting": "Reverting…",
+      "successMessage": "Email change reverted. Complete the password reset to regain access.",
+      "completePasswordReset": "Complete password reset",
+      "errors": {
+        "invalidToken": "This revert link has expired or has already been used.",
+        "conflict": "The previous email is no longer available. Contact your chamber administrator.",
+        "rateLimited": "Too many attempts. Try again in {seconds}s.",
+        "serverError": "Something went wrong. Please try again."
+      }
+    },
+    "emailVerification": {
+      "title": "Verify email address",
+      "cardDescription": "Confirming your new email address — one moment.",
+      "verifying": "Verifying your email address…",
+      "successMessage": "Email verified. You can now sign in.",
+      "signInCta": "Go to sign in",
+      "retry": "Try again",
+      "errors": {
+        "invalidToken": "This verification link has expired or has already been used.",
+        "notYetActive": "This link is not active yet. Try again in {seconds}s.",
+        "rateLimited": "Too many attempts. Try again in {seconds}s.",
+        "serverError": "Something went wrong. Please try again."
+      }
     }
   },
   "shell": {
@@ -157,13 +186,27 @@
     },
     "users": {
       "title": "Users",
-      "subtitle": "{total} accounts total",
       "pageSubtitle": "Manage staff and member accounts, roles, and status.",
-      "viewingAs": "Viewing as {role}",
-      "listHeading": "All accounts",
-      "listDescription": "Invite, disable, enable, or change roles. Destructive actions require confirmation.",
       "empty": "No users yet. Invite the first one to get started.",
-      "refreshHint": "Changes apply immediately after confirmation.",
+      "filters": {
+        "searchPlaceholder": "Search by email or display name",
+        "searchSrLabel": "Search users",
+        "role": {
+          "label": "Role",
+          "all": "All roles",
+          "admin": "Admin",
+          "manager": "Manager",
+          "member": "Member"
+        },
+        "status": {
+          "label": "Status",
+          "all": "All statuses",
+          "active": "Active",
+          "disabled": "Disabled",
+          "pending": "Pending"
+        },
+        "clear": "Clear filters"
+      },
       "columns": {
         "email": "Email",
         "name": "Name",
@@ -222,7 +265,6 @@
     "plans": {
       "title": "Membership Plans",
       "subtitle": "{total} plans in {year}",
-      "listHeading": "Plan catalogue",
       "listDescription": "Manage tier definitions, annual fees, and benefit matrices. Prior-year plans are partially locked for audit integrity.",
       "empty": {
         "title": "No plans for this year",
@@ -230,7 +272,6 @@
         "newCta": "New plan",
         "cloneCta": "Clone {sourceYear} → {targetYear}"
       },
-      "refreshHint": "Changes apply immediately and appear in the audit log.",
       "columns": {
         "name": "Name",
         "category": "Category",
@@ -444,29 +485,370 @@
           "validation": "Please fix the highlighted fields."
         }
       }
+    },
+    "members": {
+      "title": "Members",
+      "overrideReason": {
+        "title": "Reason for bypassing validation",
+        "description": "Record why you are proceeding despite the warning. The reason is kept in the audit log.",
+        "codeLabel": "Reason",
+        "codePlaceholder": "Select a reason…",
+        "noteLabel": "Note",
+        "noteRequired": "Note is required when reason is \"Other\".",
+        "notePlaceholder": "Add context (max 500 chars)…",
+        "proceed": "Proceed with override",
+        "cancel": "Cancel",
+        "codes": {
+          "board_approved": "Board approved",
+          "pending_renewal_grace": "Pending renewal (grace period)",
+          "data_correction": "Data correction",
+          "other": "Other"
+        }
+      },
+      "bundleChangeWarning": {
+        "title": "Plan bundle change",
+        "description": "Changing the plan changes the bundled corporate tier for {affectedCount, plural, =0 {no} one {# member} other {# members}} on the old partnership.",
+        "oldBundle": "Old bundle",
+        "newBundle": "New bundle",
+        "affectedCount": "{count, plural, =0 {No members affected} one {# member affected} other {# members affected}}",
+        "confirm": "Confirm bundle change",
+        "cancel": "Cancel",
+        "loading": "Calculating affected members…"
+      },
+      "subtitle": "Member companies + primary contacts",
+      "directory": {
+        "searchPlaceholder": "Search by company, contact name, or email",
+        "searchSrLabel": "Search members",
+        "clearFilters": "Clear filters",
+        "filters": {
+          "status": {
+            "label": "Status",
+            "all": "All statuses",
+            "active": "Active",
+            "inactive": "Inactive",
+            "archived": "Archived"
+          },
+          "plan": {
+            "label": "Plan",
+            "all": "All plans"
+          }
+        },
+        "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
+        "columns": {
+          "company": "Company",
+          "country": "Country",
+          "plan": "Plan",
+          "year": "Year",
+          "primaryContact": "Primary contact",
+          "status": "Status",
+          "risk": "Risk",
+          "lastActivity": "Last activity",
+          "notes": "Notes"
+        },
+        "riskPlaceholder": "—",
+        "rowAriaLabel": "Open {company} details",
+        "noPrimary": "No primary contact",
+        "loadMore": "Load more",
+        "selectAll": "Select all rows",
+        "selectRow": "Select {company}",
+        "selectedCount": "{count, plural, one {# row selected} other {# rows selected}}",
+        "selectAllMatchingHint": "{count} selected on this page. <loadMore>Load the next page</loadMore> to extend the selection."
+      },
+      "emptyStates": {
+        "zero": {
+          "title": "No members yet",
+          "description": "Add your first member to get started.",
+          "cta": "Add your first member"
+        },
+        "filtered": {
+          "title": "No members match these filters",
+          "description": "Try clearing one or more filters.",
+          "cta": "Clear filters"
+        },
+        "error": {
+          "title": "Could not load members",
+          "description": "A server error prevented loading the directory.",
+          "cta": "Retry"
+        }
+      },
+      "detail": {
+        "title": "{companyName}",
+        "sections": {
+          "company": "Company",
+          "contacts": "Contacts",
+          "primary": "Primary contact",
+          "secondary": "Other contacts",
+          "plan": "Plan",
+          "audit": "Recent activity"
+        },
+        "fields": {
+          "legalEntityType": "Legal entity type",
+          "country": "Country",
+          "taxId": "Tax ID",
+          "website": "Website",
+          "description": "Description",
+          "foundedYear": "Founded",
+          "turnoverThb": "Annual turnover (THB)",
+          "planId": "Plan ID",
+          "planYear": "Plan year",
+          "registrationDate": "Registration date",
+          "registrationFeePaid": "Registration fee",
+          "registrationFeePaidYes": "Paid",
+          "registrationFeePaidNo": "Unpaid",
+          "status": "Status",
+          "lastActivityAt": "Last activity",
+          "archivedAt": "Archived at",
+          "notes": "Internal notes",
+          "firstName": "First name",
+          "lastName": "Last name",
+          "email": "Email",
+          "phone": "Phone",
+          "roleTitle": "Role",
+          "preferredLanguage": "Preferred language",
+          "plan": "Plan"
+        },
+        "copy": {
+          "copyMemberId": "Copy member ID",
+          "copyEmail": "Copy email",
+          "copyTaxId": "Copy tax ID",
+          "copied": "Copied!"
+        },
+        "notFound": {
+          "title": "Member not found",
+          "description": "The member may have been archived or the URL is incorrect.",
+          "cta": "Back to members"
+        },
+        "unknown": "—",
+        "emergencyPrimary": {
+          "ariaLabel": "Help — emergency primary contact transfer",
+          "title": "Emergency primary contact transfer",
+          "body": "Need to transfer the primary contact to a new person (e.g. the previous primary has left the company)? Click Add contact to create a secondary contact with the new person's details, then use Promote to make them the new primary. The old primary is automatically demoted."
+        },
+        "portal": {
+          "linked": "Portal linked"
+        },
+        "editCta": "Edit"
+      },
+      "timeline": {
+        "pageTitle": "Timeline · {companyName} · SweCham",
+        "title": "Timeline",
+        "subtitle": "Activity history for this member",
+        "empty": "No activity recorded yet.",
+        "loadMore": "Load older events",
+        "loading": "Loading timeline…",
+        "actor": "by {actor}",
+        "actorSystem": "System",
+        "eventAt": "{date}",
+        "backToDetail": "Back to member",
+        "totalEvents": "{count, plural, one {# event} other {# events}}",
+        "payload": {
+          "primary": "primary",
+          "primaryContactPromoted": "primary contact promoted"
+        }
+      },
+      "create": {
+        "pageTitle": "Add member · SweCham",
+        "title": "Add member",
+        "subtitle": "Create a member company with its primary contact.",
+        "requiredNote": "* fields are required",
+        "submit": "Create member",
+        "submitting": "Creating…",
+        "cancel": "Cancel",
+        "sections": {
+          "company": "Company",
+          "primaryContact": "Primary contact"
+        },
+        "fields": {
+          "companyName": "Company name",
+          "legalEntityType": "Legal entity type",
+          "country": "Country (ISO code)",
+          "taxId": "Tax ID",
+          "taxIdHintTH": "Thai 13-digit tax ID with checksum",
+          "website": "Website",
+          "description": "Description",
+          "foundedYear": "Founded year",
+          "turnoverThb": "Annual turnover (THB)",
+          "plan": "Plan",
+          "planPlaceholder": "Select a plan…",
+          "planYear": "Plan year",
+          "registrationDate": "Registration date",
+          "firstName": "First name",
+          "lastName": "Last name",
+          "email": "Email",
+          "phone": "Phone (E.164)",
+          "roleTitle": "Role / title",
+          "preferredLanguage": "Preferred language",
+          "dateOfBirth": "Date of birth",
+          "dateOfBirthHint": "Required for Thai Alumni plan",
+          "notes": "Notes (admin only)",
+          "notesPlaceholder": "Internal admin notes…",
+          "notesHint": "Visible to chamber staff only. Not shown to members."
+        },
+        "errors": {
+          "generic": "Something went wrong. Please try again.",
+          "validation": "Please fix the highlighted fields.",
+          "forbidden": "Only administrators can add members.",
+          "planMissing": "No active plans found — create a plan first."
+        },
+        "success": "Member created."
+      },
+      "softDuplicate": {
+        "title": "Possible duplicate found",
+        "description": "A member with the same company name + country already exists in this directory. Proceed only if this is a distinct entity (e.g. subsidiary, franchise).",
+        "existingLabel": "Existing member",
+        "openExisting": "Open existing member",
+        "proceed": "Proceed anyway",
+        "cancel": "Cancel"
+      },
+      "edit": {
+        "pageTitle": "Edit {companyName} · SweCham",
+        "title": "Edit member",
+        "subtitle": "Update member details, plan, or primary contact.",
+        "submit": "Save changes",
+        "submitting": "Saving…",
+        "cancel": "Cancel",
+        "success": "Member updated.",
+        "contactsHeading": "Contacts",
+        "addContact": "Add contact",
+        "primary": "Primary",
+        "promoteLabel": "Promote to primary",
+        "removeLabel": "Remove contact",
+        "removeConfirmTitle": "Remove contact?",
+        "removeConfirmDescription": "This will soft-delete the contact. The record is kept for audit but the contact will no longer appear in the directory.",
+        "removeConfirm": "Remove",
+        "addHelpTip": "Emergency primary contact transfer — use \"Add contact\" then \"Promote to primary\".",
+        "errors": {
+          "generic": "Something went wrong. Please try again.",
+          "notFound": "Member not found.",
+          "validation": "Please fix the highlighted fields.",
+          "contactNotFound": "Contact not found.",
+          "cannotRemovePrimary": "Cannot remove the primary contact. Promote another contact first."
+        }
+      },
+      "contactForm": {
+        "title": "Add contact",
+        "editTitle": "Edit contact",
+        "submit": "Save",
+        "submitting": "Saving…",
+        "cancel": "Cancel"
+      },
+      "addMember": "Add member",
+      "invitePortal": {
+        "label": "Invite to portal",
+        "submitting": "Sending…",
+        "success": "Invitation sent.",
+        "errors": {
+          "alreadyLinked": "This contact is already linked to a portal account.",
+          "noEmail": "Add an email to this contact before inviting.",
+          "invalidEmail": "The contact email is invalid.",
+          "emailTaken": "This email already belongs to another account.",
+          "notFound": "Contact not found.",
+          "serverError": "Something went wrong. Please try again."
+        }
+      },
+      "bulk": {
+        "toolbarLabel": "Bulk actions",
+        "selectedCount": "{count, plural, one {# selected} other {# selected}}",
+        "overCap": "Maximum {max} members per batch. Split the selection.",
+        "actions": {
+          "archive": "Archive",
+          "change_plan": "Change plan",
+          "send_portal_invite": "Send invite"
+        },
+        "clear": "Clear selection",
+        "archiveTitle": "Archive {count, plural, one {# member} other {# members}}",
+        "archiveDescription": "Archived members are hidden from the directory and linked portal accounts are revoked. Undelete within 90 days.",
+        "affectedMembers": "Affected members",
+        "andMore": "…and {count} more",
+        "typeToConfirm": "Type \"{phrase}\" to confirm",
+        "archivePhrase": "Archive {count, plural, one {# member} other {# members}}",
+        "cancel": "Cancel",
+        "confirmArchive": "Archive {count, plural, one {# member} other {# members}}",
+        "success": "{count, plural, one {# member} other {# members}} {action}",
+        "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
+        "unknownError": "Something went wrong.",
+        "networkError": "Network error. Check your connection.",
+        "progressLabel": "Bulk operation in progress",
+        "progressMessage": "{action} {count, plural, one {# member} other {# members}}…",
+        "elapsedSeconds": "Elapsed: {seconds}s"
+      },
+      "inlineEdit": {
+        "statusUpdated": "Status updated",
+        "saveFailed": "Save failed. Reverted.",
+        "saving": "Saving…",
+        "toggleStatus": "Toggle status (currently {current})",
+        "editCountry": "Edit country",
+        "editCountryHint": "Double-click to edit country (ISO 3166-1 alpha-2)",
+        "countryUpdated": "Country updated",
+        "countryInvalid": "Country must be a 2-letter ISO code.",
+        "countryInput": "Country code (2 letters)",
+        "editNotes": "Edit notes",
+        "editNotesHint": "Double-click to edit notes",
+        "notesUpdated": "Notes updated",
+        "notesSaved": "Notes saved",
+        "notesInput": "Edit notes",
+        "notesPlaceholder": "Add notes…",
+        "networkError": "Network error. Check your connection."
+      },
+      "archive": {
+        "archiveCta": "Archive member",
+        "confirmTitle": "Archive {companyName}?",
+        "confirmDescription": "Archiving hides the member from the default directory and revokes any linked portal sessions. You can restore within 90 days.",
+        "reasonLabel": "Reason (optional)",
+        "reasonPlaceholder": "e.g. company closed, membership cancelled",
+        "reasonHelper": "Up to 500 characters. Visible to other admins in the audit log.",
+        "cancel": "Cancel",
+        "confirmCta": "Archive",
+        "archivingInProgress": "Archiving…",
+        "archiveSuccess": "{companyName} archived.",
+        "archiveError": "Could not archive. Please try again.",
+        "bannerTitle": "Archived on {date}",
+        "withinWindow": "{daysRemaining, plural, one {# day remaining} other {# days remaining}} in the 90-day undelete window.",
+        "windowExpired": "Archived {daysSinceArchive} days ago — beyond the 90-day undelete window.",
+        "windowExpiredTooltip": "Archived > 90 days — contact platform admin to restore.",
+        "undeleteCta": "Undelete",
+        "undeleteSuccess": "Member restored.",
+        "undeleteError": "Could not restore. Please try again.",
+        "windowExpiredToast": "Archive window (90 days) has expired. Contact platform admin to restore."
+      },
+      "undelete": {
+        "cta": "Undelete",
+        "confirmTitle": "Restore member?",
+        "confirmDescription": "Restoring reactivates the member record. Linked portal users must sign in again.",
+        "success": "Member restored.",
+        "error": "Could not restore. Please try again."
+      }
+    },
+    "outboxHealth": {
+      "label": "Email delivery issues detected",
+      "permanentFailed": "{count, plural, one {# email permanently failed} other {# emails permanently failed}} in the last 24 h",
+      "stuckPending": "{count, plural, one {# email stuck} other {# emails stuck}} in queue (cron may be down)"
     }
   },
   "palette": {
     "title": "Command palette",
     "description": "Search for a plan, action, or page to run",
-    "placeholder": "Search plans, actions, and pages…",
+    "placeholder": "Search plans, members, actions, and pages…",
     "empty": "No results found.",
     "groups": {
       "plans": "Plans",
       "actions": "Actions",
-      "navigate": "Navigate"
+      "navigate": "Navigate",
+      "members": "Members"
     },
     "actions": {
       "newPlan": "Create new plan",
       "cloneYear": "Clone year",
       "editFees": "Edit fee configuration",
-      "viewAuditLog": "View audit log"
+      "viewAuditLog": "View audit log",
+      "newMember": "Create new member"
     },
     "navigate": {
       "plansList": "Plans list",
       "feeConfig": "Fee configuration",
       "usersList": "Users list",
-      "dashboard": "Dashboard"
+      "dashboard": "Dashboard",
+      "membersList": "Members list"
     }
   },
   "nav": {
@@ -482,10 +864,12 @@
       },
       "collapse": "Collapse sidebar",
       "expand": "Expand sidebar",
-      "ariaLabel": "Staff navigation"
+      "ariaLabel": "Staff navigation",
+      "members": "Members"
     },
     "member": {
       "dashboard": "Dashboard",
+      "profile": "Profile",
       "account": "Account",
       "ariaLabel": "Member navigation"
     }
@@ -500,7 +884,11 @@
     "account": "Account",
     "newPlan": "New Plan",
     "clonePlan": "Clone Plan",
-    "editPlan": "Edit"
+    "editPlan": "Edit",
+    "members": "Members",
+    "memberDetail": "Details",
+    "newMember": "New Member",
+    "editMember": "Edit"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
@@ -509,5 +897,121 @@
     "loadingPage": "Loading page content",
     "loadingTable": "Loading table data",
     "loadingForm": "Loading form"
+  },
+  "portal": {
+    "profile": {
+      "title": "My profile",
+      "pageTitle": "My Profile",
+      "notLinked": "Your account is not linked to a member. Please contact your administrator.",
+      "loadError": "Could not load your profile. Please try again.",
+      "editButton": "Edit Profile",
+      "companySection": "Company Information",
+      "planSection": "Membership Plan",
+      "contactsSection": "Contacts",
+      "inviteColleague": "Invite Colleague",
+      "primaryBadge": "Primary",
+      "portalLinked": "Portal linked",
+      "noContacts": "No contacts found.",
+      "fields": {
+        "companyName": "Company Name",
+        "legalEntityType": "Legal Entity Type",
+        "country": "Country",
+        "website": "Website",
+        "description": "Description",
+        "planYear": "Plan Year",
+        "registrationDate": "Registration Date",
+        "status": "Status"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "archived": "Archived"
+      }
+    },
+    "edit": {
+      "pageTitle": "Edit Profile",
+      "notLinked": "Your account is not linked to a member.",
+      "loadError": "Could not load your profile.",
+      "contactSection": "Your Contact Information",
+      "companySection": "Company Information",
+      "fields": {
+        "firstName": "First Name",
+        "lastName": "Last Name",
+        "phone": "Phone",
+        "preferredLanguage": "Preferred Language",
+        "website": "Website",
+        "description": "Description"
+      },
+      "saveButton": "Save Changes",
+      "cancelButton": "Cancel",
+      "saving": "Saving…",
+      "saveSuccess": "Profile updated successfully.",
+      "saveError": "Could not save changes. Please try again.",
+      "noChanges": "No changes to save.",
+      "languageOptions": {
+        "en": "English",
+        "th": "ไทย (Thai)",
+        "sv": "Svenska (Swedish)"
+      }
+    },
+    "invite": {
+      "pageTitle": "Invite Colleague",
+      "notLinked": "Your account is not linked to a member.",
+      "loadError": "Could not load your profile.",
+      "notPrimary": "Only the primary contact can invite colleagues.",
+      "formTitle": "Colleague Details",
+      "fields": {
+        "firstName": "First Name",
+        "lastName": "Last Name",
+        "email": "Email",
+        "roleTitle": "Role / Title",
+        "preferredLanguage": "Preferred Language"
+      },
+      "sendButton": "Send Invitation",
+      "cancelButton": "Cancel",
+      "sending": "Sending…",
+      "sendSuccess": "Invitation sent successfully.",
+      "sendError": "Could not send invitation. Please try again.",
+      "emailTaken": "This email is already registered.",
+      "languageOptions": {
+        "en": "English",
+        "th": "ไทย (Thai)",
+        "sv": "Svenska (Swedish)"
+      }
+    }
+  },
+  "audit": {
+    "eventType": {
+      "member_created": "Member created",
+      "member_updated": "Member updated",
+      "member_plan_changed": "Plan changed",
+      "member_primary_contact_changed": "Primary contact changed",
+      "member_status_changed": "Status changed",
+      "member_archived": "Member archived",
+      "member_undeleted": "Member undeleted",
+      "contact_created": "Contact added",
+      "contact_updated": "Contact updated",
+      "contact_removed": "Contact removed",
+      "member_self_updated": "Profile updated by member",
+      "member_self_update_forbidden": "Forbidden self-update blocked",
+      "member_cross_tenant_probe": "Cross-tenant probe detected",
+      "plan_bundle_changed": "Plan bundle changed",
+      "member_contact_email_changed": "Contact email changed",
+      "user_sessions_revoked": "Sessions revoked",
+      "email_verification_sent": "Email verification sent",
+      "email_change_notification_sent_to_old_address": "Email-change notice sent to old address",
+      "member_email_change_reverted": "Email change reverted",
+      "email_verification_resent": "Verification email resent",
+      "email_dispatch_failed": "Email dispatch failed",
+      "invitation_bounced": "Invitation bounced",
+      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
+    }
+  },
+  "pagination": {
+    "summary": "Showing {from}–{to} of {total}",
+    "emptyCount": "No records",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {page}"
   }
 }

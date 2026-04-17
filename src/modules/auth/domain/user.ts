@@ -23,6 +23,19 @@ export interface UserAccount {
   readonly failedSignInCount: number;
   readonly lockedUntil: Date | null;
   readonly displayName: string | null;
+  /**
+   * F3 FR-012a — flipped FALSE by the change-contact-email atomic txn
+   * and TRUE by the verification endpoint consuming the 24h token.
+   * F1 sign-in MUST refuse when FALSE. Existing F1 rows default TRUE.
+   */
+  readonly emailVerified: boolean;
+  /**
+   * F3 FR-012b — flipped TRUE by the revert-contact-email use case.
+   * F1 sign-in MUST refuse while TRUE; the reset-password flow flips
+   * it back to FALSE on successful password change. Existing F1 rows
+   * default FALSE.
+   */
+  readonly requiresPasswordReset: boolean;
 }
 
 export function isUserStatus(value: string): value is UserStatus {

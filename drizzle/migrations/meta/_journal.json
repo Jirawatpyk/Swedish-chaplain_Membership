@@ -64,6 +64,76 @@
       "when": 1775915326091,
       "tag": "0008_money_columns_to_bigint",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776252552934,
+      "tag": "0009_members_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1776252600000,
+      "tag": "0010_audit_log_f3_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1776252700000,
+      "tag": "0011_notifications_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1776252800000,
+      "tag": "0012_email_change_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1776252900000,
+      "tag": "0013_requires_password_reset",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1776350000000,
+      "tag": "0014_audit_event_portal_invite_queued",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1776350100000,
+      "tag": "0015_add_missing_audit_enum_values",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1776400000000,
+      "tag": "0016_invitations_revoke_grant",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1776410000000,
+      "tag": "0017_invitations_revoke_tighten",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1776439610984,
+      "tag": "0018_soft_franklin_richards",
+      "breakpoints": true
     }
   ]
 }

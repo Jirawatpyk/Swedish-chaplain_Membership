@@ -1,31 +1,44 @@
 /**
- * create-user use case (T123, spec US4 AS1, FR-009).
+ * create-user use case (T123, spec US4 AS1, FR-009) — Path C refactor.
  *
- * Admin invites a new staff / member by email. We create a `pending`
- * user row + an `invitations` row atomically, then send the invitation
- * email via Resend. The invitee follows the link, calls
- * `redeem-invite`, and transitions to `active`.
+ * Admin invites a new staff / member by email. All 4 side effects
+ * (user insert + invitation insert + outbox enqueue + audit append)
+ * execute inside a SINGLE `db.transaction(...)` so the full flow is
+ * atomic:
  *
- * Algorithm:
- *   1. Ensure caller is `admin` (RBAC enforcement happens at the route
- *      handler via `requireRole`; this use case trusts the input).
- *   2. Check for an existing user with this email. If one exists
- *      (pending, active, or disabled), return err(email-taken) —
- *      we do NOT silently overwrite, and we do NOT re-issue a fresh
- *      invitation to an existing pending user (admins must explicitly
- *      delete + recreate, logged in the audit trail).
- *   3. Insert `users` row with status='pending'.
- *   4. Insert `invitations` row with 7-day expiry.
- *   5. Send invitation email. Failure is LOGGED but does not roll
- *      back the user row — the admin can resend via a future
- *      "resend invitation" admin action (tracked for F9 polish; no
- *      dedicated Feature number — it's a small F1 follow-up patch).
- *   6. Emit `account_created` audit event.
+ *   BEGIN;
+ *     INSERT INTO users (... status='pending');
+ *     INSERT INTO invitations (...);
+ *     INSERT INTO notifications_outbox (...);
+ *     INSERT INTO audit_log (... event='account_created');
+ *   COMMIT;
+ *
+ * If ANY step fails the whole tx rolls back — no orphan user, no
+ * invitation without an outbox row, no audit without state. Pre-Path-C
+ * the flow used 3 separate connections + a compensating `deletePending`
+ * call that had to be maintained manually and could leave the audit
+ * event missing on the enqueue-fail path (the silent-success bug that
+ * the L1-L3 observability layers surfaced).
+ *
+ * Why `db.transaction` directly and not `runInTenant`:
+ *   - F1 admin-invite flow is cross-tenant: the outbox row carries
+ *     `tenant_id=null` because the dispatcher serves every tenant.
+ *     `runInTenant` would `SET LOCAL app.current_tenant` and activate
+ *     RLS policies that do not apply here (notifications_outbox has no
+ *     RLS — see migration 0011 header).
+ *   - `TenantTx`/`DbTx` types are structurally identical; repos accept
+ *     either via the `DbTx` alias.
+ *
+ * Error mapping: `CreateUserAbort<E>` sentinel throws inside the tx
+ * callback and the outer catch maps it back to the typed
+ * `CreateUserError` union. Any unexpected throw (DB connection loss,
+ * statement timeout) bubbles out as-is so the route returns 500.
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
+import { db, type DbTx } from '@/lib/db';
 import { asEmailAddress, type TokenId, type UserId } from '@/modules/auth/domain/branded';
 import type { Role } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
@@ -33,13 +46,8 @@ import type { UserAccount } from '@/modules/auth/domain/user';
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
-import type { EmailSender } from '@/modules/auth/infrastructure/email/resend-client';
-// `buildInvitationEmail` is a PURE template function (no DB, no network).
-// Type-only import keeps the Application layer free of the concrete
-// value; the implementation is injected via `CreateUserDeps.buildEmail`
-// from `auth-deps.ts` composition root.
-import type { buildInvitationEmail as BuildInvitationEmailFn } from '@/modules/auth/infrastructure/email/invitation-email';
 import type { EmailLocale } from '@/modules/auth/infrastructure/email/reset-password-email';
+import { CreateUserAbort } from './tx-abort';
 import { defaultCreateUserDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
@@ -63,16 +71,49 @@ export interface CreateUserSuccess {
 
 export type CreateUserError =
   | { readonly code: 'invalid-input' }
-  | { readonly code: 'email-taken' };
+  | { readonly code: 'email-taken' }
+  | { readonly code: 'invitation-create-failed' };
 
 // --- Dependencies ------------------------------------------------------------
+
+/**
+ * Outbox enqueue port for invitation emails. Inserts a row into
+ * `notifications_outbox` with `notification_type='member_invitation'`.
+ */
+export interface EnqueueInvitationRequest {
+  readonly toEmail: string;
+  readonly token: TokenId;
+  readonly role: Role;
+  readonly locale?: EmailLocale | undefined;
+}
+
+/**
+ * Literal union of known enqueue failure codes. Keeping this closed
+ * lets consumers exhaustively handle the error space; the `cause`
+ * field is sanitised (string) to avoid raw DB exception leakage.
+ */
+export type EnqueueInvitationErrorCode = 'enqueue_failed' | 'no_row_returned';
+
+export interface EnqueueInvitationError {
+  readonly code: EnqueueInvitationErrorCode;
+  readonly cause?: string;
+}
+
+/**
+ * Tx-scoped enqueue used by the atomic `createUser` flow. Inserts on
+ * the caller's tx handle so the outbox row commits with the rest of
+ * the flow (or rolls back together).
+ */
+export type EnqueueInvitationInTxFn = (
+  tx: DbTx,
+  request: EnqueueInvitationRequest,
+) => Promise<Result<{ outboxRowId: string }, EnqueueInvitationError>>;
 
 export interface CreateUserDeps {
   readonly users: UserRepo;
   readonly tokens: TokenRepo;
   readonly audit: AuditRepo;
-  readonly email: EmailSender;
-  readonly buildInvitationEmail: typeof BuildInvitationEmailFn;
+  readonly enqueueInvitationInTx: EnqueueInvitationInTxFn;
   readonly now: () => Date;
 }
 
@@ -84,7 +125,7 @@ export async function createUser(
   input: CreateUserInput,
   deps: CreateUserDeps = defaultCreateUserDeps,
 ): Promise<Result<CreateUserSuccess, CreateUserError>> {
-  // 1. Parse + normalise email
+  // Pre-tx validation — no point opening a tx for a malformed input.
   let normalisedEmail;
   try {
     normalisedEmail = asEmailAddress(input.email);
@@ -92,65 +133,90 @@ export async function createUser(
     return err({ code: 'invalid-input' });
   }
 
-  // 2. Duplicate check
-  const existing = await deps.users.findByEmail(normalisedEmail);
-  if (existing) {
-    return err({ code: 'email-taken' });
-  }
-
-  // 3. Create pending user + invitation token
-  const user = await deps.users.createPending({
-    email: normalisedEmail,
-    role: input.role,
-    displayName: input.displayName ?? null,
-  });
-
   const now = deps.now();
-  const invitation = await deps.tokens.createInvitation({
-    userId: user.id,
-    invitedByUserId: input.actorUserId,
-    intendedRole: input.role,
-    now,
-  });
 
-  // 4. Send invitation email — template builder injected via deps
-  //    so this file never imports the concrete function at module
-  //    load time (Clean Architecture: Application imports types only).
-  const built = deps.buildInvitationEmail({
-    toEmail: user.email,
-    token: invitation.id,
-    role: input.role,
-    locale: input.locale,
-  });
-  const sendResult = await deps.email.send({
-    to: user.email,
-    subject: built.subject,
-    html: built.html,
-    text: built.text,
-  });
-  if (!sendResult.ok) {
+  try {
+    const outcome = await db.transaction(async (tx) => {
+      // 1. Duplicate check inside tx — holds the row so a concurrent
+      //    admin invite cannot pass the same check and commit twice
+      //    (TOCTOU race eliminated).
+      const existing = await deps.users.findByEmailInTx(tx, normalisedEmail);
+      if (existing) {
+        throw new CreateUserAbort<CreateUserError>({ code: 'email-taken' });
+      }
+
+      // 2. Create pending user.
+      const user = await deps.users.createPendingInTx(tx, {
+        email: normalisedEmail,
+        role: input.role,
+        displayName: input.displayName ?? null,
+      });
+
+      // 3. Create invitation.
+      const invitation = await deps.tokens.createInvitationInTx(tx, {
+        userId: user.id,
+        invitedByUserId: input.actorUserId,
+        intendedRole: input.role,
+        now,
+      });
+
+      // 4. Enqueue outbox — atomic with steps 1-3. If this returns err
+      //    the throw triggers rollback, so users + invitations inserts
+      //    are undone without needing a compensating delete path.
+      const enqueueResult = await deps.enqueueInvitationInTx(tx, {
+        toEmail: user.email,
+        token: invitation.id,
+        role: input.role,
+        locale: input.locale,
+      });
+      if (!enqueueResult.ok) {
+        logger.error(
+          {
+            requestId: input.requestId,
+            errCode: enqueueResult.error.code,
+            errCause: enqueueResult.error.cause,
+            targetUserIdHash: hashId(user.id),
+          },
+          'create_user.invitation_enqueue_failed',
+        );
+        authMetrics.invitationEnqueueFailed(input.role, enqueueResult.error.code);
+        throw new CreateUserAbort<CreateUserError>({
+          code: 'invitation-create-failed',
+        });
+      }
+
+      // 5. Audit — also in-tx so the append-only row commits with the
+      //    state change (Principle VIII).
+      await deps.audit.appendInTx(tx, {
+        eventType: 'account_created',
+        actorUserId: input.actorUserId,
+        targetUserId: user.id,
+        sourceIp: input.sourceIp,
+        summary: `invited ${input.role} ${user.email}`,
+        requestId: input.requestId,
+      });
+
+      return { user, invitationId: invitation.id };
+    });
+
+    // observability.md § 4.3 — invitation volume by role. Post-commit
+    // so we don't count aborted transactions.
+    authMetrics.invitationSent(input.role);
+    return ok(outcome);
+  } catch (e) {
+    if (e instanceof CreateUserAbort) {
+      return err(e.error as CreateUserError);
+    }
+    // Unexpected DB / network error. Log with context, re-raise so the
+    // route handler maps it to 500. Pre-Path-C this path was reached
+    // via `createInvitation` throw; now any step's throw lands here.
     logger.error(
       {
         requestId: input.requestId,
-        errCode: sendResult.error.code,
-        targetUserIdHash: hashId(user.id),
+        errMessage: e instanceof Error ? e.message : String(e),
       },
-      'create_user.email_send_failed',
+      'create_user.unexpected_tx_failure',
     );
+    throw e;
   }
-
-  // 5. Audit
-  await deps.audit.append({
-    eventType: 'account_created',
-    actorUserId: input.actorUserId,
-    targetUserId: user.id,
-    sourceIp: input.sourceIp,
-    summary: `invited ${input.role} ${user.email}`,
-    requestId: input.requestId,
-  });
-
-  // observability.md § 4.3 — invitation volume by role.
-  authMetrics.invitationSent(input.role);
-
-  return ok({ user, invitationId: invitation.id });
 }
