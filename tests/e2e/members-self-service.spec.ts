@@ -108,7 +108,7 @@ test.describe('US5 Member self-service portal @f3 @a11y @i18n', () => {
       await page.waitForLoadState('networkidle');
 
       const results = await new AxeBuilder({ page })
-        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
         .analyze();
       expect(results.violations).toEqual([]);
     }

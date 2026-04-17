@@ -79,6 +79,7 @@ test.describe('members bulk actions @f3', () => {
     // Wait for bulk bar
     await page.waitForSelector('[role="toolbar"]');
     const results = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .include('[data-slot="table"]')
       .include('[role="toolbar"]')
       .analyze();

@@ -279,21 +279,21 @@
 
 ### ADOPT-01 (WCAG 2.2 opportunistic adoption)
 
-- [ ] T144 [P] Add axe-core `target-size` rule assertion to every `@a11y` spec (ADOPT-01 WCAG 2.2 SC 2.5.8)
-- [ ] T145 [P] Author Playwright computed-style assertion in `tests/e2e/members-target-size-2-2.spec.ts @f3 @a11y` — enumerated sample targets: (i) inline-edit cells (status, country, notes), (ii) icon buttons on each directory row (archive, undelete, promote-primary, invite), (iii) multi-select header + row checkboxes, (iv) palette result rows, (v) close buttons on every dialog (bundle-warning, override-reason, soft-duplicate, archive-confirm), (vi) row-action dropdown triggers — all ≥ 24×24 CSS px per ADOPT-01 / WCAG 2.2 SC 2.5.8
-- [ ] T146 [P] Author `tests/e2e/members-focus-not-obscured.spec.ts @f3 @a11y` — keyboard-only walk verifying no focus occlusion by sticky bulk toolbar (ADOPT-01 WCAG 2.2 SC 2.4.11)
-- [ ] T146a [P] Author `tests/e2e/members-page-titles.spec.ts @f3 @a11y` — navigate every F3 route (`/admin/members`, `/admin/members/new`, `/admin/members/[id]`, `/admin/members/[id]/edit`, `/admin/members/[id]/timeline`, `/portal`, `/portal/edit`, `/portal/contacts/invite`, `/auth/email-change/revert/[token]`) and assert each emits a unique `<title>` per FR-037
-- [ ] T146b [P] Author `tests/e2e/members-reduced-motion.spec.ts @f3 @a11y` — set `prefers-reduced-motion: reduce`; verify (i) shimmer skeleton renders as static pulse (not animated), (ii) palette open/close has no slide animation, (iii) toast appears instantly (no slide-in), (iv) timeline reveal is instant per FR-044
+- [X] T144 [P] Add axe-core `target-size` rule assertion to every `@a11y` spec (ADOPT-01 WCAG 2.2 SC 2.5.8)
+- [X] T145 [P] Author Playwright computed-style assertion in `tests/e2e/members-target-size-2-2.spec.ts @f3 @a11y` — enumerated sample targets: (i) inline-edit cells (status, country, notes), (ii) icon buttons on each directory row (archive, undelete, promote-primary, invite), (iii) multi-select header + row checkboxes, (iv) palette result rows, (v) close buttons on every dialog (bundle-warning, override-reason, soft-duplicate, archive-confirm), (vi) row-action dropdown triggers — all ≥ 24×24 CSS px per ADOPT-01 / WCAG 2.2 SC 2.5.8
+- [X] T146 [P] Author `tests/e2e/members-focus-not-obscured.spec.ts @f3 @a11y` — keyboard-only walk verifying no focus occlusion by sticky bulk toolbar (ADOPT-01 WCAG 2.2 SC 2.4.11)
+- [X] T146a [P] Author `tests/e2e/members-page-titles.spec.ts @f3 @a11y` — navigate every F3 route (`/admin/members`, `/admin/members/new`, `/admin/members/[id]`, `/admin/members/[id]/edit`, `/admin/members/[id]/timeline`, `/portal`, `/portal/edit`, `/portal/contacts/invite`, `/auth/email-change/revert/[token]`) and assert each emits a unique `<title>` per FR-037
+- [X] T146b [P] Author `tests/e2e/members-reduced-motion.spec.ts @f3 @a11y` — set `prefers-reduced-motion: reduce`; verify (i) shimmer skeleton renders as static pulse (not animated), (ii) palette open/close has no slide animation, (iii) toast appears instantly (no slide-in), (iv) timeline reveal is instant per FR-044
 
 ### Observability + Runbook
 
-- [ ] T147 Flesh out `docs/observability.md § F3 Members` with metric names, SLO thresholds, PagerDuty alert config per plan § Constitution Check VII + security.md § 4
-- [ ] T148 [P] Author `tests/e2e/members-a11y.spec.ts @f3 @a11y` comprehensive axe-core scan across every FR-024 surface
-- [ ] T149 [P] Author `tests/e2e/members-i18n.spec.ts @f3 @i18n` locale coverage (EN + TH + SV) + Thai BE display on DOB + axe-core per locale
+- [X] T147 Flesh out `docs/observability.md § F3 Members` with metric names, SLO thresholds, PagerDuty alert config per plan § Constitution Check VII + security.md § 4
+- [X] T148 [P] Author `tests/e2e/members-a11y.spec.ts @f3 @a11y` comprehensive axe-core scan across every FR-024 surface
+- [X] T149 [P] Author `tests/e2e/members-i18n.spec.ts @f3 @i18n` locale coverage (EN + TH + SV) + Thai BE display on DOB + axe-core per locale
 
 ### i18n completeness
 
-- [ ] T150 Run `pnpm check:i18n` and fix any missing EN/TH/SV keys until all 3 locales pass
+- [X] T150 Run `pnpm check:i18n` and fix any missing EN/TH/SV keys until all 3 locales pass
 
 ### Full CI validation
 
@@ -302,21 +302,21 @@
 
 ### Security checklist close-out
 
-- [ ] T153 Tick each item in `specs/005-members-contacts/checklists/security.md` (78 items) with evidence links (commit SHA / test file path / screenshot)
-- [ ] T154 Tick each item in `specs/005-members-contacts/checklists/ux.md` (88 items)
-- [ ] T155 Tick each item in `specs/005-members-contacts/checklists/a11y.md` (95 items)
+- [X] T153 Tick each item in `specs/005-members-contacts/checklists/security.md` (78 items) with evidence links (commit SHA / test file path / screenshot)
+- [X] T154 Tick each item in `specs/005-members-contacts/checklists/ux.md` (88 items)
+- [X] T155 Tick each item in `specs/005-members-contacts/checklists/a11y.md` (95 items)
 - [ ] T155a Manual screen-reader pass (NVDA on Windows OR VoiceOver on macOS) on `/admin/members` directory + `/portal` landing + `/admin/members/new` create form — verify logical reading order, correct role announcements on TanStack Table + Combobox + Calendar, inline-edit save announcements; attach transcript/recording to security.md § 5 evidence per FR-039
 - [ ] T156 Maintainer co-signs `security.md § 5` checklist (solo-maintainer substitute requirement) — including attestation of T155a manual SR pass
 
 ### Performance validation
 
-- [ ] T157 Run `RUN_PERF=1 pnpm test:integration -- search-perf.test.ts` and confirm SC-002 (p95 < 500ms @ 5k rows)
+- [X] T157 Run `RUN_PERF=1 pnpm test:integration -- search-perf.test.ts` and confirm SC-002 (p95 < 500ms @ 5k rows)
 - [ ] T158 Measure `members` API p95 / p99 on staging via `@vercel/otel` traces — confirm < 400ms / < 800ms (Principle VII)
 
 ### Documentation
 
-- [ ] T159 Update `CLAUDE.md` Active Technologies + Recent Changes sections via `update-agent-context.ps1` (one final run post-implementation)
-- [ ] T160 Author retrospective at `specs/005-members-contacts/retrospective.md` matching the F2 format
+- [X] T159 Update `CLAUDE.md` Active Technologies + Recent Changes sections via `update-agent-context.ps1` (one final run post-implementation)
+- [X] T160 Author retrospective at `specs/005-members-contacts/retrospective.md` matching the F2 format
 
 ---
 

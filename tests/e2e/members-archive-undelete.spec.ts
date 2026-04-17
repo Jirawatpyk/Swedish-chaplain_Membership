@@ -105,7 +105,7 @@ test.describe('members archive/undelete — F3 US7 @f3 @a11y @i18n', () => {
 
     // Scan detail page first
     let results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze();
     expect(results.violations).toEqual([]);
 
@@ -117,7 +117,7 @@ test.describe('members archive/undelete — F3 US7 @f3 @a11y @i18n', () => {
     await page.getByRole('alertdialog').waitFor({ timeout: 5_000 });
 
     results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze();
     expect(results.violations).toEqual([]);
   });

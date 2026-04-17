@@ -90,7 +90,7 @@ test.describe('members edit + bundle warning — F3 US3 @f3 @a11y @i18n', () => 
     await page.locator('#company_name').waitFor({ timeout: 10_000 });
 
     const results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze();
     expect(results.violations).toEqual([]);
   });

@@ -366,49 +366,144 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 
 ---
 
-## 14. F3 Members & Contacts (stub — T039)
+## 14. F3 Members & Contacts
 
-**Status**: scaffolded during Batch A.2 of F3 implementation; to be fleshed out in the Polish phase (T229+). This section lists the metric names + SLO targets derived from `specs/005-members-contacts/plan.md § Constitution Check VII`. Full runbook entries land alongside the first user story that emits each event type.
+**Status**: Fleshed out in Polish phase (T147). All US1–US7 shipped and green.
+**Source refs**: `specs/005-members-contacts/plan.md § Constitution Check VII`, `security.md § 4`, `data-model.md § 4`.
 
-### 14.1 Metrics
+### 14.1 Metrics catalogue
 
-| Metric | Type | Source |
-|---|---|---|
-| `members.api.latency_ms` | histogram | every `/api/members/**` + `/api/portal/**` route handler via OTel span duration |
-| `members.api.requests_total` | counter | every `/api/members/**` response, labels `{method, route, status}` |
-| `members.search.latency_ms` | histogram | `GET /api/members?search=…` — tracked separately because pg_trgm hit rates matter |
-| `members.bulk.rows_per_action` | histogram | `POST /api/members/bulk` — labels `{action, outcome}` |
-| `members.cross_tenant_probe.count` | counter | emitted each time `member_cross_tenant_probe` audit event lands |
-| `members.self_update_forbidden.count` | counter | emitted each time `member_self_update_forbidden` audit event lands (forged portal payload) |
-| `members.email_change.count` | counter | labels `{verified, reverted, failed}` |
-| `members.bundle_warning_count.latency_ms` | histogram | `/api/plans/[year]/[planId]/affected-members` |
-| `outbox.dispatch.latency_ms` | histogram | member-email outbox dispatcher |
-| `outbox.dispatch.failures_total` | counter | includes permanent_failed after 5 retries (emits `email_dispatch_failed` audit) |
+| Metric | Type | Labels | Source |
+|---|---|---|---|
+| `members.api.latency_ms` | histogram | `{method, route}` | every `/api/members/**` + `/api/portal/**` handler via `@vercel/otel` span duration |
+| `members.api.requests_total` | counter | `{method, route, status_class}` | every `/api/members/**` response (2xx/4xx/5xx) |
+| `members.search.latency_ms` | histogram | `{has_query, status}` | `GET /api/members?q=…` — pg_trgm GIN path |
+| `members.bulk.rows_per_action` | histogram | `{action, outcome}` | `POST /api/members/bulk` |
+| `members.cross_tenant_probe.count` | counter | `{actor_tenant, route}` | emitted on each `member_cross_tenant_probe` audit event |
+| `members.self_update_forbidden.count` | counter | `{attempted_fields}` | emitted on each `member_self_update_forbidden` audit event |
+| `members.email_change.count` | counter | `{event}` (`initiated`/`verified`/`reverted`/`failed`) | email-change lifecycle events |
+| `members.bundle_warning.latency_ms` | histogram | `{plan_id}` | `/api/plans/[year]/[planId]/affected-members` |
+| `outbox.dispatch.latency_ms` | histogram | `{notification_type, attempt}` | member-email outbox cron dispatcher |
+| `outbox.dispatch.failures_total` | counter | `{notification_type, reason}` | `permanently_failed` flips after 5 retries |
+| `members.invite.count` | counter | `{outcome}` (`sent`/`already_linked`/`no_email`) | portal invite events |
+| `members.archive.count` | counter | `{cascade_sessions}` (`0`/`1`/`2+`) | archive cascade cardinality signal |
 
 ### 14.2 SLO targets
 
-- **Members API p95 < 400 ms, p99 < 800 ms** (Constitution VII)
-- **Members substring search p95 < 500 ms** on 5,000-row tenant (SC-002)
-- **Bulk-change 100 rows p95 < 5 s** with zero partial-state failures (SC-004)
-- **Bundle-change warning count fetch p95 < 200 ms** at 500-member tenant (SC-008)
-- **LCP < 2.5 s, INP < 200 ms, CLS < 0.1** on mid-range mobile over 4G (every new screen)
+| SLO | Target | Error budget | Measured by |
+|---|---|---|---|
+| Members API p95 | < 400 ms | 1 % per month | `members.api.latency_ms` p95 over 5 min windows |
+| Members API p99 | < 800 ms | 0.1 % per month | `members.api.latency_ms` p99 |
+| Substring search p95 (SC-002) | < 500 ms @ 5 k rows | 1 % per month | `members.search.latency_ms` p95 |
+| Bulk 100-row p95 (SC-004) | < 5 s | 0.1 % per month | `members.bulk.rows_per_action` + latency span |
+| Bundle-warning fetch p95 (SC-008) | < 200 ms @ 500 members | 1 % per month | `members.bundle_warning.latency_ms` p95 |
+| Core Web Vitals (LCP / INP / CLS) | < 2.5 s / < 200 ms / < 0.1 | per-release Lighthouse CI gate | Vercel Speed Insights |
 
-### 14.3 High-severity audit events
+### 14.3 Alerting thresholds
 
-| Event | Threshold | Action |
+#### High severity (page immediately)
+
+| Event / Metric | Threshold | Action |
 |---|---|---|
-| `member_cross_tenant_probe` | 1 in 5 min / 5 in 1 h | alarm → incident, same playbook as § 12 `plan_not_found` |
-| `member_self_update_forbidden` | 5 in 10 min per actor | alarm — investigate forged portal payload / script |
-| `email_dispatch_failed` | 1 per critical notification type | alarm — triage Resend outage vs bad template |
-| `member_email_change_reverted` | any occurrence | info-level — review for admin-impersonation ATO |
-| `bulk_action_rate_limit_exceeded` | 1 in 10 min per actor | info-level — verify not a script abuse |
+| `member_cross_tenant_probe` | ≥ 1 event in 5 min | Alarm → incident; isolate tenant, rotate session tokens, audit affected member IDs. Time-to-triage: 5 min. |
+| `member_cross_tenant_probe` | ≥ 5 events in 1 h | Escalate to security incident — potential systematic enumeration attack. |
+| `email_dispatch_failed` (critical type) | ≥ 1 `permanently_failed` for `email_verification` or `email_change_revert` | Alarm → triage Resend outage vs. bad template vs. invalid address. Time-to-triage: 15 min. |
+| `members.api.latency_ms` p95 | > 1 s for 5 consecutive min | Alarm → check Neon query plan, pg_trgm index health. |
 
-### 14.4 PII redaction (T038)
+#### Medium severity (notify on-call, investigate next business hour)
 
-`src/lib/logger.ts` REDACT_PATHS extended with: `email`, `toEmail`, `phone`, `date_of_birth`, `dateOfBirth`, `tax_id`, `taxId` (top-level + one-level-deep). Invariant test: `tests/unit/lib/logger-pii.test.ts` (to be authored when the first use case logs structured data).
+| Event / Metric | Threshold | Action |
+|---|---|---|
+| `member_self_update_forbidden` | ≥ 5 events in 10 min per actor | Investigate forged portal payload; possible script or compromised member session. Time-to-triage: 10 min. |
+| `outbox.dispatch.failures_total` | ≥ 3 failures in 30 min | Check Resend rate limits and outbox `retry_count` distribution. |
+| `members.bulk.rows_per_action` p95 | > 8 s for 100-row action | Bulk endpoint degraded — profile DB query + RLS policy latency. |
 
-### 14.5 Reference
+#### Info (log and monitor, no page)
 
-- `specs/005-members-contacts/plan.md § VII Performance & Observability`
+| Event | Notes |
+|---|---|
+| `member_email_change_reverted` | Any occurrence → audit review for admin-impersonation ATO pattern. |
+| `bulk_action_rate_limit_exceeded` | 1 per actor per 10 min budget — verify not scripted abuse. |
+| `members.invite.count` outcome=`already_linked` | Elevated rate may indicate double-click bug on the Invite button. |
+
+### 14.4 Runbooks
+
+#### R-M01: Cross-tenant probe alarm
+
+```
+1. Pull audit_log rows: SELECT * FROM audit_log WHERE event_type = 'member_cross_tenant_probe'
+   AND timestamp > NOW() - INTERVAL '1 hour' ORDER BY timestamp DESC;
+2. Identify actor_user_id + actor_tenant_id in the payload.
+3. Check actor session freshness: SELECT * FROM sessions WHERE user_id = '<actor>';
+4. If pattern is systematic (sequential member IDs), revoke all sessions for actor + notify legal.
+5. If isolated (single probe, then stops), log as false-positive — likely stale frontend link.
+6. Close incident after 24 h no recurrence.
+```
+
+#### R-M02: Email dispatch failed (critical)
+
+```
+1. Check outbox: SELECT * FROM notifications_outbox WHERE permanently_failed = true
+   AND updated_at > NOW() - INTERVAL '2 hours';
+2. Inspect failed_reason column for pattern (SMTP 5xx vs. network timeout vs. template error).
+3. If Resend outage: monitor status.resend.com, retry via admin UI once restored.
+4. If bad template: patch template → redeploy → manually re-enqueue via:
+   UPDATE notifications_outbox SET permanently_failed = false, retry_count = 0
+   WHERE id = '<row_id>';
+5. For email_verification failures: contact affected member via alternate channel (admin-to-admin).
+6. Emit post-mortem if > 5 members affected.
+```
+
+#### R-M03: Admin-compromise scenario
+
+```
+1. Lock account: UPDATE users SET disabled = true WHERE id = '<compromised_admin_id>';
+2. Revoke all sessions: DELETE FROM sessions WHERE user_id = '<compromised_admin_id>';
+3. Audit affected member writes: SELECT * FROM audit_log WHERE actor_user_id = '<id>'
+   AND timestamp > '<compromise_window_start>' ORDER BY timestamp;
+4. Notify affected members of any PII changes (email/phone/plan changes).
+5. Rotate RESEND_API_KEY + UPSTASH_REDIS_REST_TOKEN if admin had infrastructure access.
+6. Engage legal/DPO for PDPA/GDPR 72-hour notification assessment.
+```
+
+### 14.5 PII redaction (T038)
+
+`src/lib/logger.ts` REDACT_PATHS extended with: `email`, `toEmail`, `phone`, `date_of_birth`,
+`dateOfBirth`, `tax_id`, `taxId` — top-level + one-level-deep `*.` variants. Censor value: `[REDACTED]`.
+
+Invariant test: `tests/unit/lib/logger-pii.test.ts` (authored alongside first use-case logging).
+
+### 14.6 Dashboard queries (Vercel Logs / future Grafana)
+
+```sql
+-- Cross-tenant probes in last 24 h
+SELECT DATE_TRUNC('hour', timestamp) AS hour, COUNT(*) AS probes
+FROM audit_log
+WHERE event_type = 'member_cross_tenant_probe'
+  AND timestamp > NOW() - INTERVAL '24 hours'
+GROUP BY 1 ORDER BY 1;
+
+-- Outbox health
+SELECT notification_type,
+       COUNT(*) FILTER (WHERE permanently_failed) AS failed,
+       COUNT(*) FILTER (WHERE sent_at IS NULL AND NOT permanently_failed) AS pending,
+       AVG(retry_count) AS avg_retries
+FROM notifications_outbox
+WHERE created_at > NOW() - INTERVAL '7 days'
+GROUP BY 1;
+
+-- Bulk action usage (last 7 days)
+SELECT payload->>'action' AS action, COUNT(*) AS total
+FROM audit_log
+WHERE event_type = 'member_bulk_action_completed'
+  AND timestamp > NOW() - INTERVAL '7 days'
+GROUP BY 1;
+```
+
+### 14.7 Reference
+
+- `specs/005-members-contacts/plan.md § Constitution Check VII`
+- `specs/005-members-contacts/security.md § 4` (runbook requirements CHK068–CHK070, CHK077)
 - `specs/005-members-contacts/data-model.md § 4` (23 F3 audit event types + payload shapes)
 - Constitution Principle I clause 4 (audit severity for cross-tenant probes)
+- Constitution Principle VII (Performance & Observability SLOs)
