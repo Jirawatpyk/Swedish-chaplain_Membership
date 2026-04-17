@@ -1,16 +1,26 @@
 /**
- * Unit tests for `createUser` use case (T049 / F3 close-out).
+ * Unit tests for `createUser` use case — Path C atomic rewrite.
  *
- * Covers the 4 branches of the state machine:
+ * Covers the state-machine branches of the new `db.transaction`-wrapped
+ * flow:
+ *
  *   1. Happy path — user + invitation + enqueue + audit all succeed.
- *   2. invalid-input — malformed email short-circuits before repo calls.
- *   3. email-taken — duplicate rejects without creating a user.
- *   4. invitation-create-failed — createInvitation throws AFTER
- *      createPending commits; compensating delete runs; error surfaces.
- *   5. enqueue non-fatal — outbox enqueue fails, user + invitation
- *      persist, audit still fires, use case returns ok.
+ *   2. invalid-input — malformed email short-circuits before opening the tx.
+ *   3. email-taken — dup check inside tx throws CreateUserAbort; repo
+ *      writes (createPending, createInvitation, audit) are never called.
+ *   4. invitation-create-failed via unexpected throw — TokenRepo throws
+ *      mid-tx; `db.transaction` rolls back; outer handler re-throws
+ *      (not mapped to typed err, because the throw was not a
+ *      CreateUserAbort).
+ *   5. invitation-create-failed via enqueue err — enqueueInvitationInTx
+ *      returns err; use case throws CreateUserAbort; tx rolls back;
+ *      outer catch returns err('invitation-create-failed').
+ *   6. enqueue failure emits the metric + log (observability gate).
+ *   7. Locale passthrough — `th` propagates to enqueueInvitationInTx.
  *
- * Mirrors the deps-injection pattern from sign-in.test.ts.
+ * The `db.transaction` mock invokes the callback with a dummy tx and
+ * re-throws any exception (mirrors Drizzle's real semantics: `return`
+ * commits, `throw` rolls back). That contract is what the tests assert.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,6 +32,13 @@ vi.mock('@/lib/metrics', () => ({
   authMetrics: {
     invitationSent: vi.fn(),
     invitationEnqueueFailed: vi.fn(),
+  },
+}));
+// `db.transaction(fn)` mock — invokes callback with fake tx; re-throws
+// anything thrown inside so the outer catch can observe CreateUserAbort.
+vi.mock('@/lib/db', () => ({
+  db: {
+    transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({} as never)),
   },
 }));
 // Prevent defaultCreateUserDeps from pulling Drizzle at test boot.
@@ -57,7 +74,8 @@ const PENDING_USER = {
 
 function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
   const users = {
-    findByEmail: vi.fn().mockResolvedValue(null),
+    findByEmail: vi.fn(),
+    findByEmailInTx: vi.fn().mockResolvedValue(null),
     findById: vi.fn(),
     updateLastSignIn: vi.fn(),
     incrementFailedCount: vi.fn(),
@@ -65,8 +83,9 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
     setLocked: vi.fn(),
     clearLock: vi.fn(),
     countActiveAdmins: vi.fn(),
-    createPending: vi.fn().mockResolvedValue(PENDING_USER),
-    deletePending: vi.fn().mockResolvedValue(undefined),
+    createPending: vi.fn(),
+    createPendingInTx: vi.fn().mockResolvedValue(PENDING_USER),
+    deletePending: vi.fn(),
     setPasswordHash: vi.fn(),
     activate: vi.fn(),
     disable: vi.fn(),
@@ -79,29 +98,34 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
   } as unknown as CreateUserDeps['users'];
 
   const tokens = {
-    createInvitation: vi
+    createInvitation: vi.fn(),
+    createInvitationInTx: vi
       .fn()
       .mockResolvedValue({ id: INVITATION_ID, userId: PENDING_USER.id }),
     findInvitationById: vi.fn(),
-    consumeInvitation: vi.fn(),
-    createResetToken: vi.fn(),
-    findResetToken: vi.fn(),
-    consumeResetToken: vi.fn(),
+    markInvitationConsumed: vi.fn(),
+    createReset: vi.fn(),
+    findResetById: vi.fn(),
+    markResetConsumed: vi.fn(),
+    invalidateAllUnconsumedForUser: vi.fn(),
   } as unknown as CreateUserDeps['tokens'];
 
   const audit = {
-    append: vi.fn().mockResolvedValue(undefined),
+    append: vi.fn(),
+    appendInTx: vi.fn().mockResolvedValue(undefined),
   } as unknown as CreateUserDeps['audit'];
 
-  const enqueueInvitation = vi.fn().mockResolvedValue(
-    ok({ outboxRowId: 'outbox-row-1' }),
-  );
+  const enqueueInvitation = vi.fn();
+  const enqueueInvitationInTx = vi
+    .fn()
+    .mockResolvedValue(ok({ outboxRowId: 'outbox-row-1' }));
 
   return {
     users,
     tokens,
     audit,
     enqueueInvitation,
+    enqueueInvitationInTx,
     now: () => FROZEN_NOW,
     ...overrides,
   };
@@ -123,8 +147,8 @@ beforeEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('createUser', () => {
-  it('happy path: creates user, invitation, enqueues email, audits', async () => {
+describe('createUser (Path C atomic flow)', () => {
+  it('happy path: creates user, invitation, enqueues email, audits — all inside one tx', async () => {
     const deps = makeDeps();
 
     const result = await createUser(baseInput, deps);
@@ -133,20 +157,23 @@ describe('createUser', () => {
     if (!result.ok) return;
     expect(result.value.user).toEqual(PENDING_USER);
     expect(result.value.invitationId).toBe(INVITATION_ID);
-    expect(deps.users.createPending).toHaveBeenCalledOnce();
-    expect(deps.users.deletePending).not.toHaveBeenCalled();
-    expect(deps.tokens.createInvitation).toHaveBeenCalledOnce();
-    expect(deps.enqueueInvitation).toHaveBeenCalledWith({
+    expect(deps.users.createPendingInTx).toHaveBeenCalledOnce();
+    expect(deps.tokens.createInvitationInTx).toHaveBeenCalledOnce();
+    expect(deps.enqueueInvitationInTx).toHaveBeenCalledWith(expect.anything(), {
       toEmail: PENDING_USER.email,
       token: INVITATION_ID,
       role: 'member',
       locale: undefined,
     });
-    expect(deps.audit.append).toHaveBeenCalledOnce();
+    expect(deps.audit.appendInTx).toHaveBeenCalledOnce();
     expect(authMetrics.invitationSent).toHaveBeenCalledWith('member');
+    // Non-tx paths MUST NOT be used by the atomic flow.
+    expect(deps.users.createPending).not.toHaveBeenCalled();
+    expect(deps.users.deletePending).not.toHaveBeenCalled();
+    expect(deps.audit.append).not.toHaveBeenCalled();
   });
 
-  it('invalid-input: malformed email short-circuits without creating a user', async () => {
+  it('invalid-input: malformed email short-circuits without opening the tx', async () => {
     const deps = makeDeps();
 
     const result = await createUser({ ...baseInput, email: 'not-an-email' }, deps);
@@ -154,14 +181,15 @@ describe('createUser', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('invalid-input');
-    expect(deps.users.findByEmail).not.toHaveBeenCalled();
-    expect(deps.users.createPending).not.toHaveBeenCalled();
-    expect(deps.enqueueInvitation).not.toHaveBeenCalled();
+    expect(deps.users.findByEmailInTx).not.toHaveBeenCalled();
+    expect(deps.users.createPendingInTx).not.toHaveBeenCalled();
+    expect(deps.enqueueInvitationInTx).not.toHaveBeenCalled();
+    expect(deps.audit.appendInTx).not.toHaveBeenCalled();
   });
 
-  it('email-taken: duplicate rejects without creating the user', async () => {
+  it('email-taken: dup check inside tx throws CreateUserAbort — no writes executed', async () => {
     const deps = makeDeps();
-    (deps.users.findByEmail as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    (deps.users.findByEmailInTx as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       user: PENDING_USER,
       passwordHash: null,
     });
@@ -171,73 +199,72 @@ describe('createUser', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('email-taken');
-    expect(deps.users.createPending).not.toHaveBeenCalled();
-    expect(deps.tokens.createInvitation).not.toHaveBeenCalled();
-    expect(deps.enqueueInvitation).not.toHaveBeenCalled();
+    expect(deps.users.createPendingInTx).not.toHaveBeenCalled();
+    expect(deps.tokens.createInvitationInTx).not.toHaveBeenCalled();
+    expect(deps.enqueueInvitationInTx).not.toHaveBeenCalled();
+    expect(deps.audit.appendInTx).not.toHaveBeenCalled();
   });
 
-  it('invitation-create-failed: compensating delete runs and use case returns error', async () => {
+  it('unexpected tx error: TokenRepo throw is re-raised (not mapped to typed err)', async () => {
     const deps = makeDeps();
-    (deps.tokens.createInvitation as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('db connection reset'),
+    (
+      deps.tokens.createInvitationInTx as ReturnType<typeof vi.fn>
+    ).mockRejectedValueOnce(new Error('db connection reset'));
+
+    // Path C: an unexpected throw (not CreateUserAbort) propagates out
+    // of the outer catch so the route handler maps it to 500. This is
+    // different from pre-Path-C where the throw was caught + mapped to
+    // invitation-create-failed.
+    await expect(createUser(baseInput, deps)).rejects.toThrow(
+      'db connection reset',
     );
 
-    const result = await createUser(baseInput, deps);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe('invitation-create-failed');
-    expect(deps.users.createPending).toHaveBeenCalledOnce();
-    expect(deps.users.deletePending).toHaveBeenCalledWith(PENDING_USER.id);
-    expect(deps.enqueueInvitation).not.toHaveBeenCalled();
-    expect(deps.audit.append).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ errMessage: 'db connection reset' }),
-      'create_user.invitation_create_failed',
-    );
+    // No compensating delete — the tx rollback handles it.
+    expect(deps.users.deletePending).not.toHaveBeenCalled();
+    // Audit inside tx is also rolled back, so the in-tx call happened
+    // (createPending succeeded) but never committed.
+    expect(deps.audit.appendInTx).not.toHaveBeenCalled();
   });
 
-  it('compensating delete swallows its own error and still returns the outer failure', async () => {
-    const deps = makeDeps();
-    (deps.tokens.createInvitation as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('invitation failed'),
-    );
-    (deps.users.deletePending as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('delete failed'),
-    );
-
-    const result = await createUser(baseInput, deps);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe('invitation-create-failed');
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ errMessage: 'delete failed' }),
-      'create_user.compensating_delete_failed',
-    );
-  });
-
-  it('enqueue non-fatal: outbox enqueue failure logs but use case returns ok', async () => {
+  it('enqueue err: CreateUserAbort + rollback; returns typed invitation-create-failed', async () => {
     const deps = makeDeps({
-      enqueueInvitation: vi
+      enqueueInvitationInTx: vi
         .fn()
         .mockResolvedValue(err({ code: 'enqueue_failed', cause: 'connection reset' })),
     });
 
     const result = await createUser(baseInput, deps);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.invitationId).toBe(INVITATION_ID);
+    // Admin sees a typed 500 (no silent-success) + tx rolled back.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invitation-create-failed');
+    expect(deps.audit.appendInTx).not.toHaveBeenCalled();
     expect(deps.users.deletePending).not.toHaveBeenCalled();
-    expect(deps.audit.append).toHaveBeenCalledOnce();
+  });
+
+  it('enqueue err: logs create_user.invitation_enqueue_failed + emits metric', async () => {
+    const deps = makeDeps({
+      enqueueInvitationInTx: vi
+        .fn()
+        .mockResolvedValue(err({ code: 'enqueue_failed', cause: 'timeout' })),
+    });
+
+    await createUser(baseInput, deps);
+
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
         errCode: 'enqueue_failed',
-        errCause: 'connection reset',
+        errCause: 'timeout',
       }),
       'create_user.invitation_enqueue_failed',
     );
+    expect(authMetrics.invitationEnqueueFailed).toHaveBeenCalledWith(
+      'member',
+      'enqueue_failed',
+    );
+    // invitationSent NOT fired on rollback — metric stays accurate.
+    expect(authMetrics.invitationSent).not.toHaveBeenCalled();
   });
 
   it('passes locale through to the outbox enqueue request', async () => {
@@ -245,7 +272,8 @@ describe('createUser', () => {
 
     await createUser({ ...baseInput, locale: 'th' }, deps);
 
-    expect(deps.enqueueInvitation).toHaveBeenCalledWith(
+    expect(deps.enqueueInvitationInTx).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({ locale: 'th' }),
     );
   });

@@ -12,7 +12,7 @@
  * lifecycle (spec FR-009 / FR-010).
  */
 import { and, eq, isNull } from 'drizzle-orm';
-import { db } from '@/lib/db';
+import { db, type DbTx } from '@/lib/db';
 import {
   invitations,
   passwordResetTokens,
@@ -88,6 +88,21 @@ export interface TokenRepo {
     intendedRole: Role;
     now: Date;
   }): Promise<Invitation>;
+  /**
+   * Tx-scoped variant of `createInvitation`. Used by `createUser` so
+   * the invitation insert commits atomically with the matching user +
+   * outbox rows — pre-Path-C these lived in 3 separate connections,
+   * which created the W1 audit-atomicity regression class.
+   */
+  createInvitationInTx(
+    tx: DbTx,
+    args: {
+      userId: UserId;
+      invitedByUserId: UserId;
+      intendedRole: Role;
+      now: Date;
+    },
+  ): Promise<Invitation>;
   findInvitationById(id: TokenId): Promise<Invitation | null>;
   markInvitationConsumed(id: TokenId, now: Date): Promise<void>;
 }
@@ -170,6 +185,26 @@ export const tokenRepo: TokenRepo = {
       .returning();
     const row = rows[0];
     if (!row) throw new Error('token-repo.createInvitation: no row returned');
+    return toDomainInvitation(row);
+  },
+
+  async createInvitationInTx(tx, args) {
+    const id = generateTokenId();
+    const expiresAt = new Date(args.now.getTime() + INVITATION_TTL_MS);
+    const rows = await tx
+      .insert(invitations)
+      .values({
+        id,
+        userId: args.userId,
+        invitedByUserId: args.invitedByUserId,
+        intendedRole: args.intendedRole,
+        createdAt: args.now,
+        expiresAt,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row)
+      throw new Error('token-repo.createInvitationInTx: no row returned');
     return toDomainInvitation(row);
   },
 

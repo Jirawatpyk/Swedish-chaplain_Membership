@@ -50,6 +50,7 @@ import {
 function oneAdminRepo(): UserRepo {
   return {
     findByEmail: (email) => userRepo.findByEmail(email),
+    findByEmailInTx: (tx, email) => userRepo.findByEmailInTx(tx, email),
     findById: (id) => userRepo.findById(id),
     updateLastSignIn: (id, at) => userRepo.updateLastSignIn(id, at),
     incrementFailedCount: (id) => userRepo.incrementFailedCount(id),
@@ -59,6 +60,7 @@ function oneAdminRepo(): UserRepo {
     // THE POINT of this wrapper: pretend there is only one admin.
     countActiveAdmins: async () => 1,
     createPending: (args) => userRepo.createPending(args),
+    createPendingInTx: (tx, args) => userRepo.createPendingInTx(tx, args),
     deletePending: (id) => userRepo.deletePending(id),
     setPasswordHash: (id, hash, now) =>
       userRepo.setPasswordHash(id, hash, now),

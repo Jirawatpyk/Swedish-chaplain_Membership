@@ -6,7 +6,7 @@
  * the interface declared here, never on Drizzle directly.
  */
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
-import { db } from '@/lib/db';
+import { db, type DbTx } from '@/lib/db';
 import { users, type UserRow } from './schema';
 import {
   asEmailAddress,
@@ -61,6 +61,18 @@ function toDomain(row: UserRow): UserAccount {
 
 export interface UserRepo {
   findByEmail(email: EmailAddress): Promise<{ user: UserAccount; passwordHash: PasswordHash | null } | null>;
+  /**
+   * Tx-scoped variant of `findByEmail`. Used by `createUser` so the
+   * duplicate check shares the same transaction as the subsequent
+   * INSERT — prevents the TOCTOU race that would let two concurrent
+   * admin invites both pass the dup check and both commit the user
+   * row. Pre-Path-C the check ran in a separate connection; now it
+   * holds the row lock for the rest of the tx.
+   */
+  findByEmailInTx(
+    tx: DbTx,
+    email: EmailAddress,
+  ): Promise<{ user: UserAccount; passwordHash: PasswordHash | null } | null>;
   findById(id: UserId): Promise<UserAccount | null>;
   updateLastSignIn(id: UserId, at: Date): Promise<void>;
   incrementFailedCount(id: UserId): Promise<number>;
@@ -73,6 +85,20 @@ export interface UserRepo {
     role: Role;
     displayName?: string | null;
   }): Promise<UserAccount>;
+  /**
+   * Tx-scoped variant of `createPending`. Used by `createUser` so the
+   * insert shares the tx with the subsequent invitation + outbox
+   * inserts — failure in any later step rolls this row back without
+   * needing the compensating-delete dance.
+   */
+  createPendingInTx(
+    tx: DbTx,
+    args: {
+      email: EmailAddress;
+      role: Role;
+      displayName?: string | null;
+    },
+  ): Promise<UserAccount>;
   /**
    * Compensating delete for `createPending` — used when a downstream
    * step (e.g. invitation row insert) fails after the user row has
@@ -113,6 +139,23 @@ export const userRepo: UserRepo = {
     email: EmailAddress,
   ): Promise<{ user: UserAccount; passwordHash: PasswordHash | null } | null> {
     const rows = await db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.email}) = ${email}`)
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      user: toDomain(row),
+      passwordHash: row.passwordHash ? asPasswordHash(row.passwordHash) : null,
+    };
+  },
+
+  async findByEmailInTx(
+    tx,
+    email,
+  ) {
+    const rows = await tx
       .select()
       .from(users)
       .where(sql`lower(${users.email}) = ${email}`)
@@ -199,6 +242,21 @@ export const userRepo: UserRepo = {
       .returning();
     const row = rows[0];
     if (!row) throw new Error('user-repo.createPending: no row returned');
+    return toDomain(row);
+  },
+
+  async createPendingInTx(tx, args) {
+    const rows = await tx
+      .insert(users)
+      .values({
+        email: args.email,
+        role: args.role,
+        status: 'pending',
+        displayName: args.displayName ?? null,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) throw new Error('user-repo.createPendingInTx: no row returned');
     return toDomain(row);
   },
 
