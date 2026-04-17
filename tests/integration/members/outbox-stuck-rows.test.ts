@@ -16,7 +16,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 
 // IMPORTANT: vi.mock is hoisted above imports. We preserve the real
@@ -43,9 +43,21 @@ describe('integration: outbox dispatcher L2 stuck-rows detection', () => {
   const createdOutboxIds: string[] = [];
   const previousCronSecret = process.env.CRON_SECRET;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.CRON_SECRET = 'test-outbox-stuck-rows-secret';
     vi.clearAllMocks();
+    // Isolation guard: purge cross-tenant pending rows from prior tests.
+    // The dispatcher walks every dispatch-ready pending row; leftover
+    // rows cause the 30s test timeout (lots of rows × per-row Resend
+    // send) and skew the stuckRows() count assertion.
+    await db
+      .delete(notificationsOutbox)
+      .where(
+        and(
+          isNull(notificationsOutbox.tenantId),
+          eq(notificationsOutbox.status, 'pending'),
+        ),
+      );
   });
 
   afterEach(async () => {

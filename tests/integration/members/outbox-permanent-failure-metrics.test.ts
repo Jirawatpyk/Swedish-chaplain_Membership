@@ -17,7 +17,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 
 // Hoisted mocks — must appear above route + db imports.
@@ -48,9 +48,22 @@ describe('integration: outbox permanentFailure metric labels', () => {
   const createdOutboxIds: string[] = [];
   const previousCronSecret = process.env.CRON_SECRET;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.CRON_SECRET = 'test-outbox-perm-metrics-secret';
     vi.clearAllMocks();
+    // Isolation guard: nuke every pending cross-tenant (tenant_id=null)
+    // outbox row left over from prior tests in the suite. The test's
+    // `sendMock` is called ONCE per dispatched row, so any leftover
+    // pending row inflates the count and breaks toHaveBeenCalledOnce().
+    // F3 tenant-scoped rows (tenant_id != null) are unaffected.
+    await db
+      .delete(notificationsOutbox)
+      .where(
+        and(
+          isNull(notificationsOutbox.tenantId),
+          eq(notificationsOutbox.status, 'pending'),
+        ),
+      );
   });
 
   afterEach(async () => {
