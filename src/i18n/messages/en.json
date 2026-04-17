@@ -626,7 +626,8 @@
         },
         "portal": {
           "linked": "Portal linked"
-        }
+        },
+        "editCta": "Edit"
       },
       "timeline": {
         "pageTitle": "Timeline · {companyName} · SweCham",
@@ -788,6 +789,34 @@
         "notesInput": "Edit notes",
         "notesPlaceholder": "Add notes…",
         "networkError": "Network error. Check your connection."
+      },
+      "archive": {
+        "archiveCta": "Archive member",
+        "confirmTitle": "Archive {companyName}?",
+        "confirmDescription": "Archiving hides the member from the default directory and revokes any linked portal sessions. You can restore within 90 days.",
+        "reasonLabel": "Reason (optional)",
+        "reasonPlaceholder": "e.g. company closed, membership cancelled",
+        "reasonHelper": "Up to 500 characters. Visible to other admins in the audit log.",
+        "cancel": "Cancel",
+        "confirmCta": "Archive",
+        "archivingInProgress": "Archiving…",
+        "archiveSuccess": "{companyName} archived.",
+        "archiveError": "Could not archive. Please try again.",
+        "bannerTitle": "Archived on {date}",
+        "withinWindow": "{daysRemaining, plural, one {# day remaining} other {# days remaining}} in the 90-day undelete window.",
+        "windowExpired": "Archived {daysSinceArchive} days ago — beyond the 90-day undelete window.",
+        "windowExpiredTooltip": "Archived > 90 days — contact platform admin to restore.",
+        "undeleteCta": "Undelete",
+        "undeleteSuccess": "Member restored.",
+        "undeleteError": "Could not restore. Please try again.",
+        "windowExpiredToast": "Archive window (90 days) has expired. Contact platform admin to restore."
+      },
+      "undelete": {
+        "cta": "Undelete",
+        "confirmTitle": "Restore member?",
+        "confirmDescription": "Restoring reactivates the member record. Linked portal users must sign in again.",
+        "success": "Member restored.",
+        "error": "Could not restore. Please try again."
       }
     }
   },

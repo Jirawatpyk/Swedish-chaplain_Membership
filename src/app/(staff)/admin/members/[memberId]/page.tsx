@@ -23,7 +23,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { headers } from 'next/headers';
-import { getMember } from '@/modules/members';
+import { getMember, archiveWindowStatus } from '@/modules/members';
 import type { MemberId, Contact } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
@@ -38,6 +38,8 @@ import { ContentContainer } from '@/components/layout/content-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
+import { ArchivedBanner } from '@/components/members/archived-banner';
+import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import {
   Popover,
   PopoverContent,
@@ -227,6 +229,11 @@ export default async function MemberDetailPage({ params }: PageProps) {
     ? planLookup.value.planNameEn
     : member.planId;
 
+  const windowStatus =
+    member.status === 'archived' && member.archivedAt
+      ? archiveWindowStatus(member.archivedAt, new Date())
+      : null;
+
   return (
     <ContentContainer>
       <PageHeader
@@ -248,18 +255,37 @@ export default async function MemberDetailPage({ params }: PageProps) {
               <ClockIcon className="size-4" />
               {t('sections.audit')}
             </Link>
-            <Link
-              href={`/admin/members/${member.memberId}/edit`}
-              className={buttonVariants()}
-            >
-              <PencilIcon className="size-4" />
-              Edit
-            </Link>
+            {member.status !== 'archived' && (
+              <>
+                <Link
+                  href={`/admin/members/${member.memberId}/edit`}
+                  className={buttonVariants()}
+                >
+                  <PencilIcon className="size-4" />
+                  {t('editCta')}
+                </Link>
+                <ArchiveMemberButton
+                  memberId={member.memberId}
+                  companyName={member.companyName}
+                />
+              </>
+            )}
           </>
         }
       />
 
       <div className="flex flex-col gap-4">
+        {member.status === 'archived' &&
+          member.archivedAt &&
+          windowStatus &&
+          (windowStatus.state === 'within_window' ||
+            windowStatus.state === 'window_expired') && (
+            <ArchivedBanner
+              memberId={member.memberId}
+              archivedAtIso={member.archivedAt.toISOString()}
+              windowStatus={windowStatus}
+            />
+          )}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{t('sections.company')}</CardTitle>

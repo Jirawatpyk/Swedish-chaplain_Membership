@@ -129,6 +129,31 @@ limit misuse:
   is opaque free text; admins are expected to avoid pasting PII and
   the F9 GDPR export carve-out is the safety net.
 
+### Admin free-text audit fields (US7 archive `reason`, US3 `override_reason_note`)
+
+Several audit event payloads carry admin-authored free-text strings
+that share the same cross-admin visibility + PII-exposure posture as
+the `notes` field above:
+
+- **`member_archived.reason`** (US7 FR-005, ≤ 500 chars) — optional
+  admin-authored context on why a member was archived. Stored verbatim
+  in the audit payload.
+- **`*.override_reason_note`** (FR-006a, ≤ 500 chars) — required on
+  `board_approved` / `pending_renewal_grace` / `data_correction` /
+  `other` overrides for turnover (FR-006), Start-up duration
+  (FR-007), and Thai Alumni age (FR-008) rules. Stored on the
+  originating audit event (`member_created`, `member_plan_changed`,
+  `member_updated`, etc.).
+
+All three fields (`notes`, `reason`, `override_reason_note`) MUST
+inherit the identical F9 GDPR self-service export carve-out —
+excluded from the member's own export because admins may reference
+third parties or internal deliberations that the member has no right
+to see. The F9 spec MUST enumerate these three fields explicitly so
+the carve-out is not discovered per-field via codebase grep. Admins
+MUST be warned in the relevant UI helpers to avoid pasting PII,
+consistent with the existing `notes` convention.
+
 **Out of scope** (deferred to later features, explicit YAGNI):
 - Bulk CSV import (Phase 5 smart #13 or one-off migration script)
 - At-risk scoring logic (F8 — F3 only reserves the UI slot)
@@ -833,6 +858,13 @@ and `member_undeleted`).
   your first member" + illustration); (b) **filter yields zero**
   (clear-filters CTA + "No members match these filters" copy);
   (c) **server error** (retry button + localized error message).
+  US7 "Show archived" is implemented as a third option on the
+  status filter Select dropdown (`Active` / `Inactive` / `Archived`)
+  rather than a standalone toggle — the dropdown is functionally
+  equivalent (admin opts into the archived view explicitly) and
+  avoids a redundant UI control. Default filter remains
+  `[active, inactive]`; selecting `Archived` shows archived rows
+  exclusively.
 - **FR-035**: Required form fields MUST be indicated programmatically
   (`aria-required="true"`) **AND** visually (asterisk after label)
   **AND** enumerated once at form top ("* fields are required").

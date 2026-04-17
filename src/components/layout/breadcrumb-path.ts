@@ -19,6 +19,7 @@ function safeDecode(segment: string): string {
   }
 }
 
+
 export function parseBreadcrumbPath({
   pathname,
   staticLabels,

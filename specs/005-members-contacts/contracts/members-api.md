@@ -156,15 +156,21 @@ Tenant context is resolved server-side from the session — clients never send a
 
 **Headers**: `Idempotency-Key`
 
-**Body**: `{ "reason": "..." }` (optional)
+**Body**: `{ "reason": "..." }` (optional, ≤ 500 chars)
 
 **RBAC**: `admin` only.
 
-**Response 200**: `{ "status": "archived", "archived_at": "..." }`.
+**Validation**:
+- `400 invalid_body` when `reason` exceeds 500 chars.
+- `409 conflict` with code `state_error` (+ `details.code = state.cannot_archive_already_archived`) when the target member is already archived.
 
-**Cascades**: All linked user sessions revoked; pending invitations revoked.
+**Response 200**: full member shape with `status = "archived"` + `archived_at` populated.
 
-**Audit**: `member_archived` + (per cascaded contact) `user_sessions_revoked`.
+**Cascades** (all inside one tenant-scoped tx):
+- Every active contact's linked F1 user → all sessions revoked via `SessionRevocationPort`.
+- Pending (unredeemed + unexpired) F1 invitations for those users → soft-consumed (`consumed_at = NOW()`) so existing invite links can no longer be redeemed.
+
+**Audit**: one `member_archived` with payload `{ member_id, reason?, cascaded_user_ids, sessions_revoked_total, invitations_revoked_count }` + one `user_sessions_revoked` per linked user whose sessions were killed.
 
 ---
 
@@ -176,7 +182,9 @@ Tenant context is resolved server-side from the session — clients never send a
 
 **RBAC**: `admin` only.
 
-**Validation**: `403 forbidden` with code `archive_window_expired` if `archived_at < NOW() - 90 days`.
+**Validation**:
+- `403 forbidden` with code `archive_window_expired` if `archived_at < NOW() - 90 days`.
+- `409 conflict` with code `state_error` (+ `details.code = state.undelete_only_from_archived`) when the target member is NOT in `archived` status — prevents accidental state flips on already-active members.
 
 **Response 200**: `{ "status": "active" }`.
 

@@ -626,7 +626,8 @@
         },
         "portal": {
           "linked": "Portalanslutning"
-        }
+        },
+        "editCta": "Redigera"
       },
       "timeline": {
         "pageTitle": "Tidslinje · {companyName} · SweCham",
@@ -788,6 +789,34 @@
         "notesInput": "Redigera anteckningar",
         "notesPlaceholder": "Lägg till anteckningar…",
         "networkError": "Nätverksfel. Kontrollera anslutningen."
+      },
+      "archive": {
+        "archiveCta": "Arkivera medlem",
+        "confirmTitle": "Arkivera {companyName}?",
+        "confirmDescription": "Arkivering döljer medlemmen från standardkatalogen och återkallar kopplade portalsessioner. Du kan återställa inom 90 dagar.",
+        "reasonLabel": "Orsak (valfritt)",
+        "reasonPlaceholder": "t.ex. företaget har lagts ned, medlemskapet har sagts upp",
+        "reasonHelper": "Upp till 500 tecken. Synligt för andra administratörer i granskningsloggen.",
+        "cancel": "Avbryt",
+        "confirmCta": "Arkivera",
+        "archivingInProgress": "Arkiverar…",
+        "archiveSuccess": "{companyName} arkiverad.",
+        "archiveError": "Kunde inte arkivera. Försök igen.",
+        "bannerTitle": "Arkiverad {date}",
+        "withinWindow": "{daysRemaining, plural, one {# dag kvar} other {# dagar kvar}} i 90-dagars återställningsfönstret.",
+        "windowExpired": "Arkiverad för {daysSinceArchive} dagar sedan — utanför 90-dagars återställningsfönstret.",
+        "windowExpiredTooltip": "Arkiverad > 90 dagar — kontakta plattformsadministratören för att återställa.",
+        "undeleteCta": "Återställ",
+        "undeleteSuccess": "Medlemmen har återställts.",
+        "undeleteError": "Kunde inte återställa. Försök igen.",
+        "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta plattformsadministratören för att återställa."
+      },
+      "undelete": {
+        "cta": "Återställ",
+        "confirmTitle": "Återställ medlem?",
+        "confirmDescription": "Återställning återaktiverar medlemsposten. Kopplade portalanvändare måste logga in igen.",
+        "success": "Medlemmen har återställts.",
+        "error": "Kunde inte återställa. Försök igen."
       }
     }
   },

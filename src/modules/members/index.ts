@@ -258,6 +258,27 @@ export {
   type TimelineListDeps,
 } from './application/use-cases/timeline-list';
 
+// --- US7 use cases ----------------------------------------------------------
+
+export {
+  archiveMember,
+  archiveMemberSchema,
+  type ArchiveMemberInput,
+  type ArchiveMemberError,
+  type ArchiveMemberDeps,
+  type ArchiveMemberMeta,
+} from './application/use-cases/archive-member';
+
+export {
+  undeleteMember,
+  type UndeleteMemberError,
+  type UndeleteMemberDeps,
+  type UndeleteMemberMeta,
+} from './application/use-cases/undelete-member';
+
+export { archiveWindowStatus } from './domain/policies/archive-window-policy';
+export type { ArchiveWindowStatus } from './domain/policies/archive-window-policy';
+
 export type {
   TimelineEvent,
   TimelineResult,

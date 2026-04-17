@@ -113,6 +113,20 @@
       "when": 1776350100000,
       "tag": "0015_add_missing_audit_enum_values",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1776400000000,
+      "tag": "0016_invitations_revoke_grant",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1776410000000,
+      "tag": "0017_invitations_revoke_tighten",
+      "breakpoints": true
     }
   ]
 }
