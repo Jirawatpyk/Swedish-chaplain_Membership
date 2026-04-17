@@ -43,7 +43,7 @@ export type CreateUserPort = (input: {
   readonly locale?: 'en' | 'th' | 'sv' | undefined;
 }) => Promise<
   | { readonly ok: true; readonly value: { readonly user: { readonly id: string } } }
-  | { readonly ok: false; readonly error: { readonly code: 'invalid-input' | 'email-taken' } }
+  | { readonly ok: false; readonly error: { readonly code: 'invalid-input' | 'email-taken' | 'invitation-create-failed' } }
 >;
 
 export type InvitePortalDeps = {
@@ -108,7 +108,12 @@ export async function invitePortal(
     if (created.error.code === 'invalid-input') {
       return err({ code: 'invalid_email' });
     }
-    return err({ code: 'email_taken' });
+    if (created.error.code === 'email-taken') {
+      return err({ code: 'email_taken' });
+    }
+    // invitation-create-failed — compensating delete already ran in
+    // create-user; surface as server_error so the route returns 500.
+    return err({ code: 'server_error', cause: created.error.code });
   }
 
   // 3. Link user_id to the contact

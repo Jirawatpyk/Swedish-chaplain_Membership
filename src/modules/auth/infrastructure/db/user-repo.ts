@@ -73,6 +73,14 @@ export interface UserRepo {
     role: Role;
     displayName?: string | null;
   }): Promise<UserAccount>;
+  /**
+   * Compensating delete for `createPending` — used when a downstream
+   * step (e.g. invitation row insert) fails after the user row has
+   * already committed. Refuses to delete unless the row is still
+   * `status='pending'` so a race with a successful redemption cannot
+   * destroy an active account.
+   */
+  deletePending(id: UserId): Promise<void>;
   setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void>;
   activate(id: UserId, now: Date): Promise<void>;
   /** Transition active → disabled. */
@@ -192,6 +200,15 @@ export const userRepo: UserRepo = {
     const row = rows[0];
     if (!row) throw new Error('user-repo.createPending: no row returned');
     return toDomain(row);
+  },
+
+  async deletePending(id: UserId): Promise<void> {
+    // Guard: only delete if still pending. This prevents a race where
+    // create-user's compensation fires AFTER an invitation was redeemed
+    // (user flipped to active) from destroying a live account.
+    await db
+      .delete(users)
+      .where(and(eq(users.id, id), eq(users.status, 'pending')));
   },
 
   async setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void> {

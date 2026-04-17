@@ -12,6 +12,7 @@
  *
  * Pure TypeScript — no framework imports.
  */
+import { err, ok, type Result } from '@/lib/result';
 import type { Email } from './value-objects/email';
 import type { Phone } from './value-objects/phone';
 import type { UserId } from './value-objects/user-id';
@@ -20,9 +21,27 @@ import type { MemberId, TenantId } from './member';
 declare const ContactIdBrand: unique symbol;
 export type ContactId = string & { readonly [ContactIdBrand]: true };
 
-/** Brand a raw string as a ContactId. Used at trust boundaries. */
+/**
+ * Brand a raw string as a ContactId. Used at trust boundaries where the
+ * value has been validated externally (e.g. returned from the contacts
+ * repo, read from URL params after zod parsing). Prefer `tryContactId`
+ * for raw untrusted input — ContactIds are UUIDs so a format check is
+ * cheap.
+ */
 export function asContactId(raw: string): ContactId {
   return raw as ContactId;
+}
+
+/** UUID format check shared with member.ts — repeated locally to avoid a Domain-internal import. */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Validated ContactId brander for untrusted input. */
+export function tryContactId(raw: unknown): Result<ContactId, { code: 'invalid_contact_id' }> {
+  if (typeof raw !== 'string' || !UUID_RE.test(raw)) {
+    return err({ code: 'invalid_contact_id' });
+  }
+  return ok(raw.toLowerCase() as ContactId);
 }
 
 export const PREFERRED_LANGUAGES = ['en', 'th', 'sv'] as const;

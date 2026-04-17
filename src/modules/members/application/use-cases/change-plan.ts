@@ -13,6 +13,7 @@
  */
 
 import { z } from 'zod';
+import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -174,60 +175,83 @@ export async function changePlan(
     }
   }
 
-  // Persist — plan_id + plan_year are the only fields we touch
-  const updated = await deps.memberRepo.updateFields(
-    deps.tenant,
-    memberId,
-    {
-      planId: newPlan.value.planId,
-      planYear: data.new_plan_year,
-    },
-  );
-  if (!updated.ok)
-    return err({
-      type: 'server_error',
-      message: `update: ${updated.error.code}`,
+  // Persist + audit atomically (Principle VIII — audit-with-state).
+  // Throw-to-rollback: any port err aborts the tx via UpdateFailed /
+  // AuditFailed sentinels caught below and mapped to server_error.
+  try {
+    const updatedMember = await runInTenant(deps.tenant, async (tx) => {
+      const updated = await deps.memberRepo.updateFieldsInTx(tx, memberId, {
+        planId: newPlan.value.planId,
+        planYear: data.new_plan_year,
+      });
+      if (!updated.ok) {
+        throw new TxAbort({ type: 'update_failed', code: updated.error.code });
+      }
+
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_plan_changed',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `member_plan_changed ${memberId}`,
+        payload: {
+          member_id: memberId,
+          old_plan_id: current.planId,
+          old_plan_year: current.planYear,
+          new_plan_id: data.new_plan_id,
+          new_plan_year: data.new_plan_year,
+          ...(data.override_reason_code && {
+            override_reason_code: data.override_reason_code,
+            override_reason_note: data.override_reason_note ?? null,
+          }),
+        },
+      });
+      if (!auditResult.ok) {
+        throw new TxAbort({ type: 'audit_failed' });
+      }
+
+      if (bundleChanged) {
+        const bundleAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'plan_bundle_changed',
+          actorUserId: meta.actorUserId,
+          requestId: meta.requestId,
+          summary: `plan_bundle_changed for ${memberId}`,
+          payload: {
+            member_id: memberId,
+            plan_id: data.new_plan_id,
+            old_includes_corporate_plan_id: oldBundle,
+            new_includes_corporate_plan_id: newBundle,
+          },
+        });
+        if (!bundleAudit.ok) {
+          throw new TxAbort({ type: 'audit_failed' });
+        }
+      }
+
+      return updated.value;
     });
 
-  // Audit: member_plan_changed + (conditional) plan_bundle_changed
-  const auditResult = await deps.audit.record(deps.tenant, {
-    type: 'member_plan_changed',
-    actorUserId: meta.actorUserId,
-    requestId: meta.requestId,
-    summary: `member_plan_changed ${memberId}`,
-    payload: {
-      member_id: memberId,
-      old_plan_id: current.planId,
-      old_plan_year: current.planYear,
-      new_plan_id: data.new_plan_id,
-      new_plan_year: data.new_plan_year,
-      ...(data.override_reason_code && {
-        override_reason_code: data.override_reason_code,
-        override_reason_note: data.override_reason_note ?? null,
-      }),
-    },
-  });
-  if (!auditResult.ok) {
-    return err({ type: 'server_error', message: 'audit_failed' });
-  }
-
-  if (bundleChanged) {
-    const bundleAudit = await deps.audit.record(deps.tenant, {
-      type: 'plan_bundle_changed',
-      actorUserId: meta.actorUserId,
-      requestId: meta.requestId,
-      summary: `plan_bundle_changed for ${memberId}`,
-      payload: {
-        member_id: memberId,
-        plan_id: data.new_plan_id,
-        old_includes_corporate_plan_id: oldBundle,
-        new_includes_corporate_plan_id: newBundle,
-      },
-    });
-    if (!bundleAudit.ok) {
+    return ok(updatedMember);
+  } catch (e) {
+    if (e instanceof TxAbort) {
+      if (e.detail.type === 'update_failed') {
+        return err({
+          type: 'server_error',
+          message: `update: ${e.detail.code}`,
+        });
+      }
       return err({ type: 'server_error', message: 'audit_failed' });
     }
+    throw e;
   }
+}
 
-  return ok(updated.value);
+/** Internal abort-sentinel for rolling back change-plan's tx cleanly. */
+class TxAbort extends Error {
+  constructor(
+    public readonly detail:
+      | { type: 'update_failed'; code: string }
+      | { type: 'audit_failed' },
+  ) {
+    super(`tx-abort: ${detail.type}`);
+  }
 }

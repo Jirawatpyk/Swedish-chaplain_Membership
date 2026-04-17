@@ -59,6 +59,7 @@ function oneAdminRepo(): UserRepo {
     // THE POINT of this wrapper: pretend there is only one admin.
     countActiveAdmins: async () => 1,
     createPending: (args) => userRepo.createPending(args),
+    deletePending: (id) => userRepo.deletePending(id),
     setPasswordHash: (id, hash, now) =>
       userRepo.setPasswordHash(id, hash, now),
     activate: (id, now) => userRepo.activate(id, now),

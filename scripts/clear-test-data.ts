@@ -114,9 +114,23 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   );
 
   // 3. Integration test users (test-<timestamp>-<rand>@swecham.test).
-  //    Sessions / password_reset_tokens / invitations cascade via FK.
+  //    Sessions + password_reset_tokens cascade via FK (ON DELETE
+  //    cascade). Invitations DO NOT — `invitations.invited_by_user_id`
+  //    is `ON DELETE restrict` (drizzle/migrations/0000…sql) to preserve
+  //    the audit trail of who issued each invite. So we must explicitly
+  //    delete any invitation rows that reference (a) a test user as
+  //    invitee OR (b) a test user as inviter, BEFORE deleting users.
   //    Narrow pattern: only `test-*@swecham.test` (not .com), so
   //    production accounts are safe.
+  await db.execute(
+    sql`DELETE FROM invitations
+        WHERE user_id IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )
+        OR invited_by_user_id IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )`,
+  );
   const usersDeleted = await db.execute(
     sql`DELETE FROM users
         WHERE email LIKE 'test-%@swecham.test'

@@ -21,6 +21,9 @@ export {
   asTenantId,
   asPlanId,
   asMemberId,
+  tryTenantId,
+  tryPlanId,
+  tryMemberId,
   type Member,
   type MemberId,
   type MemberStatus,
@@ -31,6 +34,7 @@ export {
 export {
   PREFERRED_LANGUAGES,
   asContactId,
+  tryContactId,
   type Contact,
   type ContactId,
   type PreferredLanguage,
@@ -48,6 +52,12 @@ export {
   type PortalSelfUpdateContactField,
   type PortalSelfUpdateMemberField,
 } from './domain/portal-self-update-fields';
+
+export {
+  assertNeverAuditEvent,
+  type F3AuditEventType,
+  type F3AuditEvent,
+} from './application/ports/audit-port';
 
 // Value-object constructor + branded types for use cases that compose
 // Domain types outside this module (e.g. integration tests, adapters).

@@ -32,25 +32,58 @@ export type PlanId = string & { readonly [PlanIdBrand]: true };
 /**
  * Brand a raw string as a TenantId. Used at trust boundaries (adapters,
  * route handlers, tests) where the value has been validated externally.
+ * For untrusted boundaries (user input, URL params) prefer
+ * `tryTenantId` which runs a non-empty check and returns a Result.
  */
 export function asTenantId(raw: string): TenantId {
   return raw as TenantId;
 }
 
+/** Validated TenantId brander for untrusted input. Rejects empty / whitespace. */
+export function tryTenantId(raw: unknown): Result<TenantId, { code: 'invalid_tenant_id' }> {
+  if (typeof raw !== 'string' || raw.trim().length === 0) {
+    return err({ code: 'invalid_tenant_id' });
+  }
+  return ok(raw as TenantId);
+}
+
 /**
  * Brand a raw string as a PlanId. Used at trust boundaries (adapters,
  * route handlers, tests) where the value has been validated externally
- * — e.g. confirmed to exist in the plans catalogue via getPlan.
+ * — e.g. confirmed to exist in the plans catalogue via getPlan. Prefer
+ * `tryPlanId` for untrusted input.
  */
 export function asPlanId(raw: string): PlanId {
   return raw as PlanId;
 }
 
+/** Validated PlanId brander. Rejects empty / whitespace. */
+export function tryPlanId(raw: unknown): Result<PlanId, { code: 'invalid_plan_id' }> {
+  if (typeof raw !== 'string' || raw.trim().length === 0) {
+    return err({ code: 'invalid_plan_id' });
+  }
+  return ok(raw as PlanId);
+}
+
+/** UUID v4-ish pattern (accepts any RFC 4122 variant; route params are always lowercase hex). */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * Brand a raw string as a MemberId. Used at trust boundaries.
+ * Brand a raw string as a MemberId. Used at trust boundaries. Prefer
+ * `tryMemberId` for untrusted input — MemberIds are UUIDs so a format
+ * check is cheap and catches URL-tampering attempts early.
  */
 export function asMemberId(raw: string): MemberId {
   return raw as MemberId;
+}
+
+/** Validated MemberId brander — UUID format check. */
+export function tryMemberId(raw: unknown): Result<MemberId, { code: 'invalid_member_id' }> {
+  if (typeof raw !== 'string' || !UUID_RE.test(raw)) {
+    return err({ code: 'invalid_member_id' });
+  }
+  return ok(raw.toLowerCase() as MemberId);
 }
 
 /**

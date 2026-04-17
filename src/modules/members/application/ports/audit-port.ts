@@ -5,7 +5,15 @@
  * narrow event descriptors — the adapter fills in `actor_user_id`,
  * `tenant_id`, and `timestamp` from the TenantContext + infrastructure.
  *
- * Payloads conform to data-model.md § 4 (23 F3 event types).
+ * Payloads conform to data-model.md § 4. The union below is the single
+ * source of truth for F3 event names — CLAUDE.md's "23 F3 event types"
+ * count predates the US3.b email-change flow (which added `…_sent`,
+ * `…_consumed`, `…_reverted`, `email_verification_resent`,
+ * `email_dispatch_failed`, `…_notification_sent_to_old_address`,
+ * `user_sessions_revoked`) and the F2-carry-over `plan_bundle_changed`.
+ * The union is intentionally open to growth; consumers MUST use the
+ * `assertNeverAuditEvent` helper in exhaustive switches so a forgotten
+ * case is a compile-time error rather than silent data-loss.
  */
 import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
@@ -38,6 +46,19 @@ export type F3AuditEventType =
   | 'invitation_bounced'
   | 'bulk_action_rate_limit_exceeded'
   | 'member_portal_invite_queued';
+
+/**
+ * Exhaustiveness guard for switch statements over `F3AuditEventType`.
+ * The compiler infers `never` at the `default:` branch only when every
+ * member of the union has been handled; pass the event through this
+ * helper to surface forgotten cases at build time. Throws at runtime
+ * so unexpected production payloads are loud rather than silent.
+ */
+export function assertNeverAuditEvent(event: never): never {
+  throw new Error(
+    `Unhandled F3 audit event type: ${JSON.stringify(event)}`,
+  );
+}
 
 export type F3AuditEvent = {
   readonly type: F3AuditEventType;

@@ -1,25 +1,22 @@
 /**
  * create-user use case (T123, spec US4 AS1, FR-009).
  *
- * Admin invites a new staff / member by email. We create a `pending`
- * user row + an `invitations` row atomically, then send the invitation
- * email via Resend. The invitee follows the link, calls
- * `redeem-invite`, and transitions to `active`.
+ * Admin invites a new staff / member by email.
  *
  * Algorithm:
- *   1. Ensure caller is `admin` (RBAC enforcement happens at the route
- *      handler via `requireRole`; this use case trusts the input).
- *   2. Check for an existing user with this email. If one exists
- *      (pending, active, or disabled), return err(email-taken) —
- *      we do NOT silently overwrite, and we do NOT re-issue a fresh
- *      invitation to an existing pending user (admins must explicitly
- *      delete + recreate, logged in the audit trail).
- *   3. Insert `users` row with status='pending'.
- *   4. Insert `invitations` row with 7-day expiry.
- *   5. Send invitation email. Failure is LOGGED but does not roll
- *      back the user row — the admin can resend via a future
- *      "resend invitation" admin action (tracked for F9 polish; no
- *      dedicated Feature number — it's a small F1 follow-up patch).
+ *   1. Parse + normalise email.
+ *   2. Duplicate check — reject with `email-taken` on any match.
+ *   3. Insert `users` row (status='pending').
+ *   4. Insert `invitations` row (7-day TTL). On failure, compensate by
+ *      deleting the pending user via `users.deletePending` — this keeps
+ *      the pair atomic across two non-transactional repos. Without the
+ *      compensation a transient failure at step 4 would leave an
+ *      orphan pending user that blocks the admin from retrying with
+ *      the same email.
+ *   5. Enqueue invitation email to the F3 outbox (T049). Failure is
+ *      LOGGED (with `cause`) but does not roll back the user +
+ *      invitation — admin can resend via a future "resend invitation"
+ *      admin action. Outbox dispatcher renders + sends within ≤60s tick.
  *   6. Emit `account_created` audit event.
  */
 import { Result, err, ok } from '@/lib/result';
@@ -33,12 +30,6 @@ import type { UserAccount } from '@/modules/auth/domain/user';
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
-import type { EmailSender } from '@/modules/auth/infrastructure/email/resend-client';
-// `buildInvitationEmail` is a PURE template function (no DB, no network).
-// Type-only import keeps the Application layer free of the concrete
-// value; the implementation is injected via `CreateUserDeps.buildEmail`
-// from `auth-deps.ts` composition root.
-import type { buildInvitationEmail as BuildInvitationEmailFn } from '@/modules/auth/infrastructure/email/invitation-email';
 import type { EmailLocale } from '@/modules/auth/infrastructure/email/reset-password-email';
 import { defaultCreateUserDeps } from '@/lib/auth-deps';
 
@@ -63,16 +54,43 @@ export interface CreateUserSuccess {
 
 export type CreateUserError =
   | { readonly code: 'invalid-input' }
-  | { readonly code: 'email-taken' };
+  | { readonly code: 'email-taken' }
+  | { readonly code: 'invitation-create-failed' };
 
 // --- Dependencies ------------------------------------------------------------
+
+/**
+ * Outbox enqueue port for invitation emails. Inserts a row into
+ * `notifications_outbox` with `notification_type='member_invitation'`.
+ */
+export interface EnqueueInvitationRequest {
+  readonly toEmail: string;
+  readonly token: TokenId;
+  readonly role: Role;
+  readonly locale?: EmailLocale | undefined;
+}
+
+/**
+ * Literal union of known enqueue failure codes. Keeping this closed
+ * lets consumers exhaustively handle the error space; the `cause`
+ * field is sanitised (string) to avoid raw DB exception leakage.
+ */
+export type EnqueueInvitationErrorCode = 'enqueue_failed' | 'no_row_returned';
+
+export interface EnqueueInvitationError {
+  readonly code: EnqueueInvitationErrorCode;
+  readonly cause?: string;
+}
+
+export type EnqueueInvitationFn = (
+  request: EnqueueInvitationRequest,
+) => Promise<Result<{ outboxRowId: string }, EnqueueInvitationError>>;
 
 export interface CreateUserDeps {
   readonly users: UserRepo;
   readonly tokens: TokenRepo;
   readonly audit: AuditRepo;
-  readonly email: EmailSender;
-  readonly buildInvitationEmail: typeof BuildInvitationEmailFn;
+  readonly enqueueInvitation: EnqueueInvitationFn;
   readonly now: () => Date;
 }
 
@@ -98,7 +116,7 @@ export async function createUser(
     return err({ code: 'email-taken' });
   }
 
-  // 3. Create pending user + invitation token
+  // 3. Create pending user
   const user = await deps.users.createPending({
     email: normalisedEmail,
     role: input.role,
@@ -106,40 +124,65 @@ export async function createUser(
   });
 
   const now = deps.now();
-  const invitation = await deps.tokens.createInvitation({
-    userId: user.id,
-    invitedByUserId: input.actorUserId,
-    intendedRole: input.role,
-    now,
-  });
 
-  // 4. Send invitation email — template builder injected via deps
-  //    so this file never imports the concrete function at module
-  //    load time (Clean Architecture: Application imports types only).
-  const built = deps.buildInvitationEmail({
+  // 4. Create invitation — compensate on failure to keep the user +
+  //    invitation pair atomic across two repos that do not share a tx.
+  let invitation;
+  try {
+    invitation = await deps.tokens.createInvitation({
+      userId: user.id,
+      invitedByUserId: input.actorUserId,
+      intendedRole: input.role,
+      now,
+    });
+  } catch (e) {
+    logger.error(
+      {
+        requestId: input.requestId,
+        errMessage: e instanceof Error ? e.message : String(e),
+        targetUserIdHash: hashId(user.id),
+      },
+      'create_user.invitation_create_failed',
+    );
+    // Compensate: delete the pending user row so the admin can retry
+    // with the same email. Safe-guarded inside the repo against deleting
+    // an already-activated account (race with redeemInvite).
+    try {
+      await deps.users.deletePending(user.id);
+    } catch (deleteError) {
+      logger.error(
+        {
+          requestId: input.requestId,
+          errMessage:
+            deleteError instanceof Error ? deleteError.message : String(deleteError),
+          targetUserIdHash: hashId(user.id),
+        },
+        'create_user.compensating_delete_failed',
+      );
+    }
+    return err({ code: 'invitation-create-failed' });
+  }
+
+  // 5. Enqueue invitation email to the F3 outbox (T049).
+  const enqueueResult = await deps.enqueueInvitation({
     toEmail: user.email,
     token: invitation.id,
     role: input.role,
     locale: input.locale,
   });
-  const sendResult = await deps.email.send({
-    to: user.email,
-    subject: built.subject,
-    html: built.html,
-    text: built.text,
-  });
-  if (!sendResult.ok) {
+  if (!enqueueResult.ok) {
     logger.error(
       {
         requestId: input.requestId,
-        errCode: sendResult.error.code,
+        errCode: enqueueResult.error.code,
+        errCause: enqueueResult.error.cause,
         targetUserIdHash: hashId(user.id),
       },
-      'create_user.email_send_failed',
+      'create_user.invitation_enqueue_failed',
     );
   }
 
-  // 5. Audit
+  // 6. Audit
   await deps.audit.append({
     eventType: 'account_created',
     actorUserId: input.actorUserId,

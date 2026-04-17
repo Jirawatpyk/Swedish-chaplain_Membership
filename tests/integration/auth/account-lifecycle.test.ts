@@ -50,9 +50,11 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 
-const stubEmailSender = {
-  send: async () => ok({ messageId: 'stub' }),
-};
+// T049 close-out 2026-04-17: createUser now enqueues an outbox row
+// instead of calling EmailSender synchronously. Stub matches the
+// EnqueueInvitationFn signature (Result<T,E> shape post-M1+M2).
+const stubEnqueueInvitation = async () =>
+  ok({ outboxRowId: 'stub-outbox-id' });
 
 const unlimitedLimiter = {
   check: async () => ({
@@ -90,7 +92,7 @@ describe('integration: invitation flow (happy path + replay)', () => {
         sourceIp: '203.0.113.11',
         requestId: inviteRequestId,
       },
-      { ...defaultCreateUserDeps, email: stubEmailSender },
+      { ...defaultCreateUserDeps, enqueueInvitation: stubEnqueueInvitation },
     );
     expect(inviteResult.ok).toBe(true);
     if (!inviteResult.ok) return;

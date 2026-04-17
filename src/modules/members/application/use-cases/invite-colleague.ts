@@ -183,8 +183,14 @@ export async function inviteColleague(
     });
   }
 
-  // W-2: Emit audit event for PII-touching operation (Constitution Principle I)
-  await deps.audit.record(deps.tenant, {
+  // W-2: Emit audit event for PII-touching operation (Constitution Principle I).
+  // Principle VIII: check the result — a silent audit-write failure on a
+  // completed state change is a compliance gap. If the write fails we
+  // return server_error so the route surfaces the issue; the caller can
+  // reconcile the orphan audit via the log entry. State is already
+  // committed (add + linkUser ran their own txs) so this cannot roll it
+  // back, but the typed failure preserves audit-gap visibility.
+  const auditResult = await deps.audit.record(deps.tenant, {
     type: 'contact_created',
     actorUserId: input.actorUserId,
     requestId: input.requestId,
@@ -195,6 +201,21 @@ export async function inviteColleague(
       user_id: created.value.user.id,
     },
   });
+  if (!auditResult.ok) {
+    logger.error(
+      {
+        contactId: newContactId,
+        userId: created.value.user.id,
+        cause: auditResult.error,
+        requestId: input.requestId,
+      },
+      'invite-colleague.audit_failed: state persisted without contact_created event',
+    );
+    return err({
+      type: 'server_error',
+      message: `audit: ${auditResult.error.code}`,
+    });
+  }
 
   return ok({
     contact: linked.value,
