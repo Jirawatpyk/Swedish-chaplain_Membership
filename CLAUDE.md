@@ -223,6 +223,8 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - 23 new F3 audit event types: `member_created`, `member_updated`, `member_archived`, `member_undeleted`, `contact_added`, `contact_promoted`, `contact_removed`, `member_plan_changed`, `member_plan_override`, `member_status_changed`, `member_self_update`, `member_portal_view`, `member_email_change_requested`, `member_email_change_confirmed`, `member_email_change_reverted`, `member_invitation_sent`, `member_invitation_accepted`, `member_invitation_revoked`, `member_invitation_expired`, `member_session_invalidated`, `member_cross_tenant_probe`, `member_bulk_archive`, `member_bulk_status_change` (005-members-contacts)
 - Smart chamber features shipped in F3: timeline (event feed), inline+bulk edit, at-risk detection logic (last_activity_at), archive+undelete with session/invitation cascade (005-members-contacts)
 - WCAG 2.2 SC 2.4.11 (Focus Not Obscured) + SC 2.5.8 (Target Size ≥24×24px) opportunistic adoption via E2E assertions (005-members-contacts)
+- TypeScript 5.7+ strict (existing F1–F4 config; no change) + Next.js 16 App Router, React 19, Tailwind CSS v4, shadcn/ui (no new deps) (006-layout-container-tier2)
+- N/A (presentation-only) (006-layout-container-tier2)
 
 ## Recent Changes
 
@@ -231,4 +233,4 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - 002-membership-plans: F2 Membership Plans — 6 user stories (US1–US6) shipped across 9 phases. Added `cmdk` command palette, `src/modules/tenants/` + `src/modules/plans/` bounded contexts, Postgres RLS tenant isolation, 2 new DB tables (`membership_plans`, `tenant_fee_config`), migrations 0006 + 0007, 268 i18n keys (EN+TH+SV), 495 unit+contract tests, 163 integration tests on live Neon Singapore. US7 (Inline Edit + Bulk Actions) deferred to F3.
 - 001-auth-rbac: F1 Auth & RBAC shipped via PR #1. 188/191 tasks, 480/480 tests.
 
-Last updated: 2026-04-17
+Last updated: 2026-04-18
