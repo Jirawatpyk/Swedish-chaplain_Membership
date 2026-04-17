@@ -4,6 +4,9 @@ import {
   asMemberId,
   asPlanId,
   asTenantId,
+  tryMemberId,
+  tryPlanId,
+  tryTenantId,
   ARCHIVE_UNDELETE_WINDOW_DAYS,
   isMemberStatus,
   MEMBER_STATUSES,
@@ -169,6 +172,68 @@ describe('Brand constructors', () => {
 
   it('asMemberId brands a raw string', () => {
     expect(asMemberId('m-001')).toBe('m-001');
+  });
+});
+
+describe('tryTenantId', () => {
+  it('returns ok for a non-empty string', () => {
+    const r = tryTenantId('swecham');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe('swecham');
+  });
+
+  it('returns err for empty / whitespace-only string', () => {
+    expect(tryTenantId('').ok).toBe(false);
+    expect(tryTenantId('   ').ok).toBe(false);
+  });
+
+  it('returns err for non-string values', () => {
+    expect(tryTenantId(null).ok).toBe(false);
+    expect(tryTenantId(42).ok).toBe(false);
+  });
+});
+
+describe('tryPlanId', () => {
+  it('returns ok for a non-empty string', () => {
+    const r = tryPlanId('premium-2026');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe('premium-2026');
+  });
+
+  it('returns err for empty / whitespace string', () => {
+    expect(tryPlanId('').ok).toBe(false);
+    expect(tryPlanId('  ').ok).toBe(false);
+  });
+
+  it('returns err for non-string values', () => {
+    expect(tryPlanId(null).ok).toBe(false);
+    expect(tryPlanId(undefined).ok).toBe(false);
+  });
+});
+
+describe('tryMemberId', () => {
+  it('returns ok for a valid UUID', () => {
+    const r = tryMemberId('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+  });
+
+  it('normalises to lowercase', () => {
+    const r = tryMemberId('A1B2C3D4-E5F6-7890-ABCD-EF1234567890');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+  });
+
+  it('returns err for a non-UUID string', () => {
+    const r = tryMemberId('not-a-uuid');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('invalid_member_id');
+  });
+
+  it('returns err for null / number / undefined', () => {
+    expect(tryMemberId(null).ok).toBe(false);
+    expect(tryMemberId(42).ok).toBe(false);
+    expect(tryMemberId(undefined).ok).toBe(false);
   });
 });
 
