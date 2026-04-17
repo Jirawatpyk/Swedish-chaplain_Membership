@@ -88,6 +88,7 @@ async function handle(
       contactRepo: deps.contactRepo,
       userEmails: deps.userEmails,
       sessions: deps.sessions,
+      audit: deps.audit,
       clock: deps.clock,
     },
     { tokenId, requestId },

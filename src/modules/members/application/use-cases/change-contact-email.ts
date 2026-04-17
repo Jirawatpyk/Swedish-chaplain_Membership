@@ -38,13 +38,9 @@
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-// The use case writes ONE audit row inside the caller's tx. Going
-// through AuditPort would start its own non-tx connection and break
-// atomicity. Same pattern as drizzle-contact-repo's existing inserts
-// (see its update() method).
-import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asEmail, type Email } from '../../domain/value-objects/email';
 import type { ContactId } from '../../domain/contact';
+import type { AuditPort } from '../ports/audit-port';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
 import type { EmailPort } from '../ports/email-port';
@@ -66,6 +62,7 @@ export type ChangeContactEmailDeps = {
   sessions: SessionRevocationPort;
   tokens: EmailChangeTokenPort;
   emails: EmailPort;
+  audit: AuditPort;
   clock: ClockPort;
 };
 
@@ -231,23 +228,21 @@ export async function changeContactEmail(
       });
       if (!revertEnqueue.ok) throw new PortError(revertEnqueue.error);
 
-      // Audit — single event row carrying the full context. Inserted
-      // inside the tx for atomicity + to trigger the F3 `members.
-      // last_activity_at` bump (migration 0009 trigger).
-      await tx.insert(auditLog).values({
-        eventType: 'member_contact_email_changed',
+      // Audit via AuditPort.recordInTx — preserves atomicity and keeps
+      // the Application layer free of Drizzle schema imports
+      // (Principle III). Email values hashed per data-model.md § 4
+      // (append-only audit_log, ≥5y retention, PDPA § 37 + GDPR
+      // Art 5(1)(c) data minimisation).
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_contact_email_changed',
         actorUserId: input.actorUserId,
         targetUserId: userId,
-        summary: `contact email changed for contact ${input.contactId}`,
         requestId: input.requestId,
-        tenantId: deps.tenant.slug,
+        summary: `contact email changed for contact ${input.contactId}`,
         payload: {
           member_id: contact.memberId,
           contact_id: input.contactId,
           user_id: userId,
-          // Emails hashed per data-model.md § 4 — audit_log is
-          // append-only with ≥5-year retention; plaintext PII violates
-          // PDPA § 37 + GDPR Art 5(1)(c) data minimisation.
           old_email_hash: hashEmail(userUpdate.value.oldEmail),
           new_email_hash: hashEmail(newEmail as string),
           sessions_revoked: sessionResult.value.revokedCount,
@@ -255,6 +250,7 @@ export async function changeContactEmail(
           revert_enqueued: true,
         },
       });
+      if (!auditResult.ok) throw new PortError(auditResult.error);
 
       return {
         oldEmail: userUpdate.value.oldEmail,

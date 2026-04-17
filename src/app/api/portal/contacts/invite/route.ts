@@ -22,9 +22,12 @@ export async function POST(request: NextRequest) {
   const ctx = await requireMemberContext(request);
   if ('response' in ctx) return ctx.response;
 
-  // Idempotency-Key required — format validation only.
-  // W-6: Full classify/reserve/remember flow deferred (low-frequency path).
-  // TODO(US5-polish): Wire withIdempotency() for full replay protection.
+  // Idempotency-Key required — format validation only. Full
+  // classify/reserve/remember flow is intentionally deferred to F9
+  // (idempotency layer). Domain-level duplicate protection: inviting
+  // the same email twice hits the `email-taken` branch of
+  // `invitePortal` → returns 409 without creating a second invitation.
+  // Tracked: F9 idempotency layer.
   const idemResult = parseIdempotencyKey(request.headers);
   if (!idemResult.ok) {
     return NextResponse.json(

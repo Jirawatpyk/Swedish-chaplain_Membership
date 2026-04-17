@@ -56,6 +56,7 @@ export async function POST(
       tokens: deps.tokens,
       emails: deps.emails,
       userEmails: deps.userEmails,
+      audit: deps.audit,
       clock: deps.clock,
     },
     {

@@ -232,6 +232,7 @@ describe('outbox permanent failure + admin re-send (T074, FR-012c)', () => {
         tokens: deps.tokens,
         emails: deps.emails,
         userEmails: deps.userEmails,
+        audit: deps.audit,
         clock: deps.clock,
       },
       {

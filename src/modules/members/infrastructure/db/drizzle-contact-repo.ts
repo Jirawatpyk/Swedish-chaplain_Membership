@@ -8,7 +8,7 @@
  * `repo.conflict` so callers get a clean error instead of a leaky 500.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { contacts } from './schema-contacts';
@@ -270,6 +270,21 @@ export const drizzleContactRepo: ContactRepo = {
       }
       return err(unexpected(e));
     }
+  },
+
+  async listLinkedUserIdsForMemberInTx(tx, memberId) {
+    const rows = await tx
+      .select({ linkedUserId: contacts.linkedUserId })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.memberId, memberId),
+          isNull(contacts.removedAt),
+        ),
+      );
+    return rows
+      .map((r) => r.linkedUserId)
+      .filter((uid): uid is string => uid !== null);
   },
 
   async updateEmailInTx(tx, _ctx, contactId, newEmail) {

@@ -102,4 +102,19 @@ export interface ContactRepo {
     contactId: ContactId,
     newEmail: Email,
   ): Promise<Result<{ oldEmail: Email }, RepoError>>;
+
+  /**
+   * List `linkedUserId`s for every non-removed contact on the member,
+   * inside the caller's transaction. Used by the archive cascade to
+   * collect the F1 users whose sessions + pending invitations must be
+   * revoked atomically with the status flip (US7).
+   *
+   * Returns a de-duplication-friendly list (may contain duplicates if
+   * the same F1 user is linked to multiple contacts on the same
+   * member); callers dedupe via `new Set(...)` before iterating.
+   */
+  listLinkedUserIdsForMemberInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+  ): Promise<string[]>;
 }

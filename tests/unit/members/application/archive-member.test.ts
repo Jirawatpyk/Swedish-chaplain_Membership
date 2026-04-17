@@ -88,6 +88,8 @@ function makeMember(opts: {
 
 type StubbedArchiveDeps = ArchiveMemberDeps & {
   memberRepo: { [K in keyof ArchiveMemberDeps['memberRepo']]: ReturnType<typeof vi.fn> };
+  contactRepo: { [K in keyof ArchiveMemberDeps['contactRepo']]: ReturnType<typeof vi.fn> };
+  invitations: { [K in keyof ArchiveMemberDeps['invitations']]: ReturnType<typeof vi.fn> };
   sessions: { [K in keyof ArchiveMemberDeps['sessions']]: ReturnType<typeof vi.fn> };
   audit: { [K in keyof ArchiveMemberDeps['audit']]: ReturnType<typeof vi.fn> };
 };
@@ -129,8 +131,39 @@ function makeDeps(overrides: Partial<{
     record: vi.fn(),
     recordInTx: vi.fn().mockResolvedValue(overrides.auditResult ?? ok(undefined)),
   };
+  // ContactRepo stub — only the InTx method is touched by archiveMember.
+  // Returns the raw list (null-inclusive) to preserve R002 dedupe coverage;
+  // the filter-out-null lives in the real adapter.
+  const contactRepo = {
+    listByMember: vi.fn(),
+    findById: vi.fn(),
+    add: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn(),
+    promotePrimary: vi.fn(),
+    linkUser: vi.fn(),
+    updateEmailInTx: vi.fn(),
+    listLinkedUserIdsForMemberInTx: vi.fn(async () =>
+      stubTxContacts.linkedUserIds.filter(
+        (uid): uid is string => uid !== null,
+      ),
+    ),
+  };
+  const invitations = {
+    softConsumePendingForUsersInTx: vi.fn(async () => ({
+      revokedCount: stubTxInvitationsRevoked.length,
+    })),
+  };
   const clock = { now: () => now };
-  return { tenant, memberRepo, sessions, audit, clock } as unknown as StubbedArchiveDeps;
+  return {
+    tenant,
+    memberRepo,
+    contactRepo,
+    invitations,
+    sessions,
+    audit,
+    clock,
+  } as unknown as StubbedArchiveDeps;
 }
 
 describe('archiveMember use case (R009)', () => {

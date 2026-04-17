@@ -32,10 +32,10 @@
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asEmail } from '../../domain/value-objects/email';
 import { asContactId } from '../../domain/contact';
 import type { ContactId } from '../../domain/contact';
+import type { AuditPort } from '../ports/audit-port';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
 import type { SessionRevocationPort } from '../ports/session-revocation-port';
@@ -50,6 +50,7 @@ export type RevertContactEmailDeps = {
   contactRepo: ContactRepo;
   userEmails: UserEmailPort;
   sessions: SessionRevocationPort;
+  audit: AuditPort;
   clock: ClockPort;
 };
 
@@ -170,15 +171,14 @@ export async function revertContactEmail(
         });
       }
 
-      // Step 7 — high-severity audit. Email is redacted by hashing per
-      // data-model.md § 4 `reverted_to_email_hash`.
-      await tx.insert(auditLog).values({
-        eventType: 'member_email_change_reverted',
+      // Step 7 — high-severity audit via AuditPort.recordInTx
+      // (Principle III). Email redacted by hashing per data-model.md § 4.
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_email_change_reverted',
         actorUserId: input.actorUserId ?? 'anonymous',
         targetUserId: token.userId,
-        summary: `email change reverted for user ${token.userId}`,
         requestId: input.requestId,
-        tenantId: deps.tenant.slug,
+        summary: `email change reverted for user ${token.userId}`,
         payload: {
           contact_id: token.contactId,
           user_id: token.userId,
@@ -188,6 +188,12 @@ export async function revertContactEmail(
           sessions_revoked: sessionsResult.value.revokedCount,
         },
       });
+      if (!auditResult.ok) {
+        throw new UseCaseAbort({
+          code: 'server_error',
+          cause: auditResult.error,
+        });
+      }
 
       return {
         userId: token.userId,

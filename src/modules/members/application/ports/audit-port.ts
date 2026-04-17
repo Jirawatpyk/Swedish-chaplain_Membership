@@ -66,6 +66,13 @@ export type F3AuditEvent = {
   readonly requestId: string;
   readonly summary: string;
   readonly payload: Record<string, unknown>;
+  /**
+   * Optional top-level `audit_log.target_user_id` column. Used by the
+   * email-change flow (change / revert / resend-verification) so tests
+   * + operators can filter by target without scanning the JSON payload.
+   * When omitted, the column stays null.
+   */
+  readonly targetUserId?: string;
 };
 
 export interface AuditPort {

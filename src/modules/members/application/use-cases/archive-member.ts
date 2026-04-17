@@ -24,17 +24,16 @@
  */
 
 import { z } from 'zod';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { archive, type Member, type MemberId } from '../../domain/member';
-import { contacts } from '../../infrastructure/db/schema-contacts';
-import { invitations } from '@/modules/auth/infrastructure/db/schema';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
+import type { ContactRepo } from '../ports/contact-repo';
+import type { InvitationCascadePort } from '../ports/invitation-cascade-port';
 import type { SessionRevocationPort } from '../ports/session-revocation-port';
 
 export const archiveMemberSchema = z
@@ -57,6 +56,8 @@ export type ArchiveMemberError =
 export type ArchiveMemberDeps = {
   tenant: TenantContext;
   memberRepo: MemberRepo;
+  contactRepo: ContactRepo;
+  invitations: InvitationCascadePort;
   sessions: SessionRevocationPort;
   audit: AuditPort;
   clock: ClockPort;
@@ -125,18 +126,11 @@ export async function archiveMember(
 
       // Cascade — read linked users inside the same tx snapshot so we
       // revoke exactly the sessions of the users linked at archive time.
-      const linkedRows = await tx
-        .select({ linkedUserId: contacts.linkedUserId })
-        .from(contacts)
-        .where(
-          and(
-            eq(contacts.memberId, memberId),
-            isNull(contacts.removedAt),
-          ),
-        );
-      const linkedUserIds = linkedRows
-        .map((r) => r.linkedUserId)
-        .filter((uid): uid is string => uid !== null);
+      // Principle III: via ContactRepo port, not a raw schema select.
+      const linkedUserIds = await deps.contactRepo.listLinkedUserIdsForMemberInTx(
+        tx,
+        memberId,
+      );
 
       // R002 (staff-review-20260417-us7) — dedupe linkedUserIds before
       // revocation: if the same F1 user is linked to multiple contacts
@@ -175,30 +169,16 @@ export async function archiveMember(
 
       // Soft-consume any pending/unredeemed invitations for the linked
       // users so the invite links become dead — defense-in-depth per
-      // spec Edge Cases. Invitations table is cross-tenant (F1); we
-      // scope the UPDATE to the exact user_ids we just cascaded.
-      // Setting `consumed_at = NOW()` marks the invite as used without
-      // adding a new schema column or migration. F1's invite-redemption
-      // flow rejects rows where `consumed_at IS NOT NULL`.
-      //
-      // R001 (staff-review-20260417-us7) — `.returning({ userId })` instead
-      // of `{ id }`. `invitations.id` IS the raw invite token and migration
-      // 0017 revokes chamber_app's SELECT privilege on it.
-      let invitationsRevokedCount = 0;
-      if (uniqueLinkedUserIds.length > 0) {
-        const revokedRows = await tx
-          .update(invitations)
-          .set({ consumedAt: now })
-          .where(
-            and(
-              inArray(invitations.userId, uniqueLinkedUserIds),
-              isNull(invitations.consumedAt),
-              sql`${invitations.expiresAt} > NOW()`,
-            ),
-          )
-          .returning({ userId: invitations.userId });
-        invitationsRevokedCount = revokedRows.length;
-      }
+      // spec Edge Cases. Cross-module boundary handled via
+      // InvitationCascadePort (Principle III). R001 column-grant
+      // semantics preserved inside the adapter (`returning({ userId })`
+      // only — never exposes `invitations.id`).
+      const { revokedCount: invitationsRevokedCount } =
+        await deps.invitations.softConsumePendingForUsersInTx(
+          tx,
+          uniqueLinkedUserIds,
+          now,
+        );
 
       // R004 (staff-review-20260417-us7) — `reason` is admin free-text
       // (up to 500 chars) and lands verbatim in this audit payload.

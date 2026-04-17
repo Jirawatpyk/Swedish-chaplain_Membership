@@ -92,6 +92,10 @@ function makeDeps(overrides: Partial<{
     emails: {
       enqueueInTx: vi.fn(async () => emailEnqueueResult),
     } as unknown as ChangeContactEmailDeps['emails'],
+    audit: {
+      record: vi.fn(async () => ok(undefined)),
+      recordInTx: vi.fn(async () => ok(undefined)),
+    } as unknown as ChangeContactEmailDeps['audit'],
     clock: { now: () => new Date('2026-04-15T10:00:00Z') },
   };
 }
@@ -282,9 +286,13 @@ describe('changeContactEmail — happy path', () => {
     }
   });
 
-  it('writes an audit row inside the transaction', async () => {
+  it('writes an audit row via AuditPort.recordInTx inside the transaction', async () => {
     await changeContactEmail(deps, baseInput);
-    expect(stubTx.insert).toHaveBeenCalled();
+    expect(deps.audit.recordInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      deps.tenant,
+      expect.objectContaining({ type: 'member_contact_email_changed' }),
+    );
   });
 
   it('revokes sessions inside the transaction', async () => {

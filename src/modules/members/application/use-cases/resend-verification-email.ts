@@ -23,8 +23,8 @@
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type { ContactId } from '../../domain/contact';
+import type { AuditPort } from '../ports/audit-port';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
 import type { EmailPort } from '../ports/email-port';
@@ -43,6 +43,7 @@ export type ResendVerificationDeps = {
   tokens: EmailChangeTokenPort;
   emails: EmailPort;
   userEmails: UserEmailPort;
+  audit: AuditPort;
   clock: ClockPort;
 };
 
@@ -154,13 +155,12 @@ export async function resendVerificationEmail(
         });
       }
 
-      await tx.insert(auditLog).values({
-        eventType: 'email_verification_resent',
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'email_verification_resent',
         actorUserId: input.actorUserId,
         targetUserId: userId,
-        summary: `verification email re-sent for user ${userId}`,
         requestId: input.requestId,
-        tenantId: deps.tenant.slug,
+        summary: `verification email re-sent for user ${userId}`,
         payload: {
           member_id: contact.memberId,
           contact_id: input.contactId,
@@ -170,6 +170,12 @@ export async function resendVerificationEmail(
           outbox_row_id: enqueued.value.outboxRowId,
         },
       });
+      if (!auditResult.ok) {
+        throw new UseCaseAbort({
+          code: 'server_error',
+          cause: auditResult.error,
+        });
+      }
 
       return {
         userId,

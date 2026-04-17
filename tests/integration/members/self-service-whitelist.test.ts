@@ -100,6 +100,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
       err({ code: 'repo.unexpected' as const }),
     linkUser: async () => ok(baseContact),
     updateEmailInTx: async () => ok({ oldEmail: baseContact.email }),
+    listLinkedUserIdsForMemberInTx: async () => [],
   };
 
   const audit: AuditPort = {

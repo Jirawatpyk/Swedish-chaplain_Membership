@@ -150,6 +150,7 @@ beforeAll(async () => {
       sessions: deps.sessions,
       tokens: deps.tokens,
       emails: deps.emails,
+      audit: deps.audit,
       clock: deps.clock,
     },
     {

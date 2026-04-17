@@ -17,6 +17,9 @@ export const drizzleAuditAdapter: AuditPort = {
       await db.insert(auditLog).values({
         eventType: event.type,
         actorUserId: event.actorUserId,
+        ...(event.targetUserId !== undefined && {
+          targetUserId: event.targetUserId,
+        }),
         summary: event.summary,
         requestId: event.requestId,
         tenantId: ctx.slug,
@@ -33,6 +36,9 @@ export const drizzleAuditAdapter: AuditPort = {
       await tx.insert(auditLog).values({
         eventType: event.type,
         actorUserId: event.actorUserId,
+        ...(event.targetUserId !== undefined && {
+          targetUserId: event.targetUserId,
+        }),
         summary: event.summary,
         requestId: event.requestId,
         tenantId: ctx.slug,

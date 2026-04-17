@@ -20,6 +20,7 @@ import { resendEmailPort } from './infrastructure/adapters/resend-email-port';
 import { authSessionRevocationPort } from './infrastructure/adapters/auth-session-revocation-port';
 import { userEmailAdapter } from './infrastructure/adapters/user-email-adapter';
 import { emailChangeTokenAdapter } from './infrastructure/adapters/email-change-token-adapter';
+import { drizzleInvitationCascadePort } from './infrastructure/adapters/invitation-cascade-adapter';
 import type { MemberRepo } from './application/ports/member-repo';
 import type { ContactRepo } from './application/ports/contact-repo';
 import type { AuditPort } from './application/ports/audit-port';
@@ -29,6 +30,7 @@ import type { EmailPort } from './application/ports/email-port';
 import type { SessionRevocationPort } from './application/ports/session-revocation-port';
 import type { UserEmailPort } from './application/ports/user-email-port';
 import type { EmailChangeTokenPort } from './application/ports/email-change-token-port';
+import type { InvitationCascadePort } from './application/ports/invitation-cascade-port';
 import type { TimelinePort } from './application/ports/timeline-port';
 import type { MemberId } from './domain/member';
 import type { ContactId } from './domain/contact';
@@ -43,6 +45,7 @@ export type MembersDeps = {
   sessions: SessionRevocationPort;
   userEmails: UserEmailPort;
   tokens: EmailChangeTokenPort;
+  invitations: InvitationCascadePort;
   timeline: TimelinePort;
   clock: ClockPort;
   idFactory: {
@@ -89,6 +92,7 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     sessions: authSessionRevocationPort,
     userEmails: userEmailAdapter,
     tokens: emailChangeTokenAdapter,
+    invitations: drizzleInvitationCascadePort,
     timeline: drizzleTimelineRepo,
     clock: systemClock,
     idFactory: systemIdFactory,

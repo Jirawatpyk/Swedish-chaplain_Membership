@@ -133,10 +133,11 @@ export async function PATCH(request: NextRequest) {
   const ctx = await requireMemberContext(request);
   if ('response' in ctx) return ctx.response;
 
-  // Idempotency-Key required on mutations.
-  // W-6: Full classify/reserve/remember flow deferred — portal self-service
-  // is low-frequency; format validation provides basic protection.
-  // TODO(US5-polish): Wire withIdempotency() for full replay protection.
+  // Idempotency-Key required on mutations — format validation only.
+  // Full classify/reserve/remember flow is intentionally deferred to F9
+  // (idempotency layer); portal self-service traffic is low-frequency
+  // and a duplicate PATCH here is idempotent at the domain level (same
+  // field values → same terminal state). Tracked: F9 idempotency layer.
   const idemResult = parseIdempotencyKey(request.headers);
   if (!idemResult.ok) {
     return NextResponse.json(
