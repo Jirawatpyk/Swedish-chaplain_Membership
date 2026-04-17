@@ -94,6 +94,41 @@ const eslintConfig = defineConfig([
               "Application layer must not depend on Next.js, React, or a specific ORM. " +
               "Use Infrastructure adapters via dependency injection.",
           })),
+          patterns: [
+            {
+              // Path C hardening — B1-class regression guard.
+              // Round 3 staff review found 4 Application files importing
+              // Drizzle schema VALUES directly from
+              // `@/modules/*/infrastructure/**`. The package-name rule
+              // above (drizzle-orm, next, …) did not cover project-local
+              // infrastructure paths.
+              //
+              // `allowTypeImports: true` — `import type { ... }` lines
+              // erase at compile time and create no runtime coupling.
+              // F1 use cases (sign-in.ts, reset-password.ts, etc.)
+              // legitimately import port INTERFACES via `import type`
+              // for DI wiring; blocking those would force duplicate
+              // type definitions. What B1 caught was VALUE imports
+              // (`import { auditLog } ...` → `tx.insert(auditLog)`),
+              // which this rule still blocks.
+              group: [
+                "@/modules/*/infrastructure/**",
+                "./*/infrastructure/**",
+                "./infrastructure/**",
+                "../infrastructure/**",
+                "../../infrastructure/**",
+                "../../../infrastructure/**",
+              ],
+              allowTypeImports: true,
+              message:
+                "Application layer must NOT import Infrastructure VALUES directly. " +
+                "Define a Port interface in application/ports/ and inject " +
+                "the Infrastructure adapter via the composition root " +
+                "(src/lib/auth-deps.ts, src/modules/<name>/<name>-deps.ts). " +
+                "Type-only imports (`import type { ... }`) are allowed for DI wiring. " +
+                "Constitution Principle III (NON-NEGOTIABLE).",
+            },
+          ],
         },
       ],
     },
