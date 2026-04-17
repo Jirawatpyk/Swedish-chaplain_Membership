@@ -150,8 +150,17 @@ test.describe('F3 admin route page titles @f3 @a11y', () => {
 
     const titles: string[] = [];
     for (const route of routes) {
+      const prevTitle = await page.title();
       await page.goto(route);
       await page.waitForLoadState('networkidle');
+      // In Turbopack dev, React may hoist <title> to document.title after
+      // networkidle. Wait up to 3 s for the title to differ from the
+      // previous page; silent catch handles same-URL re-navigation.
+      await page
+        .waitForFunction((prev) => document.title !== prev, prevTitle, {
+          timeout: 3_000,
+        })
+        .catch(() => {});
       titles.push(await page.title());
     }
 

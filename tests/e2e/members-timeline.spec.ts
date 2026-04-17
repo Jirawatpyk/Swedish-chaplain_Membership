@@ -78,7 +78,7 @@ test.describe('members timeline — F3 US6 @f3 @a11y @i18n', () => {
       expect(await items.count()).toBeGreaterThan(0);
       // The event-type label must NOT look like a raw snake_case key
       // (defensive — audit.eventType keys should be localised strings).
-      const firstEventLabel = await items.first().locator('span').first().innerText();
+      const firstEventLabel = await items.first().locator('span:not([aria-hidden])').first().innerText();
       expect(firstEventLabel.length).toBeGreaterThan(0);
     }
   });

@@ -95,10 +95,10 @@ test.describe('members bulk actions i18n @f3 @i18n', () => {
 
   for (const locale of ['en', 'th', 'sv'] as const) {
     test(`${locale} locale renders without i18n leak`, async ({ page }) => {
-      await page.context().addCookies([
-        { name: 'NEXT_LOCALE', value: locale, domain: 'localhost', path: '/' },
-      ]);
       await signIn(page);
+      await page.context().addCookies([
+        { name: 'NEXT_LOCALE', value: locale, url: 'http://localhost:3100' },
+      ]);
       await page.goto('/admin/members');
       await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
       // Check no raw i18n keys (admin.members.* pattern) leak into the page

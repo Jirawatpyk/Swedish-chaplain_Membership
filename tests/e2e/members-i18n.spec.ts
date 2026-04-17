@@ -73,8 +73,8 @@ test.describe('F3 members i18n locale coverage @f3 @i18n', () => {
       page,
       context,
     }) => {
-      await setLocale(context, locale);
       await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+      await setLocale(context, locale);
       await page.goto('/admin/members');
       await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
 
@@ -96,8 +96,8 @@ test.describe('F3 members i18n locale coverage @f3 @i18n', () => {
       page,
       context,
     }) => {
-      await setLocale(context, locale);
       await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+      await setLocale(context, locale);
       await page.goto('/admin/members');
       await page.waitForLoadState('networkidle');
 
@@ -112,8 +112,8 @@ test.describe('F3 members i18n locale coverage @f3 @i18n', () => {
       page,
       context,
     }) => {
-      await setLocale(context, locale);
       await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+      await setLocale(context, locale);
       await page.goto('/admin/members');
       await page.waitForSelector('[data-slot="table"]', { timeout: 10_000 });
 
@@ -128,8 +128,8 @@ test.describe('F3 members i18n locale coverage @f3 @i18n', () => {
     page,
     context,
   }) => {
-    await setLocale(context, 'th');
     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    await setLocale(context, 'th');
 
     // Find first member that has a date_of_birth visible on detail page
     await page.goto('/admin/members');
