@@ -563,3 +563,114 @@ Non-blocking items deferred from F3 ship. Track against the F2+ observability ro
 ### 15.2 Future backlog items
 
 Add future post-ship observability follow-ups here (format: subsection 15.N with context, current mitigation, target state, effort estimate, and ship-blocker justification).
+
+---
+
+## 16. F4 Invoicing — metrics catalogue (T022)
+
+All metrics emitted by the `invoicing` bounded context. Every use case creates a pino child logger + OTel span; counters + histograms attached as span attributes.
+
+### 16.1 Issue-invoice transactional path (the critical F4 surface)
+
+| Name | Kind | Labels | Purpose |
+|---|---|---|---|
+| `invoicing.issue.duration_ms` | histogram | tenant_slug, outcome | Wall-clock of full issue tx (seq alloc → PDF → Blob → DB → outbox) |
+| `invoicing.issue.count` | counter | tenant_slug, outcome | issued, failed, idempotency_replay |
+| `invoicing.pdf_render.duration_ms` | histogram | tenant_slug, template_version, doc_type | PDF render only (SC-003 reproducibility) |
+| `invoicing.seq_allocator.contention_retries` | counter | tenant_slug, document_type, fiscal_year | Advisory-lock retry count |
+| `invoicing.blob_upload.duration_ms` | histogram | tenant_slug, outcome | Vercel Blob upload time |
+
+### 16.2 Auto-email delivery
+
+| Name | Kind | Labels | Purpose |
+|---|---|---|---|
+| `invoicing.auto_email.enqueued` | counter | tenant_slug, event_type | Outbox rows added inside issue/pay/void/CN tx |
+| `invoicing.auto_email.sent` | counter | tenant_slug, event_type | Dispatcher successfully invoked Resend |
+| `invoicing.auto_email.bounces` | counter | tenant_slug, bounce_reason | Resend webhook flagged a permanent failure |
+| `invoicing.auto_email.throttled` | counter | tenant_slug, member_id_hash | Token-bucket rejected (>10/h per member) |
+
+### 16.3 Cross-tenant + security
+
+| Name | Kind | Labels | Purpose |
+|---|---|---|---|
+| `invoicing.cross_tenant_probe.count` | counter | tenant_slug, actor_role | Crafted-URL probes → 404 + audit |
+| `invoicing.logo_blob.count` | counter | tenant_slug | Monotonic per-tenant logo upload counter (50 cap) |
+| `invoicing.logo_upload_rejected.count` | counter | tenant_slug, reason | MIME / size / dim / EXIF / cap |
+
+### 16.4 Overdue + operational
+
+| Name | Kind | Labels | Purpose |
+|---|---|---|---|
+| `invoicing.overdue.detected` | counter | tenant_slug | Lazy overdue derivation (once per day per invoice) |
+| `invoicing.resend.count` | counter | tenant_slug, doc_type | Manual PDF resend (admin clicks resend button) |
+
+## 17. SLOs — F4
+
+| Objective | Window | Budget | Measurement |
+|---|---|---|---|
+| SLO-F4-001 issuance success rate | 28d rolling | ≥ 99.5% | `issue.count{outcome='issued'} / (issued+failed)` |
+| SLO-F4-002 issuance p95 latency | 28d rolling | ≤ 1500 ms | `issue.duration_ms p95` |
+| SLO-F4-003 PDF render determinism | 28d rolling | 100% byte-identical | CI + staging sha256 equality probe |
+| SLO-F4-004 auto-email bounce rate | 28d rolling | ≤ 2% | `auto_email.bounces / auto_email.sent` |
+| SLO-F4-005 cross-tenant probes | 28d rolling | 0 per tenant | `cross_tenant_probe.count == 0` |
+| SLO-F4-006 invoice list query p95 | 28d rolling | ≤ 500 ms @ 5k rows | T110a perf test + prod p95 |
+
+## 18. Alerts — F4 initial set
+
+| Alert | Trigger | Severity | Runbook |
+|---|---|---|---|
+| `f4-cross-tenant-probe` | `cross_tenant_probe.count >= 1` within 5 min | PAGE | § 19.1 — investigate + rotate session if abuse confirmed |
+| `f4-issuance-p99-slow` | p99 `issue.duration_ms` > 3000 ms for 10 min | NOTIFY | § 19.2 — check Blob + Resend latency + DB connections |
+| `f4-auto-email-bounce-storm` | `auto_email.bounces / hour > 5%` | NOTIFY | § 19.3 — pause dispatcher, investigate stale addresses |
+| `f4-seq-contention-spike` | `seq_allocator.contention_retries p95 > 2/min` | NOTIFY | Advisory lock churn — check for runaway concurrent issues |
+| `f4-logo-upload-rejected-flood` | `logo_upload_rejected.count / hour > 20` | NOTIFY | Possible abuse — audit actor |
+| `f4-pdf-render-failed-spike` | `pdf_render_failed` audit events > 5 / hour | PAGE | Likely font / template regression — check latest deploy |
+
+## 19. F4 Runbooks
+
+### 19.1 Cross-tenant probe investigation (`f4-cross-tenant-probe`)
+
+1. Query `audit_log` for the last 50 `invoice_cross_tenant_probe` / `credit_note_cross_tenant_probe` rows:
+   ```sql
+   SELECT tenant_id, actor_user_id, payload, timestamp
+   FROM audit_log
+   WHERE event_type IN ('invoice_cross_tenant_probe','credit_note_cross_tenant_probe')
+   ORDER BY timestamp DESC LIMIT 50;
+   ```
+2. Confirm actor is a known session (not a brute-force token).
+3. If actor legitimate (mistyped id): reach out, close ticket.
+4. If actor hostile: revoke session, email admin, escalate to legal if PII exfiltrated.
+5. Update incident in `specs/007-invoices-receipts/reviews/incident-NNN.md`.
+
+### 19.2 Doc-number overflow runbook (FR-035)
+
+1. If allocator hits `2_000_000` (6-digit overflow): issue blocks with `document_number_overflow`.
+2. Decide: bump prefix (SC → SC2) or reset fiscal-year cadence. Both require maintainer sign-off.
+3. Apply new prefix via `tenant_invoice_settings.invoice_number_prefix` update.
+4. Verify next issuance lands at new prefix + seq 1.
+
+### 19.3 Auto-email permanent-failure recovery
+
+1. Dashboard → "F4 auto-email failures" badge on `/admin`.
+2. Click through to list of `auto_email_delivery_failed` rows.
+3. For each: admin fixes recipient email via F3 member edit → triggers manual `resend-pdf` (T107).
+4. Stale addresses > 30d age: mark member contact `do_not_auto_email = true` (future F9 column).
+
+### 19.4 Template-version release process
+
+1. PR introducing a template change bumps `CURRENT_TEMPLATE_VERSION` constant.
+2. `pdf-template-version-smoke.test.ts` (T045) covers version registry completeness.
+3. Old versions MUST remain in the registry indefinitely — deleting an old version breaks reproducibility (FR-016).
+4. Release notes document the visual diff + which invoice batches will use the new version.
+
+## 20. F4 staging-baseline
+
+Populated in Phase 10 T114b after a live issuance flow on staging. Placeholders:
+
+- Invoice-issue trace ID: _(tbd)_
+- p50 / p95 / p99: _(tbd)_
+- Blob upload p95: _(tbd)_
+- Resend queue latency: _(tbd)_
+
+Target: ≤1500 ms p95 for full issue tx; ≤800 ms p95 for PDF render alone.
+

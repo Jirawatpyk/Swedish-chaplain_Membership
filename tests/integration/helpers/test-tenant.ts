@@ -39,6 +39,11 @@ import {
 } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
 
 export interface TestTenant {
   readonly ctx: TenantContext;
@@ -78,6 +83,15 @@ export async function createTestTenant(
     await db
       .delete(notificationsOutbox)
       .where(eq(notificationsOutbox.tenantId, slug));
+    // F4 cleanup — delete in FK order: credit_notes → invoice_lines (CASCADE
+    // from invoices) → invoices → settings + sequences. invoice_lines are
+    // CASCADE-deleted by `invoices_invoice_fk ON DELETE CASCADE` so an
+    // explicit `delete(invoiceLines)` is redundant but kept for clarity.
+    await db.delete(creditNotes).where(eq(creditNotes.tenantId, slug));
+    await db.delete(invoiceLines).where(eq(invoiceLines.tenantId, slug));
+    await db.delete(invoices).where(eq(invoices.tenantId, slug));
+    await db.delete(tenantDocumentSequences).where(eq(tenantDocumentSequences.tenantId, slug));
+    await db.delete(tenantInvoiceSettings).where(eq(tenantInvoiceSettings.tenantId, slug));
     await db.delete(contacts).where(eq(contacts.tenantId, slug));
     await db.delete(members).where(eq(members.tenantId, slug));
     await db.delete(membershipPlans).where(eq(membershipPlans.tenantId, slug));

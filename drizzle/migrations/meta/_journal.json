@@ -134,6 +134,34 @@
       "when": 1776439610984,
       "tag": "0018_soft_franklin_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1776720000000,
+      "tag": "0019_invoicing_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1776720001000,
+      "tag": "0020_audit_log_f4_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1776720002000,
+      "tag": "0021_audit_overdue_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1776720003000,
+      "tag": "0022_invoicing_chamber_app_grants",
+      "breakpoints": true
     }
   ]
 }

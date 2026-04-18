@@ -152,6 +152,7 @@ const eslintConfig = defineConfig([
       "src/modules/plans/**",
       "src/modules/tenants/**",
       "src/modules/members/**",
+      "src/modules/invoicing/**",
       // `src/lib/**` is the shared composition adapter layer.
       // Files here provide the glue between module internals and
       // Next.js route handlers (cookies, session lookup, db client,
@@ -224,6 +225,72 @@ const eslintConfig = defineConfig([
               message:
                 "Cross-module import must go through the members public barrel (`@/modules/members`). " +
                 "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
+            {
+              // F4 — invoicing module public-barrel boundary.
+              group: [
+                "@/modules/invoicing/domain/**",
+                "@/modules/invoicing/application/**",
+                "@/modules/invoicing/infrastructure/**",
+                "./modules/invoicing/domain/**",
+                "./modules/invoicing/application/**",
+                "./modules/invoicing/infrastructure/**",
+                "../modules/invoicing/domain/**",
+                "../modules/invoicing/application/**",
+                "../modules/invoicing/infrastructure/**",
+              ],
+              message:
+                "Cross-module import must go through the invoicing public barrel (`@/modules/invoicing`). " +
+                "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // F4 — Bidirectional port-type block: invoicing/application MUST NOT
+    // import members/application ports, and vice versa. Cross-module
+    // reads go through the public barrels (`@/modules/members`,
+    // `@/modules/invoicing`) only. The architecture-invariant unit test
+    // (T019) mirrors this rule in source-code scanning.
+    files: ["src/modules/invoicing/application/**/*.ts", "src/modules/invoicing/application/**/*.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/modules/members/application/ports/**",
+                "../../../members/application/ports/**",
+                "../../members/application/ports/**",
+              ],
+              message:
+                "F4 — invoicing/application MUST NOT import members/application/ports. " +
+                "Use the members public barrel (`@/modules/members`) for cross-module reads.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/modules/members/application/**/*.ts", "src/modules/members/application/**/*.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/modules/invoicing/application/ports/**",
+                "../../../invoicing/application/ports/**",
+                "../../invoicing/application/ports/**",
+              ],
+              message:
+                "F4 — members/application MUST NOT import invoicing/application/ports. " +
+                "Use the invoicing public barrel (`@/modules/invoicing`) for cross-module reads.",
             },
           ],
         },

@@ -31,6 +31,11 @@ const TEST_PLACEHOLDERS: Record<string, string> = {
   APP_ALLOWED_ORIGINS: 'http://localhost:3000',
   READ_ONLY_MODE: 'false',
   LOG_LEVEL: 'error',
+  // F4 Invoicing — required at boot by src/lib/env.ts (T004). Tests that
+  // need live Blob / Cron behaviour override these locally.
+  BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_placeholder_token',
+  CRON_SECRET: 'cron-secret-test-placeholder-16+',
+  FEATURE_F4_INVOICING: 'true',
 };
 
 for (const [key, value] of Object.entries(TEST_PLACEHOLDERS)) {

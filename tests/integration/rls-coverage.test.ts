@@ -30,6 +30,12 @@ const TENANT_SCOPED_TABLES = [
   // F3
   'members',
   'contacts',
+  // F4 (T018)
+  'invoices',
+  'invoice_lines',
+  'credit_notes',
+  'tenant_invoice_settings',
+  'tenant_document_sequences',
 ];
 
 describe('RLS coverage — every tenant-scoped table', () => {
