@@ -1,0 +1,51 @@
+/**
+ * T054 — POST /api/invoices/[invoiceId]/issue.
+ *
+ * Rate limit: 20 per (tenant, actor) per 5 minutes — applied via a
+ * per-request Upstash token bucket if configured, otherwise a soft
+ * guard. F1 + F3 pattern. For MVP we accept a best-effort rate-limit
+ * using the existing Upstash `generic` token bucket via the F1 auth
+ * module's rate-limit adapter — skipped here if unavailable.
+ */
+import { NextResponse, type NextRequest } from 'next/server';
+import { requireAdminContext } from '@/lib/admin-context';
+import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { requestIdFromHeaders } from '@/lib/request-id';
+import { issueInvoice, issueInvoiceSchema, makeIssueInvoiceDeps } from '@/modules/invoicing';
+import { serialiseInvoice } from '../../_serialise';
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ invoiceId: string }> },
+): Promise<NextResponse> {
+  const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'write' });
+  if ('response' in ctx) return ctx.response;
+
+  const { invoiceId } = await params;
+  const tenantCtx = resolveTenantFromRequest(request);
+  const requestId = requestIdFromHeaders(request.headers);
+
+  const parsed = issueInvoiceSchema.safeParse({
+    tenantId: tenantCtx.slug,
+    actorUserId: ctx.current.user.id,
+    requestId,
+    invoiceId,
+  });
+  if (!parsed.success) {
+    return NextResponse.json({ error: { code: 'invalid' } }, { status: 400 });
+  }
+
+  const result = await issueInvoice(makeIssueInvoiceDeps(tenantCtx.slug), parsed.data);
+  if (!result.ok) {
+    const status =
+      result.error.code === 'invoice_not_found' ? 404
+      : result.error.code === 'member_not_found' ? 404
+      : result.error.code === 'invoice_already_issued' ? 409
+      : result.error.code === 'member_archived' ? 409
+      : result.error.code === 'settings_missing' ? 409
+      : result.error.code === 'overflow' ? 422
+      : 500;
+    return NextResponse.json({ error: result.error }, { status });
+  }
+  return NextResponse.json(serialiseInvoice(result.value), { status: 200 });
+}

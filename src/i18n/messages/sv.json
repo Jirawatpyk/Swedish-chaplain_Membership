@@ -819,6 +819,86 @@
       "label": "Problem med e-postleverans hittades",
       "permanentFailed": "{count, plural, one {# e-post misslyckades permanent} other {# e-postmeddelanden misslyckades permanent}} de senaste 24 h",
       "stuckPending": "{count, plural, one {# e-post fastnad} other {# e-postmeddelanden fastnade}} i kön (cron kanske är nere)"
+    },
+    "invoices": {
+      "meta": {
+        "title": "Fakturor"
+      },
+      "list": {
+        "title": "Fakturor",
+        "description": "Thailändska momsgilla medlemsfakturor.",
+        "empty": "Inga fakturor än — skapa första utkastet.",
+        "actions": {
+          "download": "PDF"
+        },
+        "columns": {
+          "documentNumber": "Nr",
+          "status": "Status",
+          "issueDate": "Utfärdad",
+          "dueDate": "Förfaller",
+          "total": "Totalt",
+          "actions": ""
+        }
+      },
+      "new": {
+        "title": "Nytt fakturautkast",
+        "description": "Välj medlem och plan. Förhandsgranska före utfärdande.",
+        "cancel": "Tillbaka"
+      },
+      "form": {
+        "submit": "Skapa utkast",
+        "submitting": "Skapar…",
+        "success": {
+          "created": "Utkast skapat"
+        },
+        "errors": {
+          "create_failed": "Kunde inte skapa utkast"
+        },
+        "fields": {
+          "memberId": "Medlem",
+          "memberIdHelp": "Klistra in medlems-UUID. Väljare kommer senare.",
+          "planId": "Plan",
+          "planYear": "Planår"
+        }
+      },
+      "detail": {
+        "draftTitle": "Utkast",
+        "status": "Status",
+        "actions": {
+          "preview": "Förhandsgranska",
+          "issue": "Utfärda…",
+          "download": "Ladda ner PDF"
+        },
+        "fields": {
+          "memberId": "Medlem",
+          "plan": "Plan / år",
+          "issueDate": "Utfärdad",
+          "dueDate": "Förfaller",
+          "subtotal": "Delsumma",
+          "vat": "Moms",
+          "total": "Totalt"
+        },
+        "lines": {
+          "title": "Rader",
+          "description": "Beskrivning",
+          "qty": "Antal",
+          "unit": "À-pris",
+          "total": "Summa"
+        }
+      },
+      "issue": {
+        "title": "Utfärda faktura",
+        "description": "Konsumerar nästa löpnummer. Kan ej återställas (annullering sker separat).",
+        "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",
+        "typeToConfirm": "Bekräftelsefras",
+        "issueButton": "Utfärda",
+        "issuing": "Utfärdar…",
+        "success": "Fakturan utfärdad",
+        "cancel": "Avbryt",
+        "errors": {
+          "failed": "Kunde inte utfärda"
+        }
+      }
     }
   },
   "palette": {
@@ -1009,5 +1089,8 @@
     "previous": "Föregående",
     "next": "Nästa",
     "page": "Sida {page}"
+  },
+  "shared": {
+    "loaded": "Laddat"
   }
 }

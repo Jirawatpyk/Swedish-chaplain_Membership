@@ -1,0 +1,107 @@
+/**
+ * T052 — GET /api/invoices (list) + POST /api/invoices (create draft).
+ */
+import { NextResponse, type NextRequest } from 'next/server';
+import { z } from 'zod';
+import { requireAdminContext } from '@/lib/admin-context';
+import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { requestIdFromHeaders } from '@/lib/request-id';
+import {
+  createInvoiceDraft,
+  createInvoiceDraftSchema,
+  listInvoices,
+  listInvoicesSchema,
+  makeCreateInvoiceDraftDeps,
+  makeListInvoicesDeps,
+} from '@/modules/invoicing';
+import { logger } from '@/lib/logger';
+import { serialiseInvoice } from './_serialise';
+
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'read' });
+  if ('response' in ctx) return ctx.response;
+
+  const tenantCtx = resolveTenantFromRequest(request);
+  const url = new URL(request.url);
+  const raw: Record<string, string | number | boolean> = {};
+  for (const [k, v] of url.searchParams.entries()) raw[k] = v;
+
+  const parsed = listInvoicesSchema.safeParse({
+    tenantId: tenantCtx.slug,
+    cursor: raw.cursor,
+    pageSize: raw.pageSize ? Number(raw.pageSize) : 50,
+    status: raw.status,
+    fiscalYear: raw.fiscalYear ? Number(raw.fiscalYear) : undefined,
+    memberId: raw.memberId,
+    search: raw.search,
+    includeDrafts: raw.includeDrafts === 'true',
+  });
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: { code: 'invalid_query', details: parsed.error.flatten() } },
+      { status: 400 },
+    );
+  }
+
+  const result = await listInvoices(makeListInvoicesDeps(tenantCtx.slug), parsed.data);
+  if (!result.ok) {
+    return NextResponse.json({ error: { code: 'server_error' } }, { status: 500 });
+  }
+  return NextResponse.json({
+    rows: result.value.rows.map(serialiseInvoice),
+    next_cursor: result.value.nextCursor,
+  });
+}
+
+const createBodySchema = z.object({
+  member_id: z.string().uuid(),
+  plan_id: z.string().min(1),
+  plan_year: z.number().int(),
+  auto_email_on_issue: z.boolean().nullable().optional(),
+});
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'write' });
+  if ('response' in ctx) return ctx.response;
+
+  const tenantCtx = resolveTenantFromRequest(request);
+  const requestId = requestIdFromHeaders(request.headers);
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: { code: 'invalid_json' } }, { status: 400 });
+  }
+  const parsed = createBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: { code: 'invalid_body', details: parsed.error.flatten() } },
+      { status: 400 },
+    );
+  }
+
+  const input = createInvoiceDraftSchema.parse({
+    tenantId: tenantCtx.slug,
+    actorUserId: ctx.current.user.id,
+    requestId,
+    memberId: parsed.data.member_id,
+    planId: parsed.data.plan_id,
+    planYear: parsed.data.plan_year,
+    autoEmailOnIssue: parsed.data.auto_email_on_issue ?? null,
+  });
+
+  const result = await createInvoiceDraft(makeCreateInvoiceDraftDeps(tenantCtx.slug), input);
+  if (!result.ok) {
+    const status =
+      result.error.code === 'settings_missing' || result.error.code === 'plan_not_found'
+        ? 409
+        : result.error.code === 'member_archived'
+          ? 409
+          : result.error.code === 'member_not_found'
+            ? 404
+            : 400;
+    logger.warn({ err: result.error, tenantSlug: tenantCtx.slug }, 'invoice draft create failed');
+    return NextResponse.json({ error: { code: result.error.code } }, { status });
+  }
+  return NextResponse.json(serialiseInvoice(result.value), { status: 201 });
+}

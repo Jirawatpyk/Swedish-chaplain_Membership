@@ -1,0 +1,345 @@
+/**
+ * T051 — Drizzle invoice repo (F4).
+ *
+ * Domain ↔ Drizzle mapping. Transactions are run under `chamber_app`
+ * role via `runInTenant(ctx, fn)` so RLS policies enforce tenant
+ * scoping even on paths that forget an explicit WHERE filter.
+ */
+import { and, asc, desc, eq, gt, sql, ilike } from 'drizzle-orm';
+import type { InvoiceRepo } from '../../application/ports/invoice-repo';
+import {
+  asInvoiceId,
+  type Invoice,
+  type InvoiceId,
+  type InvoiceStatus,
+} from '../../domain/invoice';
+import {
+  asInvoiceLineId,
+  type InvoiceLine,
+} from '../../domain/invoice-line';
+import { Money } from '../../domain/value-objects/money';
+import { DocumentNumber } from '../../domain/value-objects/document-number';
+import { asFiscalYearUnsafe } from '../../domain/value-objects/fiscal-year';
+import { VatRate } from '../../domain/value-objects/vat-rate';
+import { asProRatePolicyUnsafe } from '../../domain/value-objects/pro-rate-policy';
+import {
+  makeTenantIdentitySnapshot,
+  type TenantIdentitySnapshot,
+} from '../../domain/value-objects/tenant-identity-snapshot';
+import {
+  makeMemberIdentitySnapshot,
+  type MemberIdentitySnapshot,
+} from '../../domain/value-objects/member-identity-snapshot';
+import { invoices, invoiceLines, type InvoiceRow, type InvoiceLineRow } from '../db';
+import { runInTenant, type TenantTx } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
+
+function rowToLine(row: InvoiceLineRow): InvoiceLine {
+  return {
+    lineId: asInvoiceLineId(row.lineId),
+    kind: row.kind,
+    descriptionTh: row.descriptionTh,
+    descriptionEn: row.descriptionEn,
+    unitPrice: Money.fromSatangUnsafe(BigInt(row.unitPriceSatang as unknown as string)),
+    quantity: String(row.quantity),
+    proRateFactor: row.proRateFactor === null ? null : String(row.proRateFactor),
+    total: Money.fromSatangUnsafe(BigInt(row.totalSatang as unknown as string)),
+    position: row.position,
+  };
+}
+
+function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice {
+  const docNum =
+    row.documentNumber === null
+      ? null
+      : DocumentNumber.parse(row.documentNumber).ok
+        ? DocumentNumber.parse(row.documentNumber).ok
+          ? ((): DocumentNumber => {
+              const parsed = DocumentNumber.parse(row.documentNumber!);
+              if (!parsed.ok) throw new Error('unreachable');
+              return parsed.value;
+            })()
+          : null
+        : null;
+
+  const subtotal =
+    row.subtotalSatang === null
+      ? null
+      : Money.fromSatangUnsafe(BigInt(row.subtotalSatang as unknown as string));
+  const vat =
+    row.vatSatang === null
+      ? null
+      : Money.fromSatangUnsafe(BigInt(row.vatSatang as unknown as string));
+  const total =
+    row.totalSatang === null
+      ? null
+      : Money.fromSatangUnsafe(BigInt(row.totalSatang as unknown as string));
+  const credited = Money.fromSatangUnsafe(
+    BigInt(row.creditedTotalSatang as unknown as string),
+  );
+
+  return {
+    tenantId: row.tenantId,
+    invoiceId: asInvoiceId(row.invoiceId),
+    memberId: row.memberId,
+    planId: row.planId,
+    planYear: row.planYear,
+    status: row.status as InvoiceStatus,
+    draftByUserId: row.draftByUserId,
+
+    fiscalYear: row.fiscalYear === null ? null : asFiscalYearUnsafe(row.fiscalYear),
+    sequenceNumber: row.sequenceNumber ?? null,
+    documentNumber: docNum,
+
+    issueDate: row.issueDate ?? null,
+    dueDate: row.dueDate ?? null,
+    paidAt: row.paidAt === null ? null : row.paidAt.toISOString(),
+    voidedAt: row.voidedAt === null ? null : row.voidedAt.toISOString(),
+
+    currency: 'THB',
+    subtotal,
+    vatRate: row.vatRateSnapshot === null ? null : VatRate.ofUnsafe(row.vatRateSnapshot),
+    vat,
+    total,
+    creditedTotal: credited,
+
+    proRatePolicy:
+      row.proRatePolicySnapshot === null
+        ? null
+        : asProRatePolicyUnsafe(row.proRatePolicySnapshot),
+    netDays: row.netDaysSnapshot ?? null,
+
+    tenantIdentitySnapshot:
+      row.tenantIdentitySnapshot === null
+        ? null
+        : makeTenantIdentitySnapshot(
+            row.tenantIdentitySnapshot as TenantIdentitySnapshot,
+          ),
+    memberIdentitySnapshot:
+      row.memberIdentitySnapshot === null
+        ? null
+        : makeMemberIdentitySnapshot(
+            row.memberIdentitySnapshot as MemberIdentitySnapshot,
+          ),
+
+    paymentMethod: row.paymentMethod ?? null,
+    paymentReference: row.paymentReference ?? null,
+    paymentNotes: row.paymentNotes ?? null,
+    paymentRecordedByUserId: row.paymentRecordedByUserId ?? null,
+
+    voidReason: row.voidReason ?? null,
+    voidedByUserId: row.voidedByUserId ?? null,
+
+    autoEmailOnIssue: row.autoEmailOnIssue ?? null,
+
+    pdfBlobKey: row.pdfBlobKey ?? null,
+    pdfSha256: row.pdfSha256 ?? null,
+    pdfTemplateVersion: row.pdfTemplateVersion ?? null,
+
+    lines,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
+  const ctx = asTenantContext(tenantId);
+
+  return {
+    async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      return runInTenant(ctx, async (tx) => fn(tx));
+    },
+
+    async insertDraft(txUnknown, input): Promise<Invoice> {
+      const tx = txUnknown as TenantTx;
+      const [insertedInvoice] = await tx
+        .insert(invoices)
+        .values({
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          memberId: input.memberId,
+          planId: input.planId,
+          planYear: input.planYear,
+          status: 'draft',
+          draftByUserId: input.draftByUserId,
+          autoEmailOnIssue: input.autoEmailOnIssue,
+        })
+        .returning();
+      if (!insertedInvoice) throw new Error('insertDraft: no row returned');
+
+      if (input.lines.length > 0) {
+        await tx.insert(invoiceLines).values(
+          input.lines.map((l) => ({
+            tenantId: input.tenantId,
+            lineId: l.lineId,
+            invoiceId: input.invoiceId,
+            kind: l.kind,
+            descriptionTh: l.descriptionTh,
+            descriptionEn: l.descriptionEn,
+            unitPriceSatang: l.unitPrice.satang,
+            quantity: l.quantity,
+            proRateFactor: l.proRateFactor,
+            totalSatang: l.total.satang,
+            position: l.position,
+          })),
+        );
+      }
+
+      return rowsToInvoice(insertedInvoice as InvoiceRow, input.lines);
+    },
+
+    async findDraftById(txUnknown, invoiceId: InvoiceId, tenantIdArg: string): Promise<Invoice | null> {
+      const tx = txUnknown as TenantTx;
+      const [row] = await tx
+        .select()
+        .from(invoices)
+        .where(and(eq(invoices.tenantId, tenantIdArg), eq(invoices.invoiceId, invoiceId)))
+        .limit(1);
+      if (!row) return null;
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(and(eq(invoiceLines.tenantId, tenantIdArg), eq(invoiceLines.invoiceId, invoiceId)))
+        .orderBy(asc(invoiceLines.position));
+      const lines = lineRows.map(rowToLine);
+      return rowsToInvoice(row as InvoiceRow, lines);
+    },
+
+    async findById(invoiceId: InvoiceId, tenantIdArg: string): Promise<Invoice | null> {
+      return runInTenant(ctx, async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(invoices)
+          .where(and(eq(invoices.tenantId, tenantIdArg), eq(invoices.invoiceId, invoiceId)))
+          .limit(1);
+        if (!row) return null;
+        const lineRows = await tx
+          .select()
+          .from(invoiceLines)
+          .where(
+            and(eq(invoiceLines.tenantId, tenantIdArg), eq(invoiceLines.invoiceId, invoiceId)),
+          )
+          .orderBy(asc(invoiceLines.position));
+        return rowsToInvoice(row as InvoiceRow, lineRows.map(rowToLine));
+      });
+    },
+
+    async list(tenantIdArg: string, opts) {
+      return runInTenant(ctx, async (tx) => {
+        const filters = [eq(invoices.tenantId, tenantIdArg)];
+
+        const includeDrafts = opts.includeDrafts ?? false;
+        if (!includeDrafts && !opts.status) {
+          filters.push(sql`${invoices.status} != 'draft'`);
+        }
+        if (opts.status && opts.status !== 'all') {
+          filters.push(eq(invoices.status, opts.status));
+        }
+        if (opts.fiscalYear !== undefined) {
+          filters.push(eq(invoices.fiscalYear, opts.fiscalYear));
+        }
+        if (opts.memberId) filters.push(eq(invoices.memberId, opts.memberId));
+        if (opts.search && opts.search.length > 0) {
+          filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
+        }
+        if (opts.cursor) {
+          filters.push(gt(invoices.invoiceId, opts.cursor));
+        }
+
+        const rows = await tx
+          .select()
+          .from(invoices)
+          .where(and(...filters))
+          .orderBy(desc(invoices.issueDate), desc(invoices.invoiceId))
+          .limit(opts.pageSize + 1);
+
+        const hasMore = rows.length > opts.pageSize;
+        const page = rows.slice(0, opts.pageSize) as InvoiceRow[];
+        const nextCursor = hasMore ? page[page.length - 1]!.invoiceId : null;
+
+        // Load lines in a single follow-up query for each invoice on the page.
+        const invoiceIds = page.map((r) => r.invoiceId);
+        const linesByInvoice = new Map<string, InvoiceLine[]>();
+        if (invoiceIds.length > 0) {
+          const allLines = await tx
+            .select()
+            .from(invoiceLines)
+            .where(
+              and(
+                eq(invoiceLines.tenantId, tenantIdArg),
+                sql`${invoiceLines.invoiceId} IN (${sql.join(
+                  invoiceIds.map((id) => sql`${id}`),
+                  sql`, `,
+                )})`,
+              ),
+            )
+            .orderBy(asc(invoiceLines.invoiceId), asc(invoiceLines.position));
+          for (const lr of allLines) {
+            const bucket = linesByInvoice.get(lr.invoiceId) ?? [];
+            bucket.push(rowToLine(lr as InvoiceLineRow));
+            linesByInvoice.set(lr.invoiceId, bucket);
+          }
+        }
+
+        return {
+          rows: page.map((r) => rowsToInvoice(r, linesByInvoice.get(r.invoiceId) ?? [])),
+          nextCursor,
+        };
+      });
+    },
+
+    async applyIssue(txUnknown, input): Promise<Invoice> {
+      const tx = txUnknown as TenantTx;
+      const [updated] = await tx
+        .update(invoices)
+        .set({
+          status: 'issued',
+          fiscalYear: input.fiscalYear,
+          sequenceNumber: input.sequenceNumber,
+          documentNumber: input.documentNumber,
+          issueDate: input.issueDate,
+          dueDate: input.dueDate,
+          subtotalSatang: input.subtotalSatang,
+          vatRateSnapshot: input.vatRate,
+          vatSatang: input.vatSatang,
+          totalSatang: input.totalSatang,
+          proRatePolicySnapshot: input.proRatePolicySnapshot,
+          netDaysSnapshot: input.netDaysSnapshot,
+          tenantIdentitySnapshot: input.tenantIdentitySnapshot,
+          memberIdentitySnapshot: input.memberIdentitySnapshot,
+          pdfBlobKey: input.pdfBlobKey,
+          pdfSha256: input.pdfSha256,
+          pdfTemplateVersion: input.pdfTemplateVersion,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        )
+        .returning();
+      if (!updated) throw new Error('applyIssue: no row returned');
+
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, input.tenantId),
+            eq(invoiceLines.invoiceId, input.invoiceId),
+          ),
+        )
+        .orderBy(asc(invoiceLines.position));
+      return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
+    },
+
+    async deleteDraft(txUnknown, invoiceId: InvoiceId, tenantIdArg: string): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // invoice_lines cascade-deletes via FK
+      await tx
+        .delete(invoices)
+        .where(and(eq(invoices.tenantId, tenantIdArg), eq(invoices.invoiceId, invoiceId)));
+    },
+  };
+}

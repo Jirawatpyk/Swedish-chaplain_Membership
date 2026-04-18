@@ -819,6 +819,86 @@
       "label": "Email delivery issues detected",
       "permanentFailed": "{count, plural, one {# email permanently failed} other {# emails permanently failed}} in the last 24 h",
       "stuckPending": "{count, plural, one {# email stuck} other {# emails stuck}} in queue (cron may be down)"
+    },
+    "invoices": {
+      "meta": {
+        "title": "Invoices"
+      },
+      "list": {
+        "title": "Invoices",
+        "description": "Thai-tax-compliant membership invoices.",
+        "empty": "No invoices yet — create your first draft.",
+        "actions": {
+          "download": "PDF"
+        },
+        "columns": {
+          "documentNumber": "Number",
+          "status": "Status",
+          "issueDate": "Issued",
+          "dueDate": "Due",
+          "total": "Total",
+          "actions": "Actions"
+        }
+      },
+      "new": {
+        "title": "New invoice draft",
+        "description": "Select a member and plan. You can preview before issuing.",
+        "cancel": "Back to list"
+      },
+      "form": {
+        "submit": "Create draft",
+        "submitting": "Creating…",
+        "success": {
+          "created": "Draft created"
+        },
+        "errors": {
+          "create_failed": "Could not create draft"
+        },
+        "fields": {
+          "memberId": "Member",
+          "memberIdHelp": "Paste the member UUID. A picker will arrive in a later polish pass.",
+          "planId": "Plan",
+          "planYear": "Plan year"
+        }
+      },
+      "detail": {
+        "draftTitle": "Draft invoice",
+        "status": "Status",
+        "actions": {
+          "preview": "Preview",
+          "issue": "Issue…",
+          "download": "Download PDF"
+        },
+        "fields": {
+          "memberId": "Member",
+          "plan": "Plan / Year",
+          "issueDate": "Issue date",
+          "dueDate": "Due date",
+          "subtotal": "Subtotal",
+          "vat": "VAT",
+          "total": "Total"
+        },
+        "lines": {
+          "title": "Line items",
+          "description": "Description",
+          "qty": "Qty",
+          "unit": "Unit",
+          "total": "Total"
+        }
+      },
+      "issue": {
+        "title": "Issue invoice",
+        "description": "This consumes the next sequential tax-document number and cannot be undone. A void can be recorded later.",
+        "confirmCopy": "Type \"{phrase}\" to confirm",
+        "typeToConfirm": "Confirmation phrase",
+        "issueButton": "Issue",
+        "issuing": "Issuing…",
+        "success": "Invoice issued",
+        "cancel": "Cancel",
+        "errors": {
+          "failed": "Issue failed"
+        }
+      }
     }
   },
   "palette": {
@@ -1009,5 +1089,8 @@
     "previous": "Previous",
     "next": "Next",
     "page": "Page {page}"
+  },
+  "shared": {
+    "loaded": "Loaded"
   }
 }
