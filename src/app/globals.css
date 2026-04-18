@@ -2,6 +2,12 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Exclude non-source markdown docs from Tailwind v4 auto-detection so
+   example class strings (e.g. `max-w-[var(--TOKEN)]`) inside specs/ or
+   docs/ markdown never leak into generated CSS. */
+@source not "../../specs/**/*";
+@source not "../../docs/**/*";
+
 @custom-variant dark (&:is(.dark *));
 
 /* -----------------------------------------------------------------------------
@@ -154,8 +160,6 @@
   --sidebar-ring: oklch(0.708 0 0);
 
   /* --- Page layout tokens --- */
-  --content-max-width-admin: 72rem;   /* 1152px — legacy, removed in F5 Phase 6 */
-  --content-max-width-portal: 64rem;  /* 1024px — legacy, removed in F5 Phase 6 */
   --layout-max-width-form: 42rem;     /* 672px — FormContainer (F5) */
   --layout-max-width-detail: 72rem;   /* 1152px — DetailContainer (F5) */
   --layout-max-width-table: 96rem;    /* 1536px — TableContainer (F5) */

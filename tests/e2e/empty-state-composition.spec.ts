@@ -1,5 +1,7 @@
 /**
- * T052 — E2E: F4 US5 EmptyState composition inside ContentContainer.
+ * T052 — E2E: F4 US5 EmptyState composition inside layout container.
+ * Updated for F5: reads from the new `[data-slot="layout-container"]`
+ * (the plans page uses TableContainer now).
  */
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
@@ -14,7 +16,7 @@ test.describe('F4 US5 — empty state composition @layout', () => {
     await clearE2ERateLimits();
   });
 
-  test('empty state renders inside ContentContainer with token spacing', async ({ page }) => {
+  test('empty state renders inside a layout container with token spacing', async ({ page }) => {
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
@@ -22,7 +24,7 @@ test.describe('F4 US5 — empty state composition @layout', () => {
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
     await page.goto('/admin/plans?year=2099'); // force empty year (valid but unseeded)
-    const container = page.locator('[data-slot="content-container"]').first();
+    const container = page.locator('[data-slot="layout-container"]').first();
     await expect(container).toBeVisible();
 
     // The existing empty-state renders via PlansTable; ensure *something*
