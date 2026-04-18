@@ -21,8 +21,8 @@ description: "Task list for Layout Container Tier 2"
 
 ## Phase 1 — Setup
 
-- [ ] T001 Verify branch `006-layout-container-tier2` is checked out and up to date with `main` (must be post-F3 merge per Spec §Assumptions F3-dependency).
-- [ ] T002 Run `pnpm install` to confirm no new dependencies are required (Spec §FR-018 scope gate forbids new deps).
+- [X] T001 Verify branch `006-layout-container-tier2` is checked out and up to date with `main` (must be post-F3 merge per Spec §Assumptions F3-dependency).
+- [X] T002 Run `pnpm install` to confirm no new dependencies are required (Spec §FR-018 scope gate forbids new deps).
 
 ## Phase 2 — Foundational (blocks US1, US2, and detail migration)
 
@@ -30,29 +30,29 @@ description: "Task list for Layout Container Tier 2"
 
 ### 2a. Unit tests (TDD — RED before implementation)
 
-- [ ] T003 [P] Write failing unit test `tests/unit/components/layout/table-container.test.tsx` asserting (a) renders children, (b) root has `data-slot="layout-container"` + `data-variant="table"`, (c) computed `max-width` equals `var(--layout-max-width-table)` (96rem), (d) merges custom `className`, (e) **FR-015 negative assertion** — root's computed `overflow-x` is `visible` (NOT `auto`/`scroll`/`hidden`); the container must never own horizontal scroll.
-- [ ] T004 [P] Write failing unit test `tests/unit/components/layout/form-container.test.tsx` asserting the same five invariants with `data-variant="form"` and `--layout-max-width-form` (42rem).
-- [ ] T005 [P] Write failing unit test `tests/unit/components/layout/detail-container.test.tsx` asserting the same five invariants with `data-variant="detail"` and `--layout-max-width-detail` (72rem).
-- [ ] T006 Commit RED test suite (three specs failing). Conventional Commits prefix: `test(layout): add failing unit tests for tier-2 containers`.
+- [X] T003 [P] Write failing unit test `tests/unit/components/layout/table-container.test.tsx` asserting (a) renders children, (b) root has `data-slot="layout-container"` + `data-variant="table"`, (c) computed `max-width` equals `var(--layout-max-width-table)` (96rem), (d) merges custom `className`, (e) **FR-015 negative assertion** — root's computed `overflow-x` is `visible` (NOT `auto`/`scroll`/`hidden`); the container must never own horizontal scroll.
+- [X] T004 [P] Write failing unit test `tests/unit/components/layout/form-container.test.tsx` asserting the same five invariants with `data-variant="form"` and `--layout-max-width-form` (42rem).
+- [X] T005 [P] Write failing unit test `tests/unit/components/layout/detail-container.test.tsx` asserting the same five invariants with `data-variant="detail"` and `--layout-max-width-detail` (72rem).
+- [X] T006 Commit RED test suite (three specs failing). Conventional Commits prefix: `test(layout): add failing unit tests for tier-2 containers`.
 
 ### 2b. CSS tokens + Thai hedge
 
-- [ ] T007 Edit `src/app/globals.css` to add `--layout-max-width-form: 42rem`, `--layout-max-width-detail: 72rem`, `--layout-max-width-table: 96rem` under `:root`. DO NOT remove the legacy `--content-max-width-admin` / `--content-max-width-portal` tokens yet — they are deleted in Phase 6 after all pages are migrated.
-- [ ] T008 In the same file, add the Thai line-break hedge block: `:lang(th) { line-break: loose; word-break: normal; }` per Spec §FR-017.
+- [X] T007 Edit `src/app/globals.css` to add `--layout-max-width-form: 42rem`, `--layout-max-width-detail: 72rem`, `--layout-max-width-table: 96rem` under `:root`. DO NOT remove the legacy `--content-max-width-admin` / `--content-max-width-portal` tokens yet — they are deleted in Phase 6 after all pages are migrated.
+- [X] T008 In the same file, add the Thai line-break hedge block: `:lang(th) { line-break: loose; word-break: normal; }` per Spec §FR-017.
 
 ### 2c. Primitives
 
-- [ ] T009 [P] Create `src/components/layout/table-container.tsx` — server-component-safe `<div>` with `data-slot="layout-container"`, `data-variant="table"`, classes `mx-auto w-full max-w-[var(--layout-max-width-table)] px-[var(--page-padding-x)] py-[var(--page-padding-y)]`, `cn()`-merged `className`. Props: `{ children: ReactNode; className?: string }`. No `variant`, no `fullBleed`.
-- [ ] T010 [P] Create `src/components/layout/form-container.tsx` — identical structure, `data-variant="form"`, token `--layout-max-width-form`.
-- [ ] T011 [P] Create `src/components/layout/detail-container.tsx` — identical structure, `data-variant="detail"`, token `--layout-max-width-detail`.
-- [ ] T012 Update `src/components/layout/index.ts` barrel: add `export { TableContainer } from './table-container';`, `export { FormContainer } from './form-container';`, `export { DetailContainer } from './detail-container';`. Keep legacy `ContentContainer` export for now (deleted Phase 6).
-- [ ] T013 Run `pnpm test tests/unit/components/layout` and confirm all three primitive specs now GREEN. Commit: `feat(layout): add tier-2 layout container primitives`.
+- [X] T009 [P] Create `src/components/layout/table-container.tsx` — server-component-safe `<div>` with `data-slot="layout-container"`, `data-variant="table"`, classes `mx-auto w-full max-w-[var(--layout-max-width-table)] px-[var(--page-padding-x)] py-[var(--page-padding-y)]`, `cn()`-merged `className`. Props: `{ children: ReactNode; className?: string }`. No `variant`, no `fullBleed`.
+- [X] T010 [P] Create `src/components/layout/form-container.tsx` — identical structure, `data-variant="form"`, token `--layout-max-width-form`.
+- [X] T011 [P] Create `src/components/layout/detail-container.tsx` — identical structure, `data-variant="detail"`, token `--layout-max-width-detail`.
+- [X] T012 Update `src/components/layout/index.ts` barrel: add `export { TableContainer } from './table-container';`, `export { FormContainer } from './form-container';`, `export { DetailContainer } from './detail-container';`. Keep legacy `ContentContainer` export for now (deleted Phase 6).
+- [X] T013 Run `pnpm test tests/unit/components/layout` and confirm all three primitive specs now GREEN. Commit: `feat(layout): add tier-2 layout container primitives`.
 
 ### 2d. CI static check (scope-gate enforcement)
 
-- [ ] T014 Create `scripts/check-layout-container-usage.ts` — Node/TS script that: (a) globs `src/app/(staff)/**/page.tsx` and `src/app/(member)/**/page.tsx`, (b) for each file reads source and counts imports from `@/components/layout` of `{TableContainer, FormContainer, DetailContainer}`, (c) fails with non-zero exit if any page imports zero or multiple of them. Output lists offending files.
-- [ ] T015 Add `check:layout` script to `package.json` → `"check:layout": "tsx scripts/check-layout-container-usage.ts"`.
-- [ ] T016 Wire `check:layout` into two places: (a) append `pnpm check:layout` to the full-CI chain documented in `CLAUDE.md` Commands section (the `pnpm lint && pnpm typecheck && ... && pnpm test:e2e` reproducer), and (b) add it to `.husky/pre-push` (or the existing pre-push hook). No `.github/workflows/` exists in this repo — CI runs via Vercel build + Husky hooks. At Phase 2 boundary the script MUST fail because no pages import the new containers yet — that's correct; it starts passing as migration progresses.
+- [X] T014 Create `scripts/check-layout-container-usage.ts` — Node/TS script that: (a) globs `src/app/(staff)/**/page.tsx` and `src/app/(member)/**/page.tsx`, (b) for each file reads source and counts imports from `@/components/layout` of `{TableContainer, FormContainer, DetailContainer}`, (c) fails with non-zero exit if any page imports zero or multiple of them. Output lists offending files.
+- [X] T015 Add `check:layout` script to `package.json` → `"check:layout": "tsx scripts/check-layout-container-usage.ts"`.
+- [X] T016 Wire `check:layout` into two places: (a) append `pnpm check:layout` to the full-CI chain documented in `CLAUDE.md` Commands section (the `pnpm lint && pnpm typecheck && ... && pnpm test:e2e` reproducer), and (b) add it to `.husky/pre-push` (or the existing pre-push hook). No `.github/workflows/` exists in this repo — CI runs via Vercel build + Husky hooks. At Phase 2 boundary the script MUST fail because no pages import the new containers yet — that's correct; it starts passing as migration progresses.
 
 ---
 
@@ -64,23 +64,23 @@ description: "Task list for Layout Container Tier 2"
 
 ### 3a. E2E depth test (RED)
 
-- [ ] T017 [US1] Create failing Playwright spec `tests/e2e/layout/container-widths.spec.ts` with a parametric block for TableContainer — for each `{width: 375, 1280, 1440, 1920}` × representative page `/admin/members` asserts `document.documentElement.scrollWidth === document.documentElement.clientWidth` AND `[data-slot="layout-container"][data-variant="table"]` exists AND container width behaves per FR-011: at 375px (mobile band) the container takes full width minus `--page-padding-x` gutter; at ≥1280px it caps at ≤1536px (96rem). Spec must currently fail because the page still uses ContentContainer. Commit RED.
+- [X] T017 [US1] Create failing Playwright spec `tests/e2e/layout/container-widths.spec.ts` with a parametric block for TableContainer — for each `{width: 375, 1280, 1440, 1920}` × representative page `/admin/members` asserts `document.documentElement.scrollWidth === document.documentElement.clientWidth` AND `[data-slot="layout-container"][data-variant="table"]` exists AND container width behaves per FR-011: at 375px (mobile band) the container takes full width minus `--page-padding-x` gutter; at ≥1280px it caps at ≤1536px (96rem). Spec must currently fail because the page still uses ContentContainer. Commit RED.
 
 ### 3b. Migrate pages (3 table-dense routes)
 
-- [ ] T018 [P] [US1] Migrate `src/app/(staff)/admin/users/page.tsx` — replace `ContentContainer` import + element with `TableContainer`; drop any `variant` / `fullBleed` props.
-- [ ] T019 [P] [US1] Migrate `src/app/(staff)/admin/plans/page.tsx` — same replacement.
-- [ ] T020 [P] [US1] Migrate `src/app/(staff)/admin/members/page.tsx` — same replacement.
+- [X] T018 [P] [US1] Migrate `src/app/(staff)/admin/users/page.tsx` — replace `ContentContainer` import + element with `TableContainer`; drop any `variant` / `fullBleed` props.
+- [X] T019 [P] [US1] Migrate `src/app/(staff)/admin/plans/page.tsx` — same replacement.
+- [X] T020 [P] [US1] Migrate `src/app/(staff)/admin/members/page.tsx` — same replacement.
 
 ### 3c. Migrate loading skeletons (per FR-007)
 
-- [ ] T021 [P] [US1] Migrate `src/app/(staff)/admin/plans/loading.tsx` — wrap skeleton in `TableContainer`.
-- [ ] T022 [P] [US1] Migrate `src/app/(staff)/admin/members/loading.tsx` — wrap skeleton in `TableContainer`.
-- [ ] T023 [US1] If `src/app/(staff)/admin/users/loading.tsx` does not exist, create it wrapping a members-style skeleton in `TableContainer`. Per Spec §FR-007 "every one of the 19 migrated routes MUST have `loading.tsx`".
+- [X] T021 [P] [US1] Migrate `src/app/(staff)/admin/plans/loading.tsx` — wrap skeleton in `TableContainer`.
+- [X] T022 [P] [US1] Migrate `src/app/(staff)/admin/members/loading.tsx` — wrap skeleton in `TableContainer`.
+- [X] T023 [US1] If `src/app/(staff)/admin/users/loading.tsx` does not exist, create it wrapping a members-style skeleton in `TableContainer`. Per Spec §FR-007 "every one of the 19 migrated routes MUST have `loading.tsx`".
 
 ### 3d. Green check
 
-- [ ] T024 [US1] Run `pnpm test:e2e --grep "container-widths"` and confirm table block is GREEN. Commit: `feat(layout): [US1] migrate admin table pages to TableContainer`.
+- [X] T024 [US1] Run `pnpm test:e2e --grep "container-widths"` and confirm table block is GREEN. Commit: `feat(layout): [US1] migrate admin table pages to TableContainer`.
 
 ---
 
@@ -92,33 +92,33 @@ description: "Task list for Layout Container Tier 2"
 
 ### 4a. E2E depth test (RED)
 
-- [ ] T025 [US2] Extend `tests/e2e/layout/container-widths.spec.ts` with a FormContainer block — for representative `/admin/settings/fees` at 375/1280/1440/1920 asserts `[data-variant="form"]` present AND container width behaves per FR-011: at 375px full-width minus gutter; at ≥1280px sits between 650 and 680 (42rem ≈672px ±8px); no horizontal body scroll at any tested viewport. Currently RED.
+- [X] T025 [US2] Extend `tests/e2e/layout/container-widths.spec.ts` with a FormContainer block — for representative `/admin/settings/fees` at 375/1280/1440/1920 asserts `[data-variant="form"]` present AND container width behaves per FR-011: at 375px full-width minus gutter; at ≥1280px sits between 650 and 680 (42rem ≈672px ±8px); no horizontal body scroll at any tested viewport. Currently RED.
 
 ### 4b. Migrate pages (10 form routes)
 
-- [ ] T026 [P] [US2] Migrate `src/app/(staff)/admin/account/page.tsx` → `FormContainer`.
-- [ ] T027 [P] [US2] Migrate `src/app/(staff)/admin/settings/fees/page.tsx` → `FormContainer`.
-- [ ] T028 [P] [US2] Migrate `src/app/(staff)/admin/plans/new/page.tsx` → `FormContainer`.
-- [ ] T029 [P] [US2] Migrate `src/app/(staff)/admin/plans/clone/page.tsx` → `FormContainer`.
-- [ ] T030 [P] [US2] Migrate `src/app/(staff)/admin/plans/[year]/[planId]/edit/page.tsx` → `FormContainer`.
-- [ ] T031 [P] [US2] Migrate `src/app/(staff)/admin/members/new/page.tsx` → `FormContainer`.
-- [ ] T032 [P] [US2] Migrate `src/app/(staff)/admin/members/[memberId]/edit/page.tsx` → `FormContainer`.
-- [ ] T033 [P] [US2] Migrate `src/app/(member)/portal/account/page.tsx` → `FormContainer`.
-- [ ] T034 [P] [US2] Migrate `src/app/(member)/portal/edit/page.tsx` → `FormContainer`.
-- [ ] T035 [P] [US2] Migrate `src/app/(member)/portal/contacts/invite/page.tsx` → `FormContainer`.
+- [X] T026 [P] [US2] Migrate `src/app/(staff)/admin/account/page.tsx` → `FormContainer`.
+- [X] T027 [P] [US2] Migrate `src/app/(staff)/admin/settings/fees/page.tsx` → `FormContainer`.
+- [X] T028 [P] [US2] Migrate `src/app/(staff)/admin/plans/new/page.tsx` → `FormContainer`.
+- [X] T029 [P] [US2] Migrate `src/app/(staff)/admin/plans/clone/page.tsx` → `FormContainer`.
+- [X] T030 [P] [US2] Migrate `src/app/(staff)/admin/plans/[year]/[planId]/edit/page.tsx` → `FormContainer`.
+- [X] T031 [P] [US2] Migrate `src/app/(staff)/admin/members/new/page.tsx` → `FormContainer`.
+- [X] T032 [P] [US2] Migrate `src/app/(staff)/admin/members/[memberId]/edit/page.tsx` → `FormContainer`.
+- [X] T033 [P] [US2] Migrate `src/app/(member)/portal/account/page.tsx` → `FormContainer`.
+- [X] T034 [P] [US2] Migrate `src/app/(member)/portal/edit/page.tsx` → `FormContainer`.
+- [X] T035 [P] [US2] Migrate `src/app/(member)/portal/contacts/invite/page.tsx` → `FormContainer`.
 
 ### 4c. Migrate loading skeletons
 
-- [ ] T036 [P] [US2] Migrate `src/app/(staff)/admin/account/loading.tsx` → `FormContainer` (create if missing).
-- [ ] T037 [P] [US2] Migrate `src/app/(staff)/admin/plans/new/loading.tsx` → `FormContainer` (create if missing).
-- [ ] T038 [P] [US2] Migrate `src/app/(staff)/admin/plans/clone/loading.tsx` → `FormContainer` (create if missing).
-- [ ] T039 [P] [US2] Migrate `src/app/(staff)/admin/plans/[year]/[planId]/edit/loading.tsx` → `FormContainer` (create if missing).
-- [ ] T040 [P] [US2] Migrate `src/app/(staff)/admin/members/new/loading.tsx` → `FormContainer` (create if missing).
-- [ ] T041 [P] [US2] Migrate `src/app/(staff)/admin/members/[memberId]/edit/loading.tsx` → `FormContainer` (create if missing).
-- [ ] T042 [P] [US2] Migrate `src/app/(member)/portal/account/loading.tsx` → `FormContainer`.
-- [ ] T043a [P] [US2] Ensure `src/app/(staff)/admin/settings/fees/loading.tsx` exists (create if missing) wrapping a form-shaped skeleton in `FormContainer`.
-- [ ] T043b [P] [US2] Ensure `src/app/(member)/portal/edit/loading.tsx` exists (create if missing) wrapping a form-shaped skeleton in `FormContainer`.
-- [ ] T043c [P] [US2] Ensure `src/app/(member)/portal/contacts/invite/loading.tsx` exists (create if missing) wrapping a form-shaped skeleton in `FormContainer`.
+- [X] T036 [P] [US2] Migrate `src/app/(staff)/admin/account/loading.tsx` → `FormContainer` (create if missing).
+- [X] T037 [P] [US2] Migrate `src/app/(staff)/admin/plans/new/loading.tsx` → `FormContainer` (create if missing).
+- [X] T038 [P] [US2] Migrate `src/app/(staff)/admin/plans/clone/loading.tsx` → `FormContainer` (create if missing).
+- [X] T039 [P] [US2] Migrate `src/app/(staff)/admin/plans/[year]/[planId]/edit/loading.tsx` → `FormContainer` (create if missing).
+- [X] T040 [P] [US2] Migrate `src/app/(staff)/admin/members/new/loading.tsx` → `FormContainer` (create if missing).
+- [X] T041 [P] [US2] Migrate `src/app/(staff)/admin/members/[memberId]/edit/loading.tsx` → `FormContainer` (create if missing).
+- [X] T042 [P] [US2] Migrate `src/app/(member)/portal/account/loading.tsx` → `FormContainer`.
+- [X] T043a [P] [US2] Ensure `src/app/(staff)/admin/settings/fees/loading.tsx` exists (create if missing) wrapping a form-shaped skeleton in `FormContainer`.
+- [X] T043b [P] [US2] Ensure `src/app/(member)/portal/edit/loading.tsx` exists (create if missing) wrapping a form-shaped skeleton in `FormContainer`.
+- [X] T043c [P] [US2] Ensure `src/app/(member)/portal/contacts/invite/loading.tsx` exists (create if missing) wrapping a form-shaped skeleton in `FormContainer`.
 
 ### 4d. SC-006 manual measurement (Review-gate)
 
@@ -126,7 +126,7 @@ description: "Task list for Layout Container Tier 2"
 
 ### 4e. Green check
 
-- [ ] T045 [US2] Run `pnpm test:e2e --grep "container-widths"` and confirm form block is GREEN. Commit: `feat(layout): [US2] migrate form pages to FormContainer`.
+- [X] T045 [US2] Run `pnpm test:e2e --grep "container-widths"` and confirm form block is GREEN. Commit: `feat(layout): [US2] migrate form pages to FormContainer`.
 
 ---
 
@@ -138,25 +138,25 @@ description: "Task list for Layout Container Tier 2"
 
 ### 5a. E2E depth + parity test (RED)
 
-- [ ] T046 Extend `tests/e2e/layout/container-widths.spec.ts` with a DetailContainer block — for representative `/admin` at 375/1440px asserts `[data-variant="detail"]` present AND container width behaves per FR-011: at 375px full-width minus gutter; at 1440px exactly 1152 ±4 px (72rem pixel parity per SC-003); no horizontal body scroll at any tested viewport. Currently RED.
+- [X] T046 Extend `tests/e2e/layout/container-widths.spec.ts` with a DetailContainer block — for representative `/admin` at 375/1440px asserts `[data-variant="detail"]` present AND container width behaves per FR-011: at 375px full-width minus gutter; at 1440px exactly 1152 ±4 px (72rem pixel parity per SC-003); no horizontal body scroll at any tested viewport. Currently RED.
 
 ### 5b. Migrate pages (6 detail routes)
 
-- [ ] T047 [P] Migrate `src/app/(staff)/admin/page.tsx` → `DetailContainer`.
-- [ ] T048 [P] Migrate `src/app/(staff)/admin/plans/[year]/[planId]/page.tsx` → `DetailContainer`.
-- [ ] T049 [P] Migrate `src/app/(staff)/admin/members/[memberId]/page.tsx` → `DetailContainer`.
-- [ ] T050 [P] Migrate `src/app/(staff)/admin/members/[memberId]/timeline/page.tsx` → `DetailContainer`.
-- [ ] T051 [P] Migrate `src/app/(member)/portal/page.tsx` → `DetailContainer`.
-- [ ] T052 [P] Migrate `src/app/(member)/portal/profile/page.tsx` → `DetailContainer`.
+- [X] T047 [P] Migrate `src/app/(staff)/admin/page.tsx` → `DetailContainer`.
+- [X] T048 [P] Migrate `src/app/(staff)/admin/plans/[year]/[planId]/page.tsx` → `DetailContainer`.
+- [X] T049 [P] Migrate `src/app/(staff)/admin/members/[memberId]/page.tsx` → `DetailContainer`.
+- [X] T050 [P] Migrate `src/app/(staff)/admin/members/[memberId]/timeline/page.tsx` → `DetailContainer`.
+- [X] T051 [P] Migrate `src/app/(member)/portal/page.tsx` → `DetailContainer`.
+- [X] T052 [P] Migrate `src/app/(member)/portal/profile/page.tsx` → `DetailContainer`.
 
 ### 5c. Migrate loading skeletons
 
-- [ ] T053 [P] Migrate `src/app/(staff)/admin/loading.tsx` → `DetailContainer`.
-- [ ] T054 [P] Migrate `src/app/(staff)/admin/plans/[year]/[planId]/loading.tsx` → `DetailContainer`.
-- [ ] T055 [P] Migrate `src/app/(staff)/admin/members/[memberId]/loading.tsx` → `DetailContainer`.
-- [ ] T056 [P] Migrate `src/app/(staff)/admin/members/[memberId]/timeline/loading.tsx` → `DetailContainer`.
-- [ ] T057 [P] Migrate `src/app/(member)/portal/loading.tsx` → `DetailContainer`.
-- [ ] T058 [P] Migrate `src/app/(member)/portal/profile/loading.tsx` → `DetailContainer` (create if missing).
+- [X] T053 [P] Migrate `src/app/(staff)/admin/loading.tsx` → `DetailContainer`.
+- [X] T054 [P] Migrate `src/app/(staff)/admin/plans/[year]/[planId]/loading.tsx` → `DetailContainer`.
+- [X] T055 [P] Migrate `src/app/(staff)/admin/members/[memberId]/loading.tsx` → `DetailContainer`.
+- [X] T056 [P] Migrate `src/app/(staff)/admin/members/[memberId]/timeline/loading.tsx` → `DetailContainer`.
+- [X] T057 [P] Migrate `src/app/(member)/portal/loading.tsx` → `DetailContainer`.
+- [X] T058 [P] Migrate `src/app/(member)/portal/profile/loading.tsx` → `DetailContainer` (create if missing).
 
 ### 5d. Pre-ship plan-detail Review-gate check (Spec §Assumptions)
 
@@ -164,7 +164,7 @@ description: "Task list for Layout Container Tier 2"
 
 ### 5e. Green check
 
-- [ ] T060 Run `pnpm test:e2e --grep "container-widths"` and confirm detail block is GREEN. Commit: `feat(layout): migrate detail pages to DetailContainer (non-regression)`.
+- [X] T060 Run `pnpm test:e2e --grep "container-widths"` and confirm detail block is GREEN. Commit: `feat(layout): migrate detail pages to DetailContainer (non-regression)`.
 
 ---
 
@@ -172,29 +172,29 @@ description: "Task list for Layout Container Tier 2"
 
 ### 6a. Breadth probe
 
-- [ ] T061 Create `tests/e2e/layout/all-pages-containers.spec.ts` — parametric sweep over all 19 migrated routes at 1440px. For each route asserts: (a) exactly one `[data-slot="layout-container"]` present, (b) `document.documentElement.scrollWidth === clientWidth`. Commit.
+- [X] T061 Create `tests/e2e/layout/all-pages-containers.spec.ts` — parametric sweep over all 19 migrated routes at 1440px. For each route asserts: (a) exactly one `[data-slot="layout-container"]` present, (b) `document.documentElement.scrollWidth === clientWidth`. Commit.
 
 ### 6b. CLS measurement
 
-- [ ] T062 Create `tests/e2e/layout/cls-container-transition.spec.ts` — Playwright test navigating from `/admin/settings/fees` (form) to `/admin/members` (table), collects CLS via `PerformanceObserver({ type: 'layout-shift' })` for the duration of the transition, asserts total CLS ≤0.02 on persistent chrome (sidebar, top bar, breadcrumbs). Per Spec §SC-007.
+- [X] T062 Create `tests/e2e/layout/cls-container-transition.spec.ts` — Playwright test navigating from `/admin/settings/fees` (form) to `/admin/members` (table), collects CLS via `PerformanceObserver({ type: 'layout-shift' })` for the duration of the transition, asserts total CLS ≤0.02 on persistent chrome (sidebar, top bar, breadcrumbs). Per Spec §SC-007.
 
 ### 6c. Pre-existing test teardown (per Research §R10)
 
-- [ ] T063 Delete `tests/unit/layout/content-container.test.tsx` — replaced by the three new primitive specs from Phase 2.
-- [ ] T064 Rewrite `tests/e2e/layout-consistency.spec.ts` — replace "every admin page has max-width 1152px" with per-category assertions: `[data-variant="table"]` ≤ 1536px, `[data-variant="detail"]` = 1152±4px, `[data-variant="form"]` ≈ 672±8px.
-- [ ] T065 Update `tests/e2e/empty-state-composition.spec.ts` — replace `ContentContainer` reference with `DetailContainer` (empty states typically render on detail/dashboard pages).
-- [ ] T066 Rewrite `tests/e2e/portal-layout.spec.ts` (T043 of F4) — replace `variant="portal"` (64rem) assertion with the portal page's new container per Content-Type Mapping (DetailContainer for `/portal`, FormContainer for `/portal/account`, etc.).
+- [X] T063 Delete `tests/unit/layout/content-container.test.tsx` — replaced by the three new primitive specs from Phase 2.
+- [X] T064 Rewrite `tests/e2e/layout-consistency.spec.ts` — replace "every admin page has max-width 1152px" with per-category assertions: `[data-variant="table"]` ≤ 1536px, `[data-variant="detail"]` = 1152±4px, `[data-variant="form"]` ≈ 672±8px.
+- [X] T065 Update `tests/e2e/empty-state-composition.spec.ts` — replace `ContentContainer` reference with `DetailContainer` (empty states typically render on detail/dashboard pages).
+- [X] T066 Rewrite `tests/e2e/portal-layout.spec.ts` (T043 of F4) — replace `variant="portal"` (64rem) assertion with the portal page's new container per Content-Type Mapping (DetailContainer for `/portal`, FormContainer for `/portal/account`, etc.).
 
 ### 6d. Delete legacy ContentContainer
 
-- [ ] T067 Delete `src/components/layout/content-container.tsx`.
-- [ ] T068 Remove `ContentContainer` export from `src/components/layout/index.ts`.
-- [ ] T069 Remove `--content-max-width-admin` and `--content-max-width-portal` tokens from `src/app/globals.css`.
-- [ ] T070 Run `pnpm typecheck` and confirm zero remaining `ContentContainer` imports anywhere in the repo (per Spec §SC-004). If any surface, fix in-place. Commit: `refactor(layout): remove legacy ContentContainer`.
+- [X] T067 Delete `src/components/layout/content-container.tsx`.
+- [X] T068 Remove `ContentContainer` export from `src/components/layout/index.ts`.
+- [X] T069 Remove `--content-max-width-admin` and `--content-max-width-portal` tokens from `src/app/globals.css`.
+- [X] T070 Run `pnpm typecheck` and confirm zero remaining `ContentContainer` imports anywhere in the repo (per Spec §SC-004). If any surface, fix in-place. Commit: `refactor(layout): remove legacy ContentContainer`.
 
 ### 6e. CI static check must now pass
 
-- [ ] T071 Run `pnpm check:layout` and confirm it exits 0 (all 19 pages import exactly one of the three containers).
+- [X] T071 Run `pnpm check:layout` and confirm it exits 0 (all 19 pages import exactly one of the three containers).
 
 ---
 
@@ -202,7 +202,7 @@ description: "Task list for Layout Container Tier 2"
 
 ### 7a. Documentation
 
-- [ ] T072 Update `docs/ux-standards.md` with the "Container Selection Guideline" section per Spec §FR-008: (a) one-line decision rule, (b) full Content-Type Mapping table (19 current routes), (c) three minimal code examples — one per primitive, (d) explicit note that `ContentContainer` has been removed. Add a Table of Contents entry (per Spec §SC-009).
+- [X] T072 Update `docs/ux-standards.md` with the "Container Selection Guideline" section per Spec §FR-008: (a) one-line decision rule, (b) full Content-Type Mapping table (19 current routes), (c) three minimal code examples — one per primitive, (d) explicit note that `ContentContainer` has been removed. Add a Table of Contents entry (per Spec §SC-009).
 
 ### 7b. Full CI sweep
 
@@ -216,7 +216,7 @@ description: "Task list for Layout Container Tier 2"
 
 ### 7d. Scope-gate verification
 
-- [ ] T077 Per Spec §FR-018, verify the PR diff touches ZERO of: package.json dependencies, `i18n/messages/*.json`, `drizzle/migrations/**`, `src/app/api/**`, `src/modules/**` (except type-only imports for presentation), audit event enum, RBAC policy files, observability metric definitions. Any touch = scope violation to revert.
+- [X] T077 Per Spec §FR-018, verify the PR diff touches ZERO of: package.json dependencies, `i18n/messages/*.json`, `drizzle/migrations/**`, `src/app/api/**`, `src/modules/**` (except type-only imports for presentation), audit event enum, RBAC policy files, observability metric definitions. Any touch = scope violation to revert.
 
 ### 7e. Ready to ship
 
