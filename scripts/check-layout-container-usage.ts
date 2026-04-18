@@ -23,7 +23,8 @@ const LAYOUT_IMPORT_RE =
 
 type Offense =
   | { kind: 'count'; file: string; found: Container[]; reason: 'zero' | 'multiple' }
-  | { kind: 'pair-mismatch'; page: string; loading: string; pageVariant: Container; loadingVariant: Container };
+  | { kind: 'pair-mismatch'; page: string; loading: string; pageVariant: Container; loadingVariant: Container }
+  | { kind: 'pair-missing'; page: string; loading: string };
 
 function collectFiles(): string[] {
   const out: string[] = [];
@@ -65,10 +66,18 @@ function main(): void {
     else variantByFile.set(file, found[0]!);
   }
 
-  // Cross-check: each page.tsx and its sibling loading.tsx must share a variant.
+  // Cross-check: each page.tsx must have a sibling loading.tsx, and they
+  // must share a variant. Missing loading.tsx is a CLS-0 hazard per FR-007
+  // (skeleton-to-content shift) — fail loudly so silent deletions are
+  // caught at pre-push, not in production.
+  const allFiles = new Set(files);
   for (const [file, variant] of variantByFile) {
     if (!file.endsWith('page.tsx')) continue;
     const loading = join(dirname(file), 'loading.tsx');
+    if (!allFiles.has(loading)) {
+      offenses.push({ kind: 'pair-missing', page: file, loading });
+      continue;
+    }
     const loadingVariant = variantByFile.get(loading);
     if (loadingVariant && loadingVariant !== variant) {
       offenses.push({
@@ -93,10 +102,14 @@ function main(): void {
               : `multiple containers imported: ${o.found.join(', ')}`
           }`,
         );
-      } else {
+      } else if (o.kind === 'pair-mismatch') {
         console.error(`  ${relative(process.cwd(), o.page)} uses ${o.pageVariant}`);
         console.error(`  ${relative(process.cwd(), o.loading)} uses ${o.loadingVariant}`);
         console.error(`    reason: page and loading must use the SAME container (FR-007 CLS 0)`);
+      } else {
+        console.error(`  ${relative(process.cwd(), o.page)}`);
+        console.error(`  ${relative(process.cwd(), o.loading)} (missing)`);
+        console.error(`    reason: every migrated page.tsx must have a sibling loading.tsx (FR-007)`);
       }
     }
     console.error(

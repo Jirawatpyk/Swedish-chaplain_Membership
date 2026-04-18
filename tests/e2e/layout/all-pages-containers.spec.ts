@@ -15,7 +15,6 @@
  */
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
-import { clearE2ERateLimits } from '../helpers/rate-limit';
 import {
   assertNoHorizontalScroll,
   firstActiveMemberId,
@@ -73,7 +72,8 @@ test.describe('F5 all pages containers breadth @layout', () => {
     browser,
   }) => {
     test.setTimeout(180_000);
-    await clearE2ERateLimits();
+    // autoClearRateLimits fixture (imported via ../fixtures) already
+    // cleared the Upstash bucket before this test ran.
     const context: BrowserContext = await browser.newContext({
       viewport: { width: 1440, height: 900 },
     });
@@ -101,6 +101,9 @@ test.describe('F5 all pages containers breadth @layout', () => {
 
       for (const path of [...STAFF_STATIC_ROUTES, ...dynamicRoutes]) {
         await assertContainer(page, path);
+        // Release per-page resources between navigations to avoid
+        // net::ERR_INSUFFICIENT_RESOURCES on long sequential sweeps.
+        await page.goto('about:blank');
       }
     } finally {
       await context.close();
@@ -112,7 +115,7 @@ test.describe('F5 all pages containers breadth @layout', () => {
   }) => {
     test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
     test.setTimeout(90_000);
-    await clearE2ERateLimits();
+    // autoClearRateLimits fixture already ran.
     const context: BrowserContext = await browser.newContext({
       viewport: { width: 1440, height: 900 },
     });
@@ -121,6 +124,7 @@ test.describe('F5 all pages containers breadth @layout', () => {
       await signInViaForm(page, '/portal/sign-in', MEMBER_EMAIL!, MEMBER_PASSWORD!, /^\/portal(\/|$)/);
       for (const path of MEMBER_ROUTES) {
         await assertContainer(page, path);
+        await page.goto('about:blank');
       }
     } finally {
       await context.close();

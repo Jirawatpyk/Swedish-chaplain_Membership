@@ -27,7 +27,12 @@ const VIEWPORTS_FULL = [375, 1280, 1440, 1920] as const;
 const VIEWPORTS_DETAIL = [375, 1440] as const;
 
 const ADMIN_FORM_ROUTES = ['/admin/settings/fees', '/admin/plans/new'] as const;
-const PORTAL_FORM_ROUTES = ['/portal/account'] as const;
+const PORTAL_FORM_ROUTES = [
+  '/portal/account',
+  '/portal/edit',
+  '/portal/contacts/invite',
+] as const;
+const PORTAL_DETAIL_ROUTES = ['/portal/profile'] as const;
 
 async function signInAdmin(page: Page): Promise<void> {
   await signInViaForm(page, '/admin/sign-in', ADMIN_EMAIL!, ADMIN_PASSWORD!, /^\/admin(\/|$)/);
@@ -131,6 +136,28 @@ test.describe('F5 container widths @layout', () => {
         } else {
           expect(boxWidth, 'detail container takes full viewport width at 375px').toBe(width);
         }
+
+        await assertNoHorizontalScroll(page);
+      });
+    }
+
+    // Portal detail routes — additional SC-003 coverage beyond /admin.
+    for (const route of PORTAL_DETAIL_ROUTES) {
+      test(`DetailContainer on ${route} @ 1440px`, async ({ page }) => {
+        test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await signInMember(page);
+        await page.goto(route);
+        await waitForLayoutContainer(page);
+
+        const container = page.locator('[data-slot="layout-container"][data-variant="detail"]').first();
+        await expect(container).toBeVisible();
+
+        const boxWidth = await container.evaluate(
+          (el) => (el as HTMLElement).getBoundingClientRect().width,
+        );
+        expect(boxWidth).toBeGreaterThanOrEqual(1148);
+        expect(boxWidth).toBeLessThanOrEqual(1156);
 
         await assertNoHorizontalScroll(page);
       });
