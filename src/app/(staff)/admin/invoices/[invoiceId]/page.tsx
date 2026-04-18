@@ -13,6 +13,10 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 
+function isIssued(status: string): boolean {
+  return status === 'issued';
+}
+
 function formatSatang(satang: bigint | null): string {
   if (!satang) return '—';
   const whole = satang / 100n;
@@ -67,10 +71,18 @@ export default async function InvoiceDetailPage({
                 </Link>
               </>
             )}
+            {invoice.status === 'issued' && (
+              <Link
+                href={`/admin/invoices/${invoice.invoiceId}/pay`}
+                className={buttonVariants({ variant: 'default' })}
+              >
+                {t('actions.pay')}
+              </Link>
+            )}
             {!isDraft && invoice.pdfBlobKey && (
               <Link
                 href={`/api/invoices/${invoice.invoiceId}/pdf`}
-                className={buttonVariants({ variant: 'default' })}
+                className={buttonVariants({ variant: isIssued(invoice.status) ? 'secondary' : 'default' })}
               >
                 {t('actions.download')}
               </Link>

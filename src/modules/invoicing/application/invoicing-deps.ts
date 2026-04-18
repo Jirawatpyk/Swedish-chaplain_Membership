@@ -27,6 +27,7 @@ import type { GetInvoicePdfSignedUrlDeps } from './use-cases/get-invoice-pdf-sig
 import type { PreviewInvoiceDraftDeps } from './use-cases/preview-invoice-draft';
 import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
 import type { GetInvoiceDeps } from './use-cases/get-invoice';
+import type { RecordPaymentDeps } from './use-cases/record-payment';
 
 export function makeCreateInvoiceDraftDeps(tenantId: string): CreateInvoiceDraftDeps {
   return {
@@ -87,4 +88,18 @@ export function makeDeleteInvoiceDraftDeps(tenantId: string): DeleteInvoiceDraft
 
 export function makeGetInvoiceDeps(tenantId: string): GetInvoiceDeps {
   return { invoiceRepo: makeDrizzleInvoiceRepo(tenantId) };
+}
+
+export function makeRecordPaymentDeps(tenantId: string): RecordPaymentDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    sequenceAllocator: postgresSequenceAllocator,
+    pdfRender: reactPdfRenderAdapter,
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+    clock: systemClock,
+    outbox: resendEmailOutboxAdapter,
+    currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+  };
 }

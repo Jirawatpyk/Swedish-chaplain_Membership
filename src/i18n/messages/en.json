@@ -829,6 +829,7 @@
         "description": "Thai-tax-compliant membership invoices.",
         "empty": "No invoices yet — create your first draft.",
         "actions": {
+          "new": "New invoice",
           "download": "PDF"
         },
         "columns": {
@@ -867,7 +868,8 @@
         "actions": {
           "preview": "Preview",
           "issue": "Issue…",
-          "download": "Download PDF"
+          "download": "Download PDF",
+          "pay": "Record payment"
         },
         "fields": {
           "memberId": "Member",
@@ -897,6 +899,32 @@
         "cancel": "Cancel",
         "errors": {
           "failed": "Issue failed"
+        }
+      },
+      "pay": {
+        "title": "Record payment",
+        "description": "Mark this invoice paid. A receipt PDF will be generated and emailed to the member.",
+        "submit": "Record payment",
+        "submitting": "Recording…",
+        "success": "Payment recorded",
+        "successDetail": "Invoice {number} is now paid.",
+        "cancel": "Back to invoice",
+        "errors": {
+          "failed": "Could not record payment",
+          "invalidStatus": "Only issued invoices can be paid (current status: {status})."
+        },
+        "fields": {
+          "method": "Payment method",
+          "reference": "Reference",
+          "referencePlaceholder": "Bank transfer id / cheque no.",
+          "date": "Payment date",
+          "notes": "Notes"
+        },
+        "methods": {
+          "bank_transfer": "Bank transfer",
+          "cheque": "Cheque",
+          "cash": "Cash",
+          "other": "Other"
         }
       }
     }
@@ -941,7 +969,8 @@
       "collapse": "Collapse sidebar",
       "expand": "Expand sidebar",
       "ariaLabel": "Staff navigation",
-      "members": "Members"
+      "members": "Members",
+      "invoices": "Invoices"
     },
     "member": {
       "dashboard": "Dashboard",

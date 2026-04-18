@@ -89,6 +89,13 @@ export {
   type GetInvoiceError,
 } from './application/use-cases/get-invoice';
 
+export {
+  recordPayment,
+  recordPaymentSchema,
+  type RecordPaymentInput,
+  type RecordPaymentError,
+} from './application/use-cases/record-payment';
+
 // --- Composition-root factories --------------------------------------------
 // Presentation / route handlers consume these to wire a per-request
 // tenant-scoped dependency graph.
@@ -100,4 +107,5 @@ export {
   makePreviewInvoiceDraftDeps,
   makeDeleteInvoiceDraftDeps,
   makeGetInvoiceDeps,
+  makeRecordPaymentDeps,
 } from './application/invoicing-deps';

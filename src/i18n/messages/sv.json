@@ -829,6 +829,7 @@
         "description": "Thailändska momsgilla medlemsfakturor.",
         "empty": "Inga fakturor än — skapa första utkastet.",
         "actions": {
+          "new": "Ny faktura",
           "download": "PDF"
         },
         "columns": {
@@ -867,7 +868,8 @@
         "actions": {
           "preview": "Förhandsgranska",
           "issue": "Utfärda…",
-          "download": "Ladda ner PDF"
+          "download": "Ladda ner PDF",
+          "pay": "Registrera betalning"
         },
         "fields": {
           "memberId": "Medlem",
@@ -897,6 +899,32 @@
         "cancel": "Avbryt",
         "errors": {
           "failed": "Kunde inte utfärda"
+        }
+      },
+      "pay": {
+        "title": "Registrera betalning",
+        "description": "Markera fakturan som betald. Ett kvitto-PDF genereras och skickas till medlemmen.",
+        "submit": "Registrera",
+        "submitting": "Registrerar…",
+        "success": "Betalning registrerad",
+        "successDetail": "Faktura {number} är nu betald.",
+        "cancel": "Tillbaka",
+        "errors": {
+          "failed": "Kunde inte registrera betalning",
+          "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status})."
+        },
+        "fields": {
+          "method": "Betalningsmetod",
+          "reference": "Referens",
+          "referencePlaceholder": "Banköverförings-id / checknummer",
+          "date": "Betalningsdatum",
+          "notes": "Anteckningar"
+        },
+        "methods": {
+          "bank_transfer": "Banköverföring",
+          "cheque": "Check",
+          "cash": "Kontant",
+          "other": "Övrigt"
         }
       }
     }
@@ -941,7 +969,8 @@
       "collapse": "Fäll ihop sidofältet",
       "expand": "Expandera sidofältet",
       "ariaLabel": "Personalnavigering",
-      "members": "Medlemmar"
+      "members": "Medlemmar",
+      "invoices": "Fakturor"
     },
     "member": {
       "dashboard": "Instrumentpanel",

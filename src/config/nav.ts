@@ -8,6 +8,7 @@ import {
   DollarSignIcon,
   UserCircleIcon,
   BuildingIcon,
+  ReceiptIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,12 @@ export const staffNavConfig: NavConfig = {
           icon: BuildingIcon,
           href: '/admin/members',
           activePattern: '/admin/members',
+        },
+        {
+          titleKey: 'nav.staff.invoices',
+          icon: ReceiptIcon,
+          href: '/admin/invoices',
+          activePattern: '/admin/invoices',
         },
         {
           titleKey: 'nav.staff.users',
