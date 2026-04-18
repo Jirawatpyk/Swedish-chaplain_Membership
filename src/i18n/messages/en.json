@@ -671,7 +671,7 @@
           "firstName": "First name",
           "lastName": "Last name",
           "email": "Email",
-          "phone": "Phone (E.164)",
+          "phone": "Phone",
           "roleTitle": "Role / title",
           "preferredLanguage": "Preferred language",
           "dateOfBirth": "Date of birth",

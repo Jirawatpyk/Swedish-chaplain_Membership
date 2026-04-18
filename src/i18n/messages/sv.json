@@ -671,7 +671,7 @@
           "firstName": "Förnamn",
           "lastName": "Efternamn",
           "email": "E-post",
-          "phone": "Telefon (E.164)",
+          "phone": "Telefon",
           "roleTitle": "Roll / titel",
           "preferredLanguage": "Föredraget språk",
           "dateOfBirth": "Födelsedatum",

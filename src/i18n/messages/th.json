@@ -671,7 +671,7 @@
           "firstName": "ชื่อ",
           "lastName": "นามสกุล",
           "email": "อีเมล",
-          "phone": "โทรศัพท์ (รูปแบบ E.164)",
+          "phone": "โทรศัพท์",
           "roleTitle": "ตำแหน่ง",
           "preferredLanguage": "ภาษาที่ต้องการ",
           "dateOfBirth": "วันเกิด",
