@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { DetailContainer } from '@/components/layout/detail-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 
@@ -33,7 +34,7 @@ export default async function MemberPortalHomePage() {
   const t = await getTranslations('auth.memberPortal');
 
   return (
-    <>
+    <DetailContainer>
       <PageHeader
         title={t('welcome', { name: user.displayName ?? user.email })}
         subtitle={t('intro')}
@@ -100,6 +101,6 @@ export default async function MemberPortalHomePage() {
         </CardContent>
       </Card>
       </div>
-    </>
+    </DetailContainer>
   );
 }

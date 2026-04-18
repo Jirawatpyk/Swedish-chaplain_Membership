@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { DetailContainer } from '@/components/layout/detail-container';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   PageSkeletonShell,
@@ -14,19 +15,20 @@ import {
 /**
  * Portal profile loading skeleton — matches the shape of
  * `/portal/profile/page.tsx` (Company Info + Plan + Contacts).
- * Portal layout already owns `<ContentContainer>`.
+ * Wraps in DetailContainer (72rem) to mirror the real page.
  */
 export default async function Loading() {
   const t = await getTranslations('portal.profile');
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
-      <PageHeader
-        title={t('pageTitle')}
-        subtitle={<SkeletonBlock className="h-4 w-48" />}
-        actions={<SkeletonBlock className="h-9 w-28" />}
-      />
-      <div className="flex flex-col gap-4">
+      <DetailContainer>
+        <PageHeader
+          title={t('pageTitle')}
+          subtitle={<SkeletonBlock className="h-4 w-48" />}
+          actions={<SkeletonBlock className="h-9 w-28" />}
+        />
+        <div className="flex flex-col gap-4">
         {/* Company Info */}
         <Card>
           <CardHeader>
@@ -86,7 +88,8 @@ export default async function Loading() {
             </div>
           </CardContent>
         </Card>
-      </div>
+        </div>
+      </DetailContainer>
     </PageSkeletonShell>
   );
 }

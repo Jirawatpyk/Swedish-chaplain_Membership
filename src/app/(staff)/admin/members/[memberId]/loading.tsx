@@ -5,14 +5,14 @@
  */
 import { getTranslations } from 'next-intl/server';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ContentContainer } from '@/components/layout/content-container';
+import { DetailContainer } from '@/components/layout/detail-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { MemberDetailSkeleton } from '@/components/members/member-detail-skeleton';
 
 export default async function Loading() {
   const t = await getTranslations('admin.members');
   return (
-    <ContentContainer>
+    <DetailContainer>
       <PageHeader
         title={<Skeleton className="h-8 w-64" />}
         subtitle={t('subtitle')}
@@ -30,6 +30,6 @@ export default async function Loading() {
         }
       />
       <MemberDetailSkeleton />
-    </ContentContainer>
+    </DetailContainer>
   );
 }

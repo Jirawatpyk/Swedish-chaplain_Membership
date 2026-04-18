@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
-import { ContentContainer } from '@/components/layout/content-container';
+import { DetailContainer } from '@/components/layout/detail-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
@@ -185,7 +185,7 @@ export default async function MemberDetailPage({ params }: PageProps) {
   if (!result.ok) {
     if (result.error.type === 'not_found') {
       return (
-        <ContentContainer>
+        <DetailContainer>
           <Card>
             <CardContent className="flex flex-col items-center gap-4 p-10 text-center">
               <h2 className="text-h2 text-xl font-semibold">
@@ -203,7 +203,7 @@ export default async function MemberDetailPage({ params }: PageProps) {
               </Link>
             </CardContent>
           </Card>
-        </ContentContainer>
+        </DetailContainer>
       );
     }
     // Generic server error — let the route-level error.tsx handle unknowns.
@@ -235,7 +235,7 @@ export default async function MemberDetailPage({ params }: PageProps) {
       : null;
 
   return (
-    <ContentContainer>
+    <DetailContainer>
       <PageHeader
         title={member.companyName}
         subtitle={tRoot('subtitle')}
@@ -459,6 +459,6 @@ export default async function MemberDetailPage({ params }: PageProps) {
           </>
         )}
       </div>
-    </ContentContainer>
+    </DetailContainer>
   );
 }

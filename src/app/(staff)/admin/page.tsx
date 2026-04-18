@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ContentContainer } from '@/components/layout/content-container';
+import { DetailContainer } from '@/components/layout/detail-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 
@@ -29,7 +29,7 @@ export default async function StaffHomePage() {
   const t = await getTranslations('admin.home');
 
   return (
-    <ContentContainer>
+    <DetailContainer>
       <PageHeader
         title={
           user.displayName
@@ -57,6 +57,6 @@ export default async function StaffHomePage() {
           </ul>
         </CardContent>
       </Card>
-    </ContentContainer>
+    </DetailContainer>
   );
 }

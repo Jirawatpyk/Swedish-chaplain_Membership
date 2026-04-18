@@ -30,7 +30,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
-import { ContentContainer } from '@/components/layout/content-container';
+import { DetailContainer } from '@/components/layout/detail-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { TimelineClient } from '@/components/members/timeline-client';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
@@ -73,7 +73,7 @@ export default async function MemberTimelinePage({ params }: PageProps) {
   if (!memberResult.ok) {
     if (memberResult.error.type === 'not_found') {
       return (
-        <ContentContainer>
+        <DetailContainer>
           <Card>
             <CardContent className="flex flex-col items-center gap-4 p-10 text-center">
               <h2 className="text-h2 text-xl font-semibold">
@@ -91,7 +91,7 @@ export default async function MemberTimelinePage({ params }: PageProps) {
               </Link>
             </CardContent>
           </Card>
-        </ContentContainer>
+        </DetailContainer>
       );
     }
     throw new Error(`getMember failed: ${memberResult.error.message}`);
@@ -130,7 +130,7 @@ export default async function MemberTimelinePage({ params }: PageProps) {
   const totalEvents = timelineResult.ok ? timelineResult.value.total : 0;
 
   return (
-    <ContentContainer>
+    <DetailContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
@@ -162,6 +162,6 @@ export default async function MemberTimelinePage({ params }: PageProps) {
           />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </DetailContainer>
   );
 }

@@ -4,13 +4,13 @@
  * Renders the TimelineSkeleton so the fallback matches the real page
  * shape (header row + card + vertical event list) for CLS = 0.
  */
-import { ContentContainer } from '@/components/layout/content-container';
+import { DetailContainer } from '@/components/layout/detail-container';
 import { TimelineSkeleton } from '@/components/members/timeline-skeleton';
 
 export default function Loading() {
   return (
-    <ContentContainer>
+    <DetailContainer>
       <TimelineSkeleton />
-    </ContentContainer>
+    </DetailContainer>
   );
 }

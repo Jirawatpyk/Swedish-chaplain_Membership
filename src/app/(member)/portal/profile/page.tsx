@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { DetailContainer } from '@/components/layout/detail-container';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -42,9 +43,11 @@ export default async function PortalProfilePage() {
   );
   if (!memberResult.ok) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-body text-muted-foreground">{t('notLinked')}</p>
-      </div>
+      <DetailContainer>
+        <div className="py-12 text-center">
+          <p className="text-body text-muted-foreground">{t('notLinked')}</p>
+        </div>
+      </DetailContainer>
     );
   }
 
@@ -62,9 +65,11 @@ export default async function PortalProfilePage() {
 
   if (!result.ok) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-body text-muted-foreground">{t('loadError')}</p>
-      </div>
+      <DetailContainer>
+        <div className="py-12 text-center">
+          <p className="text-body text-muted-foreground">{t('loadError')}</p>
+        </div>
+      </DetailContainer>
     );
   }
 
@@ -78,7 +83,7 @@ export default async function PortalProfilePage() {
   const format = await getFormatter();
 
   return (
-    <>
+    <DetailContainer>
       <PageHeader
         title={t('pageTitle')}
         subtitle={m.companyName}
@@ -242,6 +247,6 @@ export default async function PortalProfilePage() {
         </CardContent>
       </Card>
       </div>
-    </>
+    </DetailContainer>
   );
 }
