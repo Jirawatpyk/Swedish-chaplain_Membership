@@ -293,7 +293,7 @@ export function PlansTable({
               updateFilter({ activeOnly: v ? 'true' : null });
             }}
           />
-          <Label htmlFor="plans-active-only" id="plans-active-only-label" >
+          <Label htmlFor="plans-active-only" id="plans-active-only-label" className="mb-0">
             {t('filters.activeOnly')}
           </Label>
         </div>
@@ -309,7 +309,7 @@ export function PlansTable({
                 updateFilter({ showDeleted: v ? 'true' : null });
               }}
             />
-            <Label htmlFor="plans-show-deleted" id="plans-show-deleted-label" >
+            <Label htmlFor="plans-show-deleted" id="plans-show-deleted-label" className="mb-0">
               {t('filters.showDeleted')}
             </Label>
           </div>

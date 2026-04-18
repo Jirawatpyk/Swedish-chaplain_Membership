@@ -103,7 +103,7 @@ function BoolField({
   const labelId = `${id}-label`;
   return (
     <div className="flex items-center justify-between gap-4 py-1">
-      <Label htmlFor={id} id={labelId} className="flex-1">
+      <Label htmlFor={id} id={labelId} className="mb-0 flex-1">
         {label}
       </Label>
       <Switch
