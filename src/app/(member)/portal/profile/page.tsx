@@ -95,7 +95,7 @@ export default async function PortalProfilePage() {
         }
       />
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-[var(--page-section-gap)]">
         {/* Company Info */}
         <Card>
         <CardHeader>

@@ -110,7 +110,7 @@ export default async function PlanDetailPage({
   }
 
   return (
-    <DetailContainer className="flex flex-col gap-4">
+    <DetailContainer className="flex flex-col gap-[var(--page-section-gap)]">
       <PlanBreadcrumbLabel segment={year} label={String(plan.plan_year)} />
       <PlanBreadcrumbLabel segment={planId} label={planDisplayName} />
       <PageHeader
