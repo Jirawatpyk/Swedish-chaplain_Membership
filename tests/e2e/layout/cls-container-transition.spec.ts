@@ -25,34 +25,46 @@ test.describe('F5 CLS container transition @layout', () => {
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL((u) => /^\/admin(\/|$)/.test(new URL(u).pathname));
-
-    await page.goto('/admin/settings/fees');
-    await page.waitForLoadState('networkidle');
-
-    // Start CLS observer before navigation.
-    await page.evaluate(() => {
-      (window as unknown as { __F5_CLS__: number }).__F5_CLS__ = 0;
-      const obs = new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          const ls = entry as PerformanceEntry & {
-            hadRecentInput?: boolean;
-            value?: number;
-          };
-          if (ls.hadRecentInput) continue;
-          (window as unknown as { __F5_CLS__: number }).__F5_CLS__ += ls.value ?? 0;
-        }
-      });
-      obs.observe({ type: 'layout-shift', buffered: true });
+    // Exclude /admin/sign-in itself from the landing match — without
+    // this, the regex matches the sign-in URL pre-redirect and the test
+    // proceeds before auth completes.
+    await page.waitForURL((u) => {
+      const p = new URL(u).pathname;
+      return /^\/admin(\/|$)/.test(p) && !p.startsWith('/admin/sign-in');
     });
 
-    await page.goto('/admin/members');
+    // Use addInitScript so the observer is (re)installed on every
+    // navigation. A plain page.evaluate would be wiped by page.goto.
+    await page.addInitScript(() => {
+      (window as unknown as { __F5_CLS__: number }).__F5_CLS__ = 0;
+      try {
+        const obs = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            const ls = entry as PerformanceEntry & {
+              hadRecentInput?: boolean;
+              value?: number;
+            };
+            if (ls.hadRecentInput) continue;
+            (window as unknown as { __F5_CLS__: number }).__F5_CLS__ += ls.value ?? 0;
+          }
+        });
+        obs.observe({ type: 'layout-shift', buffered: true });
+      } catch {
+        // PerformanceObserver may not be available in some contexts.
+      }
+    });
+
+    await page.goto('/admin/settings/fees');
+    await page.locator('[data-slot="layout-container"]').first().waitFor({ state: 'visible', timeout: 15_000 });
     await page.waitForLoadState('networkidle');
-    // Allow late shifts to settle.
+
+    await page.goto('/admin/members');
+    await page.locator('[data-slot="layout-container"]').first().waitFor({ state: 'visible', timeout: 15_000 });
+    await page.waitForLoadState('networkidle');
     await page.waitForTimeout(500);
 
     const cls = await page.evaluate(
-      () => (window as unknown as { __F5_CLS__: number }).__F5_CLS__,
+      () => (window as unknown as { __F5_CLS__: number }).__F5_CLS__ ?? 0,
     );
     expect(cls, 'CLS on persistent chrome must be ≤0.02 per SC-007').toBeLessThanOrEqual(0.02);
   });
