@@ -5,7 +5,7 @@
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableContainer } from '@/components/layout/table-container';
+import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { MembersTableSkeleton } from '@/components/members/members-table-skeleton';
 

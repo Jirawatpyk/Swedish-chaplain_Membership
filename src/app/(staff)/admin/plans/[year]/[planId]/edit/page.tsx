@@ -16,7 +16,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { asPlanSlug, asPlanYear, getPlan, type PlanSchemaInput } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FormContainer } from '@/components/layout/form-container';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EditPlanClient } from './edit-plan-client';

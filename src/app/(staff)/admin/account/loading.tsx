@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { ChangePasswordFormSkeleton } from '@/components/auth/change-password-form-skeleton';
-import { FormContainer } from '@/components/layout/form-container';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   PageSkeletonShell,

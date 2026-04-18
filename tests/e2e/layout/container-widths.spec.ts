@@ -1,40 +1,40 @@
 /**
  * F5 US1 + US2 + detail non-regression — E2E container width assertions.
  *
- * Incrementally populated through Phases 3–5:
+ * Populated across Phases 3-5:
  *   - TableContainer block (Phase 3, US1): 375/1280/1440/1920 px → ≤1536px cap
  *   - FormContainer block (Phase 4, US2):  375/1280/1440/1920 px → 672±8px
  *   - DetailContainer block (Phase 5):      375/1440 px → 1152±4px (SC-003 pixel parity)
  *
- * In all cases we assert NO horizontal body scroll and exactly one
- * `[data-slot="layout-container"]` on the page.
+ * In all cases we assert NO horizontal body scroll and the correct
+ * `[data-variant]` is present.
+ *
+ * The form block exercises three representative routes
+ * (`/admin/settings/fees`, `/admin/plans/new`, `/portal/account`) to
+ * protect SC-002 across categories — prior revision covered only one.
  */
+import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import { clearE2ERateLimits } from '../helpers/rate-limit';
+import { assertNoHorizontalScroll, signInViaForm, waitForLayoutContainer } from '../helpers/layout';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 
 const VIEWPORTS_FULL = [375, 1280, 1440, 1920] as const;
 const VIEWPORTS_DETAIL = [375, 1440] as const;
 
-async function signInAdmin(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/admin/sign-in');
-  await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-  await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL((u) => {
-    const p = new URL(u).pathname;
-    return /^\/admin(\/|$)/.test(p) && !p.startsWith('/admin/sign-in');
-  });
+const ADMIN_FORM_ROUTES = ['/admin/settings/fees', '/admin/plans/new'] as const;
+const PORTAL_FORM_ROUTES = ['/portal/account'] as const;
+
+async function signInAdmin(page: Page): Promise<void> {
+  await signInViaForm(page, '/admin/sign-in', ADMIN_EMAIL!, ADMIN_PASSWORD!, /^\/admin(\/|$)/);
 }
 
-async function assertNoHorizontalScroll(page: import('@playwright/test').Page): Promise<void> {
-  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-  expect(scrollWidth, 'body must not horizontally overflow the viewport').toBe(clientWidth);
+async function signInMember(page: Page): Promise<void> {
+  await signInViaForm(page, '/portal/sign-in', MEMBER_EMAIL!, MEMBER_PASSWORD!, /^\/portal(\/|$)/);
 }
 
 test.describe('F5 container widths @layout', () => {
@@ -50,7 +50,7 @@ test.describe('F5 container widths @layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await signInAdmin(page);
         await page.goto('/admin/members');
-        await page.waitForLoadState('networkidle');
+        await waitForLayoutContainer(page);
 
         const container = page.locator('[data-slot="layout-container"][data-variant="table"]').first();
         await expect(container).toBeVisible();
@@ -59,7 +59,6 @@ test.describe('F5 container widths @layout', () => {
         if (width >= 1280) {
           expect(boxWidth, 'table container caps at 96rem (1536px)').toBeLessThanOrEqual(1536);
         } else {
-          // 375px mobile — container fills viewport (minus gutter padding is INSIDE the box).
           expect(boxWidth, 'table container takes full viewport width at 375px').toBe(width);
         }
 
@@ -69,23 +68,44 @@ test.describe('F5 container widths @layout', () => {
   });
 
   test.describe('container-widths form', () => {
-    for (const width of VIEWPORTS_FULL) {
-      test(`FormContainer on /admin/settings/fees @ ${width}px`, async ({ page }) => {
-        await page.setViewportSize({ width, height: 900 });
-        await signInAdmin(page);
-        await page.goto('/admin/settings/fees');
-        await page.waitForLoadState('networkidle');
+    for (const route of ADMIN_FORM_ROUTES) {
+      for (const width of VIEWPORTS_FULL) {
+        test(`FormContainer on ${route} @ ${width}px`, async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await signInAdmin(page);
+          await page.goto(route);
+          await waitForLayoutContainer(page);
+
+          const container = page.locator('[data-slot="layout-container"][data-variant="form"]').first();
+          await expect(container).toBeVisible();
+
+          const boxWidth = await container.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
+          if (width >= 1280) {
+            expect(boxWidth, 'form container sits near 42rem (≈672px) at desktop').toBeGreaterThanOrEqual(650);
+            expect(boxWidth, 'form container sits near 42rem (≈672px) at desktop').toBeLessThanOrEqual(680);
+          } else {
+            expect(boxWidth, 'form container takes full viewport width at 375px').toBe(width);
+          }
+
+          await assertNoHorizontalScroll(page);
+        });
+      }
+    }
+
+    for (const route of PORTAL_FORM_ROUTES) {
+      test(`FormContainer on ${route} @ 1440px`, async ({ page }) => {
+        test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await signInMember(page);
+        await page.goto(route);
+        await waitForLayoutContainer(page);
 
         const container = page.locator('[data-slot="layout-container"][data-variant="form"]').first();
         await expect(container).toBeVisible();
 
         const boxWidth = await container.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
-        if (width >= 1280) {
-          expect(boxWidth, 'form container sits near 42rem (≈672px) at desktop').toBeGreaterThanOrEqual(650);
-          expect(boxWidth, 'form container sits near 42rem (≈672px) at desktop').toBeLessThanOrEqual(680);
-        } else {
-          expect(boxWidth, 'form container takes full viewport width at 375px').toBe(width);
-        }
+        expect(boxWidth).toBeGreaterThanOrEqual(650);
+        expect(boxWidth).toBeLessThanOrEqual(680);
 
         await assertNoHorizontalScroll(page);
       });
@@ -98,7 +118,7 @@ test.describe('F5 container widths @layout', () => {
         await page.setViewportSize({ width, height: 900 });
         await signInAdmin(page);
         await page.goto('/admin');
-        await page.waitForLoadState('networkidle');
+        await waitForLayoutContainer(page);
 
         const container = page.locator('[data-slot="layout-container"][data-variant="detail"]').first();
         await expect(container).toBeVisible();

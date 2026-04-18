@@ -28,7 +28,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
-import { FormContainer } from '@/components/layout/form-container';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EditMemberClient } from '@/components/members/edit-member-client';
 import type { PlanOption } from '@/components/members/member-form';

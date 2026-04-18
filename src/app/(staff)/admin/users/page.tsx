@@ -32,7 +32,7 @@ import { UsersFilters } from '@/components/auth/users-filters';
 import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Card, CardContent } from '@/components/ui/card';
-import { TableContainer } from '@/components/layout/table-container';
+import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 export async function generateMetadata(): Promise<Metadata> {

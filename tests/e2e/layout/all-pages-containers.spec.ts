@@ -1,20 +1,27 @@
 /**
- * F5 T061 — Breadth probe over every one of the 19 migrated routes.
+ * F5 T061 — Breadth probe over every migrated route.
  *
  * For each route at 1440px, asserts:
  *   (a) exactly one [data-slot="layout-container"] is present
  *   (b) document.documentElement.scrollWidth === clientWidth (no body overflow)
  *
- * Uses storageState pattern: one sign-in per role per file, reused across
- * the sub-tests to avoid chewing through the per-email rate-limit budget.
+ * Uses storageState pattern: one sign-in per role per mega-test, reused
+ * across the route loop to avoid burning the per-email rate-limit
+ * budget.
  *
- * This spec does NOT assert specific widths — those live in
- * container-widths.spec.ts. Its job is to catch any page that
- * accidentally renders two containers or zero containers.
+ * Dynamic `[memberId]` routes are resolved from the live directory via
+ * `firstActiveMemberId` helper — keeps the breadth sweep honest across
+ * the full 19-route manifest instead of the 16 static paths.
  */
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import { clearE2ERateLimits } from '../helpers/rate-limit';
+import {
+  assertNoHorizontalScroll,
+  firstActiveMemberId,
+  signInViaForm,
+  waitForLayoutContainer,
+} from '../helpers/layout';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -23,7 +30,9 @@ const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 const SEEDED_YEAR = process.env.E2E_SEEDED_PLAN_YEAR ?? '2026';
 const SEEDED_PLAN_ID = process.env.E2E_SEEDED_PLAN_ID ?? 'diamond';
 
-const STAFF_ROUTES = [
+// 11 static staff routes. Dynamic [memberId] routes are added at
+// runtime so a seed ID doesn't need to be baked into env.
+const STAFF_STATIC_ROUTES = [
   '/admin',
   '/admin/account',
   '/admin/users',
@@ -45,39 +54,14 @@ const MEMBER_ROUTES = [
   '/portal/contacts/invite',
 ];
 
-async function signIn(
-  page: Page,
-  signInPath: string,
-  email: string,
-  password: string,
-  landingPattern: RegExp,
-): Promise<void> {
-  await page.goto(signInPath);
-  await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL((u) => {
-    const p = new URL(u).pathname;
-    return landingPattern.test(p) && !p.startsWith(signInPath);
-  });
-}
-
 async function assertContainer(page: Page, path: string): Promise<void> {
   await page.goto(path);
-  await page
-    .locator('[data-slot="layout-container"]')
-    .first()
-    .waitFor({ state: 'visible', timeout: 20_000 });
-  await page.waitForLoadState('networkidle');
+  await waitForLayoutContainer(page, 20_000);
 
   const count = await page.locator('[data-slot="layout-container"]').count();
   expect(count, `${path} should render exactly one layout container`).toBe(1);
 
-  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-  expect(scrollWidth, `${path} must not overflow horizontally`).toBe(clientWidth);
+  await assertNoHorizontalScroll(page);
 }
 
 test.describe('F5 all pages containers breadth @layout', () => {
@@ -85,16 +69,37 @@ test.describe('F5 all pages containers breadth @layout', () => {
 
   test.describe.configure({ mode: 'serial' });
 
-  test('staff routes — one sign-in, all 11 routes assert 1 container + no overflow', async ({ browser }) => {
-    test.setTimeout(120_000);
+  test('staff routes — one sign-in, all 14 routes (incl. dynamic [memberId]) assert 1 container + no overflow', async ({
+    browser,
+  }) => {
+    test.setTimeout(180_000);
     await clearE2ERateLimits();
     const context: BrowserContext = await browser.newContext({
       viewport: { width: 1440, height: 900 },
     });
     const page = await context.newPage();
     try {
-      await signIn(page, '/admin/sign-in', ADMIN_EMAIL!, ADMIN_PASSWORD!, /^\/admin(\/|$)/);
-      for (const path of STAFF_ROUTES) {
+      await signInViaForm(page, '/admin/sign-in', ADMIN_EMAIL!, ADMIN_PASSWORD!, /^\/admin(\/|$)/);
+
+      // Resolve dynamic member routes from live seed data.
+      let dynamicRoutes: string[] = [];
+      try {
+        const memberId = await firstActiveMemberId(page);
+        dynamicRoutes = [
+          `/admin/members/${memberId}`,
+          `/admin/members/${memberId}/edit`,
+          `/admin/members/${memberId}/timeline`,
+        ];
+      } catch (e) {
+        // Seed missing — skip dynamic portion but still cover the 11 static routes.
+        // Use test.info().annotations so the skip shows up in the report.
+        test.info().annotations.push({
+          type: 'skip',
+          description: `Dynamic [memberId] routes skipped: ${(e as Error).message}`,
+        });
+      }
+
+      for (const path of [...STAFF_STATIC_ROUTES, ...dynamicRoutes]) {
         await assertContainer(page, path);
       }
     } finally {
@@ -102,7 +107,9 @@ test.describe('F5 all pages containers breadth @layout', () => {
     }
   });
 
-  test('member routes — one sign-in, all 5 routes assert 1 container + no overflow', async ({ browser }) => {
+  test('member routes — one sign-in, all 5 routes assert 1 container + no overflow', async ({
+    browser,
+  }) => {
     test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
     test.setTimeout(90_000);
     await clearE2ERateLimits();
@@ -111,7 +118,7 @@ test.describe('F5 all pages containers breadth @layout', () => {
     });
     const page = await context.newPage();
     try {
-      await signIn(page, '/portal/sign-in', MEMBER_EMAIL!, MEMBER_PASSWORD!, /^\/portal(\/|$)/);
+      await signInViaForm(page, '/portal/sign-in', MEMBER_EMAIL!, MEMBER_PASSWORD!, /^\/portal(\/|$)/);
       for (const path of MEMBER_ROUTES) {
         await assertContainer(page, path);
       }

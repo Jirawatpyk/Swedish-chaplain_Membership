@@ -5,7 +5,7 @@
  */
 import { getTranslations } from 'next-intl/server';
 import { Skeleton } from '@/components/ui/skeleton';
-import { DetailContainer } from '@/components/layout/detail-container';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { MemberDetailSkeleton } from '@/components/members/member-detail-skeleton';
 

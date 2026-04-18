@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { MoneyDisplay } from '@/components/plans/money-display';
 import { LocaleTextDisplay } from '@/components/plans/locale-text-display';
-import { DetailContainer } from '@/components/layout/detail-container';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 

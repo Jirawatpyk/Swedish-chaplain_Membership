@@ -25,7 +25,7 @@ import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
-import { TableContainer } from '@/components/layout/table-container';
+import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   DirectoryFilters,

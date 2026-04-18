@@ -30,7 +30,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
-import { DetailContainer } from '@/components/layout/detail-container';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TimelineClient } from '@/components/members/timeline-client';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';

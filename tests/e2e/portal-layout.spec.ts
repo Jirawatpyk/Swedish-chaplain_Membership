@@ -43,6 +43,15 @@ test.describe('F5 portal layout @layout', () => {
 
     for (const { path, variant } of PAGES) {
       await page.goto(path);
+      // Wait for the real (non-skeleton) layout container to paint
+      // before measuring — networkidle alone is unreliable on streamed
+      // server-components pages and can resolve while the skeleton
+      // container is still mounted.
+      await page
+        .locator('[data-slot="layout-container"]')
+        .first()
+        .waitFor({ state: 'visible', timeout: 15_000 });
+      await page.waitForLoadState('networkidle');
       const container = page
         .locator(`[data-slot="layout-container"][data-variant="${variant}"]`)
         .first();
