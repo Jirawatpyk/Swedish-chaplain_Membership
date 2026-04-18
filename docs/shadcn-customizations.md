@@ -148,12 +148,14 @@ not by the container itself.
 ```
 
 **Why**: Tailwind v4 auto-scans the project for class strings. A literal
-token like `` `max-w-[var(--...)]` `` in a markdown file (as an example
-for reviewers) is picked up and emitted as real CSS — PostCSS then fails
-to parse `var(--...)` and the dev server breaks. Excluding `specs/**`
+token like `` `max-w-[var(--TOKEN_NAME)]` `` in a markdown file (as an example
+for reviewers) is picked up and emitted as real CSS. The `@source not`
+directives below exclude `specs/**` and `docs/**` from auto-scan, and
 and `docs/**` prevents the class. **Every new tenant / project
 bootstrap should carry these directives.**
 
 If a legitimate user-facing class lives in a `.md` file (for example, a
 code sample that should render), use a placeholder name like
-`max-w-[var(--TOKEN_NAME)]` instead of the `...` sentinel.
+`max-w-[var(--TOKEN_NAME)]` — **never** the three-dot sentinel
+`var(--DOT DOT DOT)` because three dots are not a valid CSS identifier
+and PostCSS will fail to parse the generated rule.
