@@ -16,7 +16,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ContentContainer } from '@/components/layout/content-container';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   PageSkeletonShell,
@@ -58,7 +58,7 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
-      <ContentContainer className="flex flex-col gap-4">
+      <DetailContainer>
         {/* PageHeader: title + subtitle + 2 badges */}
         <PageHeader
           title={<SkeletonBlock className="h-7 w-56" />}
@@ -105,7 +105,7 @@ export default async function Loading() {
             <SectionSkeleton rows={5} />
           </CardContent>
         </Card>
-      </ContentContainer>
+      </DetailContainer>
     </PageSkeletonShell>
   );
 }

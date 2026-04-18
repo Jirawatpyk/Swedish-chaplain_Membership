@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { MoneyDisplay } from '@/components/plans/money-display';
 import { LocaleTextDisplay } from '@/components/plans/locale-text-display';
-import { ContentContainer } from '@/components/layout/content-container';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 
@@ -110,7 +110,7 @@ export default async function PlanDetailPage({
   }
 
   return (
-    <ContentContainer className="flex flex-col gap-4">
+    <DetailContainer>
       <PlanBreadcrumbLabel segment={year} label={String(plan.plan_year)} />
       <PlanBreadcrumbLabel segment={planId} label={planDisplayName} />
       <PageHeader
@@ -285,7 +285,7 @@ export default async function PlanDetailPage({
           ) : null}
         </CardContent>
       </Card>
-    </ContentContainer>
+    </DetailContainer>
   );
 }
 

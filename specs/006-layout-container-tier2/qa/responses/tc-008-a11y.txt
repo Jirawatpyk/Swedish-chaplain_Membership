@@ -1,0 +1,11 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "tests/e2e/layout-a11y.spec.ts" "--project=chromium" "--workers=1"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 1 test using 1 worker
+
+  ✓  1 [chromium] › tests\e2e\layout-a11y.spec.ts:28:7 › F4 — layout a11y regressions @a11y @layout › every migrated admin page passes WCAG 2.1 AA (20.8s)
+
+  1 passed (24.6s)

@@ -28,7 +28,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
-import { ContentContainer } from '@/components/layout/content-container';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EditMemberClient } from '@/components/members/edit-member-client';
 import type { PlanOption } from '@/components/members/member-form';
@@ -97,7 +97,7 @@ export default async function EditMemberPage({ params }: PageProps) {
   }));
 
   return (
-    <ContentContainer>
+    <FormContainer>
       <PageHeader
         title={t('title')}
         subtitle={member.companyName}
@@ -147,6 +147,6 @@ export default async function EditMemberPage({ params }: PageProps) {
           />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </FormContainer>
   );
 }

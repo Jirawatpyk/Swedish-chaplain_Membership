@@ -631,3 +631,94 @@ Plus custom extensions:
 Every PR touching UI MUST tick all applicable items from § 15 (auth screen
 checklist) or the equivalent checklist for non-auth screens. Reviewers:
 refuse to merge UI PRs that leave boxes unchecked.
+
+---
+
+## 18. Container Selection Guideline (F5)
+
+Every admin + portal `page.tsx` MUST import **exactly one** of three layout
+containers from `@/components/layout`. The legacy `ContentContainer` has
+been **removed** and its two tokens (`--content-max-width-admin`,
+`--content-max-width-portal`) deleted.
+
+### 18.1 Decision rule (one line)
+
+**Dense data table ⇒ `TableContainer` (96rem). Form / settings / edit ⇒
+`FormContainer` (42rem). Dashboard / detail / mixed content ⇒
+`DetailContainer` (72rem).** If unsure, default to `DetailContainer`.
+
+### 18.2 Content-Type Mapping (19 current routes)
+
+| Route                                               | Container         | Width |
+|-----------------------------------------------------|-------------------|-------|
+| `/admin`                                            | `DetailContainer` | 72rem |
+| `/admin/account`                                    | `FormContainer`   | 42rem |
+| `/admin/users`                                      | `TableContainer`  | 96rem |
+| `/admin/plans`                                      | `TableContainer`  | 96rem |
+| `/admin/plans/new`                                  | `FormContainer`   | 42rem |
+| `/admin/plans/clone`                                | `FormContainer`   | 42rem |
+| `/admin/plans/[year]/[planId]`                      | `DetailContainer` | 72rem |
+| `/admin/plans/[year]/[planId]/edit`                 | `FormContainer`   | 42rem |
+| `/admin/settings/fees`                              | `FormContainer`   | 42rem |
+| `/admin/members`                                    | `TableContainer`  | 96rem |
+| `/admin/members/new`                                | `FormContainer`   | 42rem |
+| `/admin/members/[memberId]`                         | `DetailContainer` | 72rem |
+| `/admin/members/[memberId]/edit`                    | `FormContainer`   | 42rem |
+| `/admin/members/[memberId]/timeline`                | `DetailContainer` | 72rem |
+| `/portal`                                           | `DetailContainer` | 72rem |
+| `/portal/profile`                                   | `DetailContainer` | 72rem |
+| `/portal/account`                                   | `FormContainer`   | 42rem |
+| `/portal/edit`                                      | `FormContainer`   | 42rem |
+| `/portal/contacts/invite`                           | `FormContainer`   | 42rem |
+
+### 18.3 Code examples
+
+```tsx
+// 1. Dense table — admin directory, plan list, user list
+import { TableContainer } from '@/components/layout/table-container';
+
+export default function Page() {
+  return (
+    <TableContainer>
+      <PageHeader title="Members" />
+      <Card>{/* table */}</Card>
+    </TableContainer>
+  );
+}
+```
+
+```tsx
+// 2. Form — settings, edit, new-entity wizards
+import { FormContainer } from '@/components/layout/form-container';
+
+export default function Page() {
+  return (
+    <FormContainer>
+      <PageHeader title="Edit plan" />
+      <Card>{/* form */}</Card>
+    </FormContainer>
+  );
+}
+```
+
+```tsx
+// 3. Detail / dashboard / mixed content
+import { DetailContainer } from '@/components/layout/detail-container';
+
+export default function Page() {
+  return (
+    <DetailContainer>
+      <PageHeader title="Plan detail" />
+      <Card>{/* mixed content */}</Card>
+    </DetailContainer>
+  );
+}
+```
+
+### 18.4 CI enforcement
+
+`pnpm check:layout` (wired into `.husky/pre-push` and the full-CI chain in
+`CLAUDE.md` § Commands) fails if any `src/app/(staff)/**/page.tsx` or
+`src/app/(member)/**/page.tsx` imports zero or multiple of the three
+containers. Adding a new page? Add an import; the pre-push hook blocks
+merges that forget.

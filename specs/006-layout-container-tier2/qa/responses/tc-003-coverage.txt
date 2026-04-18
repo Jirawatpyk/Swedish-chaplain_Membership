@@ -1,0 +1,25 @@
+      Object {
+        "requestId": "req-test-1",
+        "tokenId": "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb",
+      },
+    ]
+[31m[90m
+
+Number of calls: [1m1[22m
+[31m[39m
+[36m [2m❯[22m tests/contract/members/email-change-revert-route.test.ts:[2m160:40[22m[39m
+    [90m158| [39m    [34mexpect[39m(res[33m.[39mheaders[33m.[39m[35mget[39m([32m'allow'[39m))[33m.[39m[34mtoBe[39m([32m'POST'[39m)[33m;[39m
+    [90m159| [39m    [90m// Revert use case must NOT be called on GET[39m
+    [90m160| [39m    [34mexpect[39m(revertContactEmailMock)[33m.[39mnot[33m.[39m[34mtoHaveBeenCalled[39m()[33m;[39m
+    [90m   | [39m                                       [31m^[39m
+    [90m161| [39m  })[33m;[39m
+    [90m162| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m123 passed[39m[22m[90m (124)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m1247 passed[39m[22m[90m (1249)[39m
+[2m   Start at [22m 13:00:15
+[2m   Duration [22m 108.53s[2m (transform 62.63s, setup 70.59s, collect 182.34s, tests 113.26s, environment 199.96s, prepare 129.33s)[22m
+
+ ELIFECYCLE  Command failed with exit code 1.

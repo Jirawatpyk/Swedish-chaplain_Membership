@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ContentContainer } from '@/components/layout/content-container';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 /**
@@ -41,7 +41,7 @@ export default function AdminError({
   }, [error]);
 
   return (
-    <ContentContainer>
+    <DetailContainer>
       <PageHeader title={t('generic')} />
       <Card>
         <CardHeader className="flex flex-row items-start gap-3">
@@ -57,6 +57,6 @@ export default function AdminError({
           <Button onClick={reset}>{tButtons('retry')}</Button>
         </CardContent>
       </Card>
-    </ContentContainer>
+    </DetailContainer>
   );
 }

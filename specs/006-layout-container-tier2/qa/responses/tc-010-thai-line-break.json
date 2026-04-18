@@ -1,0 +1,16 @@
+[
+  {
+    "route": "/admin/settings/fees",
+    "htmlLang": "th",
+    "bodyLineBreak": "loose",
+    "bodyWordBreak": "normal",
+    "thLineBreakRule": "loose"
+  },
+  {
+    "route": "/admin/plans/new",
+    "htmlLang": "th",
+    "bodyLineBreak": "loose",
+    "bodyWordBreak": "normal",
+    "thLineBreakRule": "loose"
+  }
+]

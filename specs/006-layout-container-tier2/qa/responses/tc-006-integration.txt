@@ -1,0 +1,30 @@
+{"level":"warn","time":1776492331432,"service":"swecham-membership","env":"test","userIdHash":"b6afe388","requestId":"rate-3","msg":"change_password.wrong_current"}
+{"level":"warn","time":1776492331546,"service":"swecham-membership","env":"test","userIdHash":"b6afe388","requestId":"rate-4","msg":"change_password.wrong_current"}
+[90mstdout[2m | tests/integration/auth/change-password-rate-limit.test.ts[2m > [22m[2mintegration: change-password rate limit (T149, FR-006)[2m > [22m[2mallows 5 wrong-current attempts, then rate-limits the 6th
+[22m[39m  change-password rate limit: wrong=5, rate-limited=1
+
+ [32m✓[39m tests/integration/auth/change-password-rate-limit.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1007[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: change-password rate limit (T149, FR-006)[2m > [22mallows 5 wrong-current attempts, then rate-limits the 6th [33m1007[2mms[22m[39m
+ [32m✓[39m tests/integration/auth/enumeration-message.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 999[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: enumeration-safe failure responses[2m > [22mreturns identical error shape for unknown / wrong-password / pending [33m999[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/audit-diff-fee-config.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1187[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: fee_config_updated audit-diff round-trip (T142)[2m > [22mpayload round-trips through auditPayloadSchema with expected diff [33m1187[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/integration/plans/rls-debug-state.test.ts [2m([22m[2m1 test[22m[2m | [22m[33m1 skipped[39m[2m)[22m
+{"level":"info","time":1776492335287,"service":"swecham-membership","env":"test","userIdHash":"f68021da","role":"member","portal":"member","requestId":"it-f3-clear-1776492334909","msg":"sign_in_success"}
+ [32m✓[39m tests/integration/auth/sign-in-f3-guards.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1249[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in F3 security guards[2m > [22mrejects sign-in when emailVerified = false (FR-012a) [33m350[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in F3 security guards[2m > [22mrejects sign-in when requiresPasswordReset = true (FR-012b) [33m315[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in F3 security guards[2m > [22mallows sign-in after flags are cleared [33m438[2mms[22m[39m
+ [32m✓[39m tests/integration/audit/append-only.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 328[2mms[22m[39m
+ [32m✓[39m tests/integration/middleware/feature-flag-f3-kill-switch.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m tests/integration/rls-coverage.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 456[2mms[22m[39m
+{"level":"info","time":1776492336835,"service":"swecham-membership","env":"test","userIdHash":"bc2de2ff","role":"admin","portal":"staff","requestId":"it-rotate-1-1776492336430","msg":"sign_in_success"}
+{"level":"info","time":1776492337217,"service":"swecham-membership","env":"test","userIdHash":"bc2de2ff","role":"admin","portal":"staff","requestId":"it-rotate-2-1776492336836","msg":"sign_in_success"}
+ [32m✓[39m tests/integration/auth/session-rotation.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 984[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: session id rotation on sign-in[2m > [22mproduces a fresh 64-hex id on every sign-in call [33m984[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m71 passed[39m[22m[2m | [22m[33m2 skipped[39m[90m (73)[39m
+[2m      Tests [22m [1m[32m317 passed[39m[22m[2m | [22m[33m4 skipped[39m[90m (321)[39m
+[2m   Start at [22m 13:00:41
+[2m   Duration [22m 296.89s[2m (transform 2.10s, setup 150ms, collect 9.43s, tests 285.22s, environment 0ms, prepare 165ms)[22m
+

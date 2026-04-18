@@ -1,0 +1,13 @@
+{
+  "route": "/admin/plans/2026/diamond",
+  "containerWidthPx": 1152,
+  "expectedRangePx": {
+    "min": 1148,
+    "max": 1156
+  },
+  "tableCount": 0,
+  "tableWrapperOverflow": null,
+  "tableScrollWidthPx": null,
+  "bodyHorizontallyOverflows": false,
+  "verdict": "reads-cleanly-inside-72rem"
+}

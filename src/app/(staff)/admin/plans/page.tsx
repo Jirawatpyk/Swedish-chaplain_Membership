@@ -21,7 +21,7 @@ import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { PlansTable } from '@/components/plans/plans-table';
-import { ContentContainer } from '@/components/layout/content-container';
+import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -46,7 +46,7 @@ export default async function PlansListPage({
   const t = await getTranslations('admin.plans');
 
   return (
-    <ContentContainer>
+    <TableContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('listDescription')}
@@ -87,7 +87,7 @@ export default async function PlansListPage({
           />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </TableContainer>
   );
 }
 

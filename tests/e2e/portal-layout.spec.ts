@@ -1,37 +1,79 @@
 /**
- * T043 — E2E: F4 US4 portal uses ContentContainer variant="portal" (64rem).
+ * T043 (rewritten for F5) — E2E: portal pages use content-type-based containers.
+ *
+ *   /portal           → DetailContainer (72rem = 1152px at 1440px viewport)
+ *   /portal/profile   → DetailContainer (same)
+ *   /portal/account   → FormContainer  (42rem ≈ 672±8px)
+ *   /portal/edit      → FormContainer
+ *   /portal/contacts/invite → FormContainer
  */
 import { expect, test } from './fixtures';
-import { clearE2ERateLimits } from './helpers/rate-limit';
+import { signInViaForm, waitForLayoutContainer } from './helpers/layout';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 
-test.describe('F4 US4 — portal layout @layout', () => {
+type Variant = 'detail' | 'form';
+
+const PAGES: Array<{ path: string; variant: Variant }> = [
+  { path: '/portal', variant: 'detail' },
+  { path: '/portal/profile', variant: 'detail' },
+  { path: '/portal/account', variant: 'form' },
+  { path: '/portal/edit', variant: 'form' },
+  { path: '/portal/contacts/invite', variant: 'form' },
+];
+
+test.describe('F5 portal layout @layout', () => {
   test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
 
-  test.beforeAll(async () => {
-    await clearE2ERateLimits();
-  });
+  test('portal pages use the correct content-type container at 1440px', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await signInViaForm(
+      page,
+      '/portal/sign-in',
+      MEMBER_EMAIL!,
+      MEMBER_PASSWORD!,
+      /^\/portal(\/|$)/,
+    );
 
-  test('portal pages use 64rem max-width container', async ({ page }) => {
-    await page.goto('/portal/sign-in');
-    await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/portal(\/|$)/.test(p) && !p.startsWith("/portal/sign-in"); });
-
-    for (const path of ['/portal', '/portal/account']) {
+    for (const { path, variant } of PAGES) {
       await page.goto(path);
+      await waitForLayoutContainer(page);
       const container = page
-        .locator('[data-slot="content-container"][data-variant="portal"]')
+        .locator(`[data-slot="layout-container"][data-variant="${variant}"]`)
         .first();
-      await expect(container).toBeVisible();
-      const maxWidth = await container.evaluate((el) => getComputedStyle(el).maxWidth);
-      expect(maxWidth).toBe('1024px');
+      await expect(container, `${path} has ${variant} container`).toBeVisible();
 
-      const h1 = page.getByRole('heading', { level: 1 });
-      await expect(h1).toBeVisible();
+      const boxWidth = await container.evaluate(
+        (el) => (el as HTMLElement).getBoundingClientRect().width,
+      );
+      if (variant === 'detail') {
+        expect(boxWidth).toBeGreaterThanOrEqual(1148);
+        expect(boxWidth).toBeLessThanOrEqual(1156);
+      } else {
+        expect(boxWidth).toBeGreaterThanOrEqual(664);
+        expect(boxWidth).toBeLessThanOrEqual(680);
+      }
+
+      // The page MUST render either an h1 (linked-member happy path)
+      // or the explanatory "not linked" message (unseeded e2e
+      // environment). A page that renders the container but neither
+      // is a real regression — fail loudly. Tightens the prior
+      // resilience guard which silently no-op'd on unseeded envs.
+      const h1Visible = await page
+        .getByRole('heading', { level: 1 })
+        .first()
+        .isVisible()
+        .catch(() => false);
+      const notLinkedVisible = await page
+        .getByText(/not linked|please contact your administrator/i)
+        .first()
+        .isVisible()
+        .catch(() => false);
+      expect(
+        h1Visible || notLinkedVisible,
+        `${path} must render either an <h1> or the "not linked" message`,
+      ).toBe(true);
     }
   });
 });

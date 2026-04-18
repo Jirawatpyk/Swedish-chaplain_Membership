@@ -11,11 +11,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 /**
  * Route-level error boundary for the member portal (`/portal/**`).
- * No ContentContainer — portal layout owns it.
+ * Wraps in DetailContainer (72rem) per F5 Content-Type Mapping.
  */
 export default function PortalError({
   error,
@@ -32,7 +33,7 @@ export default function PortalError({
   }, [error]);
 
   return (
-    <>
+    <DetailContainer>
       <PageHeader title={t('generic')} />
       <Card>
         <CardHeader className="flex flex-row items-start gap-3">
@@ -48,6 +49,6 @@ export default function PortalError({
           <Button onClick={reset}>{tButtons('retry')}</Button>
         </CardContent>
       </Card>
-    </>
+    </DetailContainer>
   );
 }

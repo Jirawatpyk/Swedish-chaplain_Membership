@@ -24,7 +24,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
-import { ContentContainer } from '@/components/layout/content-container';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CreateMemberClient } from '@/components/members/create-member-client';
 import type { PlanOption } from '@/components/members/member-form';
@@ -54,7 +54,7 @@ export default async function NewMemberPage() {
 
   if (!plansResult.ok) {
     return (
-      <ContentContainer>
+      <FormContainer>
         <PageHeader title={t('title')} />
         <Card>
           <CardContent className="p-6">
@@ -63,7 +63,7 @@ export default async function NewMemberPage() {
             </p>
           </CardContent>
         </Card>
-      </ContentContainer>
+      </FormContainer>
     );
   }
 
@@ -83,7 +83,7 @@ export default async function NewMemberPage() {
     plansResult.value.meta.year ?? new Date().getUTCFullYear();
 
   return (
-    <ContentContainer>
+    <FormContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
@@ -114,6 +114,6 @@ export default async function NewMemberPage() {
           )}
         </CardContent>
       </Card>
-    </ContentContainer>
+    </FormContainer>
   );
 }

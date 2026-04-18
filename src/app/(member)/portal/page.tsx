@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 
@@ -33,15 +34,14 @@ export default async function MemberPortalHomePage() {
   const t = await getTranslations('auth.memberPortal');
 
   return (
-    <>
+    <DetailContainer>
       <PageHeader
         title={t('welcome', { name: user.displayName ?? user.email })}
         subtitle={t('intro')}
         badge={<Badge variant="secondary">{t('versionBadge')}</Badge>}
       />
 
-      <div className="flex flex-col gap-4">
-        <Card>
+      <Card>
         <CardHeader>
           <CardTitle>{t('roadmapHeading')}</CardTitle>
           <CardDescription>{t('roadmapDescription')}</CardDescription>
@@ -99,7 +99,6 @@ export default async function MemberPortalHomePage() {
           </a>
         </CardContent>
       </Card>
-      </div>
-    </>
+    </DetailContainer>
   );
 }

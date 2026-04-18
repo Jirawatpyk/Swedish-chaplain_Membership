@@ -6,7 +6,7 @@
  * CSS utility in `globals.css` (shimmer gradient by default, automatic
  * pulse fallback under `prefers-reduced-motion: reduce`).
  *
- * Design alignment with F4 PageHeader + ContentContainer:
+ * Design alignment with F4 PageHeader + F5 layout containers:
  * - CardSkeleton honours --card-padding / --card-radius / --card-shadow
  *   so skeleton cards are visually indistinguishable in dimensions from
  *   real Cards.

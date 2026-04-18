@@ -1,0 +1,49 @@
+{
+  "budget": 80,
+  "mean": 78,
+  "passed": true,
+  "samples": [
+    {
+      "route": "/admin/settings/fees",
+      "text": "Per-tenant currency, VAT rate, and registration fee.",
+      "widthPx": 559,
+      "fontSizePx": 14,
+      "approxCharsPerLine": 80
+    },
+    {
+      "route": "/admin/settings/fees",
+      "text": "The currency is locked at THB until a future release adds mi",
+      "widthPx": 576,
+      "fontSizePx": 12,
+      "approxCharsPerLine": 96
+    },
+    {
+      "route": "/admin/plans/new",
+      "text": "Lowercase letters, digits, and hyphens only (e.g. diamond, s",
+      "widthPx": 280,
+      "fontSizePx": 14,
+      "approxCharsPerLine": 40
+    },
+    {
+      "route": "/admin/plans/new",
+      "text": "Lower numbers appear first in dropdowns.",
+      "widthPx": 576,
+      "fontSizePx": 14,
+      "approxCharsPerLine": 82
+    },
+    {
+      "route": "/portal/account",
+      "text": "e2e-member@swecham.test",
+      "widthPx": 624,
+      "fontSizePx": 14,
+      "approxCharsPerLine": 89
+    },
+    {
+      "route": "/portal/account",
+      "text": "Confirm new password",
+      "widthPx": 576,
+      "fontSizePx": 14,
+      "approxCharsPerLine": 82
+    }
+  ]
+}

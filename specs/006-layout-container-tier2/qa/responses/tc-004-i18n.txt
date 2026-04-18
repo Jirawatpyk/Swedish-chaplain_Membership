@@ -1,0 +1,5 @@
+
+> swecham-membership@0.1.0 check:i18n C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> tsx scripts/check-i18n-coverage.ts
+
+[check:i18n] OK — 723 keys present in all 3 locales

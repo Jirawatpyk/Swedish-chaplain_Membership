@@ -1,0 +1,99 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "tests/e2e/layout/manual-qa.spec.ts" "--project=chromium" "--workers=1"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 3 tests using 1 worker
+
+  ✓  1 [chromium] › tests\e2e\layout\manual-qa.spec.ts:39:7 › F5 manual-QA automation @qa › TC-009 (SC-006) — chars/line ≤80 on form pages @1440 EN (13.8s)
+  ✘  2 [chromium] › tests\e2e\layout\manual-qa.spec.ts:160:7 › F5 manual-QA automation @qa › TC-010 (T076) — Thai locale wraps at word boundaries (line-break engaged) (6.0s)
+  ✘  3 [chromium] › tests\e2e\layout\manual-qa.spec.ts:160:7 › F5 manual-QA automation @qa › TC-010 (T076) — Thai locale wraps at word boundaries (line-break engaged) (retry #1) (9.1s)
+  ✘  4 [chromium] › tests\e2e\layout\manual-qa.spec.ts:160:7 › F5 manual-QA automation @qa › TC-010 (T076) — Thai locale wraps at word boundaries (line-break engaged) (retry #2) (8.7s)
+  ✓  5 [chromium] › tests\e2e\layout\manual-qa.spec.ts:223:7 › F5 manual-QA automation @qa › TC-011 (T059) — plan-detail page reads cleanly inside 72rem with embedded table (8.5s)
+
+
+  1) [chromium] › tests\e2e\layout\manual-qa.spec.ts:160:7 › F5 manual-QA automation @qa › TC-010 (T076) — Thai locale wraps at word boundaries (line-break engaged) 
+
+    Error: html.lang must be Thai (got en,en)
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mtrue[39m
+    Received: [31mfalse[39m
+
+      215 |       // matches th. With locale 'th-TH' next-intl should set html.lang.
+      216 |       const allTh = evidence.every((e) => e.htmlLang.startsWith('th'));
+    > 217 |       expect(allTh, `html.lang must be Thai (got ${evidence.map((e) => e.htmlLang).join(',')})`).toBe(true);
+          |                                                                                                  ^
+      218 |     } finally {
+      219 |       await context.close();
+      220 |     }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\layout\manual-qa.spec.ts:217:98
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\layout-manual-qa-F5-manual-43a54-ndaries-line-break-engaged--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\layout-manual-qa-F5-manual-43a54-ndaries-line-break-engaged--chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: html.lang must be Thai (got en,en)
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mtrue[39m
+    Received: [31mfalse[39m
+
+      215 |       // matches th. With locale 'th-TH' next-intl should set html.lang.
+      216 |       const allTh = evidence.every((e) => e.htmlLang.startsWith('th'));
+    > 217 |       expect(allTh, `html.lang must be Thai (got ${evidence.map((e) => e.htmlLang).join(',')})`).toBe(true);
+          |                                                                                                  ^
+      218 |     } finally {
+      219 |       await context.close();
+      220 |     }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\layout\manual-qa.spec.ts:217:98
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\layout-manual-qa-F5-manual-43a54-ndaries-line-break-engaged--chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\layout-manual-qa-F5-manual-43a54-ndaries-line-break-engaged--chromium-retry1\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\layout-manual-qa-F5-manual-43a54-ndaries-line-break-engaged--chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\layout-manual-qa-F5-manual-43a54-ndaries-line-break-engaged--chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: html.lang must be Thai (got en,en)
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mtrue[39m
+    Received: [31mfalse[39m
+
+      215 |       // matches th. With locale 'th-TH' next-intl should set html.lang.
+      216 |       const allTh = evidence.every((e) => e.htmlLang.startsWith('th'));
+    > 217 |       expect(allTh, `html.lang must be Thai (got ${evidence.map((e) => e.htmlLang).join(',')})`).toBe(true);
+          |                                                                                                  ^
+      218 |     } finally {
+      219 |       await context.close();
+      220 |     }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\layout\manual-qa.spec.ts:217:98
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\layout-manual-qa-F5-manual-43a54-ndaries-line-break-engaged--chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\layout-manual-qa-F5-manual-43a54-ndaries-line-break-engaged--chromium-retry2\error-context.md
+
+  1 failed
+    [chromium] › tests\e2e\layout\manual-qa.spec.ts:160:7 › F5 manual-QA automation @qa › TC-010 (T076) — Thai locale wraps at word boundaries (line-break engaged) 
+  2 passed (58.5s)
+ ELIFECYCLE  Command failed with exit code 1.

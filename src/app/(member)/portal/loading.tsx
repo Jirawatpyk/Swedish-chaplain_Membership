@@ -6,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   PageSkeletonShell,
@@ -13,7 +14,7 @@ import {
 } from '@/components/shell/page-skeletons';
 
 /**
- * Portal home loading — NO ContentContainer (portal layout owns it).
+ * Portal home loading — DetailContainer mirrors the real page.
  */
 export default async function Loading() {
   const tShell = await getTranslations('shell');
@@ -21,12 +22,12 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
-      <PageHeader
-        title={tShell('welcome')}
-        subtitle={tPortal('intro')}
-        badge={<SkeletonBlock className="h-6 w-40" />}
-      />
-      <div className="flex flex-col gap-4">
+      <DetailContainer>
+        <PageHeader
+          title={tShell('welcome')}
+          subtitle={tPortal('intro')}
+          badge={<SkeletonBlock className="h-6 w-40" />}
+        />
         <Card>
           <CardHeader>
             <CardTitle>{tPortal('roadmapHeading')}</CardTitle>
@@ -55,7 +56,7 @@ export default async function Loading() {
             <SkeletonBlock className="h-4 w-48" />
           </CardContent>
         </Card>
-      </div>
+      </DetailContainer>
     </PageSkeletonShell>
   );
 }

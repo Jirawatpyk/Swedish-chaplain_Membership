@@ -253,6 +253,27 @@ describe('changeContactEmail — transaction port failures', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('server_error');
   });
+
+  it('returns server_error when audit.recordInTx fails (final tx step)', async () => {
+    const deps = makeDeps();
+    // Drive the entire happy path until step (vi+audit) — first 5 ports
+    // succeed, audit returns repo.unexpected → use case must rollback
+    // and surface server_error. Closes the last branch in
+    // change-contact-email.ts (line 253) so the file hits 100% branch
+    // coverage per the F3 threshold.
+    (deps.tokens.insertInTx as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ok(undefined),
+    );
+    (deps.emails.enqueueInTx as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(ok({ outboxRowId: 'outbox-v' }))
+      .mockResolvedValueOnce(ok({ outboxRowId: 'outbox-r' }));
+    (deps.audit.recordInTx as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'repo.unexpected', cause: new Error('audit insert failed') }),
+    );
+    const result = await changeContactEmail(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('server_error');
+  });
 });
 
 describe('changeContactEmail — happy path', () => {

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -31,9 +32,11 @@ export default async function PortalInvitePage() {
   );
   if (!memberResult.ok) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-body text-muted-foreground">{t('notLinked')}</p>
-      </div>
+      <FormContainer>
+        <div className="py-12 text-center">
+          <p className="text-body text-muted-foreground">{t('notLinked')}</p>
+        </div>
+      </FormContainer>
     );
   }
 
@@ -46,9 +49,11 @@ export default async function PortalInvitePage() {
   );
   if (!contactsResult.ok) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-body text-muted-foreground">{t('loadError')}</p>
-      </div>
+      <FormContainer>
+        <div className="py-12 text-center">
+          <p className="text-body text-muted-foreground">{t('loadError')}</p>
+        </div>
+      </FormContainer>
     );
   }
 
@@ -57,16 +62,18 @@ export default async function PortalInvitePage() {
   );
   if (!ownContact?.isPrimary) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-body text-muted-foreground">{t('notPrimary')}</p>
-      </div>
+      <FormContainer>
+        <div className="py-12 text-center">
+          <p className="text-body text-muted-foreground">{t('notPrimary')}</p>
+        </div>
+      </FormContainer>
     );
   }
 
   return (
-    <>
+    <FormContainer>
       <PageHeader title={t('pageTitle')} subtitle={member.companyName} />
       <InviteColleagueForm />
-    </>
+    </FormContainer>
   );
 }

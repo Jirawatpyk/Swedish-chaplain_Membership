@@ -21,7 +21,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ContentContainer } from '@/components/layout/content-container';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { NewPlanClient } from './new-plan-client';
 
@@ -44,7 +44,7 @@ export default async function NewPlanPage() {
   const currencyPrefix = feeConfig?.currency_code === 'THB' ? '฿' : (feeConfig?.currency_code ?? 'THB');
 
   return (
-    <ContentContainer>
+    <FormContainer>
       <PageHeader title={t('title')} />
       <Card>
         <CardHeader>
@@ -54,6 +54,6 @@ export default async function NewPlanPage() {
           <NewPlanClient currentYear={currentYear} currencyPrefix={currencyPrefix} />
         </CardContent>
       </Card>
-    </ContentContainer>
+    </FormContainer>
   );
 }

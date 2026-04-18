@@ -79,7 +79,12 @@ export function LocaleTextInput({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <Label>
+        {/* mb-0 overrides the primitive's field-label-gap — here the
+            Label sits inside a flex row with badges, and the outer
+            `space-y-2` already manages the gap to the Tabs below.
+            Without this override, the primitive's 6px bottom margin
+            would stack with the 8px space-y → 14px double-gap. */}
+        <Label className="mb-0">
           {label}
           {required ? <span className="text-destructive ml-1">*</span> : null}
         </Label>
