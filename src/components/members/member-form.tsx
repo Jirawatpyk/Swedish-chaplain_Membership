@@ -189,7 +189,7 @@ export function MemberForm({
   const countryIsTH = country.toUpperCase() === 'TH';
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-6">
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-[var(--page-section-gap)]">
       {/* FR-035 part (c): form-top required fields note */}
       <p className="text-sm text-muted-foreground" id="required-fields-note">
         {t('requiredNote')}

@@ -32,7 +32,7 @@ function SectionSkeleton({ fieldCount }: { readonly fieldCount: number }) {
 
 export function MemberFormSkeleton() {
   return (
-    <div className="flex flex-col gap-6" aria-hidden>
+    <div className="flex flex-col gap-[var(--page-section-gap)]" aria-hidden>
       <Skeleton className="h-4 w-40" />
       <SectionSkeleton fieldCount={9} />
       <SectionSkeleton fieldCount={6} />
