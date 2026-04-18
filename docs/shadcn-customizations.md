@@ -1,12 +1,21 @@
-# shadcn/ui customizations (F4)
+# shadcn/ui customizations (F4 + branch-006)
 
 > ⚠️ **Before running `pnpm dlx shadcn@latest add <component>`**, review this
-> file — the CLI may regenerate or overwrite these files. Re-apply F4
-> changes after any `shadcn add`.
+> file — the CLI may regenerate or overwrite these files. Re-apply every
+> customization below after any `shadcn add`.
+>
+> **Lesson from branch-006**: the Label primitive's `mb-[var(--field-label-gap)]`
+> customization was lost between F1 and the 006 review pass, causing every form
+> field across the app to render Label flush against its control. A `shadcn add`
+> of any component that depends on Label (or a hand-rewrite that dropped the
+> class) can re-introduce this. Consider adding an inventory test that asserts
+> the code matches this table before every release.
 
 F4 (Page Layout Enterprise Standardization) modified the following shadcn/ui
-primitives to align with the F4 design tokens in `src/app/globals.css`.
-The diffs are small and token-based — no structural rewrites.
+primitives to align with the design tokens in `src/app/globals.css`. Branch
+006 (Layout Container Tier 2) added the three new layout primitives and
+restored the Label customization. The diffs are small and token-based — no
+structural rewrites.
 
 ## Modified primitives
 
@@ -90,20 +99,61 @@ full-page scroll context (the default — e.g. `/admin/users`,
 constrained-scroll region**, the sticky behavior can surprise. Opt out per
 call site with `className="[&_thead]:static"` on the `<Table>` element.
 
-## Admin vs portal shell asymmetry
+## Admin vs portal shell — post branch-006
 
-`src/app/(staff)/admin/layout.tsx` and `src/app/(member)/portal/layout.tsx`
-place `ContentContainer` differently:
+Both shells now follow the **same** pattern: each `page.tsx` owns its own
+layout container (one of `TableContainer` / `FormContainer` / `DetailContainer`
+from `@/components/layout`). Neither shell wraps children in a container.
 
-- **Portal**: the shell wraps `{children}` in
-  `<ContentContainer variant="portal">`. Portal pages **do not** import
-  ContentContainer themselves — keep their file roots as `<>` fragments.
-- **Admin**: the shell renders `<BreadcrumbNav />` (which must sit between
-  the top bar and the content) and then `{children}`. Each admin page
-  owns its `<ContentContainer>` so breadcrumb can render above the
-  container without a separate padding rule.
+- **Admin shell** (`src/app/(staff)/admin/layout.tsx`): renders
+  `<BreadcrumbNav />` between the top bar and `{children}`; each page picks
+  its container per the Content-Type Mapping in `docs/ux-standards.md` § 18.
+- **Portal shell** (`src/app/(member)/portal/layout.tsx`): renders the header
+  bar only; each page picks its container (`DetailContainer` for
+  `/portal` + `/portal/profile`, `FormContainer` for the edit/invite/account
+  routes).
 
-Do not "fix" this by mirroring the two shells — the asymmetry exists so
-breadcrumb spacing stays consistent without double-wrapping. A future
-`<AdminPageShell>` wrapper could absorb the boilerplate, but the shape
-must stay: `TopBar → BreadcrumbNav → ContentContainer → page content`.
+**Do not** re-introduce a wrapping `ContentContainer` at the shell level —
+it was removed in branch-006 because single-variant wrapping couldn't express
+the table/form/detail split. `pnpm check:layout` enforces the per-page
+ownership: every `page.tsx` AND its sibling `loading.tsx` must import exactly
+one of the three primitives, and the pair must match (FR-007 CLS-0).
+
+## Layout container primitives (branch-006)
+
+| File                                             | Summary                                                                                                         | Rationale (spec) |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `src/components/layout/table-container.tsx`      | Thin `<div data-slot="layout-container" data-variant="table">` capping at `var(--layout-max-width-table)` (96rem).  | 006 FR-001, FR-002 |
+| `src/components/layout/form-container.tsx`       | Same shape, `data-variant="form"`, `var(--layout-max-width-form)` (42rem).                                       | 006 FR-003       |
+| `src/components/layout/detail-container.tsx`     | Same shape, `data-variant="detail"`, `var(--layout-max-width-detail)` (72rem — pixel-parity with the old admin ContentContainer). | 006 FR-004       |
+| `src/components/layout/index.ts`                 | Barrel export of all three. Import via `@/components/layout`, never via `@/components/layout/<variant>-container`. | 006 FR-014       |
+| `scripts/check-layout-container-usage.ts`        | Static CI gate (wired into `.husky/pre-push` + full-CI chain in `CLAUDE.md`).                                    | 006 FR-005, FR-006, FR-007 |
+
+None of the three primitives sets `overflow-x` at the root (FR-015). Wide
+tables must be absorbed by the shadcn `<Table>`'s `overflow-x-auto` wrapper,
+not by the container itself.
+
+## Tailwind v4 `@source` hygiene (branch-006)
+
+`src/app/globals.css` carries two `@source not` directives:
+
+```css
+@import 'tailwindcss';
+...
+/* Exclude non-source markdown docs from Tailwind v4 auto-detection so
+   example class strings (e.g. `max-w-[var(--TOKEN)]`) inside specs/ or
+   docs/ markdown never leak into generated CSS. */
+@source not "../../specs/**/*";
+@source not "../../docs/**/*";
+```
+
+**Why**: Tailwind v4 auto-scans the project for class strings. A literal
+token like `` `max-w-[var(--...)]` `` in a markdown file (as an example
+for reviewers) is picked up and emitted as real CSS — PostCSS then fails
+to parse `var(--...)` and the dev server breaks. Excluding `specs/**`
+and `docs/**` prevents the class. **Every new tenant / project
+bootstrap should carry these directives.**
+
+If a legitimate user-facing class lives in a `.md` file (for example, a
+code sample that should render), use a placeholder name like
+`max-w-[var(--TOKEN_NAME)]` instead of the `...` sentinel.

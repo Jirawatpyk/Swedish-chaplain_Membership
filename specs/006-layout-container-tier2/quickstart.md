@@ -114,10 +114,17 @@ Failing to match containers causes a visible layout shift between skeleton and h
 ## Running the verification suite locally
 
 ```bash
-pnpm test tests/unit/components/layout        # unit primitives
-pnpm test:e2e --grep container-widths         # Playwright 3-pages × 3-widths
-pnpm lint && pnpm typecheck                   # zero ContentContainer imports left
+pnpm test tests/unit/components/layout                   # unit primitives
+pnpm test:e2e tests/e2e/layout --workers=1               # Playwright F5 specs
+pnpm check:layout                                        # static scope-gate
+pnpm lint && pnpm typecheck                              # zero ContentContainer imports left
 ```
+
+**`--workers=1` is mandatory for E2E on most dev machines.** The default
+Playwright config allows 3 workers locally, but 3× Chromium instances +
+live-infra rate-limit pressure + streaming server-components can crash a
+machine mid-run (SIGABRT exit code 134). Run the full layout sweep in
+~3 minutes with a single worker; parallelism is only enabled in CI.
 
 If any `ContentContainer` import remains, `pnpm typecheck` fails (symbol deleted).
 

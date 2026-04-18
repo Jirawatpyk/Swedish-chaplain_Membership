@@ -175,12 +175,16 @@ per `saas-architecture.md`. Every row has `tenant_id` defaulting to `'swecham'`.
 - **All F2+ features**: tenant-scoped via Postgres RLS per `saas-architecture.md`
 
 **Branch vs Phase numbering note**: Branch `nnn-name` numbers do NOT always match
-F## phase numbers in this plan. Specifically: `003-nav-menu` and `004-page-layout-standard`
-are **ad-hoc UI-infrastructure features** shipped outside the F1-F13 business-feature
-sequence — they unblock future business features by standardizing navigation and page
-layout. **F3 Member and F4 Invoicing (per this plan) have NOT been started yet**;
-their branches will be numbered based on the next-available sequence (likely
-`005-members-contacts`, `006-mb-invoicing`) when work begins.
+F## phase numbers in this plan. Specifically: `003-nav-menu`, `004-page-layout-standard`,
+and `006-layout-container-tier2` are **ad-hoc UI-infrastructure features** shipped
+outside the F1-F13 business-feature sequence — they unblock future business features
+by standardizing navigation, page layout, and content-type-based width containers.
+F3 Member shipped on branch `005-members-contacts`. **F4 Invoicing and canonical F5
+Online Payment (per this plan) have NOT been started yet**; their branches will be
+numbered based on the next-available sequence (e.g. `007-mb-invoicing`, `008-online-payment`)
+when work begins. Do not confuse the informal label "F5 Layout" (branch 006) with
+canonical F5 (Online Payment) — the retrospective for branch 006 explicitly flags
+this ambiguity.
 
 **Notes on sensitivity markers** (maps to Constitution gates):
 
