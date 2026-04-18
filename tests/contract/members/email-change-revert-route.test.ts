@@ -16,7 +16,7 @@
  *   10. 409  use-case returns { code: 'conflict', reason }
  *   11. 500  use-case returns { code: 'server_error' }
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
@@ -125,6 +125,17 @@ function makeRequest(token: string, method = 'POST'): NextRequest {
 // ---------------------------------------------------------------------------
 
 describe('contract: POST|GET /api/auth/email-change/revert/[token]', () => {
+  // Issue #10 — under `pnpm test:coverage` parallel run this file's
+  // `revertContactEmailMock.not.toHaveBeenCalled()` assertions flaked
+  // because a stale module-cache entry carried call history across
+  // tests. Resetting modules + clearing mocks BEFORE each test
+  // (instead of only after) guarantees every dynamic
+  // `await import('@/app/api/auth/email-change/revert/[token]/route')`
+  // re-evaluates the `vi.mock` factories against a fresh mock slate.
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
   afterEach(() => vi.clearAllMocks());
 
   // 1. ------------------------------------------------------------------ 200
