@@ -28,6 +28,7 @@ import type { PreviewInvoiceDraftDeps } from './use-cases/preview-invoice-draft'
 import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
 import type { GetInvoiceDeps } from './use-cases/get-invoice';
 import type { RecordPaymentDeps } from './use-cases/record-payment';
+import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
 
 export function makeCreateInvoiceDraftDeps(tenantId: string): CreateInvoiceDraftDeps {
   return {
@@ -88,6 +89,13 @@ export function makeDeleteInvoiceDraftDeps(tenantId: string): DeleteInvoiceDraft
 
 export function makeGetInvoiceDeps(tenantId: string): GetInvoiceDeps {
   return { invoiceRepo: makeDrizzleInvoiceRepo(tenantId) };
+}
+
+export function makeUpdateInvoiceDraftDeps(tenantId: string): UpdateInvoiceDraftDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    audit: f4AuditAdapter,
+  };
 }
 
 export function makeRecordPaymentDeps(tenantId: string): RecordPaymentDeps {

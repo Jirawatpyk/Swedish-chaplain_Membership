@@ -134,7 +134,7 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 - [X] T032 [P] [US1] Define ports in `src/modules/invoicing/application/ports/{invoice-repo,tenant-settings-repo,sequence-allocator-port,pdf-render-port,blob-storage-port,audit-port,clock-port,email-outbox-port,member-identity-port,plan-lookup-port}.ts`.
 - [X] T033 [US1] Implement `src/modules/invoicing/application/use-cases/create-invoice-draft.ts` — zod input, RBAC admin guard, refuse if `tenant_invoice_settings` missing (FR-010), tenant+member active checks, emit `invoice_draft_created` audit.
-- [ ] T034 [US1] Implement `src/modules/invoicing/application/use-cases/update-invoice-draft.ts` — draft status guard, partial field update, emit `invoice_draft_updated` only on meaningful diff.
+- [X] T034 [US1] Implement `src/modules/invoicing/application/use-cases/update-invoice-draft.ts` — draft status guard, partial field update, emit `invoice_draft_updated` only on meaningful diff.
 - [X] T035 [US1] Implement `src/modules/invoicing/application/use-cases/delete-invoice-draft.ts` — draft status guard, hard delete, emit `invoice_draft_deleted`.
 - [X] T036 [US1] Implement `src/modules/invoicing/application/use-cases/preview-invoice-draft.ts` (FR-001a) — render via PdfRenderPort with `isPreview=true` + watermark prop, stream bytes, NO seq allocation, NO Blob write, NO audit event.
 - [X] T037 [US1] Implement `src/modules/invoicing/application/use-cases/issue-invoice.ts` — **THE critical transactional path** per plan § VIII Reliability. Header comment documenting canonical lock order (member FOR UPDATE → advisory lock → sequence FOR UPDATE). Steps: RBAC guard → member lock + active check (FR-037) → advisory lock → seq increment → build snapshot → render PDF → Blob upload → insert invoices + invoice_lines → emit `invoice_issued` audit → enqueue outbox row (if `auto_email_on_issue`) → commit.
@@ -180,7 +180,7 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 - [X] CP-3.1 All Phase 3 tests **GREEN** — unit (Money, VAT, pro-rate, state machine, document-number), integration (tenant-iso, seq-atomicity 8-scenario, PDF-deterministic), E2E (draft-issue, draft-preview)
 - [X] CP-3.2 Domain-layer coverage **100% line** (`src/modules/invoicing/domain/**`) per Constitution Principle II
-- [ ] CP-3.3 Application-layer `issue-invoice.ts` security-critical branch coverage **100%** (Principle II)
+- [X] CP-3.3 Application-layer `issue-invoice.ts` security-critical branch coverage **100%** (Principle II)
 - [ ] CP-3.4 **Manual smoke test on Vercel preview**: admin signs in → `/admin/invoices/new` → creates draft → Preview (watermarked bilingual PDF downloads, no seq consumed) → Issue (confirmation typed-phrase → issued invoice SC-2026-000001 appears + bilingual PDF downloads + Blob persisted)
 - [X] CP-3.5 Tenant-isolation integration test **GREEN** (Review-Gate blocker — Constitution Principle I clause 3)
 - [ ] CP-3.6 PDF template reviewed by Thai-accounting-aware reviewer against Thai RD §86/4 + §87 checklist (SC-002) — signed off in `security.md § 5` or a new `pdf-template-review.md`
@@ -212,7 +212,7 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 **Exit criteria** (this is the **ship-viable MVP** per plan § MVP slice):
 
 - [X] CP-4.1 CP-3 still green + all Phase 4 tests green
-- [ ] CP-4.2 `record-payment.test.ts` green including FR-038 tax-ID-snapshot assertion (post-analyze C3)
+- [X] CP-4.2 `record-payment.test.ts` green including FR-038 tax-ID-snapshot assertion (post-analyze C3)
 - [ ] CP-4.3 **End-to-end smoke test**: admin issues invoice → member receives auto-email with PDF attached → admin records payment → member receives receipt email → both PDFs pass Thai-RD spot check
 - [X] CP-4.4 Receipt PDF for `combined` filing mode generates the canonical "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; `separate` mode generates standalone receipt with its own sequential number
 - [X] CP-4.5 Phase 1 success criterion met (per `docs/phases-plan.md`): "admin can log in, create a member with its contacts, issue a membership invoice, mark it paid, and download a Thai-tax-compliant PDF" — **WORKS**
