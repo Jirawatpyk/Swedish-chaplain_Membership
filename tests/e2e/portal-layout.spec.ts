@@ -55,21 +55,25 @@ test.describe('F5 portal layout @layout', () => {
         expect(boxWidth).toBeLessThanOrEqual(680);
       }
 
-      // h1 is only present when the member account is linked to a
-      // Member entity. The unlinked early-return path renders an
-      // explanatory <p> inside the container instead — still valid F5
-      // behaviour (container present + correct width). Skip the h1
-      // assertion in that state so unseeded e2e environments don't
-      // false-fail.
-      const notLinked = await page
+      // The page MUST render either an h1 (linked-member happy path)
+      // or the explanatory "not linked" message (unseeded e2e
+      // environment). A page that renders the container but neither
+      // is a real regression — fail loudly. Tightens the prior
+      // resilience guard which silently no-op'd on unseeded envs.
+      const h1Visible = await page
+        .getByRole('heading', { level: 1 })
+        .first()
+        .isVisible()
+        .catch(() => false);
+      const notLinkedVisible = await page
         .getByText(/not linked|please contact your administrator/i)
         .first()
         .isVisible()
         .catch(() => false);
-      if (!notLinked) {
-        const h1 = page.getByRole('heading', { level: 1 });
-        await expect(h1).toBeVisible();
-      }
+      expect(
+        h1Visible || notLinkedVisible,
+        `${path} must render either an <h1> or the "not linked" message`,
+      ).toBe(true);
     }
   });
 });

@@ -1,0 +1,32 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "tests/e2e/layout/all-pages-containers.spec.ts" "tests/e2e/layout/container-widths.spec.ts" "tests/e2e/layout/cls-container-transition.spec.ts" "--project=chromium" "--workers=1"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 22 tests using 1 worker
+
+  ✓   1 [chromium] › tests\e2e\layout\all-pages-containers.spec.ts:71:7 › F5 all pages containers breadth @layout › staff routes — one sign-in, all 14 routes (incl. dynamic [memberId]) assert 1 container + no overflow (31.3s)
+  ✓   2 [chromium] › tests\e2e\layout\all-pages-containers.spec.ts:113:7 › F5 all pages containers breadth @layout › member routes — one sign-in, all 5 routes assert 1 container + no overflow (8.5s)
+  ✓   3 [chromium] › tests\e2e\layout\cls-container-transition.spec.ts:59:7 › F5 CLS container transition @layout › CLS stays ≤0.02 during form→table navigation (FormContainer → TableContainer) (6.6s)
+  ✓   4 [chromium] › tests\e2e\layout\cls-container-transition.spec.ts:74:7 › F5 CLS container transition @layout › CLS stays ≤0.02 during table→form navigation (TableContainer → FormContainer) (7.2s)
+  ✓   5 [chromium] › tests\e2e\layout\container-widths.spec.ts:54:11 › F5 container widths @layout › container-widths table › TableContainer on /admin/members @ 375px (5.2s)
+  ✓   6 [chromium] › tests\e2e\layout\container-widths.spec.ts:54:11 › F5 container widths @layout › container-widths table › TableContainer on /admin/members @ 1280px (6.0s)
+  ✓   7 [chromium] › tests\e2e\layout\container-widths.spec.ts:54:11 › F5 container widths @layout › container-widths table › TableContainer on /admin/members @ 1440px (5.6s)
+  ✓   8 [chromium] › tests\e2e\layout\container-widths.spec.ts:54:11 › F5 container widths @layout › container-widths table › TableContainer on /admin/members @ 1920px (6.2s)
+  ✓   9 [chromium] › tests\e2e\layout\container-widths.spec.ts:78:13 › F5 container widths @layout › container-widths form › FormContainer on /admin/settings/fees @ 375px (4.9s)
+  ✓  10 [chromium] › tests\e2e\layout\container-widths.spec.ts:78:13 › F5 container widths @layout › container-widths form › FormContainer on /admin/settings/fees @ 1280px (5.1s)
+  ✓  11 [chromium] › tests\e2e\layout\container-widths.spec.ts:78:13 › F5 container widths @layout › container-widths form › FormContainer on /admin/settings/fees @ 1440px (5.7s)
+  ✓  12 [chromium] › tests\e2e\layout\container-widths.spec.ts:78:13 › F5 container widths @layout › container-widths form › FormContainer on /admin/settings/fees @ 1920px (6.2s)
+  ✓  13 [chromium] › tests\e2e\layout\container-widths.spec.ts:78:13 › F5 container widths @layout › container-widths form › FormContainer on /admin/plans/new @ 375px (5.1s)
+  ✓  14 [chromium] › tests\e2e\layout\container-widths.spec.ts:78:13 › F5 container widths @layout › container-widths form › FormContainer on /admin/plans/new @ 1280px (5.1s)
+  ✓  15 [chromium] › tests\e2e\layout\container-widths.spec.ts:78:13 › F5 container widths @layout › container-widths form › FormContainer on /admin/plans/new @ 1440px (5.1s)
+  ✓  16 [chromium] › tests\e2e\layout\container-widths.spec.ts:78:13 › F5 container widths @layout › container-widths form › FormContainer on /admin/plans/new @ 1920px (5.1s)
+  ✓  17 [chromium] › tests\e2e\layout\container-widths.spec.ts:101:11 › F5 container widths @layout › container-widths form › FormContainer on /portal/account @ 1440px (4.4s)
+  ✓  18 [chromium] › tests\e2e\layout\container-widths.spec.ts:101:11 › F5 container widths @layout › container-widths form › FormContainer on /portal/edit @ 1440px (4.4s)
+  ✓  19 [chromium] › tests\e2e\layout\container-widths.spec.ts:101:11 › F5 container widths @layout › container-widths form › FormContainer on /portal/contacts/invite @ 1440px (4.6s)
+  ✓  20 [chromium] › tests\e2e\layout\container-widths.spec.ts:122:11 › F5 container widths @layout › container-widths detail › DetailContainer on /admin @ 375px (6.6s)
+  ✓  21 [chromium] › tests\e2e\layout\container-widths.spec.ts:122:11 › F5 container widths @layout › container-widths detail › DetailContainer on /admin @ 1440px (6.0s)
+  ✓  22 [chromium] › tests\e2e\layout\container-widths.spec.ts:146:11 › F5 container widths @layout › container-widths detail › DetailContainer on /portal/profile @ 1440px (5.4s)
+
+  22 passed (2.6m)
