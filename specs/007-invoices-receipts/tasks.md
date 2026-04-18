@@ -30,27 +30,27 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 **Purpose**: scaffold the `invoicing` module, add new dependencies, extend ESLint rules, register env vars.
 
-- [ ] T001 Create module directory structure per plan.md § Project Structure: `src/modules/invoicing/{domain,application,infrastructure,index.ts}` + empty barrel file.
-- [ ] T002 Install exact-pinned F4 dependencies in `package.json`: `@react-pdf/renderer@4.3.0` (exact), `@js-joda/core@^5`, `@js-joda/timezone@^2`, `thai-baht-text@^1`, `sharp@^0.33`, `fast-check@^3` (dev only).
-- [ ] T003 [P] Download Sarabun OFL fonts (400, 500, 700 weights) to `public/fonts/sarabun/` + author `public/fonts/sarabun/README.md` with SIL OFL v1.1 attribution text + source URL.
-- [ ] T004 [P] Extend `src/lib/env.ts` zod schema: add `BLOB_READ_WRITE_TOKEN` (required string), `CRON_SECRET` (required string), `FEATURE_F4_INVOICING` (boolean, default true).
-- [ ] T005 [P] Extend `src/lib/logger.ts` redact list with F4 PII fields: `tax_id`, `member_legal_name_snapshot`, `member_address_snapshot`, `signed_url_token`, `pdf_binary`.
-- [ ] T006 [P] Create `src/lib/fiscal-year.ts` thin wrapper around `@js-joda/core` for Bangkok-TZ fiscal-year boundary derivation from a UTC timestamp + tenant `fiscal_year_start_month`.
-- [ ] T007 Extend root `.eslintrc` `no-restricted-imports` rule family to forbid: (a) deep imports into `@/modules/invoicing/{domain,application,infrastructure}` from outside the module, (b) `@/modules/members/application/ports/*` imports from inside `invoicing/application`, (c) `@/modules/invoicing/application/ports/*` imports from inside `members/application`. See plan § Architecture Invariant Test.
-- [ ] T008 [P] Create `src/components/command-palette/invoices-group.tsx` stub extending the existing F2+F3 `cmdk` palette with an empty Invoices group (filled during US1/US6 implementation).
-- [ ] T009 Update `CLAUDE.md § Active Technologies` with F4 additions (auto-run via `.specify/scripts/powershell/update-agent-context.ps1 -AgentType claude`).
+- [X] T001 Create module directory structure per plan.md § Project Structure: `src/modules/invoicing/{domain,application,infrastructure,index.ts}` + empty barrel file.
+- [X] T002 Install exact-pinned F4 dependencies in `package.json`: `@react-pdf/renderer@4.3.0` (exact), `@js-joda/core@^5`, `@js-joda/timezone@^2`, `thai-baht-text@^1`, `sharp@^0.33`, `fast-check@^3` (dev only).
+- [X] T003 [P] Download Sarabun OFL fonts (400, 500, 700 weights) to `public/fonts/sarabun/` + author `public/fonts/sarabun/README.md` with SIL OFL v1.1 attribution text + source URL.
+- [X] T004 [P] Extend `src/lib/env.ts` zod schema: add `BLOB_READ_WRITE_TOKEN` (required string), `CRON_SECRET` (required string), `FEATURE_F4_INVOICING` (boolean, default true).
+- [X] T005 [P] Extend `src/lib/logger.ts` redact list with F4 PII fields: `tax_id`, `member_legal_name_snapshot`, `member_address_snapshot`, `signed_url_token`, `pdf_binary`.
+- [X] T006 [P] Create `src/lib/fiscal-year.ts` thin wrapper around `@js-joda/core` for Bangkok-TZ fiscal-year boundary derivation from a UTC timestamp + tenant `fiscal_year_start_month`.
+- [X] T007 Extend root `.eslintrc` `no-restricted-imports` rule family to forbid: (a) deep imports into `@/modules/invoicing/{domain,application,infrastructure}` from outside the module, (b) `@/modules/members/application/ports/*` imports from inside `invoicing/application`, (c) `@/modules/invoicing/application/ports/*` imports from inside `members/application`. See plan § Architecture Invariant Test.
+- [X] T008 [P] Create `src/components/command-palette/invoices-group.tsx` stub extending the existing F2+F3 `cmdk` palette with an empty Invoices group (filled during US1/US6 implementation).
+- [X] T009 Update `CLAUDE.md § Active Technologies` with F4 additions (auto-run via `.specify/scripts/powershell/update-agent-context.ps1 -AgentType claude`).
 
 ### 🚩 Checkpoint CP-1 — End of Phase 1 (Setup complete)
 
 **Exit criteria** (ALL must be green before Phase 2 begins):
 
-- [ ] CP-1.1 `pnpm install` clean with exact-pinned `@react-pdf/renderer@4.3.0`
-- [ ] CP-1.2 `pnpm lint` green — new ESLint `no-restricted-imports` rule (T007) does not break F1+F2+F3 modules
-- [ ] CP-1.3 `pnpm typecheck` green — `src/lib/env.ts` (T004) accepts the 3 new env vars; missing var loud-fails at boot
-- [ ] CP-1.4 Sarabun fonts present at `public/fonts/sarabun/` with OFL attribution (T003); no other font files committed
-- [ ] CP-1.5 CLAUDE.md "Active Technologies" reflects F4 (T009)
-- [ ] CP-1.6 `src/modules/invoicing/index.ts` exists as an empty barrel + ESLint rule forbids deep imports from outside
-- [ ] CP-1.7 No accidental production changes: `pnpm test` still green (no new tests introduced, no regressions)
+- [X] CP-1.1 `pnpm install` clean with exact-pinned `@react-pdf/renderer@4.3.0`
+- [X] CP-1.2 `pnpm lint` green — new ESLint `no-restricted-imports` rule (T007) does not break F1+F2+F3 modules
+- [X] CP-1.3 `pnpm typecheck` green — `src/lib/env.ts` (T004) accepts the 3 new env vars; missing var loud-fails at boot
+- [X] CP-1.4 Sarabun fonts present at `public/fonts/sarabun/` with OFL attribution (T003); no other font files committed
+- [X] CP-1.5 CLAUDE.md "Active Technologies" reflects F4 (T009)
+- [X] CP-1.6 `src/modules/invoicing/index.ts` exists as an empty barrel + ESLint rule forbids deep imports from outside
+- [X] CP-1.7 No accidental production changes: `pnpm test` still green (no new tests introduced, no regressions)
 
 **Rollback**: simply delete `src/modules/invoicing/`, revert `package.json`, `CLAUDE.md`, `.eslintrc` — Phase 1 is additive-only.
 
@@ -69,44 +69,44 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 ### 2b. Database migrations
 
-- [ ] T010 Author `drizzle/migrations/0010_invoicing_tables.sql`: create 5 tables (`invoices`, `invoice_lines`, `credit_notes`, `tenant_invoice_settings`, `tenant_document_sequences`) per data-model.md § 2, 4 new enums (`invoice_status`, `invoice_line_kind`, `pro_rate_policy`, `numbering_reset_cadence`, `document_type`), RLS + FORCE + policies on all 5 tables, all indexes via `CREATE INDEX CONCURRENTLY` outside tx, immutability BEFORE-UPDATE trigger on `invoices`.
-- [ ] T011 Author `drizzle/migrations/0011_audit_log_f4_extension.sql`: 16 `ALTER TYPE audit_event_type ADD VALUE` statements wrapped in idempotency-safe `DO $$ … EXCEPTION WHEN duplicate_object THEN NULL; END $$` blocks + `CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_log_overdue_once_per_day` partial unique index per data-model § 4.
-- [ ] T012 [P] Author corresponding Drizzle schema files: `src/modules/invoicing/infrastructure/db/schema-{invoices,invoice-lines,credit-notes,tenant-invoice-settings,tenant-document-sequences}.ts`.
-- [ ] T013 Apply migrations to live Neon Singapore via `pnpm drizzle-kit migrate`; verify via `pnpm drizzle-kit introspect` that all tables + indexes + policies match expectation.
-- [ ] T014 [P] Author `scripts/seed-f4-invoice-settings.ts` — idempotent seeder for SweCham tenant's `tenant_invoice_settings` row (VAT 7%, legal name TH+EN, tax ID, addresses, `receipt_numbering_mode='combined'`, `pro_rate_policy='monthly'`, `default_net_days=30`).
+- [X] T010 Author `drizzle/migrations/0010_invoicing_tables.sql`: create 5 tables (`invoices`, `invoice_lines`, `credit_notes`, `tenant_invoice_settings`, `tenant_document_sequences`) per data-model.md § 2, 4 new enums (`invoice_status`, `invoice_line_kind`, `pro_rate_policy`, `numbering_reset_cadence`, `document_type`), RLS + FORCE + policies on all 5 tables, all indexes via `CREATE INDEX CONCURRENTLY` outside tx, immutability BEFORE-UPDATE trigger on `invoices`.
+- [X] T011 Author `drizzle/migrations/0011_audit_log_f4_extension.sql`: 16 `ALTER TYPE audit_event_type ADD VALUE` statements wrapped in idempotency-safe `DO $$ … EXCEPTION WHEN duplicate_object THEN NULL; END $$` blocks + `CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_log_overdue_once_per_day` partial unique index per data-model § 4.
+- [X] T012 [P] Author corresponding Drizzle schema files: `src/modules/invoicing/infrastructure/db/schema-{invoices,invoice-lines,credit-notes,tenant-invoice-settings,tenant-document-sequences}.ts`.
+- [X] T013 Apply migrations to live Neon Singapore via `pnpm drizzle-kit migrate`; verify via `pnpm drizzle-kit introspect` that all tables + indexes + policies match expectation.
+- [X] T014 [P] Author `scripts/seed-f4-invoice-settings.ts` — idempotent seeder for SweCham tenant's `tenant_invoice_settings` row (VAT 7%, legal name TH+EN, tax ID, addresses, `receipt_numbering_mode='combined'`, `pro_rate_policy='monthly'`, `default_net_days=30`).
 
 ### 2c. Red tests authored first (Principle II TDD gate)
 
-- [ ] T015 Author `tests/integration/invoicing/tenant-isolation.test.ts` RED — 2-tenant UUID-suffixed fixture, assert zero cross-tenant visibility across SELECT/INSERT/UPDATE/DELETE on all 5 F4 tables + `invoice_cross_tenant_probe` + `credit_note_cross_tenant_probe` audit emission on every probe (Constitution Principle I Review-Gate blocker).
-- [ ] T016 Author `tests/integration/invoicing/seq-number-atomicity.test.ts` RED — all 8 chaos scenarios from plan Testing §: PDF render throws, Blob upload throws, DB commit throws, lock contention, year-boundary crossover, missing sequence row, audit insert throws, Idempotency-Key replay. Plus 50-writer load scenario under `RUN_PERF=1` (post-critique E3).
-- [ ] T017 [P] Author `tests/integration/invoicing/pdf-deterministic.test.ts` RED — assert `sha256(render)===sha256(rerender)` for invoice, receipt, credit-note, void-stamped invoice; plus post-critique R3-E4 assertion: resend after `CURRENT_TEMPLATE_VERSION` bump still produces byte-identical sha256 as original (pinned version path).
-- [ ] T018 [P] Extend `tests/integration/rls-coverage.test.ts` to include `invoices`, `invoice_lines`, `credit_notes`, `tenant_invoice_settings`, `tenant_document_sequences` in the `information_schema.tables` RLS scan loop.
-- [ ] T019 [P] Author `tests/unit/architecture/invoicing-members-bidirectional-dep.test.ts` — scans source under `src/modules/invoicing/application/**` and `src/modules/members/application/**` asserting no cross-module port-type imports (post-critique E1).
+- [X] T015 Author `tests/integration/invoicing/tenant-isolation.test.ts` RED — 2-tenant UUID-suffixed fixture, assert zero cross-tenant visibility across SELECT/INSERT/UPDATE/DELETE on all 5 F4 tables + `invoice_cross_tenant_probe` + `credit_note_cross_tenant_probe` audit emission on every probe (Constitution Principle I Review-Gate blocker).
+- [X] T016 Author `tests/integration/invoicing/seq-number-atomicity.test.ts` RED — all 8 chaos scenarios from plan Testing §: PDF render throws, Blob upload throws, DB commit throws, lock contention, year-boundary crossover, missing sequence row, audit insert throws, Idempotency-Key replay. Plus 50-writer load scenario under `RUN_PERF=1` (post-critique E3).
+- [X] T017 [P] Author `tests/integration/invoicing/pdf-deterministic.test.ts` RED — assert `sha256(render)===sha256(rerender)` for invoice, receipt, credit-note, void-stamped invoice; plus post-critique R3-E4 assertion: resend after `CURRENT_TEMPLATE_VERSION` bump still produces byte-identical sha256 as original (pinned version path).
+- [X] T018 [P] Extend `tests/integration/rls-coverage.test.ts` to include `invoices`, `invoice_lines`, `credit_notes`, `tenant_invoice_settings`, `tenant_document_sequences` in the `information_schema.tables` RLS scan loop.
+- [X] T019 [P] Author `tests/unit/architecture/invoicing-members-bidirectional-dep.test.ts` — scans source under `src/modules/invoicing/application/**` and `src/modules/members/application/**` asserting no cross-module port-type imports (post-critique E1).
 
 ### 2d. Feature flag + security.md
 
-- [ ] T020 Add `FEATURE_F4_INVOICING` kill-switch guard to `src/middleware.ts` — return 503 `read_only_mode` on `/api/invoices/**`, `/api/credit-notes/**`, `/api/tenant-invoice-settings/**`, `/api/portal/invoices/**` when flag is false; author `tests/integration/invoicing/feature-flag-kill-switch.test.ts`.
-- [ ] T021 Author `specs/007-invoices-receipts/security.md` — 19-threat model mapped from research.md §13 (T-01…T-19), security checklist for reviewer co-signature (required per Constitution Principle IX solo-maintainer substitute), § 6 "Logo upload threat" detail, § Data sovereignty covering Resend bounce-log DPA per R2-E5.
+- [X] T020 Add `FEATURE_F4_INVOICING` kill-switch guard to `src/middleware.ts` — return 503 `read_only_mode` on `/api/invoices/**`, `/api/credit-notes/**`, `/api/tenant-invoice-settings/**`, `/api/portal/invoices/**` when flag is false; author `tests/integration/invoicing/feature-flag-kill-switch.test.ts`.
+- [X] T021 Author `specs/007-invoices-receipts/security.md` — 19-threat model mapped from research.md §13 (T-01…T-19), security checklist for reviewer co-signature (required per Constitution Principle IX solo-maintainer substitute), § 6 "Logo upload threat" detail, § Data sovereignty covering Resend bounce-log DPA per R2-E5.
 
 ### 2e. Runbook + observability
 
-- [ ] T022 [P] Add § F4 Invoicing section to `docs/observability.md` — metrics (`invoicing.issue.duration_ms`, `invoicing.pdf_render.duration_ms`, `invoicing.seq_allocator.contention_retries`, `invoicing.auto_email.bounces`, `invoicing.cross_tenant_probe.count`, `invoicing.logo_blob.count`), alerts (1 cross-tenant/5min, p99 issue >3s, auto-email bounce >5%/1h), runbooks (doc-number overflow per FR-035, auto-email permanent-failure recovery, template-version release process).
-- [ ] T022a **Migration staging rehearsal**: apply `0010` + `0011` to a throwaway Neon branch → verify `information_schema.tables` shows 5 new tables with RLS + FORCE + policies via automated SQL probe → DROP branch. Document the probe in `scripts/verify-f4-migrations.ts` so it can be re-run on any environment.
+- [X] T022 [P] Add § F4 Invoicing section to `docs/observability.md` — metrics (`invoicing.issue.duration_ms`, `invoicing.pdf_render.duration_ms`, `invoicing.seq_allocator.contention_retries`, `invoicing.auto_email.bounces`, `invoicing.cross_tenant_probe.count`, `invoicing.logo_blob.count`), alerts (1 cross-tenant/5min, p99 issue >3s, auto-email bounce >5%/1h), runbooks (doc-number overflow per FR-035, auto-email permanent-failure recovery, template-version release process).
+- [X] T022a **Migration staging rehearsal**: apply `0010` + `0011` to a throwaway Neon branch → verify `information_schema.tables` shows 5 new tables with RLS + FORCE + policies via automated SQL probe → DROP branch. Document the probe in `scripts/verify-f4-migrations.ts` so it can be re-run on any environment.
 
 ### 🚩 Checkpoint CP-2 — End of Phase 2 (Foundational complete — Review-Gate blockers green)
 
 **Exit criteria** (ALL must be green before any User Story phase begins):
 
-- [ ] CP-2.1 Migrations `0010` + `0011` applied to live Neon Singapore without error; introspection matches schema files (T013)
-- [ ] CP-2.2 `pnpm test tests/integration/invoicing/tenant-isolation.test.ts` **RED** (authored first, not yet passing) — confirms test fixture + assertions are correct before any implementation lands. Constitution Principle I Review-Gate test is in place.
-- [ ] CP-2.3 `pnpm test tests/integration/invoicing/seq-number-atomicity.test.ts` **RED** — all 8 chaos scenarios defined; Principle II TDD gate is in place for the critical transactional path
-- [ ] CP-2.4 `pnpm test tests/integration/invoicing/pdf-deterministic.test.ts` **RED** — SC-003 byte-identical assertion in place
-- [ ] CP-2.5 `pnpm test tests/integration/rls-coverage.test.ts` **GREEN** — all 5 F4 tables included in the RLS scan (T018)
-- [ ] CP-2.6 `pnpm test tests/unit/architecture/invoicing-members-bidirectional-dep.test.ts` **GREEN** — architecture invariant passes (T019)
-- [ ] CP-2.7 `FEATURE_F4_INVOICING=false` returns 503 `read_only_mode` on every F4 route (T020); `FEATURE_F4_INVOICING=true` allows routes (still returning 501 until implemented)
-- [ ] CP-2.8 `specs/007-invoices-receipts/security.md` drafted with the 19-threat model + reviewer checklist skeleton (T021)
-- [ ] CP-2.9 `docs/observability.md § F4 Invoicing` added with SLOs + alerts + runbooks (T022)
-- [ ] CP-2.10 Seeder `scripts/seed-f4-invoice-settings.ts` idempotent — running twice leaves DB unchanged (T014)
+- [X] CP-2.1 Migrations `0010` + `0011` applied to live Neon Singapore without error; introspection matches schema files (T013)
+- [X] CP-2.2 `pnpm test tests/integration/invoicing/tenant-isolation.test.ts` **RED** (authored first, not yet passing) — confirms test fixture + assertions are correct before any implementation lands. Constitution Principle I Review-Gate test is in place.
+- [X] CP-2.3 `pnpm test tests/integration/invoicing/seq-number-atomicity.test.ts` **RED** — all 8 chaos scenarios defined; Principle II TDD gate is in place for the critical transactional path
+- [X] CP-2.4 `pnpm test tests/integration/invoicing/pdf-deterministic.test.ts` **RED** — SC-003 byte-identical assertion in place
+- [X] CP-2.5 `pnpm test tests/integration/rls-coverage.test.ts` **GREEN** — all 5 F4 tables included in the RLS scan (T018)
+- [X] CP-2.6 `pnpm test tests/unit/architecture/invoicing-members-bidirectional-dep.test.ts` **GREEN** — architecture invariant passes (T019)
+- [X] CP-2.7 `FEATURE_F4_INVOICING=false` returns 503 `read_only_mode` on every F4 route (T020); `FEATURE_F4_INVOICING=true` allows routes (still returning 501 until implemented)
+- [X] CP-2.8 `specs/007-invoices-receipts/security.md` drafted with the 19-threat model + reviewer checklist skeleton (T021)
+- [X] CP-2.9 `docs/observability.md § F4 Invoicing` added with SLOs + alerts + runbooks (T022)
+- [X] CP-2.10 Seeder `scripts/seed-f4-invoice-settings.ts` idempotent — running twice leaves DB unchanged (T014)
 
 **Rollback**: Neon point-in-time restore to pre-`0010` snapshot; enum values added in `0011` cannot be removed but are harmless if unused. Blob store untouched.
 
@@ -120,73 +120,73 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 ### 3a. Domain layer (red tests first)
 
-- [ ] T023 [P] [US1] Author `tests/unit/invoicing/money.test.ts` RED + implement `src/modules/invoicing/domain/value-objects/money.ts` — immutable satang BIGINT, `add/subtract/multiply/divide/compare`, rounding helpers, zero-safe, total-ordering. 100% line + branch.
-- [ ] T024 [P] [US1] Author `tests/unit/invoicing/vat-rate.test.ts` RED + implement `src/modules/invoicing/domain/value-objects/vat-rate.ts` — percentage 4-dp precision, bounded [0, 0.30].
-- [ ] T025 [P] [US1] Author `tests/unit/invoicing/document-number.test.ts` RED + implement `src/modules/invoicing/domain/value-objects/document-number.ts` — format `{prefix}-{YYYY}-{000000}`, FR-035 overflow guard, parsing round-trip.
-- [ ] T026 [P] [US1] Author `tests/unit/invoicing/fiscal-year.test.ts` RED + implement `src/modules/invoicing/domain/value-objects/fiscal-year.ts` — Bangkok-TZ boundary, tenant `fiscal_year_start_month` support, year-boundary edge case (Dec 31 23:59:59 UTC → FY next year for Bangkok).
-- [ ] T027 [P] [US1] Implement `src/modules/invoicing/domain/value-objects/{pro-rate-policy,member-identity-snapshot,tenant-identity-snapshot}.ts`.
-- [ ] T028 [P] [US1] Author `tests/unit/invoicing/pro-rate-policy.test.ts` RED + implement `src/modules/invoicing/domain/policies/calculate-pro-rate-factor.ts` — none/monthly/daily formulas per research.md § 7; edge cases (issue=cycle-start factor=1.0, issue=cycle-end factor=min non-zero).
-- [ ] T029 [P] [US1] Author `tests/unit/invoicing/calculate-vat.test.ts` RED + implement `src/modules/invoicing/domain/policies/calculate-vat.ts` — total-level rounding per Thai RD convention (research.md § 6).
-- [ ] T030 [US1] Author `tests/unit/invoicing/invoice-state-machine.test.ts` RED + implement `src/modules/invoicing/domain/invoice.ts` — aggregate root with statuses (draft/issued/paid/void/credited/partially_credited), transitions, terminal-state guards, snapshot setters (immutable after issue), invariants (`enforce-one-primary-membership-line`, `enforce-terminal-state-no-edit`, `enforce-sequence-monotone-increasing`).
-- [ ] T031 [P] [US1] Implement `src/modules/invoicing/domain/invoice-line.ts` — child entity with `kind` enum, `total_satang = unit_price × quantity × coalesce(pro_rate_factor, 1)`.
+- [X] T023 [P] [US1] Author `tests/unit/invoicing/money.test.ts` RED + implement `src/modules/invoicing/domain/value-objects/money.ts` — immutable satang BIGINT, `add/subtract/multiply/divide/compare`, rounding helpers, zero-safe, total-ordering. 100% line + branch.
+- [X] T024 [P] [US1] Author `tests/unit/invoicing/vat-rate.test.ts` RED + implement `src/modules/invoicing/domain/value-objects/vat-rate.ts` — percentage 4-dp precision, bounded [0, 0.30].
+- [X] T025 [P] [US1] Author `tests/unit/invoicing/document-number.test.ts` RED + implement `src/modules/invoicing/domain/value-objects/document-number.ts` — format `{prefix}-{YYYY}-{000000}`, FR-035 overflow guard, parsing round-trip.
+- [X] T026 [P] [US1] Author `tests/unit/invoicing/fiscal-year.test.ts` RED + implement `src/modules/invoicing/domain/value-objects/fiscal-year.ts` — Bangkok-TZ boundary, tenant `fiscal_year_start_month` support, year-boundary edge case (Dec 31 23:59:59 UTC → FY next year for Bangkok).
+- [X] T027 [P] [US1] Implement `src/modules/invoicing/domain/value-objects/{pro-rate-policy,member-identity-snapshot,tenant-identity-snapshot}.ts`.
+- [X] T028 [P] [US1] Author `tests/unit/invoicing/pro-rate-policy.test.ts` RED + implement `src/modules/invoicing/domain/policies/calculate-pro-rate-factor.ts` — none/monthly/daily formulas per research.md § 7; edge cases (issue=cycle-start factor=1.0, issue=cycle-end factor=min non-zero).
+- [X] T029 [P] [US1] Author `tests/unit/invoicing/calculate-vat.test.ts` RED + implement `src/modules/invoicing/domain/policies/calculate-vat.ts` — total-level rounding per Thai RD convention (research.md § 6).
+- [X] T030 [US1] Author `tests/unit/invoicing/invoice-state-machine.test.ts` RED + implement `src/modules/invoicing/domain/invoice.ts` — aggregate root with statuses (draft/issued/paid/void/credited/partially_credited), transitions, terminal-state guards, snapshot setters (immutable after issue), invariants (`enforce-one-primary-membership-line`, `enforce-terminal-state-no-edit`, `enforce-sequence-monotone-increasing`).
+- [X] T031 [P] [US1] Implement `src/modules/invoicing/domain/invoice-line.ts` — child entity with `kind` enum, `total_satang = unit_price × quantity × coalesce(pro_rate_factor, 1)`.
 
 ### 3b. Application layer ports + use cases
 
-- [ ] T032 [P] [US1] Define ports in `src/modules/invoicing/application/ports/{invoice-repo,tenant-settings-repo,sequence-allocator-port,pdf-render-port,blob-storage-port,audit-port,clock-port,email-outbox-port,member-identity-port,plan-lookup-port}.ts`.
-- [ ] T033 [US1] Implement `src/modules/invoicing/application/use-cases/create-invoice-draft.ts` — zod input, RBAC admin guard, refuse if `tenant_invoice_settings` missing (FR-010), tenant+member active checks, emit `invoice_draft_created` audit.
+- [X] T032 [P] [US1] Define ports in `src/modules/invoicing/application/ports/{invoice-repo,tenant-settings-repo,sequence-allocator-port,pdf-render-port,blob-storage-port,audit-port,clock-port,email-outbox-port,member-identity-port,plan-lookup-port}.ts`.
+- [X] T033 [US1] Implement `src/modules/invoicing/application/use-cases/create-invoice-draft.ts` — zod input, RBAC admin guard, refuse if `tenant_invoice_settings` missing (FR-010), tenant+member active checks, emit `invoice_draft_created` audit.
 - [ ] T034 [US1] Implement `src/modules/invoicing/application/use-cases/update-invoice-draft.ts` — draft status guard, partial field update, emit `invoice_draft_updated` only on meaningful diff.
-- [ ] T035 [US1] Implement `src/modules/invoicing/application/use-cases/delete-invoice-draft.ts` — draft status guard, hard delete, emit `invoice_draft_deleted`.
-- [ ] T036 [US1] Implement `src/modules/invoicing/application/use-cases/preview-invoice-draft.ts` (FR-001a) — render via PdfRenderPort with `isPreview=true` + watermark prop, stream bytes, NO seq allocation, NO Blob write, NO audit event.
-- [ ] T037 [US1] Implement `src/modules/invoicing/application/use-cases/issue-invoice.ts` — **THE critical transactional path** per plan § VIII Reliability. Header comment documenting canonical lock order (member FOR UPDATE → advisory lock → sequence FOR UPDATE). Steps: RBAC guard → member lock + active check (FR-037) → advisory lock → seq increment → build snapshot → render PDF → Blob upload → insert invoices + invoice_lines → emit `invoice_issued` audit → enqueue outbox row (if `auto_email_on_issue`) → commit.
-- [ ] T038 [US1] Implement `src/modules/invoicing/application/use-cases/list-invoices.ts` — cursor pagination, default filter excludes drafts (US1 AS6 / R2-P2), status/fiscal_year/member_id/search params.
-- [ ] T039 [US1] Implement `src/modules/invoicing/application/use-cases/get-invoice-pdf-signed-url.ts` — ownership check, Blob signed URL 60s TTL, auto-rerender on Blob miss using **pinned** `pdf_template_version` (FR-016 / R3-E4).
-- [ ] T040 [US1] Implement `src/modules/invoicing/application/invoicing-deps.ts` composition root wiring all ports → adapters.
+- [X] T035 [US1] Implement `src/modules/invoicing/application/use-cases/delete-invoice-draft.ts` — draft status guard, hard delete, emit `invoice_draft_deleted`.
+- [X] T036 [US1] Implement `src/modules/invoicing/application/use-cases/preview-invoice-draft.ts` (FR-001a) — render via PdfRenderPort with `isPreview=true` + watermark prop, stream bytes, NO seq allocation, NO Blob write, NO audit event.
+- [X] T037 [US1] Implement `src/modules/invoicing/application/use-cases/issue-invoice.ts` — **THE critical transactional path** per plan § VIII Reliability. Header comment documenting canonical lock order (member FOR UPDATE → advisory lock → sequence FOR UPDATE). Steps: RBAC guard → member lock + active check (FR-037) → advisory lock → seq increment → build snapshot → render PDF → Blob upload → insert invoices + invoice_lines → emit `invoice_issued` audit → enqueue outbox row (if `auto_email_on_issue`) → commit.
+- [X] T038 [US1] Implement `src/modules/invoicing/application/use-cases/list-invoices.ts` — cursor pagination, default filter excludes drafts (US1 AS6 / R2-P2), status/fiscal_year/member_id/search params.
+- [X] T039 [US1] Implement `src/modules/invoicing/application/use-cases/get-invoice-pdf-signed-url.ts` — ownership check, Blob signed URL 60s TTL, auto-rerender on Blob miss using **pinned** `pdf_template_version` (FR-016 / R3-E4).
+- [X] T040 [US1] Implement `src/modules/invoicing/application/invoicing-deps.ts` composition root wiring all ports → adapters.
 
 ### 3c. Infrastructure adapters
 
-- [ ] T041 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator.ts` — `pg_advisory_xact_lock` + `SELECT … FOR UPDATE` on `tenant_document_sequences` + upsert row with `ON CONFLICT DO NOTHING` for first-time allocation. Retry on deadlock with exponential backoff (max 3).
-- [ ] T042 [US1] Implement `src/modules/invoicing/infrastructure/pdf/fonts/register-sarabun.ts` — registers Sarabun 400/500/700 with `@react-pdf/renderer` Font API at module load.
-- [ ] T043 [P] [US1] Implement `src/modules/invoicing/infrastructure/pdf/amount-to-thai.ts` (wraps `thai-baht-text`) + `amount-to-english.ts` (local helper).
-- [ ] T044 [US1] Author `src/modules/invoicing/infrastructure/pdf/templates/invoice-template.tsx` — bilingual header (tenant logo + legal name TH+EN + tax ID + address), customer block (member identity snapshot), itemised lines table, subtotal + VAT + total, amount-in-words TH + EN, Thai tax-invoice label "ใบกำกับภาษี / Tax Invoice", issue date CE (BE in parens on th section), sequential document number. 1-3 pages.
-- [ ] T045 [US1] Author `src/modules/invoicing/infrastructure/pdf/template-registry.ts` — `CURRENT_TEMPLATE_VERSION` constant + version→template mapping + smoke test `tests/integration/invoicing/pdf-template-version-smoke.test.ts` (post-critique E8).
-- [ ] T046 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter.ts` — renders React tree → Uint8Array + sha256; accepts required `templateVersion` parameter per R3-E4 pinning rule.
-- [ ] T047 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/vercel-blob-adapter.ts` — upload with deterministic content-addressed key, delete, sign URL (60s TTL); redact signed-URL tokens from logs.
-- [ ] T048 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter.ts` — enqueue outbox rows (reuses F3 outbox table + dispatcher pattern; extends with F4 event types).
-- [ ] T049 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts` — reads `@/modules/members` barrel to build `MemberIdentitySnapshot`.
-- [ ] T050 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/plan-lookup-adapter.ts` — reads `@/modules/plans` barrel for tier + fee lookup at issue time.
-- [ ] T051 [P] [US1] Implement `src/modules/invoicing/infrastructure/repos/drizzle-invoice-repo.ts` + `drizzle-tenant-settings-repo.ts` — Domain ↔ Drizzle conversion, transaction-scoped queries.
+- [X] T041 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator.ts` — `pg_advisory_xact_lock` + `SELECT … FOR UPDATE` on `tenant_document_sequences` + upsert row with `ON CONFLICT DO NOTHING` for first-time allocation. Retry on deadlock with exponential backoff (max 3).
+- [X] T042 [US1] Implement `src/modules/invoicing/infrastructure/pdf/fonts/register-sarabun.ts` — registers Sarabun 400/500/700 with `@react-pdf/renderer` Font API at module load.
+- [X] T043 [P] [US1] Implement `src/modules/invoicing/infrastructure/pdf/amount-to-thai.ts` (wraps `thai-baht-text`) + `amount-to-english.ts` (local helper).
+- [X] T044 [US1] Author `src/modules/invoicing/infrastructure/pdf/templates/invoice-template.tsx` — bilingual header (tenant logo + legal name TH+EN + tax ID + address), customer block (member identity snapshot), itemised lines table, subtotal + VAT + total, amount-in-words TH + EN, Thai tax-invoice label "ใบกำกับภาษี / Tax Invoice", issue date CE (BE in parens on th section), sequential document number. 1-3 pages.
+- [X] T045 [US1] Author `src/modules/invoicing/infrastructure/pdf/template-registry.ts` — `CURRENT_TEMPLATE_VERSION` constant + version→template mapping + smoke test `tests/integration/invoicing/pdf-template-version-smoke.test.ts` (post-critique E8).
+- [X] T046 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter.ts` — renders React tree → Uint8Array + sha256; accepts required `templateVersion` parameter per R3-E4 pinning rule.
+- [X] T047 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/vercel-blob-adapter.ts` — upload with deterministic content-addressed key, delete, sign URL (60s TTL); redact signed-URL tokens from logs.
+- [X] T048 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter.ts` — enqueue outbox rows (reuses F3 outbox table + dispatcher pattern; extends with F4 event types).
+- [X] T049 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts` — reads `@/modules/members` barrel to build `MemberIdentitySnapshot`.
+- [X] T050 [P] [US1] Implement `src/modules/invoicing/infrastructure/adapters/plan-lookup-adapter.ts` — reads `@/modules/plans` barrel for tier + fee lookup at issue time.
+- [X] T051 [P] [US1] Implement `src/modules/invoicing/infrastructure/repos/drizzle-invoice-repo.ts` + `drizzle-tenant-settings-repo.ts` — Domain ↔ Drizzle conversion, transaction-scoped queries.
 
 ### 3d. Presentation layer — admin surfaces
 
-- [ ] T052 [P] [US1] Implement `src/app/api/invoices/route.ts` (POST create draft, GET list) + `src/app/api/invoices/[invoiceId]/route.ts` (GET detail, PATCH edit, DELETE draft). Contract per contracts/invoicing-api.md §§ 1.1–1.5.
-- [ ] T053 [P] [US1] Implement `src/app/api/invoices/[invoiceId]/preview/route.ts` (FR-001a) — returns PDF body stream + `Content-Disposition: inline` watermarked.
-- [ ] T054 [US1] Implement `src/app/api/invoices/[invoiceId]/issue/route.ts` — rate-limit 20/5min per (tenant,actor), idempotency key, calls `issueInvoice` use case.
-- [ ] T055 [P] [US1] Implement `src/app/api/invoices/[invoiceId]/pdf/route.ts` — signed-URL redirect (`Content-Disposition: attachment; filename={document_number}.pdf` per FR-041).
-- [ ] T056 [US1] Implement `src/app/(staff)/admin/invoices/layout.tsx` + `page.tsx` (list) + `new/page.tsx` (draft create form) + `[invoiceId]/page.tsx` (detail) + `[invoiceId]/edit/page.tsx` (draft edit) + `[invoiceId]/issue/page.tsx` (issue confirm).
-- [ ] T056a [US1] **Accessibility landmarks (FR-042)**: `src/app/(staff)/admin/invoices/layout.tsx` MUST include `<SkipToContent />` component (reusing F1+F3 pattern) as the first focusable element + `<main role="main" id="main-content">` + `<nav role="navigation" aria-label="Invoices navigation">`. Same pattern applied to member portal layout in T072. Extend `tests/e2e/invoice-a11y.spec.ts` to assert `await page.locator('[data-testid="skip-to-content"]').focus()` is tab-index 0 and `<main id="main-content">` exists.
-- [ ] T057 [P] [US1] Implement `src/app/(staff)/admin/invoices/_components/invoice-table.tsx` — TanStack Table, default filter exclude drafts + Drafts tab with count badge (R2-P2), status chips, quick actions.
-- [ ] T058 [P] [US1] Implement `_components/invoice-form.tsx` (RHF + zod + pricing preview), `_components/issue-confirm-dialog.tsx` (FR-040 typed-phrase = document number when available, "ISSUE" otherwise), `_components/pdf-download-button.tsx`, `_components/status-chip.tsx`.
+- [X] T052 [P] [US1] Implement `src/app/api/invoices/route.ts` (POST create draft, GET list) + `src/app/api/invoices/[invoiceId]/route.ts` (GET detail, PATCH edit, DELETE draft). Contract per contracts/invoicing-api.md §§ 1.1–1.5.
+- [X] T053 [P] [US1] Implement `src/app/api/invoices/[invoiceId]/preview/route.ts` (FR-001a) — returns PDF body stream + `Content-Disposition: inline` watermarked.
+- [X] T054 [US1] Implement `src/app/api/invoices/[invoiceId]/issue/route.ts` — rate-limit 20/5min per (tenant,actor), idempotency key, calls `issueInvoice` use case.
+- [X] T055 [P] [US1] Implement `src/app/api/invoices/[invoiceId]/pdf/route.ts` — signed-URL redirect (`Content-Disposition: attachment; filename={document_number}.pdf` per FR-041).
+- [X] T056 [US1] Implement `src/app/(staff)/admin/invoices/layout.tsx` + `page.tsx` (list) + `new/page.tsx` (draft create form) + `[invoiceId]/page.tsx` (detail) + `[invoiceId]/edit/page.tsx` (draft edit) + `[invoiceId]/issue/page.tsx` (issue confirm).
+- [X] T056a [US1] **Accessibility landmarks (FR-042)**: `src/app/(staff)/admin/invoices/layout.tsx` MUST include `<SkipToContent />` component (reusing F1+F3 pattern) as the first focusable element + `<main role="main" id="main-content">` + `<nav role="navigation" aria-label="Invoices navigation">`. Same pattern applied to member portal layout in T072. Extend `tests/e2e/invoice-a11y.spec.ts` to assert `await page.locator('[data-testid="skip-to-content"]').focus()` is tab-index 0 and `<main id="main-content">` exists.
+- [X] T057 [P] [US1] Implement `src/app/(staff)/admin/invoices/_components/invoice-table.tsx` — TanStack Table, default filter exclude drafts + Drafts tab with count badge (R2-P2), status chips, quick actions.
+- [X] T058 [P] [US1] Implement `_components/invoice-form.tsx` (RHF + zod + pricing preview), `_components/issue-confirm-dialog.tsx` (FR-040 typed-phrase = document number when available, "ISSUE" otherwise), `_components/pdf-download-button.tsx`, `_components/status-chip.tsx`.
 - [ ] T059 [US1] Wire US1 admin routes into F3 `invoices-group.tsx` command palette entries (create draft, jump to list).
 
 ### 3e. i18n + acceptance tests
 
-- [ ] T060 [P] [US1] Add US1 i18n keys to `src/i18n/messages/{en,th,sv}.json` under `admin.invoices.*` (list columns, form labels, issue-confirm dialog, status chips, toasts, error copy); PDF text keys under `pdf.invoice.*` for TH+EN only. `pnpm check:i18n` green.
-- [ ] T061 [US1] Author `tests/e2e/invoice-draft-issue.spec.ts` covering US1 AS1–AS6 (full bilingual PDF round-trip, preview-no-seq, default list filter, manager read-only, member crafted-URL 404, `@axe-core` WCAG scan). **Includes mobile-viewport block (FR-041 / post-analyze C4)**: `test.describe('mobile', () => { test.use({ ...devices['iPhone 13'] }) })` asserting PDF download triggers share sheet path (header `Content-Disposition: attachment; filename={document_number}.pdf`), the PDF link is NOT wrapped in a blocking `<iframe>`, and focus returns to the invoice detail after share-sheet dismissal.
-- [ ] T062 [US1] Author `tests/e2e/invoice-draft-preview.spec.ts` — asserts watermark, no seq consumed, no audit row, no Blob row, Content-Type application/pdf (R3 + FR-001a).
+- [X] T060 [P] [US1] Add US1 i18n keys to `src/i18n/messages/{en,th,sv}.json` under `admin.invoices.*` (list columns, form labels, issue-confirm dialog, status chips, toasts, error copy); PDF text keys under `pdf.invoice.*` for TH+EN only. `pnpm check:i18n` green.
+- [X] T061 [US1] Author `tests/e2e/invoice-draft-issue.spec.ts` covering US1 AS1–AS6 (full bilingual PDF round-trip, preview-no-seq, default list filter, manager read-only, member crafted-URL 404, `@axe-core` WCAG scan). **Includes mobile-viewport block (FR-041 / post-analyze C4)**: `test.describe('mobile', () => { test.use({ ...devices['iPhone 13'] }) })` asserting PDF download triggers share sheet path (header `Content-Disposition: attachment; filename={document_number}.pdf`), the PDF link is NOT wrapped in a blocking `<iframe>`, and focus returns to the invoice detail after share-sheet dismissal.
+- [X] T062 [US1] Author `tests/e2e/invoice-draft-preview.spec.ts` — asserts watermark, no seq consumed, no audit row, no Blob row, Content-Type application/pdf (R3 + FR-001a).
 
 ### 🚩 Checkpoint CP-3 — End of US1 (MVP half-slice)
 
 **Exit criteria** (admin can draft → preview → issue a real Thai-tax invoice end-to-end):
 
-- [ ] CP-3.1 All Phase 3 tests **GREEN** — unit (Money, VAT, pro-rate, state machine, document-number), integration (tenant-iso, seq-atomicity 8-scenario, PDF-deterministic), E2E (draft-issue, draft-preview)
-- [ ] CP-3.2 Domain-layer coverage **100% line** (`src/modules/invoicing/domain/**`) per Constitution Principle II
+- [X] CP-3.1 All Phase 3 tests **GREEN** — unit (Money, VAT, pro-rate, state machine, document-number), integration (tenant-iso, seq-atomicity 8-scenario, PDF-deterministic), E2E (draft-issue, draft-preview)
+- [X] CP-3.2 Domain-layer coverage **100% line** (`src/modules/invoicing/domain/**`) per Constitution Principle II
 - [ ] CP-3.3 Application-layer `issue-invoice.ts` security-critical branch coverage **100%** (Principle II)
 - [ ] CP-3.4 **Manual smoke test on Vercel preview**: admin signs in → `/admin/invoices/new` → creates draft → Preview (watermarked bilingual PDF downloads, no seq consumed) → Issue (confirmation typed-phrase → issued invoice SC-2026-000001 appears + bilingual PDF downloads + Blob persisted)
-- [ ] CP-3.5 Tenant-isolation integration test **GREEN** (Review-Gate blocker — Constitution Principle I clause 3)
+- [X] CP-3.5 Tenant-isolation integration test **GREEN** (Review-Gate blocker — Constitution Principle I clause 3)
 - [ ] CP-3.6 PDF template reviewed by Thai-accounting-aware reviewer against Thai RD §86/4 + §87 checklist (SC-002) — signed off in `security.md § 5` or a new `pdf-template-review.md`
-- [ ] CP-3.7 Auto-email path is wired but NOT yet tested end-to-end (outbox row enqueue verified in integration test T016 chaos-scenario (h); full dispatch verified in Phase 10)
+- [X] CP-3.7 Auto-email path is wired but NOT yet tested end-to-end (outbox row enqueue verified in integration test T016 chaos-scenario (h); full dispatch verified in Phase 10)
 - [ ] CP-3.8 `@axe-core/playwright` WCAG 2.1 AA scan green on `/admin/invoices` list + detail + new-draft surfaces
-- [ ] CP-3.9 All 180+ planned US1 i18n keys present in EN+TH+SV (`pnpm check:i18n` green)
+- [X] CP-3.9 All 180+ planned US1 i18n keys present in EN+TH+SV (`pnpm check:i18n` green)
 
 **Demo criterion**: SweCham admin issues a real (test-mode) invoice for a real member; bilingual PDF passes Thai-RD spot check.
 
@@ -200,22 +200,22 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 **Independent Test**: issue an invoice (via US1). Click Record Payment → fill form (method/date/reference) → submit. Status flips to paid; receipt PDF downloads with its own sequential receipt number (if separate mode) or combined doc; audit trail has `invoice_paid` event; member receives auto-email.
 
-- [ ] T063 [US2] Author `tests/integration/invoicing/record-payment.test.ts` RED covering: happy path, idempotency replay (FR-007), conflict on already-paid / void / credited, auto-email outbox row inserted in-tx, **and tax-ID snapshot semantics (FR-038 / post-analyze C3)**: after invoice issue, mutate member's `tax_id` via F3 `updateMember` use case, then record payment — assert the generated receipt PDF's rendered tax_id matches the ISSUE-TIME snapshot, NOT the current live value. Same assertion reused in T075 credit-note tests.
-- [ ] T064 [US2] Implement `src/modules/invoicing/application/use-cases/record-payment.ts` — issued-state guard, idempotency-key check, allocate receipt seq (if `receipt_numbering_mode='separate'`), render receipt PDF via appropriate template, Blob upload, DB UPDATE, `invoice_paid` audit, outbox row enqueue.
-- [ ] T065 [P] [US2] Implement `src/modules/invoicing/infrastructure/pdf/templates/receipt-template.tsx` (separate mode) + `combined-invoice-receipt-template.tsx` (default/combined mode per R2 Q1).
-- [ ] T066 [US2] Implement `src/app/api/invoices/[invoiceId]/pay/route.ts` + `src/app/(staff)/admin/invoices/[invoiceId]/pay/page.tsx` + `_components/payment-form.tsx`.
-- [ ] T067 [P] [US2] Add US2 i18n keys (`admin.invoices.payment.*`, `pdf.receipt.*`).
-- [ ] T068 [US2] Author `tests/e2e/invoice-pay.spec.ts` covering US2 AS1–AS4 including partial-payment affordance absence (AS4).
+- [X] T063 [US2] Author `tests/integration/invoicing/record-payment.test.ts` RED covering: happy path, idempotency replay (FR-007), conflict on already-paid / void / credited, auto-email outbox row inserted in-tx, **and tax-ID snapshot semantics (FR-038 / post-analyze C3)**: after invoice issue, mutate member's `tax_id` via F3 `updateMember` use case, then record payment — assert the generated receipt PDF's rendered tax_id matches the ISSUE-TIME snapshot, NOT the current live value. Same assertion reused in T075 credit-note tests.
+- [X] T064 [US2] Implement `src/modules/invoicing/application/use-cases/record-payment.ts` — issued-state guard, idempotency-key check, allocate receipt seq (if `receipt_numbering_mode='separate'`), render receipt PDF via appropriate template, Blob upload, DB UPDATE, `invoice_paid` audit, outbox row enqueue.
+- [X] T065 [P] [US2] Implement `src/modules/invoicing/infrastructure/pdf/templates/receipt-template.tsx` (separate mode) + `combined-invoice-receipt-template.tsx` (default/combined mode per R2 Q1).
+- [X] T066 [US2] Implement `src/app/api/invoices/[invoiceId]/pay/route.ts` + `src/app/(staff)/admin/invoices/[invoiceId]/pay/page.tsx` + `_components/payment-form.tsx`.
+- [X] T067 [P] [US2] Add US2 i18n keys (`admin.invoices.payment.*`, `pdf.receipt.*`).
+- [X] T068 [US2] Author `tests/e2e/invoice-pay.spec.ts` covering US2 AS1–AS4 including partial-payment affordance absence (AS4).
 
 ### 🚩 Checkpoint CP-4 — End of US2 (MVP COMPLETE — Phase 1 "replace Excel" goal unlocked)
 
 **Exit criteria** (this is the **ship-viable MVP** per plan § MVP slice):
 
-- [ ] CP-4.1 CP-3 still green + all Phase 4 tests green
+- [X] CP-4.1 CP-3 still green + all Phase 4 tests green
 - [ ] CP-4.2 `record-payment.test.ts` green including FR-038 tax-ID-snapshot assertion (post-analyze C3)
 - [ ] CP-4.3 **End-to-end smoke test**: admin issues invoice → member receives auto-email with PDF attached → admin records payment → member receives receipt email → both PDFs pass Thai-RD spot check
-- [ ] CP-4.4 Receipt PDF for `combined` filing mode generates the canonical "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; `separate` mode generates standalone receipt with its own sequential number
-- [ ] CP-4.5 Phase 1 success criterion met (per `docs/phases-plan.md`): "admin can log in, create a member with its contacts, issue a membership invoice, mark it paid, and download a Thai-tax-compliant PDF" — **WORKS**
+- [X] CP-4.4 Receipt PDF for `combined` filing mode generates the canonical "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; `separate` mode generates standalone receipt with its own sequential number
+- [X] CP-4.5 Phase 1 success criterion met (per `docs/phases-plan.md`): "admin can log in, create a member with its contacts, issue a membership invoice, mark it paid, and download a Thai-tax-compliant PDF" — **WORKS**
 - [ ] CP-4.6 Maintainer co-signs `security.md § 5 Auth + PII checklist` for the MVP slice
 - [ ] CP-4.7 Go/no-go review — decide whether to ship MVP now to SweCham or continue to Phase 5+ before first release
 
