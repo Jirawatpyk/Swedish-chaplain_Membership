@@ -24,6 +24,10 @@ describe('FiscalYear', () => {
     expect(() => asFiscalYearUnsafe(1500)).toThrow();
   });
 
+  it('asFiscalYearUnsafe returns value on ok input', () => {
+    expect(asFiscalYearUnsafe(2026)).toBe(2026);
+  });
+
   describe('fiscalYearFromUtcIso — Asia/Bangkok boundary', () => {
     it('default startMonth=1: 2026-01-15 UTC → FY 2026', () => {
       expect(fiscalYearFromUtcIso('2026-01-15T12:00:00Z', 1)).toBe(2026);

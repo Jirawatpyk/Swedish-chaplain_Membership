@@ -91,6 +91,19 @@ describe('Money value object', () => {
     it('multiplyByDecimal4 rejects malformed string', () => {
       expect(() => Money.fromSatangUnsafe(100).multiplyByDecimal4('abc')).toThrow();
     });
+
+    it('multiplyByDecimal4 rejects malformed frac part', () => {
+      expect(() => Money.fromSatangUnsafe(100).multiplyByDecimal4('1.2a')).toThrow();
+    });
+
+    it('multiplyByDecimal4 rejects negative decimal string', () => {
+      expect(() => Money.fromSatangUnsafe(100).multiplyByDecimal4('-1.0000')).toThrow();
+    });
+
+    it('multiplyByFraction throws on negative result path (negative numerator)', () => {
+      // Hits the `scaled - half` branch in line 85 + negative-check in line 86.
+      expect(() => Money.fromSatangUnsafe(100).multiplyByFraction(-1n, 1n)).toThrow();
+    });
   });
 
   describe('comparison + equality', () => {
