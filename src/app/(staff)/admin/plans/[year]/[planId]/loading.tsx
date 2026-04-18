@@ -58,7 +58,7 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
-      <DetailContainer className="flex flex-col gap-[var(--page-section-gap)]">
+      <DetailContainer>
         {/* PageHeader: title + subtitle + 2 badges */}
         <PageHeader
           title={<SkeletonBlock className="h-7 w-56" />}

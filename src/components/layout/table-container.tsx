@@ -15,6 +15,7 @@ export function TableContainer({ children, className }: TableContainerProps) {
       className={cn(
         'mx-auto w-full max-w-[var(--layout-max-width-table)]',
         'px-[var(--page-padding-x)] py-[var(--page-padding-y)]',
+        'flex flex-col gap-[var(--page-section-gap)]',
         className,
       )}
     >

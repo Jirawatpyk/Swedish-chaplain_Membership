@@ -29,7 +29,13 @@ export function PageHeader({
         // Below Tailwind's sm breakpoint (640px) stack title + actions
         // vertically so action groups wrap cleanly on mobile. At 640px+
         // lay out inline with flex-wrap as a safety net for long titles.
-        '[margin-block-end:var(--page-header-gap)] flex flex-col items-start justify-between gap-3 sm:flex-row sm:flex-wrap',
+        //
+        // No margin-block-end: vertical spacing between PageHeader and
+        // the following Cards/content is owned by the parent layout
+        // container's `flex flex-col gap-[var(--page-section-gap)]`.
+        // Previously the margin here + the parent's gap doubled to 48 px
+        // on pages that opted into flex-gap wrappers.
+        'flex flex-col items-start justify-between gap-3 sm:flex-row sm:flex-wrap',
         className,
       )}
     >
