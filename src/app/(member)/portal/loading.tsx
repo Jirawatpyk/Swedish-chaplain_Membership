@@ -28,7 +28,7 @@ export default async function Loading() {
           subtitle={tPortal('intro')}
           badge={<SkeletonBlock className="h-6 w-40" />}
         />
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-[var(--page-section-gap)]">
         <Card>
           <CardHeader>
             <CardTitle>{tPortal('roadmapHeading')}</CardTitle>

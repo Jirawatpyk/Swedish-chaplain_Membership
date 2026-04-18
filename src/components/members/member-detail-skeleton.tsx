@@ -24,7 +24,7 @@ function DlRowSkeleton() {
 
 export function MemberDetailSkeleton() {
   return (
-    <div className="flex flex-col gap-4" aria-hidden>
+    <div className="flex flex-col gap-[var(--page-section-gap)]" aria-hidden>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
