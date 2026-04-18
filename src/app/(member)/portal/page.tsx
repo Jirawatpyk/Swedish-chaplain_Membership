@@ -41,8 +41,7 @@ export default async function MemberPortalHomePage() {
         badge={<Badge variant="secondary">{t('versionBadge')}</Badge>}
       />
 
-      <div className="flex flex-col gap-[var(--page-section-gap)]">
-        <Card>
+      <Card>
         <CardHeader>
           <CardTitle>{t('roadmapHeading')}</CardTitle>
           <CardDescription>{t('roadmapDescription')}</CardDescription>
@@ -100,7 +99,6 @@ export default async function MemberPortalHomePage() {
           </a>
         </CardContent>
       </Card>
-      </div>
     </DetailContainer>
   );
 }

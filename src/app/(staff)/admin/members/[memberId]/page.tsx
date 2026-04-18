@@ -279,8 +279,7 @@ export default async function MemberDetailPage({ params }: PageProps) {
         }
       />
 
-      <div className="flex flex-col gap-[var(--page-section-gap)]">
-        {member.status === 'archived' &&
+      {member.status === 'archived' &&
           member.archivedAt &&
           windowStatus &&
           (windowStatus.state === 'within_window' ||
@@ -458,7 +457,6 @@ export default async function MemberDetailPage({ params }: PageProps) {
             ))}
           </>
         )}
-      </div>
     </DetailContainer>
   );
 }

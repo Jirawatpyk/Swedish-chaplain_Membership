@@ -23,9 +23,12 @@ function DlRowSkeleton() {
 }
 
 export function MemberDetailSkeleton() {
+  // Fragment (not wrapping <div>) — the enclosing DetailContainer
+  // supplies `flex flex-col gap-[var(--page-section-gap)]`. Wrapping
+  // here would collapse the gap into a single wrapper child.
   return (
-    <div className="flex flex-col gap-[var(--page-section-gap)]" aria-hidden>
-      <Card>
+    <>
+      <Card aria-hidden>
         <CardHeader>
           <CardTitle className="text-base">
             <Skeleton className="h-4 w-20" />
@@ -40,9 +43,9 @@ export function MemberDetailSkeleton() {
         </CardContent>
       </Card>
 
-      <Skeleton className="mt-4 h-5 w-24" />
+      <Skeleton className="h-5 w-24" aria-hidden />
 
-      <Card>
+      <Card aria-hidden>
         <CardHeader>
           <CardTitle className="text-base">
             <Skeleton className="h-4 w-48" />
@@ -56,6 +59,6 @@ export function MemberDetailSkeleton() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }

@@ -28,7 +28,6 @@ export default async function Loading() {
           subtitle={<SkeletonBlock className="h-4 w-48" />}
           actions={<SkeletonBlock className="h-9 w-28" />}
         />
-        <div className="flex flex-col gap-[var(--page-section-gap)]">
         {/* Company Info */}
         <Card>
           <CardHeader>
@@ -88,7 +87,6 @@ export default async function Loading() {
             </div>
           </CardContent>
         </Card>
-        </div>
       </DetailContainer>
     </PageSkeletonShell>
   );
