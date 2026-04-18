@@ -349,37 +349,46 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 **Purpose**: auto-email dispatcher, manual resend, overdue derivation, performance benchmarks, docs, retrospective.
 
-### 10a. Auto-email dispatcher + manual resend
+**Subsection flow** (execute in order within each parallel batch):
+
+1. **10a Implementation** — Auto-email dispatcher + manual resend (T105-T108)
+2. **10b Implementation** — Overdue derivation (T109)
+3. **10c Testing** — Performance + property tests (T110, T110a, T111, T112)
+4. **10d Verification** — Observability emission + audit coverage (T113, T113a)
+5. **10e Verification** — Manual passes: SR + cross-browser + staging + reduced-motion (T114, T114a, T114b, T114c)
+6. **10f Ship** — Docs + CI reproduction + reviews + retrospective + CP-10 gate (T115-T119)
+
+### 10a. Auto-email dispatcher + manual resend (implementation)
 
 - [ ] T105 [P] Author `tests/integration/invoicing/auto-email-outbox.test.ts` — issue/pay/void/CN enqueue correctly, Resend failure does NOT rollback financial commit (FR-026), bounce webhook flags outbox + surfaces admin failure, manual resend produces fresh outbox row + audit event.
 - [ ] T106 Implement `src/modules/invoicing/application/use-cases/dispatch-outbox.ts` + `src/app/api/cron/auto-email-dispatch/route.ts` — drains ≤100 rows per run, Resend invocation with PDF attachment, mark sent/bounced/permanently_failed, audit `auto_email_delivery_failed` on perm-fail. Vercel Cron schedule every 1 min in `vercel.json`.
 - [ ] T107 [P] Implement `src/modules/invoicing/application/use-cases/resend-pdf.ts` + routes `POST /api/invoices/[id]/resend` + `POST /api/credit-notes/[id]/resend` — uses **pinned** `pdf_template_version` per R3-E4.
 - [ ] T108 Author `src/modules/invoicing/infrastructure/email/templates/{issued,paid,voided,credit-note}.tsx` using `@react-email/components` per plan § Auto-email Template Conventions. Bilingual greeting + summary + PDF attachment.
 
-### 10b. Overdue derivation
+### 10b. Overdue derivation (implementation)
 
 - [ ] T109 Implement `src/modules/invoicing/application/use-cases/derive-overdue.ts` — pure helper adding `is_overdue` to DTO; `INSERT … ON CONFLICT DO NOTHING` on first read per Bangkok-local day per R2-E3 + FR-028.
 
-### 10c. Performance + property tests
+### 10c. Performance + property tests (testing)
 
 - [ ] T110 [P] Author `tests/perf/pdf-render-benchmark.test.ts` (RUN_PERF=1) — 100 renders, record p50/p95/p99; fails CI if p95 > 800ms (post-critique E6). Run BEFORE T037 is finalized to validate 1.5s issuance budget.
 - [ ] T110a [P] **Invoice-list query performance (SC-005)**: Author `tests/perf/invoice-list-query.test.ts` gated by `RUN_PERF=1` — seed 5,000 invoices across 2 tenants via fixture, assert first-page cursor pagination (50-row) p95 < 500ms via 100 measured calls. Mirrors F3's `search-perf.test.ts` pattern. Fails CI under `RUN_PERF=1` if p95 exceeds budget.
 - [ ] T111 [P] Extend T016 seq-atomicity test to 50-writer load (post-critique E3) under RUN_PERF=1.
 - [ ] T112 [P] Author `tests/integration/invoicing/retention-member-archive.test.ts` covering FR-029 + FR-030: archive member → invoices remain + snapshots intact + timeline still enumerates.
 
-### 10d. Observability verification
+### 10d. Observability verification (verification)
 
 - [ ] T113 [P] Verify metric emission in production code — grep `src/modules/invoicing/**` for `logger.child` + `span.setAttributes` + metric counter increments covering all 6 metrics listed in T022 observability section. Each use case MUST emit `invoicing.<use_case>.duration_ms` span + `invoicing.<use_case>.count` counter. Document in `docs/observability.md § F4 Invoicing → Verified metrics`.
 - [ ] T113a [P] Verify all 16 F4 audit event types actually emit from the matching use cases (not just added to the enum) — add `tests/integration/invoicing/audit-coverage.test.ts` that runs every mutating use case once and asserts the matching audit row appears.
 
-### 10e. Manual verification passes
+### 10e. Manual verification passes (verification)
 
 - [ ] T114 **Manual screen-reader pass** — NVDA (Windows Firefox) + VoiceOver (macOS Safari + iOS Safari 17) walks through: admin list → new draft → preview → issue confirmation → issued detail → record payment → member portal list → download. Sign-off in `specs/007-invoices-receipts/a11y-manual-sr.md` with screenshots of any gaps closed.
 - [ ] T114a **Cross-browser verification** — manual run of the core admin flow (create→issue→pay→download) on: Chrome (Win+Mac), Firefox (Win+Mac), Safari (Mac+iOS 17), Edge (Win), Chrome Android. Document in `specs/007-invoices-receipts/cross-browser.md`.
 - [ ] T114b **Staging traces captured** — open one real invoice-issue flow in Vercel Speed Insights + OTel traces on staging; attach trace IDs + p50/p95/p99 observations to `docs/observability.md § F4 staging-baseline`.
 - [ ] T114c **Reduced-motion pass** — macOS + Windows + iOS with `prefers-reduced-motion: reduce` enabled; verify all F4 animations (toast enter, dialog open, skeleton shimmer) fall back to instant transitions per FR-023-equivalent.
 
-### 10f. Docs + final gates
+### 10f. Docs + final gates (ship)
 
 - [ ] T115 Update `specs/007-invoices-receipts/quickstart.md` with actual seed script path + live smoke-test transcript.
 - [ ] T115a [P] Author release notes `specs/007-invoices-receipts/releases/v1.0.0.md` — user-facing summary of what admins + members get, migration order (F1→F2→F3→F4), rollout steps, known limitations.

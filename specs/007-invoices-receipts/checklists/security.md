@@ -5,61 +5,62 @@
 **Feature**: [spec.md](../spec.md)
 **Plan**: [plan.md](../plan.md)
 **Depth**: Standard (PR review gate, pre-`/speckit.tasks`)
+**Full audit**: 2026-04-18 post-commit c5370af — all 30 items evaluated
 
 ## Threat Model Coverage
 
-- [ ] CHK001 Is the F4 threat list (T-01 … T-15 in research.md §13) mapped to concrete FRs or plan mitigations for every threat? [Traceability, Research §13]
-- [ ] CHK002 Is each threat assigned a specific mitigation technique, not a generic "handled by RLS"? [Clarity, Research §13]
-- [x] CHK003 Are threats introduced by post-critique additions (logo upload SVG XSS, bounce PII leakage, template-version pinning) included in the 15-threat list or explicitly deferred? [Completeness, Spec §FR-034, Research §8a, §12] — **RESOLVED**: research §13 now lists T-16 (admin demotion), T-17 (SVG XSS), T-18 (bounce PII), T-19 (template drift)
-- [ ] CHK004 Is OWASP Top 10 coverage mapped to F4-specific attack vectors (A01-A10) with at least one concrete mitigation per relevant item? [Completeness, Plan Constitution Check I]
+- [x] CHK001 Is the F4 threat list (T-01 … T-15 in research.md §13) mapped to concrete FRs or plan mitigations for every threat? [Traceability, Research §13] — **PASS**: Research § 13 table has "Threat | Mitigation" columns, each row maps explicitly: T-01→RLS+TenantContext+audit, T-02→advisory-lock+FOR UPDATE+rollback, T-03→Idempotency-Key+CHECK constraint, T-04→ownership check+RLS, T-05→60s TTL+redaction, T-06→React escape, T-07→FR-030, T-08→js-joda Bangkok-TZ, T-09→retry cap+audit, T-10→FOR UPDATE, T-11→snapshot+trigger, T-12→redact list, T-13→RBAC re-read, T-14→sweeper+content-addressed, T-15→throttle+bounce
+- [x] CHK002 Is each threat assigned a specific mitigation technique, not a generic "handled by RLS"? [Clarity, Research §13] — **PASS**: Each T-## row names a specific mechanism (advisory-lock, `SELECT FOR UPDATE`, `sharp` re-encode, content-addressed hash, etc.) not generic language
+- [x] CHK003 Are threats introduced by post-critique additions (logo upload SVG XSS, bounce PII leakage, template-version pinning) included in the 15-threat list or explicitly deferred? [Completeness, Spec §FR-034, Research §8a, §12] — **PASS**: Research § 13 expanded to T-16 (admin demotion), T-17 (SVG XSS), T-18 (bounce PII via Resend DPA), T-19 (template drift)
+- [x] CHK004 Is OWASP Top 10 coverage mapped to F4-specific attack vectors (A01-A10) with at least one concrete mitigation per relevant item? [Completeness, Plan Constitution Check I] — **PASS**: Plan Constitution Check I § OWASP Top 10 coverage lists A01 (RBAC+RLS+ownership), A02 (AES-256+TLS+signed URL), A03 (Drizzle params+zod+props-as-data), A04 (transactional atomicity), A05 (Blob private+feature flag), A07 (free-text payment fields), A08 (append-only audit+pdf_sha256), A09 (high-severity audit events), A10 (N/A no user-controlled URLs). A06 covered by F1 dependency scanning (inherited).
 
 ## Authentication & Authorization (RBAC)
 
-- [ ] CHK005 Are the role × action permissions enumerated for every F4 mutation (issue/pay/void/credit-note/settings/logo) — not left as "admin-only" at the surface level? [Completeness, Spec §FR-012]
-- [ ] CHK006 Are manager read-only constraints specified per surface (list + detail + PDF download) with explicit exclusion of mutating controls? [Clarity, Spec US1 AS4, §FR-012]
-- [ ] CHK007 Are member self-service scope boundaries unambiguous — own-company invoices only, no drafts, no other tenants? [Clarity, Spec §FR-014, Research §11]
-- [x] CHK008 Are role demotion scenarios (admin demoted mid-transaction) addressed in the requirements? [Coverage, Gap, Research §13 T-13] — **RESOLVED**: T-16 added with session-store-queried RBAC at start of every handler + accepted-TOCTOU-window documentation
-- [ ] CHK009 Are the preconditions for settings PATCH (admin only, valid tenant context) specified to the same precision as mutation endpoints? [Consistency, Spec §FR-012, Contracts §3.2]
+- [x] CHK005 Are the role × action permissions enumerated for every F4 mutation (issue/pay/void/credit-note/settings/logo) — not left as "admin-only" at the surface level? [Completeness, Spec §FR-012] — **PASS**: FR-012 enumerates per role: `admin` full CRUD + issue/pay/void; `manager` strictly read-only; `member` view+download own only; Plan Constitution Check I lists resource families `invoices:*`, `credit-notes:*`, `invoice-settings:*`
+- [x] CHK006 Are manager read-only constraints specified per surface (list + detail + PDF download) with explicit exclusion of mutating controls? [Clarity, Spec US1 AS4, §FR-012] — **PASS**: US1 AS4 explicit: "manager ... can view and download PDFs but cannot issue, edit, or void any invoice — all mutating controls are disabled and any direct-route access returns a not-authorised response"
+- [x] CHK007 Are member self-service scope boundaries unambiguous — own-company invoices only, no drafts, no other tenants? [Clarity, Spec §FR-014, Research §11] — **PASS**: Research § 11 explicit: "Members can list own invoices + download PDFs only. No edit, no issue, no void, no credit-note, no payment recording. No exposure of draft invoices (portal shows status IN ('issued', 'paid', 'void', 'credited', 'partially_credited'))"
+- [x] CHK008 Are role demotion scenarios (admin demoted mid-transaction) addressed in the requirements? [Coverage, Gap, Research §13 T-13] — **PASS**: T-16 added — session-store-queried RBAC at start of every handler + accepted TOCTOU window documentation
+- [x] CHK009 Are the preconditions for settings PATCH (admin only, valid tenant context) specified to the same precision as mutation endpoints? [Consistency, Spec §FR-012, Contracts §3.2] — **PASS**: Contracts § 3.2 states `RBAC: admin only.`; § 3.3 logo upload same; matches invoice mutation endpoints precision
 
 ## Tenant Isolation (DB-layer + App-layer)
 
-- [ ] CHK010 Is the two-layer tenant-isolation requirement (app-layer `TenantContext` + DB-layer RLS + FORCE) stated as a Domain-layer invariant, not an Infrastructure-layer default? [Clarity, Spec §FR-013, Plan Constitution Check I]
-- [ ] CHK011 Are all 5 F4 tables individually listed with confirmation of RLS + FORCE + policy, with no table silently excluded? [Completeness, Data-model §2]
-- [ ] CHK012 Is the cross-tenant probe response (404, never 403 or 401) specified as a security property (to avoid resource-existence disclosure)? [Clarity, Spec §FR-013]
-- [ ] CHK013 Are dev-mode safety nets (`DEBUG_RLS_STATE`) specified as requirements with clear loud-failure behaviour? [Measurability, Plan Constitution Check I clause 2]
+- [x] CHK010 Is the two-layer tenant-isolation requirement (app-layer `TenantContext` + DB-layer RLS + FORCE) stated as a Domain-layer invariant, not an Infrastructure-layer default? [Clarity, Spec §FR-013, Plan Constitution Check I] — **PASS**: Plan Constitution Check I clause 1: "every member-touching use case in `src/modules/invoicing/application/**` takes a `TenantContext` as an explicit dependency parameter. Forgetting to pass it is a TypeScript compile error" — compile-time enforced, not infra-default
+- [x] CHK011 Are all 5 F4 tables individually listed with confirmation of RLS + FORCE + policy, with no table silently excluded? [Completeness, Data-model §2] — **PASS**: Data-model § 2.1-2.5 each table has explicit `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` + `CREATE POLICY ... USING (tenant_id = current_setting('app.current_tenant', TRUE)::uuid)`; `invoices`, `invoice_lines`, `credit_notes`, `tenant_invoice_settings`, `tenant_document_sequences` all listed
+- [x] CHK012 Is the cross-tenant probe response (404, never 403 or 401) specified as a security property (to avoid resource-existence disclosure)? [Clarity, Spec §FR-013] — **PASS**: Plan Constitution Check I clause 4: "Cross-tenant probes return 404 (never 403/401) and emit `invoice_cross_tenant_probe` + `credit_note_cross_tenant_probe` immediately at high severity"
+- [x] CHK013 Are dev-mode safety nets (`DEBUG_RLS_STATE`) specified as requirements with clear loud-failure behaviour? [Measurability, Plan Constitution Check I clause 2] — **PASS**: Plan Constitution Check I clause 2: "`DEBUG_RLS_STATE=1` (F2-introduced) loud-fails in dev when a query runs with `app.current_tenant` unset; production silently relies on the RLS 'zero rows' default"
 
 ## PII Handling
 
-- [ ] CHK014 Are the PII fields captured on snapshots enumerated (member legal name, tax_id, address) with explicit immutability + retention semantics? [Completeness, Spec §FR-011, §FR-038]
-- [ ] CHK015 Are the forbidden-in-logs fields listed comprehensively including F4 additions (tax_id, member_legal_name_snapshot, member_address_snapshot, signed_url_token, PDF body)? [Completeness, Plan Technical Context — Constraints]
-- [ ] CHK016 Is user-ID hashing in cross-request logs specified as a hard requirement rather than a convention? [Clarity, Plan Constitution Check VII]
-- [ ] CHK017 Is the distinction between snapshotted identity (immutable on issue) and live identity (mutable via F3) documented so there is no ambiguity about which applies to each rendering path? [Clarity, Spec §FR-011, §FR-038]
+- [x] CHK014 Are the PII fields captured on snapshots enumerated (member legal name, tax_id, address) with explicit immutability + retention semantics? [Completeness, Spec §FR-011, §FR-038] — **PASS**: FR-011 ("snapshot VAT rate, registration fee, tenant legal name + tax ID + address, and member legal name + tax ID + address on the invoice at issue time. Subsequent edits MUST NOT alter past invoices"); FR-038 reinforces for receipts + credit notes; FR-029 adds retention
+- [x] CHK015 Are the forbidden-in-logs fields listed comprehensively including F4 additions (tax_id, member_legal_name_snapshot, member_address_snapshot, signed_url_token, PDF body)? [Completeness, Plan Technical Context — Constraints] — **PASS**: Plan Technical Context — Constraints: "PII redaction in logs: extend the F1+F3 pino list with `tax_id`, `member_legal_name_snapshot` (contains PII), `member_address_snapshot`, `Authorization` headers, PDF binary content"; T005 extends logger.ts accordingly
+- [x] CHK016 Is user-ID hashing in cross-request logs specified as a hard requirement rather than a convention? [Clarity, Plan Constitution Check VII] — **PASS**: Plan Constitution Check VII: "User IDs hashed when cross-request correlated"; same pattern as F1 + F3 (inherited + reiterated)
+- [x] CHK017 Is the distinction between snapshotted identity (immutable on issue) and live identity (mutable via F3) documented so there is no ambiguity about which applies to each rendering path? [Clarity, Spec §FR-011, §FR-038] — **PASS**: FR-011 specifies snapshot on issue; FR-038 extends semantics to receipts + credit notes ("MUST render the member tax identity ... as snapshotted on the original invoice at issue time — NOT as it appears on the live member record at payment or credit-note time"); data-model § 2.1 immutability trigger enforces
 
 ## Input Validation & Injection Resistance
 
-- [ ] CHK018 Is every mutation endpoint's zod schema boundary specified in contracts, with no "TBD" or "see schema file" placeholders? [Completeness, Contracts §7]
-- [ ] CHK019 Is logo-upload validation (MIME whitelist, size cap, dimension range, EXIF strip) specified as strict-reject — not best-effort? [Clarity, Spec §FR-034]
-- [ ] CHK020 Is the explicit SVG rejection stated (not just "MIME whitelist includes PNG/JPEG")? [Clarity, Spec §FR-034]
-- [ ] CHK021 Is the invariant that PATCH /tenant-invoice-settings rejects raw logo binary (only accepts the upload endpoint's returned key) explicit? [Clarity, Contracts §3.3]
-- [ ] CHK022 Are PDF-template data-flow rules (props-as-data, no string interpolation) specified as a design requirement, not left as implementation practice? [Clarity, Research §1]
+- [x] CHK018 Is every mutation endpoint's zod schema boundary specified in contracts, with no "TBD" or "see schema file" placeholders? [Completeness, Contracts §7] — **PASS**: Contracts § 7 provides full DTO shapes for `InvoiceDTO`, `InvoiceLineDTO`, `CreditNoteDTO`, `TenantInvoiceSettingsDTO` with all field types; each endpoint specifies body shape + validation rules (§§ 1.1, 1.7, 3.2, 3.3 etc.)
+- [x] CHK019 Is logo-upload validation (MIME whitelist, size cap, dimension range, EXIF strip) specified as strict-reject — not best-effort? [Clarity, Spec §FR-034] — **PASS**: FR-034 explicit: "strict-reject" language: "MIME ∈ `{image/png, image/jpeg}` — any other MIME rejected", "size ≤ 1 MB", dimensions range, server-side re-encode via `sharp` to strip EXIF
+- [x] CHK020 Is the explicit SVG rejection stated (not just "MIME whitelist includes PNG/JPEG")? [Clarity, Spec §FR-034] — **PASS**: FR-034 states "SVG + any other MIME is rejected"; Contracts § 3.3 says "SVG + any other MIME → 422 with `unsupported_media_type`"; security.md § 6 (T021) will cover the threat in detail
+- [x] CHK021 Is the invariant that PATCH /tenant-invoice-settings rejects raw logo binary (only accepts the upload endpoint's returned key) explicit? [Clarity, Contracts §3.3] — **PASS**: Contracts § 3.2 body rule: "`logo_blob_key` MAY be set only to a value returned by § 3.3 logo upload; raw logo binary MUST NOT be accepted here"; FR-034 reinforces
+- [x] CHK022 Are PDF-template data-flow rules (props-as-data, no string interpolation) specified as a design requirement, not left as implementation practice? [Clarity, Research §1] — **PASS**: Plan Constitution Check I OWASP A03: "PDF template data is passed as React props, never as interpolated strings (eliminates PDF-injection class)"; Research § 1 explains React-component-tree templates
 
 ## Cryptographic & Transport
 
-- [ ] CHK023 Are Blob signed-URL TTLs quantified (60 s) and tied to a specific regeneration path for link expiry? [Measurability, Plan Technical Context — Storage]
-- [ ] CHK024 Is signed-URL token redaction in logs stated as a hard requirement? [Clarity, Plan Technical Context — Constraints]
-- [ ] CHK025 Is TLS 1.2+ + at-rest AES-256 stated for F4 or explicitly marked as inherited from F1? [Completeness, Plan Constitution Check I]
+- [x] CHK023 Are Blob signed-URL TTLs quantified (60 s) and tied to a specific regeneration path for link expiry? [Measurability, Plan Technical Context — Storage] — **PASS**: Plan Technical Context — Storage: "Private ACL; signed URLs issued per-request for downloads (60-second TTL)"; handler at `/api/invoices/[id]/pdf` regenerates per-request
+- [x] CHK024 Is signed-URL token redaction in logs stated as a hard requirement? [Clarity, Plan Technical Context — Constraints] — **PASS**: Plan Constitution Check I: "URL signing key stored in Vercel env (already exists for F1); signed-URL tokens are NOT logged (added to redaction list)"; Constraints reiterates `signed_url_token` in redact list
+- [x] CHK025 Is TLS 1.2+ + at-rest AES-256 stated for F4 or explicitly marked as inherited from F1? [Completeness, Plan Constitution Check I] — **PASS**: Plan Constitution Check I: "TLS 1.2+ + at-rest AES-256 — inherited from F1+F2+F3 unchanged"
 
 ## Idempotency & Replay Safety
 
-- [ ] CHK026 Is the `Idempotency-Key` requirement specified at the request-header level for all mutations, including logo upload and preview exemption? [Completeness, Contracts — shared headers]
-- [ ] CHK027 Is the 24-hour TTL + key-collision replay behaviour specified to eliminate ambiguity about how a retry is recognised? [Clarity, Research §10]
-- [ ] CHK028 Is the behaviour for repeated payment recording (FR-007 idempotent) documented with clear success-vs-conflict semantics? [Clarity, Spec §FR-007]
+- [x] CHK026 Is the `Idempotency-Key` requirement specified at the request-header level for all mutations, including logo upload and preview exemption? [Completeness, Contracts — shared headers] — **PASS**: Contracts shared headers: "Idempotency-Key: <uuid> — required on POST / PATCH / DELETE. 24-hour TTL per (tenant, actor, key)"; § 1.5a preview explicitly exempt ("No Idempotency-Key required"); § 3.3 logo explicitly required
+- [x] CHK027 Is the 24-hour TTL + key-collision replay behaviour specified to eliminate ambiguity about how a retry is recognised? [Clarity, Research §10] — **PASS**: Research § 10: "server stores (tenant_id, actor_user_id, idempotency_key) → response tuple for 24 hours ... a retried POST with the same key returns the already-issued invoice (same number, same PDF hash, same response body) without consuming a new number"
+- [x] CHK028 Is the behaviour for repeated payment recording (FR-007 idempotent) documented with clear success-vs-conflict semantics? [Clarity, Spec §FR-007] — **PASS**: FR-007: "System MUST refuse to mark an invoice paid more than once (idempotent on the second attempt with a clear conflict message)"; contracts § 1.7 Errors: "`conflict` (409) — already paid (idempotent replay returns original response)"
 
 ## Outbox Dispatch + Bounce Handling
 
-- [ ] CHK029 Is the outbox-row-per-financial-event guarantee stated as "same transaction as the financial commit" so a reviewer can distinguish it from best-effort enqueue? [Clarity, Plan §VIII Reliability]
-- [ ] CHK030 Are the per-member auto-email throttle (10/h) and bounce-handling behaviour specified so spam-storm scenarios have a defined outcome? [Measurability, Plan Technical Context — Rate limiting]
+- [x] CHK029 Is the outbox-row-per-financial-event guarantee stated as "same transaction as the financial commit" so a reviewer can distinguish it from best-effort enqueue? [Clarity, Plan §VIII Reliability] — **PASS**: Plan § VIII Reliability each mutation lists "insert outbox row for auto-email → commit" AS THE LAST STEP WITHIN THE TX — not after-commit; research § 8a explicit: "Decouples delivery from financial commit — if Resend is down, the invoice still commits and the email is retried later"
+- [x] CHK030 Are the per-member auto-email throttle (10/h) and bounce-handling behaviour specified so spam-storm scenarios have a defined outcome? [Measurability, Plan Technical Context — Rate limiting] — **PASS**: Plan Technical Context — Storage: "per-member auto-email throttle (max 10 auto-sends / hour per member to prevent bounce-storm from flipping us to a spam classifier)"; research § 8 Bounce webhook integration: "Resend `email.bounced` webhook sets `outbox_row.status = bounced` and emits `auto_email_delivery_failed` audit event"
 
 ---
 
-**Traceability summary**: 30/30 items reference spec, plan, data-model, research, or contracts. Coverage 100%.
+**Traceability summary**: 30/30 items verified with evidence citations to spec/plan/data-model/research/contracts/tasks. Coverage 100%. **All items PASS.**
