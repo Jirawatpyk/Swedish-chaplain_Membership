@@ -71,6 +71,20 @@ export type ListPlansError =
 export type ListPlansDeps = {
   readonly tenant: TenantContext;
   readonly planRepo: PlanRepo;
+  /**
+   * R7 consolidation — authoritative tenant tax policy source, reads
+   * `tenant_invoice_settings.vat_rate` + `.currency_code`. Wired via
+   * the F4 invoicing barrel's `getTenantTaxPolicy` in the composition
+   * root. Returns null when the tenant has not yet configured invoice
+   * settings — list-plans then falls back to `feeConfigRepo` for
+   * graceful degradation on tenants that pre-date R7 and haven't
+   * visited `/admin/settings/invoicing` yet. The fallback is removed
+   * in R8 once every tenant has an invoice_settings row.
+   */
+  readonly taxPolicy: () => Promise<{
+    readonly currencyCode: string;
+    readonly vatRateRaw: string; // "0.0700"
+  } | null>;
   readonly feeConfigRepo: FeeConfigRepo;
   readonly clock: ClockPort;
 };
@@ -86,12 +100,25 @@ export async function listPlans(
     const year =
       input.filter.year ?? asPlanYear(deps.clock.currentYear());
 
-    // Load fee config first — we need vat_rate + currency_code to
-    // hydrate Money-related fields. Fee config missing is a bootstrap
-    // error (every onboarded tenant should have one row).
-    const feeConfig = await deps.feeConfigRepo.findByTenant(deps.tenant);
-    if (!feeConfig) {
-      return err({ type: 'fee_config_missing' });
+    // R7 consolidation — prefer `tenant_invoice_settings` (authoritative
+    // per Option 2). Fall back to `tenant_fee_config` only when no
+    // invoice-settings row exists yet (tenant hasn't visited
+    // `/admin/settings/invoicing`). Both sources missing → bootstrap
+    // error. The fee_config fallback is scheduled for removal in R8
+    // after every tenant has an invoice_settings row.
+    let currencyCode: string;
+    let vatRateNumber: number;
+    const tax = await deps.taxPolicy();
+    if (tax) {
+      currencyCode = tax.currencyCode;
+      vatRateNumber = Number(tax.vatRateRaw);
+    } else {
+      const feeConfig = await deps.feeConfigRepo.findByTenant(deps.tenant);
+      if (!feeConfig) {
+        return err({ type: 'fee_config_missing' });
+      }
+      currencyCode = feeConfig.currency_code;
+      vatRateNumber = feeConfig.vat_rate;
     }
 
     // Load plans via repo — RLS scopes by tenant; no explicit tenant_id filter.
@@ -103,7 +130,7 @@ export async function listPlans(
     // Hydrate display envelope per plan
     const data: PlanListItem[] = plans.map((p) => {
       const fee = p.annual_fee_minor_units;
-      const totalWithVat = Math.round(fee * (1 + feeConfig.vat_rate));
+      const totalWithVat = Math.round(fee * (1 + vatRateNumber));
       return {
         plan_id: p.plan_id,
         plan_year: p.plan_year,
@@ -112,7 +139,7 @@ export async function listPlans(
         plan_category: p.plan_category,
         member_type_scope: p.member_type_scope,
         annual_fee_minor_units: fee,
-        vat_rate: feeConfig.vat_rate,
+        vat_rate: vatRateNumber,
         total_with_vat_minor_units: totalWithVat,
         includes_corporate_plan_id: p.includes_corporate_plan_id,
         is_active: p.is_active,
@@ -129,7 +156,7 @@ export async function listPlans(
       meta: {
         total: data.length,
         year: year as number,
-        currency_code: feeConfig.currency_code,
+        currency_code: currencyCode as CurrencyCode,
         filter: {
           category: input.filter.category ?? null,
           q: input.filter.q ?? null,

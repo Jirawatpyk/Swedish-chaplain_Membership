@@ -86,6 +86,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       tenant: deps.tenant,
       planRepo: deps.planRepo,
       feeConfigRepo: deps.feeConfigRepo,
+      taxPolicy: deps.taxPolicy,
       clock: deps.clock,
     },
   );

@@ -84,6 +84,11 @@ function makeDeps(overrides: {
       update: vi.fn(),
       upsert: vi.fn(),
     },
+    // R7 consolidation — default stub returns null so the test
+    // exercises the fee_config fallback path that existing test
+    // cases already assert on. Tests that want the new-path behaviour
+    // override `taxPolicy` in the deps argument.
+    taxPolicy: vi.fn(async () => null),
     clock: {
       now: vi.fn(() => NOW),
       currentYear: vi.fn(() => overrides.currentYear ?? 2026),

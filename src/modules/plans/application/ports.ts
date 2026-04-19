@@ -283,6 +283,17 @@ export type PlansDeps = {
   readonly tenant: TenantContext;
   readonly planRepo: PlanRepo;
   readonly feeConfigRepo: FeeConfigRepo;
+  /**
+   * R7 consolidation — authoritative tax policy source (F4
+   * invoice_settings). Wired via the F4 barrel's `getTenantTaxPolicy`
+   * in the composition root. Returns null when the tenant's
+   * invoice-settings row doesn't exist yet; callers may fall back
+   * to `feeConfigRepo` during the expand phase.
+   */
+  readonly taxPolicy: () => Promise<{
+    readonly currencyCode: string;
+    readonly vatRateRaw: string;
+  } | null>;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   readonly members: MemberAttachmentChecker;

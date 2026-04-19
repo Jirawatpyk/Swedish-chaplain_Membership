@@ -46,6 +46,7 @@ export default async function NewMemberPage() {
       tenant: deps.tenant,
       planRepo: deps.planRepo,
       feeConfigRepo: deps.feeConfigRepo,
+      taxPolicy: deps.taxPolicy,
       clock: deps.clock,
     },
   );

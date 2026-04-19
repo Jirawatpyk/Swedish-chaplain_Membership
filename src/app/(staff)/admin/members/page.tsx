@@ -149,6 +149,7 @@ async function MembersDirectoryBody({
         tenant: plansDeps.tenant,
         planRepo: plansDeps.planRepo,
         feeConfigRepo: plansDeps.feeConfigRepo,
+        taxPolicy: plansDeps.taxPolicy,
         clock: plansDeps.clock,
       },
     ),
