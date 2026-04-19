@@ -921,7 +921,8 @@
         "previewLabel": "ประมาณการ",
         "payment": {
           "title": "รายละเอียดการชำระเงิน",
-          "paidAt": "ชำระเมื่อ",
+          "paymentDate": "วันที่ชำระ",
+          "paidAt": "บันทึกเมื่อ",
           "method": "วิธีชำระ",
           "reference": "เลขอ้างอิง",
           "recordedBy": "บันทึกโดย",

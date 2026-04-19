@@ -96,6 +96,7 @@ function makeDeps(
           paymentReference: null,
           paymentNotes: null,
           paymentRecordedByUserId: null,
+          paymentDate: null,
           voidReason: null,
           voidedByUserId: null,
           autoEmailOnIssue: args.autoEmailOnIssue,

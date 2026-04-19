@@ -107,6 +107,8 @@ export interface InvoiceRepo {
       readonly paymentReference: string | null;
       readonly paymentNotes: string | null;
       readonly paymentRecordedByUserId: string;
+      /** R7-W5 — admin-entered payment date (`YYYY-MM-DD`). */
+      readonly paymentDate: string;
       readonly receiptPdf: {
         readonly blobKey: string;
         readonly sha256: Sha256Hex;

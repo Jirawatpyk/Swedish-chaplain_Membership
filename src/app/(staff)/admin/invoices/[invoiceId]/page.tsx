@@ -325,6 +325,10 @@ export default async function InvoiceDetailPage({
               </h3>
               <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
+                  <dt className="text-muted-foreground">{t('payment.paymentDate')}</dt>
+                  <dd>{formatDate(invoice.paymentDate, userLocale)}</dd>
+                </div>
+                <div>
                   <dt className="text-muted-foreground">{t('payment.paidAt')}</dt>
                   <dd>{formatDate(invoice.paidAt, userLocale)}</dd>
                 </div>

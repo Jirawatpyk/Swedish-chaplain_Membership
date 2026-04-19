@@ -244,6 +244,9 @@ export async function recordPayment(
         paymentReference: input.paymentReference ?? null,
         paymentNotes: input.paymentNotes ?? null,
         paymentRecordedByUserId: input.actorUserId,
+        // R7-W5 — persist admin-entered payment date on the invoice
+        // row (separate from paidAt = server-side mark-paid ts).
+        paymentDate: input.paymentDate,
         receiptPdf: {
           blobKey: receiptBlobKey,
           sha256: rendered.sha256,

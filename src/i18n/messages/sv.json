@@ -921,7 +921,8 @@
         "previewLabel": "förhandsgranskning",
         "payment": {
           "title": "Betalningsdetaljer",
-          "paidAt": "Betald",
+          "paymentDate": "Betalningsdatum",
+          "paidAt": "Registrerad",
           "method": "Metod",
           "reference": "Referens",
           "recordedBy": "Registrerad av",

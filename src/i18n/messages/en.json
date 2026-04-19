@@ -921,7 +921,8 @@
         "previewLabel": "preview",
         "payment": {
           "title": "Payment details",
-          "paidAt": "Paid at",
+          "paymentDate": "Payment date",
+          "paidAt": "Recorded at",
           "method": "Method",
           "reference": "Reference",
           "recordedBy": "Recorded by",

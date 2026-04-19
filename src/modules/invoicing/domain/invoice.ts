@@ -86,6 +86,14 @@ export interface Invoice {
   readonly paymentReference: string | null;
   readonly paymentNotes: string | null;
   readonly paymentRecordedByUserId: string | null;
+  /**
+   * R7-W5 — admin-entered payment date (`YYYY-MM-DD`), separate from
+   * `paidAt` which is the server-side "mark paid" timestamp. The
+   * latter is `now()` at the moment admin clicks Record Payment; the
+   * former may be earlier (the admin is recording a bank transfer
+   * dated 2 days ago). Both surface on the detail page and PDF.
+   */
+  readonly paymentDate: string | null;
 
   // Void (null unless void)
   readonly voidReason: string | null;

@@ -79,6 +79,7 @@ function makeDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
     paymentReference: null,
     paymentNotes: null,
     paymentRecordedByUserId: null,
+    paymentDate: null,
     voidReason: null,
     voidedByUserId: null,
     autoEmailOnIssue: null,

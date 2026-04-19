@@ -160,6 +160,7 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     paymentReference: row.paymentReference ?? null,
     paymentNotes: row.paymentNotes ?? null,
     paymentRecordedByUserId: row.paymentRecordedByUserId ?? null,
+    paymentDate: row.paymentDate ?? null,
 
     voidReason: row.voidReason ?? null,
     voidedByUserId: row.voidedByUserId ?? null,
@@ -476,6 +477,9 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
           paymentReference: input.paymentReference,
           paymentNotes: input.paymentNotes,
           paymentRecordedByUserId: input.paymentRecordedByUserId,
+          // R7-W5 — admin-entered payment date (distinct from paidAt
+          // which is the server-side mark-paid timestamp).
+          paymentDate: input.paymentDate,
           // F4 final-review C1: write RECEIPT columns, NOT invoice
           // columns. The invoice PDF's blobKey+sha256 stays frozen at
           // its issue-time values for audit integrity.

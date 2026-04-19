@@ -1,0 +1,27 @@
+-- R7-W5 — add `payment_date` column to `invoices`.
+--
+-- Background:
+--   `record-payment` accepts an admin-entered `paymentDate` (YYYY-MM-DD
+--   string via the schema, surfaced in the record-payment dialog) but
+--   the value only landed in `audit_log.payload.payment_date`. The
+--   `invoices` row itself had no `payment_date` column — the detail
+--   page rendered `paidAt` (server-side `now()` at the mark-paid call)
+--   as if it were the payment date. For a bank-transfer recorded 2
+--   days after receipt, this drifts the displayed date.
+--
+-- Fix:
+--   Nullable `date` column on `invoices`. Null on all pre-existing
+--   rows (historical paid invoices predating this migration retain
+--   only `paid_at`); populated on every new `record-payment` call.
+--
+-- Safe rollout:
+--   - Nullable ADD COLUMN is instant on Postgres (no table rewrite).
+--   - No backfill needed; old rows stay NULL and the UI shows `—`.
+--   - No immutability-trigger change: `payment_date` is OK to mutate
+--     on a concurrent recordPayment race; in practice `applyPayment`
+--     writes it once alongside the status=issued → paid transition
+--     and the WHERE status='issued' guard prevents double-write.
+--   - Rollback is `ALTER TABLE invoices DROP COLUMN payment_date`;
+--     detail page reverts to rendering `paidAt`.
+
+ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "payment_date" date;

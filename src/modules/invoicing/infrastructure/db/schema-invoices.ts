@@ -74,6 +74,9 @@ export const invoices = pgTable(
     paymentReference: text('payment_reference'),
     paymentNotes: text('payment_notes'),
     paymentRecordedByUserId: uuid('payment_recorded_by_user_id'),
+    // R7-W5 — admin-entered payment date (separate from paid_at which
+    // is the server-side mark-paid timestamp).
+    paymentDate: date('payment_date'),
 
     voidReason: text('void_reason'),
     voidedByUserId: uuid('voided_by_user_id'),
