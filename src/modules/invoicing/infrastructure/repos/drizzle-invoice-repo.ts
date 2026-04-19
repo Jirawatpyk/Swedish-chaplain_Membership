@@ -519,15 +519,28 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
       // Skip the UPDATE entirely when no real field changed — prevents
       // a no-op UPDATE that would still bump updated_at.
       if (Object.keys(patch).length === 0) return;
-      await tx
+      // W3 fix — add `status='draft'` guard (mirrors applyIssue /
+      // applyPayment patterns at lines 426 & 491). The Application
+      // use-case reads+checks status before calling this, but without
+      // a FOR UPDATE lock there is a race window where a concurrent
+      // issueInvoice flips the row to 'issued'. The guard + throw
+      // closes the race: if no row matches, the UPDATE silently
+      // succeeds with zero rows and the caller gets an untyped
+      // success — a data-integrity hole on draft-only fields
+      // (auto_email_on_issue, plan_id, plan_year) which the DB
+      // immutability trigger does NOT cover.
+      const [updated] = await tx
         .update(invoices)
         .set({ ...patch, updatedAt: sql`now()` })
         .where(
           and(
             eq(invoices.tenantId, input.tenantId),
             eq(invoices.invoiceId, input.invoiceId),
+            eq(invoices.status, 'draft'),
           ),
-        );
+        )
+        .returning({ invoiceId: invoices.invoiceId });
+      if (!updated) throw new InvoiceApplyConflictError('applyDraftUpdate');
     },
   };
 }

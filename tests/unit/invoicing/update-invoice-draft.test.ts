@@ -5,6 +5,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { updateInvoiceDraft } from '@/modules/invoicing/application/use-cases/update-invoice-draft';
 import { asInvoiceId, type Invoice, type InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
+import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000a001';
 
@@ -173,6 +174,21 @@ describe('updateInvoiceDraft', () => {
     const r = await updateInvoiceDraft(deps, { ...baseInput, planId: 'same' });
     expect(r.ok).toBe(true);
     expect(deps.audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('W3 — concurrent_state_change when repo throws InvoiceApplyConflictError(applyDraftUpdate)', async () => {
+    // Models the race where findDraftById reads status='draft' but a
+    // concurrent issueInvoice flips the row to 'issued' before our
+    // guarded UPDATE fires. The repo's status='draft' WHERE guard then
+    // matches zero rows and the repo throws. The use-case MUST map
+    // this to a typed `concurrent_state_change` error, not re-throw.
+    const deps = makeDeps(makeDraft({ autoEmailOnIssue: null }));
+    deps.invoiceRepo.applyDraftUpdate = vi.fn(async () => {
+      throw new InvoiceApplyConflictError('applyDraftUpdate');
+    });
+    const r = await updateInvoiceDraft(deps, { ...baseInput, autoEmailOnIssue: true });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('concurrent_state_change');
   });
 
   it('requestId undefined → audit records null', async () => {

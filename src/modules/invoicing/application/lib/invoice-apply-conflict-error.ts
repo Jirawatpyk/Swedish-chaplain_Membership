@@ -12,8 +12,8 @@
  * depends on a higher-level abstraction, not the other way round).
  */
 export class InvoiceApplyConflictError extends Error {
-  readonly kind: 'applyIssue' | 'applyPayment';
-  constructor(kind: 'applyIssue' | 'applyPayment') {
+  readonly kind: 'applyIssue' | 'applyPayment' | 'applyDraftUpdate';
+  constructor(kind: 'applyIssue' | 'applyPayment' | 'applyDraftUpdate') {
     super(`${kind}: no row updated (concurrent state change)`);
     this.name = 'InvoiceApplyConflictError';
     this.kind = kind;
