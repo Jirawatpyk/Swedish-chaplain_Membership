@@ -23,7 +23,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { recordPayment } from '@/modules/invoicing/application/use-cases/record-payment';
 import type { RecordPaymentDeps } from '@/modules/invoicing/application/use-cases/record-payment';
-import type { Invoice } from '@/modules/invoicing/domain/invoice';
+import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
@@ -149,9 +149,20 @@ function makeDeps(
         listPaged: vi.fn(),
       applyIssue: vi.fn(),
       deleteDraft: vi.fn(),
-      applyPayment: vi.fn(),
+      // applyPayment echoes the input back as the updated invoice —
+      // record-payment now uses the RETURNING value directly instead
+      // of re-reading.
+      applyPayment: vi.fn(async () =>
+        draft ? ({ ...draft, status: 'paid' } as Invoice) : (null as unknown as Invoice),
+      ),
       applyDraftUpdate: vi.fn(),
-      lockForUpdate: vi.fn(async () => ({ status: 'issued' as const })),
+      // Return the draft's CURRENT status — `rowExists=false` means
+      // the row doesn't exist (null), otherwise surface whatever
+      // status the fixture was built with so the state-machine
+      // branches all exercise correctly.
+      lockForUpdate: vi.fn(async () =>
+        rowExists ? ((draft?.status ?? 'issued') as InvoiceStatus) : null,
+      ),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
@@ -250,11 +261,11 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     if (!r.ok) expect(r.error.code).toBe('no_snapshot_on_invoice');
   });
 
-  it('no_snapshot_on_invoice — settings missing at pay time', async () => {
+  it('settings_missing — tenant settings row absent at pay time', async () => {
     const deps = makeDeps(true, makeIssuedInvoice(), null);
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('no_snapshot_on_invoice');
+    if (!r.ok) expect(r.error.code).toBe('settings_missing');
   });
 
   it('combined numbering — no receipt seq allocation', async () => {

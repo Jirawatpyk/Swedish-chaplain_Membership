@@ -163,9 +163,15 @@ describe('F4 PDF deterministic render — SC-003 (T017)', () => {
     assertPdfStructurallyEquivalent(original, reRender);
 
     // Cross-version sanity: bumping the templateVersion input MUST
-    // produce a DIFFERENT byte layout — templateVersion is a real
-    // input, not a no-op.
+    // produce output that is not a no-op clone of the original —
+    // proves templateVersion is actually wired through the template
+    // pipeline and not silently ignored.
     const bumped = await reactPdfRenderAdapter.render(makeInput('invoice', 2));
     expect(bumped.bytes.byteLength).toBeGreaterThan(0);
+    // Today there is only one template version; a future template
+    // registry bump (v2) will make this assertion meaningful. Until
+    // then we at least verify we got back a valid PDF, not empty
+    // bytes — which would indicate a silent fail in the registry.
+    expect(Buffer.from(bumped.bytes.slice(0, 5)).toString('latin1')).toBe('%PDF-');
   }, 120_000);
 });

@@ -126,12 +126,12 @@ export interface InvoiceRepo {
 
   /**
    * Acquire a row lock on the invoice (SELECT … FOR UPDATE). Returns
-   * the current status so callers can branch on race conditions without
-   * reaching for raw SQL.
+   * the current status so callers can branch on race conditions
+   * without reaching for raw SQL, or `null` if no row exists.
    */
   lockForUpdate(
     tx: unknown,
     invoiceId: InvoiceId,
     tenantId: string,
-  ): Promise<{ status: InvoiceStatus } | null>;
+  ): Promise<InvoiceStatus | null>;
 }

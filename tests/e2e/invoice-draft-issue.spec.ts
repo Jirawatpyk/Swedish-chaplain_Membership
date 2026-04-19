@@ -101,16 +101,26 @@ test.describe('@us1 invoice draft → issue', () => {
     // drafts still render the filter correctly).
     await page.goto('/admin/invoices?status=draft');
     await page.waitForLoadState('networkidle');
-    // Either rows exist AND at least one cell shows "Draft", OR the
-    // filtered empty-state message is visible. This assertion works
-    // on seeded + unseeded tenants alike.
-    const draftCell = page.getByRole('cell', { name: /^draft$/i });
-    const emptyState = page.getByText(/no invoices? found|no results/i);
-    const either = await Promise.race([
-      draftCell.first().waitFor({ state: 'visible', timeout: 2_000 }).then(() => 'draft' as const).catch(() => null),
-      emptyState.first().waitFor({ state: 'visible', timeout: 2_000 }).then(() => 'empty' as const).catch(() => null),
-    ]);
-    expect(either === 'draft' || either === 'empty').toBe(true);
+    // Either rows exist with at least one "Draft" cell, OR the
+    // filtered empty-state message is visible. `poll` waits until
+    // one side becomes true, with a generous timeout for CI
+    // cold-start where layout can take a few seconds.
+    const draftCell = page.getByRole('cell', { name: /^draft$/i }).first();
+    const emptyState = page.getByText(/no invoices? found|no results/i).first();
+    await expect
+      .poll(
+        async () => {
+          const [draftVisible, emptyVisible] = await Promise.all([
+            draftCell.isVisible().catch(() => false),
+            emptyState.isVisible().catch(() => false),
+          ]);
+          if (draftVisible) return 'draft';
+          if (emptyVisible) return 'empty';
+          return 'pending';
+        },
+        { timeout: 10_000 },
+      )
+      .toMatch(/^(draft|empty)$/);
   });
 
   test.describe('AS5 manager RBAC read-only (FR-003)', () => {

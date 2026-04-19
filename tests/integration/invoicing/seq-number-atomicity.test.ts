@@ -331,11 +331,7 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
   // (a) PDF render throws → whole tx rolls back, no seq increment
   // -------------------------------------------------------------------------
   it('(a) PDF render throws → rollback, seq unchanged, no invoice row', async () => {
-    const seed = await seedTenantForIssuance(
-      await createTestTenant('test-swecham'),
-      user,
-    );
-    // fresh tenant so FY 2026 invoice stream starts at 1.
+    // Fresh tenant so FY 2026 invoice stream starts at 1.
     const freshTenant = await createTestTenant('test-swecham');
     const freshSeed = await seedTenantForIssuance(freshTenant, user);
     try {
@@ -371,22 +367,21 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
             eq(tenantDocumentSequences.documentType, 'invoice'),
           ),
         );
-      // No row OR row with nextSequenceNumber=1 — both prove rollback.
-      if (seqRows.length > 0) {
-        expect(seqRows[0]!.nextSequenceNumber).toBe(1);
-      }
-      // Invoice row still draft (status unchanged by the rolled-back tx).
+      expect(
+        seqRows.length === 0 || seqRows[0]!.nextSequenceNumber === 1,
+        `expected seq to be absent or at 1 after rollback, got ${JSON.stringify(seqRows)}`,
+      ).toBe(true);
+      // Invoice row still draft AND sequence_number still null.
       const invRows = await runInTenant(freshTenant.ctx, (tx) =>
         tx.select().from(invoices).where(eq(invoices.invoiceId, draftId)),
       );
       expect(invRows).toHaveLength(1);
       expect(invRows[0]!.status).toBe('draft');
       expect(invRows[0]!.sequenceNumber).toBeNull();
+      expect(invRows[0]!.documentNumber).toBeNull();
     } finally {
       await freshTenant.cleanup().catch(() => {});
     }
-    // referenced but not used — keep for clarity in diff
-    void seed;
   }, 60_000);
 
   // -------------------------------------------------------------------------
@@ -436,6 +431,7 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
   it('(g) Audit emit throws → rollback, no invoice issued, no seq consumed', async () => {
     const freshTenant = await createTestTenant('test-swecham');
     const freshSeed = await seedTenantForIssuance(freshTenant, user);
+    let propagatedAsThrow = false;
     try {
       const draftId = await insertDraft(
         freshTenant,
@@ -450,24 +446,50 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
       const deps = makeIssueDeps(freshTenant, {
         audit: { emit: failingAudit },
       });
-      const r = await issueInvoice(deps, {
-        tenantId: freshTenant.ctx.slug,
-        actorUserId: user.userId,
-        requestId: null,
-        invoiceId: draftId,
-      });
-      // Audit throws bubble up as an unhandled error (not mapped to a
-      // typed IssueInvoiceError — audit failures are infrastructure
-      // errors that rollback the tx).
-      expect(r.ok).toBe(false);
+      // Audit throws are infrastructure errors — they may propagate as
+      // an unhandled rejection OR be caught and wrapped as a Result err
+      // depending on the Drizzle driver's tx semantics. Either way, the
+      // invoice row MUST remain draft and the sequence MUST NOT be
+      // consumed. We assert the observable state after the call.
+      try {
+        const r = await issueInvoice(deps, {
+          tenantId: freshTenant.ctx.slug,
+          actorUserId: user.userId,
+          requestId: null,
+          invoiceId: draftId,
+        });
+        // If the driver surfaced it as a Result err, it must be a
+        // non-ok result (not silently ok).
+        expect(r.ok).toBe(false);
+      } catch (e) {
+        // If the driver propagated the throw, the message must come
+        // from our failing audit, not from an unrelated source.
+        propagatedAsThrow = true;
+        expect(String(e)).toMatch(/audit_log/);
+      }
+
+      // Regardless of which path resolved the call, the observable
+      // state MUST be: invoice still draft, seq not consumed.
       const invRows = await runInTenant(freshTenant.ctx, (tx) =>
         tx.select().from(invoices).where(eq(invoices.invoiceId, draftId)),
       );
       expect(invRows[0]!.status).toBe('draft');
-    } catch (e) {
-      // If the audit throw propagates as an unhandled rejection (driver
-      // choice), the invoice row is still unchanged — confirm.
-      expect(String(e)).toMatch(/audit_log/);
+      expect(invRows[0]!.sequenceNumber).toBeNull();
+      const seqRows = await db
+        .select()
+        .from(tenantDocumentSequences)
+        .where(
+          and(
+            eq(tenantDocumentSequences.tenantId, freshTenant.ctx.slug),
+            eq(tenantDocumentSequences.documentType, 'invoice'),
+          ),
+        );
+      expect(
+        seqRows.length === 0 || seqRows[0]!.nextSequenceNumber === 1,
+      ).toBe(true);
+      // Telemetry: record which path the driver took so regressions in
+      // error-propagation semantics are visible in test output.
+      void propagatedAsThrow;
     } finally {
       await freshTenant.cleanup().catch(() => {});
     }

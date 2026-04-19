@@ -35,9 +35,12 @@ export const postgresSequenceAllocator: SequenceAllocatorPort = {
     // Belt-and-suspenders tenant-context assertion. A caller that
     // accidentally hands us a bare `db` (non-tenant connection) would
     // advisory-lock fine but bypass RLS. In dev / test we hard-fail
-    // when `app.current_tenant` is not set for this tenant; in prod we
-    // skip the round-trip (RLS still enforces tenant scoping and this
-    // check would add ~1ms per issuance).
+    // when `app.current_tenant` is not set for this tenant; in prod
+    // we skip the round-trip (RLS still enforces tenant scoping and
+    // this check would add ~1ms per issuance). Operators can opt in
+    // for production by setting `DEBUG_RLS_STATE=true` in Vercel env —
+    // useful when investigating a suspected RLS bypass without a
+    // code deploy.
     if (process.env.NODE_ENV !== 'production' || process.env.DEBUG_RLS_STATE === 'true') {
       const ctxRows = (await tx.execute(
         sql`SELECT current_setting('app.current_tenant', TRUE) AS ctx`,

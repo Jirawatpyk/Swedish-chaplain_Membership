@@ -38,6 +38,7 @@ import {
 } from '@/modules/invoicing/domain/invoice-line';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { calculateProRateFactor } from '@/modules/invoicing/domain/policies/calculate-pro-rate-factor';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 
 export const createInvoiceDraftSchema = z.object({
   tenantId: z.string().min(1),
@@ -55,9 +56,14 @@ export type CreateInvoiceDraftError =
   | { code: 'settings_missing' }
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
-  | { code: 'plan_mismatch'; memberPlan: string; requestedPlan: string }
   | { code: 'plan_not_found' }
   | { code: 'invalid_line'; reason: string };
+// NOTE: `plan_mismatch` was previously declared but never emitted —
+// the member/plan parity guard is handled by the F3 UI (Plan field
+// is read-only on the invoice form, bound to the member's plan). A
+// future iteration will add the server-side guard when
+// MemberIdentityView exposes planId + planYear, at which point the
+// error variant will be re-introduced alongside its emitter.
 
 export interface CreateInvoiceDraftDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -84,21 +90,20 @@ function fiscalYearBoundary(
   nowIso: string,
   startMonth: number,
 ): { fyStartDate: string; fyEndDate: string; issueDate: string } {
-  // Bangkok (+07:00, no DST) — safe to derive via UTC + offset for
-  // date-only math without pulling js-joda here. The existing
-  // `fiscalYearFromUtcIso` already handles the precise FY membership;
-  // here we only need the calendar date bounds.
-  const utc = new Date(nowIso);
-  const bkk = new Date(utc.getTime() + 7 * 60 * 60 * 1000);
-  const bkkYear = bkk.getUTCFullYear();
-  const bkkMonth = bkk.getUTCMonth() + 1; // 1..12
-  const bkkDay = bkk.getUTCDate();
-  const issueDate = `${bkkYear}-${String(bkkMonth).padStart(2, '0')}-${String(bkkDay).padStart(2, '0')}`;
+  // Derive issue date from the shared Bangkok-local helper (same one
+  // issue-invoice uses) so the two use cases agree on wall-clock
+  // timezone handling.
+  const issueDate = bangkokLocalDate(nowIso);
+  const [bkkYearStr, bkkMonthStr] = issueDate.split('-');
+  const bkkYear = Number(bkkYearStr);
+  const bkkMonth = Number(bkkMonthStr);
 
   // If we're before startMonth, FY anchor is the PREVIOUS calendar year.
   const fyAnchorYear = bkkMonth >= startMonth ? bkkYear : bkkYear - 1;
   const fyStartDate = `${fyAnchorYear}-${String(startMonth).padStart(2, '0')}-01`;
-  // End of FY = day before (startMonth) one year later.
+  // End of FY = day before (startMonth) one year later. Plain UTC
+  // arithmetic is safe here because we are computing calendar dates
+  // only — not clocks / instants.
   const endAnchor = new Date(Date.UTC(fyAnchorYear + 1, startMonth - 1, 1));
   endAnchor.setUTCDate(endAnchor.getUTCDate() - 1);
   const fyEndDate = `${endAnchor.getUTCFullYear()}-${String(endAnchor.getUTCMonth() + 1).padStart(2, '0')}-${String(endAnchor.getUTCDate()).padStart(2, '0')}`;

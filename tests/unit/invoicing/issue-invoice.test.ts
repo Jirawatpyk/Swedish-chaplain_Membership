@@ -148,7 +148,10 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
-      lockForUpdate: vi.fn(async () => ({ status: 'issued' as const })),
+      // Default: returns the status of the provided draft fixture so
+      // the lock check passes through to findDraftById. Individual
+      // tests override this to test status-race branches.
+      lockForUpdate: vi.fn(async () => (draft?.status ?? null) as InvoiceStatus | null),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),

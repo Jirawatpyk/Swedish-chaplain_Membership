@@ -34,6 +34,8 @@ import {
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
+import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
+import { logger } from '@/lib/logger';
 
 export const recordPaymentSchema = z.object({
   tenantId: z.string().min(1),
@@ -53,10 +55,11 @@ export type RecordPaymentError =
   | { code: 'invoice_not_found' }
   | { code: 'invalid_status'; status: InvoiceStatus }
   | { code: 'no_snapshot_on_invoice' }
+  | { code: 'settings_missing' }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }
-  | { code: 'overflow'; fiscalYear: number }
-  | { code: 'idempotency_key_mismatch' };
+  | { code: 'overflow'; fiscalYear: FiscalYear }
+  | { code: 'concurrent_state_change' };
 
 /**
  * Internal throw-carrier: aborts the transaction AND propagates a typed
@@ -95,8 +98,8 @@ export async function recordPayment(
   return await deps.invoiceRepo.withTx(async (tx) => {
     // Row-lock first — guards against concurrent pay/void/credit-note
     // transactions on the same invoice.
-    const locked = await deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId);
-    if (!locked) return err({ code: 'invoice_not_found' });
+    const lockedStatus = await deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId);
+    if (!lockedStatus) return err({ code: 'invoice_not_found' });
 
     const loaded = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
     if (!loaded) return err({ code: 'invoice_not_found' });
@@ -120,7 +123,7 @@ export async function recordPayment(
     }
 
     const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
-    if (!settings) return err({ code: 'no_snapshot_on_invoice' });
+    if (!settings) return err({ code: 'settings_missing' });
 
     // Receipt PDF — reuses invoice snapshot (FR-038 immutability). The
     // kind differs based on tenant setting; combined mode renders a
@@ -147,7 +150,7 @@ export async function recordPayment(
         // consumed by a failed receipt number assignment.
         throw new RecordPaymentInternalError({
           code: 'overflow',
-          fiscalYear: Number(loaded.fiscalYear),
+          fiscalYear: loaded.fiscalYear,
         });
       }
       receiptDocNumRaw = receiptDoc.value.raw;
@@ -172,7 +175,6 @@ export async function recordPayment(
         total: loaded.total,
       });
     } catch (e) {
-      if (e instanceof RecordPaymentInternalError) throw e;
       throw new RecordPaymentInternalError({
         code: 'pdf_render_failed',
         reason: String(e),
@@ -194,17 +196,28 @@ export async function recordPayment(
     }
 
     // Atomic issued→paid UPDATE with payment fields + receipt PDF
-    // metadata, via a single repo call (no raw SQL in Application).
-    await deps.invoiceRepo.applyPayment(tx, {
-      tenantId: input.tenantId,
-      invoiceId,
-      paymentMethod: input.paymentMethod,
-      paymentReference: input.paymentReference ?? null,
-      paymentNotes: input.paymentNotes ?? null,
-      paymentRecordedByUserId: input.actorUserId,
-      receiptPdfBlobKey: receiptBlobKey,
-      receiptPdfSha256: rendered.sha256,
-    });
+    // metadata. The repo throws `applyPayment: no row updated` when
+    // the status guard (WHERE status='issued') doesn't match — maps
+    // to a typed `concurrent_state_change` error instead of leaking a
+    // raw 500.
+    let updated: Invoice;
+    try {
+      updated = await deps.invoiceRepo.applyPayment(tx, {
+        tenantId: input.tenantId,
+        invoiceId,
+        paymentMethod: input.paymentMethod,
+        paymentReference: input.paymentReference ?? null,
+        paymentNotes: input.paymentNotes ?? null,
+        paymentRecordedByUserId: input.actorUserId,
+        receiptPdfBlobKey: receiptBlobKey,
+        receiptPdfSha256: rendered.sha256,
+      });
+    } catch (e) {
+      if ((e as Error).message?.includes('applyPayment: no row updated')) {
+        throw new RecordPaymentInternalError({ code: 'concurrent_state_change' });
+      }
+      throw e;
+    }
 
     await deps.audit.emit(tx, {
       tenantId: input.tenantId,
@@ -234,13 +247,20 @@ export async function recordPayment(
       });
     }
 
-    // Re-read the updated row for the return value.
-    const updated = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
-    if (!updated) return err({ code: 'invoice_not_found' });
+    // `applyPayment` returns the refreshed row via RETURNING — no need
+    // for a second findDraftById round-trip.
     return ok(updated);
   });
   } catch (e) {
     if (e instanceof RecordPaymentInternalError) {
+      logger.error(
+        {
+          err: e.error,
+          invoiceId: input.invoiceId,
+          tenantId: input.tenantId,
+        },
+        'recordPayment: internal error, rolling back',
+      );
       return err(e.error);
     }
     throw e;

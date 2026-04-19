@@ -53,9 +53,11 @@ import {
 } from '@/modules/invoicing/domain/invoice';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
+import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
 import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
+import { logger } from '@/lib/logger';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -72,7 +74,7 @@ export type IssueInvoiceError =
   | { code: 'settings_missing' }
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
-  | { code: 'overflow'; fiscalYear: number }
+  | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string };
 
@@ -119,17 +121,28 @@ export async function issueInvoice(
 
   try {
   return await deps.invoiceRepo.withTx(async (tx) => {
+    // --- PRE-SEQUENCE early exits (safe to `return err(...)` — the tx
+    // has no state yet, so a committed callback with zero writes is a
+    // no-op. DO NOT reorder code below to put these AFTER allocateNext
+    // without converting them to throw-carrier; committing a partial
+    // tx that already consumed a sequence number creates a §87 gap.
+
     // A. Settings
     const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
     if (!settings) return err({ code: 'settings_missing' });
 
-    // C. Draft invoice
+    // C1. Row-lock the invoice BEFORE reading the draft — serialises
+    // concurrent issue attempts on the same invoice id so two admins
+    // clicking "Issue" at once cannot both reach allocateNext.
+    const lockedStatus = await deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId);
+    if (!lockedStatus) return err({ code: 'invoice_not_found' });
+    if (lockedStatus !== 'draft') {
+      return err({ code: 'invoice_already_issued', status: lockedStatus });
+    }
+
+    // C2. Draft invoice (now safely inside the row lock)
     const draft = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
     if (!draft) return err({ code: 'invoice_not_found' });
-    if (draft.status !== 'draft') {
-      // Idempotent replay detection — caller may be retrying.
-      return err({ code: 'invoice_already_issued', status: draft.status });
-    }
 
     // B. Member lock (FR-037 archive-race)
     const member = await deps.memberIdentity.getForIssue(
@@ -147,6 +160,10 @@ export async function issueInvoice(
       settings.fiscalYearStartMonth as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,
     );
 
+    // --- POST-SEQUENCE zone begins. Every error path below MUST throw
+    // an `IssueInvoiceInternalError` so withTx rolls back and the
+    // allocator's increment is NOT committed.
+
     // E. Allocate sequence
     const seq = await deps.sequenceAllocator.allocateNext(tx, {
       tenantId: input.tenantId,
@@ -154,7 +171,11 @@ export async function issueInvoice(
       fiscalYear: fy,
     });
     const docNum = DocumentNumber.of(settings.invoiceNumberPrefix, fy, seq);
-    if (!docNum.ok) return err({ code: 'overflow', fiscalYear: fy });
+    if (!docNum.ok) {
+      // Critical: overflow happens AFTER allocateNext — must throw, not
+      // return err, otherwise the tx commits and we leak a §87 gap.
+      throw new IssueInvoiceInternalError({ code: 'overflow', fiscalYear: fy });
+    }
 
     // F. Pricing from lines
     let subtotal = Money.zero();
@@ -275,6 +296,14 @@ export async function issueInvoice(
   });
   } catch (e) {
     if (e instanceof IssueInvoiceInternalError) {
+      logger.error(
+        {
+          err: e.error,
+          invoiceId: input.invoiceId,
+          tenantId: input.tenantId,
+        },
+        'issueInvoice: internal error, rolling back',
+      );
       return err(e.error);
     }
     throw e;

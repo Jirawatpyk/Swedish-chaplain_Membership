@@ -133,12 +133,18 @@ export function InvoicesTable({ rows }: { rows: readonly InvoicesTableRow[] }) {
               </TableCell>
               <TableCell className="align-middle text-right">
                 {r.hasPdf ? (
-                  <Link
+                  // Plain <a> — PDF endpoint returns binary bytes;
+                  // Next.js <Link> would misinterpret the response as
+                  // an RSC payload and fail the fetch.
+                  <a
                     href={`/api/invoices/${r.invoiceId}/pdf`}
                     className="text-sm text-primary hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
                   >
                     {t('actions.download')}
-                  </Link>
+                  </a>
                 ) : (
                   <span className="text-sm text-muted-foreground">—</span>
                 )}

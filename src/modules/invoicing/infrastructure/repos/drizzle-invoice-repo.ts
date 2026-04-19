@@ -48,6 +48,12 @@ function rowToLine(row: InvoiceLineRow): InvoiceLine {
   };
 }
 
+const satangOrNull = (v: unknown): Money | null =>
+  v === null ? null : Money.fromSatangUnsafe(BigInt(v as string));
+
+const isoOrNull = (d: Date | null): string | null =>
+  d === null ? null : d.toISOString();
+
 function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice {
   let docNum: DocumentNumber | null = null;
   if (row.documentNumber !== null) {
@@ -60,18 +66,9 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     docNum = parsed.value;
   }
 
-  const subtotal =
-    row.subtotalSatang === null
-      ? null
-      : Money.fromSatangUnsafe(BigInt(row.subtotalSatang as unknown as string));
-  const vat =
-    row.vatSatang === null
-      ? null
-      : Money.fromSatangUnsafe(BigInt(row.vatSatang as unknown as string));
-  const total =
-    row.totalSatang === null
-      ? null
-      : Money.fromSatangUnsafe(BigInt(row.totalSatang as unknown as string));
+  const subtotal = satangOrNull(row.subtotalSatang);
+  const vat = satangOrNull(row.vatSatang);
+  const total = satangOrNull(row.totalSatang);
   const credited = Money.fromSatangUnsafe(
     BigInt(row.creditedTotalSatang as unknown as string),
   );
@@ -91,8 +88,8 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
 
     issueDate: row.issueDate ?? null,
     dueDate: row.dueDate ?? null,
-    paidAt: row.paidAt === null ? null : row.paidAt.toISOString(),
-    voidedAt: row.voidedAt === null ? null : row.voidedAt.toISOString(),
+    paidAt: isoOrNull(row.paidAt),
+    voidedAt: isoOrNull(row.voidedAt),
 
     currency: 'THB',
     subtotal,
@@ -379,10 +376,14 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
           and(
             eq(invoices.tenantId, input.tenantId),
             eq(invoices.invoiceId, input.invoiceId),
+            // Defense-in-depth — application calls lockForUpdate first,
+            // but an UPDATE without a status guard could still overwrite
+            // an already-issued row if a refactor removed the lock.
+            eq(invoices.status, 'draft'),
           ),
         )
         .returning();
-      if (!updated) throw new Error('applyIssue: no row returned');
+      if (!updated) throw new Error('applyIssue: no draft row updated (concurrent issue?)');
 
       const lineRows = await tx
         .select()
@@ -412,15 +413,16 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
          WHERE tenant_id = ${tenantIdArg} AND invoice_id = ${invoiceId}
          FOR UPDATE
       `)) as unknown as Array<{ status: InvoiceStatus }>;
-      return rows[0] ? { status: rows[0].status } : null;
+      return rows[0]?.status ?? null;
     },
 
     async applyPayment(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
       // Single atomic UPDATE: issued → paid + payment fields + receipt
-      // PDF metadata. The immutability trigger (migration 0019) does not
-      // constrain payment_* / pdf_* / status columns, so no split write
-      // is needed.
+      // PDF metadata. Status/payment/pdf columns are intentionally NOT
+      // guarded by the invoices immutability trigger, so no split
+      // write is needed. The WHERE `status='issued'` guard below
+      // prevents double-apply on concurrent state-change races.
       const [updated] = await tx
         .update(invoices)
         .set({
@@ -459,14 +461,19 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
 
     async applyDraftUpdate(txUnknown, input): Promise<void> {
       const tx = txUnknown as TenantTx;
-      const patch: Record<string, unknown> = { updatedAt: sql`now()` };
+      // Build the patch from caller-supplied fields only — omit keys
+      // the caller didn't set so the UPDATE doesn't overwrite columns
+      // with stale values.
+      const patch: Record<string, unknown> = {};
       if (input.autoEmailOnIssue !== undefined) patch.autoEmailOnIssue = input.autoEmailOnIssue;
       if (input.planId !== undefined) patch.planId = input.planId;
       if (input.planYear !== undefined) patch.planYear = input.planYear;
-      if (Object.keys(patch).length === 1) return; // only updatedAt — nothing meaningful
+      // Skip the UPDATE entirely when no real field changed — prevents
+      // a no-op UPDATE that would still bump updated_at.
+      if (Object.keys(patch).length === 0) return;
       await tx
         .update(invoices)
-        .set(patch)
+        .set({ ...patch, updatedAt: sql`now()` })
         .where(
           and(
             eq(invoices.tenantId, input.tenantId),

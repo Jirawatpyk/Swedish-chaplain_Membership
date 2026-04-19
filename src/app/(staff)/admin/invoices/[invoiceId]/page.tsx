@@ -148,14 +148,14 @@ export default async function InvoiceDetailPage({
           <div className="flex gap-2">
             {isDraft && isAdmin && (
               <>
-                <Link
+                <a
                   href={`/api/invoices/${invoice.invoiceId}/preview`}
                   className={buttonVariants({ variant: 'outline' })}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
                   {t('actions.preview')}
-                </Link>
+                </a>
                 <Link
                   href={`/admin/invoices/${invoice.invoiceId}/issue`}
                   className={buttonVariants({ variant: 'default' })}
@@ -173,12 +173,21 @@ export default async function InvoiceDetailPage({
               </Link>
             )}
             {!isDraft && invoice.pdfBlobKey && (
-              <Link
+              // Plain <a> (not <Link>) — the PDF endpoint returns a
+              // binary stream, which Next.js Link misinterprets as an
+              // RSC navigation and then fails the fetch. `download`
+              // hints the browser to save to disk; `target="_blank"`
+              // additionally gives mobile a chance to use the share
+              // sheet (FR-041).
+              <a
                 href={`/api/invoices/${invoice.invoiceId}/pdf`}
                 className={buttonVariants({ variant: 'outline' })}
+                target="_blank"
+                rel="noopener noreferrer"
+                download
               >
                 {t('actions.download')}
-              </Link>
+              </a>
             )}
           </div>
         }
