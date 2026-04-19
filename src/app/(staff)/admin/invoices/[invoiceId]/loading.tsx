@@ -23,7 +23,7 @@ export default function Loading() {
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* 2-column DL grid skeleton */}
-          <dl className="grid grid-cols-2 gap-4 text-sm">
+          <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             {Array.from({ length: 7 }).map((_, i) => (
               <div key={i} className="flex flex-col gap-1">
                 <Skeleton className="h-3 w-20" />

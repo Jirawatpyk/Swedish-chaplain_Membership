@@ -142,6 +142,7 @@ export function InvoicesTable({ rows }: { rows: readonly InvoicesTableRow[] }) {
                   // (≥44×44 px) on mobile (L4).
                   <a
                     href={`/api/invoices/${r.invoiceId}/pdf`}
+                    aria-label={`${t('actions.download')} — ${r.documentNumber ?? r.invoiceId}`}
                     className={cn(
                       buttonVariants({ variant: 'ghost', size: 'sm' }),
                       'min-h-11 px-3',
