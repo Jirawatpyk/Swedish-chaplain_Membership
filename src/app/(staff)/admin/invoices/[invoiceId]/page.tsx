@@ -8,7 +8,7 @@ import { headers } from 'next/headers';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getInvoice, makeGetInvoiceDeps, Money } from '@/modules/invoicing';
+import { getInvoice, makeGetInvoiceDeps, Money, VatRate, calculateVat } from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -170,11 +170,16 @@ export default async function InvoiceDetailPage({
 
     const fc = await getFeeConfig(buildPlansDeps(tenantCtx));
     if (fc.ok) {
-      const rate = fc.value.vat_rate; // decimal 0.07
-      const vatSat = (sub.satang * BigInt(Math.round(rate * 10000))) / 10000n;
-      displayVatSatang = vatSat;
-      displayTotalSatang = sub.satang + vatSat;
-      displayVatPercent = `${(rate * 100).toFixed(2)}%`;
+      // B6 fix — use Domain VatRate + calculateVat (half-away-from-zero
+      // rounding in satang) instead of float arithmetic. `rate` arrives
+      // as a JS number (e.g. 0.07); normalise to 4-dp string for VatRate
+      // (matches tenant_fee_config numeric(5,4) DB shape).
+      const rate = fc.value.vat_rate;
+      const vatRate = VatRate.ofUnsafe(rate.toFixed(4));
+      const { vat, total } = calculateVat(sub, vatRate);
+      displayVatSatang = vat.satang;
+      displayTotalSatang = total.satang;
+      displayVatPercent = vatRate.toPercentString();
     }
   }
 
@@ -275,11 +280,11 @@ export default async function InvoiceDetailPage({
             </div>
             <div>
               <dt className="text-muted-foreground">{t('fields.issueDate')}</dt>
-              <dd>{invoice.issueDate ?? '—'}</dd>
+              <dd>{formatDate(invoice.issueDate, userLocale)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">{t('fields.dueDate')}</dt>
-              <dd>{invoice.dueDate ?? '—'}</dd>
+              <dd>{formatDate(invoice.dueDate, userLocale)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">{t('fields.subtotal')}</dt>

@@ -29,6 +29,7 @@ export {
 } from './domain/value-objects/pro-rate-policy';
 export { Money } from './domain/value-objects/money';
 export { VatRate } from './domain/value-objects/vat-rate';
+export { calculateVat } from './domain/policies/calculate-vat';
 export {
   DocumentNumber,
   DOCUMENT_NUMBER_MAX_SEQ,
