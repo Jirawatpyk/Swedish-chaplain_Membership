@@ -43,6 +43,7 @@ export default async function IssueInvoicePage({
   const t = await getTranslations('admin.invoices.issue');
   const tDetail = await getTranslations('admin.invoices.detail');
   const { user: currentUser } = await requireSession('staff');
+  if (currentUser.role !== 'admin') notFound();
 
   const hdrs = await headers();
   const requestId = requestIdFromHeaders(hdrs);

@@ -2,6 +2,7 @@
  * T056 — /admin/invoices/new — create draft form (server-loaded dropdowns).
  */
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
@@ -17,7 +18,8 @@ import { CreateDraftForm, type MemberOption, type PlanOption } from '../_compone
 
 export default async function NewInvoiceDraftPage() {
   const t = await getTranslations('admin.invoices.new');
-  await requireSession('staff');
+  const { user } = await requireSession('staff');
+  if (user.role !== 'admin') notFound();
 
   const hdrs = await headers();
   const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });

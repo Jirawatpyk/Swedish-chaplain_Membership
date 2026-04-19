@@ -104,6 +104,7 @@ export default async function InvoiceDetailPage({
   }
 
   const isDraft = invoice.status === 'draft';
+  const isAdmin = currentUser.role === 'admin';
 
   // Drafts don't persist subtotal/vat/total on the row (those are
   // frozen snapshots set on issue). For display, compute a live
@@ -145,7 +146,7 @@ export default async function InvoiceDetailPage({
         }
         actions={
           <div className="flex gap-2">
-            {isDraft && (
+            {isDraft && isAdmin && (
               <>
                 <Link
                   href={`/api/invoices/${invoice.invoiceId}/preview`}
@@ -163,7 +164,7 @@ export default async function InvoiceDetailPage({
                 </Link>
               </>
             )}
-            {invoice.status === 'issued' && (
+            {invoice.status === 'issued' && isAdmin && (
               <Link
                 href={`/admin/invoices/${invoice.invoiceId}/pay`}
                 className={buttonVariants({ variant: 'default' })}

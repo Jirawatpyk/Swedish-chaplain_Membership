@@ -50,7 +50,8 @@ export default async function AdminInvoicesPage({
   const tShared = await getTranslations('shared');
   const query = await searchParams;
 
-  await requireSession('staff');
+  const { user: currentUser } = await requireSession('staff');
+  const isAdmin = currentUser.role === 'admin';
 
   const hdrs = await headers();
   const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
@@ -112,13 +113,15 @@ export default async function AdminInvoicesPage({
         title={t('list.title')}
         subtitle={t('list.description')}
         actions={
-          <Link
-            href="/admin/invoices/new"
-            className={buttonVariants({ variant: 'default' })}
-          >
-            <PlusIcon className="size-4" />
-            {t('list.actions.new')}
-          </Link>
+          isAdmin ? (
+            <Link
+              href="/admin/invoices/new"
+              className={buttonVariants({ variant: 'default' })}
+            >
+              <PlusIcon className="size-4" />
+              {t('list.actions.new')}
+            </Link>
+          ) : null
         }
       />
       <Card>
@@ -129,7 +132,7 @@ export default async function AdminInvoicesPage({
               <p className="text-muted-foreground">
                 {hasFilters ? t('list.filteredEmpty') : t('list.empty')}
               </p>
-              {!hasFilters && (
+              {!hasFilters && isAdmin && (
                 <Link
                   href="/admin/invoices/new"
                   className={buttonVariants({ variant: 'default', className: 'mt-4' })}

@@ -21,7 +21,8 @@ export default async function RecordPaymentPage({
 }) {
   const { invoiceId } = await params;
   const t = await getTranslations('admin.invoices.pay');
-  await requireSession('staff');
+  const { user } = await requireSession('staff');
+  if (user.role !== 'admin') notFound();
 
   const hdrs = await headers();
   const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
