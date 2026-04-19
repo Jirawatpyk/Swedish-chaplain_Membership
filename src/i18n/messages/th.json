@@ -918,7 +918,27 @@
           "unit": "ราคาต่อหน่วย",
           "total": "รวม"
         },
-        "previewLabel": "ประมาณการ"
+        "previewLabel": "ประมาณการ",
+        "payment": {
+          "title": "รายละเอียดการชำระเงิน",
+          "paidAt": "ชำระเมื่อ",
+          "method": "วิธีชำระ",
+          "reference": "เลขอ้างอิง",
+          "recordedBy": "บันทึกโดย",
+          "notes": "หมายเหตุ",
+          "methods": {
+            "bank_transfer": "โอนเงิน",
+            "cheque": "เช็ค",
+            "cash": "เงินสด",
+            "other": "อื่น ๆ"
+          }
+        },
+        "voidDetails": {
+          "title": "ยกเลิกแล้ว",
+          "voidedAt": "ยกเลิกเมื่อ",
+          "voidedBy": "ยกเลิกโดย",
+          "reason": "เหตุผล"
+        }
       },
       "issue": {
         "title": "ออกใบแจ้งหนี้",

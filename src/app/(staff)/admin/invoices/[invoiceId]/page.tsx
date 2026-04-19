@@ -256,6 +256,108 @@ export default async function InvoiceDetailPage({
               <dd className="font-semibold">{formatSatang(displayTotalSatang)} THB</dd>
             </div>
           </dl>
+
+          {/* Payment details — visible once the invoice is paid. Shows
+              who recorded the payment, when, and the supporting
+              reference/notes so finance + audit both have the story
+              on one screen. */}
+          {invoice.status === 'paid' && (
+            <section
+              className="mt-2 rounded-md border bg-muted/30 p-4"
+              aria-labelledby="payment-details-heading"
+            >
+              <h3
+                id="payment-details-heading"
+                className="mb-3 text-sm font-medium"
+              >
+                {t('payment.title')}
+              </h3>
+              <dl className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <dt className="text-muted-foreground">{t('payment.paidAt')}</dt>
+                  <dd>
+                    {invoice.paidAt
+                      ? new Date(invoice.paidAt).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                      : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{t('payment.method')}</dt>
+                  <dd>
+                    {invoice.paymentMethod
+                      ? t(`payment.methods.${invoice.paymentMethod}`)
+                      : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{t('payment.reference')}</dt>
+                  <dd className="font-mono text-xs">
+                    {invoice.paymentReference ?? '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{t('payment.recordedBy')}</dt>
+                  <dd className="font-mono text-xs">
+                    {invoice.paymentRecordedByUserId ?? '—'}
+                  </dd>
+                </div>
+                {invoice.paymentNotes && (
+                  <div className="col-span-2">
+                    <dt className="text-muted-foreground">{t('payment.notes')}</dt>
+                    <dd className="whitespace-pre-wrap">
+                      {invoice.paymentNotes}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </section>
+          )}
+
+          {/* Void details — parallel structure for voided invoices. */}
+          {invoice.status === 'void' && (
+            <section
+              className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 p-4"
+              aria-labelledby="void-details-heading"
+            >
+              <h3
+                id="void-details-heading"
+                className="mb-3 text-sm font-medium text-destructive"
+              >
+                {t('voidDetails.title')}
+              </h3>
+              <dl className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <dt className="text-muted-foreground">{t('voidDetails.voidedAt')}</dt>
+                  <dd>
+                    {invoice.voidedAt
+                      ? new Date(invoice.voidedAt).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                      : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{t('voidDetails.voidedBy')}</dt>
+                  <dd className="font-mono text-xs">
+                    {invoice.voidedByUserId ?? '—'}
+                  </dd>
+                </div>
+                {invoice.voidReason && (
+                  <div className="col-span-2">
+                    <dt className="text-muted-foreground">{t('voidDetails.reason')}</dt>
+                    <dd className="whitespace-pre-wrap">{invoice.voidReason}</dd>
+                  </div>
+                )}
+              </dl>
+            </section>
+          )}
+
           <section className="mt-6">
             <h3 className="mb-2 text-sm font-medium text-muted-foreground">{t('lines.title')}</h3>
             <div className="overflow-x-auto">

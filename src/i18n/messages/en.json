@@ -918,7 +918,27 @@
           "unit": "Unit",
           "total": "Total"
         },
-        "previewLabel": "preview"
+        "previewLabel": "preview",
+        "payment": {
+          "title": "Payment details",
+          "paidAt": "Paid at",
+          "method": "Method",
+          "reference": "Reference",
+          "recordedBy": "Recorded by",
+          "notes": "Notes",
+          "methods": {
+            "bank_transfer": "Bank transfer",
+            "cheque": "Cheque",
+            "cash": "Cash",
+            "other": "Other"
+          }
+        },
+        "voidDetails": {
+          "title": "Voided",
+          "voidedAt": "Voided at",
+          "voidedBy": "Voided by",
+          "reason": "Reason"
+        }
       },
       "issue": {
         "title": "Issue invoice",
