@@ -159,6 +159,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     },
     memberIdentity: {
       getForIssue: vi.fn(async () => member),
+      markRegistrationFeePaid: vi.fn(async () => {}),
     },
     sequenceAllocator: {
       allocateNext: vi.fn(async () => 1),

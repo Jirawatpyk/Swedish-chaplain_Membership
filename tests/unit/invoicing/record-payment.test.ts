@@ -194,6 +194,10 @@ function makeDeps(
     outbox: {
       enqueue: vi.fn(async () => {}),
     },
+    memberIdentity: {
+      getForIssue: vi.fn(),
+      markRegistrationFeePaid: vi.fn(async () => {}),
+    },
     currentTemplateVersion: 1,
     ...overrides,
   };
@@ -391,5 +395,38 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     await recordPayment(deps, input);
     expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
     expect(deps.pdfRender.render).not.toHaveBeenCalled();
+  });
+
+  it('flips registration_fee_paid when paid invoice contains registration_fee line (spec § 398)', async () => {
+    const regFeeLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-2'),
+      kind: 'registration_fee',
+      descriptionTh: 'ค่าลงทะเบียนแรกเข้า',
+      descriptionEn: 'Registration fee (one-off)',
+      unitPrice: Money.fromTHB(5000),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromTHB(5000),
+      position: 2,
+    };
+    const invoiceWithRegFee = makeIssuedInvoice({
+      lines: [makeIssuedInvoice().lines[0]!, regFeeLine],
+    });
+    const deps = makeDeps(true, invoiceWithRegFee, makeSettings());
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.memberIdentity.markRegistrationFeePaid).toHaveBeenCalledWith(
+      expect.anything(),
+      'test-swecham',
+      'member-1',
+    );
+  });
+
+  it('does NOT flip registration_fee_paid when invoice has only membership_fee line', async () => {
+    const invoiceOnlyMembership = makeIssuedInvoice(); // default fixture has 1 membership line
+    const deps = makeDeps(true, invoiceOnlyMembership, makeSettings());
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.memberIdentity.markRegistrationFeePaid).not.toHaveBeenCalled();
   });
 });

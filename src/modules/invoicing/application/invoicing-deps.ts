@@ -110,6 +110,7 @@ export function makeRecordPaymentDeps(tenantId: string): RecordPaymentDeps {
     audit: f4AuditAdapter,
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
+    memberIdentity: memberIdentityAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
   };
 }

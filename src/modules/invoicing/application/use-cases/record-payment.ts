@@ -29,6 +29,7 @@ import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
+import type { MemberIdentityPort } from '../ports/member-identity-port';
 import {
   asInvoiceId,
   type Invoice,
@@ -87,6 +88,7 @@ export interface RecordPaymentDeps {
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   readonly outbox: EmailOutboxPort;
+  readonly memberIdentity: MemberIdentityPort;
   readonly currentTemplateVersion: number;
 }
 
@@ -262,6 +264,24 @@ export async function recordPayment(
         pdfBlobKey: receiptBlobKey,
         pdfTemplateVersion: deps.currentTemplateVersion,
       });
+    }
+
+    // Spec § 398 — "registration fee once per member lifecycle". If
+    // the paid invoice contained a registration_fee line, flip
+    // members.registration_fee_paid = true so the NEXT invoice
+    // doesn't double-charge. Runs inside the same transaction as
+    // applyPayment so a rollback unwinds both writes atomically.
+    // Idempotent — the adapter's WHERE registration_fee_paid=FALSE
+    // makes replay on an already-true row a no-op.
+    const hasRegistrationFee = loaded.lines.some(
+      (l) => l.kind === 'registration_fee',
+    );
+    if (hasRegistrationFee) {
+      await deps.memberIdentity.markRegistrationFeePaid(
+        tx,
+        input.tenantId,
+        loaded.memberId,
+      );
     }
 
     // `applyPayment` returns the refreshed row via RETURNING — no need

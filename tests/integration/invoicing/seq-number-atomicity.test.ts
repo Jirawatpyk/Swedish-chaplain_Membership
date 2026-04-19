@@ -187,6 +187,7 @@ function makeIssueDeps(
           primary_contact_email: 'n@n.n',
         },
       })),
+      markRegistrationFeePaid: vi.fn(async () => {}),
     },
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: {

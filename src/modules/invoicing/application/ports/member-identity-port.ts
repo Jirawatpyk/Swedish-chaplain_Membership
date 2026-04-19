@@ -38,4 +38,20 @@ export interface MemberIdentityPort {
     memberId: string,
     opts?: { readonly forUpdate?: boolean },
   ): Promise<MemberIdentityView | null>;
+
+  /**
+   * Flip `members.registration_fee_paid` to true. Called from
+   * `record-payment` inside the same transaction as `applyPayment`
+   * when the paid invoice contained a registration-fee line — so a
+   * subsequent invoice for the same member won't charge the fee
+   * again (spec § 398 "once per member lifecycle").
+   *
+   * Idempotent: running it when the column is already true is a
+   * no-op (the UPDATE simply affects 0 rows).
+   */
+  markRegistrationFeePaid(
+    tx: unknown,
+    tenantId: string,
+    memberId: string,
+  ): Promise<void>;
 }

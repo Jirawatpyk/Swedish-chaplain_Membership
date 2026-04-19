@@ -93,4 +93,24 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       }),
     };
   },
+
+  async markRegistrationFeePaid(
+    txUnknown,
+    tenantId: string,
+    memberId: string,
+  ): Promise<void> {
+    const tx = txUnknown as TenantTx;
+    // Tenant-scoped UPDATE — RLS enforces the tenant_id predicate
+    // even if it's dropped here, but we include it explicitly as
+    // belt-and-suspenders and for query-planner clarity. Idempotent:
+    // once true, subsequent calls match 0 rows.
+    await tx.execute(sql`
+      UPDATE members
+         SET registration_fee_paid = TRUE,
+             updated_at = now()
+       WHERE tenant_id = ${tenantId}
+         AND member_id = ${memberId}
+         AND registration_fee_paid = FALSE
+    `);
+  },
 };
