@@ -52,6 +52,18 @@ export const recordPaymentSchema = z.object({
   paymentReference: z.string().max(200).optional(),
   paymentNotes: z.string().max(1000).optional(),
   paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // YYYY-MM-DD
+  // R7-S3 — `idempotencyKey` is accepted by the input schema but
+  // CURRENTLY IGNORED by this use-case. Status-based replay detection
+  // (the `status === 'paid'` short-circuit plus the applyPayment
+  // `WHERE status='issued'` guard) already prevents double-apply on
+  // the same invoice, which is the only concurrency failure mode
+  // this endpoint has to defend against at F4 scale.
+  //
+  // The field is RESERVED for a future Phase-10 enhancement that
+  // persists the key to an `idempotency_key` column + a processed-
+  // key log, giving callers a way to DISTINGUISH "already acked"
+  // from "first successful apply" on retries. Tracked in
+  // `specs/007-invoices-receipts/tasks.md § Phase 10`.
   idempotencyKey: z.string().min(1).max(200).optional(),
 });
 

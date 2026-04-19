@@ -10,6 +10,7 @@ import { sql } from 'drizzle-orm';
 import type {
   EmailOutboxPort,
   F4OutboxEventType,
+  F4OutboxLocale,
 } from '../../application/ports/email-outbox-port';
 import type { TenantTx } from '@/lib/db';
 
@@ -20,6 +21,7 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       readonly tenantId: string;
       readonly eventType: F4OutboxEventType;
       readonly recipientEmail: string;
+      readonly recipientLocale?: F4OutboxLocale;
       readonly invoiceId?: string;
       readonly creditNoteId?: string;
       readonly pdfBlobKey: string;
@@ -34,6 +36,10 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       pdf_blob_key: input.pdfBlobKey,
       pdf_template_version: input.pdfTemplateVersion,
     };
+    // R7-S2 — use caller-supplied locale (member's primary-contact
+    // preferred_locale when known). Defaults to 'en' for callers
+    // that predate the port extension.
+    const locale = input.recipientLocale ?? 'en';
 
     await tx.execute(sql`
       INSERT INTO notifications_outbox
@@ -42,7 +48,7 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
         (${input.tenantId},
          'invoice_auto_email'::notification_type,
          ${input.recipientEmail},
-         'en',
+         ${locale},
          ${JSON.stringify(contextData)}::jsonb,
          'pending'::outbox_status,
          0,

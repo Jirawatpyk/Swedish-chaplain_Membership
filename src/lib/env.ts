@@ -114,6 +114,12 @@ const schema = z.object({
   // `current_setting('app.current_tenant', TRUE)` is NULL — prevents
   // "I forgot runInTenant" class of bug during development. MUST be false
   // (or unset) in production; the env validator asserts this below.
+  //
+  // R7-S4 — ops recommendation: set this to TRUE on STAGING (non-prod)
+  // so any cross-tenant hole caught by the F4 sequence allocator or F3
+  // member repo assertion fails loud during QA instead of falling
+  // through to RLS (silent deny → harder to diagnose). Keep OFF in
+  // production to avoid leaking stack traces in hot paths.
   DEBUG_RLS_STATE: booleanFromString.default(false),
 
   // --- F3 Feature flag ------------------------------------------------------

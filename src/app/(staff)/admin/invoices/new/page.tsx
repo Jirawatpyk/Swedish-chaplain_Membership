@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
+import { ArrowLeftIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { FormContainer } from '@/components/layout';
@@ -84,9 +85,10 @@ export default async function NewInvoiceDraftPage() {
       </Card>
       <Link
         href="/admin/invoices"
-        className="text-sm text-muted-foreground hover:underline"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
       >
-        ← {t('cancel')}
+        <ArrowLeftIcon className="size-4" aria-hidden="true" />
+        {t('cancel')}
       </Link>
     </FormContainer>
   );

@@ -9,6 +9,24 @@
  *   3. pg_advisory_xact_lock('invoicing:{tenant}:{doc_type}:{fy}')
  *   4. tenant_document_sequences FOR UPDATE (inside allocator)
  *
+ * R7-S1 — deadlock-safety rationale:
+ *   The (invoice → member → advisory → seq) order is currently
+ *   DEADLOCK-FREE against the F3 `archive-member` path. Archive-
+ *   member acquires ONLY the member lock (no invoice lock), so:
+ *     issue-invoice holds invoice, waits for member
+ *     archive-member holds member, does NOT wait for invoice
+ *   The waits-for graph has no cycle → no deadlock possible.
+ *
+ *   IF a future refactor gives archive-member an invoice lock (e.g.
+ *   to prevent issuing against a mid-archive member atomically),
+ *   this ordering flips to deadlock-prone. At that point REVERSE to
+ *   (member → invoice → advisory → seq) — archive-member's single
+ *   member-lock acquisition stays compatible, and the waits-for
+ *   graph remains acyclic.
+ *
+ *   Until then, do NOT add an invoice lock to archive-member without
+ *   flipping this use-case's lock order FIRST.
+ *
  * Operations (all inside a single DB transaction):
  *   A. load tenant settings (no lock; read-only snapshot)
  *   B. load + lock member (archive-race guard)

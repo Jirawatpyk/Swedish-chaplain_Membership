@@ -16,6 +16,13 @@ export type F4OutboxEventType =
   | 'receipt_pdf_resent'
   | 'credit_note_pdf_resent';
 
+/**
+ * R7-S2 — recipient's preferred locale for auto-email rendering.
+ * Falls back to 'en' when the caller can't determine the member's
+ * preference (e.g. contact has no `preferredLocale` field).
+ */
+export type F4OutboxLocale = 'en' | 'th' | 'sv';
+
 export interface EmailOutboxPort {
   /**
    * `pdfBlobKey` + `pdfTemplateVersion` are kept as FLAT scalars here
@@ -32,6 +39,12 @@ export interface EmailOutboxPort {
       readonly tenantId: string;
       readonly eventType: F4OutboxEventType;
       readonly recipientEmail: string;
+      /**
+       * R7-S2 — recipient locale. Callers SHOULD pass the member's
+       * primary contact's `preferred_locale` when available. Defaults
+       * to 'en' when omitted (preserves pre-R7-S2 behaviour).
+       */
+      readonly recipientLocale?: F4OutboxLocale;
       readonly invoiceId?: string;
       readonly creditNoteId?: string;
       readonly pdfBlobKey: string;

@@ -14,6 +14,7 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { AlertCircleIcon } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -59,7 +60,17 @@ function statusVariant(status: string): BadgeVariant {
 
 function StatusBadge({ status }: { status: string }) {
   const t = useTranslations('admin.invoices.list.statuses');
-  return <Badge variant={statusVariant(status)}>{t(status)}</Badge>;
+  return (
+    <Badge variant={statusVariant(status)}>
+      {/* R7-S7 — icon on overdue so WCAG 1.4.1 "Use of Color" is
+          satisfied: the state is not conveyed by color alone. Text
+          label stays canonical; icon is aria-hidden. */}
+      {status === 'overdue' && (
+        <AlertCircleIcon className="mr-1 size-3" aria-hidden="true" />
+      )}
+      {t(status)}
+    </Badge>
+  );
 }
 
 function formatSatang(satang: string): string {

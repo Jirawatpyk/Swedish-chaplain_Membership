@@ -161,6 +161,14 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
             onChange={(e) => setTyped(e.target.value)}
             placeholder={confirmPhrase}
             autoComplete="off"
+            // R7-S9 — prevent iOS from auto-correcting the typed
+            // phrase (would silently mangle the exact-match check)
+            // and give Android a "Done" keyboard action on commit.
+            inputMode="text"
+            enterKeyHint="done"
+            autoCorrect="off"
+            autoCapitalize="characters"
+            spellCheck={false}
             aria-invalid={typed.length > 0 && !matches}
             aria-describedby={
               typed.length > 0 && !matches ? 'issue-confirm-error' : undefined
