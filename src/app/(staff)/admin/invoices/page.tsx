@@ -67,18 +67,33 @@ export default async function AdminInvoicesPage({
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
   const offset = (page - 1) * PAGE_SIZE;
 
-  const [invoicesResult, membersResult] = await Promise.all([
-    listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
-      tenantId: tenantCtx.slug,
-      offset,
-      pageSize: PAGE_SIZE,
-      includeDrafts,
-      ...(statusFilter && statusFilter !== 'draft'
-        ? { status: statusFilter as 'issued' | 'paid' | 'void' | 'credited' | 'partially_credited' }
-        : {}),
-      ...(qTrim ? { search: qTrim } : {}),
-    }),
-    directorySearch(
+  // W6 fix — `directorySearch` is only used to resolve member names
+  // for DRAFT invoices (which have no memberIdentitySnapshot yet per
+  // FR-038). Non-draft rows all carry the frozen snapshot, so the
+  // 500-row member scan is wasted work on the default view. We skip
+  // it unless drafts could appear in the result set — keeping SC-005
+  // (p95 < 500ms @ 5k invoices) achievable on the hot path.
+  const invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
+    tenantId: tenantCtx.slug,
+    offset,
+    pageSize: PAGE_SIZE,
+    includeDrafts,
+    ...(statusFilter && statusFilter !== 'draft'
+      ? { status: statusFilter as 'issued' | 'paid' | 'void' | 'credited' | 'partially_credited' }
+      : {}),
+    ...(qTrim ? { search: qTrim } : {}),
+  });
+
+  const memberNameById = new Map<string, string>();
+  // Only run the member directory scan when the result set may include
+  // drafts (tabs/filters that enable them) OR when any returned row is
+  // missing a snapshot (defence-in-depth for legacy rows).
+  const needsMemberDirectory =
+    includeDrafts ||
+    (invoicesResult.ok &&
+      invoicesResult.value.rows.some((r) => !r.memberIdentitySnapshot));
+  if (needsMemberDirectory) {
+    const membersResult = await directorySearch(
       { tenant: tenantCtx, memberRepo: buildMembersDeps(tenantCtx).memberRepo },
       // Ceiling 500 — snapshot fallback only (detail + list use the
       // frozen memberIdentitySnapshot first per FR-038, this map is a
@@ -86,13 +101,11 @@ export default async function AdminInvoicesPage({
       // within the 500-member window). See F4 Phase 10 smart feature
       // #2 for server-paged search at scale.
       { status: ['active', 'inactive', 'archived'], limit: 500 },
-    ),
-  ]);
-
-  const memberNameById = new Map<string, string>();
-  if (membersResult.ok) {
-    for (const row of membersResult.value.items) {
-      memberNameById.set(row.member.memberId, row.member.companyName);
+    );
+    if (membersResult.ok) {
+      for (const row of membersResult.value.items) {
+        memberNameById.set(row.member.memberId, row.member.companyName);
+      }
     }
   }
 

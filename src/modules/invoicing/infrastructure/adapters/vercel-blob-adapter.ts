@@ -17,14 +17,33 @@ export const vercelBlobAdapter: BlobStoragePort = {
     readonly body: Uint8Array;
     readonly contentType: 'application/pdf';
   }): Promise<{ readonly key: string; readonly url: string }> {
-    const result = await put(input.key, Buffer.from(input.body), {
-      access: 'public',
-      contentType: input.contentType,
-      token: env.blob.readWriteToken,
-      addRandomSuffix: false,
-      allowOverwrite: true,
-    });
-    return { key: input.key, url: result.url };
+    // W7 fix — `allowOverwrite: false` guards against accidental
+    // silent mutation of a historical tax document. PDF rendering is
+    // deterministic (FR-016), so a re-upload with the same content-
+    // addressed key produces byte-identical output — we can safely
+    // treat the "already exists" error as success and return the
+    // existing URL from `head()`.
+    try {
+      const result = await put(input.key, Buffer.from(input.body), {
+        access: 'public',
+        contentType: input.contentType,
+        token: env.blob.readWriteToken,
+        addRandomSuffix: false,
+        allowOverwrite: false,
+      });
+      return { key: input.key, url: result.url };
+    } catch (e) {
+      // @vercel/blob throws `BlobError` whose message includes the
+      // key + a 409-like signal when allowOverwrite is false and the
+      // key exists. Message/instance shape isn't part of the SDK's
+      // public contract, so match by message substring — if that
+      // fails, re-throw so a genuine upload failure is not masked.
+      const msg = e instanceof Error ? e.message : String(e);
+      const isConflict = /already exists|overwrite/i.test(msg);
+      if (!isConflict) throw e;
+      const existing = await head(input.key, { token: env.blob.readWriteToken });
+      return { key: input.key, url: existing.url };
+    }
   },
 
   async signDownloadUrl(key: string, ttlSeconds?: number): Promise<string> {
