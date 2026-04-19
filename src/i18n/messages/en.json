@@ -956,7 +956,8 @@
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again."
         },
-        "draftLabel": "Draft"
+        "draftLabel": "Draft",
+        "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm."
       },
       "pay": {
         "title": "Record payment",

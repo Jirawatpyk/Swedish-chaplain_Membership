@@ -134,6 +134,7 @@ export async function recordPayment(
     // allocates its own receipt sequence number.
     const combinedMode = settings.receiptNumberingMode === 'combined';
     let receiptDocNumRaw: string | null = null;
+    let receiptDocNum: DocumentNumber | null = null;
     if (!combinedMode) {
       // Separate mode — allocate receipt sequence. fiscalYear presence
       // was validated above (no_snapshot_on_invoice), so loaded.fiscalYear
@@ -156,6 +157,7 @@ export async function recordPayment(
           fiscalYear: loaded.fiscalYear,
         });
       }
+      receiptDocNum = receiptDoc.value;
       receiptDocNumRaw = receiptDoc.value.raw;
     }
 
@@ -166,7 +168,11 @@ export async function recordPayment(
       rendered = await deps.pdfRender.render({
         kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
         templateVersion: deps.currentTemplateVersion,
-        documentNumber: loaded.documentNumber,
+        // Separate-mode receipt MUST use its own document number (the
+        // one just allocated); combined-mode reuses the invoice
+        // number because the document IS the same physical page
+        // (one combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
+        documentNumber: combinedMode ? loaded.documentNumber : receiptDocNum,
         issueDate: loaded.issueDate,
         dueDate: loaded.dueDate,
         tenant: loaded.tenantIdentitySnapshot,

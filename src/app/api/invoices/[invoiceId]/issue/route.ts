@@ -53,7 +53,10 @@ export async function POST(
       : result.error.code === 'invoice_already_issued' ? 409
       : result.error.code === 'member_archived' ? 409
       : result.error.code === 'settings_missing' ? 409
+      : result.error.code === 'invalid_lines' ? 422
       : result.error.code === 'overflow' ? 422
+      : result.error.code === 'pdf_render_failed' ? 500
+      : result.error.code === 'blob_upload_failed' ? 500
       : 500;
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }

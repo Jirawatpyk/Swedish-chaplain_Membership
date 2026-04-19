@@ -69,6 +69,10 @@ export default async function InvoiceDetailPage({
   const t = await getTranslations('admin.invoices.detail');
   const tStatus = await getTranslations('admin.invoices.list.statuses');
   const { user: currentUser } = await requireSession('staff');
+  // M3 — use the next-intl locale for date display so TH/SV users
+  // see their localised format instead of the browser default.
+  const locale = (await import('next-intl/server')).getLocale;
+  const userLocale = await locale();
 
   const hdrs = await headers();
   const requestId = requestIdFromHeaders(hdrs);
@@ -167,7 +171,7 @@ export default async function InvoiceDetailPage({
           </span>
         }
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {isDraft && isAdmin && (
               <>
                 <a
@@ -229,7 +233,7 @@ export default async function InvoiceDetailPage({
       />
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <dl className="grid grid-cols-2 gap-4 text-sm">
+          <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-muted-foreground">{t('fields.memberId')}</dt>
               <dd>
@@ -292,12 +296,12 @@ export default async function InvoiceDetailPage({
               >
                 {t('payment.title')}
               </h3>
-              <dl className="grid grid-cols-2 gap-4 text-sm">
+              <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-muted-foreground">{t('payment.paidAt')}</dt>
                   <dd>
                     {invoice.paidAt
-                      ? new Date(invoice.paidAt).toLocaleDateString(undefined, {
+                      ? new Date(invoice.paidAt).toLocaleDateString(userLocale, {
                           year: 'numeric',
                           month: 'short',
                           day: 'numeric',
@@ -347,12 +351,12 @@ export default async function InvoiceDetailPage({
               >
                 {t('voidDetails.title')}
               </h3>
-              <dl className="grid grid-cols-2 gap-4 text-sm">
+              <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-muted-foreground">{t('voidDetails.voidedAt')}</dt>
                   <dd>
                     {invoice.voidedAt
-                      ? new Date(invoice.voidedAt).toLocaleDateString(undefined, {
+                      ? new Date(invoice.voidedAt).toLocaleDateString(userLocale, {
                           year: 'numeric',
                           month: 'short',
                           day: 'numeric',

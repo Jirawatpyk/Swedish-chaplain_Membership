@@ -55,40 +55,41 @@ const satangOrNull = (v: unknown): Money | null =>
 const isoOrNull = (d: Date | null): string | null =>
   d === null ? null : d.toISOString();
 
-function parseSha256OrNull(raw: string | null, invoiceId: string): Sha256HexT | null {
-  if (raw === null) return null;
-  const parsed = Sha256Hex.parse(raw);
-  if (!parsed.ok) {
-    throw new Error(
-      `drizzle-invoice-repo: corrupt pdf_sha256 on row ${invoiceId}: '${raw}'`,
-    );
-  }
-  return parsed.value;
-}
-
 /**
- * Build the `Invoice.pdf` discriminated-union field from the three
- * nullable DB columns. Returns null if any of the three is absent
- * (legal state: draft invoice has no PDF). Throws if pdf_sha256 is
- * corrupt (malformed hex) so the domain never sees broken data.
+ * Build a PDF discriminated-union field from the three nullable DB
+ * columns (used by both `invoice.pdf` and `invoice.receiptPdf`).
+ * Three valid states:
+ *   - all three columns null  → return null (no PDF yet / combined mode)
+ *   - all three columns set   → return the object
+ *   - any partial combination → THROW (data corruption) rather than
+ *     silently dropping, so observable state matches what's on disk.
+ * Throws on malformed sha256 hex as well.
  */
 function buildPdfOrNull(
   blobKey: string | null,
   sha256Raw: string | null,
   templateVersion: number | null,
   invoiceId: string,
+  fieldLabel: 'pdf' | 'receiptPdf',
 ): { blobKey: string; sha256: Sha256HexT; templateVersion: number } | null {
-  if (blobKey === null || sha256Raw === null || templateVersion === null) {
-    return null;
+  const allNull = blobKey === null && sha256Raw === null && templateVersion === null;
+  const allSet = blobKey !== null && sha256Raw !== null && templateVersion !== null;
+  if (allNull) return null;
+  if (!allSet) {
+    throw new Error(
+      `drizzle-invoice-repo: partial ${fieldLabel} state on row ${invoiceId} — ` +
+        `blobKey=${blobKey === null ? 'null' : 'set'}, ` +
+        `sha256=${sha256Raw === null ? 'null' : 'set'}, ` +
+        `templateVersion=${templateVersion === null ? 'null' : 'set'}`,
+    );
   }
-  const sha256 = parseSha256OrNull(sha256Raw, invoiceId);
-  if (sha256 === null) {
-    // parseSha256OrNull only returns null on `raw === null`, which
-    // we already excluded — this is unreachable but TypeScript
-    // cannot narrow.
-    return null;
+  const parsed = Sha256Hex.parse(sha256Raw);
+  if (!parsed.ok) {
+    throw new Error(
+      `drizzle-invoice-repo: corrupt ${fieldLabel}.sha256 on row ${invoiceId}: '${sha256Raw}'`,
+    );
   }
-  return { blobKey, sha256, templateVersion };
+  return { blobKey, sha256: parsed.value, templateVersion };
 }
 
 function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice {
@@ -164,7 +165,14 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
 
     autoEmailOnIssue: row.autoEmailOnIssue ?? null,
 
-    pdf: buildPdfOrNull(row.pdfBlobKey, row.pdfSha256, row.pdfTemplateVersion, row.invoiceId),
+    pdf: buildPdfOrNull(row.pdfBlobKey, row.pdfSha256, row.pdfTemplateVersion, row.invoiceId, 'pdf'),
+    receiptPdf: buildPdfOrNull(
+      row.receiptPdfBlobKey,
+      row.receiptPdfSha256,
+      row.receiptPdfTemplateVersion,
+      row.invoiceId,
+      'receiptPdf',
+    ),
 
     lines,
     createdAt: row.createdAt.toISOString(),
@@ -467,9 +475,12 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
           paymentReference: input.paymentReference,
           paymentNotes: input.paymentNotes,
           paymentRecordedByUserId: input.paymentRecordedByUserId,
-          pdfBlobKey: input.receiptPdf.blobKey,
-          pdfSha256: input.receiptPdf.sha256,
-          pdfTemplateVersion: input.receiptPdf.templateVersion,
+          // F4 final-review C1: write RECEIPT columns, NOT invoice
+          // columns. The invoice PDF's blobKey+sha256 stays frozen at
+          // its issue-time values for audit integrity.
+          receiptPdfBlobKey: input.receiptPdf.blobKey,
+          receiptPdfSha256: input.receiptPdf.sha256,
+          receiptPdfTemplateVersion: input.receiptPdf.templateVersion,
           updatedAt: sql`now()`,
         })
         .where(

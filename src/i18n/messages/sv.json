@@ -956,7 +956,8 @@
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         },
-        "draftLabel": "Utkast"
+        "draftLabel": "Utkast",
+        "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta."
       },
       "pay": {
         "title": "Registrera betalning",

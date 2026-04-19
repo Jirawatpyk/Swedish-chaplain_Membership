@@ -42,6 +42,7 @@ function makeDraft(overrides: Partial<Invoice> = {}): Invoice {
     voidedByUserId: null,
     autoEmailOnIssue: null,
     pdf: null,
+    receiptPdf: null,
     lines: [],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',

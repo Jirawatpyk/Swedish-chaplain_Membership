@@ -80,9 +80,17 @@ export const invoices = pgTable(
 
     autoEmailOnIssue: boolean('auto_email_on_issue'),
 
+    // Invoice PDF — frozen at issue time, never overwritten.
     pdfBlobKey: text('pdf_blob_key'),
     pdfSha256: char('pdf_sha256', { length: 64 }),
     pdfTemplateVersion: smallint('pdf_template_version'),
+    // Receipt PDF — written by applyPayment, separate from invoice PDF
+    // so the invoice's audit hash stays intact after payment (F4 final-
+    // review C1). Permanently null for combined-mode tenants where the
+    // receipt IS the invoice.
+    receiptPdfBlobKey: text('receipt_pdf_blob_key'),
+    receiptPdfSha256: char('receipt_pdf_sha256', { length: 64 }),
+    receiptPdfTemplateVersion: smallint('receipt_pdf_template_version'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

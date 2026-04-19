@@ -94,14 +94,27 @@ export interface Invoice {
   readonly autoEmailOnIssue: boolean | null;
 
   /**
-   * PDF metadata — present iff the invoice has been issued. All three
-   * sub-fields travel together: `blobKey` alone is meaningless without
-   * the corresponding `sha256` (content-address) and `templateVersion`
-   * (so re-render uses the pinned template, not CURRENT). The
-   * discriminated shape makes the "all-or-nothing" invariant a
-   * compile-time guarantee instead of a runtime null-check trio.
+   * Invoice PDF metadata — frozen at issue time, NEVER overwritten.
+   * Present iff the invoice has been issued. All three sub-fields
+   * travel together: `blobKey` alone is meaningless without the
+   * corresponding `sha256` (content-address) and `templateVersion`
+   * (so re-render uses the pinned template). The discriminated shape
+   * makes the "all-or-nothing" invariant a compile-time guarantee.
    */
   readonly pdf: {
+    readonly blobKey: string;
+    readonly sha256: Sha256Hex;
+    readonly templateVersion: number;
+  } | null;
+
+  /**
+   * Receipt PDF metadata — written by record-payment. Separate from
+   * `pdf` so the invoice's issue-time hash stays intact for audit.
+   * Null on draft/issued; non-null on paid (separate-mode) OR null
+   * on paid (combined-mode — no distinct receipt exists, `pdf` is
+   * the combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
+   */
+  readonly receiptPdf: {
     readonly blobKey: string;
     readonly sha256: Sha256Hex;
     readonly templateVersion: number;

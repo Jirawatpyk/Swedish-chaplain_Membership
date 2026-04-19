@@ -100,6 +100,7 @@ function makeDeps(
           voidedByUserId: null,
           autoEmailOnIssue: args.autoEmailOnIssue,
           pdf: null,
+          receiptPdf: null,
           lines: args.lines,
           createdAt: '2026-04-18T00:00:00Z',
           updatedAt: '2026-04-18T00:00:00Z',

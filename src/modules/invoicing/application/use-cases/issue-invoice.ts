@@ -4,9 +4,10 @@
  * THE critical transactional path per plan § VIII Reliability.
  *
  * Canonical lock order (documented below so reviewers can spot-check):
- *   1. member FOR UPDATE (archive-race guard FR-037)
- *   2. pg_advisory_xact_lock('invoicing:{tenant}:{doc_type}:{fy}')
- *   3. tenant_document_sequences FOR UPDATE (inside allocator)
+ *   1. invoice row FOR UPDATE (lockForUpdate — serialises concurrent issues)
+ *   2. member FOR UPDATE (archive-race guard FR-037)
+ *   3. pg_advisory_xact_lock('invoicing:{tenant}:{doc_type}:{fy}')
+ *   4. tenant_document_sequences FOR UPDATE (inside allocator)
  *
  * Operations (all inside a single DB transaction):
  *   A. load tenant settings (no lock; read-only snapshot)
@@ -47,6 +48,7 @@ import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import {
   asInvoiceId,
+  enforceOneMembershipLine,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,
@@ -75,6 +77,7 @@ export type IssueInvoiceError =
   | { code: 'settings_missing' }
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
+  | { code: 'invalid_lines'; reason: string }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string };
@@ -148,6 +151,17 @@ export async function issueInvoice(
     );
     if (!member) return err({ code: 'member_not_found' });
     if (member.isArchived) return err({ code: 'member_archived' });
+
+    // Domain invariant — exactly one membership_fee line required
+    // before issue (spec § invariant). Runs BEFORE allocateNext so a
+    // malformed draft cannot consume a §87 sequence number.
+    const linesCheck = enforceOneMembershipLine(draft.lines);
+    if (!linesCheck.ok) {
+      return err({
+        code: 'invalid_lines',
+        reason: linesCheck.error.code,
+      });
+    }
 
     // D. Fiscal year
     const fy = fiscalYearFromUtcIso(

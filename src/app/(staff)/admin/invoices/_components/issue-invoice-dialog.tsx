@@ -116,7 +116,7 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
         {/* Pre-confirm summary — inside dialog body so SR narrates
             these numbers as part of the dialog content (not after
             closing). */}
-        <dl className="grid grid-cols-2 gap-3 text-sm">
+        <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-muted-foreground">{tDetail('fields.memberId')}</dt>
             <dd className="font-medium">{summary.memberName}</dd>
@@ -162,7 +162,19 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
             placeholder={confirmPhrase}
             autoComplete="off"
             aria-invalid={typed.length > 0 && !matches}
+            aria-describedby={
+              typed.length > 0 && !matches ? 'issue-confirm-error' : undefined
+            }
           />
+          {typed.length > 0 && !matches && (
+            <p
+              id="issue-confirm-error"
+              role="alert"
+              className="text-xs text-destructive"
+            >
+              {t('confirmMismatch', { phrase: confirmPhrase })}
+            </p>
+          )}
         </div>
 
         <AlertDialogFooter>
