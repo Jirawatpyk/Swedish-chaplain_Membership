@@ -399,6 +399,16 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 - [ ] T118 **≥6 `/speckit.review` passes + ≥2 `/speckit.staff-review` rounds** (Constitution Principle IX solo-maintainer substitute) — log each round's findings + resolutions in `specs/007-invoices-receipts/reviews/review-NNN.md`.
 - [ ] T119 Author `specs/007-invoices-receipts/retrospective.md` — what went well, what was harder than expected, any Complexity Tracking additions, metrics (tasks completed, elapsed time, gotchas).
 
+### 10g. Carry-forward suggestions from staff reviews (polish; all non-blocking)
+
+Sourced from `specs/007-invoices-receipts/reviews/review-20260419-211943.md` § 9 and `review-20260419-220541.md` § 7. Each has an explicit rationale to defer — none block ship; surfaced here so they don't get lost.
+
+- [ ] T120 [P] **S1 — Host-header MTA dual-bind** (`src/app/api/tenant-invoice-settings/route.ts` PATCH): assert `tenantCtx.slug === ctx.current.user.tenantId` (or session-bound tenant) and emit a new `tenant_invoice_settings_cross_tenant_probe` audit event on mismatch. Adds an enum value + a probe emit path. Rationale to defer: STD deployment today; future MTA-readiness.
+- [ ] T121 [P] **S2 — CR/LF strip in `asciiSafe`** (`src/app/api/portal/invoices/[invoiceId]/pdf/route.ts` + symmetric admin route): add `.replace(/[\r\n]/g, '_')` in the helper to defend `Content-Disposition` against future `document_number` format changes that might admit newlines. Currently unreachable (digits + prefix only).
+- [ ] T122 [P] **S3 — Behavioral audit coverage** (`tests/integration/invoicing/audit-coverage.test.ts`): promote the 3 schema-only event types (`invoice_draft_updated`, `invoice_draft_deleted`, `pdf_render_failed`) to end-to-end behavioral assertions by invoking the real use cases and asserting the matching audit row lands. Currently exercised via direct `INSERT` probes.
+- [ ] T123 [P] **S4 — C4 end-to-end VAT source chain test** (`tests/integration/plans/`): add one test that seeds a tenant with `tenant_invoice_settings.vat_rate = '0.0850'`, runs `create-invoice-draft`, and asserts the issued invoice's `vat_rate` column equals `'0.0850'`. Proves the post-R9 consolidation actually reads VAT from the new authoritative source (`tenant_fee_config` has been DROPPED in R9 so the risk is low, but one end-to-end pin protects future drift).
+- [ ] T124 [P] **S5 — fieldset-card nested-role a11y QA** (`src/components/invoices/invoice-settings-form.tsx`): manual screen-reader pass to confirm `<fieldset role="group">` inside `<Card>` does not double-announce on NVDA + VoiceOver. Visual render already verified; this is an a11y sign-off task, not a code change (folds into T114 SR pass).
+
 ### 🚩 Checkpoint CP-10 — Ship Gate (all green for `/speckit.ship`)
 
 **Exit criteria** (ALL required — the final ship-ready gate):
