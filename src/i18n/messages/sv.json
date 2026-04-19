@@ -1129,6 +1129,7 @@
     "member": {
       "dashboard": "Instrumentpanel",
       "profile": "Profil",
+      "invoices": "Fakturor",
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering"
     }
@@ -1158,6 +1159,24 @@
     "loadingForm": "Laddar formulär"
   },
   "portal": {
+    "invoices": {
+      "title": "Fakturor",
+      "subtitle": "Ditt företags fakturor och skattekvitton.",
+      "empty": "Inga fakturor ännu. Fakturor visas här när de utfärdas.",
+      "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
+      "loaded": "Fakturalistan laddad.",
+      "columns": {
+        "documentNumber": "Nr",
+        "status": "Status",
+        "issueDate": "Utfärdad",
+        "dueDate": "Förfaller",
+        "total": "Totalt",
+        "actions": "Åtgärder"
+      },
+      "actions": {
+        "download": "PDF"
+      }
+    },
     "profile": {
       "title": "Min profil",
       "pageTitle": "Min profil",

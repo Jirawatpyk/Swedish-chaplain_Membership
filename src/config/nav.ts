@@ -138,6 +138,13 @@ export const memberNavConfig: NavConfig = {
           href: '/portal/profile',
           activePattern: '/portal/profile',
         },
+        // R7-B3 — US3 member invoice self-service.
+        {
+          titleKey: 'nav.member.invoices',
+          icon: ReceiptIcon,
+          href: '/portal/invoices',
+          activePattern: '/portal/invoices',
+        },
         {
           titleKey: 'nav.member.account',
           icon: UserCircleIcon,

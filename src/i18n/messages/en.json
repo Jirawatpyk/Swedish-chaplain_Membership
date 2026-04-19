@@ -1129,6 +1129,7 @@
     "member": {
       "dashboard": "Dashboard",
       "profile": "Profile",
+      "invoices": "Invoices",
       "account": "Account",
       "ariaLabel": "Member navigation"
     }
@@ -1158,6 +1159,24 @@
     "loadingForm": "Loading form"
   },
   "portal": {
+    "invoices": {
+      "title": "Invoices",
+      "subtitle": "Your company's invoices and tax receipts.",
+      "empty": "No invoices yet. Invoices will appear here once issued.",
+      "notLinked": "Your account is not linked to a member. Please contact your administrator.",
+      "loaded": "Invoices list loaded.",
+      "columns": {
+        "documentNumber": "Number",
+        "status": "Status",
+        "issueDate": "Issued",
+        "dueDate": "Due",
+        "total": "Total",
+        "actions": "Actions"
+      },
+      "actions": {
+        "download": "PDF"
+      }
+    },
     "profile": {
       "title": "My profile",
       "pageTitle": "My Profile",

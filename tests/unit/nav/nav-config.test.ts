@@ -61,13 +61,17 @@ describe('staffNavConfig', () => {
 });
 
 describe('memberNavConfig', () => {
-  it('has exactly 1 section with 3 items: Dashboard, Profile, Account', () => {
+  it('has exactly 1 section with 4 items: Dashboard, Profile, Invoices, Account (R7-B3)', () => {
     expect(memberNavConfig.sections).toHaveLength(1);
     const section = memberNavConfig.sections[0]!;
-    expect(section.items).toHaveLength(3);
+    expect(section.items).toHaveLength(4);
     expect(section.items[0]!.titleKey).toBe('nav.member.dashboard');
     expect(section.items[1]!.titleKey).toBe('nav.member.profile');
-    expect(section.items[2]!.titleKey).toBe('nav.member.account');
+    // R7-B3 — US3 member invoice self-service inserted between
+    // Profile and Account to group "company information" (Profile +
+    // Invoices) before "personal settings" (Account).
+    expect(section.items[2]!.titleKey).toBe('nav.member.invoices');
+    expect(section.items[3]!.titleKey).toBe('nav.member.account');
   });
 
   it('no NavGroups in member config', () => {
