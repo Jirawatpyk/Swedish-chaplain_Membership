@@ -34,6 +34,11 @@ export const tenantInvoiceSettings = pgTable(
     registrationFeeSatang: bigint('registration_fee_satang', { mode: 'bigint' })
       .notNull()
       .default(0n),
+    // R7 consolidation (migration 0026) — tenant currency migrated
+    // from F2 `tenant_fee_config.currency_code`. ISO 4217, 3 upper-
+    // case letters enforced at DB level + at Application validation.
+    // F2 plan module reads this via the new `TenantTaxPolicyPort`.
+    currencyCode: text('currency_code').notNull().default('THB'),
 
     legalNameTh: text('legal_name_th').notNull(),
     legalNameEn: text('legal_name_en').notNull(),
