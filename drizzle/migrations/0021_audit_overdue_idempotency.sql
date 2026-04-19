@@ -16,6 +16,30 @@
 -- NOTE: audit_log uses `timestamp` column (not `created_at`) — F1's
 -- original schema from 0000_high_firestar.sql. Spec data-model.md
 -- § 4 said `created_at`; sync in Phase 10 docs pass.
+--
+-- R7-W4 — non-CONCURRENTLY index build is acceptable HERE (same
+-- pattern as F3 `0009_members_contacts.sql` pg_trgm index) because:
+--
+--   1. audit_log is small during Chamber-OS deploys (green-field
+--      tenants, low-volume SaaS) — index build completes in < 1 s
+--      and the implicit ACCESS EXCLUSIVE lock on audit_log is too
+--      brief to block user-facing audit writes meaningfully.
+--   2. CREATE UNIQUE INDEX CONCURRENTLY cannot run inside a
+--      transaction, and drizzle-kit wraps every migration in a tx.
+--      Moving this statement "outside" the tx requires a separate
+--      deploy-time manual step — unjustified complexity at the
+--      current scale.
+--
+-- When audit_log grows to a size where the non-concurrent lock is
+-- visible in p95 latency (likely > 1M rows) OR a tenant with
+-- pre-existing high audit volume is onboarded, the ops runbook
+-- MUST reindex CONCURRENTLY outside the migration pipeline:
+--
+--   DROP INDEX CONCURRENTLY audit_log_overdue_once_per_day;
+--   CREATE UNIQUE INDEX CONCURRENTLY audit_log_overdue_once_per_day ...
+--
+-- and mark this migration file as "reindexed concurrently" in the
+-- ops log.
 CREATE UNIQUE INDEX IF NOT EXISTS "audit_log_overdue_once_per_day"
   ON "audit_log" (
     "tenant_id",
