@@ -32,6 +32,7 @@ import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/ad
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans, tenantFeeConfig } from '@/modules/plans/infrastructure/db/schema';
@@ -131,8 +132,8 @@ async function insertDraft(
   planYear: number,
 ): Promise<string> {
   const invoiceId = randomUUID();
-  await runInTenant(tenant.ctx, (tx) =>
-    tx.insert(invoices).values({
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx.insert(invoices).values({
       tenantId: tenant.ctx.slug,
       invoiceId,
       memberId,
@@ -140,8 +141,25 @@ async function insertDraft(
       planId,
       draftByUserId: user.userId,
       status: 'draft',
-    }),
-  );
+    });
+    // R8-T1 — seed one membership_fee line so `issueInvoice`'s
+    // `enforceOneMembershipLine(draft.lines)` invariant check passes
+    // and the test reaches the mocked PDF/Blob/audit failure points
+    // it actually wants to exercise. Without this, scenarios (a),
+    // (b), (g), (h-replay) short-circuit to `invalid_lines` before
+    // the failure injection fires.
+    await tx.insert(invoiceLines).values({
+      tenantId: tenant.ctx.slug,
+      lineId: randomUUID(),
+      invoiceId,
+      kind: 'membership_fee',
+      descriptionTh: `ค่าสมาชิก ปี ${planYear}`,
+      descriptionEn: `Membership ${planYear}`,
+      unitPriceSatang: 1_000_000n,
+      totalSatang: 1_000_000n,
+      position: 1,
+    });
+  });
   return invoiceId;
 }
 

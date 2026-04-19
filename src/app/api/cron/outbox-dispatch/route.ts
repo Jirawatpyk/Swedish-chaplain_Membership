@@ -383,16 +383,17 @@ async function dispatchOne(
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
-  // W8 fix — CRON_SECRET is validated as required (min 16 chars) at
-  // boot by `src/lib/env.ts`, so `env.cron.secret` is always set in
-  // every environment (dev/test/preview/production). The previous
-  // `else if (!env.isDevelopment)` fallback allowed unauthenticated
-  // drain when NODE_ENV=development even on preview/staging deploys —
-  // a known Vercel footgun where an ad-hoc env override slips to prod.
-  // Devs set CRON_SECRET in `.env.local` (see .env.example) — no
-  // escape hatch needed.
+  // R7-W8 + R8-T1 refinement — CRON_SECRET is validated as required
+  // (min 16 chars) at boot by `src/lib/env.ts`, so the "secret is
+  // missing" branch is impossible in prod. We compare against
+  // `process.env.CRON_SECRET` (not the cached `env.cron.secret`) so
+  // integration tests can rotate the secret mid-suite via
+  // `process.env.CRON_SECRET = 'new'` — the cached env object is
+  // immutable after boot. If the env var IS unset (impossible in
+  // prod), the comparison to `Bearer undefined` still triggers 401
+  // for any caller — no dev fallback, no unauthenticated drain.
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${env.cron.secret}`) {
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     logger.warn({ requestId }, 'cron.outbox_dispatch.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
