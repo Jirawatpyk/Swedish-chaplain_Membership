@@ -71,6 +71,22 @@ export function makeGetInvoicePdfSignedUrlDeps(tenantId: string): GetInvoicePdfS
   };
 }
 
+/**
+ * R7-B5 — bootstrap-guard helper for the invoice list page.
+ *
+ * Returns `true` when the tenant's invoice-settings row is present
+ * AND populated enough to allow an issue. `false` signals the list
+ * page to render a "Configure Invoicing" empty state instead of the
+ * hidden-but-functional table (FR-010 + US4 AS5).
+ *
+ * Implemented via the same `getForIssue` port that `issue-invoice`
+ * uses, so the UI guard and the API guard share one source of truth.
+ */
+export async function isTenantInvoiceSetupComplete(tenantId: string): Promise<boolean> {
+  const settings = await drizzleTenantSettingsRepo.getForIssue(tenantId);
+  return settings !== null;
+}
+
 export function makePreviewInvoiceDraftDeps(tenantId: string): PreviewInvoiceDraftDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),

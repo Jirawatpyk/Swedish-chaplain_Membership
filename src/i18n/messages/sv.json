@@ -828,10 +828,12 @@
         "title": "Fakturor",
         "description": "Thailändska momsgilla medlemsfakturor.",
         "empty": "Inga fakturor än — skapa första utkastet.",
+        "setupRequired": "Slutför fakturakonfiguration för att börja fakturera.",
         "actions": {
           "new": "Ny faktura",
           "download": "PDF",
-          "clearFilters": "Rensa filter"
+          "clearFilters": "Rensa filter",
+          "configureInvoicing": "Konfigurera fakturering"
         },
         "columns": {
           "documentNumber": "Nr",

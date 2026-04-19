@@ -125,4 +125,5 @@ export {
   makeGetInvoiceDeps,
   makeRecordPaymentDeps,
   makeUpdateInvoiceDraftDeps,
+  isTenantInvoiceSetupComplete,
 } from './application/invoicing-deps';

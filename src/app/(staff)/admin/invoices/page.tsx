@@ -12,7 +12,7 @@ import { headers } from 'next/headers';
 import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
+import { listInvoicesPaged, makeListInvoicesDeps, isTenantInvoiceSetupComplete } from '@/modules/invoicing';
 import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { TableContainer } from '@/components/layout';
@@ -56,6 +56,34 @@ export default async function AdminInvoicesPage({
   const hdrs = await headers();
   const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
   const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
+
+  // R7-B5 — bootstrap guard. When `tenant_invoice_settings` is
+  // missing the API refuses to issue (FR-010), so showing a hidden-
+  // but-functional list with a "+ New Invoice" button is a UX
+  // dead-end. Render a "Configure Invoicing" empty state instead
+  // (US4 AS5). The settings page lives at /admin/invoice-settings
+  // (B2 — ships alongside this guard).
+  const setupComplete = await isTenantInvoiceSetupComplete(tenantCtx.slug);
+  if (!setupComplete) {
+    return (
+      <TableContainer>
+        <PageHeader title={t('list.title')} subtitle={t('list.description')} />
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">{t('list.setupRequired')}</p>
+            {isAdmin && (
+              <Link
+                href="/admin/invoice-settings"
+                className={buttonVariants({ variant: 'default', className: 'mt-4' })}
+              >
+                {t('list.actions.configureInvoicing')}
+              </Link>
+            )}
+          </CardContent>
+        </Card>
+      </TableContainer>
+    );
+  }
 
   const qTrim = query.q?.trim();
   const statusFilter =

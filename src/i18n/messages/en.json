@@ -828,10 +828,12 @@
         "title": "Invoices",
         "description": "Thai-tax-compliant membership invoices.",
         "empty": "No invoices yet — create your first draft.",
+        "setupRequired": "Finish invoice setup to start billing.",
         "actions": {
           "new": "New invoice",
           "download": "PDF",
-          "clearFilters": "Clear filters"
+          "clearFilters": "Clear filters",
+          "configureInvoicing": "Configure Invoicing"
         },
         "columns": {
           "documentNumber": "Number",
