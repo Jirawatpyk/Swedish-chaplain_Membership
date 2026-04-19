@@ -127,17 +127,6 @@ function makeDeps(
     planLookup: {
       getAnnualFeeSatang: vi.fn(async () => annualFeeSatang),
     },
-    feeConfig: {
-      getByTenant: vi.fn(async () =>
-        settings
-          ? {
-              currencyCode: 'THB',
-              vatRate: settings.vatRate.raw,
-              registrationFeeMinorUnits: settings.registrationFeeSatang,
-            }
-          : null,
-      ),
-    },
     audit: { emit: vi.fn(async () => {}) },
     clock: { nowIso: () => '2026-01-15T10:00:00Z' }, // mid-January Bangkok
     newUuid: () => `${++uuidCounter}-uuid`,

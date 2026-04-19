@@ -17,7 +17,6 @@ import { vercelBlobAdapter } from '../infrastructure/adapters/vercel-blob-adapte
 import { resendEmailOutboxAdapter } from '../infrastructure/adapters/resend-email-outbox-adapter';
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
-import { f2FeeConfigAdapter } from '../infrastructure/adapters/fee-config-adapter';
 import { f4AuditAdapter } from '../infrastructure/adapters/audit-adapter';
 import { CURRENT_TEMPLATE_VERSION } from '../infrastructure/pdf/template-registry';
 
@@ -37,7 +36,6 @@ export function makeCreateInvoiceDraftDeps(tenantId: string): CreateInvoiceDraft
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: memberIdentityAdapter,
     planLookup: planLookupAdapter,
-    feeConfig: f2FeeConfigAdapter,
     audit: f4AuditAdapter,
     clock: systemClock,
     newUuid: () => randomUUID(),

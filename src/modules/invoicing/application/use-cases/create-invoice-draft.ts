@@ -23,7 +23,6 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { PlanLookupPort } from '../ports/plan-lookup-port';
-import type { FeeConfigPort } from '../ports/fee-config-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import {
@@ -67,16 +66,18 @@ export type CreateInvoiceDraftError =
 
 export interface CreateInvoiceDraftDeps {
   readonly invoiceRepo: InvoiceRepo;
+  /**
+   * R7 consolidation (Option 2) — `tenant_invoice_settings` is now
+   * the single source of truth for VAT + currency + registration
+   * fee. The former F2 `tenant_fee_config` dependency (FeeConfigPort)
+   * was dropped in C3b; the registration-fee line reads
+   * `settings.registrationFeeSatang` directly. Migration 0026
+   * backfilled that column from fee_config so existing tenants are
+   * unchanged.
+   */
   readonly tenantSettingsRepo: TenantSettingsRepo;
   readonly memberIdentity: MemberIdentityPort;
   readonly planLookup: PlanLookupPort;
-  /**
-   * Authoritative fee config (F2 `tenant_fee_config`). F4's own
-   * `tenant_invoice_settings.registration_fee_satang` is DEPRECATED
-   * and MUST NOT be read for new invoices — F2 is the single source
-   * of truth for tenant-level fee/VAT config.
-   */
-  readonly feeConfig: FeeConfigPort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   readonly newUuid: () => string;
@@ -194,11 +195,13 @@ export async function createInvoiceDraft(
     }
     lines.push(membershipLine.value);
 
-    // 2) Registration fee line (US1 AS1) — read from F2 tenant_fee_config
-    // (authoritative). F4's deprecated registrationFeeSatang on
-    // tenant_invoice_settings is IGNORED.
-    const feeConfig = await deps.feeConfig.getByTenant(input.tenantId);
-    const registrationFeeSatang = feeConfig?.registrationFeeMinorUnits ?? 0n;
+    // 2) Registration fee line (US1 AS1) — R7 consolidation: read from
+    // `tenant_invoice_settings.registration_fee_satang` (authoritative
+    // per Option-2 consolidation after F4 shipped). The migration 0026
+    // backfilled this column from `tenant_fee_config.registration_fee_
+    // minor_units` so existing tenants keep their value. `settings` is
+    // already loaded above — no extra round-trip.
+    const registrationFeeSatang = settings.registrationFeeSatang;
     if (!member.registrationFeePaid && registrationFeeSatang > 0n) {
       const regFeeLine = makeInvoiceLine({
         lineId: asInvoiceLineId(deps.newUuid()),
