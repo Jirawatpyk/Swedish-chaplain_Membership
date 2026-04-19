@@ -125,6 +125,11 @@ export {
   type UploadTenantLogoError,
 } from './application/use-cases/upload-tenant-logo';
 
+export {
+  getTenantTaxPolicy,
+  type TenantTaxPolicy,
+} from './application/use-cases/get-tenant-tax-policy';
+
 // --- Composition-root factories --------------------------------------------
 // Presentation / route handlers consume these to wire a per-request
 // tenant-scoped dependency graph.
@@ -140,5 +145,6 @@ export {
   makeUpdateInvoiceDraftDeps,
   makeUpdateTenantInvoiceSettingsDeps,
   makeUploadTenantLogoDeps,
+  makeGetTenantTaxPolicyDeps,
   isTenantInvoiceSetupComplete,
 } from './application/invoicing-deps';

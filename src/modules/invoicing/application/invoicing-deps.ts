@@ -92,6 +92,18 @@ export function makeUploadTenantLogoDeps(): {
 }
 
 /**
+ * R7 consolidation — F2 plan module calls this when it needs to
+ * render VAT-inclusive prices / apply a registration fee. Returns
+ * null when the tenant hasn't completed invoice-settings setup yet;
+ * F2 callers render a placeholder in that case.
+ */
+export function makeGetTenantTaxPolicyDeps(): {
+  tenantSettingsRepo: typeof drizzleTenantSettingsRepo;
+} {
+  return { tenantSettingsRepo: drizzleTenantSettingsRepo };
+}
+
+/**
  * R7-B5 — bootstrap-guard helper for the invoice list page.
  *
  * Returns `true` when the tenant's invoice-settings row is present
