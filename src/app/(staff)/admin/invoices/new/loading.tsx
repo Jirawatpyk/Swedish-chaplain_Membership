@@ -1,15 +1,21 @@
+/**
+ * Route-level loading UI for /admin/invoices/new.
+ *
+ * async + translated header — matches members/new + plans/new pattern
+ * so Next.js 16 Cache Components resolves the boundary consistently
+ * (see adjacent invoices/loading.tsx note).
+ */
+import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
-export default function Loading() {
+export default async function Loading() {
+  const t = await getTranslations('admin.invoices.new');
   return (
     <FormContainer>
-      <PageHeader
-        title={<Skeleton className="h-7 w-48" />}
-        subtitle={<Skeleton className="h-4 w-64" />}
-      />
+      <PageHeader title={t('title')} subtitle={t('description')} />
       <Card>
         <CardContent className="flex flex-col gap-[var(--page-section-gap)]">
           {/* Member combobox skeleton */}

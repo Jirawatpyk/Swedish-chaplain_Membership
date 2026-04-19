@@ -1,20 +1,31 @@
+/**
+ * Route-level loading UI for /admin/invoices.
+ *
+ * async + translated title/subtitle match the pattern used by members,
+ * plans, and settings/invoicing. An older sync version was observed to
+ * bubble up to the parent /admin/loading.tsx (dashboard skeleton) under
+ * Next.js 16 Cache Components because the boundary did not resolve
+ * its i18n in time with the async page.
+ */
+import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
-export default function Loading() {
+export default async function Loading() {
+  const t = await getTranslations('admin.invoices.list');
   return (
     <TableContainer>
       <PageHeader
-        title={<Skeleton className="h-7 w-32" />}
-        subtitle={<Skeleton className="h-4 w-64" />}
+        title={t('title')}
+        subtitle={t('description')}
         actions={<Skeleton className="h-9 w-32" />}
       />
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* Filter bar skeleton — mirrors <InvoiceFilters /> */}
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap items-end gap-3" aria-hidden>
             <Skeleton className="h-10 flex-1 min-w-[16rem]" />
             <Skeleton className="h-10 w-[12rem]" />
           </div>

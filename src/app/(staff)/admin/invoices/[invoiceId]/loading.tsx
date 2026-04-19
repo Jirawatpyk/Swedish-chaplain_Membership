@@ -1,9 +1,26 @@
+/**
+ * Route-level loading UI for /admin/invoices/[invoiceId].
+ *
+ * async + translated header — boundary-consistency fix (see adjacent
+ * invoices/loading.tsx comment).
+ *
+ * Title is a skeleton because the real heading is status-specific
+ * ("Draft invoice" vs a document number like "SC-2026-000004") — we
+ * can't render it deterministically until the detail page resolves.
+ * The async shell + i18n load still ensures Next.js mounts THIS
+ * boundary instead of bubbling up to /admin/loading.tsx.
+ */
+import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
-export default function Loading() {
+export default async function Loading() {
+  // Touch the namespace so it's resolved at boundary mount — even
+  // though we don't render a literal string, this forces the shell to
+  // be treated as async-ready alongside the page.
+  await getTranslations('admin.invoices.detail');
   return (
     <DetailContainer>
       <PageHeader
