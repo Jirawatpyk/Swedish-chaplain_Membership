@@ -186,7 +186,7 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 - [ ] CP-3.6 PDF template reviewed by Thai-accounting-aware reviewer against Thai RD §86/4 + §87 checklist (SC-002) — signed off in `security.md § 5` or a new `pdf-template-review.md`
 - [X] CP-3.7 Auto-email path is wired but NOT yet tested end-to-end (outbox row enqueue verified in integration test T016 chaos-scenario (h); full dispatch verified in Phase 10)
 - [ ] CP-3.8 `@axe-core/playwright` WCAG 2.1 AA scan green on `/admin/invoices` list + detail + new-draft surfaces
-- [X] CP-3.9 All 180+ planned US1 i18n keys present in EN+TH+SV (`pnpm check:i18n` green)
+- [ ] CP-3.9 All 180+ planned US1 i18n keys present in EN+TH+SV (`pnpm check:i18n` green)
 
 **Demo criterion**: SweCham admin issues a real (test-mode) invoice for a real member; bilingual PDF passes Thai-RD spot check.
 
@@ -214,8 +214,8 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 - [X] CP-4.1 CP-3 still green + all Phase 4 tests green
 - [X] CP-4.2 `record-payment.test.ts` green including FR-038 tax-ID-snapshot assertion (post-analyze C3)
 - [ ] CP-4.3 **End-to-end smoke test**: admin issues invoice → member receives auto-email with PDF attached → admin records payment → member receives receipt email → both PDFs pass Thai-RD spot check
-- [X] CP-4.4 Receipt PDF for `combined` filing mode generates the canonical "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; `separate` mode generates standalone receipt with its own sequential number
-- [X] CP-4.5 Phase 1 success criterion met (per `docs/phases-plan.md`): "admin can log in, create a member with its contacts, issue a membership invoice, mark it paid, and download a Thai-tax-compliant PDF" — **WORKS**
+- [ ] CP-4.4 Receipt PDF for `combined` filing mode generates the canonical "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; `separate` mode generates standalone receipt with its own sequential number
+- [ ] CP-4.5 Phase 1 success criterion met (per `docs/phases-plan.md`): "admin can log in, create a member with its contacts, issue a membership invoice, mark it paid, and download a Thai-tax-compliant PDF" — **WORKS**
 - [ ] CP-4.6 Maintainer co-signs `security.md § 5 Auth + PII checklist` for the MVP slice
 - [ ] CP-4.7 Go/no-go review — decide whether to ship MVP now to SweCham or continue to Phase 5+ before first release
 

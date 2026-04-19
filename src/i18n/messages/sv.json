@@ -838,7 +838,25 @@
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
           "total": "Totalt",
-          "actions": ""
+          "actions": "",
+          "member": "Medlem"
+        },
+        "statuses": {
+          "draft": "Utkast",
+          "issued": "Utfärdad",
+          "paid": "Betald",
+          "void": "Ogiltig",
+          "credited": "Krediterad",
+          "partially_credited": "Delvis krediterad",
+          "overdue": "Förfallen"
+        },
+        "searchPlaceholder": "Sök fakturanummer…",
+        "searchLabel": "Sök fakturor",
+        "loadMore": "Ladda fler",
+        "filteredEmpty": "Inga fakturor matchar filtren.",
+        "filters": {
+          "allStatuses": "Alla status",
+          "clearAll": "Rensa filter"
         }
       },
       "new": {
@@ -853,13 +871,25 @@
           "created": "Utkast skapat"
         },
         "errors": {
-          "create_failed": "Kunde inte skapa utkast"
+          "create_failed": "Kunde inte skapa utkast",
+          "codeFallback": "Felkod: {code}",
+          "unknown": "Ett okänt fel inträffade. Försök igen."
         },
         "fields": {
           "memberId": "Medlem",
           "memberIdHelp": "Klistra in medlems-UUID. Väljare kommer senare.",
           "planId": "Plan",
           "planYear": "Planår"
+        },
+        "memberPicker": {
+          "placeholder": "Välj medlem…",
+          "search": "Sök medlemmar…",
+          "empty": "Inga medlemmar matchar.",
+          "noActiveMembers": "Inga aktiva medlemmar"
+        },
+        "planInfo": {
+          "annualFee": "Årsavgift: {amount} THB (före moms)",
+          "changePlan": "Ändra medlemmens plan →"
         }
       },
       "detail": {
@@ -886,7 +916,8 @@
           "qty": "Antal",
           "unit": "À-pris",
           "total": "Summa"
-        }
+        },
+        "previewLabel": "förhandsgranskning"
       },
       "issue": {
         "title": "Utfärda faktura",
@@ -898,8 +929,11 @@
         "success": "Fakturan utfärdad",
         "cancel": "Avbryt",
         "errors": {
-          "failed": "Kunde inte utfärda"
-        }
+          "failed": "Kunde inte utfärda",
+          "codeFallback": "Felkod: {code}",
+          "unknown": "Ett okänt fel inträffade. Försök igen."
+        },
+        "draftLabel": "Utkast"
       },
       "pay": {
         "title": "Registrera betalning",
@@ -911,7 +945,9 @@
         "cancel": "Tillbaka",
         "errors": {
           "failed": "Kunde inte registrera betalning",
-          "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status})."
+          "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",
+          "codeFallback": "Felkod: {code}",
+          "unknown": "Ett okänt fel inträffade. Försök igen."
         },
         "fields": {
           "method": "Betalningsmetod",
@@ -925,7 +961,8 @@
           "cheque": "Check",
           "cash": "Kontant",
           "other": "Övrigt"
-        }
+        },
+        "draftLabel": "Utkast"
       }
     }
   },

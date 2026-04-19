@@ -52,3 +52,39 @@ export async function listInvoices(
   });
   return ok({ rows, nextCursor });
 }
+
+export const listInvoicesPagedSchema = z.object({
+  tenantId: z.string().min(1),
+  offset: z.number().int().min(0).default(0),
+  pageSize: z.number().int().min(1).max(100).default(50),
+  status: z
+    .enum(['draft', 'issued', 'paid', 'void', 'credited', 'partially_credited', 'all'])
+    .optional(),
+  fiscalYear: z.number().int().optional(),
+  memberId: z.string().uuid().optional(),
+  search: z.string().optional(),
+  includeDrafts: z.boolean().default(false),
+});
+
+export type ListInvoicesPagedInput = z.infer<typeof listInvoicesPagedSchema>;
+
+export interface ListInvoicesPagedOutput {
+  readonly rows: readonly Invoice[];
+  readonly total: number;
+}
+
+export async function listInvoicesPaged(
+  deps: ListInvoicesDeps,
+  input: ListInvoicesPagedInput,
+): Promise<Result<ListInvoicesPagedOutput, never>> {
+  const { rows, total } = await deps.invoiceRepo.listPaged(input.tenantId, {
+    offset: input.offset,
+    pageSize: input.pageSize,
+    status: (input.status as InvoiceStatus | 'all' | undefined) ?? undefined,
+    fiscalYear: input.fiscalYear,
+    memberId: input.memberId,
+    search: input.search,
+    includeDrafts: input.includeDrafts,
+  });
+  return ok({ rows, total });
+}

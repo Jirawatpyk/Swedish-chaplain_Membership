@@ -288,6 +288,71 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
       });
     },
 
+    async listPaged(tenantIdArg: string, opts) {
+      return runInTenant(ctx, async (tx) => {
+        const filters = [eq(invoices.tenantId, tenantIdArg)];
+        const includeDrafts = opts.includeDrafts ?? false;
+        if (!includeDrafts && !opts.status) {
+          filters.push(sql`${invoices.status} != 'draft'`);
+        }
+        if (opts.status && opts.status !== 'all') {
+          filters.push(eq(invoices.status, opts.status));
+        }
+        if (opts.fiscalYear !== undefined) {
+          filters.push(eq(invoices.fiscalYear, opts.fiscalYear));
+        }
+        if (opts.memberId) filters.push(eq(invoices.memberId, opts.memberId));
+        if (opts.search && opts.search.length > 0) {
+          filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
+        }
+
+        const [rowsRaw, countRows] = await Promise.all([
+          tx
+            .select()
+            .from(invoices)
+            .where(and(...filters))
+            .orderBy(desc(invoices.issueDate), desc(invoices.invoiceId))
+            .limit(opts.pageSize)
+            .offset(opts.offset),
+          tx.execute(
+            sql`SELECT COUNT(*)::int AS c FROM invoices WHERE ${and(...filters)!}`,
+          ),
+        ]);
+        const page = rowsRaw as InvoiceRow[];
+        const total = Number(
+          (countRows as unknown as Array<{ c: number }>)[0]?.c ?? 0,
+        );
+
+        const invoiceIds = page.map((r) => r.invoiceId);
+        const linesByInvoice = new Map<string, InvoiceLine[]>();
+        if (invoiceIds.length > 0) {
+          const allLines = await tx
+            .select()
+            .from(invoiceLines)
+            .where(
+              and(
+                eq(invoiceLines.tenantId, tenantIdArg),
+                sql`${invoiceLines.invoiceId} IN (${sql.join(
+                  invoiceIds.map((id) => sql`${id}`),
+                  sql`, `,
+                )})`,
+              ),
+            )
+            .orderBy(asc(invoiceLines.invoiceId), asc(invoiceLines.position));
+          for (const lr of allLines) {
+            const bucket = linesByInvoice.get(lr.invoiceId) ?? [];
+            bucket.push(rowToLine(lr as InvoiceLineRow));
+            linesByInvoice.set(lr.invoiceId, bucket);
+          }
+        }
+
+        return {
+          rows: page.map((r) => rowsToInvoice(r, linesByInvoice.get(r.invoiceId) ?? [])),
+          total,
+        };
+      });
+    },
+
     async applyIssue(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
       const [updated] = await tx

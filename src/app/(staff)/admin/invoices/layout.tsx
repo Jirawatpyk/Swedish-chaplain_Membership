@@ -19,9 +19,14 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('meta.title') };
 }
 
-export default function AdminInvoicesLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminInvoicesLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const t = await getTranslations('admin.invoices');
   return (
-    <section aria-label="Invoices" className="min-h-full">
+    <section aria-label={t('list.title')} className="min-h-full">
       {children}
     </section>
   );

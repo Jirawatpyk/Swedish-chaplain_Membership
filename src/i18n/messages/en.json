@@ -838,7 +838,25 @@
           "issueDate": "Issued",
           "dueDate": "Due",
           "total": "Total",
-          "actions": "Actions"
+          "actions": "Actions",
+          "member": "Member"
+        },
+        "statuses": {
+          "draft": "Draft",
+          "issued": "Issued",
+          "paid": "Paid",
+          "void": "Void",
+          "credited": "Credited",
+          "partially_credited": "Partially credited",
+          "overdue": "Overdue"
+        },
+        "searchPlaceholder": "Search invoice number…",
+        "searchLabel": "Search invoices",
+        "loadMore": "Load more",
+        "filteredEmpty": "No invoices match the current filters.",
+        "filters": {
+          "allStatuses": "All statuses",
+          "clearAll": "Clear filters"
         }
       },
       "new": {
@@ -853,13 +871,25 @@
           "created": "Draft created"
         },
         "errors": {
-          "create_failed": "Could not create draft"
+          "create_failed": "Could not create draft",
+          "codeFallback": "Error code: {code}",
+          "unknown": "An unknown error occurred. Please try again."
         },
         "fields": {
           "memberId": "Member",
           "memberIdHelp": "Paste the member UUID. A picker will arrive in a later polish pass.",
           "planId": "Plan",
           "planYear": "Plan year"
+        },
+        "memberPicker": {
+          "placeholder": "Pick a member…",
+          "search": "Search members…",
+          "empty": "No members match.",
+          "noActiveMembers": "No active members"
+        },
+        "planInfo": {
+          "annualFee": "Annual fee: {amount} THB (before VAT)",
+          "changePlan": "Change member's plan →"
         }
       },
       "detail": {
@@ -886,7 +916,8 @@
           "qty": "Qty",
           "unit": "Unit",
           "total": "Total"
-        }
+        },
+        "previewLabel": "preview"
       },
       "issue": {
         "title": "Issue invoice",
@@ -898,8 +929,11 @@
         "success": "Invoice issued",
         "cancel": "Cancel",
         "errors": {
-          "failed": "Issue failed"
-        }
+          "failed": "Issue failed",
+          "codeFallback": "Error code: {code}",
+          "unknown": "An unknown error occurred. Please try again."
+        },
+        "draftLabel": "Draft"
       },
       "pay": {
         "title": "Record payment",
@@ -911,7 +945,9 @@
         "cancel": "Back to invoice",
         "errors": {
           "failed": "Could not record payment",
-          "invalidStatus": "Only issued invoices can be paid (current status: {status})."
+          "invalidStatus": "Only issued invoices can be paid (current status: {status}).",
+          "codeFallback": "Error code: {code}",
+          "unknown": "An unknown error occurred. Please try again."
         },
         "fields": {
           "method": "Payment method",
@@ -925,7 +961,8 @@
           "cheque": "Cheque",
           "cash": "Cash",
           "other": "Other"
-        }
+        },
+        "draftLabel": "Draft"
       }
     }
   },

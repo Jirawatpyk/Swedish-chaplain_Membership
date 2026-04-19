@@ -44,6 +44,24 @@ export interface InvoiceRepo {
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly nextCursor: string | null }>;
 
+  /**
+   * Offset-based page + total count for numbered pagination (admin
+   * directory). Uses the same filter shape as `list` but runs a parallel
+   * COUNT(*) query so UI can render "Showing X–Y of Z" + page numbers.
+   */
+  listPaged(
+    tenantId: string,
+    opts: {
+      readonly offset: number;
+      readonly pageSize: number;
+      readonly status?: InvoiceStatus | 'all' | undefined;
+      readonly fiscalYear?: number | undefined;
+      readonly memberId?: string | undefined;
+      readonly search?: string | undefined;
+      readonly includeDrafts?: boolean | undefined;
+    },
+  ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
+
   /** Apply post-issue UPDATE: status=issued + set snapshots + seq + document_number + pdf. */
   applyIssue(
     tx: unknown,

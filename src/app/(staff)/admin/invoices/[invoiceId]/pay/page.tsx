@@ -10,6 +10,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { Card, CardContent } from '@/components/ui/card';
 import { PaymentForm } from '../../_components/payment-form';
 
@@ -32,10 +33,12 @@ export default async function RecordPaymentPage({
   });
   if (!result.ok) return notFound();
   const invoice = result.value;
+  const breadcrumbLabel = invoice.documentNumber?.raw ?? t('draftLabel');
 
   if (invoice.status !== 'issued') {
     return (
       <FormContainer>
+        <PlanBreadcrumbLabel segment={invoiceId} label={breadcrumbLabel} />
         <PageHeader title={t('title')} subtitle={t('errors.invalidStatus', { status: invoice.status })} />
         <Link href={`/admin/invoices/${invoice.invoiceId}`} className="text-sm underline">
           ← {t('cancel')}
@@ -46,17 +49,19 @@ export default async function RecordPaymentPage({
 
   return (
     <FormContainer>
+      <PlanBreadcrumbLabel segment={invoiceId} label={breadcrumbLabel} />
       <PageHeader title={t('title')} subtitle={t('description')} />
       <Card>
-        <CardContent className="p-6">
+        <CardContent>
           <PaymentForm invoiceId={invoice.invoiceId} documentNumber={invoice.documentNumber?.raw ?? null} />
         </CardContent>
       </Card>
-      <div className="mt-4">
-        <Link href={`/admin/invoices/${invoice.invoiceId}`} className="text-sm text-muted-foreground hover:underline">
-          ← {t('cancel')}
-        </Link>
-      </div>
+      <Link
+        href={`/admin/invoices/${invoice.invoiceId}`}
+        className="text-sm text-muted-foreground hover:underline"
+      >
+        ← {t('cancel')}
+      </Link>
     </FormContainer>
   );
 }

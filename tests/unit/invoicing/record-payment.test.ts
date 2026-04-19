@@ -146,6 +146,7 @@ function makeDeps(
       findDraftById: vi.fn(async () => draft),
       findById: vi.fn(),
       list: vi.fn(),
+        listPaged: vi.fn(),
       applyIssue: vi.fn(),
       deleteDraft: vi.fn(),
     },

@@ -63,6 +63,10 @@ export {
   listInvoicesSchema,
   type ListInvoicesInput,
   type ListInvoicesOutput,
+  listInvoicesPaged,
+  listInvoicesPagedSchema,
+  type ListInvoicesPagedInput,
+  type ListInvoicesPagedOutput,
 } from './application/use-cases/list-invoices';
 
 export {

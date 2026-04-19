@@ -30,8 +30,9 @@ export function IssueConfirmDialog({ invoiceId }: { invoiceId: string }) {
       const res = await fetch(`/api/invoices/${invoiceId}/issue`, { method: 'POST' });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        const code = (body as { error?: { code?: string } })?.error?.code;
         toast.error(t('errors.failed'), {
-          description: String((body as { error?: { code?: string } })?.error?.code ?? res.status),
+          description: code ? t('errors.codeFallback', { code }) : t('errors.unknown'),
         });
         return;
       }
@@ -42,7 +43,7 @@ export function IssueConfirmDialog({ invoiceId }: { invoiceId: string }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <p className="text-sm">
         {t('confirmCopy', { phrase: CONFIRM_PHRASE })}
       </p>
@@ -53,6 +54,8 @@ export function IssueConfirmDialog({ invoiceId }: { invoiceId: string }) {
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           placeholder={CONFIRM_PHRASE}
+          autoFocus
+          autoComplete="off"
         />
       </div>
       <Button onClick={issue} disabled={!matches || pending}>

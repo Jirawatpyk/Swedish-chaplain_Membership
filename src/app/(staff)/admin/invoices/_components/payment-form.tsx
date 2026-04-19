@@ -4,12 +4,19 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  TranslatedSelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 
 const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
@@ -27,7 +34,10 @@ export function PaymentForm({
   const [paymentMethod, setPaymentMethod] = useState<(typeof METHODS)[number]>('bank_transfer');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState('');
+  useEffect(() => {
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+  }, []);
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -44,8 +54,9 @@ export function PaymentForm({
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        const code = (body as { error?: { code?: string } })?.error?.code;
         toast.error(t('errors.failed'), {
-          description: String((body as { error?: { code?: string } })?.error?.code ?? res.status),
+          description: code ? t('errors.codeFallback', { code }) : t('errors.unknown'),
         });
         return;
       }
@@ -58,21 +69,30 @@ export function PaymentForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6">
-      <div>
+    <form
+      onSubmit={submit}
+      className="flex flex-col gap-[var(--page-section-gap)]"
+    >
+      <div suppressHydrationWarning>
         <Label htmlFor="method">{t('fields.method')}</Label>
-        <select
-          id="method"
+        <Select
           value={paymentMethod}
-          onChange={(e) => setPaymentMethod(e.target.value as (typeof METHODS)[number])}
-          className="w-full rounded border px-3 py-2"
+          onValueChange={(v) => v && setPaymentMethod(v as (typeof METHODS)[number])}
         >
-          {METHODS.map((m) => (
-            <option key={m} value={m}>
-              {t(`methods.${m}`)}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id="method" className="w-full" aria-label={t('fields.method')}>
+            <TranslatedSelectValue
+              placeholder={t('fields.method')}
+              translate={(v) => (v ? t(`methods.${v}`) : null)}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {METHODS.map((m) => (
+              <SelectItem key={m} value={m}>
+                {t(`methods.${m}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div>
         <Label htmlFor="reference">{t('fields.reference')}</Label>

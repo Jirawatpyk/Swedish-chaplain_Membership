@@ -1,30 +1,88 @@
 /**
- * T058 — Invoice draft form (F4).
+ * T058 — Invoice draft form (F4, Pattern C — spec-correct).
  *
- * Minimal first ship — admin enters member_id + plan_id + plan_year,
- * clicks Create, lands on the draft detail page. Future polish will
- * replace inputs with member + plan pickers.
+ * Spec (US1 header): "Admin staff pick a member, CONFIRM the
+ * membership tier and period, and the system generates a draft
+ * invoice". "Confirm" — not "pick". The tier comes from the member's
+ * F3 record, not an independent form field.
+ *
+ * UX:
+ *  - Member picker is a cmdk-backed searchable combobox (scales to
+ *    hundreds of members).
+ *  - Plan + Plan-year are READ-ONLY and derived from the selected
+ *    member's F3 record. To invoice for a different tier, admin MUST
+ *    first go to `/admin/members/[id]/edit` and run the F3
+ *    `changePlan` use case (which emits `member_plan_changed` audit
+ *    with an override_reason). Keeping invoice issuance and plan
+ *    change as separate flows preserves audit clarity and prevents
+ *    admins from silently billing for a tier that doesn't match
+ *    the member's subscription state.
  */
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useTransition, useState } from 'react';
+import { useState, useTransition, useMemo } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { SearchableCombobox } from './searchable-combobox';
+import type { ComboboxOption } from './searchable-combobox';
 
-export function CreateDraftForm() {
+export type MemberOption = {
+  readonly memberId: string;
+  readonly label: string;
+  readonly currentPlanId: string;
+  readonly currentPlanYear: number;
+};
+
+export type PlanOption = {
+  readonly planId: string;
+  readonly label: string;
+  readonly annualFeeMinorUnits: number;
+};
+
+function formatSatang(satang: number): string {
+  const whole = Math.floor(satang / 100);
+  const rem = satang % 100;
+  return `${whole.toLocaleString()}.${rem.toString().padStart(2, '0')}`;
+}
+
+export function CreateDraftForm({
+  members,
+  plans,
+}: {
+  readonly members: readonly MemberOption[];
+  readonly plans: readonly PlanOption[];
+}) {
   const t = useTranslations('admin.invoices.form');
+  const tPicker = useTranslations('admin.invoices.form.memberPicker');
+  const tPlan = useTranslations('admin.invoices.form.planInfo');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+
   const [memberId, setMemberId] = useState('');
-  const [planId, setPlanId] = useState('');
-  const [planYear, setPlanYear] = useState(new Date().getFullYear());
+  const selectedMember = members.find((m) => m.memberId === memberId);
+
+  const memberOptions: ComboboxOption[] = useMemo(
+    () => members.map((m) => ({ value: m.memberId, label: m.label })),
+    [members],
+  );
+
+  // Derived from selected member — never a form state.
+  const planId = selectedMember?.currentPlanId ?? '';
+  const planYear = selectedMember?.currentPlanYear ?? new Date().getFullYear();
+  const selectedPlan = plans.find((p) => p.planId === planId);
+
+  const noMembers = members.length === 0;
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!memberId || !planId) {
+      toast.error(t('errors.create_failed'));
+      return;
+    }
     startTransition(async () => {
       const res = await fetch('/api/invoices', {
         method: 'POST',
@@ -38,8 +96,11 @@ export function CreateDraftForm() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        const code = (body as { error?: { code?: string } })?.error?.code;
         toast.error(t('errors.create_failed'), {
-          description: String((body as { error?: { code?: string } })?.error?.code ?? res.status),
+          description: code
+            ? t('errors.codeFallback', { code })
+            : t('errors.unknown'),
         });
         return;
       }
@@ -50,40 +111,54 @@ export function CreateDraftForm() {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6">
+    <form
+      onSubmit={submit}
+      className="flex flex-col gap-[var(--page-section-gap)]"
+    >
       <div>
         <Label htmlFor="memberId">{t('fields.memberId')}</Label>
-        <Input
+        <SearchableCombobox
           id="memberId"
-          required
+          options={memberOptions}
           value={memberId}
-          onChange={(e) => setMemberId(e.target.value)}
-          placeholder="uuid-of-member"
-        />
-        <p className="mt-1 text-xs text-muted-foreground">{t('fields.memberIdHelp')}</p>
-      </div>
-      <div>
-        <Label htmlFor="planId">{t('fields.planId')}</Label>
-        <Input
-          id="planId"
-          required
-          value={planId}
-          onChange={(e) => setPlanId(e.target.value)}
-          placeholder="corporate-regular"
+          onChange={setMemberId}
+          placeholder={noMembers ? tPicker('noActiveMembers') : tPicker('placeholder')}
+          searchPlaceholder={tPicker('search')}
+          emptyMessage={tPicker('empty')}
+          ariaLabel={t('fields.memberId')}
+          disabled={noMembers}
         />
       </div>
-      <div>
-        <Label htmlFor="planYear">{t('fields.planYear')}</Label>
-        <Input
-          id="planYear"
-          type="number"
-          required
-          value={planYear}
-          onChange={(e) => setPlanYear(Number(e.target.value))}
-        />
-      </div>
-      <div className="flex justify-end gap-3 pt-2">
-        <Button type="submit" disabled={pending}>
+
+      {selectedMember && (
+        <div className="rounded-md border bg-muted/30 p-4">
+          <div className="flex items-baseline justify-between">
+            <div>
+              <div className="text-xs text-muted-foreground">{t('fields.planId')}</div>
+              <div className="text-base font-medium">
+                {selectedPlan?.label ?? planId}
+                <span className="ml-2 text-sm text-muted-foreground">/ {planYear}</span>
+              </div>
+              {selectedPlan && (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {tPlan('annualFee', {
+                    amount: formatSatang(selectedPlan.annualFeeMinorUnits),
+                  })}
+                </div>
+              )}
+            </div>
+            <Link
+              href={`/admin/members/${memberId}/edit`}
+              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+            >
+              {tPlan('changePlan')}
+            </Link>
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-3">
+        <Button type="submit" disabled={pending || noMembers || !memberId || !selectedPlan}>
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>

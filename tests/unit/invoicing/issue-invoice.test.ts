@@ -119,6 +119,8 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
     memberId: 'member-1',
     isActive: true,
     isArchived: false,
+    registrationDate: '2026-01-15',
+    registrationFeePaid: true,
     snapshot: Object.freeze({
       legal_name: 'Acme Co',
       tax_id: '1234567890123',
@@ -139,6 +141,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       findDraftById: vi.fn(async () => draft),
       findById: vi.fn(),
       list: vi.fn(),
+        listPaged: vi.fn(),
       applyIssue: vi.fn(async (_tx, input) =>
         ({ ...(draft as Invoice), status: 'issued', fiscalYear: 2026 as never, sequenceNumber: input.sequenceNumber, documentNumber: { raw: input.documentNumber } as never, pdfBlobKey: input.pdfBlobKey, pdfSha256: input.pdfSha256 }) as Invoice,
       ),

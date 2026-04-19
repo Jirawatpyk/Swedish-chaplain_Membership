@@ -157,6 +157,8 @@ export async function recordPayment(
              payment_reference = ${input.paymentReference ?? null},
              payment_notes = ${input.paymentNotes ?? null},
              payment_recorded_by_user_id = ${input.actorUserId},
+             pdf_blob_key = ${receiptBlobKey},
+             pdf_sha256 = ${rendered.sha256},
              updated_at = now()
        WHERE tenant_id = ${input.tenantId} AND invoice_id = ${invoiceId}
     `);

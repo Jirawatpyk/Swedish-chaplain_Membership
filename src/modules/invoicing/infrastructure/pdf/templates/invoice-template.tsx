@@ -84,8 +84,18 @@ function beYear(isoDate: string | null): string {
 export function InvoiceTemplate(input: PdfRenderInput) {
   const isPreview = input.kind === 'invoice_preview';
   const isVoid = input.kind === 'void_stamped_invoice';
-  const titleTh = input.kind === 'credit_note' ? 'ใบลดหนี้' : 'ใบกำกับภาษี';
-  const titleEn = input.kind === 'credit_note' ? 'Credit Note' : 'Tax Invoice';
+  let titleTh = 'ใบกำกับภาษี';
+  let titleEn = 'Tax Invoice';
+  if (input.kind === 'credit_note') {
+    titleTh = 'ใบลดหนี้';
+    titleEn = 'Credit Note';
+  } else if (input.kind === 'receipt_combined') {
+    titleTh = 'ใบกำกับภาษี / ใบเสร็จรับเงิน';
+    titleEn = 'Tax Invoice / Official Receipt';
+  } else if (input.kind === 'receipt_separate') {
+    titleTh = 'ใบเสร็จรับเงิน';
+    titleEn = 'Official Receipt';
+  }
 
   const totalThb = Number(input.total.satang) / 100;
 
@@ -104,9 +114,8 @@ export function InvoiceTemplate(input: PdfRenderInput) {
             <Text style={styles.label}>เลขประจำตัวผู้เสียภาษี / Tax ID: {input.tenant.tax_id}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.h1}>
-              {titleTh} / {titleEn}
-            </Text>
+            <Text style={styles.h1}>{titleTh}</Text>
+            <Text style={styles.h2}>{titleEn}</Text>
             {input.documentNumber && (
               <Text style={styles.value}>No. {input.documentNumber.raw}</Text>
             )}
