@@ -66,6 +66,31 @@ function parseSha256OrNull(raw: string | null, invoiceId: string): Sha256HexT | 
   return parsed.value;
 }
 
+/**
+ * Build the `Invoice.pdf` discriminated-union field from the three
+ * nullable DB columns. Returns null if any of the three is absent
+ * (legal state: draft invoice has no PDF). Throws if pdf_sha256 is
+ * corrupt (malformed hex) so the domain never sees broken data.
+ */
+function buildPdfOrNull(
+  blobKey: string | null,
+  sha256Raw: string | null,
+  templateVersion: number | null,
+  invoiceId: string,
+): { blobKey: string; sha256: Sha256HexT; templateVersion: number } | null {
+  if (blobKey === null || sha256Raw === null || templateVersion === null) {
+    return null;
+  }
+  const sha256 = parseSha256OrNull(sha256Raw, invoiceId);
+  if (sha256 === null) {
+    // parseSha256OrNull only returns null on `raw === null`, which
+    // we already excluded — this is unreachable but TypeScript
+    // cannot narrow.
+    return null;
+  }
+  return { blobKey, sha256, templateVersion };
+}
+
 function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice {
   let docNum: DocumentNumber | null = null;
   if (row.documentNumber !== null) {
@@ -139,9 +164,7 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
 
     autoEmailOnIssue: row.autoEmailOnIssue ?? null,
 
-    pdfBlobKey: row.pdfBlobKey ?? null,
-    pdfSha256: parseSha256OrNull(row.pdfSha256, row.invoiceId),
-    pdfTemplateVersion: row.pdfTemplateVersion ?? null,
+    pdf: buildPdfOrNull(row.pdfBlobKey, row.pdfSha256, row.pdfTemplateVersion, row.invoiceId),
 
     lines,
     createdAt: row.createdAt.toISOString(),
@@ -379,9 +402,9 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
           netDaysSnapshot: input.netDaysSnapshot,
           tenantIdentitySnapshot: input.tenantIdentitySnapshot,
           memberIdentitySnapshot: input.memberIdentitySnapshot,
-          pdfBlobKey: input.pdfBlobKey,
-          pdfSha256: input.pdfSha256,
-          pdfTemplateVersion: input.pdfTemplateVersion,
+          pdfBlobKey: input.pdf.blobKey,
+          pdfSha256: input.pdf.sha256,
+          pdfTemplateVersion: input.pdf.templateVersion,
           updatedAt: sql`now()`,
         })
         .where(
@@ -444,8 +467,9 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
           paymentReference: input.paymentReference,
           paymentNotes: input.paymentNotes,
           paymentRecordedByUserId: input.paymentRecordedByUserId,
-          pdfBlobKey: input.receiptPdfBlobKey,
-          pdfSha256: input.receiptPdfSha256,
+          pdfBlobKey: input.receiptPdf.blobKey,
+          pdfSha256: input.receiptPdf.sha256,
+          pdfTemplateVersion: input.receiptPdf.templateVersion,
           updatedAt: sql`now()`,
         })
         .where(

@@ -115,7 +115,7 @@ export default async function AdminInvoicesPage({
         issueDate: r.issueDate,
         dueDate: r.dueDate,
         totalSatang: r.total?.satang.toString() ?? '0',
-        hasPdf: Boolean(r.pdfBlobKey),
+        hasPdf: r.pdf !== null,
       }))
     : [];
 

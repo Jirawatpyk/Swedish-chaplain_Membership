@@ -38,6 +38,7 @@ import {
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { logger } from '@/lib/logger';
+import { TxAbort } from '../lib/tx-abort';
 
 export const recordPaymentSchema = z.object({
   tenantId: z.string().min(1),
@@ -68,15 +69,9 @@ export type RecordPaymentError =
  * error up to the outer `try/catch`. Required for errors that occur
  * AFTER `sequenceAllocator.allocateNext` runs — returning `err(...)`
  * normally from the withTx callback resolves the promise and commits
- * the sequence increment.
+ * the sequence increment. See `lib/tx-abort.ts` for the shared pattern.
  */
-class RecordPaymentInternalError extends Error {
-  readonly error: RecordPaymentError;
-  constructor(error: RecordPaymentError) {
-    super(`RecordPayment: ${error.code}`);
-    this.error = error;
-  }
-}
+class RecordPaymentInternalError extends TxAbort<RecordPaymentError> {}
 
 export interface RecordPaymentDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -217,8 +212,11 @@ export async function recordPayment(
         paymentReference: input.paymentReference ?? null,
         paymentNotes: input.paymentNotes ?? null,
         paymentRecordedByUserId: input.actorUserId,
-        receiptPdfBlobKey: receiptBlobKey,
-        receiptPdfSha256: rendered.sha256,
+        receiptPdf: {
+          blobKey: receiptBlobKey,
+          sha256: rendered.sha256,
+          templateVersion: deps.currentTemplateVersion,
+        },
       });
     } catch (e) {
       if ((e as Error).message?.includes('applyPayment: no row updated')) {

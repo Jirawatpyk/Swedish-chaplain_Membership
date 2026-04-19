@@ -83,9 +83,9 @@ export async function getInvoicePdfSignedUrl(
   }
 
   // Drafts have no PDF yet — refuse.
-  if (!invoice.pdfBlobKey) return err({ code: 'forbidden' });
+  if (!invoice.pdf) return err({ code: 'forbidden' });
 
-  const url = await deps.blob.signDownloadUrl(invoice.pdfBlobKey, 60);
+  const url = await deps.blob.signDownloadUrl(invoice.pdf.blobKey, 60);
   const filename = `${invoice.documentNumber?.raw ?? 'invoice'}.pdf`;
   return ok({ url, filename });
 }

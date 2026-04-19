@@ -93,10 +93,19 @@ export interface Invoice {
 
   readonly autoEmailOnIssue: boolean | null;
 
-  // PDF
-  readonly pdfBlobKey: string | null;
-  readonly pdfSha256: Sha256Hex | null;
-  readonly pdfTemplateVersion: number | null;
+  /**
+   * PDF metadata — present iff the invoice has been issued. All three
+   * sub-fields travel together: `blobKey` alone is meaningless without
+   * the corresponding `sha256` (content-address) and `templateVersion`
+   * (so re-render uses the pinned template, not CURRENT). The
+   * discriminated shape makes the "all-or-nothing" invariant a
+   * compile-time guarantee instead of a runtime null-check trio.
+   */
+  readonly pdf: {
+    readonly blobKey: string;
+    readonly sha256: Sha256Hex;
+    readonly templateVersion: number;
+  } | null;
 
   readonly lines: readonly InvoiceLine[];
 
@@ -137,8 +146,7 @@ export function assertSnapshotsSet(inv: Invoice): Result<void, InvoiceTransition
   if (!inv.vatRate) return err({ code: 'missing_snapshot', field: 'vatRate' });
   if (!inv.tenantIdentitySnapshot) return err({ code: 'missing_snapshot', field: 'tenantIdentitySnapshot' });
   if (!inv.memberIdentitySnapshot) return err({ code: 'missing_snapshot', field: 'memberIdentitySnapshot' });
-  if (!inv.pdfBlobKey) return err({ code: 'missing_snapshot', field: 'pdfBlobKey' });
-  if (!inv.pdfSha256) return err({ code: 'missing_snapshot', field: 'pdfSha256' });
+  if (!inv.pdf) return err({ code: 'missing_snapshot', field: 'pdf' });
   return ok(undefined);
 }
 

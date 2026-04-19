@@ -29,7 +29,7 @@ import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/in
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
-import { asSha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000e002';
@@ -97,9 +97,11 @@ function makeIssuedInvoice(overrides: Partial<Invoice> = {}): Invoice {
     voidReason: null,
     voidedByUserId: null,
     autoEmailOnIssue: null,
-    pdfBlobKey: `invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`,
-    pdfSha256: asSha256Hex('a'.repeat(64)),
-    pdfTemplateVersion: 1,
+    pdf: {
+      blobKey: `invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`,
+      sha256: Sha256Hex.ofUnsafe('a'.repeat(64)),
+      templateVersion: 1,
+    },
     lines: [line],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',
@@ -174,7 +176,7 @@ function makeDeps(
     pdfRender: {
       render: vi.fn(async () => ({
         bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
-        sha256: asSha256Hex('b'.repeat(64)),
+        sha256: Sha256Hex.ofUnsafe('b'.repeat(64)),
       })),
     },
     blob: {

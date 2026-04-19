@@ -28,7 +28,7 @@ import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
-import { asSha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { MemberIdentityView } from '@/modules/invoicing/application/ports/member-identity-port';
 
@@ -81,9 +81,7 @@ function makeDraftInvoice(overrides: Partial<Invoice> = {}): Invoice {
     voidReason: null,
     voidedByUserId: null,
     autoEmailOnIssue: null,
-    pdfBlobKey: null,
-    pdfSha256: null,
-    pdfTemplateVersion: null,
+    pdf: null,
     lines: [line],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',
@@ -144,7 +142,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       list: vi.fn(),
         listPaged: vi.fn(),
       applyIssue: vi.fn(async (_tx, input) =>
-        ({ ...(draft as Invoice), status: 'issued', fiscalYear: 2026 as never, sequenceNumber: input.sequenceNumber, documentNumber: { raw: input.documentNumber } as never, pdfBlobKey: input.pdfBlobKey, pdfSha256: input.pdfSha256 }) as Invoice,
+        ({ ...(draft as Invoice), status: 'issued', fiscalYear: 2026 as never, sequenceNumber: input.sequenceNumber, documentNumber: { raw: input.documentNumber } as never, pdf: input.pdf }) as Invoice,
       ),
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),
@@ -166,7 +164,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     pdfRender: {
       render: vi.fn(async () => ({
         bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]), // %PDF
-        sha256: asSha256Hex('a'.repeat(64)),
+        sha256: Sha256Hex.ofUnsafe('a'.repeat(64)),
       })),
     },
     blob: {

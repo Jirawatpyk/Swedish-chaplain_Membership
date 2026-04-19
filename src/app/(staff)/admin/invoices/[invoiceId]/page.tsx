@@ -14,6 +14,12 @@ import type { MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { listPlans, getFeeConfig } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
+// Raw repo read mirrors the escape hatch used by /admin/users page.tsx —
+// an Application-layer `getStaffUser` would be a passthrough. Read is
+// admin-gated by the layout guard.
+// eslint-disable-next-line no-restricted-imports
+import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import { asUserId } from '@/modules/auth';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
@@ -105,6 +111,20 @@ export default async function InvoiceDetailPage({
     if (memberResult.ok) memberDisplayName = memberResult.value.member.companyName;
   }
 
+  // Resolve staff-user display names for the audit fields on the
+  // paid / void sections. Showing a raw UUID in "Recorded by" tells
+  // the admin nothing — email is the smallest humane identifier we
+  // have today (TODO: add display_name when F1 user profile lands).
+  async function resolveUserEmail(userId: string | null): Promise<string> {
+    if (!userId) return '—';
+    const row = await userRepo.findById(asUserId(userId));
+    return row?.email ?? userId;
+  }
+  const [paymentRecordedByEmail, voidedByEmail] = await Promise.all([
+    resolveUserEmail(invoice.paymentRecordedByUserId),
+    resolveUserEmail(invoice.voidedByUserId),
+  ]);
+
   const isDraft = invoice.status === 'draft';
   const isAdmin = currentUser.role === 'admin';
 
@@ -187,7 +207,7 @@ export default async function InvoiceDetailPage({
                 issueDate={invoice.issueDate}
               />
             )}
-            {!isDraft && invoice.pdfBlobKey && (
+            {!isDraft && invoice.pdf && (
               // Plain <a> (not <Link>) — the PDF endpoint returns a
               // binary stream, which Next.js Link misinterprets as an
               // RSC navigation and then fails the fetch. `download`
@@ -301,9 +321,7 @@ export default async function InvoiceDetailPage({
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('payment.recordedBy')}</dt>
-                  <dd className="font-mono text-xs">
-                    {invoice.paymentRecordedByUserId ?? '—'}
-                  </dd>
+                  <dd>{paymentRecordedByEmail}</dd>
                 </div>
                 {invoice.paymentNotes && (
                   <div className="col-span-2">
@@ -344,9 +362,7 @@ export default async function InvoiceDetailPage({
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('voidDetails.voidedBy')}</dt>
-                  <dd className="font-mono text-xs">
-                    {invoice.voidedByUserId ?? '—'}
-                  </dd>
+                  <dd>{voidedByEmail}</dd>
                 </div>
                 {invoice.voidReason && (
                   <div className="col-span-2">

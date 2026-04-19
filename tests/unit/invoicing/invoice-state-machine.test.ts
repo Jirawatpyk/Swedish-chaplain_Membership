@@ -19,7 +19,7 @@ import {
 } from '@/modules/invoicing/domain/invoice-line';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
-import { asSha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 
 describe('Invoice state machine', () => {
   describe('canTransition — legal transitions', () => {
@@ -153,9 +153,11 @@ describe('Invoice state machine', () => {
       voidReason: null,
       voidedByUserId: null,
       autoEmailOnIssue: null,
-      pdfBlobKey: 'key',
-      pdfSha256: asSha256Hex('0'.repeat(64)),
-      pdfTemplateVersion: 1,
+      pdf: {
+        blobKey: 'key',
+        sha256: Sha256Hex.ofUnsafe('0'.repeat(64)),
+        templateVersion: 1,
+      },
       lines: [],
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
@@ -170,8 +172,7 @@ describe('Invoice state machine', () => {
       ['vatRate', { vatRate: null }],
       ['tenantIdentitySnapshot', { tenantIdentitySnapshot: null }],
       ['memberIdentitySnapshot', { memberIdentitySnapshot: null }],
-      ['pdfBlobKey', { pdfBlobKey: null }],
-      ['pdfSha256', { pdfSha256: null }],
+      ['pdf', { pdf: null }],
     ])('reports missing_snapshot field=%s', (field, override) => {
       const inv = { ...fullSnapshot, ...(override as Partial<Invoice>) };
       const r = assertSnapshotsSet(inv);

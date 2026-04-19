@@ -8,8 +8,12 @@
  * e.g., a caller cannot accidentally pass a base64 digest or a
  * Uint8Array.toString() result.
  *
- * Construct via `asSha256Hex(raw)` (validated — throws on bad input)
- * or `Sha256Hex.parse(raw)` (Result-returning for boundary code).
+ * Unified namespace API (aligns with Money / VatRate / ProRatePolicy
+ * value objects in the same bounded context):
+ *   - `Sha256Hex.parse(raw)` — Result form for boundary code (DB
+ *     reads, external inputs).
+ *   - `Sha256Hex.ofUnsafe(raw)` — throwing form for trusted producer
+ *     paths (e.g., the adapter hash).
  *
  * Pure TypeScript — no framework imports (Principle III).
  */
@@ -21,25 +25,12 @@ export type Sha256Hex = string & { readonly [Sha256HexBrand]: true };
 
 export type Sha256HexError = { kind: 'malformed'; raw: string };
 
-/**
- * Validate + brand a raw string. Throws on malformed input — use only
- * on trusted producer paths (e.g., the hash returned by `createHash`
- * inside the PDF adapter, which always produces a 64-char lowercase
- * hex string by construction).
- */
-export function asSha256Hex(raw: string): Sha256Hex {
-  if (!RE_SHA256.test(raw)) {
-    throw new Error(`asSha256Hex: expected 64-char lowercase hex, got '${raw.slice(0, 16)}…'`);
-  }
-  return raw as Sha256Hex;
-}
-
-/**
- * Validate + brand without throwing. Returns a Result so callers at
- * system boundaries (DB reads, external inputs) can handle malformed
- * values explicitly.
- */
 export const Sha256Hex = {
+  /**
+   * Validate + brand without throwing. Returns a Result so callers at
+   * system boundaries (DB reads, external inputs) can handle malformed
+   * values explicitly.
+   */
   parse(
     raw: string,
   ): { ok: true; value: Sha256Hex } | { ok: false; error: Sha256HexError } {
@@ -47,5 +38,19 @@ export const Sha256Hex = {
       return { ok: false, error: { kind: 'malformed', raw } };
     }
     return { ok: true, value: raw as Sha256Hex };
+  },
+
+  /**
+   * Validate + brand, throwing on malformed input. For trusted
+   * producer paths like `createHash(...).digest('hex')` which
+   * produces a 64-char lowercase hex string by construction.
+   */
+  ofUnsafe(raw: string): Sha256Hex {
+    if (!RE_SHA256.test(raw)) {
+      throw new Error(
+        `Sha256Hex.ofUnsafe: expected 64-char lowercase hex, got '${raw.slice(0, 16)}…'`,
+      );
+    }
+    return raw as Sha256Hex;
   },
 } as const;

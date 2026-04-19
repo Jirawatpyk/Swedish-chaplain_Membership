@@ -13,7 +13,7 @@ import type {
   PdfRenderInput,
   PdfRenderResult,
 } from '../../application/ports/pdf-render-port';
-import { asSha256Hex } from '../../domain/value-objects/sha256-hex';
+import { Sha256Hex } from '../../domain/value-objects/sha256-hex';
 import { registerSarabun } from '../pdf/fonts/register-sarabun';
 import { InvoiceTemplate } from '../pdf/templates/invoice-template';
 
@@ -33,9 +33,9 @@ export const reactPdfRenderAdapter: PdfRenderPort = {
     const stream = await renderToStream(element);
     const bytes = await streamToBytes(stream);
     // createHash('sha256').digest('hex') ALWAYS returns 64-char
-    // lowercase hex by construction — `asSha256Hex` re-validates as
-    // belt-and-suspenders, costs O(64) regex.
-    const sha256 = asSha256Hex(createHash('sha256').update(bytes).digest('hex'));
+    // lowercase hex by construction — `Sha256Hex.ofUnsafe` re-validates
+    // as belt-and-suspenders, costs O(64) regex.
+    const sha256 = Sha256Hex.ofUnsafe(createHash('sha256').update(bytes).digest('hex'));
     return { bytes, sha256 };
   },
 };

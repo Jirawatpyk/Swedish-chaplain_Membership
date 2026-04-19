@@ -82,9 +82,11 @@ export interface InvoiceRepo {
       readonly netDaysSnapshot: number;
       readonly tenantIdentitySnapshot: unknown;
       readonly memberIdentitySnapshot: unknown;
-      readonly pdfBlobKey: string;
-      readonly pdfSha256: Sha256Hex;
-      readonly pdfTemplateVersion: number;
+      readonly pdf: {
+        readonly blobKey: string;
+        readonly sha256: Sha256Hex;
+        readonly templateVersion: number;
+      };
     },
   ): Promise<Invoice>;
 
@@ -105,8 +107,11 @@ export interface InvoiceRepo {
       readonly paymentReference: string | null;
       readonly paymentNotes: string | null;
       readonly paymentRecordedByUserId: string;
-      readonly receiptPdfBlobKey: string;
-      readonly receiptPdfSha256: Sha256Hex;
+      readonly receiptPdf: {
+        readonly blobKey: string;
+        readonly sha256: Sha256Hex;
+        readonly templateVersion: number;
+      };
     },
   ): Promise<Invoice>;
 

@@ -39,10 +39,7 @@ export {
 } from './domain/value-objects/fiscal-year';
 export type { TenantIdentitySnapshot } from './domain/value-objects/tenant-identity-snapshot';
 export type { MemberIdentitySnapshot } from './domain/value-objects/member-identity-snapshot';
-export {
-  Sha256Hex,
-  asSha256Hex,
-} from './domain/value-objects/sha256-hex';
+export { Sha256Hex } from './domain/value-objects/sha256-hex';
 // `Sha256HexError` intentionally not exported — consumers receive the
 // inline `{ ok:false, error:{kind,raw} }` shape from `Sha256Hex.parse`
 // and rarely need the nominal type.

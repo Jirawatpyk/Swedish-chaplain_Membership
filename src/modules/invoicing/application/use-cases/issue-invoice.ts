@@ -58,6 +58,7 @@ import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/f
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
 import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
+import { TxAbort } from '../lib/tx-abort';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -80,18 +81,12 @@ export type IssueInvoiceError =
 
 /**
  * Internal throw-carrier used to abort the transaction AND propagate a
- * typed error up to the outer `try/catch`. We cannot `return err(...)`
- * from inside `withTx` because that resolves the callback normally and
- * the sequence allocator's increment would commit — instead we throw
- * and catch here so the tx rolls back.
+ * typed error up to the outer `try/catch`. Returning `err(...)` from
+ * inside `withTx` resolves the callback normally and the sequence
+ * allocator's increment commits — instead we throw so the tx rolls
+ * back. See `lib/tx-abort.ts` for the shared pattern.
  */
-class IssueInvoiceInternalError extends Error {
-  readonly error: IssueInvoiceError;
-  constructor(error: IssueInvoiceError) {
-    super(`IssueInvoice: ${error.code}`);
-    this.error = error;
-  }
-}
+class IssueInvoiceInternalError extends TxAbort<IssueInvoiceError> {}
 
 export interface IssueInvoiceDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -260,9 +255,11 @@ export async function issueInvoice(
         netDaysSnapshot: settings.defaultNetDays,
         tenantIdentitySnapshot: tenantSnap,
         memberIdentitySnapshot: memberSnap,
-        pdfBlobKey: blobKey,
-        pdfSha256: rendered.sha256,
-        pdfTemplateVersion: deps.currentTemplateVersion,
+        pdf: {
+          blobKey,
+          sha256: rendered.sha256,
+          templateVersion: deps.currentTemplateVersion,
+        },
       });
     } catch (e) {
       if ((e as Error).message?.includes('applyIssue: no draft row updated')) {
