@@ -234,14 +234,18 @@ export function InvoiceSettingsForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8" noValidate>
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-[var(--page-section-gap)]"
+      noValidate
+    >
       {/* Currency — R7 consolidation: tenant-wide ISO-4217 code. F2
           plan module reads this via TenantTaxPolicyPort; this form
           is the ONLY editor after fee-config UI was removed. */}
-      <section className="space-y-4" aria-labelledby="sect-currency">
-        <h3 id="sect-currency" className="text-sm font-semibold">
+      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+        <legend className="px-2 text-sm font-semibold">
           {t('sections.currency')}
-        </h3>
+        </legend>
         <div className="space-y-2 sm:max-w-xs">
           <Label htmlFor="currency_code">{t('labels.currencyCode')}</Label>
           <Input
@@ -260,13 +264,13 @@ export function InvoiceSettingsForm({
             {t('hints.currencyCode')}
           </p>
         </div>
-      </section>
+      </fieldset>
 
       {/* Identity */}
-      <section className="space-y-4" aria-labelledby="sect-identity">
-        <h3 id="sect-identity" className="text-sm font-semibold">
+      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+        <legend className="px-2 text-sm font-semibold">
           {t('sections.identity')}
-        </h3>
+        </legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="legal_name_th">{t('labels.legalNameTh')}</Label>
@@ -332,13 +336,13 @@ export function InvoiceSettingsForm({
             />
           </div>
         </div>
-      </section>
+      </fieldset>
 
       {/* Tax */}
-      <section className="space-y-4" aria-labelledby="sect-tax">
-        <h3 id="sect-tax" className="text-sm font-semibold">
+      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+        <legend className="px-2 text-sm font-semibold">
           {t('sections.tax')}
-        </h3>
+        </legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="vat_percent">{t('labels.vatPercent')}</Label>
@@ -370,13 +374,13 @@ export function InvoiceSettingsForm({
             />
           </div>
         </div>
-      </section>
+      </fieldset>
 
       {/* Numbering */}
-      <section className="space-y-4" aria-labelledby="sect-numbering">
-        <h3 id="sect-numbering" className="text-sm font-semibold">
+      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+        <legend className="px-2 text-sm font-semibold">
           {t('sections.numbering')}
-        </h3>
+        </legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="inv_prefix">{t('labels.invoicePrefix')}</Label>
@@ -431,13 +435,13 @@ export function InvoiceSettingsForm({
             </p>
           </div>
         </div>
-      </section>
+      </fieldset>
 
       {/* Defaults */}
-      <section className="space-y-4" aria-labelledby="sect-defaults">
-        <h3 id="sect-defaults" className="text-sm font-semibold">
+      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+        <legend className="px-2 text-sm font-semibold">
           {t('sections.defaults')}
-        </h3>
+        </legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="fy_month">{t('labels.fiscalYearStartMonth')}</Label>
@@ -501,13 +505,13 @@ export function InvoiceSettingsForm({
             />
           </div>
         </div>
-      </section>
+      </fieldset>
 
       {/* Logo */}
-      <section className="space-y-4" aria-labelledby="sect-logo">
-        <h3 id="sect-logo" className="text-sm font-semibold">
+      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+        <legend className="px-2 text-sm font-semibold">
           {t('sections.logo')}
-        </h3>
+        </legend>
         <div className="space-y-2">
           <Label htmlFor="logo_file">{t('labels.logo')}</Label>
           <Input
@@ -537,7 +541,7 @@ export function InvoiceSettingsForm({
             </p>
           ) : null}
         </div>
-      </section>
+      </fieldset>
 
       {error ? (
         <p className="text-sm text-destructive" role="alert">
