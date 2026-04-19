@@ -69,19 +69,6 @@ async function seedTenantForIssuance(
   const planId = 'seq-test-plan';
   const planYear = 2026;
   await runInTenant(tenant.ctx, async (tx) => {
-    await tx.insert(tenantInvoiceSettings).values({
-      tenantId: tenant.ctx.slug,
-      currencyCode: 'THB',
-      vatRate: '0.0700',
-      registrationFeeSatang: 0n,
-      legalNameTh: 'Test TH',
-      legalNameEn: 'Test EN',
-      taxId: '0000000000000',
-      registeredAddressTh: 'Test Address TH',
-      registeredAddressEn: 'Test Address EN',
-      invoiceNumberPrefix: 'INV',
-      creditNoteNumberPrefix: 'CN',
-    });
     await tx.insert(membershipPlans).values({
       tenantId: tenant.ctx.slug,
       planId,

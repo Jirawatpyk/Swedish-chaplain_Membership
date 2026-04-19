@@ -11,7 +11,7 @@ const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 
 const VIEWPORTS = [320, 375, 640, 768, 1024, 1440];
-const PAGES = ['/admin', '/admin/users', '/admin/plans', '/admin/settings/fees'];
+const PAGES = ['/admin', '/admin/users', '/admin/plans', '/admin/settings/invoicing'];
 
 test.describe('F4 US2 — responsive layout @layout', () => {
   test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_ADMIN_* not set');

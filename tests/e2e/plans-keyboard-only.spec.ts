@@ -133,7 +133,7 @@ test.describe('keyboard-only plans admin — T158', () => {
 
   test('US5 — Tab through fee-config form fields', async ({ page }) => {
     await signInKeyboard(page);
-    await page.goto('/admin/settings/fees');
+    await page.goto('/admin/settings/invoicing');
     await page.waitForLoadState('networkidle');
 
     // Use getByLabel to disambiguate from the page subtitle that also

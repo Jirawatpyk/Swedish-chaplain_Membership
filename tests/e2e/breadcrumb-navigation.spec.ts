@@ -29,8 +29,8 @@ test.describe('F4 US3 — breadcrumb navigation @layout', () => {
     await page.goto('/admin/users');
     await expect(page.locator('[data-slot="breadcrumb"]')).toHaveCount(0);
 
-    // /admin/settings/fees → depth 3 → breadcrumb
-    await page.goto('/admin/settings/fees');
+    // /admin/settings/invoicing → depth 3 → breadcrumb
+    await page.goto('/admin/settings/invoicing');
     // Component renders both desktop + mobile breadcrumb lists for
     // responsive switching; count only the visible (desktop) list.
     const crumbs = page
@@ -47,7 +47,7 @@ test.describe('F4 US3 — breadcrumb navigation @layout', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
-    await page.goto('/admin/settings/fees');
+    await page.goto('/admin/settings/invoicing');
     const ellipsis = page.locator('[data-slot="breadcrumb-ellipsis"]');
     await expect(ellipsis).toBeVisible();
   });

@@ -12,7 +12,7 @@ const PAGES = [
   '/admin/users',
   '/admin/plans',
   '/admin/plans/new',
-  '/admin/settings/fees',
+  '/admin/settings/invoicing',
 ];
 
 test.describe('F4 SC-011 — universal focus ring @a11y @layout', () => {

@@ -53,7 +53,7 @@ test.describe('F5 manual-QA automation @qa', () => {
         /^\/admin(\/|$)/,
       );
 
-      const adminRoutes = ['/admin/settings/fees', '/admin/plans/new'];
+      const adminRoutes = ['/admin/settings/invoicing', '/admin/plans/new'];
       const samples: Array<{
         route: string;
         text: string;
@@ -195,7 +195,7 @@ test.describe('F5 manual-QA automation @qa', () => {
         thLineBreakRule: 'loose' | 'other';
       }> = [];
 
-      for (const route of ['/admin/settings/fees', '/admin/plans/new']) {
+      for (const route of ['/admin/settings/invoicing', '/admin/plans/new']) {
         await page.goto(route);
         await waitForLayoutContainer(page);
 

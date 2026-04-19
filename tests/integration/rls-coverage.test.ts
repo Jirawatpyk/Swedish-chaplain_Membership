@@ -26,7 +26,6 @@ import { db } from '@/lib/db';
 const TENANT_SCOPED_TABLES = [
   // F2
   'membership_plans',
-  'tenant_fee_config',
   // F3
   'members',
   'contacts',

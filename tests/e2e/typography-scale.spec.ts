@@ -26,7 +26,7 @@ test.describe('F4 SC-010 — typography scale @layout', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
-    const pages = ['/admin', '/admin/users', '/admin/plans', '/admin/settings/fees'];
+    const pages = ['/admin', '/admin/users', '/admin/plans', '/admin/settings/invoicing'];
     for (const path of pages) {
       await page.goto(path);
       // Wait for network idle so the page (not loading.tsx skeleton's h1)

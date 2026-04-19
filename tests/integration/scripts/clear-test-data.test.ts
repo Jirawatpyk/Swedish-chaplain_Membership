@@ -51,7 +51,7 @@ describe('clearTestData script', () => {
 
   it('deletes E2E members (E2E Co %) and their contacts', async () => {
     // Need a real admin user for the created_by / updated_by FK on
-    // tenant_fee_config + membership_plans.
+    // membership_plans.
     const seedEmail = `test-${Date.now()}-e2eseed@swecham.test`;
     createdEmails.push(seedEmail);
     const seedHash = await argon2Hasher.hash('Test-Password-E2E-Seed-2026!');

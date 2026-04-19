@@ -15,7 +15,7 @@ const PAGES = [
   '/admin/users',
   '/admin/plans',
   '/admin/plans/new',
-  '/admin/settings/fees',
+  '/admin/settings/invoicing',
 ];
 
 test.describe('F4 — layout a11y regressions @a11y @layout', () => {

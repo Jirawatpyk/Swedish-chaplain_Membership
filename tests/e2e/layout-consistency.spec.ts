@@ -27,7 +27,7 @@ const PAGES: Array<{ path: string; variant: Variant }> = [
   { path: '/admin/plans/clone', variant: 'form' },
   { path: `/admin/plans/${SEEDED_YEAR}/${SEEDED_PLAN_ID}`, variant: 'detail' },
   { path: `/admin/plans/${SEEDED_YEAR}/${SEEDED_PLAN_ID}/edit`, variant: 'form' },
-  { path: '/admin/settings/fees', variant: 'form' },
+  { path: '/admin/settings/invoicing', variant: 'form' },
 ];
 
 const EXPECTED_H1_FONT_SIZE = '30px';

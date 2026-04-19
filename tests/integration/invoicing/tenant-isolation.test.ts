@@ -80,22 +80,9 @@ describe('F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)', () => {
     tenantA = pair.a;
     tenantB = pair.b;
 
-    // Seed fee config + plan + member per tenant.
+    // Seed plans + members per tenant (invoice_settings seeded below).
     for (const [t, prefix] of [[tenantA, 'alpha'], [tenantB, 'beta']] as const) {
       await runInTenant(t.ctx, async (tx) => {
-        await tx.insert(tenantInvoiceSettings).values({
-          tenantId: t.ctx.slug,
-          currencyCode: 'THB',
-          vatRate: '0.0700',
-          registrationFeeSatang: 100000n,
-          legalNameTh: 'Test TH',
-          legalNameEn: 'Test EN',
-          taxId: '0000000000000',
-          registeredAddressTh: 'Test Address TH',
-          registeredAddressEn: 'Test Address EN',
-          invoiceNumberPrefix: 'INV',
-          creditNoteNumberPrefix: 'CN',
-        });
         await tx.insert(membershipPlans).values({
           tenantId: t.ctx.slug,
           planId: `${prefix}-plan`,

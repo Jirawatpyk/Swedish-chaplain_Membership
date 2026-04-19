@@ -70,19 +70,6 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     tenant = await createTestTenant('test-swecham');
     memberId = randomUUID();
     await runInTenant(tenant.ctx, async (tx) => {
-      await tx.insert(tenantInvoiceSettings).values({
-        tenantId: tenant.ctx.slug,
-        currencyCode: 'THB',
-        vatRate: '0.0700',
-        registrationFeeSatang: 500000n,
-        legalNameTh: 'Test TH',
-        legalNameEn: 'Test EN',
-        taxId: '0000000000000',
-        registeredAddressTh: 'Test Address TH',
-        registeredAddressEn: 'Test Address EN',
-        invoiceNumberPrefix: 'INV',
-        creditNoteNumberPrefix: 'CN',
-      });
       await tx.insert(membershipPlans).values({
         tenantId: tenant.ctx.slug,
         planId: 'audit-plan',
