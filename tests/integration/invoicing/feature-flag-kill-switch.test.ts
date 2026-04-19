@@ -18,13 +18,20 @@ const F4_PATHS = [
   '/api/credit-notes',
   '/api/tenant-invoice-settings',
   '/api/portal/invoices',
-  '/api/cron/auto-email-dispatch',
 ];
 
+// R7-B4 — the outbox dispatcher is a shared cron route that serves
+// BOTH F1 and F4 rows. The kill-switch must NOT blanket-block this
+// path (that would stop F1 emails too). Instead F4 rows are filtered
+// at the query layer inside the route handler when F4 is disabled;
+// see `src/app/api/cron/outbox-dispatch/route.ts` and the companion
+// integration test `dispatcher-f4-gated.test.ts`. The proxy path is
+// asserted as NON-gated here to lock in that contract.
 const NON_F4_PATHS = [
   '/api/members',
   '/api/auth/sign-in',
   '/admin',
+  '/api/cron/outbox-dispatch',
 ];
 
 describe('F4 feature-flag kill-switch (T020)', () => {

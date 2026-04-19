@@ -138,12 +138,21 @@ export function proxy(request: NextRequest): NextResponse {
   //     reads and writes on F4 surfaces. Member-portal /api/portal/invoices
   //     is a dedicated sub-path (added in US3) and is gated here too; the
   //     F3 /api/portal guard above only triggers when F3 itself is off.
+  //
+  //     R7-B4 fix — the cron dispatcher is a SHARED route
+  //     (`/api/cron/outbox-dispatch`) serving F1 + F4 rows. Blanket-
+  //     blocking it here would stop F1 emails too. The kill-switch for
+  //     F4 outbox rows lives INSIDE the dispatcher query which filters
+  //     `notification_type != 'invoice_auto_email'` when f4Invoicing is
+  //     false (see src/app/api/cron/outbox-dispatch/route.ts). The
+  //     previous `/api/cron/auto-email-dispatch` reference was a
+  //     path-mismatch that gave the kill-switch no actual containment
+  //     power over in-flight invoice email dispatch.
   const isF4Path =
     nextUrl.pathname.startsWith('/api/invoices') ||
     nextUrl.pathname.startsWith('/api/credit-notes') ||
     nextUrl.pathname.startsWith('/api/tenant-invoice-settings') ||
-    nextUrl.pathname.startsWith('/api/portal/invoices') ||
-    nextUrl.pathname.startsWith('/api/cron/auto-email-dispatch');
+    nextUrl.pathname.startsWith('/api/portal/invoices');
   if (!env.features.f4Invoicing && isF4Path) {
     const response = NextResponse.json(
       {

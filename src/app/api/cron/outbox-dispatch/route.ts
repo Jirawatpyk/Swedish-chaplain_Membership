@@ -33,7 +33,7 @@
  * event emission (FR-012c parity for unrenderable rows).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { and, count, eq, lt, lte } from 'drizzle-orm';
+import { and, count, eq, lt, lte, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 /* eslint-disable no-restricted-imports --
  * Cron job: direct UPDATE on `notifications_outbox` + auditLog — this
@@ -399,16 +399,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const now = new Date();
 
+  // R7-B4 fix — FEATURE_F4_INVOICING kill-switch containment. When F4
+  // is disabled the dispatcher MUST NOT ship `invoice_auto_email`
+  // rows (which carry Blob download URLs to tax PDFs) while still
+  // draining F1 outbox rows. The previous proxy-layer gate on
+  // `/api/cron/auto-email-dispatch` was a path-mismatch (that route
+  // never existed) — flipping the kill-switch therefore had no
+  // containment power. Filter at query time so rows are skipped
+  // cleanly without racking up per-row retries or errors.
+  const baseReadyFilters = [
+    eq(notificationsOutbox.status, 'pending'),
+    lte(notificationsOutbox.nextRetryAt, now),
+  ];
+  if (!env.features.f4Invoicing) {
+    baseReadyFilters.push(ne(notificationsOutbox.notificationType, 'invoice_auto_email'));
+  }
+
   // Lock-less candidate pick. Real per-row lock happens inside dispatchOne.
   const ready = await db
     .select({ id: notificationsOutbox.id })
     .from(notificationsOutbox)
-    .where(
-      and(
-        eq(notificationsOutbox.status, 'pending'),
-        lte(notificationsOutbox.nextRetryAt, now),
-      ),
-    )
+    .where(and(...baseReadyFilters))
     .limit(BATCH_SIZE);
 
   // Level 2 — stuck-rows check: pending rows whose next_retry_at is > 30 min
