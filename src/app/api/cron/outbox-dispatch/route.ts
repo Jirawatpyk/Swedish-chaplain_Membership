@@ -383,24 +383,18 @@ async function dispatchOne(
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
+  // W8 fix — CRON_SECRET is validated as required (min 16 chars) at
+  // boot by `src/lib/env.ts`, so `env.cron.secret` is always set in
+  // every environment (dev/test/preview/production). The previous
+  // `else if (!env.isDevelopment)` fallback allowed unauthenticated
+  // drain when NODE_ENV=development even on preview/staging deploys —
+  // a known Vercel footgun where an ad-hoc env override slips to prod.
+  // Devs set CRON_SECRET in `.env.local` (see .env.example) — no
+  // escape hatch needed.
   const authHeader = request.headers.get('authorization');
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    if (authHeader !== `Bearer ${expected}`) {
-      logger.warn({ requestId }, 'cron.outbox_dispatch.unauthorized');
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-  } else if (!env.isDevelopment) {
-    logger.error({ requestId }, 'cron.outbox_dispatch.no_secret_configured');
+  if (authHeader !== `Bearer ${env.cron.secret}`) {
+    logger.warn({ requestId }, 'cron.outbox_dispatch.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  } else {
-    // S3 — loud warning so an accidental dev-mode deploy is immediately
-    // visible in aggregated logs. Dev-mode + missing CRON_SECRET means
-    // any unauthenticated caller can drain the outbox.
-    logger.warn(
-      { requestId },
-      'cron.outbox_dispatch.dev_mode_unauthenticated_drain',
-    );
   }
 
   const now = new Date();
