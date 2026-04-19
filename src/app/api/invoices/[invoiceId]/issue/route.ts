@@ -14,6 +14,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { issueInvoice, issueInvoiceSchema, makeIssueInvoiceDeps } from '@/modules/invoicing';
 import { serialiseInvoice, stripReason } from '../../_serialise';
 import { logger } from '@/lib/logger';
+import { rateLimiter } from '@/lib/auth-deps';
 
 export async function POST(
   request: NextRequest,
@@ -25,6 +26,26 @@ export async function POST(
   const { invoiceId } = await params;
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
+
+  // FR-022 — 20 issuance attempts per (tenant, actor) per 5 min.
+  // Prevents a runaway script from burning through the §87 sequence
+  // numbers on valid drafts; legitimate admins rarely issue >20
+  // invoices in 5 minutes.
+  const rl = await rateLimiter.check(
+    `f4:issue:${tenantCtx.slug}:${ctx.current.user.id}`,
+    20,
+    300,
+  );
+  if (!rl.success) {
+    logger.warn(
+      { requestId, tenantId: tenantCtx.slug, userId: ctx.current.user.id, reset: rl.reset },
+      'POST /api/invoices/[id]/issue rate-limited',
+    );
+    return NextResponse.json(
+      { error: { code: 'rate_limited', retryAfterMs: rl.reset - Date.now() } },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) } },
+    );
+  }
 
   const parsed = issueInvoiceSchema.safeParse({
     tenantId: tenantCtx.slug,

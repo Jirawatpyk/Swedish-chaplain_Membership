@@ -27,7 +27,11 @@ export const vercelBlobAdapter: BlobStoragePort = {
     return { key: input.key, url: result.url };
   },
 
-  async signDownloadUrl(key: string): Promise<string> {
+  async signDownloadUrl(key: string, ttlSeconds?: number): Promise<string> {
+    // `ttlSeconds` is part of the port signature for future
+    // @vercel/blob signed-URL API support; today we return the
+    // stable public URL regardless. See comment below.
+    void ttlSeconds;
     // Vercel Blob does not currently support per-request signed URLs
     // with arbitrary TTL via the SDK; the URL returned by `put` is
     // stable but the access (public vs private) is set at upload.

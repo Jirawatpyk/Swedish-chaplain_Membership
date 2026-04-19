@@ -97,6 +97,13 @@ export default async function InvoiceDetailPage({
   const result = await getInvoice(makeGetInvoiceDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,
     invoiceId,
+    // Actor context — enables invoice_cross_tenant_probe audit emit
+    // when an admin navigates to /admin/invoices/<foreign-id>.
+    actor: {
+      userId: currentUser.id,
+      role: currentUser.role as 'admin' | 'manager' | 'member',
+      requestId,
+    },
   });
   if (!result.ok) return notFound();
   const invoice = result.value;

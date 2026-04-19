@@ -8,6 +8,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { recordPayment, recordPaymentSchema, makeRecordPaymentDeps } from '@/modules/invoicing';
 import { serialiseInvoice, stripReason } from '../../_serialise';
 import { logger } from '@/lib/logger';
+import { rateLimiter } from '@/lib/auth-deps';
 
 export async function POST(
   request: NextRequest,
@@ -19,6 +20,26 @@ export async function POST(
   const { invoiceId } = await params;
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
+
+  // FR-023 — 20 payment-record attempts per (tenant, actor) per
+  // 5 min. Mirrors the /issue bucket — the idempotent replay path
+  // inside record-payment is the safety net for legitimate retries;
+  // this cap throttles misbehaving clients before they reach it.
+  const rl = await rateLimiter.check(
+    `f4:pay:${tenantCtx.slug}:${ctx.current.user.id}`,
+    20,
+    300,
+  );
+  if (!rl.success) {
+    logger.warn(
+      { requestId, tenantId: tenantCtx.slug, userId: ctx.current.user.id, reset: rl.reset },
+      'POST /api/invoices/[id]/pay rate-limited',
+    );
+    return NextResponse.json(
+      { error: { code: 'rate_limited', retryAfterMs: rl.reset - Date.now() } },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) } },
+    );
+  }
 
   let body: unknown;
   try {

@@ -12,6 +12,7 @@ import {
   makeGetInvoiceDeps,
 } from '@/modules/invoicing';
 import { serialiseInvoice } from '../_serialise';
+import { logger } from '@/lib/logger';
 
 export async function GET(
   request: NextRequest,
@@ -21,11 +22,21 @@ export async function GET(
   if ('response' in ctx) return ctx.response;
   const { invoiceId } = await params;
   const tenantCtx = resolveTenantFromRequest(request);
+  const requestId = requestIdFromHeaders(request.headers);
   const result = await getInvoice(makeGetInvoiceDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,
     invoiceId,
+    actor: {
+      userId: ctx.current.user.id,
+      role: ctx.current.user.role as 'admin' | 'manager' | 'member',
+      requestId,
+    },
   });
   if (!result.ok) {
+    logger.warn(
+      { requestId, tenantId: tenantCtx.slug, invoiceId, errorCode: result.error.code },
+      'GET /api/invoices/[id] not found',
+    );
     return NextResponse.json({ error: { code: 'not_found' } }, { status: 404 });
   }
   return NextResponse.json(serialiseInvoice(result.value));
@@ -47,6 +58,10 @@ export async function DELETE(
     invoiceId,
   });
   if (!result.ok) {
+    logger.warn(
+      { requestId, tenantId: tenantCtx.slug, invoiceId, errorCode: result.error.code },
+      'DELETE /api/invoices/[id] failed',
+    );
     const status = result.error.code === 'invoice_not_found' ? 404 : 409;
     return NextResponse.json({ error: { code: result.error.code } }, { status });
   }

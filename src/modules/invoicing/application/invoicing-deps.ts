@@ -90,7 +90,13 @@ export function makeDeleteInvoiceDraftDeps(tenantId: string): DeleteInvoiceDraft
 }
 
 export function makeGetInvoiceDeps(tenantId: string): GetInvoiceDeps {
-  return { invoiceRepo: makeDrizzleInvoiceRepo(tenantId) };
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    // Wire audit so cross-tenant probes emit when actor context is
+    // supplied. Detail-page callers SHOULD pass actor; background
+    // reads (sweeper, reconciliation) can omit it safely.
+    audit: f4AuditAdapter,
+  };
 }
 
 export function makeUpdateInvoiceDraftDeps(tenantId: string): UpdateInvoiceDraftDeps {

@@ -58,6 +58,11 @@ import { buildEmailChangeRevertEmail } from '@/modules/members/infrastructure/em
 import type { EmailLocale } from '@/modules/members/infrastructure/email/email-verification-email';
 import { buildInvitationEmail } from '@/modules/auth/infrastructure/email/invitation-email';
 import { isRole } from '@/modules/auth/domain/role';
+import {
+  buildInvoiceAutoEmail,
+  type InvoiceAutoEmailEventType,
+} from '@/modules/invoicing/infrastructure/email/invoice-auto-email';
+import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 /* eslint-enable no-restricted-imports */
 
 // Spec FR-012c: "≥ 5 attempts with exponential backoff 60s / 5m / 30m / 3h / 12h".
@@ -87,7 +92,9 @@ interface BuiltPayload {
  * failure path with an explicit audit event so unrenderable rows do
  * not disappear silently.
  */
-function buildPayload(row: NotificationsOutboxRow): BuiltPayload | null {
+async function buildPayload(
+  row: NotificationsOutboxRow,
+): Promise<BuiltPayload | null> {
   const locale: Locale = isLocale(row.locale) ? row.locale : 'en';
   const ctx = row.contextData as Record<string, unknown>;
 
@@ -126,9 +133,48 @@ function buildPayload(row: NotificationsOutboxRow): BuiltPayload | null {
         locale,
       });
     }
+    case 'invoice_auto_email': {
+      // F4 auto-email row: context_data contains eventType +
+      // pdf_blob_key. Resolve the Blob URL (stable public URL per
+      // vercel-blob-adapter.ts — no TTL concerns) and build a
+      // link-based notification email. We do NOT attach the PDF
+      // bytes — the current EmailSender interface has no attachment
+      // slot and Vercel Blob URLs are stable.
+      const eventType = ctx.event_type as string | undefined;
+      const pdfBlobKey = typeof ctx.pdf_blob_key === 'string' ? ctx.pdf_blob_key : '';
+      if (!pdfBlobKey || !isInvoiceAutoEmailEventType(eventType)) return null;
+      try {
+        const downloadUrl = await vercelBlobAdapter.signDownloadUrl(pdfBlobKey, 60);
+        return buildInvoiceAutoEmail({
+          toEmail: row.toEmail,
+          eventType,
+          downloadUrl,
+          locale,
+        });
+      } catch {
+        // Blob lookup failed — treat as transient failure. Returning
+        // null lets the dispatcher's retry ladder re-attempt per
+        // RETRY_BACKOFF_SECONDS. If the blob has been garbage-
+        // collected the row will hit MAX_ATTEMPTS and flip to
+        // permanently_failed with an audit emit.
+        return null;
+      }
+    }
     default:
       return null;
   }
+}
+
+function isInvoiceAutoEmailEventType(v: unknown): v is InvoiceAutoEmailEventType {
+  return (
+    v === 'invoice_issued' ||
+    v === 'invoice_paid' ||
+    v === 'invoice_voided' ||
+    v === 'credit_note_issued' ||
+    v === 'invoice_pdf_resent' ||
+    v === 'receipt_pdf_resent' ||
+    v === 'credit_note_pdf_resent'
+  );
 }
 
 type DispatchOutcome = 'sent' | 'retried' | 'permanent' | 'skipped';
@@ -161,7 +207,7 @@ async function dispatchOne(
 
     if (!row) return 'skipped';
 
-    const payload = buildPayload(row);
+    const payload = await buildPayload(row);
     const now = new Date();
 
     if (!payload) {
