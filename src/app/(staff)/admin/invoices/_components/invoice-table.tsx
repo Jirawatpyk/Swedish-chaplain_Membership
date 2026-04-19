@@ -23,6 +23,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export type InvoicesTableRow = {
   readonly invoiceId: string;
@@ -135,10 +137,15 @@ export function InvoicesTable({ rows }: { rows: readonly InvoicesTableRow[] }) {
                 {r.hasPdf ? (
                   // Plain <a> — PDF endpoint returns binary bytes;
                   // Next.js <Link> would misinterpret the response as
-                  // an RSC payload and fail the fetch.
+                  // an RSC payload and fail the fetch. Styled as a
+                  // ghost button so the touch target meets WCAG 2.5.5
+                  // (≥44×44 px) on mobile (L4).
                   <a
                     href={`/api/invoices/${r.invoiceId}/pdf`}
-                    className="text-sm text-primary hover:underline"
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'sm' }),
+                      'min-h-11 px-3',
+                    )}
                     target="_blank"
                     rel="noopener noreferrer"
                     download

@@ -31,6 +31,7 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
+import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000e002';
 
@@ -377,7 +378,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     const invoice = makeIssuedInvoice();
     const deps = makeDeps(true, invoice, makeSettings());
     deps.invoiceRepo.applyPayment = vi.fn(async () => {
-      throw new Error('applyPayment: no row updated');
+      throw new InvoiceApplyConflictError('applyPayment');
     });
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(false);

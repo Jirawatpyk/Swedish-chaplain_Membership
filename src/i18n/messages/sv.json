@@ -937,7 +937,8 @@
           "title": "Annullerad",
           "voidedAt": "Annullerad",
           "voidedBy": "Annullerad av",
-          "reason": "Orsak"
+          "reason": "Orsak",
+          "creditNoteHint": "För att legalt återställa denna faktura, utfärda en kreditnota (tillgänglig i F4 US6)."
         }
       },
       "issue": {

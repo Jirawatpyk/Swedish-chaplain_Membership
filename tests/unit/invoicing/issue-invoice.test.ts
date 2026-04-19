@@ -31,6 +31,7 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { MemberIdentityView } from '@/modules/invoicing/application/ports/member-identity-port';
+import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 
 // ---- Fixtures ---------------------------------------------------------------
 
@@ -240,7 +241,7 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     // error, not a raw 500.
     const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
     deps.invoiceRepo.applyIssue = vi.fn(async () => {
-      throw new Error('applyIssue: no draft row updated (concurrent issue?)');
+      throw new InvoiceApplyConflictError('applyIssue');
     });
     const r = await issueInvoice(deps, input);
     expect(r.ok).toBe(false);

@@ -75,7 +75,10 @@ export function InvoiceFilters() {
 
   return (
     <div className="flex flex-wrap items-end gap-3">
-      <div className="relative flex-1 min-w-[16rem]">
+      {/* L5: was min-w-[16rem]=256px — overflowed 320px mobile viewports
+          after padding + sibling Status dropdown. 10rem=160px leaves
+          room for the dropdown alongside on narrow screens. */}
+      <div className="relative flex-1 min-w-[10rem]">
         <SearchIcon
           aria-hidden="true"
           className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"

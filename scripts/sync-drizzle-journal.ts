@@ -12,7 +12,7 @@
  * already-applied without actually executing any SQL.
  */
 import postgres from 'postgres';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 

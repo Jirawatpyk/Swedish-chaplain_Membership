@@ -46,6 +46,21 @@ function formatSatang(satang: bigint | null): string {
   return `${sign}${whole.toLocaleString()}.${rem.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Format an ISO timestamp as a medium-style date in the active
+ * next-intl locale. Returns an em-dash for null inputs so missing
+ * audit timestamps read cleanly in the UI (L7 — duplicate of the
+ * inline blocks that used to live on the payment/void sections).
+ */
+function formatDate(iso: string | null, locale: string): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString(locale, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 type InvoiceStatusBadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
 function statusBadgeVariant(status: string): InvoiceStatusBadgeVariant {
   switch (status) {
@@ -299,16 +314,13 @@ export default async function InvoiceDetailPage({
               <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-muted-foreground">{t('payment.paidAt')}</dt>
-                  <dd>
-                    {invoice.paidAt
-                      ? new Date(invoice.paidAt).toLocaleDateString(userLocale, {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })
-                      : '—'}
-                  </dd>
+                  <dd>{formatDate(invoice.paidAt, userLocale)}</dd>
                 </div>
+                {/* No separate "Amount paid" row — partial payments are
+                    out of MVP scope (spec §US2 AS4), so paid amount is
+                    always invoice.total which is already in the main
+                    summary above. Add this row when partial payments
+                    land. */}
                 <div>
                   <dt className="text-muted-foreground">{t('payment.method')}</dt>
                   <dd>
@@ -354,15 +366,7 @@ export default async function InvoiceDetailPage({
               <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-muted-foreground">{t('voidDetails.voidedAt')}</dt>
-                  <dd>
-                    {invoice.voidedAt
-                      ? new Date(invoice.voidedAt).toLocaleDateString(userLocale, {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })
-                      : '—'}
-                  </dd>
+                  <dd>{formatDate(invoice.voidedAt, userLocale)}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('voidDetails.voidedBy')}</dt>
@@ -375,6 +379,14 @@ export default async function InvoiceDetailPage({
                   </div>
                 )}
               </dl>
+              {/* Next-step hint (M6) — voided invoices are terminal in
+                  §87 terms but finance almost always wants to issue a
+                  credit note as the legal undo. F4 US6 ships the flow;
+                  until then we surface the intent as a disabled CTA
+                  with tooltip so admins know where it's coming. */}
+              <p className="mt-3 text-xs text-muted-foreground">
+                {t('voidDetails.creditNoteHint')}
+              </p>
             </section>
           )}
 

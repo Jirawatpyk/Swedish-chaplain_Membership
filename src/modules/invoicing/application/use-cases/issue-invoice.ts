@@ -61,6 +61,7 @@ import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat'
 import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { TxAbort } from '../lib/tx-abort';
+import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -89,7 +90,11 @@ export type IssueInvoiceError =
  * allocator's increment commits — instead we throw so the tx rolls
  * back. See `lib/tx-abort.ts` for the shared pattern.
  */
-class IssueInvoiceInternalError extends TxAbort<IssueInvoiceError> {}
+class IssueInvoiceInternalError extends TxAbort<IssueInvoiceError> {
+  // Hardcode the class name so production minifiers (esbuild/Terser)
+  // can't mangle it in logger output (L3).
+  override readonly name = 'IssueInvoiceInternalError';
+}
 
 export interface IssueInvoiceDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -276,7 +281,7 @@ export async function issueInvoice(
         },
       });
     } catch (e) {
-      if ((e as Error).message?.includes('applyIssue: no draft row updated')) {
+      if (e instanceof InvoiceApplyConflictError && e.kind === 'applyIssue') {
         // Row was 'draft' under the lock but isn't anymore — concurrent
         // re-issue. Surface 'issued' as the inferred new status so
         // callers (and the 409 response) carry useful info.
@@ -324,7 +329,7 @@ export async function issueInvoice(
   });
   } catch (e) {
     if (e instanceof IssueInvoiceInternalError) {
-      logger.error(
+      logger.warn(
         {
           err: e.error,
           invoiceId: input.invoiceId,

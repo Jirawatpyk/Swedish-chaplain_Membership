@@ -937,7 +937,8 @@
           "title": "Voided",
           "voidedAt": "Voided at",
           "voidedBy": "Voided by",
-          "reason": "Reason"
+          "reason": "Reason",
+          "creditNoteHint": "To legally reverse this invoice, issue a credit note (available in F4 US6)."
         }
       },
       "issue": {

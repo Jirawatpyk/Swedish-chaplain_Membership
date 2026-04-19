@@ -23,6 +23,7 @@ import { asFiscalYearUnsafe } from '../../domain/value-objects/fiscal-year';
 import { VatRate } from '../../domain/value-objects/vat-rate';
 import { asProRatePolicyUnsafe } from '../../domain/value-objects/pro-rate-policy';
 import { Sha256Hex, type Sha256Hex as Sha256HexT } from '../../domain/value-objects/sha256-hex';
+import { InvoiceApplyConflictError } from '../../application/lib/invoice-apply-conflict-error';
 import {
   makeTenantIdentitySnapshot,
   type TenantIdentitySnapshot,
@@ -426,7 +427,7 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
           ),
         )
         .returning();
-      if (!updated) throw new Error('applyIssue: no draft row updated (concurrent issue?)');
+      if (!updated) throw new InvoiceApplyConflictError('applyIssue');
 
       const lineRows = await tx
         .select()
@@ -491,7 +492,7 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
           ),
         )
         .returning();
-      if (!updated) throw new Error('applyPayment: no row updated');
+      if (!updated) throw new InvoiceApplyConflictError('applyPayment');
 
       const lineRows = await tx
         .select()

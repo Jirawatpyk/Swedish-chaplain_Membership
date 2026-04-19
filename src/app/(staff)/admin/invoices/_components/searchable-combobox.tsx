@@ -79,7 +79,13 @@ export function SearchableCombobox({
         </span>
         <ChevronsUpDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--anchor-width)] min-w-[20rem] p-0" align="start">
+      {/* L6: dropped min-w-[20rem]=320px which overflowed smallest-
+          viewport mobile (iPhone SE 320px). Popover now sizes to its
+          anchor with a max of viewport − 2rem gutter. */}
+      <PopoverContent
+        className="w-[var(--anchor-width)] max-w-[calc(100vw-2rem)] p-0"
+        align="start"
+      >
         <Command>
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList>

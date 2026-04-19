@@ -17,6 +17,15 @@ export type F4OutboxEventType =
   | 'credit_note_pdf_resent';
 
 export interface EmailOutboxPort {
+  /**
+   * `pdfBlobKey` + `pdfTemplateVersion` are kept as FLAT scalars here
+   * (not wrapped in a `pdf: {...}` object like Invoice.pdf) on
+   * purpose: the outbox row stores BOTH invoice + receipt variants
+   * via `eventType` discrimination, so the caller always knows which
+   * PDF to reference at the callsite. A nested object would force
+   * the caller to build the right variant per branch — net more
+   * boilerplate without added safety. Reviewed 2026-04-19 (M4).
+   */
   enqueue(
     tx: unknown,
     input: {

@@ -39,6 +39,7 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { logger } from '@/lib/logger';
 import { TxAbort } from '../lib/tx-abort';
+import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 
 export const recordPaymentSchema = z.object({
   tenantId: z.string().min(1),
@@ -71,7 +72,11 @@ export type RecordPaymentError =
  * normally from the withTx callback resolves the promise and commits
  * the sequence increment. See `lib/tx-abort.ts` for the shared pattern.
  */
-class RecordPaymentInternalError extends TxAbort<RecordPaymentError> {}
+class RecordPaymentInternalError extends TxAbort<RecordPaymentError> {
+  // Hardcode the class name so production minifiers can't mangle it
+  // in logger output (L3).
+  override readonly name = 'RecordPaymentInternalError';
+}
 
 export interface RecordPaymentDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -225,7 +230,7 @@ export async function recordPayment(
         },
       });
     } catch (e) {
-      if ((e as Error).message?.includes('applyPayment: no row updated')) {
+      if (e instanceof InvoiceApplyConflictError && e.kind === 'applyPayment') {
         throw new RecordPaymentInternalError({ code: 'concurrent_state_change' });
       }
       throw e;
@@ -265,7 +270,7 @@ export async function recordPayment(
   });
   } catch (e) {
     if (e instanceof RecordPaymentInternalError) {
-      logger.error(
+      logger.warn(
         {
           err: e.error,
           invoiceId: input.invoiceId,
