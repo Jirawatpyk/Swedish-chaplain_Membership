@@ -982,14 +982,16 @@
       "cloneYear": "Clone year",
       "editFees": "Edit fee configuration",
       "viewAuditLog": "View audit log",
-      "newMember": "Create new member"
+      "newMember": "Create new member",
+      "newInvoice": "Create new invoice"
     },
     "navigate": {
       "plansList": "Plans list",
       "feeConfig": "Fee configuration",
       "usersList": "Users list",
       "dashboard": "Dashboard",
-      "membersList": "Members list"
+      "membersList": "Members list",
+      "invoicesList": "Invoices list"
     }
   },
   "nav": {

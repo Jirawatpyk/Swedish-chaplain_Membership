@@ -137,7 +137,7 @@ function makeDeps(
   overrides: Partial<RecordPaymentDeps> = {},
 ): RecordPaymentDeps {
   const opaqueTx = {
-    execute: vi.fn(async (_sql) => (rowExists ? [{ status: draft?.status ?? 'issued' }] : [])),
+    execute: vi.fn(async () => (rowExists ? [{ status: draft?.status ?? 'issued' }] : [])),
   };
   return {
     invoiceRepo: {

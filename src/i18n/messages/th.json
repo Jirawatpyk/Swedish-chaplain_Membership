@@ -982,14 +982,16 @@
       "cloneYear": "คัดลอกปี",
       "editFees": "แก้ไขการตั้งค่าค่าธรรมเนียม",
       "viewAuditLog": "ดูประวัติการตรวจสอบ",
-      "newMember": "สร้างสมาชิกใหม่"
+      "newMember": "สร้างสมาชิกใหม่",
+      "newInvoice": "สร้างใบแจ้งหนี้ใหม่"
     },
     "navigate": {
       "plansList": "รายการแพ็กเกจ",
       "feeConfig": "การตั้งค่าค่าธรรมเนียม",
       "usersList": "รายการผู้ใช้",
       "dashboard": "แดชบอร์ด",
-      "membersList": "รายการสมาชิก"
+      "membersList": "รายการสมาชิก",
+      "invoicesList": "รายการใบแจ้งหนี้"
     }
   },
   "nav": {

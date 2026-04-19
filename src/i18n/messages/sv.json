@@ -982,14 +982,16 @@
       "cloneYear": "Klona år",
       "editFees": "Redigera avgiftskonfiguration",
       "viewAuditLog": "Visa revisionslogg",
-      "newMember": "Skapa ny medlem"
+      "newMember": "Skapa ny medlem",
+      "newInvoice": "Skapa ny faktura"
     },
     "navigate": {
       "plansList": "Paketlista",
       "feeConfig": "Avgiftskonfiguration",
       "usersList": "Användarlista",
       "dashboard": "Instrumentpanel",
-      "membersList": "Medlemslista"
+      "membersList": "Medlemslista",
+      "invoicesList": "Fakturalista"
     }
   },
   "nav": {

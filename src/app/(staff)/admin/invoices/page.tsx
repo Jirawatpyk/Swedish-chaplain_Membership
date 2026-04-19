@@ -91,13 +91,22 @@ export default async function AdminInvoicesPage({
     }
   }
 
+  // Prefer the frozen snapshot on issued/paid/void invoices (FR-038) —
+  // it's the legal source of truth and always present. Fall back to the
+  // live directory map only for drafts (no snapshot yet). Ultimate
+  // fallback to a placeholder if directorySearch's 100-row window
+  // didn't include the member (rare — tenant with >100 active members
+  // AND an old draft).
   const rows: InvoicesTableRow[] = invoicesResult.ok
     ? invoicesResult.value.rows.map((r) => ({
         invoiceId: r.invoiceId,
         documentNumber: r.documentNumber?.raw ?? '—',
         status: r.status,
         memberId: r.memberId,
-        memberName: memberNameById.get(r.memberId) ?? '—',
+        memberName:
+          r.memberIdentitySnapshot?.legal_name ??
+          memberNameById.get(r.memberId) ??
+          '—',
         issueDate: r.issueDate,
         dueDate: r.dueDate,
         totalSatang: r.total?.satang.toString() ?? '0',

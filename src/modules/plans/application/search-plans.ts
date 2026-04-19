@@ -103,6 +103,13 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     url: '/admin/members/new',
     requires: 'admin',
   },
+  // F4 T059 — invoice surfaces reachable from the palette.
+  {
+    id: 'invoice.new',
+    label: 'palette.actions.newInvoice',
+    url: '/admin/invoices/new',
+    requires: 'admin',
+  },
 ];
 
 const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
@@ -134,6 +141,12 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.members',
     label: 'palette.navigate.membersList',
     url: '/admin/members',
+    requires: 'read',
+  },
+  {
+    id: 'nav.invoices',
+    label: 'palette.navigate.invoicesList',
+    url: '/admin/invoices',
     requires: 'read',
   },
 ];

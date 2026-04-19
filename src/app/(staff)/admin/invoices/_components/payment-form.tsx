@@ -36,6 +36,11 @@ export function PaymentForm({
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
   useEffect(() => {
+    // Seed with today's date on the client only to avoid SSR/CSR
+    // hydration mismatch from `new Date()`. The outer wrapper carries
+    // `suppressHydrationWarning`; the setState-on-mount pattern is the
+    // documented React 19 pattern for this case.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPaymentDate(new Date().toISOString().slice(0, 10));
   }, []);
 

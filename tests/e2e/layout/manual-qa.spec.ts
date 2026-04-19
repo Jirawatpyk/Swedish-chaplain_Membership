@@ -201,7 +201,6 @@ test.describe('F5 manual-QA automation @qa', () => {
 
         const computed = await page.evaluate(() => {
           const html = document.documentElement;
-          const style = getComputedStyle(html);
           // Find any element with [lang="th"] or :lang(th) match
           const target = document.querySelector('p, label, h1') ?? html;
           const tStyle = getComputedStyle(target);

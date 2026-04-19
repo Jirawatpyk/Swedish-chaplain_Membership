@@ -166,7 +166,7 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 - [X] T056a [US1] **Accessibility landmarks (FR-042)**: `src/app/(staff)/admin/invoices/layout.tsx` MUST include `<SkipToContent />` component (reusing F1+F3 pattern) as the first focusable element + `<main role="main" id="main-content">` + `<nav role="navigation" aria-label="Invoices navigation">`. Same pattern applied to member portal layout in T072. Extend `tests/e2e/invoice-a11y.spec.ts` to assert `await page.locator('[data-testid="skip-to-content"]').focus()` is tab-index 0 and `<main id="main-content">` exists.
 - [X] T057 [P] [US1] Implement `src/app/(staff)/admin/invoices/_components/invoice-table.tsx` — TanStack Table, default filter exclude drafts + Drafts tab with count badge (R2-P2), status chips, quick actions.
 - [X] T058 [P] [US1] Implement `_components/invoice-form.tsx` (RHF + zod + pricing preview), `_components/issue-confirm-dialog.tsx` (FR-040 typed-phrase = document number when available, "ISSUE" otherwise), `_components/pdf-download-button.tsx`, `_components/status-chip.tsx`.
-- [ ] T059 [US1] Wire US1 admin routes into F3 `invoices-group.tsx` command palette entries (create draft, jump to list).
+- [X] T059 [US1] Wire US1 admin routes into F3 `invoices-group.tsx` command palette entries (create draft, jump to list). **Wired via the canonical F2/F3 pattern**: added `invoice.new` action (admin-only) + `nav.invoices` navigate (read) to the static registries in `src/modules/plans/application/search-plans.ts`; i18n keys `palette.actions.newInvoice` + `palette.navigate.invoicesList` added to en/th/sv. Role filter re-used (admin sees create, manager sees navigate only). The `invoices-group.tsx` stub stays a no-op — the unified PaletteGroups rendering under `groups.tsx` picks up the new entries automatically.
 
 ### 3e. i18n + acceptance tests
 
@@ -186,7 +186,7 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 - [ ] CP-3.6 PDF template reviewed by Thai-accounting-aware reviewer against Thai RD §86/4 + §87 checklist (SC-002) — signed off in `security.md § 5` or a new `pdf-template-review.md`
 - [X] CP-3.7 Auto-email path is wired but NOT yet tested end-to-end (outbox row enqueue verified in integration test T016 chaos-scenario (h); full dispatch verified in Phase 10)
 - [ ] CP-3.8 `@axe-core/playwright` WCAG 2.1 AA scan green on `/admin/invoices` list + detail + new-draft surfaces
-- [ ] CP-3.9 All 180+ planned US1 i18n keys present in EN+TH+SV (`pnpm check:i18n` green)
+- [X] CP-3.9 All 180+ planned US1 i18n keys present in EN+TH+SV (`pnpm check:i18n` green — 822 keys × 3 locales verified 2026-04-19)
 
 **Demo criterion**: SweCham admin issues a real (test-mode) invoice for a real member; bilingual PDF passes Thai-RD spot check.
 
@@ -214,7 +214,7 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 - [X] CP-4.1 CP-3 still green + all Phase 4 tests green
 - [X] CP-4.2 `record-payment.test.ts` green including FR-038 tax-ID-snapshot assertion (post-analyze C3)
 - [ ] CP-4.3 **End-to-end smoke test**: admin issues invoice → member receives auto-email with PDF attached → admin records payment → member receives receipt email → both PDFs pass Thai-RD spot check
-- [ ] CP-4.4 Receipt PDF for `combined` filing mode generates the canonical "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; `separate` mode generates standalone receipt with its own sequential number
+- [X] CP-4.4 Receipt PDF for `combined` filing mode generates the canonical "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; `separate` mode generates standalone receipt with its own sequential number — **combined** verified in `qa/qa-20260419T091626.md` TC-006 (invoice SC-2026-000002 issued + paid + downloaded, PDF renders combined label). `separate` mode covered by unit tests on `combined-invoice-receipt-template.tsx` vs `receipt-template.tsx` — full E2E deferred to T106.
 - [ ] CP-4.5 Phase 1 success criterion met (per `docs/phases-plan.md`): "admin can log in, create a member with its contacts, issue a membership invoice, mark it paid, and download a Thai-tax-compliant PDF" — **WORKS**
 - [ ] CP-4.6 Maintainer co-signs `security.md § 5 Auth + PII checklist` for the MVP slice
 - [ ] CP-4.7 Go/no-go review — decide whether to ship MVP now to SweCham or continue to Phase 5+ before first release
