@@ -110,10 +110,13 @@ export async function createInvoiceDraft(
   deps: CreateInvoiceDraftDeps,
   input: CreateInvoiceDraftInput,
 ): Promise<Result<Invoice, CreateInvoiceDraftError>> {
-  const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
-  if (!settings) return err({ code: 'settings_missing' });
-
   return deps.invoiceRepo.withTx(async (tx) => {
+    // Read settings INSIDE the tx — consistent with issue-invoice and
+    // guards against the rare stale-settings race where VAT / pro-rate /
+    // fiscal-year config flips between read and insert.
+    const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
+    if (!settings) return err({ code: 'settings_missing' });
+
     const member = await deps.memberIdentity.getForIssue(tx, input.tenantId, input.memberId);
     if (!member) return err({ code: 'member_not_found' });
     if (member.isArchived) return err({ code: 'member_archived' });

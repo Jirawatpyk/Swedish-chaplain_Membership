@@ -51,11 +51,22 @@ export class Money {
     return new Money(n);
   }
 
-  /** THB → Money. Rounds half-away-from-zero. */
+  /**
+   * THB → Money. Rounds half-away-from-zero at 2 decimal places.
+   *
+   * Implementation note: `Math.round(thb * 100)` is subject to IEEE-754
+   * drift on borderline values (e.g. `1234.565 * 100` may round down
+   * where half-away-from-zero expects up). We route the rounding through
+   * `toFixed(2)` so the float is truncated to satang precision BEFORE
+   * the integer cast.
+   */
   static fromTHB(thb: number): Money {
+    if (!Number.isFinite(thb)) throw new Error(`Money.fromTHB: non-finite THB ${thb}`);
     if (thb < 0) throw new Error(`Money.fromTHB: negative THB ${thb}`);
-    // Scale to satang with rounding.
-    const satang = BigInt(Math.round(thb * 100));
+    // toFixed applies half-away-from-zero to 2 decimals; strip the dot.
+    const [intPart, fracPartRaw = '00'] = thb.toFixed(2).split('.');
+    const fracPadded = (fracPartRaw + '00').slice(0, 2);
+    const satang = BigInt(intPart!) * 100n + BigInt(fracPadded);
     return new Money(satang);
   }
 

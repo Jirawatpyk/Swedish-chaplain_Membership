@@ -27,7 +27,7 @@
  */
 
 import '@js-joda/timezone';
-import { Instant, ZoneId, ZonedDateTime } from '@js-joda/core';
+import { Instant, LocalDate, ZoneId, ZonedDateTime } from '@js-joda/core';
 
 export const BANGKOK_ZONE: ZoneId = ZoneId.of('Asia/Bangkok');
 
@@ -74,4 +74,23 @@ export function deriveFiscalYearFromInstant(
   const year = zoned.year();
   const fy = month >= startMonth ? year : year - 1;
   return fy as FiscalYear;
+}
+
+/**
+ * Format a UTC ISO timestamp as a YYYY-MM-DD date string in Asia/Bangkok
+ * local time. This is the canonical "invoice date" convention — the
+ * calendar date on the document follows wall-clock Bangkok, not UTC.
+ */
+export function bangkokLocalDate(utcIso: string): string {
+  const zoned = ZonedDateTime.ofInstant(Instant.parse(utcIso), BANGKOK_ZONE);
+  return zoned.toLocalDate().toString();
+}
+
+/**
+ * Add `days` to a YYYY-MM-DD calendar date, returning the new date as a
+ * YYYY-MM-DD string. Pure calendar math — no timezone / DST concerns
+ * because we operate on `LocalDate`, not instants.
+ */
+export function addDays(dateYmd: string, days: number): string {
+  return LocalDate.parse(dateYmd).plusDays(days).toString();
 }

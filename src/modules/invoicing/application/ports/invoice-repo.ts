@@ -89,4 +89,49 @@ export interface InvoiceRepo {
 
   /** Delete draft only — enforced at use-case layer + DB check. */
   deleteDraft(tx: unknown, invoiceId: InvoiceId, tenantId: string): Promise<void>;
+
+  /**
+   * Atomic issued→paid transition + payment fields + receipt PDF metadata.
+   * Single UPDATE so there is no partial-failure window. Returns the
+   * refreshed Invoice row.
+   */
+  applyPayment(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly invoiceId: InvoiceId;
+      readonly paymentMethod: 'bank_transfer' | 'cheque' | 'cash' | 'other';
+      readonly paymentReference: string | null;
+      readonly paymentNotes: string | null;
+      readonly paymentRecordedByUserId: string;
+      readonly receiptPdfBlobKey: string;
+      readonly receiptPdfSha256: string;
+    },
+  ): Promise<Invoice>;
+
+  /**
+   * Partial field update on a DRAFT invoice. Only caller-supplied fields
+   * are touched. Caller guarantees `status = 'draft'` upstream.
+   */
+  applyDraftUpdate(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly invoiceId: InvoiceId;
+      readonly autoEmailOnIssue?: boolean | null | undefined;
+      readonly planId?: string | undefined;
+      readonly planYear?: number | undefined;
+    },
+  ): Promise<void>;
+
+  /**
+   * Acquire a row lock on the invoice (SELECT … FOR UPDATE). Returns
+   * the current status so callers can branch on race conditions without
+   * reaching for raw SQL.
+   */
+  lockForUpdate(
+    tx: unknown,
+    invoiceId: InvoiceId,
+    tenantId: string,
+  ): Promise<{ status: InvoiceStatus } | null>;
 }

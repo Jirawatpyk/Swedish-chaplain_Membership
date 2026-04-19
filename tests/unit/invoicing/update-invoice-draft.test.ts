@@ -70,6 +70,9 @@ function makeDeps(draft: Invoice | null): TestDeps {
         listPaged: vi.fn(),
       applyIssue: vi.fn(),
       deleteDraft: vi.fn(),
+      applyPayment: vi.fn(),
+      applyDraftUpdate: vi.fn(),
+      lockForUpdate: vi.fn(async () => ({ status: 'issued' as const })),
     },
     audit: { emit: vi.fn(async () => {}) },
     _tx: tx,
@@ -116,7 +119,11 @@ describe('updateInvoiceDraft', () => {
     const deps = makeDeps(makeDraft({ autoEmailOnIssue: null }));
     const r = await updateInvoiceDraft(deps, { ...baseInput, autoEmailOnIssue: true });
     expect(r.ok).toBe(true);
-    expect(deps._tx.execute).toHaveBeenCalledTimes(1);
+    expect(deps.invoiceRepo.applyDraftUpdate).toHaveBeenCalledTimes(1);
+    expect(deps.invoiceRepo.applyDraftUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ autoEmailOnIssue: true }),
+    );
     expect(deps.audit.emit).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -130,7 +137,7 @@ describe('updateInvoiceDraft', () => {
     );
   });
 
-  it('changing plan_id + plan_year triggers 2 UPDATEs + combined audit', async () => {
+  it('changing plan_id + plan_year triggers single combined UPDATE + combined audit', async () => {
     const deps = makeDeps(
       makeDraft({ planId: 'corporate-regular', planYear: 2026 }),
     );
@@ -140,7 +147,15 @@ describe('updateInvoiceDraft', () => {
       planYear: 2027,
     });
     expect(r.ok).toBe(true);
-    expect(deps._tx.execute).toHaveBeenCalledTimes(2);
+    // One atomic UPDATE via the repo port carries both fields.
+    expect(deps.invoiceRepo.applyDraftUpdate).toHaveBeenCalledTimes(1);
+    expect(deps.invoiceRepo.applyDraftUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        planId: 'corporate-premium',
+        planYear: 2027,
+      }),
+    );
     expect(deps.audit.emit).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

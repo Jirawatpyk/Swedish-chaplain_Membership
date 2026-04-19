@@ -61,6 +61,9 @@ describe('getInvoice', () => {
         listPaged: vi.fn(),
         applyIssue: vi.fn(),
         deleteDraft: vi.fn(),
+      applyPayment: vi.fn(),
+      applyDraftUpdate: vi.fn(),
+      lockForUpdate: vi.fn(async () => ({ status: 'issued' as const })),
       },
     };
     const r = await getInvoice(deps, { tenantId: 't', invoiceId: 'i' });
@@ -79,6 +82,9 @@ describe('getInvoice', () => {
         listPaged: vi.fn(),
         applyIssue: vi.fn(),
         deleteDraft: vi.fn(),
+      applyPayment: vi.fn(),
+      applyDraftUpdate: vi.fn(),
+      lockForUpdate: vi.fn(async () => ({ status: 'issued' as const })),
       },
     };
     const r = await getInvoice(deps, { tenantId: 't', invoiceId: 'missing' });

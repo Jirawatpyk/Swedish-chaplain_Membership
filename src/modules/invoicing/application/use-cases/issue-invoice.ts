@@ -55,6 +55,7 @@ import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
+import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -72,7 +73,23 @@ export type IssueInvoiceError =
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
   | { code: 'overflow'; fiscalYear: number }
-  | { code: 'pdf_render_failed'; reason: string };
+  | { code: 'pdf_render_failed'; reason: string }
+  | { code: 'blob_upload_failed'; reason: string };
+
+/**
+ * Internal throw-carrier used to abort the transaction AND propagate a
+ * typed error up to the outer `try/catch`. We cannot `return err(...)`
+ * from inside `withTx` because that resolves the callback normally and
+ * the sequence allocator's increment would commit — instead we throw
+ * and catch here so the tx rolls back.
+ */
+class IssueInvoiceInternalError extends Error {
+  readonly error: IssueInvoiceError;
+  constructor(error: IssueInvoiceError) {
+    super(`IssueInvoice: ${error.code}`);
+    this.error = error;
+  }
+}
 
 export interface IssueInvoiceDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -100,7 +117,8 @@ export async function issueInvoice(
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   const now = deps.clock.nowIso();
 
-  return deps.invoiceRepo.withTx(async (tx) => {
+  try {
+  return await deps.invoiceRepo.withTx(async (tx) => {
     // A. Settings
     const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
     if (!settings) return err({ code: 'settings_missing' });
@@ -149,12 +167,16 @@ export async function issueInvoice(
     const tenantSnap = settings.identity;
     const memberSnap = member.snapshot;
 
-    // Dates
-    const issueDate = new Date(now).toISOString().slice(0, 10);
-    const dueDateMs = Date.parse(issueDate) + settings.defaultNetDays * 86_400_000;
-    const dueDate = new Date(dueDateMs).toISOString().slice(0, 10);
+    // Dates — invoice date follows wall-clock Bangkok, not UTC, so an
+    // issuance at 23:30 UTC (= 06:30 Bangkok next day) shows the correct
+    // local calendar date on the document.
+    const issueDate = bangkokLocalDate(now);
+    const dueDate = addDays(issueDate, settings.defaultNetDays);
 
-    // H. Render PDF
+    // H. Render PDF — typed error on failure. Returning `err(...)` here
+    // inside `withTx` still resolves the callback, which WILL commit the
+    // sequence allocation — so we throw to force rollback, then catch
+    // below and map to a typed Result.
     let rendered;
     try {
       rendered = await deps.pdfRender.render({
@@ -172,16 +194,28 @@ export async function issueInvoice(
         total,
       });
     } catch (e) {
-      return err({ code: 'pdf_render_failed', reason: String(e) });
+      throw new IssueInvoiceInternalError({
+        code: 'pdf_render_failed',
+        reason: String(e),
+      });
     }
 
-    // I. Blob upload — content-addressed key
+    // I. Blob upload — content-addressed key. Wrap in try/catch so blob
+    // failures also propagate as typed errors AND roll back the sequence
+    // allocation (throw → withTx rollback).
     const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
-    await deps.blob.uploadPdf({
-      key: blobKey,
-      body: rendered.bytes,
-      contentType: 'application/pdf',
-    });
+    try {
+      await deps.blob.uploadPdf({
+        key: blobKey,
+        body: rendered.bytes,
+        contentType: 'application/pdf',
+      });
+    } catch (e) {
+      throw new IssueInvoiceInternalError({
+        code: 'blob_upload_failed',
+        reason: String(e),
+      });
+    }
 
     // J. UPDATE invoices row
     const issued = await deps.invoiceRepo.applyIssue(tx, {
@@ -211,7 +245,7 @@ export async function issueInvoice(
       requestId: input.requestId ?? null,
       eventType: 'invoice_issued',
       actorUserId: input.actorUserId,
-      summary: `Invoice ${docNum.value.raw} issued for member ${draft.memberId}`,
+      summary: `Invoice ${docNum.value.raw} issued`,
       payload: {
         invoice_id: invoiceId,
         member_id: draft.memberId,
@@ -239,4 +273,10 @@ export async function issueInvoice(
 
     return ok(issued);
   });
+  } catch (e) {
+    if (e instanceof IssueInvoiceInternalError) {
+      return err(e.error);
+    }
+    throw e;
+  }
 }

@@ -149,6 +149,9 @@ function makeDeps(
         listPaged: vi.fn(),
       applyIssue: vi.fn(),
       deleteDraft: vi.fn(),
+      applyPayment: vi.fn(),
+      applyDraftUpdate: vi.fn(),
+      lockForUpdate: vi.fn(async () => ({ status: 'issued' as const })),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),

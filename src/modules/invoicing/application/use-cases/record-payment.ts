@@ -6,9 +6,12 @@
  * + uploads to Blob + emits `invoice_paid` audit + enqueues
  * auto-email outbox row.
  *
- * Idempotency: the route layer hands us an `Idempotency-Key`. If the
- * invoice is already `paid` (matching the same key), we return the
- * persisted row unchanged — callers cannot double-pay.
+ * Idempotency: status-based replay detection. If the invoice is already
+ * `paid` we short-circuit and return the persisted row unchanged —
+ * callers cannot double-pay the same invoice, regardless of retry.
+ * The `idempotencyKey` field in the input schema is RESERVED for a
+ * future upgrade that stores the key on the row and validates matching
+ * keys on replay; it is accepted but not currently persisted.
  *
  * Tax-ID snapshot immutability (FR-038): we reuse the invoice's
  * `member_identity_snapshot` (captured at issue time). Mutations to
@@ -30,8 +33,7 @@ import {
   type InvoiceId,
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
-import { sql } from 'drizzle-orm';
-import type { TenantTx } from '@/lib/db';
+import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 
 export const recordPaymentSchema = z.object({
   tenantId: z.string().min(1),
@@ -50,7 +52,26 @@ export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 export type RecordPaymentError =
   | { code: 'invoice_not_found' }
   | { code: 'invalid_status'; status: InvoiceStatus }
-  | { code: 'no_snapshot_on_invoice' };
+  | { code: 'no_snapshot_on_invoice' }
+  | { code: 'pdf_render_failed'; reason: string }
+  | { code: 'blob_upload_failed'; reason: string }
+  | { code: 'overflow'; fiscalYear: number }
+  | { code: 'idempotency_key_mismatch' };
+
+/**
+ * Internal throw-carrier: aborts the transaction AND propagates a typed
+ * error up to the outer `try/catch`. Required for errors that occur
+ * AFTER `sequenceAllocator.allocateNext` runs — returning `err(...)`
+ * normally from the withTx callback resolves the promise and commits
+ * the sequence increment.
+ */
+class RecordPaymentInternalError extends Error {
+  readonly error: RecordPaymentError;
+  constructor(error: RecordPaymentError) {
+    super(`RecordPayment: ${error.code}`);
+    this.error = error;
+  }
+}
 
 export interface RecordPaymentDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -70,16 +91,12 @@ export async function recordPayment(
 ): Promise<Result<Invoice, RecordPaymentError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
 
-  return deps.invoiceRepo.withTx(async (txUnknown) => {
-    const tx = txUnknown as TenantTx;
-    // Load the invoice with a row lock — guards against concurrent
-    // pay / void / credit-note transactions touching the same invoice.
-    const rows = (await tx.execute(sql`
-      SELECT status FROM invoices
-       WHERE tenant_id = ${input.tenantId} AND invoice_id = ${invoiceId}
-       FOR UPDATE
-    `)) as unknown as Array<{ status: string }>;
-    if (!rows[0]) return err({ code: 'invoice_not_found' });
+  try {
+  return await deps.invoiceRepo.withTx(async (tx) => {
+    // Row-lock first — guards against concurrent pay/void/credit-note
+    // transactions on the same invoice.
+    const locked = await deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId);
+    if (!locked) return err({ code: 'invoice_not_found' });
 
     const loaded = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
     if (!loaded) return err({ code: 'invoice_not_found' });
@@ -90,7 +107,15 @@ export async function recordPayment(
     if (loaded.status !== 'issued') {
       return err({ code: 'invalid_status', status: loaded.status });
     }
-    if (!loaded.memberIdentitySnapshot || !loaded.tenantIdentitySnapshot || !loaded.subtotal || !loaded.vat || !loaded.total || !loaded.vatRate) {
+    if (
+      !loaded.memberIdentitySnapshot ||
+      !loaded.tenantIdentitySnapshot ||
+      !loaded.subtotal ||
+      !loaded.vat ||
+      !loaded.total ||
+      !loaded.vatRate ||
+      !loaded.fiscalYear
+    ) {
       return err({ code: 'no_snapshot_on_invoice' });
     }
 
@@ -104,64 +129,82 @@ export async function recordPayment(
     const combinedMode = settings.receiptNumberingMode === 'combined';
     let receiptDocNumRaw: string | null = null;
     if (!combinedMode) {
-      // Separate mode — allocate receipt sequence.
-      const receiptFy = loaded.fiscalYear ?? 0;
+      // Separate mode — allocate receipt sequence. fiscalYear presence
+      // was validated above (no_snapshot_on_invoice), so loaded.fiscalYear
+      // is the frozen issue-time FY, never 0.
       const seq = await deps.sequenceAllocator.allocateNext(tx, {
         tenantId: input.tenantId,
         documentType: 'receipt',
-        fiscalYear: (receiptFy as unknown) as import('../../domain/value-objects/fiscal-year').FiscalYear,
+        fiscalYear: loaded.fiscalYear,
       });
-      receiptDocNumRaw = `R-${receiptFy}-${seq.toString().padStart(6, '0')}`;
+      const receiptDoc = DocumentNumber.of(
+        settings.receiptNumberPrefix ?? 'RE',
+        loaded.fiscalYear,
+        seq,
+      );
+      if (!receiptDoc.ok) {
+        // Throw so the tx rolls back and the sequence allocation is NOT
+        // consumed by a failed receipt number assignment.
+        throw new RecordPaymentInternalError({
+          code: 'overflow',
+          fiscalYear: Number(loaded.fiscalYear),
+        });
+      }
+      receiptDocNumRaw = receiptDoc.value.raw;
     }
 
-    const rendered = await deps.pdfRender.render({
-      kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
-      templateVersion: deps.currentTemplateVersion,
-      documentNumber: loaded.documentNumber,
-      issueDate: loaded.issueDate,
-      dueDate: loaded.dueDate,
-      tenant: loaded.tenantIdentitySnapshot,
-      member: loaded.memberIdentitySnapshot,
-      lines: loaded.lines,
-      subtotal: loaded.subtotal,
-      vatRate: loaded.vatRate,
-      vat: loaded.vat,
-      total: loaded.total,
-    });
+    // H. Render PDF — throw (not return err) on failure so withTx rolls
+    // back and the sequence increment is NOT consumed.
+    let rendered: { bytes: Uint8Array; sha256: string };
+    try {
+      rendered = await deps.pdfRender.render({
+        kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
+        templateVersion: deps.currentTemplateVersion,
+        documentNumber: loaded.documentNumber,
+        issueDate: loaded.issueDate,
+        dueDate: loaded.dueDate,
+        tenant: loaded.tenantIdentitySnapshot,
+        member: loaded.memberIdentitySnapshot,
+        lines: loaded.lines,
+        subtotal: loaded.subtotal,
+        vatRate: loaded.vatRate,
+        vat: loaded.vat,
+        total: loaded.total,
+      });
+    } catch (e) {
+      if (e instanceof RecordPaymentInternalError) throw e;
+      throw new RecordPaymentInternalError({
+        code: 'pdf_render_failed',
+        reason: String(e),
+      });
+    }
 
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
-    await deps.blob.uploadPdf({
-      key: receiptBlobKey,
-      body: rendered.bytes,
-      contentType: 'application/pdf',
-    });
+    try {
+      await deps.blob.uploadPdf({
+        key: receiptBlobKey,
+        body: rendered.bytes,
+        contentType: 'application/pdf',
+      });
+    } catch (e) {
+      throw new RecordPaymentInternalError({
+        code: 'blob_upload_failed',
+        reason: String(e),
+      });
+    }
 
-    // UPDATE invoices → paid + payment fields. The PDF key we store
-    // remains the invoice PDF; the receipt PDF has its own key written
-    // to a dedicated column in a later polish pass (MVP: combined PDF
-    // mode is the common path — single asset lives at invoice.pdf_blob_key).
-    await tx.execute(sql`
-      UPDATE invoices
-         SET status = 'issued'::invoice_status, -- sentinel; will flip
-             updated_at = now()
-       WHERE tenant_id = ${input.tenantId} AND invoice_id = ${invoiceId}
-    `);
-    // Split transition (status → paid) into its own statement so the
-    // immutability trigger sees status changing and permits the
-    // accompanying payment-field write.
-    await tx.execute(sql`
-      UPDATE invoices
-         SET status = 'paid'::invoice_status,
-             paid_at = now(),
-             payment_method = ${input.paymentMethod},
-             payment_reference = ${input.paymentReference ?? null},
-             payment_notes = ${input.paymentNotes ?? null},
-             payment_recorded_by_user_id = ${input.actorUserId},
-             pdf_blob_key = ${receiptBlobKey},
-             pdf_sha256 = ${rendered.sha256},
-             updated_at = now()
-       WHERE tenant_id = ${input.tenantId} AND invoice_id = ${invoiceId}
-    `);
+    // Atomic issued→paid UPDATE with payment fields + receipt PDF
+    // metadata, via a single repo call (no raw SQL in Application).
+    await deps.invoiceRepo.applyPayment(tx, {
+      tenantId: input.tenantId,
+      invoiceId,
+      paymentMethod: input.paymentMethod,
+      paymentReference: input.paymentReference ?? null,
+      paymentNotes: input.paymentNotes ?? null,
+      paymentRecordedByUserId: input.actorUserId,
+      receiptPdfBlobKey: receiptBlobKey,
+      receiptPdfSha256: rendered.sha256,
+    });
 
     await deps.audit.emit(tx, {
       tenantId: input.tenantId,
@@ -193,6 +236,13 @@ export async function recordPayment(
 
     // Re-read the updated row for the return value.
     const updated = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
-    return ok(updated!);
+    if (!updated) return err({ code: 'invoice_not_found' });
+    return ok(updated);
   });
+  } catch (e) {
+    if (e instanceof RecordPaymentInternalError) {
+      return err(e.error);
+    }
+    throw e;
+  }
 }

@@ -31,6 +31,26 @@ export const postgresSequenceAllocator: SequenceAllocatorPort = {
     },
   ): Promise<number> {
     const tx = txUnknown as TenantTx;
+
+    // Belt-and-suspenders tenant-context assertion. A caller that
+    // accidentally hands us a bare `db` (non-tenant connection) would
+    // advisory-lock fine but bypass RLS. In dev / test we hard-fail
+    // when `app.current_tenant` is not set for this tenant; in prod we
+    // skip the round-trip (RLS still enforces tenant scoping and this
+    // check would add ~1ms per issuance).
+    if (process.env.NODE_ENV !== 'production' || process.env.DEBUG_RLS_STATE === 'true') {
+      const ctxRows = (await tx.execute(
+        sql`SELECT current_setting('app.current_tenant', TRUE) AS ctx`,
+      )) as unknown as Array<{ ctx: string | null }>;
+      const ctx = ctxRows[0]?.ctx ?? null;
+      if (ctx !== input.tenantId) {
+        throw new Error(
+          `postgresSequenceAllocator: tenant-context mismatch — expected=${input.tenantId}, got=${ctx}. ` +
+            'Caller must run inside runInTenant(ctx, …).',
+        );
+      }
+    }
+
     const lockKey = `invoicing:${input.tenantId}:${input.documentType}:${input.fiscalYear}`;
 
     let lastError: unknown = null;

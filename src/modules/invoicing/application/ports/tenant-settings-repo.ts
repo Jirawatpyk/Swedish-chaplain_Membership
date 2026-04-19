@@ -11,6 +11,13 @@ export interface TenantInvoiceSettingsView {
   readonly registrationFeeSatang: bigint;
   readonly invoiceNumberPrefix: string;
   readonly creditNoteNumberPrefix: string;
+  /**
+   * Receipt document-number prefix used only when
+   * `receiptNumberingMode === 'separate'`. Nullable for backwards-compat
+   * with tenants that have not configured a dedicated prefix yet — the
+   * record-payment use case falls back to `'RE'` in that case.
+   */
+  readonly receiptNumberPrefix?: string | null;
   readonly receiptNumberingMode: 'combined' | 'separate';
   readonly fiscalYearStartMonth: number;
   readonly defaultNetDays: number;

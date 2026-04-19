@@ -146,6 +146,9 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
         ({ ...(draft as Invoice), status: 'issued', fiscalYear: 2026 as never, sequenceNumber: input.sequenceNumber, documentNumber: { raw: input.documentNumber } as never, pdfBlobKey: input.pdfBlobKey, pdfSha256: input.pdfSha256 }) as Invoice,
       ),
       deleteDraft: vi.fn(),
+      applyPayment: vi.fn(),
+      applyDraftUpdate: vi.fn(),
+      lockForUpdate: vi.fn(async () => ({ status: 'issued' as const })),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),

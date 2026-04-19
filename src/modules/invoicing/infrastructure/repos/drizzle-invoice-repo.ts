@@ -49,18 +49,16 @@ function rowToLine(row: InvoiceLineRow): InvoiceLine {
 }
 
 function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice {
-  const docNum =
-    row.documentNumber === null
-      ? null
-      : DocumentNumber.parse(row.documentNumber).ok
-        ? DocumentNumber.parse(row.documentNumber).ok
-          ? ((): DocumentNumber => {
-              const parsed = DocumentNumber.parse(row.documentNumber!);
-              if (!parsed.ok) throw new Error('unreachable');
-              return parsed.value;
-            })()
-          : null
-        : null;
+  let docNum: DocumentNumber | null = null;
+  if (row.documentNumber !== null) {
+    const parsed = DocumentNumber.parse(row.documentNumber);
+    if (!parsed.ok) {
+      throw new Error(
+        `drizzle-invoice-repo: corrupt document_number on row ${row.invoiceId}: ${row.documentNumber}`,
+      );
+    }
+    docNum = parsed.value;
+  }
 
   const subtotal =
     row.subtotalSatang === null
@@ -405,6 +403,76 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
       await tx
         .delete(invoices)
         .where(and(eq(invoices.tenantId, tenantIdArg), eq(invoices.invoiceId, invoiceId)));
+    },
+
+    async lockForUpdate(txUnknown, invoiceId: InvoiceId, tenantIdArg: string) {
+      const tx = txUnknown as TenantTx;
+      const rows = (await tx.execute(sql`
+        SELECT status FROM invoices
+         WHERE tenant_id = ${tenantIdArg} AND invoice_id = ${invoiceId}
+         FOR UPDATE
+      `)) as unknown as Array<{ status: InvoiceStatus }>;
+      return rows[0] ? { status: rows[0].status } : null;
+    },
+
+    async applyPayment(txUnknown, input): Promise<Invoice> {
+      const tx = txUnknown as TenantTx;
+      // Single atomic UPDATE: issued → paid + payment fields + receipt
+      // PDF metadata. The immutability trigger (migration 0019) does not
+      // constrain payment_* / pdf_* / status columns, so no split write
+      // is needed.
+      const [updated] = await tx
+        .update(invoices)
+        .set({
+          status: 'paid',
+          paidAt: sql`now()`,
+          paymentMethod: input.paymentMethod,
+          paymentReference: input.paymentReference,
+          paymentNotes: input.paymentNotes,
+          paymentRecordedByUserId: input.paymentRecordedByUserId,
+          pdfBlobKey: input.receiptPdfBlobKey,
+          pdfSha256: input.receiptPdfSha256,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            eq(invoices.status, 'issued'),
+          ),
+        )
+        .returning();
+      if (!updated) throw new Error('applyPayment: no row updated');
+
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, input.tenantId),
+            eq(invoiceLines.invoiceId, input.invoiceId),
+          ),
+        )
+        .orderBy(asc(invoiceLines.position));
+      return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
+    },
+
+    async applyDraftUpdate(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      const patch: Record<string, unknown> = { updatedAt: sql`now()` };
+      if (input.autoEmailOnIssue !== undefined) patch.autoEmailOnIssue = input.autoEmailOnIssue;
+      if (input.planId !== undefined) patch.planId = input.planId;
+      if (input.planYear !== undefined) patch.planYear = input.planYear;
+      if (Object.keys(patch).length === 1) return; // only updatedAt — nothing meaningful
+      await tx
+        .update(invoices)
+        .set(patch)
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        );
     },
   };
 }
