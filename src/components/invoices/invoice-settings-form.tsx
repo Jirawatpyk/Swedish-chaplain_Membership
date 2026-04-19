@@ -368,7 +368,7 @@ export function InvoiceSettingsForm({
               onValueChange={(v) => setReceiptMode(v as 'combined' | 'separate')}
               disabled={disabled}
             >
-              <SelectTrigger id="receipt_mode">
+              <SelectTrigger id="receipt_mode" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -437,7 +437,7 @@ export function InvoiceSettingsForm({
               onValueChange={(v) => setProRate(v as 'none' | 'monthly' | 'daily')}
               disabled={disabled}
             >
-              <SelectTrigger id="pro_rate">
+              <SelectTrigger id="pro_rate" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -478,6 +478,7 @@ export function InvoiceSettingsForm({
             onChange={handleLogoChange}
             disabled={disabled || uploadingLogo}
             aria-describedby="logo_hint logo_status"
+            className="cursor-pointer file:cursor-pointer hover:bg-accent/40"
           />
           <p id="logo_hint" className="text-xs text-muted-foreground">
             {t('hints.logo')}

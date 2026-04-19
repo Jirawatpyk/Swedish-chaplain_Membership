@@ -1111,6 +1111,7 @@
       "users": "Users",
       "settings": "Settings",
       "settingsFees": "Fee Configuration",
+      "settingsInvoices": "Invoice Settings",
       "sections": {
         "main": "Main",
         "settings": "Settings"

@@ -9,6 +9,7 @@ import {
   UserCircleIcon,
   BuildingIcon,
   ReceiptIcon,
+  FileCog2Icon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -100,20 +101,26 @@ export const staffNavConfig: NavConfig = {
       ],
     },
     {
+      // R7-B2 — flattened from NavGroup to flat items. Previously a
+      // 1-child NavGroup whose single-child-flatten path collapsed it
+      // to a single link using the group's icon; adding a 2nd child
+      // broke that flatten and produced a visually-duplicated header
+      // ("Settings" section + "Settings" group). Since we now have
+      // 2 settings sub-routes, the NavGroup wrapper is redundant —
+      // the section header itself groups them.
       titleKey: 'nav.staff.sections.settings',
       items: [
         {
-          titleKey: 'nav.staff.settings',
-          icon: SettingsIcon,
-          activePattern: '/admin/settings',
-          children: [
-            {
-              titleKey: 'nav.staff.settingsFees',
-              icon: DollarSignIcon,
-              href: '/admin/settings/fees',
-              activePattern: '/admin/settings/fees',
-            },
-          ],
+          titleKey: 'nav.staff.settingsFees',
+          icon: DollarSignIcon,
+          href: '/admin/settings/fees',
+          activePattern: '/admin/settings/fees',
+        },
+        {
+          titleKey: 'nav.staff.settingsInvoices',
+          icon: FileCog2Icon,
+          href: '/admin/settings/invoicing',
+          activePattern: '/admin/settings/invoicing',
         },
       ],
     },

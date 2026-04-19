@@ -1,5 +1,5 @@
 /**
- * R7-B2 — /admin/invoice-settings page (F4 US4 / FR-009 / FR-010).
+ * R7-B2 — /admin/settings/invoicing page (F4 US4 / FR-009 / FR-010).
  *
  * Server component — loads current settings via the same
  * `TenantSettingsRepo.getForIssue` port that `issue-invoice` uses, so

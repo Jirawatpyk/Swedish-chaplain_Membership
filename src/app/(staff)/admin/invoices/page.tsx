@@ -61,7 +61,7 @@ export default async function AdminInvoicesPage({
   // missing the API refuses to issue (FR-010), so showing a hidden-
   // but-functional list with a "+ New Invoice" button is a UX
   // dead-end. Render a "Configure Invoicing" empty state instead
-  // (US4 AS5). The settings page lives at /admin/invoice-settings
+  // (US4 AS5). The settings page lives at /admin/settings/invoicing
   // (B2 — ships alongside this guard).
   const setupComplete = await isTenantInvoiceSetupComplete(tenantCtx.slug);
   if (!setupComplete) {
@@ -73,7 +73,7 @@ export default async function AdminInvoicesPage({
             <p className="text-muted-foreground">{t('list.setupRequired')}</p>
             {isAdmin && (
               <Link
-                href="/admin/invoice-settings"
+                href="/admin/settings/invoicing"
                 className={buttonVariants({ variant: 'default', className: 'mt-4' })}
               >
                 {t('list.actions.configureInvoicing')}
