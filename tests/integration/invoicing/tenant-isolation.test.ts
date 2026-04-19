@@ -9,9 +9,10 @@
  * invoice snapshots). A single missed RLS path leaks tax documents
  * across chambers.
  *
- * Covered surfaces:
+ * Covered surfaces (all 5 F4 tables, R7-W2 extends coverage to lines +
+ * credit_notes — previously covered only implicitly via FK cascade):
  *   - invoices — SELECT / UPDATE / DELETE
- *   - invoice_lines — SELECT (isolation via composite FK to invoices)
+ *   - invoice_lines — SELECT / UPDATE / DELETE
  *   - credit_notes — SELECT / UPDATE / DELETE
  *   - tenant_invoice_settings — SELECT / UPDATE
  *   - tenant_document_sequences — SELECT / UPDATE
@@ -32,6 +33,8 @@ import { runInTenant } from '@/lib/db';
 import { membershipPlans, tenantFeeConfig } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -60,6 +63,16 @@ describe('F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)', () => {
   let bInvoiceId: string;
   let aMemberId: string;
   let bMemberId: string;
+  // R7-W2 — seed invoice_lines + credit_notes per tenant so the
+  // isolation matrix covers all 5 F4 tables (Constitution v1.4.0
+  // Principle I clause 3). Previously only 3 tables were probed; the
+  // comment "invoice_lines — SELECT (isolation via composite FK)"
+  // relied on implicit FK-cascade which is NOT an access-control
+  // mechanism. RLS is — so we probe it directly.
+  let aLineId: string;
+  let bLineId: string;
+  let aCreditNoteId: string;
+  let bCreditNoteId: string;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -168,6 +181,81 @@ describe('F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)', () => {
           tenantId: t.ctx.slug,
           documentType: 'invoice',
           fiscalYear: 2026,
+        }),
+      );
+    }
+
+    // R7-W2 — seed one invoice_lines row per tenant, parented to the
+    // draft invoice seeded above.
+    aLineId = randomUUID();
+    bLineId = randomUUID();
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx.insert(invoiceLines).values({
+        tenantId: tenantA.ctx.slug,
+        lineId: aLineId,
+        invoiceId: aInvoiceId,
+        kind: 'membership_fee',
+        descriptionTh: 'ค่าสมาชิก',
+        descriptionEn: 'Membership fee',
+        unitPriceSatang: 1_000_000n,
+        totalSatang: 1_000_000n,
+        position: 1,
+      }),
+    );
+    await runInTenant(tenantB.ctx, (tx) =>
+      tx.insert(invoiceLines).values({
+        tenantId: tenantB.ctx.slug,
+        lineId: bLineId,
+        invoiceId: bInvoiceId,
+        kind: 'membership_fee',
+        descriptionTh: 'ค่าสมาชิก',
+        descriptionEn: 'Membership fee',
+        unitPriceSatang: 1_000_000n,
+        totalSatang: 1_000_000n,
+        position: 1,
+      }),
+    );
+
+    // R7-W2 — seed one credit_notes row per tenant. Standalone fixture
+    // (not linked to a real paid invoice) because the integration test
+    // only needs to prove RLS — not domain invariants. `original_invoice_id`
+    // points to a random UUID so neither tenant observes a real
+    // credit-note-to-invoice link; both rows are RLS-scoped by tenant_id.
+    aCreditNoteId = randomUUID();
+    bCreditNoteId = randomUUID();
+    const creditNoteSnapshotPlaceholder = {
+      legal_name_en: 'Test',
+      legal_name_th: 'ทดสอบ',
+      tax_id: '0000000000000',
+      address: 'Bangkok',
+    };
+    // `originalInvoiceId` must satisfy the FK to `invoices`. Point at
+    // the seeded draft invoice per tenant — domain status invariants
+    // (credit note only against paid) are enforced at Application
+    // layer, not at the DB level, so this FK is satisfied.
+    for (const [t, creditNoteId, prefix, origInvoice] of [
+      [tenantA, aCreditNoteId, 'T', aInvoiceId],
+      [tenantB, bCreditNoteId, 'T', bInvoiceId],
+    ] as const) {
+      await runInTenant(t.ctx, (tx) =>
+        tx.insert(creditNotes).values({
+          tenantId: t.ctx.slug,
+          creditNoteId,
+          originalInvoiceId: origInvoice,
+          fiscalYear: 2026,
+          sequenceNumber: 1,
+          documentNumber: `${prefix}C26-000001`,
+          issueDate: '2026-01-15',
+          issuedByUserId: user.userId,
+          reason: 'R7-W2 isolation fixture',
+          creditAmountSatang: 100000n,
+          vatSatang: 7000n,
+          totalSatang: 107000n,
+          tenantIdentitySnapshot: creditNoteSnapshotPlaceholder,
+          memberIdentitySnapshot: creditNoteSnapshotPlaceholder,
+          pdfBlobKey: `invoicing/${t.ctx.slug}/2026/fixture_v1.pdf`,
+          pdfSha256: 'a'.repeat(64),
+          pdfTemplateVersion: 1,
         }),
       );
     }
@@ -281,6 +369,102 @@ describe('F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)', () => {
         .returning(),
     );
     expect(updated).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // invoice_lines (R7-W2)
+  //
+  // Previously covered only implicitly via FK-cascade on invoice
+  // deletion. FK is not access control — only RLS is. Probe directly.
+  // ---------------------------------------------------------------------------
+
+  it('A sees only A invoice_lines', async () => {
+    const rows = await runInTenant(tenantA.ctx, (tx) => tx.select().from(invoiceLines));
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.tenantId).toBe(tenantA.ctx.slug);
+    expect(rows[0]!.lineId).toBe(aLineId);
+  });
+
+  it('A cannot SELECT B invoice_lines by id (RLS hides row)', async () => {
+    const rows = await runInTenant(tenantA.ctx, (tx) =>
+      tx.select().from(invoiceLines).where(eq(invoiceLines.lineId, bLineId)),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('A.update(B invoice_line) affects 0 rows', async () => {
+    const updated = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .update(invoiceLines)
+        .set({ descriptionEn: 'HIJACKED' })
+        .where(eq(invoiceLines.lineId, bLineId))
+        .returning(),
+    );
+    expect(updated).toHaveLength(0);
+    // Confirm via tenantB-scoped read — original description survives.
+    const check = await runInTenant(tenantB.ctx, (tx) =>
+      tx.select().from(invoiceLines).where(eq(invoiceLines.lineId, bLineId)),
+    );
+    expect(check).toHaveLength(1);
+    expect(check[0]!.descriptionEn).toBe('Membership fee');
+  });
+
+  it('A.delete(B invoice_line) affects 0 rows', async () => {
+    const deleted = await runInTenant(tenantA.ctx, (tx) =>
+      tx.delete(invoiceLines).where(eq(invoiceLines.lineId, bLineId)).returning(),
+    );
+    expect(deleted).toHaveLength(0);
+    const check = await runInTenant(tenantB.ctx, (tx) =>
+      tx.select().from(invoiceLines).where(eq(invoiceLines.lineId, bLineId)),
+    );
+    expect(check).toHaveLength(1);
+  });
+
+  // ---------------------------------------------------------------------------
+  // credit_notes (R7-W2)
+  //
+  // Not previously covered. Probe SELECT/UPDATE/DELETE directly.
+  // ---------------------------------------------------------------------------
+
+  it('A sees only A credit_notes', async () => {
+    const rows = await runInTenant(tenantA.ctx, (tx) => tx.select().from(creditNotes));
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.tenantId).toBe(tenantA.ctx.slug);
+    expect(rows[0]!.creditNoteId).toBe(aCreditNoteId);
+  });
+
+  it('A cannot SELECT B credit_notes by id (RLS hides row)', async () => {
+    const rows = await runInTenant(tenantA.ctx, (tx) =>
+      tx.select().from(creditNotes).where(eq(creditNotes.creditNoteId, bCreditNoteId)),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('A.update(B credit_note) affects 0 rows', async () => {
+    const updated = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .update(creditNotes)
+        .set({ reason: 'HIJACKED' })
+        .where(eq(creditNotes.creditNoteId, bCreditNoteId))
+        .returning(),
+    );
+    expect(updated).toHaveLength(0);
+    const check = await runInTenant(tenantB.ctx, (tx) =>
+      tx.select().from(creditNotes).where(eq(creditNotes.creditNoteId, bCreditNoteId)),
+    );
+    expect(check).toHaveLength(1);
+    expect(check[0]!.reason).toBe('R7-W2 isolation fixture');
+  });
+
+  it('A.delete(B credit_note) affects 0 rows', async () => {
+    const deleted = await runInTenant(tenantA.ctx, (tx) =>
+      tx.delete(creditNotes).where(eq(creditNotes.creditNoteId, bCreditNoteId)).returning(),
+    );
+    expect(deleted).toHaveLength(0);
+    const check = await runInTenant(tenantB.ctx, (tx) =>
+      tx.select().from(creditNotes).where(eq(creditNotes.creditNoteId, bCreditNoteId)),
+    );
+    expect(check).toHaveLength(1);
   });
 
   // ---------------------------------------------------------------------------
