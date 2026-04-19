@@ -8,11 +8,16 @@ import { headers } from 'next/headers';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getInvoice, makeGetInvoiceDeps, Money, VatRate, calculateVat } from '@/modules/invoicing';
+import { getInvoice, makeGetInvoiceDeps, Money, calculateVat } from '@/modules/invoicing';
+// Direct infra import for the settings read — same escape-hatch as
+// the B2 settings page. This is a READ against the public port
+// `getForIssue`, not a deep reach into internals.
+// eslint-disable-next-line no-restricted-imports
+import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { listPlans, getFeeConfig } from '@/modules/plans';
+import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 // Raw repo read mirrors the escape hatch used by /admin/users page.tsx —
 // an Application-layer `getStaffUser` would be a passthrough. Read is
@@ -168,18 +173,18 @@ export default async function InvoiceDetailPage({
     for (const line of invoice.lines) sub = sub.add(line.total);
     displaySubtotalSatang = sub.satang;
 
-    const fc = await getFeeConfig(buildPlansDeps(tenantCtx));
-    if (fc.ok) {
-      // B6 fix — use Domain VatRate + calculateVat (half-away-from-zero
-      // rounding in satang) instead of float arithmetic. `rate` arrives
-      // as a JS number (e.g. 0.07); normalise to 4-dp string for VatRate
-      // (matches tenant_fee_config numeric(5,4) DB shape).
-      const rate = fc.value.vat_rate;
-      const vatRate = VatRate.ofUnsafe(rate.toFixed(4));
-      const { vat, total } = calculateVat(sub, vatRate);
+    // R7-B2 follow-up — source VAT from `tenant_invoice_settings`
+    // (the `issue-invoice` use-case's source of truth, FR-009/011),
+    // NOT from F2 `tenant_fee_config`. The two tables can drift and
+    // the invoice will be snapshotted from invoice-settings at
+    // issue time — the draft preview MUST match what issuance will
+    // produce, otherwise admin sees one number and commits another.
+    const invoiceSettings = await drizzleTenantSettingsRepo.getForIssue(tenantCtx.slug);
+    if (invoiceSettings) {
+      const { vat, total } = calculateVat(sub, invoiceSettings.vatRate);
       displayVatSatang = vat.satang;
       displayTotalSatang = total.satang;
-      displayVatPercent = vatRate.toPercentString();
+      displayVatPercent = invoiceSettings.vatRate.toPercentString();
     }
   }
 
