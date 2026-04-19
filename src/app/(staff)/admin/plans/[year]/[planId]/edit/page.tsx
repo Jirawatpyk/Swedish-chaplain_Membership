@@ -72,10 +72,11 @@ export default async function EditPlanPage({
   }
 
   const plan = planResult.value;
-  const feeConfig = await deps.feeConfigRepo.findByTenant(deps.tenant);
+  // R8 — currency via F4 invoice_settings taxPolicy (consolidated).
+  const taxPolicy = await deps.taxPolicy();
+  const currencyCode = taxPolicy?.currencyCode ?? 'THB';
   const currentYear = deps.clock.currentYear();
-  const currencyPrefix =
-    feeConfig?.currency_code === 'THB' ? '฿' : (feeConfig?.currency_code ?? 'THB');
+  const currencyPrefix = currencyCode === 'THB' ? '฿' : currencyCode;
 
   // Convert the Domain Plan to a PlanSchemaInput-shaped initial value
   const initialValues: PlanSchemaInput = {

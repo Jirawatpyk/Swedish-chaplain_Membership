@@ -1,0 +1,29 @@
+-- R9-T2 — DROP tenant_fee_config (contract half of the
+-- expand-and-contract consolidation started in migration 0026).
+--
+-- Background:
+--   Migration 0026 added `currency_code` to tenant_invoice_settings
+--   and backfilled it from tenant_fee_config.
+--   Migration 0028 INSERTed invoice_settings rows for every tenant
+--   that had a fee_config row but no invoice_settings (using
+--   placeholder legal_name/addresses that admins fill in via
+--   `/admin/settings/invoicing`).
+--   R8/R9 migrated every reader (list-plans, create-invoice-draft,
+--   /admin/plans/* pages) and every writer (seed script, 27
+--   integration tests via `seedTenantFiscal` helper) off
+--   tenant_fee_config.
+--
+-- Invariants at DROP time:
+--   - Zero code paths read from or write to tenant_fee_config.
+--   - Every tenant that had a tenant_fee_config row now has a
+--     tenant_invoice_settings row carrying the same values (or
+--     stricter admin-entered values).
+--
+-- Rollback (destructive — only possible from DB backup):
+--   The column data (currency_code, vat_rate, registration_fee_minor_units)
+--   is fully duplicated in tenant_invoice_settings. Restore the table
+--   from backup if a live rollback is needed; no in-band rollback
+--   path is provided because the table + all writers/readers are
+--   deleted in the same round.
+
+DROP TABLE IF EXISTS "tenant_fee_config";

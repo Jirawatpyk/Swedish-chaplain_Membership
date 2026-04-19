@@ -458,30 +458,6 @@
         "sourceYearEmpty": "Inga paket hittades för {sourceYear}."
       }
     },
-    "settings": {
-      "fees": {
-        "title": "Avgiftskonfiguration",
-        "subtitle": "Valuta, momssats och registreringsavgift per tenant.",
-        "description": "Dessa värden tillämpas på alla paket i din katalog. Valutan är oföränderlig i denna version.",
-        "labels": {
-          "currencyCode": "Valuta",
-          "vatRate": "Momssats (%)",
-          "registrationFee": "Registreringsavgift"
-        },
-        "currencyImmutableNote": "Valutan är låst till {currency} tills en framtida version lägger till stöd för blandade valutor.",
-        "save": "Spara ändringar",
-        "saving": "Sparar…",
-        "toast": {
-          "success": "Avgiftskonfigurationen uppdaterades."
-        },
-        "errors": {
-          "generic": "Något gick fel. Försök igen.",
-          "forbidden": "Endast administratörer kan ändra avgiftskonfigurationen.",
-          "currencyImmutable": "Valutan kan inte ändras medan {count} paket finns. Ta bort alla paket först.",
-          "validation": "Korrigera de markerade fälten."
-        }
-      }
-    },
     "members": {
       "title": "Medlemmar",
       "overrideReason": {
@@ -819,6 +795,265 @@
       "label": "Problem med e-postleverans hittades",
       "permanentFailed": "{count, plural, one {# e-post misslyckades permanent} other {# e-postmeddelanden misslyckades permanent}} de senaste 24 h",
       "stuckPending": "{count, plural, one {# e-post fastnad} other {# e-postmeddelanden fastnade}} i kön (cron kanske är nere)"
+    },
+    "invoiceSettings": {
+      "title": "Fakturainställningar",
+      "subtitle": "Tenant-nivå fakturakonfiguration (juridisk identitet, moms, numrering, logotyp).",
+      "card": {
+        "title": "Fakturakonfiguration",
+        "description": "Ändringar gäller endast framtida fakturor. Redan utfärdade fakturor behåller sin ursprungliga snapshot (FR-011).",
+        "firstTimeDescription": "Inga inställningar ännu. Fyll i obligatoriska fält för att låsa upp fakturering (FR-010)."
+      },
+      "sections": {
+        "currency": "Valuta",
+        "identity": "Juridisk identitet",
+        "tax": "Skatt",
+        "numbering": "Dokumentnumrering",
+        "defaults": "Faktureringsstandard",
+        "logo": "Logotyp"
+      },
+      "labels": {
+        "currencyCode": "Valutakod",
+        "legalNameTh": "Juridiskt namn (thai)",
+        "legalNameEn": "Juridiskt namn (engelska)",
+        "taxId": "Skatte-ID",
+        "addressTh": "Registrerad adress (thai)",
+        "addressEn": "Registrerad adress (engelska)",
+        "vatPercent": "Momssats (%)",
+        "registrationFee": "Registreringsavgift (THB)",
+        "invoicePrefix": "Fakturanummerprefix",
+        "creditNotePrefix": "Kreditnotaprefix",
+        "receiptMode": "Kvittonumreringsläge",
+        "receiptPrefix": "Kvittonummerprefix",
+        "fiscalYearStartMonth": "Räkenskapsårets startmånad (1-12)",
+        "defaultNetDays": "Standard kreditdagar",
+        "proRatePolicy": "Proportionerlig beräkning",
+        "autoEmail": "Auto-e-post vid utfärdande/betalning",
+        "logo": "Ladda upp logotyp"
+      },
+      "hints": {
+        "currencyCode": "ISO 4217 — 3 versaler (t.ex. THB, USD, SEK).",
+        "taxId": "13 siffror (thailändskt skattemyndighetsformat).",
+        "receiptPrefix": "Används endast när kvittoläge är \"separat\".",
+        "autoEmail": "När på skickas nya fakturor automatiskt via e-post vid utfärdande. Kan åsidosättas per faktura.",
+        "logo": "PNG eller JPEG, ≤ 1 MB, 200-2000 px brett, 100-500 px högt."
+      },
+      "receiptMode": {
+        "combined": "Kombinerad faktura + kvitto",
+        "separate": "Separata faktura- och kvittoströmmar"
+      },
+      "proRate": {
+        "none": "Ingen (full periodavgift)",
+        "monthly": "Månadsvis",
+        "daily": "Dagligen"
+      },
+      "logo": {
+        "uploading": "Laddar upp…",
+        "currentKey": "Aktuell logotyp",
+        "toast": {
+          "uploaded": "Logotyp uppladdad — spara inställningar för att tillämpa."
+        },
+        "errors": {
+          "mime_rejected": "Endast PNG eller JPEG tillåts.",
+          "too_large": "Filen är större än 1 MB.",
+          "dimensions_out_of_range": "Måtten måste vara 200-2000 px breda, 100-500 px höga.",
+          "decode_failed": "Bilden kunde inte avkodas.",
+          "generic": "Uppladdning misslyckades."
+        }
+      },
+      "errors": {
+        "currencyCode": "Valutakod måste vara 3 versaler (ISO 4217).",
+        "vatRange": "Moms måste vara mellan 0 och 30 procent.",
+        "regFeeRange": "Registreringsavgift måste vara 0 eller mer.",
+        "fiscalMonth": "Startmånad måste vara 1-12.",
+        "netDays": "Standard kreditdagar måste vara 0-365.",
+        "validation": "Kontrollera formuläret — vissa fält behöver uppmärksamhet.",
+        "forbidden": "Din roll kan inte ändra fakturainställningar.",
+        "generic": "Sparning misslyckades. Försök igen."
+      },
+      "saving": "Sparar…",
+      "actions": {
+        "save": "Spara inställningar",
+        "create": "Skapa inställningar"
+      },
+      "toast": {
+        "created": "Fakturainställningar skapade.",
+        "updated": "Fakturainställningar uppdaterade."
+      }
+    },
+    "invoices": {
+      "meta": {
+        "title": "Fakturor"
+      },
+      "list": {
+        "title": "Fakturor",
+        "description": "Thailändska momsgilla medlemsfakturor.",
+        "empty": "Inga fakturor än — skapa första utkastet.",
+        "setupRequired": "Slutför fakturakonfiguration för att börja fakturera.",
+        "actions": {
+          "new": "Ny faktura",
+          "download": "PDF",
+          "clearFilters": "Rensa filter",
+          "configureInvoicing": "Konfigurera fakturering"
+        },
+        "columns": {
+          "documentNumber": "Nr",
+          "status": "Status",
+          "issueDate": "Utfärdad",
+          "dueDate": "Förfaller",
+          "total": "Totalt",
+          "actions": "",
+          "member": "Medlem"
+        },
+        "statuses": {
+          "draft": "Utkast",
+          "issued": "Utfärdad",
+          "paid": "Betald",
+          "void": "Ogiltig",
+          "credited": "Krediterad",
+          "partially_credited": "Delvis krediterad",
+          "overdue": "Förfallen"
+        },
+        "searchPlaceholder": "Sök fakturanummer…",
+        "searchLabel": "Sök fakturor",
+        "loadMore": "Ladda fler",
+        "filteredEmpty": "Inga fakturor matchar filtren.",
+        "filters": {
+          "allStatuses": "Alla status",
+          "clearAll": "Rensa filter"
+        }
+      },
+      "new": {
+        "title": "Nytt fakturautkast",
+        "description": "Välj medlem och plan. Förhandsgranska före utfärdande.",
+        "cancel": "Tillbaka"
+      },
+      "form": {
+        "submit": "Skapa utkast",
+        "submitting": "Skapar…",
+        "success": {
+          "created": "Utkast skapat"
+        },
+        "errors": {
+          "create_failed": "Kunde inte skapa utkast",
+          "codeFallback": "Felkod: {code}",
+          "unknown": "Ett okänt fel inträffade. Försök igen."
+        },
+        "fields": {
+          "memberId": "Medlem",
+          "memberIdHelp": "Klistra in medlems-UUID. Väljare kommer senare.",
+          "planId": "Plan",
+          "planYear": "Planår"
+        },
+        "memberPicker": {
+          "placeholder": "Välj medlem…",
+          "search": "Sök medlemmar…",
+          "empty": "Inga medlemmar matchar.",
+          "noActiveMembers": "Inga aktiva medlemmar"
+        },
+        "planInfo": {
+          "annualFee": "Årsavgift: {amount} THB (före moms)",
+          "changePlan": "Ändra medlemmens plan →"
+        }
+      },
+      "detail": {
+        "draftTitle": "Utkast",
+        "status": "Status",
+        "actions": {
+          "preview": "Förhandsgranska",
+          "issue": "Utfärda…",
+          "download": "Ladda ner PDF",
+          "pay": "Registrera betalning"
+        },
+        "fields": {
+          "memberId": "Medlem",
+          "plan": "Plan / år",
+          "issueDate": "Utfärdad",
+          "dueDate": "Förfaller",
+          "subtotal": "Delsumma",
+          "vat": "Moms",
+          "total": "Totalt"
+        },
+        "lines": {
+          "title": "Rader",
+          "description": "Beskrivning",
+          "qty": "Antal",
+          "unit": "À-pris",
+          "total": "Summa"
+        },
+        "previewLabel": "förhandsgranskning",
+        "payment": {
+          "title": "Betalningsdetaljer",
+          "paymentDate": "Betalningsdatum",
+          "paidAt": "Registrerad",
+          "method": "Metod",
+          "reference": "Referens",
+          "recordedBy": "Registrerad av",
+          "notes": "Anteckningar",
+          "methods": {
+            "bank_transfer": "Banköverföring",
+            "cheque": "Check",
+            "cash": "Kontant",
+            "other": "Övrigt"
+          }
+        },
+        "voidDetails": {
+          "title": "Annullerad",
+          "voidedAt": "Annullerad",
+          "voidedBy": "Annullerad av",
+          "reason": "Orsak",
+          "creditNoteHint": "För att legalt återställa denna faktura, utfärda en kreditnota (tillgänglig i F4 US6)."
+        }
+      },
+      "issue": {
+        "title": "Utfärda faktura",
+        "description": "Konsumerar nästa löpnummer. Kan ej återställas (annullering sker separat).",
+        "confirmPhrase": "UTFÄRDA",
+        "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",
+        "typeToConfirm": "Bekräftelsefras",
+        "issueButton": "Utfärda",
+        "issuing": "Utfärdar…",
+        "success": "Fakturan utfärdad",
+        "cancel": "Avbryt",
+        "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan **inte ångras** — för att annullera måste en kreditnota utfärdas.",
+        "errors": {
+          "failed": "Kunde inte utfärda",
+          "codeFallback": "Felkod: {code}",
+          "unknown": "Ett okänt fel inträffade. Försök igen."
+        },
+        "draftLabel": "Utkast",
+        "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta."
+      },
+      "pay": {
+        "title": "Registrera betalning",
+        "description": "Markera fakturan som betald. Ett kvitto-PDF genereras och skickas till medlemmen.",
+        "submit": "Registrera",
+        "submitting": "Registrerar…",
+        "success": "Betalning registrerad",
+        "successDetail": "Faktura {number} är nu betald.",
+        "cancel": "Tillbaka",
+        "errors": {
+          "failed": "Kunde inte registrera betalning",
+          "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",
+          "codeFallback": "Felkod: {code}",
+          "unknown": "Ett okänt fel inträffade. Försök igen."
+        },
+        "fields": {
+          "method": "Betalningsmetod",
+          "reference": "Referens",
+          "referencePlaceholder": "Banköverförings-id / checknummer",
+          "date": "Betalningsdatum",
+          "dateHint": "Datum visas i gregoriansk kalender. Måste vara på eller efter fakturans utfärdandedatum och får inte vara i framtiden.",
+          "notes": "Anteckningar"
+        },
+        "methods": {
+          "bank_transfer": "Banköverföring",
+          "cheque": "Check",
+          "cash": "Kontant",
+          "other": "Övrigt"
+        },
+        "draftLabel": "Utkast"
+      }
     }
   },
   "palette": {
@@ -835,16 +1070,17 @@
     "actions": {
       "newPlan": "Skapa nytt paket",
       "cloneYear": "Klona år",
-      "editFees": "Redigera avgiftskonfiguration",
       "viewAuditLog": "Visa revisionslogg",
-      "newMember": "Skapa ny medlem"
+      "newMember": "Skapa ny medlem",
+      "newInvoice": "Skapa ny faktura"
     },
     "navigate": {
       "plansList": "Paketlista",
-      "feeConfig": "Avgiftskonfiguration",
+      "invoiceSettings": "Fakturainställningar",
       "usersList": "Användarlista",
       "dashboard": "Instrumentpanel",
-      "membersList": "Medlemslista"
+      "membersList": "Medlemslista",
+      "invoicesList": "Fakturalista"
     }
   },
   "nav": {
@@ -853,7 +1089,7 @@
       "plans": "Paket",
       "users": "Användare",
       "settings": "Inställningar",
-      "settingsFees": "Avgiftskonfiguration",
+      "settingsInvoices": "Fakturainställningar",
       "sections": {
         "main": "Huvud",
         "settings": "Inställningar"
@@ -861,11 +1097,13 @@
       "collapse": "Fäll ihop sidofältet",
       "expand": "Expandera sidofältet",
       "ariaLabel": "Personalnavigering",
-      "members": "Medlemmar"
+      "members": "Medlemmar",
+      "invoices": "Fakturor"
     },
     "member": {
       "dashboard": "Instrumentpanel",
       "profile": "Profil",
+      "invoices": "Fakturor",
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering"
     }
@@ -895,6 +1133,24 @@
     "loadingForm": "Laddar formulär"
   },
   "portal": {
+    "invoices": {
+      "title": "Fakturor",
+      "subtitle": "Ditt företags fakturor och skattekvitton.",
+      "empty": "Inga fakturor ännu. Fakturor visas här när de utfärdas.",
+      "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
+      "loaded": "Fakturalistan laddad.",
+      "columns": {
+        "documentNumber": "Nr",
+        "status": "Status",
+        "issueDate": "Utfärdad",
+        "dueDate": "Förfaller",
+        "total": "Totalt",
+        "actions": "Åtgärder"
+      },
+      "actions": {
+        "download": "PDF"
+      }
+    },
     "profile": {
       "title": "Min profil",
       "pageTitle": "Min profil",
@@ -1009,5 +1265,8 @@
     "previous": "Föregående",
     "next": "Nästa",
     "page": "Sida {page}"
+  },
+  "shared": {
+    "loaded": "Laddat"
   }
 }

@@ -10,7 +10,7 @@
  * `[data-variant]` is present.
  *
  * The form block exercises three representative routes
- * (`/admin/settings/fees`, `/admin/plans/new`, `/portal/account`) to
+ * (`/admin/settings/invoicing`, `/admin/plans/new`, `/portal/account`) to
  * protect SC-002 across categories — prior revision covered only one.
  */
 import type { Page } from '@playwright/test';
@@ -26,7 +26,7 @@ const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 const VIEWPORTS_FULL = [375, 1280, 1440, 1920] as const;
 const VIEWPORTS_DETAIL = [375, 1440] as const;
 
-const ADMIN_FORM_ROUTES = ['/admin/settings/fees', '/admin/plans/new'] as const;
+const ADMIN_FORM_ROUTES = ['/admin/settings/invoicing', '/admin/plans/new'] as const;
 const PORTAL_FORM_ROUTES = [
   '/portal/account',
   '/portal/edit',

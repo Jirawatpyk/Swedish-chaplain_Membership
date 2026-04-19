@@ -133,6 +133,39 @@ export function proxy(request: NextRequest): NextResponse {
     return applySecurityHeaders(response);
   }
 
+  // 1c. FEATURE_F4_INVOICING kill-switch (T020) — when false, every
+  //     invoicing route returns 503 read_only_mode. Applies to BOTH
+  //     reads and writes on F4 surfaces. Member-portal /api/portal/invoices
+  //     is a dedicated sub-path (added in US3) and is gated here too; the
+  //     F3 /api/portal guard above only triggers when F3 itself is off.
+  //
+  //     R7-B4 fix — the cron dispatcher is a SHARED route
+  //     (`/api/cron/outbox-dispatch`) serving F1 + F4 rows. Blanket-
+  //     blocking it here would stop F1 emails too. The kill-switch for
+  //     F4 outbox rows lives INSIDE the dispatcher query which filters
+  //     `notification_type != 'invoice_auto_email'` when f4Invoicing is
+  //     false (see src/app/api/cron/outbox-dispatch/route.ts). The
+  //     previous `/api/cron/auto-email-dispatch` reference was a
+  //     path-mismatch that gave the kill-switch no actual containment
+  //     power over in-flight invoice email dispatch.
+  const isF4Path =
+    nextUrl.pathname.startsWith('/api/invoices') ||
+    nextUrl.pathname.startsWith('/api/credit-notes') ||
+    nextUrl.pathname.startsWith('/api/tenant-invoice-settings') ||
+    nextUrl.pathname.startsWith('/api/portal/invoices');
+  if (!env.features.f4Invoicing && isF4Path) {
+    const response = NextResponse.json(
+      {
+        error: 'read_only_mode',
+        message: 'Invoicing is temporarily unavailable.',
+      },
+      { status: 503 },
+    );
+    response.headers.set(REQUEST_ID_HEADER, requestId);
+    response.headers.set('Retry-After', '300');
+    return applySecurityHeaders(response);
+  }
+
   // 2. CSRF Origin allow-list for /api/* state-changing requests
   const csrfDecision = checkCsrf(method, nextUrl.pathname, request.headers.get('origin'));
   if (csrfDecision.action === 'reject') {

@@ -21,7 +21,6 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
-import { feeConfigRepo } from '@/modules/plans/infrastructure/db/fee-config-repo';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
 import { stubMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/stub-member-attachment-checker';
 import { updatePlan } from '@/modules/plans/application/update-plan';
@@ -83,12 +82,6 @@ describe('Integration: concurrent edit LWW (T113)', () => {
     const adminA = await createActiveTestUser('admin');
     const adminB = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: adminA.userId,
-    });
     await planRepo.insert(tenant.ctx, seed(adminA.userId));
 
     // Launch both edits concurrently
@@ -106,7 +99,6 @@ describe('Integration: concurrent edit LWW (T113)', () => {
         {
           tenant: tenant.ctx,
           planRepo,
-          feeConfigRepo,
           audit: planAuditAdapter,
           clock: currentYearClock,
           members: stubMemberAttachmentChecker,
@@ -125,7 +117,6 @@ describe('Integration: concurrent edit LWW (T113)', () => {
         {
           tenant: tenant.ctx,
           planRepo,
-          feeConfigRepo,
           audit: planAuditAdapter,
           clock: currentYearClock,
           members: stubMemberAttachmentChecker,
@@ -150,12 +141,6 @@ describe('Integration: concurrent edit LWW (T113)', () => {
     const adminA = await createActiveTestUser('admin');
     const adminB = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: adminA.userId,
-    });
     await planRepo.insert(tenant.ctx, seed(adminA.userId));
 
     // Sequential writes — B is the last writer
@@ -172,7 +157,6 @@ describe('Integration: concurrent edit LWW (T113)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
         audit: planAuditAdapter,
         clock: currentYearClock,
         members: stubMemberAttachmentChecker,
@@ -191,7 +175,6 @@ describe('Integration: concurrent edit LWW (T113)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
         audit: planAuditAdapter,
         clock: currentYearClock,
         members: stubMemberAttachmentChecker,

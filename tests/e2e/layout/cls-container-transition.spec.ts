@@ -61,7 +61,7 @@ test.describe('F5 CLS container transition @layout', () => {
     await installClsObserver(page);
     await signInViaForm(page, '/admin/sign-in', ADMIN_EMAIL!, ADMIN_PASSWORD!, /^\/admin(\/|$)/);
 
-    await page.goto('/admin/settings/fees');
+    await page.goto('/admin/settings/invoicing');
     await waitForLayoutContainer(page);
 
     await page.goto('/admin/members');
@@ -79,7 +79,7 @@ test.describe('F5 CLS container transition @layout', () => {
     await page.goto('/admin/members');
     await waitForLayoutContainer(page);
 
-    await page.goto('/admin/settings/fees');
+    await page.goto('/admin/settings/invoicing');
     await waitForLayoutContainer(page);
 
     const cls = await readCls(page);

@@ -21,7 +21,7 @@ test.describe('F4 SC-012 — form field consistency @layout', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
-    await page.goto('/admin/settings/fees');
+    await page.goto('/admin/settings/invoicing');
     // Wait for the form inputs to mount (loading.tsx skeleton swaps for
     // the real FeeConfigForm).
     await page.waitForLoadState('networkidle');

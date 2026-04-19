@@ -17,6 +17,7 @@ jspm_packages/
 .env
 .env.local
 .env.*.local
+.env.local.bak.*
 .env.development.local
 .env.test.local
 .env.production.local

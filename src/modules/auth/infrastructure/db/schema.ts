@@ -99,6 +99,23 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'bulk_action_rate_limit_exceeded',
   // --- Round-3 review N-I3 — added by migration 0014 ---
   'member_portal_invite_queued',
+  // --- F4 invoicing events (16) — added by migration 0020 ---
+  'invoice_draft_created',
+  'invoice_draft_updated',
+  'invoice_draft_deleted',
+  'invoice_issued',
+  'invoice_paid',
+  'invoice_voided',
+  'invoice_overdue_detected',
+  'credit_note_issued',
+  'tenant_invoice_settings_updated',
+  'invoice_pdf_resent',
+  'receipt_pdf_resent',
+  'credit_note_pdf_resent',
+  'invoice_cross_tenant_probe',
+  'credit_note_cross_tenant_probe',
+  'pdf_render_failed',
+  'auto_email_delivery_failed',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [
@@ -111,6 +128,11 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   'email_verification',
   'email_change_revert',
   'email_verification_resent',
+  // --- F4 migration 0023: invoice auto-email (issue / pay / void /
+  // credit note + PDF resend variants). The physical column accepts
+  // all F4 auto-email variants; the notification dispatcher routes
+  // them via `context_data.event_type`. ---
+  'invoice_auto_email',
 ]);
 
 export const outboxStatusEnum = pgEnum('outbox_status', [

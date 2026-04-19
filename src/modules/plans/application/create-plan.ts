@@ -36,7 +36,6 @@ import type { TenantContext } from '@/modules/tenants';
 import type {
   AuditPort,
   ClockPort,
-  FeeConfigRepo,
   MemberAttachmentChecker,
   PlanDraftInput,
   PlanRepo,
@@ -78,7 +77,6 @@ export type CreatePlanError =
 export type CreatePlanDeps = {
   readonly tenant: TenantContext;
   readonly planRepo: PlanRepo;
-  readonly feeConfigRepo: FeeConfigRepo;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   readonly members: MemberAttachmentChecker;

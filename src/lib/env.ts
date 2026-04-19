@@ -114,6 +114,12 @@ const schema = z.object({
   // `current_setting('app.current_tenant', TRUE)` is NULL — prevents
   // "I forgot runInTenant" class of bug during development. MUST be false
   // (or unset) in production; the env validator asserts this below.
+  //
+  // R7-S4 — ops recommendation: set this to TRUE on STAGING (non-prod)
+  // so any cross-tenant hole caught by the F4 sequence allocator or F3
+  // member repo assertion fails loud during QA instead of falling
+  // through to RLS (silent deny → harder to diagnose). Keep OFF in
+  // production to avoid leaking stack traces in hot paths.
   DEBUG_RLS_STATE: booleanFromString.default(false),
 
   // --- F3 Feature flag ------------------------------------------------------
@@ -123,6 +129,30 @@ const schema = z.object({
   // deployments pick up the feature; set to FALSE in Vercel env to
   // temporarily disable without a code deploy.
   FEATURE_F3_MEMBERS: booleanFromString.default(true),
+
+  // --- F4 Invoicing ---------------------------------------------------------
+  // Vercel Blob (private) read/write token — used by
+  // `vercel-blob-adapter.ts` to persist rendered tax-document PDFs under
+  // `invoicing/{tenant_id}/{yyyy}/{document_id}.pdf`. Signed URLs are
+  // issued per-request with a 60s TTL. Missing token at boot is a
+  // ship-blocker: F4 cannot render/store/serve PDFs without it.
+  BLOB_READ_WRITE_TOKEN: z.string().min(10),
+
+  // Shared secret used by Vercel Cron to authenticate the auto-email
+  // dispatcher endpoint (`/api/cron/auto-email-dispatch`). The route
+  // handler compares this against the `Authorization: Bearer <secret>`
+  // header that Vercel Cron supplies. Rotating this secret invalidates
+  // queued webhook triggers — coordinate with vercel.json updates.
+  CRON_SECRET: z.string().min(16),
+
+  // Kill-switch for F4 Invoicing. When FALSE every `/api/invoices/**`,
+  // `/api/credit-notes/**`, `/api/tenant-invoice-settings/**`, and
+  // `/api/portal/invoices/**` route returns 503 `read_only_mode` via
+  // the feature-flag guard (T020). Default TRUE so normal deployments
+  // pick up the feature; set to FALSE in Vercel env to temporarily
+  // disable without a code deploy — useful for emergency write-freeze
+  // of financial mutations.
+  FEATURE_F4_INVOICING: booleanFromString.default(true),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -229,9 +259,18 @@ export const env = {
     debugRlsState: raw.DEBUG_RLS_STATE,
   },
 
-  // F3 feature flags
+  // F3 + F4 feature flags
   features: {
     f3Members: raw.FEATURE_F3_MEMBERS,
+    f4Invoicing: raw.FEATURE_F4_INVOICING,
+  },
+
+  // F4 Invoicing
+  blob: {
+    readWriteToken: raw.BLOB_READ_WRITE_TOKEN,
+  },
+  cron: {
+    secret: raw.CRON_SECRET,
   },
 } as const;
 

@@ -27,8 +27,6 @@ import type {
   PlanSlug,
   PlanYear,
 } from '../domain/plan';
-import type { TenantFeeConfig } from '../domain/fee-config';
-import type { CurrencyCode } from '../domain/money';
 import type { F2AuditEvent, F2AuditEventType } from '../domain/audit-event';
 import type { PlanPatchOutput, PlanSchemaOutput } from '../domain/plan-validators';
 
@@ -158,55 +156,12 @@ export type CloneYearError =
   | { readonly type: 'target_year_populated'; readonly existingCount: number }
   | { readonly type: 'source_year_empty' };
 
-// ---------------------------------------------------------------------------
-// FeeConfigRepo — per-tenant fee configuration
-// ---------------------------------------------------------------------------
-
-export interface FeeConfigRepo {
-  /**
-   * Return the tenant's fee config row, or undefined if none exists
-   * yet. A missing row is a bootstrap error — every tenant is expected
-   * to have exactly one row inserted at onboarding (for SweCham that's
-   * the F2 seed script).
-   */
-  findByTenant(tenant: TenantContext): Promise<TenantFeeConfig | undefined>;
-
-  /**
-   * Partial update. `currency_code` IS accepted in the patch, but
-   * the Application use case `update-fee-config` gates it behind the
-   * F2 immutability guard (critique R1) — the repo simply writes the
-   * fields provided. When `non_deleted_plan_count === 0` the use
-   * case allows a currency swap through.
-   */
-  update(
-    tenant: TenantContext,
-    patch: FeeConfigPatch,
-    updatedBy: string,
-  ): Promise<TenantFeeConfig | undefined>;
-
-  /**
-   * Upsert the row — used by the seed script. Existing rows are left
-   * unchanged (idempotent); missing rows are created with the provided
-   * values. Returns the post-upsert row.
-   */
-  upsert(
-    tenant: TenantContext,
-    row: FeeConfigUpsert,
-  ): Promise<TenantFeeConfig>;
-}
-
-export type FeeConfigPatch = {
-  readonly vat_rate?: number;
-  readonly registration_fee_minor_units?: number;
-  readonly currency_code?: CurrencyCode;
-};
-
-export type FeeConfigUpsert = {
-  readonly currency_code: CurrencyCode;
-  readonly vat_rate: number;
-  readonly registration_fee_minor_units: number;
-  readonly updated_by: string;
-};
+// R9 — FeeConfigRepo interface + FeeConfigPatch + FeeConfigUpsert
+// REMOVED after the full Option-2 consolidation. Plans module reads
+// VAT + currency via `PlansDeps.taxPolicy()` (F4 invoice_settings);
+// create-invoice-draft reads registration_fee via
+// `tenantSettingsRepo`. Integration tests seed fiscal config via the
+// shared `seedTenantFiscal(...)` helper.
 
 // ---------------------------------------------------------------------------
 // AuditPort — writes F2 audit events into the F1 `audit_log` table
@@ -282,7 +237,19 @@ export interface MemberAttachmentChecker {
 export type PlansDeps = {
   readonly tenant: TenantContext;
   readonly planRepo: PlanRepo;
-  readonly feeConfigRepo: FeeConfigRepo;
+  /**
+   * R8 consolidation final — authoritative tax policy source (F4
+   * invoice_settings, via the F4 barrel's `getTenantTaxPolicy`
+   * facade wired in `plans-deps.ts`). Returns null for un-onboarded
+   * tenants; readers surface a bootstrap error. The previous
+   * `feeConfigRepo` dep + FeeConfigRepo port + infrastructure
+   * adapter were removed after migration 0028 backfilled every
+   * tenant's invoice_settings row.
+   */
+  readonly taxPolicy: () => Promise<{
+    readonly currencyCode: string;
+    readonly vatRateRaw: string;
+  } | null>;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   readonly members: MemberAttachmentChecker;

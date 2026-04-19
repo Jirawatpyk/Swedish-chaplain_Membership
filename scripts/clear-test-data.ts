@@ -54,7 +54,7 @@ export type ClearTestDataReport = {
     readonly members: number;
     readonly contacts: number;
     readonly plans: number;
-    readonly feeConfig: number;
+    readonly invoiceSettings: number;
     readonly emailChangeTokens: number;
     readonly notificationsOutbox: number;
   };
@@ -91,9 +91,9 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
     e2eMembers = unwrap(membersDeleted).length;
   }
 
-  // 2. Test-tenant data: members, contacts, plans, fee_config, tokens,
-  //    outbox. Scoped by tenant_id LIKE 'test-%'. Order matters: child
-  //    tables first, then parents.
+  // 2. Test-tenant data: members, contacts, plans, invoice_settings,
+  //    tokens, outbox. Scoped by tenant_id LIKE 'test-%'. Order matters:
+  //    child tables first, then parents.
   const emailTokensDeleted = await db.execute(
     sql`DELETE FROM email_change_tokens WHERE tenant_id LIKE 'test-%' RETURNING id`,
   );
@@ -109,8 +109,8 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   const testPlansDeleted = await db.execute(
     sql`DELETE FROM membership_plans WHERE tenant_id LIKE 'test-%' RETURNING plan_id`,
   );
-  const testFeeConfigDeleted = await db.execute(
-    sql`DELETE FROM tenant_fee_config WHERE tenant_id LIKE 'test-%' RETURNING tenant_id`,
+  const testInvoiceSettingsDeleted = await db.execute(
+    sql`DELETE FROM tenant_invoice_settings WHERE tenant_id LIKE 'test-%' RETURNING tenant_id`,
   );
 
   // 3. Integration test users (test-<timestamp>-<rand>@swecham.test).
@@ -145,7 +145,7 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
       members: unwrap(testMembersDeleted).length,
       contacts: unwrap(testContactsDeleted).length,
       plans: unwrap(testPlansDeleted).length,
-      feeConfig: unwrap(testFeeConfigDeleted).length,
+      invoiceSettings: unwrap(testInvoiceSettingsDeleted).length,
       emailChangeTokens: unwrap(emailTokensDeleted).length,
       notificationsOutbox: unwrap(outboxDeleted).length,
     },
@@ -164,7 +164,7 @@ async function main(): Promise<void> {
   console.log('    members:      ', report.testTenantRows.members);
   console.log('    contacts:     ', report.testTenantRows.contacts);
   console.log('    plans:        ', report.testTenantRows.plans);
-  console.log('    fee config:   ', report.testTenantRows.feeConfig);
+  console.log('    inv settings: ', report.testTenantRows.invoiceSettings);
   console.log('    email tokens: ', report.testTenantRows.emailChangeTokens);
   console.log('    outbox:       ', report.testTenantRows.notificationsOutbox);
   console.log('');

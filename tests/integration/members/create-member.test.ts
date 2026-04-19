@@ -16,7 +16,8 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
-import { membershipPlans, tenantFeeConfig } from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -59,12 +60,18 @@ describe('create-member integration (T041, US1)', () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
     await runInTenant(tenant.ctx, async (tx) => {
-      await tx.insert(tenantFeeConfig).values({
+      await tx.insert(tenantInvoiceSettings).values({
         tenantId: tenant.ctx.slug,
         currencyCode: 'THB',
         vatRate: '0.0700',
-        registrationFeeMinorUnits: 100000,
-        updatedBy: user.userId,
+        registrationFeeSatang: 100000n,
+        legalNameTh: 'Test TH',
+        legalNameEn: 'Test EN',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Test Address TH',
+        registeredAddressEn: 'Test Address EN',
+        invoiceNumberPrefix: 'INV',
+        creditNoteNumberPrefix: 'CN',
       });
       await tx.insert(membershipPlans).values({
         tenantId: tenant.ctx.slug,

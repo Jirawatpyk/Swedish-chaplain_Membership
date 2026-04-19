@@ -164,7 +164,6 @@ function makeDeps(overrides: Partial<UpdatePlanDeps> = {}): UpdatePlanDeps {
   return {
     tenant: TENANT,
     planRepo: makePlanRepo(),
-    feeConfigRepo: { findByTenant: vi.fn(), update: vi.fn(), upsert: vi.fn() },
     audit: makeAuditStub(),
     clock: { now: vi.fn(() => new Date('2026-04-17T12:00:00Z')), currentYear: vi.fn(() => 2026) },
     members: { countActivePlanMembers: vi.fn(async () => 0) },

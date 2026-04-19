@@ -4,10 +4,10 @@ import {
   LayoutDashboardIcon,
   FileTextIcon,
   UsersIcon,
-  SettingsIcon,
-  DollarSignIcon,
   UserCircleIcon,
   BuildingIcon,
+  ReceiptIcon,
+  FileCog2Icon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -85,6 +85,12 @@ export const staffNavConfig: NavConfig = {
           activePattern: '/admin/members',
         },
         {
+          titleKey: 'nav.staff.invoices',
+          icon: ReceiptIcon,
+          href: '/admin/invoices',
+          activePattern: '/admin/invoices',
+        },
+        {
           titleKey: 'nav.staff.users',
           icon: UsersIcon,
           href: '/admin/users',
@@ -93,20 +99,18 @@ export const staffNavConfig: NavConfig = {
       ],
     },
     {
+      // R7 consolidation — Fee Configuration removed. VAT + currency
+      // + registration fee consolidated into Invoice Settings as the
+      // authoritative tenant-wide fiscal-config surface. `settingsFees`
+      // i18n key + the previous two-child NavGroup pattern are now
+      // orphaned (harmless; swept in R8 cleanup).
       titleKey: 'nav.staff.sections.settings',
       items: [
         {
-          titleKey: 'nav.staff.settings',
-          icon: SettingsIcon,
-          activePattern: '/admin/settings',
-          children: [
-            {
-              titleKey: 'nav.staff.settingsFees',
-              icon: DollarSignIcon,
-              href: '/admin/settings/fees',
-              activePattern: '/admin/settings/fees',
-            },
-          ],
+          titleKey: 'nav.staff.settingsInvoices',
+          icon: FileCog2Icon,
+          href: '/admin/settings/invoicing',
+          activePattern: '/admin/settings/invoicing',
         },
       ],
     },
@@ -132,6 +136,13 @@ export const memberNavConfig: NavConfig = {
           icon: BuildingIcon,
           href: '/portal/profile',
           activePattern: '/portal/profile',
+        },
+        // R7-B3 — US3 member invoice self-service.
+        {
+          titleKey: 'nav.member.invoices',
+          icon: ReceiptIcon,
+          href: '/portal/invoices',
+          activePattern: '/portal/invoices',
         },
         {
           titleKey: 'nav.member.account',

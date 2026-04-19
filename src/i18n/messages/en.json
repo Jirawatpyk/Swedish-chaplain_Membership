@@ -458,30 +458,6 @@
         "sourceYearEmpty": "No plans found for {sourceYear}."
       }
     },
-    "settings": {
-      "fees": {
-        "title": "Fee configuration",
-        "subtitle": "Per-tenant currency, VAT rate, and registration fee.",
-        "description": "These values apply to every plan in your catalogue. The currency is immutable in this release.",
-        "labels": {
-          "currencyCode": "Currency",
-          "vatRate": "VAT rate (%)",
-          "registrationFee": "Registration fee"
-        },
-        "currencyImmutableNote": "The currency is locked at {currency} until a future release adds mixed-currency support.",
-        "save": "Save changes",
-        "saving": "Saving…",
-        "toast": {
-          "success": "Fee configuration updated."
-        },
-        "errors": {
-          "generic": "Something went wrong. Please try again.",
-          "forbidden": "Only administrators can change fee configuration.",
-          "currencyImmutable": "Currency cannot be changed while {count} plans exist. Delete all plans first.",
-          "validation": "Please fix the highlighted fields."
-        }
-      }
-    },
     "members": {
       "title": "Members",
       "overrideReason": {
@@ -819,6 +795,265 @@
       "label": "Email delivery issues detected",
       "permanentFailed": "{count, plural, one {# email permanently failed} other {# emails permanently failed}} in the last 24 h",
       "stuckPending": "{count, plural, one {# email stuck} other {# emails stuck}} in queue (cron may be down)"
+    },
+    "invoiceSettings": {
+      "title": "Invoice settings",
+      "subtitle": "Tenant-level invoice configuration (legal identity, VAT, numbering, logo).",
+      "card": {
+        "title": "Invoice configuration",
+        "description": "Changes apply to future invoices only. Already-issued invoices retain their original snapshot (FR-011).",
+        "firstTimeDescription": "No settings yet. Fill in the required fields to unlock invoice issuance (FR-010)."
+      },
+      "sections": {
+        "currency": "Currency",
+        "identity": "Tenant legal identity",
+        "tax": "Tax",
+        "numbering": "Document numbering",
+        "defaults": "Invoicing defaults",
+        "logo": "Logo"
+      },
+      "labels": {
+        "currencyCode": "Currency code",
+        "legalNameTh": "Legal name (Thai)",
+        "legalNameEn": "Legal name (English)",
+        "taxId": "Tax ID",
+        "addressTh": "Registered address (Thai)",
+        "addressEn": "Registered address (English)",
+        "vatPercent": "VAT rate (%)",
+        "registrationFee": "Registration fee (THB)",
+        "invoicePrefix": "Invoice number prefix",
+        "creditNotePrefix": "Credit-note number prefix",
+        "receiptMode": "Receipt numbering mode",
+        "receiptPrefix": "Receipt number prefix",
+        "fiscalYearStartMonth": "Fiscal year start month (1-12)",
+        "defaultNetDays": "Default net days",
+        "proRatePolicy": "Pro-rate policy",
+        "autoEmail": "Auto-email on issue/payment",
+        "logo": "Upload logo"
+      },
+      "hints": {
+        "currencyCode": "ISO 4217 — 3 uppercase letters (e.g. THB, USD, SEK).",
+        "taxId": "13 digits (Thai Revenue Department format).",
+        "receiptPrefix": "Only used when receipt numbering mode is \"separate\".",
+        "autoEmail": "When on, new invoices default to auto-email their PDF on issue. Can be overridden per-invoice.",
+        "logo": "PNG or JPEG, ≤ 1 MB, width 200-2000 px, height 100-500 px."
+      },
+      "receiptMode": {
+        "combined": "Combined tax invoice + receipt",
+        "separate": "Separate invoice and receipt streams"
+      },
+      "proRate": {
+        "none": "None (full period fee)",
+        "monthly": "Monthly",
+        "daily": "Daily"
+      },
+      "logo": {
+        "uploading": "Uploading…",
+        "currentKey": "Current logo",
+        "toast": {
+          "uploaded": "Logo uploaded — save settings to apply."
+        },
+        "errors": {
+          "mime_rejected": "Only PNG or JPEG allowed.",
+          "too_large": "File is larger than 1 MB.",
+          "dimensions_out_of_range": "Dimensions must be 200-2000 px wide, 100-500 px tall.",
+          "decode_failed": "Image could not be decoded.",
+          "generic": "Logo upload failed."
+        }
+      },
+      "errors": {
+        "currencyCode": "Currency code must be 3 uppercase letters (ISO 4217).",
+        "vatRange": "VAT must be between 0 and 30 percent.",
+        "regFeeRange": "Registration fee must be 0 or greater.",
+        "fiscalMonth": "Fiscal-year start month must be 1 through 12.",
+        "netDays": "Default net days must be 0-365.",
+        "validation": "Please check the form — some fields need attention.",
+        "forbidden": "Your role cannot modify invoice settings.",
+        "generic": "Save failed. Please try again."
+      },
+      "saving": "Saving…",
+      "actions": {
+        "save": "Save settings",
+        "create": "Create settings"
+      },
+      "toast": {
+        "created": "Invoice settings created.",
+        "updated": "Invoice settings updated."
+      }
+    },
+    "invoices": {
+      "meta": {
+        "title": "Invoices"
+      },
+      "list": {
+        "title": "Invoices",
+        "description": "Thai-tax-compliant membership invoices.",
+        "empty": "No invoices yet — create your first draft.",
+        "setupRequired": "Finish invoice setup to start billing.",
+        "actions": {
+          "new": "New invoice",
+          "download": "PDF",
+          "clearFilters": "Clear filters",
+          "configureInvoicing": "Configure Invoicing"
+        },
+        "columns": {
+          "documentNumber": "Number",
+          "status": "Status",
+          "issueDate": "Issued",
+          "dueDate": "Due",
+          "total": "Total",
+          "actions": "Actions",
+          "member": "Member"
+        },
+        "statuses": {
+          "draft": "Draft",
+          "issued": "Issued",
+          "paid": "Paid",
+          "void": "Void",
+          "credited": "Credited",
+          "partially_credited": "Partially credited",
+          "overdue": "Overdue"
+        },
+        "searchPlaceholder": "Search invoice number…",
+        "searchLabel": "Search invoices",
+        "loadMore": "Load more",
+        "filteredEmpty": "No invoices match the current filters.",
+        "filters": {
+          "allStatuses": "All statuses",
+          "clearAll": "Clear filters"
+        }
+      },
+      "new": {
+        "title": "New invoice draft",
+        "description": "Select a member and plan. You can preview before issuing.",
+        "cancel": "Back to list"
+      },
+      "form": {
+        "submit": "Create draft",
+        "submitting": "Creating…",
+        "success": {
+          "created": "Draft created"
+        },
+        "errors": {
+          "create_failed": "Could not create draft",
+          "codeFallback": "Error code: {code}",
+          "unknown": "An unknown error occurred. Please try again."
+        },
+        "fields": {
+          "memberId": "Member",
+          "memberIdHelp": "Paste the member UUID. A picker will arrive in a later polish pass.",
+          "planId": "Plan",
+          "planYear": "Plan year"
+        },
+        "memberPicker": {
+          "placeholder": "Pick a member…",
+          "search": "Search members…",
+          "empty": "No members match.",
+          "noActiveMembers": "No active members"
+        },
+        "planInfo": {
+          "annualFee": "Annual fee: {amount} THB (before VAT)",
+          "changePlan": "Change member's plan →"
+        }
+      },
+      "detail": {
+        "draftTitle": "Draft invoice",
+        "status": "Status",
+        "actions": {
+          "preview": "Preview",
+          "issue": "Issue…",
+          "download": "Download PDF",
+          "pay": "Record payment"
+        },
+        "fields": {
+          "memberId": "Member",
+          "plan": "Plan / Year",
+          "issueDate": "Issue date",
+          "dueDate": "Due date",
+          "subtotal": "Subtotal",
+          "vat": "VAT",
+          "total": "Total"
+        },
+        "lines": {
+          "title": "Line items",
+          "description": "Description",
+          "qty": "Qty",
+          "unit": "Unit",
+          "total": "Total"
+        },
+        "previewLabel": "preview",
+        "payment": {
+          "title": "Payment details",
+          "paymentDate": "Payment date",
+          "paidAt": "Recorded at",
+          "method": "Method",
+          "reference": "Reference",
+          "recordedBy": "Recorded by",
+          "notes": "Notes",
+          "methods": {
+            "bank_transfer": "Bank transfer",
+            "cheque": "Cheque",
+            "cash": "Cash",
+            "other": "Other"
+          }
+        },
+        "voidDetails": {
+          "title": "Voided",
+          "voidedAt": "Voided at",
+          "voidedBy": "Voided by",
+          "reason": "Reason",
+          "creditNoteHint": "To legally reverse this invoice, issue a credit note (available in F4 US6)."
+        }
+      },
+      "issue": {
+        "title": "Issue invoice",
+        "description": "This consumes the next sequential tax-document number and cannot be undone. A void can be recorded later.",
+        "confirmPhrase": "ISSUE",
+        "confirmCopy": "Type \"{phrase}\" to confirm",
+        "typeToConfirm": "Confirmation phrase",
+        "issueButton": "Issue",
+        "issuing": "Issuing…",
+        "success": "Invoice issued",
+        "cancel": "Cancel",
+        "irreversibleWarning": "This action will allocate a Thai RD §87 sequential document number and CANNOT be reversed — to cancel the invoice you must issue a credit note (ใบลดหนี้).",
+        "errors": {
+          "failed": "Issue failed",
+          "codeFallback": "Error code: {code}",
+          "unknown": "An unknown error occurred. Please try again."
+        },
+        "draftLabel": "Draft",
+        "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm."
+      },
+      "pay": {
+        "title": "Record payment",
+        "description": "Mark this invoice paid. A receipt PDF will be generated and emailed to the member.",
+        "submit": "Record payment",
+        "submitting": "Recording…",
+        "success": "Payment recorded",
+        "successDetail": "Invoice {number} is now paid.",
+        "cancel": "Back to invoice",
+        "errors": {
+          "failed": "Could not record payment",
+          "invalidStatus": "Only issued invoices can be paid (current status: {status}).",
+          "codeFallback": "Error code: {code}",
+          "unknown": "An unknown error occurred. Please try again."
+        },
+        "fields": {
+          "method": "Payment method",
+          "reference": "Reference",
+          "referencePlaceholder": "Bank transfer id / cheque no.",
+          "date": "Payment date",
+          "dateHint": "Date displayed in CE (Gregorian calendar). Must be on or after the invoice issue date and not in the future.",
+          "notes": "Notes"
+        },
+        "methods": {
+          "bank_transfer": "Bank transfer",
+          "cheque": "Cheque",
+          "cash": "Cash",
+          "other": "Other"
+        },
+        "draftLabel": "Draft"
+      }
     }
   },
   "palette": {
@@ -835,16 +1070,17 @@
     "actions": {
       "newPlan": "Create new plan",
       "cloneYear": "Clone year",
-      "editFees": "Edit fee configuration",
       "viewAuditLog": "View audit log",
-      "newMember": "Create new member"
+      "newMember": "Create new member",
+      "newInvoice": "Create new invoice"
     },
     "navigate": {
       "plansList": "Plans list",
-      "feeConfig": "Fee configuration",
+      "invoiceSettings": "Invoice settings",
       "usersList": "Users list",
       "dashboard": "Dashboard",
-      "membersList": "Members list"
+      "membersList": "Members list",
+      "invoicesList": "Invoices list"
     }
   },
   "nav": {
@@ -853,7 +1089,7 @@
       "plans": "Plans",
       "users": "Users",
       "settings": "Settings",
-      "settingsFees": "Fee Configuration",
+      "settingsInvoices": "Invoice Settings",
       "sections": {
         "main": "Main",
         "settings": "Settings"
@@ -861,11 +1097,13 @@
       "collapse": "Collapse sidebar",
       "expand": "Expand sidebar",
       "ariaLabel": "Staff navigation",
-      "members": "Members"
+      "members": "Members",
+      "invoices": "Invoices"
     },
     "member": {
       "dashboard": "Dashboard",
       "profile": "Profile",
+      "invoices": "Invoices",
       "account": "Account",
       "ariaLabel": "Member navigation"
     }
@@ -895,6 +1133,24 @@
     "loadingForm": "Loading form"
   },
   "portal": {
+    "invoices": {
+      "title": "Invoices",
+      "subtitle": "Your company's invoices and tax receipts.",
+      "empty": "No invoices yet. Invoices will appear here once issued.",
+      "notLinked": "Your account is not linked to a member. Please contact your administrator.",
+      "loaded": "Invoices list loaded.",
+      "columns": {
+        "documentNumber": "Number",
+        "status": "Status",
+        "issueDate": "Issued",
+        "dueDate": "Due",
+        "total": "Total",
+        "actions": "Actions"
+      },
+      "actions": {
+        "download": "PDF"
+      }
+    },
     "profile": {
       "title": "My profile",
       "pageTitle": "My Profile",
@@ -1009,5 +1265,8 @@
     "previous": "Previous",
     "next": "Next",
     "page": "Page {page}"
+  },
+  "shared": {
+    "loaded": "Loaded"
   }
 }

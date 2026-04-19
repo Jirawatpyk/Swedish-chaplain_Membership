@@ -91,10 +91,9 @@ export default async function PlanDetailPage({
   if (!result.ok) notFound();
   const plan = result.value;
 
-  // Load fee config for currency code — via the composition root so
-  // we respect the module boundary (no deep import into infrastructure).
-  const feeConfig = await deps.feeConfigRepo.findByTenant(tenant);
-  const currencyCode = feeConfig?.currency_code ?? 'THB';
+  // R8 — currency via F4 invoice_settings taxPolicy (consolidated).
+  const taxPolicy = await deps.taxPolicy();
+  const currencyCode = taxPolicy?.currencyCode ?? 'THB';
 
   const planDisplayName = plan.plan_name.en ?? planId;
 

@@ -42,7 +42,7 @@ export default async function CloneYearPage() {
     {
       tenant: deps.tenant,
       planRepo: deps.planRepo,
-      feeConfigRepo: deps.feeConfigRepo,
+      taxPolicy: deps.taxPolicy,
       clock: deps.clock,
     },
   );

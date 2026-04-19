@@ -38,7 +38,6 @@ import type { TenantContext } from '@/modules/tenants';
 import type {
   AuditPort,
   ClockPort,
-  FeeConfigRepo,
   MemberAttachmentChecker,
   PlanRepo,
 } from './ports';
@@ -89,7 +88,6 @@ export type UpdatePlanError =
 export type UpdatePlanDeps = {
   readonly tenant: TenantContext;
   readonly planRepo: PlanRepo;
-  readonly feeConfigRepo: FeeConfigRepo;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   readonly members: MemberAttachmentChecker;

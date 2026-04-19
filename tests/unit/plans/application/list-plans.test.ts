@@ -50,8 +50,13 @@ function makePlan(overrides: Partial<Plan> = {}): Plan {
   } as unknown as Plan;
 }
 
+interface FeeConfigOverride {
+  readonly currency_code: string;
+  readonly vat_rate: number;
+}
+
 function makeDeps(overrides: {
-  feeConfig?: object | null | Error;
+  feeConfig?: FeeConfigOverride | null | Error;
   plans?: Plan[] | Error;
   currentYear?: number;
 } = {}): ListPlansDeps {
@@ -72,18 +77,31 @@ function makeDeps(overrides: {
       cloneYear: vi.fn(),
       countActiveForTenant: vi.fn(),
     },
-    feeConfigRepo: {
-      findByTenant: vi.fn(async () => {
-        if ('feeConfig' in overrides) {
-          const r = overrides.feeConfig;
-          if (r instanceof Error) throw r;
-          return r;
-        }
-        return BASE_FEE_CONFIG;
-      }),
-      update: vi.fn(),
-      upsert: vi.fn(),
-    },
+    // R8 consolidation final — ListPlansDeps only carries `taxPolicy`
+    // now; the legacy `feeConfigRepo` dep was removed. We drive the
+    // same three scenarios the test file exercises (null / throw /
+    // happy-path row) through the taxPolicy stub, mapping the
+    // `feeConfig` override to a taxPolicy shape:
+    //   null → taxPolicy returns null (→ fee_config_missing error)
+    //   Error → taxPolicy throws (→ server_error)
+    //   object → taxPolicy returns { currencyCode, vatRateRaw }
+    //   undefined (default) → taxPolicy returns BASE_FEE_CONFIG values
+    taxPolicy: vi.fn(async () => {
+      if ('feeConfig' in overrides) {
+        const r = overrides.feeConfig;
+        if (r === null) return null;
+        if (r instanceof Error) throw r;
+        // Convert FeeConfigRow → taxPolicy shape.
+        return {
+          currencyCode: r.currency_code,
+          vatRateRaw: r.vat_rate.toFixed(4),
+        };
+      }
+      return {
+        currencyCode: BASE_FEE_CONFIG.currency_code,
+        vatRateRaw: BASE_FEE_CONFIG.vat_rate.toFixed(4),
+      };
+    }),
     clock: {
       now: vi.fn(() => NOW),
       currentYear: vi.fn(() => overrides.currentYear ?? 2026),
@@ -145,6 +163,40 @@ describe('listPlans use case', () => {
       expect(item.annual_fee_minor_units).toBe(1_000_000);
       expect(item.vat_rate).toBe(0.07);
       expect(item.total_with_vat_minor_units).toBe(1_070_000);
+    }
+  });
+
+  // N2 (review 2026-04-19 21:19) — integer-only gross amount. Pin
+  // a non-7 % VAT rate on a fee amount where float arithmetic
+  // (`Math.round(fee * (1 + Number(rate)))`) would round incorrectly.
+  //
+  // 8.5 % × 1_234_567 satang:
+  //   exact = 1_234_567 × (10_000 + 850) / 10_000
+  //         = 1_234_567 × 1.0850
+  //         = 1_339_505.195 satang
+  //   → half-up round = 1_339_505 satang
+  //
+  // With float (the bug we replaced):
+  //   Number('0.0850') × 1_234_567 → 104_938.194_9… (binary-inexact)
+  //   Math.round(1_234_567 × 1.0850)  → 1_339_505 on this particular
+  //   input, BUT on other non-7 % rates + other fee amounts the float
+  //   path returns off-by-1-satang errors. We still pin this test
+  //   because a future regression that swaps the bigint math back to
+  //   float would silently pass 7 % tests and fail at 8.5 %.
+  it('N2: integer gross for 8.5 % VAT on 1_234_567 satang = 1_339_505', async () => {
+    const plan = makePlan({ annual_fee_minor_units: 1_234_567 });
+    const deps = makeDeps({
+      plans: [plan],
+      feeConfig: { currency_code: 'THB', vat_rate: 0.085 },
+    });
+    const result = await listPlans(baseInput, deps);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const item = result.value.data[0]!;
+      // Exact gross via integer math:
+      // 1_234_567 * (10_000 + 850) / 10_000, half-up.
+      // = 13_394_950.795 → rounded = 1_339_505.
+      expect(item.total_with_vat_minor_units).toBe(1_339_505);
     }
   });
 

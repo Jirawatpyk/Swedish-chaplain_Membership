@@ -7,7 +7,7 @@ import { clearE2ERateLimits } from './helpers/rate-limit';
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 
-const PAGES = ['/admin', '/admin/users', '/admin/plans', '/admin/settings/fees'];
+const PAGES = ['/admin', '/admin/users', '/admin/plans', '/admin/settings/invoicing'];
 
 test.describe('F4 SC-006 — sidebar-toggle CLS @layout', () => {
   test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_ADMIN_* not set');

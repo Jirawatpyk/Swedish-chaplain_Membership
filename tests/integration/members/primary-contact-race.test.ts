@@ -27,10 +27,8 @@ import { promotePrimary, type ContactId, type MemberId } from '@/modules/members
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
-import {
-  membershipPlans,
-  tenantFeeConfig,
-} from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import {
   createActiveTestUser,
   deleteTestUser,
@@ -46,12 +44,18 @@ describe('primary-contact partial-index race (T075)', () => {
     admin = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
     await runInTenant(tenant.ctx, async (tx) => {
-      await tx.insert(tenantFeeConfig).values({
+      await tx.insert(tenantInvoiceSettings).values({
         tenantId: tenant.ctx.slug,
         currencyCode: 'THB',
         vatRate: '0.0700',
-        registrationFeeMinorUnits: 100000,
-        updatedBy: admin.userId,
+        registrationFeeSatang: 100000n,
+        legalNameTh: 'Test TH',
+        legalNameEn: 'Test EN',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Test Address TH',
+        registeredAddressEn: 'Test Address EN',
+        invoiceNumberPrefix: 'INV',
+        creditNoteNumberPrefix: 'CN',
       });
       await tx.insert(membershipPlans).values({
         tenantId: tenant.ctx.slug,

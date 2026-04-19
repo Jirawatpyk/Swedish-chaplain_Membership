@@ -84,6 +84,29 @@ const REDACT_PATHS = [
   '*.tax_id',
   'taxId',
   '*.taxId',
+  // --- F4 invoicing PII + secrets (T005, plan § Observability) ---
+  // Never log raw member-identity snapshots copied onto tax documents,
+  // signed-URL tokens that grant 60s access to private PDFs, or raw
+  // PDF bytes themselves (huge + contains PII). Tests assert redaction
+  // via `tests/unit/lib/logger-pii.test.ts`.
+  'member_legal_name_snapshot',
+  '*.member_legal_name_snapshot',
+  'memberLegalNameSnapshot',
+  '*.memberLegalNameSnapshot',
+  'member_address_snapshot',
+  '*.member_address_snapshot',
+  'memberAddressSnapshot',
+  '*.memberAddressSnapshot',
+  'signed_url_token',
+  '*.signed_url_token',
+  'signedUrlToken',
+  '*.signedUrlToken',
+  'pdf_binary',
+  '*.pdf_binary',
+  'pdfBinary',
+  '*.pdfBinary',
+  'BLOB_READ_WRITE_TOKEN',
+  'CRON_SECRET',
 ];
 
 const baseOptions: LoggerOptions = {

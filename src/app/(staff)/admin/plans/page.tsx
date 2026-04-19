@@ -122,7 +122,7 @@ async function PlansList({
     {
       tenant: deps.tenant,
       planRepo: deps.planRepo,
-      feeConfigRepo: deps.feeConfigRepo,
+      taxPolicy: deps.taxPolicy,
       clock: deps.clock,
     },
   );

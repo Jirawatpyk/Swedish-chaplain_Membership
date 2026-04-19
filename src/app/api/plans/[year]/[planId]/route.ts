@@ -226,7 +226,6 @@ export async function PATCH(
     {
       tenant: deps.tenant,
       planRepo: deps.planRepo,
-      feeConfigRepo: deps.feeConfigRepo,
       audit: deps.audit,
       clock: deps.clock,
       members: deps.members,
@@ -410,7 +409,6 @@ export async function DELETE(
     {
       tenant: deps.tenant,
       planRepo: deps.planRepo,
-      feeConfigRepo: deps.feeConfigRepo,
       audit: deps.audit,
       clock: deps.clock,
       members: deps.members,

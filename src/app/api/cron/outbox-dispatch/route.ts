@@ -33,7 +33,7 @@
  * event emission (FR-012c parity for unrenderable rows).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { and, count, eq, lt, lte } from 'drizzle-orm';
+import { and, count, eq, lt, lte, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 /* eslint-disable no-restricted-imports --
  * Cron job: direct UPDATE on `notifications_outbox` + auditLog — this
@@ -58,6 +58,11 @@ import { buildEmailChangeRevertEmail } from '@/modules/members/infrastructure/em
 import type { EmailLocale } from '@/modules/members/infrastructure/email/email-verification-email';
 import { buildInvitationEmail } from '@/modules/auth/infrastructure/email/invitation-email';
 import { isRole } from '@/modules/auth/domain/role';
+import {
+  buildInvoiceAutoEmail,
+  type InvoiceAutoEmailEventType,
+} from '@/modules/invoicing/infrastructure/email/invoice-auto-email';
+import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 /* eslint-enable no-restricted-imports */
 
 // Spec FR-012c: "≥ 5 attempts with exponential backoff 60s / 5m / 30m / 3h / 12h".
@@ -87,7 +92,9 @@ interface BuiltPayload {
  * failure path with an explicit audit event so unrenderable rows do
  * not disappear silently.
  */
-function buildPayload(row: NotificationsOutboxRow): BuiltPayload | null {
+async function buildPayload(
+  row: NotificationsOutboxRow,
+): Promise<BuiltPayload | null> {
   const locale: Locale = isLocale(row.locale) ? row.locale : 'en';
   const ctx = row.contextData as Record<string, unknown>;
 
@@ -126,9 +133,48 @@ function buildPayload(row: NotificationsOutboxRow): BuiltPayload | null {
         locale,
       });
     }
+    case 'invoice_auto_email': {
+      // F4 auto-email row: context_data contains eventType +
+      // pdf_blob_key. Resolve the Blob URL (stable public URL per
+      // vercel-blob-adapter.ts — no TTL concerns) and build a
+      // link-based notification email. We do NOT attach the PDF
+      // bytes — the current EmailSender interface has no attachment
+      // slot and Vercel Blob URLs are stable.
+      const eventType = ctx.event_type as string | undefined;
+      const pdfBlobKey = typeof ctx.pdf_blob_key === 'string' ? ctx.pdf_blob_key : '';
+      if (!pdfBlobKey || !isInvoiceAutoEmailEventType(eventType)) return null;
+      try {
+        const downloadUrl = await vercelBlobAdapter.signDownloadUrl(pdfBlobKey, 60);
+        return buildInvoiceAutoEmail({
+          toEmail: row.toEmail,
+          eventType,
+          downloadUrl,
+          locale,
+        });
+      } catch {
+        // Blob lookup failed — treat as transient failure. Returning
+        // null lets the dispatcher's retry ladder re-attempt per
+        // RETRY_BACKOFF_SECONDS. If the blob has been garbage-
+        // collected the row will hit MAX_ATTEMPTS and flip to
+        // permanently_failed with an audit emit.
+        return null;
+      }
+    }
     default:
       return null;
   }
+}
+
+function isInvoiceAutoEmailEventType(v: unknown): v is InvoiceAutoEmailEventType {
+  return (
+    v === 'invoice_issued' ||
+    v === 'invoice_paid' ||
+    v === 'invoice_voided' ||
+    v === 'credit_note_issued' ||
+    v === 'invoice_pdf_resent' ||
+    v === 'receipt_pdf_resent' ||
+    v === 'credit_note_pdf_resent'
+  );
 }
 
 type DispatchOutcome = 'sent' | 'retried' | 'permanent' | 'skipped';
@@ -161,7 +207,7 @@ async function dispatchOne(
 
     if (!row) return 'skipped';
 
-    const payload = buildPayload(row);
+    const payload = await buildPayload(row);
     const now = new Date();
 
     if (!payload) {
@@ -337,38 +383,44 @@ async function dispatchOne(
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
+  // R7-W8 + R8-T1 refinement — CRON_SECRET is validated as required
+  // (min 16 chars) at boot by `src/lib/env.ts`, so the "secret is
+  // missing" branch is impossible in prod. We compare against
+  // `process.env.CRON_SECRET` (not the cached `env.cron.secret`) so
+  // integration tests can rotate the secret mid-suite via
+  // `process.env.CRON_SECRET = 'new'` — the cached env object is
+  // immutable after boot. If the env var IS unset (impossible in
+  // prod), the comparison to `Bearer undefined` still triggers 401
+  // for any caller — no dev fallback, no unauthenticated drain.
   const authHeader = request.headers.get('authorization');
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    if (authHeader !== `Bearer ${expected}`) {
-      logger.warn({ requestId }, 'cron.outbox_dispatch.unauthorized');
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-  } else if (!env.isDevelopment) {
-    logger.error({ requestId }, 'cron.outbox_dispatch.no_secret_configured');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    logger.warn({ requestId }, 'cron.outbox_dispatch.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  } else {
-    // S3 — loud warning so an accidental dev-mode deploy is immediately
-    // visible in aggregated logs. Dev-mode + missing CRON_SECRET means
-    // any unauthenticated caller can drain the outbox.
-    logger.warn(
-      { requestId },
-      'cron.outbox_dispatch.dev_mode_unauthenticated_drain',
-    );
   }
 
   const now = new Date();
+
+  // R7-B4 fix — FEATURE_F4_INVOICING kill-switch containment. When F4
+  // is disabled the dispatcher MUST NOT ship `invoice_auto_email`
+  // rows (which carry Blob download URLs to tax PDFs) while still
+  // draining F1 outbox rows. The previous proxy-layer gate on
+  // `/api/cron/auto-email-dispatch` was a path-mismatch (that route
+  // never existed) — flipping the kill-switch therefore had no
+  // containment power. Filter at query time so rows are skipped
+  // cleanly without racking up per-row retries or errors.
+  const baseReadyFilters = [
+    eq(notificationsOutbox.status, 'pending'),
+    lte(notificationsOutbox.nextRetryAt, now),
+  ];
+  if (!env.features.f4Invoicing) {
+    baseReadyFilters.push(ne(notificationsOutbox.notificationType, 'invoice_auto_email'));
+  }
 
   // Lock-less candidate pick. Real per-row lock happens inside dispatchOne.
   const ready = await db
     .select({ id: notificationsOutbox.id })
     .from(notificationsOutbox)
-    .where(
-      and(
-        eq(notificationsOutbox.status, 'pending'),
-        lte(notificationsOutbox.nextRetryAt, now),
-      ),
-    )
+    .where(and(...baseReadyFilters))
     .limit(BATCH_SIZE);
 
   // Level 2 — stuck-rows check: pending rows whose next_retry_at is > 30 min

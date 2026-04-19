@@ -13,28 +13,29 @@ describe('staffNavConfig', () => {
     expect(staffNavConfig.sections).toHaveLength(2);
   });
 
-  it('first section has 4 items: Dashboard, Plans, Members, Users', () => {
+  it('first section has 5 items: Dashboard, Plans, Members, Invoices, Users', () => {
     const mainSection = staffNavConfig.sections[0]!;
-    expect(mainSection.items).toHaveLength(4);
+    expect(mainSection.items).toHaveLength(5);
     expect(mainSection.items[0]!.titleKey).toBe('nav.staff.dashboard');
     expect(mainSection.items[1]!.titleKey).toBe('nav.staff.plans');
     expect(mainSection.items[2]!.titleKey).toBe('nav.staff.members');
-    expect(mainSection.items[3]!.titleKey).toBe('nav.staff.users');
+    expect(mainSection.items[3]!.titleKey).toBe('nav.staff.invoices');
+    expect(mainSection.items[4]!.titleKey).toBe('nav.staff.users');
   });
 
-  it('second section is Settings with a section header', () => {
+  it('second section is Settings with only InvoiceSettings (R7 consolidation)', () => {
+    // R7 consolidation removed the Fee Configuration page. VAT +
+    // currency + registration fee all live in Invoice Settings now
+    // (tenant_invoice_settings is the authoritative source). Only
+    // one item remains under Settings; the NavGroup's single-child-
+    // flatten path renders it as a flat link under the section
+    // header.
     const settingsSection = staffNavConfig.sections[1]!;
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
     expect(settingsSection.items).toHaveLength(1);
-  });
-
-  it('Settings is a NavGroup with Fees as a child', () => {
-    const settingsItem = staffNavConfig.sections[1]!.items[0]!;
-    expect(isNavGroup(settingsItem)).toBe(true);
-    const group = settingsItem as NavGroup;
-    expect(group.titleKey).toBe('nav.staff.settings');
-    expect(group.children).toHaveLength(1);
-    expect(group.children[0]!.titleKey).toBe('nav.staff.settingsFees');
+    expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');
+    const invoiceSettingsItem = settingsSection.items[0]! as NavItem;
+    expect(invoiceSettingsItem.href).toBe('/admin/settings/invoicing');
   });
 
   it('every NavItem has required fields: titleKey, icon, href, activePattern', () => {
@@ -60,13 +61,17 @@ describe('staffNavConfig', () => {
 });
 
 describe('memberNavConfig', () => {
-  it('has exactly 1 section with 3 items: Dashboard, Profile, Account', () => {
+  it('has exactly 1 section with 4 items: Dashboard, Profile, Invoices, Account (R7-B3)', () => {
     expect(memberNavConfig.sections).toHaveLength(1);
     const section = memberNavConfig.sections[0]!;
-    expect(section.items).toHaveLength(3);
+    expect(section.items).toHaveLength(4);
     expect(section.items[0]!.titleKey).toBe('nav.member.dashboard');
     expect(section.items[1]!.titleKey).toBe('nav.member.profile');
-    expect(section.items[2]!.titleKey).toBe('nav.member.account');
+    // R7-B3 — US3 member invoice self-service inserted between
+    // Profile and Account to group "company information" (Profile +
+    // Invoices) before "personal settings" (Account).
+    expect(section.items[2]!.titleKey).toBe('nav.member.invoices');
+    expect(section.items[3]!.titleKey).toBe('nav.member.account');
   });
 
   it('no NavGroups in member config', () => {
@@ -100,20 +105,10 @@ describe('isNavGroup type guard', () => {
   });
 });
 
-describe('single-child NavGroup flatten', () => {
-  it('Settings group has exactly 1 child (triggers single-child flatten path)', () => {
-    const settingsGroup = staffNavConfig.sections[1]!.items[0]!;
-    expect(isNavGroup(settingsGroup)).toBe(true);
-    const group = settingsGroup as NavGroup;
-    expect(group.children).toHaveLength(1);
-  });
-
-  it('single-child flatten uses group icon, not child icon', () => {
-    const settingsGroup = staffNavConfig.sections[1]!.items[0]! as NavGroup;
-    const child = settingsGroup.children[0]!;
-    // Group icon and child icon should be different (Settings vs DollarSign)
-    expect(settingsGroup.icon).not.toBe(child.icon);
-    // The flatten path does { ...child, icon: group.icon } — child href is preserved
-    expect(child.href).toBe('/admin/settings/fees');
-  });
-});
+// The previous "single-child NavGroup flatten" describe block exercised
+// the 1-child Settings NavGroup. After R7-B2 the Settings section was
+// flattened to 2 direct items (no NavGroup wrapper), so the flatten
+// path in nav-item.tsx is no longer triggered by the staff config.
+// The flatten logic still exists in `components/layout/nav-item.tsx`
+// for any future 1-child group; its unit coverage can be added back
+// against a synthetic config when such a group re-emerges.

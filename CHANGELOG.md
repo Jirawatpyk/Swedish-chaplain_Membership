@@ -13,7 +13,63 @@ spec / plan / tasks / review / retrospective for each release lives under
 
 ---
 
-## [F3] Members & Contacts — 2026-04-17
+## [F4] Invoicing & Thai-Tax Receipts (MVP slice) — 2026-04-19
+
+**Spec**: [`specs/007-invoices-receipts/spec.md`](specs/007-invoices-receipts/spec.md)
+**Plan**: [`specs/007-invoices-receipts/plan.md`](specs/007-invoices-receipts/plan.md)
+**Final review**: [`specs/007-invoices-receipts/reviews/review-20260419-220541.md`](specs/007-invoices-receipts/reviews/review-20260419-220541.md) — ✅ APPROVED (R10 verified)
+**Review history**: R1–R10 rounds; R10 closed 2 Blockers + 9 Warnings in commit `0eb49de`
+**Spec adherence (MVP slice)**: US1 + US2 + US3 + US4 + kill-switch complete; US5/US6/US7 + Phase 10 polish deferred to follow-up PRs (CP-4.7 go/no-go decision)
+**Test baseline**: 420 / 420 unit + 369 / 375 integration (5 skip + 1 intentional `test.todo`) on live Neon `ap-southeast-1` · 117 F4 i18n keys × EN/TH/SV · typecheck + lint clean · tenant-isolation Review-Gate blocker 17/17 green
+
+### Added
+
+- **US1 Issue Thai-tax-compliant invoice** — admin issues a bilingual (TH/EN) PDF invoice carrying legal identity snapshot + VAT calculation + Asia/Bangkok fiscal-year §87 sequential document number. Advisory-lock per `(tenant, document_type, fiscal_year)` + transactional atomicity guarantee no-gaps numbering under concurrent load.
+- **US2 Record payment + receipt** — admin records payment, receipt PDF auto-generated with the frozen invoice snapshot. `payment_date` column persists the admin-entered date (not wall-clock).
+- **US3 Member portal read** — member downloads own invoices + receipts from `/portal/invoices` with RLS + member-context ownership guard. PDF served byte-streamed with `Content-Disposition: attachment`.
+- **US4 Tenant invoice settings** — admin configures legal identity + VAT rate + numbering prefixes + receipt numbering mode + fiscal-year start month + pro-rate policy + auto-email toggle + logo via `/admin/settings/invoicing`. Logo upload pipeline: sharp EXIF-strip + MIME whitelist + dimension bounds (200–2000 × 100–500) + pixel-bomb guard.
+- **Kill-switch** — `FEATURE_F4_INVOICING=false` contains F4 end-to-end (routes + cron + outbox + UI).
+- **5 new DB tables** — `invoices`, `invoice_lines`, `credit_notes`, `tenant_invoice_settings`, `tenant_document_sequences`. RLS + FORCE on every tenant-scoped row; immutability triggers on both `invoices` + `credit_notes`.
+- **16 F4 audit event types** — draft/issue/pay/void lifecycle + cross-tenant probes + tenant-settings updates + PDF resends + delivery failures. All mutation use-cases emit in-transaction (Constitution Principle I clause 4).
+- **Sarabun TTF font** committed under `public/fonts/sarabun/` — embedded into PDFs at render time for deterministic Thai rendering (SC-003 byte-identical re-renders).
+- **Rate limiting** — `f4:issue:*` 20/5min, `f4:pay:*` 20/5min, `f4:settings:*` 30/min, `f4:settings:logo:*` 15/min per (tenant, actor).
+- **Bounded context** `src/modules/invoicing/` with public barrel + `no-restricted-imports` enforcement per Principle III.
+
+### Changed
+
+- **R9 consolidation** — `tenant_fee_config` DROPPED; `tenant_invoice_settings` is now the single authoritative source for `currency_code` + `vat_rate` + `registration_fee_satang` + legal identity. Plans module reads VAT / currency via `getTenantTaxPolicy` facade. 27 test files migrated to the new seed helper (`seedTenantFiscal`).
+- **List-plans VAT math** — replaced float `Math.round(fee * (1 + Number(rate)))` with integer `bigint` arithmetic (half-up rounding) so non-binary-clean VAT rates (8.5 %, 10 %, 13.5 %) produce satang-exact totals (FR-002 / FR-005).
+- **Invoice settings form** — matches F3 member-form pattern with `<fieldset>` + `<legend>` card grouping per section (Currency, Identity, Tax, Numbering, Defaults, Logo); loading skeleton updated symmetrically to prevent CLS.
+- **Bootstrap UX** — `/admin/invoices` now renders a "Configure Invoicing" empty-state CTA when `tenant_invoice_settings` is missing (FR-010).
+
+### Fixed
+
+- **N1 audit-tx gap** — `updateTenantInvoiceSettings` now wraps `upsert` + `audit.emit` in a single `withTx` so an audit failure rolls back the settings row (was separated across two queries).
+- **N2 float VAT in list-plans** — see above.
+- **N3 logo pixel-bomb + format confusion** — sharp `limitInputPixels` + detected-format (not client `declaredMime`) drives the encoder branch + upload `Content-Type`.
+- **N4 loose zod at PATCH boundary** — strict regex + length caps mirror the use-case schema; PATCH body now validated at the HTTP boundary.
+- **N5 missing rate limits** — added per-route rate-limiting to settings PATCH + logo POST.
+- **N7 cross-tenant `logo_blob_key`** — server-side regex + explicit tenantId-prefix assertion prevents one tenant from embedding another's logo asset.
+- **N11 locale-dependent `formatSatang`** — pinned to `'en-US'` across 4 sites (admin detail, admin list, admin form, portal list) to prevent C/POSIX server runtimes from emitting unseparated integers.
+- **R7 blockers (all closed)** — PDF route streams bytes + `Content-Disposition: attachment` (B1); admin settings UI + logo pipeline (B2); portal invoice surfaces (B3); kill-switch containment (B4); bootstrap empty-state (B5); domain-helper VAT on draft preview (B6).
+
+### Technical Notes
+
+- **@js-joda/core + @js-joda/timezone** correctly resolve `Asia/Bangkok` fiscal-year boundaries regardless of server TZ — avoids the off-by-UTC-offset class of bug on Dec 31 23:30 invoices.
+- **Blob storage** uses `access: 'public'` with UUID-keyed paths (`@vercel/blob` has no per-request signed URL API yet). Route layer byte-streams through the handler (no 307 redirect) to keep the URL from escaping the application. Residual documented in `security.md § T-05` with a tracked follow-up.
+- **Expand-and-contract** schema migration pattern: `currency_code` added to `tenant_invoice_settings` first (R7 C1), readers migrated (C2–C4), then `tenant_fee_config` dropped in R9. Backfill migration guarantees every tenant with a pre-existing row got the new column.
+- **Property-based testing** via `fast-check` (dev dep) — planned for credit-note VAT sum invariants in US6 (Phase 6).
+- **Solo-maintainer substitute (Principle IX)** may be invoked for the security.md § 5 co-sign given the SweCham-only deployment context.
+
+### Deferred to follow-up PRs
+
+- **US5** void invoice + cancellation notice (Phase 9)
+- **US6** credit notes (Phase 6) — `credit_notes` table + immutability trigger shipped; issuance flow deferred
+- **US7** timeline integration with F3 member page (Phase 7)
+- **Phase 10** auto-email dispatcher (T106), overdue derivation (T109), perf benchmarks (T110/T111/T111a), retention test (T112), manual SR/cross-browser/staging/reduced-motion passes (T114–T114c), docs (T115 quickstart update, T115a release notes), CI reproduction (T116), security co-sign (T117), review-rounds log (T118), retrospective (T119)
+- **Carry-forward suggestions** T120–T124 — Host-header MTA dual-bind, CR/LF strip in `asciiSafe`, behavioral audit coverage for 3 event types, C4 end-to-end VAT chain test, fieldset-card a11y SR QA
+
+
 
 **Spec**: [`specs/005-members-contacts/spec.md`](specs/005-members-contacts/spec.md)
 **Plan**: [`specs/005-members-contacts/plan.md`](specs/005-members-contacts/plan.md)

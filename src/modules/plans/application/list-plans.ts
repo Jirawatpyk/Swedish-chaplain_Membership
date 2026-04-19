@@ -15,7 +15,6 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   ClockPort,
-  FeeConfigRepo,
   ListPlansFilter,
   PlanRepo,
 } from './ports';
@@ -71,7 +70,18 @@ export type ListPlansError =
 export type ListPlansDeps = {
   readonly tenant: TenantContext;
   readonly planRepo: PlanRepo;
-  readonly feeConfigRepo: FeeConfigRepo;
+  /**
+   * R8 consolidation final — authoritative tenant tax policy source,
+   * reads `tenant_invoice_settings.vat_rate` + `.currency_code` via
+   * the F4 `getTenantTaxPolicy` facade wired in the composition root.
+   * Migration 0028 backfilled invoice_settings rows for every tenant
+   * that had a fee_config row, so `null` here means a truly
+   * un-onboarded tenant (no fee_config either) — bootstrap error.
+   */
+  readonly taxPolicy: () => Promise<{
+    readonly currencyCode: string;
+    readonly vatRateRaw: string; // "0.0700"
+  } | null>;
   readonly clock: ClockPort;
 };
 
@@ -86,13 +96,28 @@ export async function listPlans(
     const year =
       input.filter.year ?? asPlanYear(deps.clock.currentYear());
 
-    // Load fee config first — we need vat_rate + currency_code to
-    // hydrate Money-related fields. Fee config missing is a bootstrap
-    // error (every onboarded tenant should have one row).
-    const feeConfig = await deps.feeConfigRepo.findByTenant(deps.tenant);
-    if (!feeConfig) {
+    // R8 consolidation final — `tenant_invoice_settings` is the sole
+    // authoritative source. Migration 0028 guarantees every tenant
+    // with a pre-existing `tenant_fee_config` row also has an
+    // `invoice_settings` row. A null return here means the tenant is
+    // un-onboarded — surface the same bootstrap error type as pre-R8
+    // so API consumers don't have to switch.
+    const tax = await deps.taxPolicy();
+    if (!tax) {
       return err({ type: 'fee_config_missing' });
     }
+    const currencyCode = tax.currencyCode;
+    const vatRateNumber = Number(tax.vatRateRaw);
+
+    // N2 (review 2026-04-19 21:19) — integer-only gross-amount math.
+    // `vatRateRaw` is a 4-dp decimal string ("0.0700" for 7%). Parsing
+    // via `Number` + multiplying by a fee introduces IEEE-754 rounding
+    // for non-binary-clean rates (8.5%, 10%, 13.5%). Thai-tax amounts
+    // are legal figures (FR-002 / FR-005) — compute gross = fee *
+    // (10000 + numerator) / 10000 with half-up rounding in `bigint`.
+    const [, vatFrac] = tax.vatRateRaw.split('.');
+    const vatNumerator = BigInt(vatFrac ?? '0'); // "0700" → 700n
+    const VAT_SCALE = 10_000n;
 
     // Load plans via repo — RLS scopes by tenant; no explicit tenant_id filter.
     const plans = await deps.planRepo.findByTenantAndYear(deps.tenant, {
@@ -103,7 +128,10 @@ export async function listPlans(
     // Hydrate display envelope per plan
     const data: PlanListItem[] = plans.map((p) => {
       const fee = p.annual_fee_minor_units;
-      const totalWithVat = Math.round(fee * (1 + feeConfig.vat_rate));
+      const feeBn = BigInt(fee);
+      const totalWithVat = Number(
+        (feeBn * (VAT_SCALE + vatNumerator) + VAT_SCALE / 2n) / VAT_SCALE,
+      );
       return {
         plan_id: p.plan_id,
         plan_year: p.plan_year,
@@ -112,7 +140,7 @@ export async function listPlans(
         plan_category: p.plan_category,
         member_type_scope: p.member_type_scope,
         annual_fee_minor_units: fee,
-        vat_rate: feeConfig.vat_rate,
+        vat_rate: vatRateNumber,
         total_with_vat_minor_units: totalWithVat,
         includes_corporate_plan_id: p.includes_corporate_plan_id,
         is_active: p.is_active,
@@ -129,7 +157,7 @@ export async function listPlans(
       meta: {
         total: data.length,
         year: year as number,
-        currency_code: feeConfig.currency_code,
+        currency_code: currencyCode as CurrencyCode,
         filter: {
           category: input.filter.category ?? null,
           q: input.filter.q ?? null,

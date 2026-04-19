@@ -31,10 +31,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
-import {
-  membershipPlans,
-  tenantFeeConfig,
-} from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -92,31 +90,26 @@ describe('Tenant isolation — REVIEW GATE BLOCKER (T027)', () => {
     tenantA = pair.a;
     tenantB = pair.b;
 
+    // R9 — fiscal seed via shared helper (tenant_invoice_settings);
+    // tenant_fee_config dropped in migration 0029.
+    await seedTenantFiscal({
+      tenant: tenantA,
+      currencyCode: 'THB',
+      vatRate: '0.0700',
+      registrationFeeSatang: 100000n,
+    });
+    await seedTenantFiscal({
+      tenant: tenantB,
+      currencyCode: 'SEK',
+      vatRate: '0.2500',
+      registrationFeeSatang: 50000n,
+    });
     await runInTenant(tenantA.ctx, async (tx) => {
-      await tx
-        .insert(tenantFeeConfig)
-        .values({
-          tenantId: tenantA.ctx.slug,
-          currencyCode: 'THB',
-          vatRate: '0.0700',
-          registrationFeeMinorUnits: 100000,
-          updatedBy: user.userId,
-        });
       await tx
         .insert(membershipPlans)
         .values(seedPlansFor(tenantA.ctx.slug, user.userId, 'alpha'));
     });
-
     await runInTenant(tenantB.ctx, async (tx) => {
-      await tx
-        .insert(tenantFeeConfig)
-        .values({
-          tenantId: tenantB.ctx.slug,
-          currencyCode: 'SEK',
-          vatRate: '0.2500',
-          registrationFeeMinorUnits: 50000,
-          updatedBy: user.userId,
-        });
       await tx
         .insert(membershipPlans)
         .values(seedPlansFor(tenantB.ctx.slug, user.userId, 'beta'));
@@ -257,25 +250,9 @@ describe('Tenant isolation — REVIEW GATE BLOCKER (T027)', () => {
     expect(rows).toHaveLength(0);
   });
 
-  // -- fee_config isolation ---------------------------------------------
-
-  it('A sees only A fee_config (not B)', async () => {
-    const rows = await runInTenant(tenantA.ctx, (tx) =>
-      tx.select().from(tenantFeeConfig),
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.tenantId).toBe(tenantA.ctx.slug);
-    expect(rows[0]!.currencyCode).toBe('THB');
-  });
-
-  it('B sees only B fee_config (not A)', async () => {
-    const rows = await runInTenant(tenantB.ctx, (tx) =>
-      tx.select().from(tenantFeeConfig),
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.tenantId).toBe(tenantB.ctx.slug);
-    expect(rows[0]!.currencyCode).toBe('SEK');
-  });
+  // R9 — fee_config isolation tests REMOVED after tenant_fee_config
+  // DROPPED. tenant_invoice_settings isolation is covered by
+  // `tests/integration/invoicing/tenant-isolation.test.ts` (R7-W2).
 
   // -- audit_log permissive policy ---------------------------------------
 

@@ -39,9 +39,12 @@ export default async function NewPlanPage() {
 
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);
-  const feeConfig = await deps.feeConfigRepo.findByTenant(deps.tenant);
+  // R8 — read currency from F4 invoice_settings (single source of
+  // truth) via the plans-deps `taxPolicy` facade.
+  const taxPolicy = await deps.taxPolicy();
+  const currencyCode = taxPolicy?.currencyCode ?? 'THB';
   const currentYear = deps.clock.currentYear();
-  const currencyPrefix = feeConfig?.currency_code === 'THB' ? '฿' : (feeConfig?.currency_code ?? 'THB');
+  const currencyPrefix = currencyCode === 'THB' ? '฿' : currencyCode;
 
   return (
     <FormContainer>

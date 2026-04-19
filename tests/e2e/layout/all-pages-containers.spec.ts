@@ -47,7 +47,7 @@ const STAFF_STATIC_ROUTES = [
   '/admin/plans/clone',
   `/admin/plans/${SEEDED_YEAR}/${SEEDED_PLAN_ID}`,
   `/admin/plans/${SEEDED_YEAR}/${SEEDED_PLAN_ID}/edit`,
-  '/admin/settings/fees',
+  '/admin/settings/invoicing',
   '/admin/members',
   '/admin/members/new',
 ];

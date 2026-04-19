@@ -225,6 +225,16 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - WCAG 2.2 SC 2.4.11 (Focus Not Obscured) + SC 2.5.8 (Target Size ≥24×24px) opportunistic adoption via E2E assertions (005-members-contacts)
 - TypeScript 5.7+ strict (existing F1–F4 config; no change) + Next.js 16 App Router, React 19, Tailwind CSS v4, shadcn/ui (no new deps) (006-layout-container-tier2)
 - N/A (presentation-only) (006-layout-container-tier2)
+- TypeScript 5.7+ strict (`strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`) — unchanged from F1+F2+F3 (007-invoices-receipts)
+- `@react-pdf/renderer@4.3.0` (exact-pin) — deterministic bilingual PDF engine for Thai-tax documents (FR-016 / SC-003) (007-invoices-receipts)
+- `@js-joda/core@^6` + `@js-joda/timezone@^2` — correct Asia/Bangkok fiscal-year boundary for sequential-number allocator (007-invoices-receipts)
+- `thai-baht-text@^2` — Thai amount-in-words on invoices/receipts (007-invoices-receipts)
+- `sharp@^0.34` — server-side logo re-encode (EXIF strip, MIME/dimension enforce) for tenant-invoice-settings (FR-034) (007-invoices-receipts)
+- `fast-check@^4` (dev) — property-based testing for credit-note VAT sum invariant (007-invoices-receipts)
+- Sarabun TTF (OFL) committed under `public/fonts/sarabun/` — 400/500/700 weights embedded into PDFs at build time (007-invoices-receipts)
+- `src/modules/invoicing/` — F4 bounded context: Domain (Invoice, CreditNote, TenantInvoiceSettings, SequentialNumberAllocator), Application (use-cases), Infrastructure (react-pdf adapter, Vercel Blob adapter, Drizzle repos) (007-invoices-receipts)
+- 5 new DB tables: `invoices`, `invoice_lines`, `credit_notes`, `tenant_invoice_settings`, `tenant_document_sequences`; 16 new audit event types; Postgres advisory lock per (tenant_id, document_type, fiscal_year) for §87 no-gaps numbering (007-invoices-receipts)
+- `FEATURE_F4_INVOICING` kill-switch + `BLOB_READ_WRITE_TOKEN` + `CRON_SECRET` env vars (007-invoices-receipts)
 
 ## Recent Changes
 

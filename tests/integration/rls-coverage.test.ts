@@ -26,10 +26,15 @@ import { db } from '@/lib/db';
 const TENANT_SCOPED_TABLES = [
   // F2
   'membership_plans',
-  'tenant_fee_config',
   // F3
   'members',
   'contacts',
+  // F4 (T018)
+  'invoices',
+  'invoice_lines',
+  'credit_notes',
+  'tenant_invoice_settings',
+  'tenant_document_sequences',
 ];
 
 describe('RLS coverage — every tenant-scoped table', () => {
