@@ -16,13 +16,12 @@ import {
 /**
  * R7-B2 — loading skeleton for /admin/settings/invoicing.
  *
- * Matches the real `<InvoiceSettingsForm>` structural shape: 5
- * sections (identity, tax, numbering, defaults, logo), each with
- * 2-column field grid on `sm`+. Title / subtitle / card header copy
- * render as real (translated) text per the existing skeleton
- * convention across /admin (see settings/fees/loading.tsx) so the
- * header reads identically to the loaded page — only interactive
- * fields flicker.
+ * Matches the real `<InvoiceSettingsForm>` structural shape: 6
+ * fieldset-wrapped sections (currency, identity, tax, numbering,
+ * defaults, logo), each with 2-column field grid on `sm`+. Title /
+ * subtitle / card header copy render as real (translated) text per the
+ * existing skeleton convention across /admin so the header reads
+ * identically to the loaded page — only interactive fields flicker.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.invoiceSettings');
@@ -41,12 +40,17 @@ export default async function Loading() {
             <CardDescription>{t('card.description')}</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-8">
+            <div className="flex flex-col gap-[var(--page-section-gap)]">
               {(
                 ['currency', 'identity', 'tax', 'numbering', 'defaults', 'logo'] as const
               ).map((section) => (
-                <section key={section} className="space-y-4">
-                  <h3 className="text-sm font-semibold">{t(`sections.${section}`)}</h3>
+                <fieldset
+                  key={section}
+                  className="flex flex-col gap-4 rounded-md border p-4"
+                >
+                  <legend className="px-2 text-sm font-semibold">
+                    {t(`sections.${section}`)}
+                  </legend>
                   <div
                     className={
                       section === 'currency'
@@ -63,7 +67,7 @@ export default async function Loading() {
                       </div>
                     ))}
                   </div>
-                </section>
+                </fieldset>
               ))}
               <SkeletonBlock className="h-11 w-full" />
             </div>
