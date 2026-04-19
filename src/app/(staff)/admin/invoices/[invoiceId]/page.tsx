@@ -28,6 +28,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { IssueInvoiceDialog } from '../_components/issue-invoice-dialog';
+import { RecordPaymentDialog } from '../_components/record-payment-dialog';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -156,21 +158,34 @@ export default async function InvoiceDetailPage({
                 >
                   {t('actions.preview')}
                 </a>
-                <Link
-                  href={`/admin/invoices/${invoice.invoiceId}/issue`}
-                  className={buttonVariants({ variant: 'default' })}
-                >
-                  {t('actions.issue')}
-                </Link>
+                {/* Issue — AlertDialog pattern (align with F3 archive /
+                    F2 clone-year). Confirmation stays in-context so
+                    the admin sees the summary numbers as they type
+                    the irreversible phrase. */}
+                <IssueInvoiceDialog
+                  invoiceId={invoice.invoiceId}
+                  summary={{
+                    memberName: memberDisplayName,
+                    planDisplayName,
+                    planYear: invoice.planYear,
+                    subtotalText: formatSatang(displaySubtotalSatang),
+                    vatText: formatSatang(displayVatSatang),
+                    vatPercent: displayVatPercent ?? '',
+                    totalText: formatSatang(displayTotalSatang),
+                  }}
+                />
               </>
             )}
             {invoice.status === 'issued' && isAdmin && (
-              <Link
-                href={`/admin/invoices/${invoice.invoiceId}/pay`}
-                className={buttonVariants({ variant: 'default' })}
-              >
-                {t('actions.pay')}
-              </Link>
+              // Pay — Dialog pattern (align with F1 invite / F1 change
+              // password). Short 4-field form, in-context overlay so
+              // the admin still sees the invoice total + document
+              // number in the background card.
+              <RecordPaymentDialog
+                invoiceId={invoice.invoiceId}
+                documentNumber={invoice.documentNumber?.raw ?? null}
+                issueDate={invoice.issueDate}
+              />
             )}
             {!isDraft && invoice.pdfBlobKey && (
               // Plain <a> (not <Link>) — the PDF endpoint returns a

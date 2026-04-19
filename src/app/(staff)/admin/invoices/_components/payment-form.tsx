@@ -25,6 +25,7 @@ export function PaymentForm({
   invoiceId,
   documentNumber,
   issueDate,
+  onSuccess,
 }: {
   invoiceId: string;
   documentNumber: string | null;
@@ -34,6 +35,13 @@ export function PaymentForm({
    * issuance of the tax document (§87 temporal consistency).
    */
   issueDate: string | null;
+  /**
+   * Optional callback fired after a successful submit. Used by the
+   * RecordPaymentDialog wrapper to close the overlay before the
+   * router refresh lands. When absent (legacy full-page callers) we
+   * fall back to the previous navigate-and-refresh behaviour.
+   */
+  onSuccess?: () => void;
 }) {
   const t = useTranslations('admin.invoices.pay');
   const router = useRouter();
@@ -78,8 +86,16 @@ export function PaymentForm({
       toast.success(t('success'), {
         description: documentNumber ? t('successDetail', { number: documentNumber }) : undefined,
       });
-      router.push(`/admin/invoices/${invoiceId}`);
-      router.refresh();
+      if (onSuccess) {
+        // Dialog overlay wrapper — close first, then refresh so the
+        // detail page rerender lands with the dialog already gone.
+        onSuccess();
+        router.refresh();
+      } else {
+        // Legacy full-page caller — preserve original behaviour.
+        router.push(`/admin/invoices/${invoiceId}`);
+        router.refresh();
+      }
     });
   }
 
