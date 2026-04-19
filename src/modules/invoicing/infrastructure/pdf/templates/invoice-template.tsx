@@ -22,12 +22,34 @@ import { shapeThai } from '../fonts/register-sarabun';
 
 const styles = StyleSheet.create({
   page: { fontFamily: 'Sarabun', fontSize: 10, padding: 36, color: '#111' },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  h1: { fontSize: 16, fontWeight: 700, marginBottom: 2 },
-  h2: { fontSize: 12, fontWeight: 500, marginBottom: 2 },
-  label: { fontSize: 9, color: '#555' },
-  value: { fontSize: 10 },
-  section: { marginBottom: 12 },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+    gap: 12,
+  },
+  // Left column (tenant identity): flex-shrink enabled so a long
+  // address wraps instead of pushing into the right column.
+  headerLeft: { flex: 1, minWidth: 0 },
+  // Right column (title + doc number + dates): stays intrinsic-sized,
+  // never shrinks below content, never overlaps left column.
+  headerRight: { alignItems: 'flex-end', flexShrink: 0, maxWidth: '40%' },
+  // `maxWidth: '100%'` on each Text style forces the leaf <Text>
+  // element to respect the parent container's content width. Without
+  // this, fontkit's Thai shaping tricks @react-pdf into thinking the
+  // text fits on one line (advance-width under-counts after sara-am
+  // decomposition), and long Thai strings overflow the section
+  // container horizontally instead of wrapping.
+  h1: { fontSize: 16, fontWeight: 700, marginBottom: 2, maxWidth: '100%' },
+  h2: { fontSize: 12, fontWeight: 500, marginBottom: 2, maxWidth: '100%' },
+  label: { fontSize: 9, color: '#555', maxWidth: '100%' },
+  // `maxLines: 3` + ellipsis safeguards against pathologically long
+  // Thai strings (e.g., 130+ char legal names) that @react-pdf +
+  // fontkit cannot wrap reliably. Three lines gives room for even a
+  // long normal company name to render in full.
+  value: { fontSize: 10, maxWidth: '100%', maxLines: 3, textOverflow: 'ellipsis' },
+  section: { marginBottom: 12, width: '100%' },
   table: { marginTop: 8, marginBottom: 8, borderTop: '1 solid #ccc' },
   tr: { flexDirection: 'row', borderBottom: '1 solid #eee', paddingVertical: 4 },
   trHead: {
@@ -111,7 +133,7 @@ export function InvoiceTemplate(input: PdfRenderInput) {
         {isVoid && <Text style={styles.voidStamp}>VOID / ยกเลิก</Text>}
 
         <View style={styles.headerRow}>
-          <View>
+          <View style={styles.headerLeft}>
             <Text style={styles.h1}>{shapeThai(input.tenant.legal_name_th)}</Text>
             <Text style={styles.h2}>{input.tenant.legal_name_en}</Text>
             <Text style={styles.value}>{shapeThai(input.tenant.address_th)}</Text>
@@ -120,7 +142,7 @@ export function InvoiceTemplate(input: PdfRenderInput) {
               {shapeThai('เลขประจำตัวผู้เสียภาษี')} / Tax ID: {input.tenant.tax_id}
             </Text>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
+          <View style={styles.headerRight}>
             <Text style={styles.h1}>{shapeThai(titleTh)}</Text>
             <Text style={styles.h2}>{titleEn}</Text>
             {originalMarker && (
