@@ -41,6 +41,7 @@ import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { InvoiceRepo } from '@/modules/invoicing/application/ports/invoice-repo';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
+import { asSha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { asTenantContext } from '@/modules/tenants';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -191,7 +192,7 @@ function makeIssueDeps(
     pdfRender: {
       render: vi.fn(async () => ({
         bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
-        sha256: 'a'.repeat(64),
+        sha256: asSha256Hex('a'.repeat(64)),
       })),
     },
     blob: {

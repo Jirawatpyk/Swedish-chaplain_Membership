@@ -85,7 +85,10 @@ test.describe('@us1 invoice draft → issue', () => {
   }) => {
     await signInAdmin(page);
     await page.goto('/admin/invoices');
-    await page.waitForLoadState('networkidle');
+    // Wait on the h1 landmark, not `networkidle` — Vercel analytics /
+    // telemetry beacons run as background requests that can keep the
+    // network "active" indefinitely on some deploys (L3).
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
     // Default view: the Status filter should be the shared "All statuses"
     // default; drafts are excluded unless explicitly chosen. The list
@@ -100,7 +103,7 @@ test.describe('@us1 invoice draft → issue', () => {
     // empty-state message. Both are acceptable (tenants with zero
     // drafts still render the filter correctly).
     await page.goto('/admin/invoices?status=draft');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     // Either rows exist with at least one "Draft" cell, OR the
     // filtered empty-state message is visible. `poll` waits until
     // one side becomes true, with a generous timeout for CI

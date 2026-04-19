@@ -19,6 +19,7 @@ import {
 } from '@/modules/invoicing/domain/invoice-line';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
+import { asSha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 
 describe('Invoice state machine', () => {
   describe('canTransition — legal transitions', () => {
@@ -153,7 +154,7 @@ describe('Invoice state machine', () => {
       voidedByUserId: null,
       autoEmailOnIssue: null,
       pdfBlobKey: 'key',
-      pdfSha256: 'sha',
+      pdfSha256: asSha256Hex('0'.repeat(64)),
       pdfTemplateVersion: 1,
       lines: [],
       createdAt: '2026-01-01T00:00:00Z',

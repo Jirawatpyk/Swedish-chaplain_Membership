@@ -72,7 +72,9 @@ test.describe('@us2 record-payment', () => {
       '/admin/invoices?status=issued',
     ]) {
       await page.goto(route);
-      await page.waitForLoadState('networkidle');
+      // Wait on the h1 landmark instead of `networkidle` — analytics
+      // beacons keep network busy indefinitely on some deploys (L3).
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       const partial = page.getByText(/partial (amount|payment)/i);
       await expect(partial).toHaveCount(0);
     }

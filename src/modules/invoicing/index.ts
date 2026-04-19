@@ -39,6 +39,11 @@ export {
 } from './domain/value-objects/fiscal-year';
 export type { TenantIdentitySnapshot } from './domain/value-objects/tenant-identity-snapshot';
 export type { MemberIdentitySnapshot } from './domain/value-objects/member-identity-snapshot';
+export {
+  Sha256Hex,
+  asSha256Hex,
+  type Sha256HexError,
+} from './domain/value-objects/sha256-hex';
 
 // --- Audit event types (for F3 timeline integration US7) --------------------
 export type { F4AuditEventType, F4AuditEvent } from './application/ports/audit-port';

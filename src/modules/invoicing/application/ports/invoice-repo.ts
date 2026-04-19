@@ -4,6 +4,7 @@
 
 import type { Invoice, InvoiceId, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import type { InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
+import type { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 
 export interface InvoiceRepo {
   /** Run `fn` inside a serializable transaction; rollback on throw. */
@@ -82,7 +83,7 @@ export interface InvoiceRepo {
       readonly tenantIdentitySnapshot: unknown;
       readonly memberIdentitySnapshot: unknown;
       readonly pdfBlobKey: string;
-      readonly pdfSha256: string;
+      readonly pdfSha256: Sha256Hex;
       readonly pdfTemplateVersion: number;
     },
   ): Promise<Invoice>;
@@ -105,7 +106,7 @@ export interface InvoiceRepo {
       readonly paymentNotes: string | null;
       readonly paymentRecordedByUserId: string;
       readonly receiptPdfBlobKey: string;
-      readonly receiptPdfSha256: string;
+      readonly receiptPdfSha256: Sha256Hex;
     },
   ): Promise<Invoice>;
 

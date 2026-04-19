@@ -28,6 +28,7 @@ import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
+import { asSha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { MemberIdentityView } from '@/modules/invoicing/application/ports/member-identity-port';
 
@@ -165,7 +166,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     pdfRender: {
       render: vi.fn(async () => ({
         bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]), // %PDF
-        sha256: 'a'.repeat(64),
+        sha256: asSha256Hex('a'.repeat(64)),
       })),
     },
     blob: {

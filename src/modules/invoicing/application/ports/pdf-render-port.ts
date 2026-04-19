@@ -11,6 +11,7 @@ import type { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate'
 import type { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { TenantIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/tenant-identity-snapshot';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
+import type { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 
 export type PdfDocKind =
   | 'invoice'
@@ -38,7 +39,7 @@ export interface PdfRenderInput {
 
 export interface PdfRenderResult {
   readonly bytes: Uint8Array;
-  readonly sha256: string; // 64-char lowercase hex
+  readonly sha256: Sha256Hex;
 }
 
 export interface PdfRenderPort {

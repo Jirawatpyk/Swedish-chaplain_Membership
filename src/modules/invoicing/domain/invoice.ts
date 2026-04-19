@@ -27,6 +27,7 @@ import type { VatRate } from './value-objects/vat-rate';
 import type { ProRatePolicy } from './value-objects/pro-rate-policy';
 import type { TenantIdentitySnapshot } from './value-objects/tenant-identity-snapshot';
 import type { MemberIdentitySnapshot } from './value-objects/member-identity-snapshot';
+import type { Sha256Hex } from './value-objects/sha256-hex';
 import type { InvoiceLine } from './invoice-line';
 
 export const INVOICE_STATUSES = [
@@ -94,7 +95,7 @@ export interface Invoice {
 
   // PDF
   readonly pdfBlobKey: string | null;
-  readonly pdfSha256: string | null;
+  readonly pdfSha256: Sha256Hex | null;
   readonly pdfTemplateVersion: number | null;
 
   readonly lines: readonly InvoiceLine[];

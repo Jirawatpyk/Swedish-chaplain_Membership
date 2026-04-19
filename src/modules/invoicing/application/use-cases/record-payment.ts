@@ -158,7 +158,7 @@ export async function recordPayment(
 
     // H. Render PDF — throw (not return err) on failure so withTx rolls
     // back and the sequence increment is NOT consumed.
-    let rendered: { bytes: Uint8Array; sha256: string };
+    let rendered: Awaited<ReturnType<typeof deps.pdfRender.render>>;
     try {
       rendered = await deps.pdfRender.render({
         kind: combinedMode ? 'receipt_combined' : 'receipt_separate',

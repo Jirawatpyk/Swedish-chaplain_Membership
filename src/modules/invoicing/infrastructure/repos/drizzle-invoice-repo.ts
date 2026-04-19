@@ -22,6 +22,7 @@ import { DocumentNumber } from '../../domain/value-objects/document-number';
 import { asFiscalYearUnsafe } from '../../domain/value-objects/fiscal-year';
 import { VatRate } from '../../domain/value-objects/vat-rate';
 import { asProRatePolicyUnsafe } from '../../domain/value-objects/pro-rate-policy';
+import { Sha256Hex, type Sha256Hex as Sha256HexT } from '../../domain/value-objects/sha256-hex';
 import {
   makeTenantIdentitySnapshot,
   type TenantIdentitySnapshot,
@@ -53,6 +54,17 @@ const satangOrNull = (v: unknown): Money | null =>
 
 const isoOrNull = (d: Date | null): string | null =>
   d === null ? null : d.toISOString();
+
+function parseSha256OrNull(raw: string | null, invoiceId: string): Sha256HexT | null {
+  if (raw === null) return null;
+  const parsed = Sha256Hex.parse(raw);
+  if (!parsed.ok) {
+    throw new Error(
+      `drizzle-invoice-repo: corrupt pdf_sha256 on row ${invoiceId}: '${raw}'`,
+    );
+  }
+  return parsed.value;
+}
 
 function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice {
   let docNum: DocumentNumber | null = null;
@@ -128,7 +140,7 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     autoEmailOnIssue: row.autoEmailOnIssue ?? null,
 
     pdfBlobKey: row.pdfBlobKey ?? null,
-    pdfSha256: row.pdfSha256 ?? null,
+    pdfSha256: parseSha256OrNull(row.pdfSha256, row.invoiceId),
     pdfTemplateVersion: row.pdfTemplateVersion ?? null,
 
     lines,
