@@ -89,11 +89,22 @@ const baseInput = {
 describe('updateInvoiceDraft', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('invoice_not_found when repo returns null', async () => {
+  it('invoice_not_found when repo returns null + emits invoice_cross_tenant_probe (R7-W1)', async () => {
     const deps = makeDeps(null);
     const r = await updateInvoiceDraft(deps, baseInput);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'invoice_cross_tenant_probe',
+        payload: expect.objectContaining({
+          attempted_invoice_id: baseInput.invoiceId,
+          actor_role: 'admin',
+          route: 'update-invoice-draft',
+        }),
+      }),
+    );
   });
 
   it.each(['issued', 'paid', 'void', 'credited'] as const)(

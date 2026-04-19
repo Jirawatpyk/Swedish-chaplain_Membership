@@ -79,6 +79,10 @@ export function makePreviewInvoiceDraftDeps(tenantId: string): PreviewInvoiceDra
     pdfRender: reactPdfRenderAdapter,
     clock: systemClock,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+    // R7-W1 — wire audit so the preview route can emit
+    // `invoice_cross_tenant_probe` on not-found when actor context is
+    // passed in the input.
+    audit: f4AuditAdapter,
   };
 }
 

@@ -31,7 +31,24 @@ export async function deleteInvoiceDraft(
   const invoiceId = asInvoiceId(input.invoiceId);
   return deps.invoiceRepo.withTx(async (tx) => {
     const row = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
-    if (!row) return err({ code: 'invoice_not_found' });
+    if (!row) {
+      // R7-W1 — probe on not-found (RLS-hidden vs. truly-missing is
+      // indistinguishable from the app side; audit either way per
+      // Constitution Principle I clause 4).
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'invoice_cross_tenant_probe',
+        actorUserId: input.actorUserId,
+        summary: `Probe on invoice ${invoiceId} (not found on draft delete)`,
+        payload: {
+          attempted_invoice_id: invoiceId,
+          actor_role: 'admin',
+          route: 'delete-invoice-draft',
+        },
+      });
+      return err({ code: 'invoice_not_found' });
+    }
     if (row.status !== 'draft') return err({ code: 'not_draft' });
     await deps.invoiceRepo.deleteDraft(tx, invoiceId, input.tenantId);
     await deps.audit.emit(tx, {

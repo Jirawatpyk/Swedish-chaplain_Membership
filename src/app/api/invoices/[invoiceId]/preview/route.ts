@@ -17,6 +17,10 @@ export async function GET(
   const result = await previewInvoiceDraft(makePreviewInvoiceDraftDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,
     invoiceId,
+    // R7-W1 — actor context enables `invoice_cross_tenant_probe`
+    // audit emission when the draft lookup returns null.
+    actorUserId: ctx.current.user.id,
+    requestId: ctx.requestId,
   });
   if (!result.ok) {
     const status = result.error.code === 'invoice_not_found' ? 404 : 409;

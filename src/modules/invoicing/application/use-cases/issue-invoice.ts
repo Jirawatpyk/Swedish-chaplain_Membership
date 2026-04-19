@@ -138,7 +138,27 @@ export async function issueInvoice(
     // concurrent issue attempts on the same invoice id so two admins
     // clicking "Issue" at once cannot both reach allocateNext.
     const lockedStatus = await deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId);
-    if (!lockedStatus) return err({ code: 'invoice_not_found' });
+    if (!lockedStatus) {
+      // R7-W1 — emit cross-tenant probe on not-found (RLS-hidden row
+      // looks identical to a genuinely missing id; audit it either
+      // way per Constitution Principle I clause 4). Using `null` tx
+      // so the audit survives regardless of the outer withTx's
+      // commit/rollback outcome — consistent with get-invoice +
+      // get-invoice-pdf-signed-url patterns.
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'invoice_cross_tenant_probe',
+        actorUserId: input.actorUserId,
+        summary: `Probe on invoice ${invoiceId} (not found on issue)`,
+        payload: {
+          attempted_invoice_id: invoiceId,
+          actor_role: 'admin',
+          route: 'issue-invoice',
+        },
+      });
+      return err({ code: 'invoice_not_found' });
+    }
     if (lockedStatus !== 'draft') {
       return err({ code: 'invoice_already_issued', status: lockedStatus });
     }

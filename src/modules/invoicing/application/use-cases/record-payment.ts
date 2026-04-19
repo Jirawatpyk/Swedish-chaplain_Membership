@@ -106,7 +106,25 @@ export async function recordPayment(
     // directly so the idempotent-replay and invalid-status paths don't
     // require a second read that could race with a concurrent delete.
     const lockedStatus = await deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId);
-    if (!lockedStatus) return err({ code: 'invoice_not_found' });
+    if (!lockedStatus) {
+      // R7-W1 — probe on not-found (RLS-hidden vs. truly-missing is
+      // indistinguishable from the app layer; audit either way per
+      // Constitution Principle I clause 4). Emit via `null` tx so
+      // the audit survives the outer withTx's commit/rollback.
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'invoice_cross_tenant_probe',
+        actorUserId: input.actorUserId,
+        summary: `Probe on invoice ${invoiceId} (not found on record-payment)`,
+        payload: {
+          attempted_invoice_id: invoiceId,
+          actor_role: 'admin',
+          route: 'record-payment',
+        },
+      });
+      return err({ code: 'invoice_not_found' });
+    }
 
     // Idempotent replay: already paid → fetch + return the persisted row.
     if (lockedStatus === 'paid') {

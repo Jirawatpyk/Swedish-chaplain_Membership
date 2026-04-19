@@ -216,11 +216,22 @@ const input = {
 describe('recordPayment — CP-4.2 branch coverage', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('invoice_not_found — row lock returns empty', async () => {
+  it('invoice_not_found — row lock returns empty + emits invoice_cross_tenant_probe (R7-W1)', async () => {
     const deps = makeDeps(false, null, null);
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'invoice_cross_tenant_probe',
+        payload: expect.objectContaining({
+          attempted_invoice_id: input.invoiceId,
+          actor_role: 'admin',
+          route: 'record-payment',
+        }),
+      }),
+    );
   });
 
   it('invoice_not_found — findDraftById returns null after row exists (concurrent delete race)', async () => {

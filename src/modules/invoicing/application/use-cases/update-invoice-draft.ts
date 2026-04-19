@@ -53,7 +53,24 @@ export async function updateInvoiceDraft(
   try {
     return await deps.invoiceRepo.withTx(async (tx) => {
       const loaded = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
-      if (!loaded) return err({ code: 'invoice_not_found' });
+      if (!loaded) {
+        // R7-W1 — probe on not-found (RLS may have hidden a row owned
+        // by a foreign tenant). Emit via `null` tx so it survives the
+        // outer withTx's commit/rollback, consistent with get-invoice.
+        await deps.audit.emit(null, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'invoice_cross_tenant_probe',
+          actorUserId: input.actorUserId,
+          summary: `Probe on invoice ${invoiceId} (not found on draft update)`,
+          payload: {
+            attempted_invoice_id: invoiceId,
+            actor_role: 'admin',
+            route: 'update-invoice-draft',
+          },
+        });
+        return err({ code: 'invoice_not_found' });
+      }
       if (loaded.status !== 'draft') return err({ code: 'not_draft' });
 
       // Build diff — only include fields the caller provided AND that changed.

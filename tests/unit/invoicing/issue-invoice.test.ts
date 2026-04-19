@@ -210,11 +210,26 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     if (!r.ok) expect(r.error.code).toBe('settings_missing');
   });
 
-  it('invoice_not_found → err', async () => {
+  it('invoice_not_found → err + emits invoice_cross_tenant_probe (R7-W1)', async () => {
     const deps = makeDeps(null, makeSettings(), makeMember());
     const r = await issueInvoice(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
+    // R7-W1 — probe audit fires on lockForUpdate-returns-null (RLS-
+    // hidden row looks identical to a truly-missing id). The audit
+    // MUST NOT be conflated with the `invoice_issued` audit fired on
+    // the happy path — assert only the probe event type is seen.
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'invoice_cross_tenant_probe',
+        payload: expect.objectContaining({
+          attempted_invoice_id: input.invoiceId,
+          actor_role: 'admin',
+          route: 'issue-invoice',
+        }),
+      }),
+    );
   });
 
   it.each(['issued', 'paid', 'void', 'credited'] as const)(
