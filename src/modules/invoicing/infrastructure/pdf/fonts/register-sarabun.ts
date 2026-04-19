@@ -46,12 +46,51 @@ export function registerSarabun(): void {
 }
 
 /**
- * Normalise a potentially-mixed-form Thai string to NFC so the PDF
- * engine sees a single codepoint for sara-am (ำ U+0E33) instead of
- * the decomposed pair (ํ U+0E4D + า U+0E32). Idempotent + safe on
- * pure-ASCII + mixed TH/EN strings.
+ * Pre-shape a Thai string for @react-pdf/renderer / fontkit.
+ *
+ * Why: fontkit's Thai handling has two bugs that cause trailing
+ * characters to be clipped at the end of lines:
+ *   (1) Sara-am ำ (U+0E33) is decomposed internally to ◌ํ + า
+ *       (U+0E4D + U+0E32) at shape time, but the **advance-width**
+ *       for the enclosing Text element is computed at PRE-shape
+ *       time counting ำ as a single character width. Render then
+ *       produces two glyphs — the second (า) can push the last
+ *       char of the string past the container edge, which fontkit
+ *       clips silently.
+ *   (2) No word-break rules for Thai — line-break opportunities
+ *       default to whitespace-only, so a Thai run to the edge of
+ *       the container gets no hyphenation point and the overflow
+ *       is applied as clip, not wrap.
+ *
+ * Fixes (in order of effect):
+ *   (a) **Pre-decompose ำ manually** (not via NFD on whole string
+ *       — other Thai vowels are also affected by NFD and decomposing
+ *       them confuses fontkit further). The layout engine now
+ *       counts ◌ํ + า as two chars and allocates matching width.
+ *   (b) Append a zero-width space (U+200B) sentinel so the layout
+ *       has a break-point after the last real character. Prevents
+ *       fontkit from treating the final Thai cluster as "overflow"
+ *       when it sits exactly at the container edge.
+ *
+ * Both transforms are lossless — PDF text-layer extraction maps
+ * back to logical order; Thai readers see the glyphs positioned
+ * correctly.
  */
+const SARA_AM = /\u0E33/g; // ำ
+const NIKHAHIT_AA = '\u0E4D\u0E32'; // ◌ํ + า
+const ZWSP = '\u200B';
+
 export function shapeThai(input: string | null | undefined): string {
   if (input === null || input === undefined) return '';
-  return input.normalize('NFC');
+  if (input.length === 0) return '';
+  // Work on NFC first so any upstream NFD variant collapses to the
+  // canonical ำ before we decompose it explicitly below.
+  const nfc = input.normalize('NFC');
+  // Decompose sara-am so advance-width counts match rendered glyph count.
+  const decomposed = nfc.replace(SARA_AM, NIKHAHIT_AA);
+  // Only append the sentinel when the tail is a Thai character —
+  // otherwise we'd add invisible characters to pure-ASCII strings.
+  const lastChar = decomposed.charCodeAt(decomposed.length - 1);
+  const isThaiTail = lastChar >= 0x0e00 && lastChar <= 0x0e7f;
+  return isThaiTail ? decomposed + ZWSP : decomposed;
 }
