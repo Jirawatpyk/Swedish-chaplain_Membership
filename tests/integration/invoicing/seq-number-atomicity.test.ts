@@ -368,10 +368,18 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
             eq(tenantDocumentSequences.documentType, 'invoice'),
           ),
         );
-      expect(
-        seqRows.length === 0 || seqRows[0]!.nextSequenceNumber === 1,
-        `expected seq to be absent or at 1 after rollback, got ${JSON.stringify(seqRows)}`,
-      ).toBe(true);
+      // Branch on presence — if the row exists, its counter MUST be
+      // exactly 1 (allocator bootstraps to 1; any bump that wasn't
+      // rolled back would show ≥2). This is stronger than a simple OR
+      // because a bug that sets nextSequenceNumber to 0 or null would
+      // now fail loudly.
+      if (seqRows.length === 0) {
+        // No row yet — allocator never ran or rollback dropped it.
+        expect(seqRows).toHaveLength(0);
+      } else {
+        expect(seqRows).toHaveLength(1);
+        expect(seqRows[0]!.nextSequenceNumber).toBe(1);
+      }
       // Invoice row still draft AND sequence_number still null.
       const invRows = await runInTenant(freshTenant.ctx, (tx) =>
         tx.select().from(invoices).where(eq(invoices.invoiceId, draftId)),
@@ -485,9 +493,12 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
             eq(tenantDocumentSequences.documentType, 'invoice'),
           ),
         );
-      expect(
-        seqRows.length === 0 || seqRows[0]!.nextSequenceNumber === 1,
-      ).toBe(true);
+      if (seqRows.length === 0) {
+        expect(seqRows).toHaveLength(0);
+      } else {
+        expect(seqRows).toHaveLength(1);
+        expect(seqRows[0]!.nextSequenceNumber).toBe(1);
+      }
       // Telemetry: record which path the driver took so regressions in
       // error-propagation semantics are visible in test output.
       void propagatedAsThrow;

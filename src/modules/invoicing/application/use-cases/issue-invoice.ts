@@ -238,27 +238,44 @@ export async function issueInvoice(
       });
     }
 
-    // J. UPDATE invoices row
-    const issued = await deps.invoiceRepo.applyIssue(tx, {
-      tenantId: input.tenantId,
-      invoiceId,
-      fiscalYear: fy,
-      sequenceNumber: seq,
-      documentNumber: docNum.value.raw,
-      issueDate,
-      dueDate,
-      subtotalSatang: subtotal.satang,
-      vatRate: settings.vatRate.raw,
-      vatSatang: vat.satang,
-      totalSatang: total.satang,
-      proRatePolicySnapshot: settings.proRatePolicy,
-      netDaysSnapshot: settings.defaultNetDays,
-      tenantIdentitySnapshot: tenantSnap,
-      memberIdentitySnapshot: memberSnap,
-      pdfBlobKey: blobKey,
-      pdfSha256: rendered.sha256,
-      pdfTemplateVersion: deps.currentTemplateVersion,
-    });
+    // J. UPDATE invoices row. The repo throws if the status guard
+    // (WHERE status='draft') doesn't match — treat that as a
+    // concurrent re-issue race and surface it as a typed error so the
+    // route maps to 409 instead of 500.
+    let issued;
+    try {
+      issued = await deps.invoiceRepo.applyIssue(tx, {
+        tenantId: input.tenantId,
+        invoiceId,
+        fiscalYear: fy,
+        sequenceNumber: seq,
+        documentNumber: docNum.value.raw,
+        issueDate,
+        dueDate,
+        subtotalSatang: subtotal.satang,
+        vatRate: settings.vatRate.raw,
+        vatSatang: vat.satang,
+        totalSatang: total.satang,
+        proRatePolicySnapshot: settings.proRatePolicy,
+        netDaysSnapshot: settings.defaultNetDays,
+        tenantIdentitySnapshot: tenantSnap,
+        memberIdentitySnapshot: memberSnap,
+        pdfBlobKey: blobKey,
+        pdfSha256: rendered.sha256,
+        pdfTemplateVersion: deps.currentTemplateVersion,
+      });
+    } catch (e) {
+      if ((e as Error).message?.includes('applyIssue: no draft row updated')) {
+        // Row was 'draft' under the lock but isn't anymore — concurrent
+        // re-issue. Surface 'issued' as the inferred new status so
+        // callers (and the 409 response) carry useful info.
+        throw new IssueInvoiceInternalError({
+          code: 'invoice_already_issued',
+          status: 'issued',
+        });
+      }
+      throw e;
+    }
 
     // K. Audit
     await deps.audit.emit(tx, {

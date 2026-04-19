@@ -126,9 +126,11 @@ export interface InvoiceRepo {
   ): Promise<void>;
 
   /**
-   * Acquire a row lock on the invoice (SELECT … FOR UPDATE). Returns
-   * the current status so callers can branch on race conditions
-   * without reaching for raw SQL, or `null` if no row exists.
+   * Acquire a row lock on the invoice via `SELECT … FOR UPDATE` and
+   * return the current status (or `null` if no row exists). The
+   * infra layer uses a raw `sql\`…FOR UPDATE\`` — Drizzle does not
+   * expose a typed `.forUpdate()` modifier — but callers see a
+   * typed, tenant-scoped result and never touch SQL themselves.
    */
   lockForUpdate(
     tx: unknown,

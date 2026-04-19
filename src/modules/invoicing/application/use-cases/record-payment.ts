@@ -6,12 +6,14 @@
  * + uploads to Blob + emits `invoice_paid` audit + enqueues
  * auto-email outbox row.
  *
- * Idempotency: status-based replay detection. If the invoice is already
- * `paid` we short-circuit and return the persisted row unchanged —
- * callers cannot double-pay the same invoice, regardless of retry.
- * The `idempotencyKey` field in the input schema is RESERVED for a
- * future upgrade that stores the key on the row and validates matching
- * keys on replay; it is accepted but not currently persisted.
+ * Idempotency: status-based replay detection. If the invoice is
+ * already `paid` we short-circuit and return the persisted row
+ * unchanged — callers cannot double-pay the same invoice, regardless
+ * of retry. The `idempotencyKey` field in the input schema is
+ * RESERVED for the future key-persistence upgrade tracked in F4
+ * Phase 10 polish (see specs/007-invoices-receipts/tasks.md § Phase
+ * 10 — idempotency-key storage). It is accepted to stabilise the
+ * request shape now, but ignored by the use case today.
  *
  * Tax-ID snapshot immutability (FR-038): we reuse the invoice's
  * `member_identity_snapshot` (captured at issue time). Mutations to
@@ -97,19 +99,25 @@ export async function recordPayment(
   try {
   return await deps.invoiceRepo.withTx(async (tx) => {
     // Row-lock first — guards against concurrent pay/void/credit-note
-    // transactions on the same invoice.
+    // transactions on the same invoice. Branch on the locked status
+    // directly so the idempotent-replay and invalid-status paths don't
+    // require a second read that could race with a concurrent delete.
     const lockedStatus = await deps.invoiceRepo.lockForUpdate(tx, invoiceId, input.tenantId);
     if (!lockedStatus) return err({ code: 'invoice_not_found' });
 
+    // Idempotent replay: already paid → fetch + return the persisted row.
+    if (lockedStatus === 'paid') {
+      const loaded = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
+      if (!loaded) return err({ code: 'invoice_not_found' });
+      return ok(loaded);
+    }
+
+    if (lockedStatus !== 'issued') {
+      return err({ code: 'invalid_status', status: lockedStatus });
+    }
+
     const loaded = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
     if (!loaded) return err({ code: 'invoice_not_found' });
-
-    // Idempotent replay: already paid → return the persisted row.
-    if (loaded.status === 'paid') return ok(loaded);
-
-    if (loaded.status !== 'issued') {
-      return err({ code: 'invalid_status', status: loaded.status });
-    }
     if (
       !loaded.memberIdentitySnapshot ||
       !loaded.tenantIdentitySnapshot ||

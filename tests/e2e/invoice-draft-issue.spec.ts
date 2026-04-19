@@ -135,9 +135,10 @@ test.describe('@us1 invoice draft → issue', () => {
     test('manager sees /admin/invoices list but cannot access new/issue', async ({ page }) => {
       await signInManager(page);
 
-      // 1. List page loads (read allowed).
+      // 1. List page loads (read allowed). Wait on the h1 landmark
+      //    instead of `networkidle` — analytics beacons can keep the
+      //    network active indefinitely on some deploys (L3).
       await page.goto('/admin/invoices');
-      await page.waitForLoadState('networkidle');
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
       // 2. "New invoice" action is NOT rendered for managers (isAdmin

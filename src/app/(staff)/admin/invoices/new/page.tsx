@@ -53,10 +53,13 @@ export default async function NewInvoiceDraftPage() {
   // Corporate / 2026)" instead of the raw "regular" slug.
   const planNameById = new Map<string, string>(plans.map((p) => [p.planId, p.label]));
 
-  // Active members — first 100.
+  // Active members — ceiling 500 covers SweCham 2026 count (~131)
+  // with comfortable headroom for mid-year growth. Tenants larger
+  // than this need server-paged search in a follow-up polish
+  // (tracked as F4 Phase 10 smart-chamber feature #2).
   const membersDeps = buildMembersDeps(tenantCtx);
   const membersResult = await directorySearch(membersDeps, {
-    limit: 100,
+    limit: 500,
     status: ['active'] as const,
   });
   const members: readonly MemberOption[] = membersResult.ok

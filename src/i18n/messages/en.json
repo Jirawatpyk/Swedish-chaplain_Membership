@@ -830,7 +830,8 @@
         "empty": "No invoices yet — create your first draft.",
         "actions": {
           "new": "New invoice",
-          "download": "PDF"
+          "download": "PDF",
+          "clearFilters": "Clear filters"
         },
         "columns": {
           "documentNumber": "Number",
@@ -922,12 +923,14 @@
       "issue": {
         "title": "Issue invoice",
         "description": "This consumes the next sequential tax-document number and cannot be undone. A void can be recorded later.",
+        "confirmPhrase": "ISSUE",
         "confirmCopy": "Type \"{phrase}\" to confirm",
         "typeToConfirm": "Confirmation phrase",
         "issueButton": "Issue",
         "issuing": "Issuing…",
         "success": "Invoice issued",
         "cancel": "Cancel",
+        "irreversibleWarning": "This action will allocate a Thai RD §87 sequential document number and CANNOT be reversed — to cancel the invoice you must issue a credit note (ใบลดหนี้).",
         "errors": {
           "failed": "Issue failed",
           "codeFallback": "Error code: {code}",
@@ -954,6 +957,7 @@
           "reference": "Reference",
           "referencePlaceholder": "Bank transfer id / cheque no.",
           "date": "Payment date",
+          "dateHint": "Date displayed in CE (Gregorian calendar). Must be on or after the invoice issue date and not in the future.",
           "notes": "Notes"
         },
         "methods": {

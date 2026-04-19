@@ -80,7 +80,12 @@ export default async function AdminInvoicesPage({
     }),
     directorySearch(
       { tenant: tenantCtx, memberRepo: buildMembersDeps(tenantCtx).memberRepo },
-      { status: ['active', 'inactive', 'archived'], limit: 100 },
+      // Ceiling 500 — snapshot fallback only (detail + list use the
+      // frozen memberIdentitySnapshot first per FR-038, this map is a
+      // belt-and-suspenders fallback for pre-issue drafts on tenants
+      // within the 500-member window). See F4 Phase 10 smart feature
+      // #2 for server-paged search at scale.
+      { status: ['active', 'inactive', 'archived'], limit: 500 },
     ),
   ]);
 
@@ -141,6 +146,19 @@ export default async function AdminInvoicesPage({
               <p className="text-muted-foreground">
                 {hasFilters ? t('list.filteredEmpty') : t('list.empty')}
               </p>
+              {hasFilters && (
+                // Filtered-empty state — provide an explicit escape
+                // hatch back to the unfiltered list. The filter bar
+                // above has its own clear button, but on long tables
+                // it may have scrolled off the viewport by the time
+                // the user reaches the empty state (UX-M1).
+                <Link
+                  href="/admin/invoices"
+                  className={buttonVariants({ variant: 'outline', className: 'mt-4' })}
+                >
+                  {t('list.actions.clearFilters')}
+                </Link>
+              )}
               {!hasFilters && isAdmin && (
                 <Link
                   href="/admin/invoices/new"

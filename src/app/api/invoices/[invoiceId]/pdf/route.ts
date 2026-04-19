@@ -6,6 +6,7 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getInvoicePdfSignedUrl, makeGetInvoicePdfSignedUrlDeps } from '@/modules/invoicing';
+import { logger } from '@/lib/logger';
 
 export async function GET(
   request: NextRequest,
@@ -28,13 +29,30 @@ export async function GET(
     },
   );
   if (!result.ok) {
+    logger.warn(
+      {
+        requestId,
+        tenantId: tenantCtx.slug,
+        invoiceId,
+        errorCode: result.error.code,
+      },
+      'GET /api/invoices/[id]/pdf failed',
+    );
     const status = result.error.code === 'invoice_not_found' ? 404 : 403;
     return NextResponse.json({ error: { code: result.error.code } }, { status });
   }
   const response = NextResponse.redirect(result.value.url, { status: 307 });
+  // RFC 6266-compliant Content-Disposition — quote the ASCII fallback
+  // AND emit filename* with percent-encoded UTF-8 so Thai / space /
+  // non-ASCII characters survive cross-browser. Note: browsers often
+  // honor the Content-Disposition on the REDIRECT TARGET (Vercel
+  // Blob) instead of this response — the Blob upload must also set
+  // it. See adapters/vercel-blob-adapter.ts for the upload side.
+  const raw = result.value.filename;
+  const asciiSafe = raw.replace(/["\\]/g, '_').replace(/[^\x20-\x7E]/g, '_');
   response.headers.set(
     'Content-Disposition',
-    `attachment; filename=${result.value.filename}`,
+    `attachment; filename="${asciiSafe}"; filename*=UTF-8''${encodeURIComponent(raw)}`,
   );
   return response;
 }

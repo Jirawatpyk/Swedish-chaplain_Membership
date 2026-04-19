@@ -42,8 +42,10 @@ export type { MemberIdentitySnapshot } from './domain/value-objects/member-ident
 export {
   Sha256Hex,
   asSha256Hex,
-  type Sha256HexError,
 } from './domain/value-objects/sha256-hex';
+// `Sha256HexError` intentionally not exported — consumers receive the
+// inline `{ ok:false, error:{kind,raw} }` shape from `Sha256Hex.parse`
+// and rarely need the nominal type.
 
 // --- Audit event types (for F3 timeline integration US7) --------------------
 export type { F4AuditEventType, F4AuditEvent } from './application/ports/audit-port';

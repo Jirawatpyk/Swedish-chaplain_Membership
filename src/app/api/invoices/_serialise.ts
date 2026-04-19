@@ -7,6 +7,22 @@
  */
 import type { Invoice } from '@/modules/invoicing';
 
+/**
+ * Strip the `reason` field from a typed error object before returning
+ * it to an HTTP client. `reason` is infrastructure detail (raw
+ * `String(e)` from @react-pdf or Vercel Blob) that may include font
+ * paths, blob URLs, or stack-trace fragments — the full context is
+ * already captured by the use-case logger.
+ */
+export function stripReason<E extends { code: string }>(error: E): Omit<E, 'reason'> {
+  if ('reason' in error) {
+    const clone: Record<string, unknown> = { ...error };
+    delete clone.reason;
+    return clone as Omit<E, 'reason'>;
+  }
+  return error;
+}
+
 export function serialiseInvoice(invoice: Invoice) {
   return {
     tenant_id: invoice.tenantId,

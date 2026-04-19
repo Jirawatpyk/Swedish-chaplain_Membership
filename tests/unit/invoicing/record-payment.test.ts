@@ -365,4 +365,28 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     const r = await recordPayment(deps, { ...rest });
     expect(r.ok).toBe(true);
   });
+
+  it('concurrent_state_change — applyPayment throws "no row updated" → typed error (race guard)', async () => {
+    // Scenario: lockForUpdate observed status='issued' but another
+    // transaction flipped the invoice to 'paid'/'void' between the
+    // lock and applyPayment. The repo throws; the use case must
+    // catch + map to the typed concurrent_state_change code so the
+    // route layer returns 409 instead of a raw 500.
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings());
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw new Error('applyPayment: no row updated');
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('concurrent_state_change');
+  });
+
+  it('idempotent replay does NOT call applyPayment (tautology-proof)', async () => {
+    const paid = makeIssuedInvoice({ status: 'paid' });
+    const deps = makeDeps(true, paid, makeSettings());
+    await recordPayment(deps, input);
+    expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+  });
 });

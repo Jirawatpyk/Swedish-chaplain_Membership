@@ -24,9 +24,16 @@ const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
 export function PaymentForm({
   invoiceId,
   documentNumber,
+  issueDate,
 }: {
   invoiceId: string;
   documentNumber: string | null;
+  /**
+   * The invoice's `issue_date` (YYYY-MM-DD) — used as the lower bound
+   * for the payment-date picker. Payments cannot pre-date the
+   * issuance of the tax document (§87 temporal consistency).
+   */
+  issueDate: string | null;
 }) {
   const t = useTranslations('admin.invoices.pay');
   const router = useRouter();
@@ -35,13 +42,16 @@ export function PaymentForm({
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
+  const [todayIso, setTodayIso] = useState('');
   useEffect(() => {
     // Seed with today's date on the client only to avoid SSR/CSR
     // hydration mismatch from `new Date()`. The outer wrapper carries
     // `suppressHydrationWarning`; the setState-on-mount pattern is the
     // documented React 19 pattern for this case.
+    const today = new Date().toISOString().slice(0, 10);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentDate(today);
+    setTodayIso(today);
   }, []);
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -116,7 +126,16 @@ export function PaymentForm({
           value={paymentDate}
           onChange={(e) => setPaymentDate(e.target.value)}
           required
+          // Clamp [issueDate, today] — prevents typos like 2062-04-19
+          // and ensures payment cannot pre-date the tax document
+          // (§87 temporal consistency).
+          {...(issueDate ? { min: issueDate } : {})}
+          {...(todayIso ? { max: todayIso } : {})}
+          aria-describedby="date-hint"
         />
+        <p id="date-hint" className="mt-1 text-xs text-muted-foreground">
+          {t('fields.dateHint')}
+        </p>
       </div>
       <div>
         <Label htmlFor="notes">{t('fields.notes')}</Label>

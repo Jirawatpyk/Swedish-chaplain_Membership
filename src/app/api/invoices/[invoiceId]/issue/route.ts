@@ -12,7 +12,8 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { issueInvoice, issueInvoiceSchema, makeIssueInvoiceDeps } from '@/modules/invoicing';
-import { serialiseInvoice } from '../../_serialise';
+import { serialiseInvoice, stripReason } from '../../_serialise';
+import { logger } from '@/lib/logger';
 
 export async function POST(
   request: NextRequest,
@@ -37,6 +38,15 @@ export async function POST(
 
   const result = await issueInvoice(makeIssueInvoiceDeps(tenantCtx.slug), parsed.data);
   if (!result.ok) {
+    logger.warn(
+      {
+        requestId,
+        tenantId: tenantCtx.slug,
+        invoiceId,
+        errorCode: result.error.code,
+      },
+      'POST /api/invoices/[id]/issue failed',
+    );
     const status =
       result.error.code === 'invoice_not_found' ? 404
       : result.error.code === 'member_not_found' ? 404
@@ -45,7 +55,7 @@ export async function POST(
       : result.error.code === 'settings_missing' ? 409
       : result.error.code === 'overflow' ? 422
       : 500;
-    return NextResponse.json({ error: result.error }, { status });
+    return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
   return NextResponse.json(serialiseInvoice(result.value), { status: 200 });
 }

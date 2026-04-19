@@ -217,7 +217,7 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
   });
 
   it.each(['issued', 'paid', 'void', 'credited'] as const)(
-    'invoice_already_issued when status=%s → err',
+    'invoice_already_issued when status=%s → err (detected via lockForUpdate)',
     async (status) => {
       const deps = makeDeps(
         makeDraftInvoice({ status: status as InvoiceStatus }),
@@ -232,6 +232,21 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
       }
     },
   );
+
+  it('invoice_already_issued — applyIssue race (lock says draft, UPDATE affects 0 rows) maps to typed error', async () => {
+    // Scenario: lockForUpdate observed 'draft' but another tx flipped
+    // to 'issued' between the lock read and the UPDATE (the
+    // applyIssue WHERE status='draft' guard returns 0 rows). The
+    // use-case must catch + map to a typed invoice_already_issued
+    // error, not a raw 500.
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    deps.invoiceRepo.applyIssue = vi.fn(async () => {
+      throw new Error('applyIssue: no draft row updated (concurrent issue?)');
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('invoice_already_issued');
+  });
 
   it('member_not_found → err', async () => {
     const deps = makeDeps(makeDraftInvoice(), makeSettings(), null);

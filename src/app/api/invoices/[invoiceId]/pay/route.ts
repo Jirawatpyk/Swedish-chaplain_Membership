@@ -6,7 +6,8 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { recordPayment, recordPaymentSchema, makeRecordPaymentDeps } from '@/modules/invoicing';
-import { serialiseInvoice } from '../../_serialise';
+import { serialiseInvoice, stripReason } from '../../_serialise';
+import { logger } from '@/lib/logger';
 
 export async function POST(
   request: NextRequest,
@@ -42,11 +43,26 @@ export async function POST(
 
   const result = await recordPayment(makeRecordPaymentDeps(tenantCtx.slug), parsed.data);
   if (!result.ok) {
+    logger.warn(
+      {
+        requestId,
+        tenantId: tenantCtx.slug,
+        invoiceId,
+        errorCode: result.error.code,
+      },
+      'POST /api/invoices/[id]/pay failed',
+    );
     const status =
       result.error.code === 'invoice_not_found' ? 404
       : result.error.code === 'invalid_status' ? 409
+      : result.error.code === 'concurrent_state_change' ? 409
+      : result.error.code === 'settings_missing' ? 409
+      : result.error.code === 'no_snapshot_on_invoice' ? 422
+      : result.error.code === 'overflow' ? 422
+      : result.error.code === 'pdf_render_failed' ? 500
+      : result.error.code === 'blob_upload_failed' ? 500
       : 422;
-    return NextResponse.json({ error: result.error }, { status });
+    return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
   return NextResponse.json(serialiseInvoice(result.value));
 }

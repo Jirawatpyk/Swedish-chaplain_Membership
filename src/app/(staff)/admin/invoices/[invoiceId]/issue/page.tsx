@@ -111,8 +111,20 @@ export default async function IssueInvoicePage({
       <PageHeader title={t('title')} subtitle={t('description')} />
       <Card>
         <CardContent className="flex flex-col gap-[var(--page-section-gap)]">
-          {/* Pre-confirm summary */}
-          <dl className="grid grid-cols-2 gap-4 text-sm">
+          {/* Destructive-action warning — legally irreversible (UX-L1). */}
+          <div
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+          >
+            {t('irreversibleWarning')}
+          </div>
+          {/* Pre-confirm summary — `id` referenced from IssueConfirmPanel
+              via aria-describedby so AT users hear the numbers before
+              the typed-phrase input takes focus. */}
+          <dl
+            id="issue-invoice-summary"
+            className="grid grid-cols-2 gap-4 text-sm"
+          >
             <div>
               <dt className="text-muted-foreground">{tDetail('fields.memberId')}</dt>
               <dd>{memberDisplayName}</dd>
@@ -142,7 +154,10 @@ export default async function IssueInvoicePage({
               </dd>
             </div>
           </dl>
-          <IssueConfirmDialog invoiceId={invoice.invoiceId} />
+          <IssueConfirmDialog
+            invoiceId={invoice.invoiceId}
+            summaryId="issue-invoice-summary"
+          />
         </CardContent>
       </Card>
       <Link

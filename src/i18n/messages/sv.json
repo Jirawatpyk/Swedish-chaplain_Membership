@@ -830,7 +830,8 @@
         "empty": "Inga fakturor än — skapa första utkastet.",
         "actions": {
           "new": "Ny faktura",
-          "download": "PDF"
+          "download": "PDF",
+          "clearFilters": "Rensa filter"
         },
         "columns": {
           "documentNumber": "Nr",
@@ -922,12 +923,14 @@
       "issue": {
         "title": "Utfärda faktura",
         "description": "Konsumerar nästa löpnummer. Kan ej återställas (annullering sker separat).",
+        "confirmPhrase": "UTFÄRDA",
         "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",
         "typeToConfirm": "Bekräftelsefras",
         "issueButton": "Utfärda",
         "issuing": "Utfärdar…",
         "success": "Fakturan utfärdad",
         "cancel": "Avbryt",
+        "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan **inte ångras** — för att annullera måste en kreditnota utfärdas.",
         "errors": {
           "failed": "Kunde inte utfärda",
           "codeFallback": "Felkod: {code}",
@@ -954,6 +957,7 @@
           "reference": "Referens",
           "referencePlaceholder": "Banköverförings-id / checknummer",
           "date": "Betalningsdatum",
+          "dateHint": "Datum visas i gregoriansk kalender. Måste vara på eller efter fakturans utfärdandedatum och får inte vara i framtiden.",
           "notes": "Anteckningar"
         },
         "methods": {

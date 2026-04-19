@@ -54,7 +54,11 @@ export default async function RecordPaymentPage({
       <PageHeader title={t('title')} subtitle={t('description')} />
       <Card>
         <CardContent>
-          <PaymentForm invoiceId={invoice.invoiceId} documentNumber={invoice.documentNumber?.raw ?? null} />
+          <PaymentForm
+            invoiceId={invoice.invoiceId}
+            documentNumber={invoice.documentNumber?.raw ?? null}
+            issueDate={invoice.issueDate}
+          />
         </CardContent>
       </Card>
       <Link

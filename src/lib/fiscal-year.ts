@@ -16,7 +16,7 @@
  *   - `src/modules/invoicing/domain/value-objects/fiscal-year.ts`
  *     (Domain imports FROM here — this is a leaf util with no
  *     Domain-forbidden dependencies.)
- *   - `SequentialNumberAllocator` (infrastructure) to tag a new
+ *   - `postgresSequenceAllocator` (infrastructure) to tag a new
  *     invoice/credit-note with the correct FY at issue time.
  *
  * Convention: FY `n` starts on the 1st day of
