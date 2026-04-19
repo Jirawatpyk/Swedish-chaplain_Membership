@@ -14,7 +14,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { and, desc, eq } from 'drizzle-orm';
 import { auditPayloadSchema } from '@/modules/plans/domain/audit-event';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
-import { feeConfigRepo } from '@/modules/plans/infrastructure/db/fee-config-repo';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
 import { stubMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/stub-member-attachment-checker';
 import { updatePlan } from '@/modules/plans/application/update-plan';
@@ -77,12 +76,6 @@ describe('Integration: plan_updated audit-diff round-trip (T114)', () => {
   it('payload round-trips through auditPayloadSchema with correct diff shape', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
     await planRepo.insert(tenant.ctx, seed(user.userId));
 
     // Mutate plan_name.en + annual_fee_minor_units in one call

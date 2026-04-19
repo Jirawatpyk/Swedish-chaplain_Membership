@@ -21,7 +21,6 @@ import { asPlanYear } from '@/modules/plans/domain/plan';
 import { createPlan } from '@/modules/plans/application/create-plan';
 import { clonePlansToYear } from '@/modules/plans/application/clone-plans-to-year';
 import { stubMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/stub-member-attachment-checker';
-import { feeConfigRepo } from '@/modules/plans/infrastructure/db/fee-config-repo';
 import { db } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -80,13 +79,6 @@ describe('Integration: audit-diff round-trip for create + clone (T096)', () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
 
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
-
     const result = await createPlan(
       {
         input: buildInput('premium', 2027),
@@ -130,13 +122,6 @@ describe('Integration: audit-diff round-trip for create + clone (T096)', () => {
   it('plan_cloned audit payload round-trips through auditPayloadSchema', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
 
     // Seed 3 source-year plans
     for (let i = 0; i < 3; i++) {
