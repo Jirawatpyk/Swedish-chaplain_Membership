@@ -19,7 +19,6 @@
 import type { TenantContext } from '@/modules/tenants';
 import type { PlansDeps } from './application/ports';
 import { planRepo } from './infrastructure/db/plan-repo';
-import { feeConfigRepo } from './infrastructure/db/fee-config-repo';
 import { planAuditAdapter } from './infrastructure/audit/plan-audit-adapter';
 import { stubMemberAttachmentChecker } from './infrastructure/members/stub-member-attachment-checker';
 import { getTenantTaxPolicy, makeGetTenantTaxPolicyDeps } from '@/modules/invoicing';
@@ -51,8 +50,7 @@ export function buildPlansDeps(tenant: TenantContext): PlansDeps {
   return {
     tenant,
     planRepo,
-    feeConfigRepo,
-    // R7 consolidation — cross-module composition: reads F4's
+    // R8 consolidation final — cross-module composition: reads F4's
     // invoice_settings via the public `getTenantTaxPolicy` facade.
     // Adapts F4's `VatRate` + `currencyCode` view to the minimal
     // shape list-plans expects (raw 4-dp string + currency string).

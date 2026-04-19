@@ -102,7 +102,6 @@ describe('Integration: plan_updated audit-diff round-trip (T114)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
         audit: planAuditAdapter,
         clock: currentYearClock,
         members: stubMemberAttachmentChecker,

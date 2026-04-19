@@ -109,7 +109,6 @@ describe('Integration: soft-delete with attached members (T125)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
         audit: planAuditAdapter,
         clock: currentYearClock,
         members: makeFakeChecker(3),
@@ -155,7 +154,6 @@ describe('Integration: soft-delete with attached members (T125)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
         audit: planAuditAdapter,
         clock: currentYearClock,
         members: makeFakeChecker(0),

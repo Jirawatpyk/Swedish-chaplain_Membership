@@ -15,7 +15,6 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   ClockPort,
-  FeeConfigRepo,
   ListPlansFilter,
   PlanRepo,
 } from './ports';
@@ -72,20 +71,17 @@ export type ListPlansDeps = {
   readonly tenant: TenantContext;
   readonly planRepo: PlanRepo;
   /**
-   * R7 consolidation — authoritative tenant tax policy source, reads
-   * `tenant_invoice_settings.vat_rate` + `.currency_code`. Wired via
-   * the F4 invoicing barrel's `getTenantTaxPolicy` in the composition
-   * root. Returns null when the tenant has not yet configured invoice
-   * settings — list-plans then falls back to `feeConfigRepo` for
-   * graceful degradation on tenants that pre-date R7 and haven't
-   * visited `/admin/settings/invoicing` yet. The fallback is removed
-   * in R8 once every tenant has an invoice_settings row.
+   * R8 consolidation final — authoritative tenant tax policy source,
+   * reads `tenant_invoice_settings.vat_rate` + `.currency_code` via
+   * the F4 `getTenantTaxPolicy` facade wired in the composition root.
+   * Migration 0028 backfilled invoice_settings rows for every tenant
+   * that had a fee_config row, so `null` here means a truly
+   * un-onboarded tenant (no fee_config either) — bootstrap error.
    */
   readonly taxPolicy: () => Promise<{
     readonly currencyCode: string;
     readonly vatRateRaw: string; // "0.0700"
   } | null>;
-  readonly feeConfigRepo: FeeConfigRepo;
   readonly clock: ClockPort;
 };
 
@@ -100,26 +96,18 @@ export async function listPlans(
     const year =
       input.filter.year ?? asPlanYear(deps.clock.currentYear());
 
-    // R7 consolidation — prefer `tenant_invoice_settings` (authoritative
-    // per Option 2). Fall back to `tenant_fee_config` only when no
-    // invoice-settings row exists yet (tenant hasn't visited
-    // `/admin/settings/invoicing`). Both sources missing → bootstrap
-    // error. The fee_config fallback is scheduled for removal in R8
-    // after every tenant has an invoice_settings row.
-    let currencyCode: string;
-    let vatRateNumber: number;
+    // R8 consolidation final — `tenant_invoice_settings` is the sole
+    // authoritative source. Migration 0028 guarantees every tenant
+    // with a pre-existing `tenant_fee_config` row also has an
+    // `invoice_settings` row. A null return here means the tenant is
+    // un-onboarded — surface the same bootstrap error type as pre-R8
+    // so API consumers don't have to switch.
     const tax = await deps.taxPolicy();
-    if (tax) {
-      currencyCode = tax.currencyCode;
-      vatRateNumber = Number(tax.vatRateRaw);
-    } else {
-      const feeConfig = await deps.feeConfigRepo.findByTenant(deps.tenant);
-      if (!feeConfig) {
-        return err({ type: 'fee_config_missing' });
-      }
-      currencyCode = feeConfig.currency_code;
-      vatRateNumber = feeConfig.vat_rate;
+    if (!tax) {
+      return err({ type: 'fee_config_missing' });
     }
+    const currencyCode = tax.currencyCode;
+    const vatRateNumber = Number(tax.vatRateRaw);
 
     // Load plans via repo — RLS scopes by tenant; no explicit tenant_id filter.
     const plans = await deps.planRepo.findByTenantAndYear(deps.tenant, {

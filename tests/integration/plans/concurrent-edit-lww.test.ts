@@ -106,7 +106,6 @@ describe('Integration: concurrent edit LWW (T113)', () => {
         {
           tenant: tenant.ctx,
           planRepo,
-          feeConfigRepo,
           audit: planAuditAdapter,
           clock: currentYearClock,
           members: stubMemberAttachmentChecker,
@@ -125,7 +124,6 @@ describe('Integration: concurrent edit LWW (T113)', () => {
         {
           tenant: tenant.ctx,
           planRepo,
-          feeConfigRepo,
           audit: planAuditAdapter,
           clock: currentYearClock,
           members: stubMemberAttachmentChecker,
@@ -172,7 +170,6 @@ describe('Integration: concurrent edit LWW (T113)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
         audit: planAuditAdapter,
         clock: currentYearClock,
         members: stubMemberAttachmentChecker,
@@ -191,7 +188,6 @@ describe('Integration: concurrent edit LWW (T113)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
         audit: planAuditAdapter,
         clock: currentYearClock,
         members: stubMemberAttachmentChecker,

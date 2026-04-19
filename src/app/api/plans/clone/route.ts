@@ -138,7 +138,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     {
       tenant: deps.tenant,
       planRepo: deps.planRepo,
-      feeConfigRepo: deps.feeConfigRepo,
       audit: deps.audit,
       clock: deps.clock,
       members: deps.members,

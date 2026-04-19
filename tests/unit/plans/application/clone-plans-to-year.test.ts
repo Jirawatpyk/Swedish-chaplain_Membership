@@ -82,17 +82,11 @@ function makeDeps(overrides: Partial<ClonePlansToYearDeps> = {}): ClonePlansToYe
     countActiveForTenant: vi.fn(),
   };
 
-  const feeConfigRepo = {
-    findByTenant: vi.fn(),
-    update: vi.fn(),
-    upsert: vi.fn(),
-  };
-
   const audit = makeAuditStub();
   const clock = { now: vi.fn(() => new Date('2026-01-01T00:00:00Z')), currentYear: vi.fn(() => 2026) };
   const members = { countActivePlanMembers: vi.fn(async () => 0) };
 
-  return { tenant: TENANT, planRepo, feeConfigRepo, audit, clock, members, ...overrides };
+  return { tenant: TENANT, planRepo, audit, clock, members, ...overrides };
 }
 
 // ---------------------------------------------------------------------------

@@ -82,7 +82,6 @@ export default async function EditMemberPage({ params }: PageProps) {
     {
       tenant: plansDeps.tenant,
       planRepo: plansDeps.planRepo,
-      feeConfigRepo: plansDeps.feeConfigRepo,
       taxPolicy: plansDeps.taxPolicy,
       clock: plansDeps.clock,
     },

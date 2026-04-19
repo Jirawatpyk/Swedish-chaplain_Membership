@@ -282,13 +282,14 @@ export interface MemberAttachmentChecker {
 export type PlansDeps = {
   readonly tenant: TenantContext;
   readonly planRepo: PlanRepo;
-  readonly feeConfigRepo: FeeConfigRepo;
   /**
-   * R7 consolidation — authoritative tax policy source (F4
-   * invoice_settings). Wired via the F4 barrel's `getTenantTaxPolicy`
-   * in the composition root. Returns null when the tenant's
-   * invoice-settings row doesn't exist yet; callers may fall back
-   * to `feeConfigRepo` during the expand phase.
+   * R8 consolidation final — authoritative tax policy source (F4
+   * invoice_settings, via the F4 barrel's `getTenantTaxPolicy`
+   * facade wired in `plans-deps.ts`). Returns null for un-onboarded
+   * tenants; readers surface a bootstrap error. The previous
+   * `feeConfigRepo` dep + FeeConfigRepo port + infrastructure
+   * adapter were removed after migration 0028 backfilled every
+   * tenant's invoice_settings row.
    */
   readonly taxPolicy: () => Promise<{
     readonly currencyCode: string;

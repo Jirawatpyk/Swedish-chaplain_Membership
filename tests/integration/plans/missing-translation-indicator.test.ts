@@ -94,11 +94,10 @@ describe('Integration: missing_translations indicator (T067)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
-        // R7 consolidation — return null from stub so list-plans
-        // exercises the fee_config fallback path this test intends
-        // (seeded fee_config row is what's under test).
-        taxPolicy: async () => null,
+        // R8 — list-plans now reads ONLY via taxPolicy; stub returns
+        // the values this test seeded on tenant_fee_config so the
+        // assertions on currency_code + vat_rate still hold.
+        taxPolicy: async () => ({ currencyCode: 'THB', vatRateRaw: '0.0700' }),
         clock: { now: () => new Date('2026-06-01T00:00:00Z'), currentYear: () => 2026 },
       },
     );
@@ -117,11 +116,10 @@ describe('Integration: missing_translations indicator (T067)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
-        // R7 consolidation — return null from stub so list-plans
-        // exercises the fee_config fallback path this test intends
-        // (seeded fee_config row is what's under test).
-        taxPolicy: async () => null,
+        // R8 — list-plans now reads ONLY via taxPolicy; stub returns
+        // the values this test seeded on tenant_fee_config so the
+        // assertions on currency_code + vat_rate still hold.
+        taxPolicy: async () => ({ currencyCode: 'THB', vatRateRaw: '0.0700' }),
         clock: { now: () => new Date('2026-06-01T00:00:00Z'), currentYear: () => 2026 },
       },
     );

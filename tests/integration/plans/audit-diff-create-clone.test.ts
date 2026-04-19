@@ -98,7 +98,6 @@ describe('Integration: audit-diff round-trip for create + clone (T096)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
         audit: planAuditAdapter,
         clock: systemClock,
         members: stubMemberAttachmentChecker,
@@ -152,7 +151,6 @@ describe('Integration: audit-diff round-trip for create + clone (T096)', () => {
         {
           tenant: tenant.ctx,
           planRepo,
-          feeConfigRepo,
           audit: planAuditAdapter,
           clock: systemClock,
           members: stubMemberAttachmentChecker,
@@ -173,7 +171,6 @@ describe('Integration: audit-diff round-trip for create + clone (T096)', () => {
       {
         tenant: tenant.ctx,
         planRepo,
-        feeConfigRepo,
         audit: planAuditAdapter,
         clock: systemClock,
         members: stubMemberAttachmentChecker,

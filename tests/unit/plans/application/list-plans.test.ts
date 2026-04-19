@@ -50,8 +50,13 @@ function makePlan(overrides: Partial<Plan> = {}): Plan {
   } as unknown as Plan;
 }
 
+interface FeeConfigOverride {
+  readonly currency_code: string;
+  readonly vat_rate: number;
+}
+
 function makeDeps(overrides: {
-  feeConfig?: object | null | Error;
+  feeConfig?: FeeConfigOverride | null | Error;
   plans?: Plan[] | Error;
   currentYear?: number;
 } = {}): ListPlansDeps {
@@ -72,23 +77,31 @@ function makeDeps(overrides: {
       cloneYear: vi.fn(),
       countActiveForTenant: vi.fn(),
     },
-    feeConfigRepo: {
-      findByTenant: vi.fn(async () => {
-        if ('feeConfig' in overrides) {
-          const r = overrides.feeConfig;
-          if (r instanceof Error) throw r;
-          return r;
-        }
-        return BASE_FEE_CONFIG;
-      }),
-      update: vi.fn(),
-      upsert: vi.fn(),
-    },
-    // R7 consolidation — default stub returns null so the test
-    // exercises the fee_config fallback path that existing test
-    // cases already assert on. Tests that want the new-path behaviour
-    // override `taxPolicy` in the deps argument.
-    taxPolicy: vi.fn(async () => null),
+    // R8 consolidation final — ListPlansDeps only carries `taxPolicy`
+    // now; the legacy `feeConfigRepo` dep was removed. We drive the
+    // same three scenarios the test file exercises (null / throw /
+    // happy-path row) through the taxPolicy stub, mapping the
+    // `feeConfig` override to a taxPolicy shape:
+    //   null → taxPolicy returns null (→ fee_config_missing error)
+    //   Error → taxPolicy throws (→ server_error)
+    //   object → taxPolicy returns { currencyCode, vatRateRaw }
+    //   undefined (default) → taxPolicy returns BASE_FEE_CONFIG values
+    taxPolicy: vi.fn(async () => {
+      if ('feeConfig' in overrides) {
+        const r = overrides.feeConfig;
+        if (r === null) return null;
+        if (r instanceof Error) throw r;
+        // Convert FeeConfigRow → taxPolicy shape.
+        return {
+          currencyCode: r.currency_code,
+          vatRateRaw: r.vat_rate.toFixed(4),
+        };
+      }
+      return {
+        currencyCode: BASE_FEE_CONFIG.currency_code,
+        vatRateRaw: BASE_FEE_CONFIG.vat_rate.toFixed(4),
+      };
+    }),
     clock: {
       now: vi.fn(() => NOW),
       currentYear: vi.fn(() => overrides.currentYear ?? 2026),
