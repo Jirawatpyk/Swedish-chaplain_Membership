@@ -97,6 +97,7 @@ async function seedTenantForIssuance(
     });
     await tx.insert(tenantInvoiceSettings).values({
       tenantId: tenant.ctx.slug,
+      currencyCode: 'THB',
       vatRate: '0.0700',
       registrationFeeSatang: 0n,
       legalNameTh: 'ทดสอบ',

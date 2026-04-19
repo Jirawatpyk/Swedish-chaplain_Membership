@@ -99,6 +99,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       });
       await tx.insert(tenantInvoiceSettings).values({
         tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
         vatRate: '0.0700',
         registrationFeeSatang: 0n,
         legalNameTh: 'ทดสอบ',

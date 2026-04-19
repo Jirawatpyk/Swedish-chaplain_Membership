@@ -4,7 +4,6 @@ import {
   LayoutDashboardIcon,
   FileTextIcon,
   UsersIcon,
-  SettingsIcon,
   UserCircleIcon,
   BuildingIcon,
   ReceiptIcon,

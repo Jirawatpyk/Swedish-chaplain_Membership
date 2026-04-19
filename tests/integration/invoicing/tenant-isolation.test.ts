@@ -165,6 +165,7 @@ describe('F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)', () => {
       await runInTenant(t.ctx, (tx) =>
         tx.insert(tenantInvoiceSettings).values({
           tenantId: t.ctx.slug,
+          currencyCode: 'THB',
           vatRate: '0.0700',
           registrationFeeSatang: 500000n,
           legalNameTh: 'ทดสอบ',
