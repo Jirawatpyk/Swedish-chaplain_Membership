@@ -151,6 +151,7 @@ function makeIssueDeps(
   const invoiceRepo: InvoiceRepo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
   const settingsView: TenantInvoiceSettingsView = {
     tenantId: tenant.ctx.slug,
+    currencyCode: 'THB',
     vatRate: VatRate.ofUnsafe('0.0700'),
     registrationFeeSatang: 0n,
     invoiceNumberPrefix: 'T',

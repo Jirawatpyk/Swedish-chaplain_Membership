@@ -42,6 +42,7 @@ import { logger } from '@/lib/logger';
 // Body shape — snake_case for HTTP wire; mapped to camelCase use-case
 // input below. All fields optional (PATCH semantics).
 const bodySchema = z.object({
+  currency_code: z.string().optional(),
   vat_rate: z.string().optional(),
   registration_fee_satang: z.string().optional(),
   legal_name_th: z.string().optional(),
@@ -87,6 +88,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     tenantId: tenantCtx.slug,
     actorUserId: ctx.current.user.id,
     requestId,
+    ...(b.currency_code !== undefined && { currencyCode: b.currency_code }),
     ...(b.vat_rate !== undefined && { vatRate: b.vat_rate }),
     ...(b.registration_fee_satang !== undefined && {
       registrationFeeSatang: BigInt(b.registration_fee_satang),

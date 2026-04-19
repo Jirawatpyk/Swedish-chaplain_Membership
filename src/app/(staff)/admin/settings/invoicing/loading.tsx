@@ -42,23 +42,29 @@ export default async function Loading() {
           </CardHeader>
           <CardContent>
             <div className="space-y-8">
-              {(['identity', 'tax', 'numbering', 'defaults', 'logo'] as const).map(
-                (section) => (
-                  <section key={section} className="space-y-4">
-                    <h3 className="text-sm font-semibold">{t(`sections.${section}`)}</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      {Array.from({ length: section === 'logo' ? 1 : 2 }).map(
-                        (_, i) => (
-                          <div key={i} className="space-y-2">
-                            <SkeletonBlock className="h-4 w-28" />
-                            <SkeletonBlock className="h-[var(--input-height)] w-full" />
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  </section>
-                ),
-              )}
+              {(
+                ['currency', 'identity', 'tax', 'numbering', 'defaults', 'logo'] as const
+              ).map((section) => (
+                <section key={section} className="space-y-4">
+                  <h3 className="text-sm font-semibold">{t(`sections.${section}`)}</h3>
+                  <div
+                    className={
+                      section === 'currency'
+                        ? 'sm:max-w-xs'
+                        : 'grid grid-cols-1 gap-4 sm:grid-cols-2'
+                    }
+                  >
+                    {Array.from({
+                      length: section === 'currency' || section === 'logo' ? 1 : 2,
+                    }).map((_, i) => (
+                      <div key={i} className="space-y-2">
+                        <SkeletonBlock className="h-4 w-28" />
+                        <SkeletonBlock className="h-[var(--input-height)] w-full" />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
               <SkeletonBlock className="h-11 w-full" />
             </div>
           </CardContent>

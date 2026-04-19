@@ -29,6 +29,10 @@ export const updateTenantInvoiceSettingsSchema = z.object({
   // Every field optional — partial PATCH. Zod narrows each to its
   // storage shape (e.g. VAT as 4-dp string, `YYYY-MM-DD` ≠ needed here
   // because settings don't carry dates).
+  currencyCode: z
+    .string()
+    .regex(/^[A-Z]{3}$/, 'currencyCode must be 3 uppercase letters (ISO 4217)')
+    .optional(),
   vatRate: z
     .string()
     .regex(/^(?:0|[1-9]\d*)\.\d{4}$/, 'vatRate must be 4-dp decimal (e.g. 0.0700)')
@@ -82,6 +86,7 @@ export async function updateTenantInvoiceSettings(
   // is readonly at the type level, so construct as a spread that
   // filters out undefined values.
   const patch: TenantInvoiceSettingsPatch = {
+    ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
     ...(input.vatRate !== undefined && { vatRate: input.vatRate }),
     ...(input.registrationFeeSatang !== undefined && {
       registrationFeeSatang: input.registrationFeeSatang,

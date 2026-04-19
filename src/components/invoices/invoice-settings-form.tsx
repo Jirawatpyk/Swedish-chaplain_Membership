@@ -38,6 +38,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 
 export interface InvoiceSettingsFormInitialValues {
+  readonly currency_code: string; // ISO 4217 (e.g. "THB")
   readonly legal_name_th: string;
   readonly legal_name_en: string;
   readonly tax_id: string;
@@ -71,6 +72,7 @@ export function InvoiceSettingsForm({
   const router = useRouter();
   const isAdmin = currentUserRole === 'admin';
 
+  const [currencyCode, setCurrencyCode] = useState(initialValues.currency_code);
   const [legalNameTh, setLegalNameTh] = useState(initialValues.legal_name_th);
   const [legalNameEn, setLegalNameEn] = useState(initialValues.legal_name_en);
   const [taxId, setTaxId] = useState(initialValues.tax_id);
@@ -175,7 +177,17 @@ export function InvoiceSettingsForm({
       return;
     }
 
+    // ISO 4217 client-side sanity check — the DB CHECK + Application
+    // regex are the real guards; this just catches obvious typos fast.
+    const normalisedCurrency = currencyCode.trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(normalisedCurrency)) {
+      setError(t('errors.currencyCode'));
+      setSubmitting(false);
+      return;
+    }
+
     const body = {
+      currency_code: normalisedCurrency,
       legal_name_th: legalNameTh,
       legal_name_en: legalNameEn,
       tax_id: taxId,
@@ -223,6 +235,33 @@ export function InvoiceSettingsForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8" noValidate>
+      {/* Currency — R7 consolidation: tenant-wide ISO-4217 code. F2
+          plan module reads this via TenantTaxPolicyPort; this form
+          is the ONLY editor after fee-config UI was removed. */}
+      <section className="space-y-4" aria-labelledby="sect-currency">
+        <h3 id="sect-currency" className="text-sm font-semibold">
+          {t('sections.currency')}
+        </h3>
+        <div className="space-y-2 sm:max-w-xs">
+          <Label htmlFor="currency_code">{t('labels.currencyCode')}</Label>
+          <Input
+            id="currency_code"
+            value={currencyCode}
+            onChange={(e) => setCurrencyCode(e.target.value.toUpperCase())}
+            disabled={disabled}
+            required
+            maxLength={3}
+            pattern="[A-Z]{3}"
+            inputMode="text"
+            aria-describedby="currency_code_hint"
+            className="font-mono uppercase"
+          />
+          <p id="currency_code_hint" className="text-xs text-muted-foreground">
+            {t('hints.currencyCode')}
+          </p>
+        </div>
+      </section>
+
       {/* Identity */}
       <section className="space-y-4" aria-labelledby="sect-identity">
         <h3 id="sect-identity" className="text-sm font-semibold">

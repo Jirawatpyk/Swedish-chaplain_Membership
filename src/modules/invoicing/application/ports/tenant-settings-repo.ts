@@ -7,6 +7,13 @@ import type { ProRatePolicy } from '@/modules/invoicing/domain/value-objects/pro
 
 export interface TenantInvoiceSettingsView {
   readonly tenantId: string;
+  /**
+   * R7 consolidation — ISO-4217 currency code (3 uppercase letters).
+   * Migrated from F2 `tenant_fee_config.currency_code` in migration
+   * 0026. Single authoritative source for F2 plan-pricing display
+   * + F4 invoice rendering.
+   */
+  readonly currencyCode: string;
   readonly vatRate: VatRate;
   readonly registrationFeeSatang: bigint;
   readonly invoiceNumberPrefix: string;
@@ -35,6 +42,16 @@ export interface TenantInvoiceSettingsView {
  * already-validated `logoBlobKey` (output of the upload endpoint).
  */
 export interface TenantInvoiceSettingsPatch {
+  /**
+   * R7 consolidation — ISO-4217. Validation: `/^[A-Z]{3}$/` at the
+   * Application boundary mirrors the DB CHECK from migration 0026.
+   * Note: currency mutation should remain rare in practice — F2
+   * had a `currency_immutable_in_f2` guard when plans exist; the
+   * plans-based guard becomes R8 work (for now the DB CHECK ensures
+   * well-formed values, and admins are trusted not to flip currency
+   * mid-billing-cycle).
+   */
+  readonly currencyCode?: string;
   readonly vatRate?: string;
   readonly registrationFeeSatang?: bigint;
   readonly legalNameTh?: string;

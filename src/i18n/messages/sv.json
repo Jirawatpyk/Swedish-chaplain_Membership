@@ -829,6 +829,7 @@
         "firstTimeDescription": "Inga inställningar ännu. Fyll i obligatoriska fält för att låsa upp fakturering (FR-010)."
       },
       "sections": {
+        "currency": "Valuta",
         "identity": "Juridisk identitet",
         "tax": "Skatt",
         "numbering": "Dokumentnumrering",
@@ -836,6 +837,7 @@
         "logo": "Logotyp"
       },
       "labels": {
+        "currencyCode": "Valutakod",
         "legalNameTh": "Juridiskt namn (thai)",
         "legalNameEn": "Juridiskt namn (engelska)",
         "taxId": "Skatte-ID",
@@ -854,6 +856,7 @@
         "logo": "Ladda upp logotyp"
       },
       "hints": {
+        "currencyCode": "ISO 4217 — 3 versaler (t.ex. THB, USD, SEK).",
         "taxId": "13 siffror (thailändskt skattemyndighetsformat).",
         "receiptPrefix": "Används endast när kvittoläge är \"separat\".",
         "autoEmail": "När på skickas nya fakturor automatiskt via e-post vid utfärdande. Kan åsidosättas per faktura.",
@@ -883,6 +886,7 @@
         }
       },
       "errors": {
+        "currencyCode": "Valutakod måste vara 3 versaler (ISO 4217).",
         "vatRange": "Moms måste vara mellan 0 och 30 procent.",
         "regFeeRange": "Registreringsavgift måste vara 0 eller mer.",
         "fiscalMonth": "Startmånad måste vara 1-12.",

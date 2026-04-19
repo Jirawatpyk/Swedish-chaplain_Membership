@@ -829,6 +829,7 @@
         "firstTimeDescription": "No settings yet. Fill in the required fields to unlock invoice issuance (FR-010)."
       },
       "sections": {
+        "currency": "Currency",
         "identity": "Tenant legal identity",
         "tax": "Tax",
         "numbering": "Document numbering",
@@ -836,6 +837,7 @@
         "logo": "Logo"
       },
       "labels": {
+        "currencyCode": "Currency code",
         "legalNameTh": "Legal name (Thai)",
         "legalNameEn": "Legal name (English)",
         "taxId": "Tax ID",
@@ -854,6 +856,7 @@
         "logo": "Upload logo"
       },
       "hints": {
+        "currencyCode": "ISO 4217 — 3 uppercase letters (e.g. THB, USD, SEK).",
         "taxId": "13 digits (Thai Revenue Department format).",
         "receiptPrefix": "Only used when receipt numbering mode is \"separate\".",
         "autoEmail": "When on, new invoices default to auto-email their PDF on issue. Can be overridden per-invoice.",
@@ -883,6 +886,7 @@
         }
       },
       "errors": {
+        "currencyCode": "Currency code must be 3 uppercase letters (ISO 4217).",
         "vatRange": "VAT must be between 0 and 30 percent.",
         "regFeeRange": "Registration fee must be 0 or greater.",
         "fiscalMonth": "Fiscal-year start month must be 1 through 12.",

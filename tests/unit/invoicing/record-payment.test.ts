@@ -114,6 +114,7 @@ function makeIssuedInvoice(overrides: Partial<Invoice> = {}): Invoice {
 function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): TenantInvoiceSettingsView {
   return {
     tenantId: 'test-swecham',
+    currencyCode: 'THB',
     vatRate: VatRate.ofUnsafe('0.0700'),
     registrationFeeSatang: 500000n,
     invoiceNumberPrefix: 'SC',

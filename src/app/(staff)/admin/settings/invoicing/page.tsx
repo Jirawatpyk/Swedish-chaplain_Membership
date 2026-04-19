@@ -41,6 +41,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 const DEFAULTS: InvoiceSettingsFormInitialValues = {
+  currency_code: 'THB',
   legal_name_th: '',
   legal_name_en: '',
   tax_id: '',
@@ -71,6 +72,7 @@ export default async function InvoiceSettingsPage() {
 
   const initialValues: InvoiceSettingsFormInitialValues = existing
     ? {
+        currency_code: existing.currencyCode,
         legal_name_th: existing.identity.legal_name_th,
         legal_name_en: existing.identity.legal_name_en,
         tax_id: existing.identity.tax_id,

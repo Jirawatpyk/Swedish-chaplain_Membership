@@ -31,6 +31,7 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
 
     return {
       tenantId: row.tenantId,
+      currencyCode: row.currencyCode,
       vatRate: VatRate.ofUnsafe(row.vatRate),
       registrationFeeSatang: BigInt(row.registrationFeeSatang as unknown as string),
       invoiceNumberPrefix: row.invoiceNumberPrefix,
@@ -61,6 +62,7 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     const insertValues: Record<string, unknown> = { tenantId };
     const updateValues: Record<string, unknown> = { updatedAt: sql`now()` };
     const copyFields: Array<[keyof TenantInvoiceSettingsPatch, string]> = [
+      ['currencyCode', 'currencyCode'],
       ['vatRate', 'vatRate'],
       ['registrationFeeSatang', 'registrationFeeSatang'],
       ['legalNameTh', 'legalNameTh'],
