@@ -173,6 +173,7 @@ function makeDeps(
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
       upsert: vi.fn(),
+      withTx: vi.fn(async (_t, fn) => fn({})),
     },
     sequenceAllocator: {
       allocateNext: vi.fn(async () => 1),

@@ -123,8 +123,6 @@ export async function updateTenantInvoiceSettings(
 
   if (Object.keys(patch).length === 0) return err({ code: 'no_op' });
 
-  await deps.tenantSettingsRepo.upsert(input.tenantId, patch);
-
   // Audit with the patch shape so reviewers can reconstruct any
   // change. `registrationFeeSatang` is a bigint — serialise as string
   // so the JSON round-trip is safe.
@@ -133,15 +131,22 @@ export async function updateTenantInvoiceSettings(
     auditPayload.registrationFeeSatang = String(auditPayload.registrationFeeSatang);
   }
 
-  await deps.audit.emit(null, {
-    tenantId: input.tenantId,
-    requestId: input.requestId ?? null,
-    eventType: 'tenant_invoice_settings_updated',
-    actorUserId: input.actorUserId,
-    summary: `Tenant invoice settings updated (${Object.keys(patch).length} field${
-      Object.keys(patch).length === 1 ? '' : 's'
-    })`,
-    payload: auditPayload,
+  // N1 (review 2026-04-19 21:19) — upsert + audit MUST share a single
+  // transaction so an audit failure rolls back the settings write.
+  // Violation would breach Constitution v1.4.0 Principle I clause 4
+  // (audit-in-same-tx, NON-NEGOTIABLE).
+  await deps.tenantSettingsRepo.withTx(input.tenantId, async (tx) => {
+    await deps.tenantSettingsRepo.upsert(input.tenantId, patch, tx);
+    await deps.audit.emit(tx, {
+      tenantId: input.tenantId,
+      requestId: input.requestId ?? null,
+      eventType: 'tenant_invoice_settings_updated',
+      actorUserId: input.actorUserId,
+      summary: `Tenant invoice settings updated (${Object.keys(patch).length} field${
+        Object.keys(patch).length === 1 ? '' : 's'
+      })`,
+      payload: auditPayload,
+    });
   });
 
   return ok(undefined);

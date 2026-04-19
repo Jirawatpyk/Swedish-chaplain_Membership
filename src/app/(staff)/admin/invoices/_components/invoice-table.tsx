@@ -79,7 +79,8 @@ function formatSatang(satang: string): string {
   const whole = abs / 100n;
   const rem = abs % 100n;
   const sign = n < 0n ? '-' : '';
-  return `${sign}${whole.toLocaleString()}.${rem.toString().padStart(2, '0')}`;
+  // N11 — explicit 'en-US' pins thousand-separator output. FR-005.
+  return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
 const headCls = 'text-xs uppercase tracking-wide text-muted-foreground';

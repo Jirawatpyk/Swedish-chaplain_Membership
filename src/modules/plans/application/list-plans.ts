@@ -109,6 +109,16 @@ export async function listPlans(
     const currencyCode = tax.currencyCode;
     const vatRateNumber = Number(tax.vatRateRaw);
 
+    // N2 (review 2026-04-19 21:19) — integer-only gross-amount math.
+    // `vatRateRaw` is a 4-dp decimal string ("0.0700" for 7%). Parsing
+    // via `Number` + multiplying by a fee introduces IEEE-754 rounding
+    // for non-binary-clean rates (8.5%, 10%, 13.5%). Thai-tax amounts
+    // are legal figures (FR-002 / FR-005) — compute gross = fee *
+    // (10000 + numerator) / 10000 with half-up rounding in `bigint`.
+    const [, vatFrac] = tax.vatRateRaw.split('.');
+    const vatNumerator = BigInt(vatFrac ?? '0'); // "0700" → 700n
+    const VAT_SCALE = 10_000n;
+
     // Load plans via repo — RLS scopes by tenant; no explicit tenant_id filter.
     const plans = await deps.planRepo.findByTenantAndYear(deps.tenant, {
       ...input.filter,
@@ -118,7 +128,10 @@ export async function listPlans(
     // Hydrate display envelope per plan
     const data: PlanListItem[] = plans.map((p) => {
       const fee = p.annual_fee_minor_units;
-      const totalWithVat = Math.round(fee * (1 + vatRateNumber));
+      const feeBn = BigInt(fee);
+      const totalWithVat = Number(
+        (feeBn * (VAT_SCALE + vatNumerator) + VAT_SCALE / 2n) / VAT_SCALE,
+      );
       return {
         plan_id: p.plan_id,
         plan_year: p.plan_year,

@@ -52,7 +52,9 @@ function formatSatangThb(satang: bigint | null): string {
   if (satang === null) return '—';
   const whole = satang / 100n;
   const rem = satang % 100n;
-  return `${whole.toLocaleString()}.${rem.toString().padStart(2, '0')} THB`;
+  // N11 — explicit locale pins output on server runtimes whose
+  // process locale defaults to `C`. FR-005.
+  return `${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')} THB`;
 }
 
 function formatDate(iso: string | null, locale: string): string {

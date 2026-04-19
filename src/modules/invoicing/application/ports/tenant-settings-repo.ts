@@ -87,6 +87,25 @@ export interface TenantSettingsRepo {
    * `invoiceNumberPrefix`, `creditNoteNumberPrefix`. If any required
    * field is missing on the FIRST write, the repo surfaces the DB's
    * NOT-NULL violation — the caller should validate upstream.
+   *
+   * `tx` — optional transaction handle. When provided, the upsert runs
+   * inside the caller's transaction so the mutation can be bundled with
+   * its matching `audit.emit(tx, ...)` in a single atomic unit
+   * (Constitution Principle I clause 4). When omitted, the repo opens
+   * its own `runInTenant` transaction.
    */
-  upsert(tenantId: string, patch: TenantInvoiceSettingsPatch): Promise<void>;
+  upsert(
+    tenantId: string,
+    patch: TenantInvoiceSettingsPatch,
+    tx?: unknown,
+  ): Promise<void>;
+
+  /**
+   * R7-N1 — expose a transactional scope bound to the tenant so callers
+   * that mutate settings AND emit audit can wrap both writes in the
+   * same transaction. The callback's `tx` handle is the same one that
+   * should be threaded to `upsert(tenantId, patch, tx)` and
+   * `audit.emit(tx, {...})`.
+   */
+  withTx<T>(tenantId: string, fn: (tx: unknown) => Promise<T>): Promise<T>;
 }

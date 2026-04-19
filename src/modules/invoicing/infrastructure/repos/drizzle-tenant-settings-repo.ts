@@ -17,7 +17,7 @@ import type {
 import { VatRate } from '../../domain/value-objects/vat-rate';
 import { asProRatePolicyUnsafe } from '../../domain/value-objects/pro-rate-policy';
 import { asTenantContext } from '@/modules/tenants';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { tenantInvoiceSettings } from '../db';
 
 export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
@@ -52,7 +52,19 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     };
   },
 
-  async upsert(tenantId: string, patch: TenantInvoiceSettingsPatch): Promise<void> {
+  async withTx<T>(tenantId: string, fn: (tx: unknown) => Promise<T>): Promise<T> {
+    // Open a tenant-scoped transaction and forward the handle to the
+    // caller. Callers thread this `tx` into `upsert(..., tx)` and
+    // `audit.emit(tx, ...)` so both writes land in one atomic unit.
+    const ctx = asTenantContext(tenantId);
+    return runInTenant(ctx, (tx) => fn(tx));
+  },
+
+  async upsert(
+    tenantId: string,
+    patch: TenantInvoiceSettingsPatch,
+    tx?: unknown,
+  ): Promise<void> {
     const ctx = asTenantContext(tenantId);
     // Build the patch row — only caller-provided fields are included in
     // the UPDATE SET. Required fields for INSERT are supplied only if
@@ -86,14 +98,22 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
       }
     }
 
-    await runInTenant(ctx, (tx) =>
-      tx
+    // If caller passed a `tx`, reuse it (opened via `withTx` which
+    // already set `app.current_tenant` via `runInTenant`). Only open a
+    // fresh scope when no tx was provided.
+    const doInsert = (txHandle: TenantTx) =>
+      txHandle
         .insert(tenantInvoiceSettings)
         .values(insertValues as typeof tenantInvoiceSettings.$inferInsert)
         .onConflictDoUpdate({
           target: tenantInvoiceSettings.tenantId,
           set: updateValues,
-        }),
-    );
+        });
+
+    if (tx !== undefined) {
+      await doInsert(tx as TenantTx);
+      return;
+    }
+    await runInTenant(ctx, doInsert);
   },
 };

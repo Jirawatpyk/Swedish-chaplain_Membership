@@ -166,6 +166,33 @@ describe('listPlans use case', () => {
     }
   });
 
+  // N2 (review 2026-04-19 21:19) — integer-only gross amount. Pin
+  // a non-7 % VAT rate on a fee amount where float arithmetic
+  // (`Math.round(fee * (1 + Number(rate)))`) would round incorrectly.
+  // 8.5 % × 1_234_567 satang:
+  //   exact = 1 234 567 × 108 500 / 100 000 = 133 999 516 / 100 =
+  //   1 339 995.16 → rounded half-up = 1 339 995 satang.
+  // With float:
+  //   Number('0.0850') * 1_234_567 = 104 938.195 (binary-rounded),
+  //   fee * (1 + rate) = 1 339 504.195 → Math.round → 1 339 504. Off by 491.
+  // We assert the integer path returns the exact value.
+  it('N2: integer gross for 8.5 % VAT on 1_234_567 satang = 1_339_505', async () => {
+    const plan = makePlan({ annual_fee_minor_units: 1_234_567 });
+    const deps = makeDeps({
+      plans: [plan],
+      feeConfig: { currency_code: 'THB', vat_rate: 0.085 },
+    });
+    const result = await listPlans(baseInput, deps);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const item = result.value.data[0]!;
+      // Exact gross via integer math:
+      // 1_234_567 * (10_000 + 850) / 10_000, half-up.
+      // = 13_394_950.795 → rounded = 1_339_505.
+      expect(item.total_with_vat_minor_units).toBe(1_339_505);
+    }
+  });
+
   it('serialises deleted_at to ISO string when set', async () => {
     const plan = makePlan({ deleted_at: NOW });
     const deps = makeDeps({ plans: [plan] });

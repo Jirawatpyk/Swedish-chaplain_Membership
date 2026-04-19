@@ -46,7 +46,8 @@ export type PlanOption = {
 function formatSatang(satang: number): string {
   const whole = Math.floor(satang / 100);
   const rem = satang % 100;
-  return `${whole.toLocaleString()}.${rem.toString().padStart(2, '0')}`;
+  // N11 — explicit 'en-US' pins thousand-separator output. FR-005.
+  return `${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
 export function CreateDraftForm({

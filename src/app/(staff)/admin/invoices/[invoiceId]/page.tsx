@@ -48,7 +48,11 @@ function formatSatang(satang: bigint | null): string {
   const whole = abs / 100n;
   const rem = abs % 100n;
   const sign = satang < 0n ? '-' : '';
-  return `${sign}${whole.toLocaleString()}.${rem.toString().padStart(2, '0')}`;
+  // N11 — explicit `'en-US'` locale pins thousand-separator output on
+  // Vercel runtimes whose process locale may be `C`/`POSIX` (emits no
+  // separator). Thai-tax amounts are legal figures; deterministic
+  // formatting is required by FR-005.
+  return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
 /**

@@ -159,6 +159,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
       upsert: vi.fn(),
+      withTx: vi.fn(async (_t, fn) => fn({})),
     },
     memberIdentity: {
       getForIssue: vi.fn(async () => member),

@@ -16,6 +16,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { rateLimiter } from '@/lib/auth-deps';
 import { uploadTenantLogo, makeUploadTenantLogoDeps } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
 
@@ -25,6 +26,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
+
+  // N5 — rate-limit. Logo upload kicks sharp decode + re-encode which
+  // is CPU-expensive; 15 / min per (tenant, actor) is generous for
+  // legitimate settings-form usage.
+  const rl = await rateLimiter.check(
+    `f4:settings:logo:${tenantCtx.slug}:${ctx.current.user.id}`,
+    15,
+    60,
+  );
+  if (!rl.success) {
+    logger.warn(
+      { requestId, tenantId: tenantCtx.slug, userId: ctx.current.user.id, reset: rl.reset },
+      'POST /api/tenant-invoice-settings/logo rate-limited',
+    );
+    return NextResponse.json(
+      { error: { code: 'rate_limited', retryAfterMs: rl.reset - Date.now() } },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) },
+      },
+    );
+  }
 
   let formData: FormData;
   try {

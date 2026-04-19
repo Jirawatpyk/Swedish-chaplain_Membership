@@ -71,23 +71,46 @@ export async function uploadTenantLogo(
   // fails the metadata() call; a re-encode that matches the input
   // format strips EXIF + XMP + ICC (sharp default behaviour: strips
   // unless `withMetadata()` is called).
+  //
+  // N3 (review 2026-04-19 21:19):
+  //   (a) `limitInputPixels` caps decompression-bomb payloads at the
+  //       dimension bounding box so a 900 KB file declaring
+  //       65 000 × 65 000 pixels fails fast at the decoder rather
+  //       than OOMing the Function.
+  //   (b) Choose the output encoder branch + upload contentType from
+  //       the DETECTED `meta.format`, not the client-supplied
+  //       `declaredMime`. Prevents format-confusion where a client
+  //       declares `image/png` but the bytes are JPEG (or vice
+  //       versa). Declared MIME is still used as a fast-reject gate.
   let ext: 'png' | 'jpg';
+  let outputContentType: 'image/png' | 'image/jpeg';
   let reencoded: Buffer;
   let width: number;
   let height: number;
   try {
-    const pipeline = sharp(Buffer.from(input.bytes));
+    const pipeline = sharp(Buffer.from(input.bytes), {
+      limitInputPixels: MAX_WIDTH * MAX_HEIGHT, // 2000*500 = 1M pixels
+      failOn: 'error',
+    });
     const meta = await pipeline.metadata();
     width = meta.width ?? 0;
     height = meta.height ?? 0;
     if (width < MIN_WIDTH || width > MAX_WIDTH || height < MIN_HEIGHT || height > MAX_HEIGHT) {
       return err({ code: 'dimensions_out_of_range', width, height });
     }
-    if (input.declaredMime === 'image/png') {
+    // Detected format must also be in the whitelist — otherwise we
+    // have a declared/detected mismatch that could land in Blob with
+    // a misleading contentType.
+    if (meta.format !== 'png' && meta.format !== 'jpeg') {
+      return err({ code: 'decode_failed' });
+    }
+    if (meta.format === 'png') {
       ext = 'png';
+      outputContentType = 'image/png';
       reencoded = await pipeline.png({ compressionLevel: 9 }).toBuffer();
     } else {
       ext = 'jpg';
+      outputContentType = 'image/jpeg';
       reencoded = await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer();
     }
   } catch {
@@ -101,7 +124,7 @@ export async function uploadTenantLogo(
   await deps.blob.uploadLogo({
     key: logoBlobKey,
     body: new Uint8Array(reencoded),
-    contentType: input.declaredMime === 'image/png' ? 'image/png' : 'image/jpeg',
+    contentType: outputContentType,
   });
 
   // Audit trail — logo changes are a tenant-identity mutation that a

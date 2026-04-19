@@ -184,7 +184,11 @@ function makeIssueDeps(
   };
   const base: IssueInvoiceDeps = {
     invoiceRepo,
-    tenantSettingsRepo: { getForIssue: vi.fn(async () => settingsView), upsert: vi.fn() },
+    tenantSettingsRepo: {
+      getForIssue: vi.fn(async () => settingsView),
+      upsert: vi.fn(),
+      withTx: vi.fn(async (_t, fn) => fn({})),
+    },
     memberIdentity: {
       getForIssue: vi.fn(async (_tx, _t, memberId) => ({
         memberId,

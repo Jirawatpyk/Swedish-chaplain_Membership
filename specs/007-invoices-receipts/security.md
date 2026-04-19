@@ -65,6 +65,23 @@ Summary from `research.md § 13`; full mitigations + tests listed here.
 - **Attack**: 60 s signed URL captured in logs / analytics / screen share.
 - **Impact**: short-window PDF exfiltration.
 - **Mitigations**: (1) 60 s TTL (minimum viable); (2) `signed_url_token` in logger redact list; (3) per-request scope — URL binds to actor + invoice; (4) Blob ACL = private, never public.
+- **R7/N6 residual (accepted)** — `@vercel/blob` currently does not
+  expose a per-request signed-URL API; our F4 adapter uploads with
+  `access: 'public'` + `addRandomSuffix: false` and an unguessable
+  UUID-keyed path (`invoicing/{tenantId}/{fy}/{invoiceId}_v1.pdf`).
+  The primary route-layer mitigation is in place — the PDF HTTP
+  handler **streams bytes** (never 307-redirects) and attaches
+  `Content-Disposition: attachment`, so the blob URL no longer escapes
+  via the application. Residual risk: if a blob URL otherwise leaks
+  (email forwarding of an attached PDF's inline URL, log paste,
+  browser cache on a shared machine), it grants permanent anonymous
+  access to the single document until the blob is rotated or deleted.
+  Tracked follow-up: flip `access` to `'private'` + issue per-request
+  signed URLs with the documented 60 s TTL once `@vercel/blob` ships
+  the API. The route-layer mitigation is sufficient for MVP given
+  (a) the UUID path is not enumerable, (b) no route returns the blob
+  URL, and (c) audit-log emits `invoice_pdf_resent` on every
+  render-triggered rebuild.
 
 ### T-06 — PDF template injection via member name
 - **Attack**: member legal_name contains `</Text><script>…</script>`.
