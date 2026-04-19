@@ -153,6 +153,36 @@ Summary from `research.md § 13`; full mitigations + tests listed here.
 - **Impact**: audit re-verification fails; FR-016 determinism guarantee broken.
 - **Mitigations**: (1) `pdf_template_version` stored on each invoice at issue; (2) resend + void + Blob-recovery re-render use the PINNED version; (3) only NEW issuance uses `CURRENT_TEMPLATE_VERSION`; (4) `pdf-deterministic.test.ts` R3-E4 assertion covers this.
 
+### T-20 — PDF Thai text-layer decomposed (accepted residual)
+- **Background**: `@react-pdf/renderer` + `fontkit` write the PDF
+  ToUnicode CMap using fontkit's internal Thai shaping — sara-am
+  (ำ U+0E33) is decomposed into ◌ํ + า (U+0E4D + U+0E32), post-base
+  vowels (ี, ึ, ื, ุ, ู) are stored in logical rather than visual
+  order. The VISUAL render is correct (verified across 5 QA cases
+  covering PLC names, karan, tone marks, 134-char stress test).
+- **Impact**: copy-paste / PDF text search / screen-reader output
+  on the Thai text extracted from the PDF reads in a slightly
+  mangled order. Does NOT affect: visual display, print output,
+  Thai-RD §86/4 compliance, Adobe Reader preview, or attached
+  email PDFs. Affects: copy-to-Excel for re-typing, full-text
+  search inside the PDF, assistive-tech reading of the PDF.
+- **Why accepted for MVP**:
+  1. Fixing requires swapping the PDF engine (migrate to Puppeteer
+     Chrome headless or Gotenberg) — 1–2 day rewrite + infrastructure.
+  2. Real-world invoice workflow is print / file / email-attach — no
+     member or auditor copy-pastes content from the PDF.
+  3. The `/api/invoices/[id]` + `/api/portal/invoices/[id]` JSON
+     endpoints return correctly-encoded Thai for any consumer that
+     needs to extract the structured data.
+- **Tracked follow-up**: migrate PDF engine to HarfBuzz-based renderer
+  when volume grows beyond SweCham's single-tenant deployment or
+  when a member flags the copy-paste limitation as a blocker.
+- **Mitigations (today)**: shapeThai() pre-decomposes sara-am +
+  injects word-boundary newlines so the VISUAL render is
+  substantively correct; `pdf-deterministic.test.ts` pins
+  `pdf_template_version: 1` so re-renders stay byte-identical to
+  the originally-issued document.
+
 ## 4. PII catalogue (F4-introduced)
 
 | Field | Column(s) | Lawful basis | Redacted in logs? |
