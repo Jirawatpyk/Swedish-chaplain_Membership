@@ -144,7 +144,6 @@ export {
 
 export type {
   PlanRepo,
-  FeeConfigRepo,
   AuditPort,
   AuditContext,
   AuditError,
@@ -155,8 +154,6 @@ export type {
   PlanDraftInput,
   CloneYearSummary,
   CloneYearError,
-  FeeConfigPatch,
-  FeeConfigUpsert,
 } from './application/ports';
 
 export { recordAuditEvent } from './application/record-audit-event';

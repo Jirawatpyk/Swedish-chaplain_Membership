@@ -31,7 +31,7 @@ import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
-import { membershipPlans, tenantFeeConfig } from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -70,12 +70,18 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     tenant = await createTestTenant('test-swecham');
     memberId = randomUUID();
     await runInTenant(tenant.ctx, async (tx) => {
-      await tx.insert(tenantFeeConfig).values({
+      await tx.insert(tenantInvoiceSettings).values({
         tenantId: tenant.ctx.slug,
         currencyCode: 'THB',
         vatRate: '0.0700',
-        registrationFeeMinorUnits: 500_000,
-        updatedBy: user.userId,
+        registrationFeeSatang: 500000n,
+        legalNameTh: 'Test TH',
+        legalNameEn: 'Test EN',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Test Address TH',
+        registeredAddressEn: 'Test Address EN',
+        invoiceNumberPrefix: 'INV',
+        creditNoteNumberPrefix: 'CN',
       });
       await tx.insert(membershipPlans).values({
         tenantId: tenant.ctx.slug,

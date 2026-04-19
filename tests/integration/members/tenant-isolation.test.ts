@@ -20,7 +20,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
-import { membershipPlans, tenantFeeConfig } from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -70,12 +71,18 @@ describe('F3 Tenant isolation — REVIEW GATE BLOCKER (T012)', () => {
 
     // Seed a plan per tenant (FK prerequisite for members.plan_id)
     await runInTenant(tenantA.ctx, async (tx) => {
-      await tx.insert(tenantFeeConfig).values({
+      await tx.insert(tenantInvoiceSettings).values({
         tenantId: tenantA.ctx.slug,
         currencyCode: 'THB',
         vatRate: '0.0700',
-        registrationFeeMinorUnits: 100000,
-        updatedBy: user.userId,
+        registrationFeeSatang: 100000n,
+        legalNameTh: 'Test TH',
+        legalNameEn: 'Test EN',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Test Address TH',
+        registeredAddressEn: 'Test Address EN',
+        invoiceNumberPrefix: 'INV',
+        creditNoteNumberPrefix: 'CN',
       });
       await tx.insert(membershipPlans).values({
         tenantId: tenantA.ctx.slug,
@@ -99,12 +106,18 @@ describe('F3 Tenant isolation — REVIEW GATE BLOCKER (T012)', () => {
       });
     });
     await runInTenant(tenantB.ctx, async (tx) => {
-      await tx.insert(tenantFeeConfig).values({
+      await tx.insert(tenantInvoiceSettings).values({
         tenantId: tenantB.ctx.slug,
         currencyCode: 'SEK',
         vatRate: '0.2500',
-        registrationFeeMinorUnits: 50000,
-        updatedBy: user.userId,
+        registrationFeeSatang: 50000n,
+        legalNameTh: 'Test TH',
+        legalNameEn: 'Test EN',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Test Address TH',
+        registeredAddressEn: 'Test Address EN',
+        invoiceNumberPrefix: 'INV',
+        creditNoteNumberPrefix: 'CN',
       });
       await tx.insert(membershipPlans).values({
         tenantId: tenantB.ctx.slug,

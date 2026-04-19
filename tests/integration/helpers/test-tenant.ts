@@ -28,10 +28,7 @@ import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db } from '@/lib/db';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
-import {
-  membershipPlans,
-  tenantFeeConfig,
-} from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import {
   auditLog,
   emailChangeTokens,
@@ -95,9 +92,8 @@ export async function createTestTenant(
     await db.delete(contacts).where(eq(contacts.tenantId, slug));
     await db.delete(members).where(eq(members.tenantId, slug));
     await db.delete(membershipPlans).where(eq(membershipPlans.tenantId, slug));
-    await db
-      .delete(tenantFeeConfig)
-      .where(eq(tenantFeeConfig.tenantId, slug));
+    // R9 — tenant_fee_config DROPPED (migration 0029). Fiscal config
+    // lives in tenant_invoice_settings which is cleaned above.
     // audit_log has an append-only trigger that BLOCKS DELETE — so we
     // skip audit cleanup here. Test-created audit rows accumulate as
     // pollution but are scoped to the test tenant slug so they are

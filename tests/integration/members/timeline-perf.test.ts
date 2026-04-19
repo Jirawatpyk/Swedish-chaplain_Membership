@@ -24,10 +24,8 @@ import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { createMember, timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import {
-  membershipPlans,
-  tenantFeeConfig,
-} from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -72,12 +70,18 @@ describe.skipIf(!RUN_PERF)('timeline perf (E3, RUN_PERF=1)', () => {
     // Seed one plan + one member
     const planId = `perf-plan-${randomUUID().slice(0, 6)}`;
     await runInTenant(tenant.ctx, async (tx) => {
-      await tx.insert(tenantFeeConfig).values({
+      await tx.insert(tenantInvoiceSettings).values({
         tenantId: tenant.ctx.slug,
         currencyCode: 'THB',
         vatRate: '0.0700',
-        registrationFeeMinorUnits: 100000,
-        updatedBy: user.userId,
+        registrationFeeSatang: 100000n,
+        legalNameTh: 'Test TH',
+        legalNameEn: 'Test EN',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Test Address TH',
+        registeredAddressEn: 'Test Address EN',
+        invoiceNumberPrefix: 'INV',
+        creditNoteNumberPrefix: 'CN',
       });
       await tx.insert(membershipPlans).values({
         tenantId: tenant.ctx.slug,

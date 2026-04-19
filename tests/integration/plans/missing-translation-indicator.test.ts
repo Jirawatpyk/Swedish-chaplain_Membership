@@ -8,12 +8,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listPlans } from '@/modules/plans/application/list-plans';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
-import { feeConfigRepo } from '@/modules/plans/infrastructure/db/fee-config-repo';
 import { asPlanYear } from '@/modules/plans/domain/plan';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import type { PlanDraftInput } from '@/modules/plans/application/ports';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 0,
@@ -49,6 +49,7 @@ const baseDraft = (planId: string, user: string): PlanDraftInput => ({
   updatedBy: user,
 } as PlanDraftInput);
 
+
 describe('Integration: missing_translations indicator (T067)', () => {
   let tenant: TestTenant;
   let user: TestUser;
@@ -57,13 +58,9 @@ describe('Integration: missing_translations indicator (T067)', () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
 
-    // Seed fee config first (required for list-plans to return meta.currency_code)
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100000,
-      updated_by: user.userId,
-    });
+    // Seed tenant fiscal — required for list-plans meta.currency_code
+    // (R8 consolidation: reads from tenant_invoice_settings via taxPolicy).
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
 
     // Plan 1: EN + TH + SV all present → no missing translations
     await planRepo.insert(tenant.ctx, {

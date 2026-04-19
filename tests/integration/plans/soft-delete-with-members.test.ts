@@ -17,7 +17,6 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
-import { feeConfigRepo } from '@/modules/plans/infrastructure/db/fee-config-repo';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
 import { softDeletePlan } from '@/modules/plans/application/soft-delete-plan';
 import { asPlanSlug, asPlanYear } from '@/modules/plans/domain/plan';
@@ -29,6 +28,7 @@ import type {
 } from '@/modules/plans/application/ports';
 import { createActiveTestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 0,
@@ -79,6 +79,7 @@ function makeFakeChecker(count: number): MemberAttachmentChecker {
   };
 }
 
+
 describe('Integration: soft-delete with attached members (T125)', () => {
   let tenant: TestTenant;
 
@@ -89,12 +90,7 @@ describe('Integration: soft-delete with attached members (T125)', () => {
   it('Scenario 1 — stub checker returns 3 → refuses with has_active_members', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seed(user.userId));
 
     const result = await softDeletePlan(
@@ -134,12 +130,7 @@ describe('Integration: soft-delete with attached members (T125)', () => {
   it('Scenario 2 — stub checker returns 0 → soft-delete succeeds', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seed(user.userId));
 
     const result = await softDeletePlan(

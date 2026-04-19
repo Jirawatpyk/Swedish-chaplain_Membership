@@ -43,7 +43,8 @@ import { asPlanYear } from '@/modules/plans/domain/plan';
 import type { PlanDraftInput } from '@/modules/plans/application/ports';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
-import { feeConfigRepo } from '@/modules/plans/infrastructure/db/fee-config-repo';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { runInTenant } from '@/lib/db';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
 import { eq } from 'drizzle-orm';
 
@@ -401,16 +402,33 @@ async function countPlans(ctx: TenantContext, year: number): Promise<number> {
   return rows.length;
 }
 
-async function stageA_FeeConfig(ctx: TenantContext, ownerUserId: string): Promise<'inserted' | 'exists'> {
-  const existing = await feeConfigRepo.findByTenant(ctx);
-  if (existing) return 'exists';
-  await feeConfigRepo.upsert(ctx, {
-    currency_code: 'THB',
-    vat_rate: 0.07,
-    registration_fee_minor_units: 100_000,
-    updated_by: ownerUserId,
+async function stageA_FeeConfig(ctx: TenantContext): Promise<'inserted' | 'exists'> {
+  // R9 — renamed fiscal home: tenant_invoice_settings is the single
+  // source of truth (F4 consolidation). tenant_fee_config dropped.
+  // Stage name kept for operator-script parity.
+  return await runInTenant(ctx, async (tx): Promise<'inserted' | 'exists'> => {
+    const existing = await tx
+      .select({ tenantId: tenantInvoiceSettings.tenantId })
+      .from(tenantInvoiceSettings)
+      .limit(1);
+    if (existing.length > 0) return 'exists';
+    await tx.insert(tenantInvoiceSettings).values({
+      tenantId: ctx.slug,
+      currencyCode: 'THB',
+      vatRate: '0.0700',
+      registrationFeeSatang: 100_000n,
+      // Placeholder legal identity — admin fills in via
+      // /admin/settings/invoicing before issuing invoices.
+      legalNameTh: 'PENDING-SETUP',
+      legalNameEn: 'PENDING-SETUP',
+      taxId: '0000000000000',
+      registeredAddressTh: 'PENDING-SETUP',
+      registeredAddressEn: 'PENDING-SETUP',
+      invoiceNumberPrefix: 'INV',
+      creditNoteNumberPrefix: 'CN',
+    });
+    return 'inserted';
   });
-  return 'inserted';
 }
 
 async function stageB_Plans(
@@ -506,7 +524,7 @@ async function main(): Promise<void> {
   console.log(`[seed] owner user: ${ownerUserId}`);
 
   // Stage A
-  const feeStatus = await stageA_FeeConfig(ctx, ownerUserId);
+  const feeStatus = await stageA_FeeConfig(ctx);
   console.log(`[seed] Stage A (tenant_fee_config): ${feeStatus}`);
 
   // Stage B

@@ -35,7 +35,7 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
-import { membershipPlans, tenantFeeConfig } from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { issueInvoice } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases/issue-invoice';
@@ -69,12 +69,18 @@ async function seedTenantForIssuance(
   const planId = 'seq-test-plan';
   const planYear = 2026;
   await runInTenant(tenant.ctx, async (tx) => {
-    await tx.insert(tenantFeeConfig).values({
+    await tx.insert(tenantInvoiceSettings).values({
       tenantId: tenant.ctx.slug,
       currencyCode: 'THB',
       vatRate: '0.0700',
-      registrationFeeMinorUnits: 0,
-      updatedBy: user.userId,
+      registrationFeeSatang: 0n,
+      legalNameTh: 'Test TH',
+      legalNameEn: 'Test EN',
+      taxId: '0000000000000',
+      registeredAddressTh: 'Test Address TH',
+      registeredAddressEn: 'Test Address EN',
+      invoiceNumberPrefix: 'INV',
+      creditNoteNumberPrefix: 'CN',
     });
     await tx.insert(membershipPlans).values({
       tenantId: tenant.ctx.slug,

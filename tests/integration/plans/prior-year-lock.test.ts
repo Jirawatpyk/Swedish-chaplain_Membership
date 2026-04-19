@@ -16,7 +16,6 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
-import { feeConfigRepo } from '@/modules/plans/infrastructure/db/fee-config-repo';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
 import { stubMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/stub-member-attachment-checker';
 import { updatePlan } from '@/modules/plans/application/update-plan';
@@ -26,6 +25,7 @@ import type { PlanDraftInput } from '@/modules/plans/application/ports';
 import type { ClockPort } from '@/modules/plans/application/ports';
 import { createActiveTestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 0,
@@ -74,12 +74,12 @@ async function buildCtx(tenant: TestTenant) {
   return {
     tenant: tenant.ctx,
     planRepo,
-    feeConfigRepo,
     audit: planAuditAdapter,
     clock: makeFixedClock(2027),
     members: stubMemberAttachmentChecker,
   };
 }
+
 
 describe('Integration: prior-year partial lock (T112)', () => {
   let tenant: TestTenant;
@@ -93,12 +93,7 @@ describe('Integration: prior-year partial lock (T112)', () => {
   it('Scenario 1 — edit plan_name.en on 2026 plan (when current=2027) succeeds', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seedDraft(user.userId, 2026));
 
     const result = await updatePlan(
@@ -122,12 +117,7 @@ describe('Integration: prior-year partial lock (T112)', () => {
   it('Scenario 2 — edit description.en on 2026 plan succeeds', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seedDraft(user.userId, 2026));
 
     const result = await updatePlan(
@@ -148,12 +138,7 @@ describe('Integration: prior-year partial lock (T112)', () => {
   it('Scenario 3 — edit sort_order on 2026 plan succeeds', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seedDraft(user.userId, 2026));
 
     const result = await updatePlan(
@@ -174,12 +159,7 @@ describe('Integration: prior-year partial lock (T112)', () => {
   it('Scenario 4 — edit annual_fee_minor_units on 2026 plan returns 422 locked', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seedDraft(user.userId, 2026));
 
     const result = await updatePlan(
@@ -205,12 +185,7 @@ describe('Integration: prior-year partial lock (T112)', () => {
   it('Scenario 5 — edit benefit_matrix on 2026 plan returns 422 locked', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seedDraft(user.userId, 2026));
 
     const result = await updatePlan(
@@ -238,12 +213,7 @@ describe('Integration: prior-year partial lock (T112)', () => {
   it('Scenario 6 — edit annual_fee on current-year (2027) plan succeeds', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seedDraft(user.userId, 2027));
 
     const result = await updatePlan(
@@ -266,12 +236,7 @@ describe('Integration: prior-year partial lock (T112)', () => {
   it('Scenario 7 — no-op write of locked field (same value) succeeds', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seedDraft(user.userId, 2026));
 
     const result = await updatePlan(

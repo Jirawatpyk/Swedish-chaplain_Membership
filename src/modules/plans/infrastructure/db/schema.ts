@@ -24,7 +24,7 @@ import {
   index,
   integer,
   jsonb,
-  numeric,
+
   pgEnum,
   pgTable,
   primaryKey,
@@ -169,31 +169,13 @@ export const membershipPlans = pgTable(
   ],
 );
 
-// --- tenant_fee_config --------------------------------------------------------
-
-export const tenantFeeConfig = pgTable('tenant_fee_config', {
-  tenantId: text('tenant_id').primaryKey(),
-  // ISO 4217 — single authoritative currency for the tenant's catalogue.
-  // Immutable in F2 once plans exist (critique R1, enforced in Application).
-  currencyCode: text('currency_code').notNull(),
-  // numeric(5,4) → 0.0700 = 7%
-  vatRate: numeric('vat_rate', { precision: 5, scale: 4 }).notNull(),
-  // bigint for consistency with plan money columns, even though the
-  // registration fee is small (100_000 satang = 1,000 THB for SweCham).
-  registrationFeeMinorUnits: bigint('registration_fee_minor_units', { mode: 'number' })
-    .notNull()
-    .default(0),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedBy: uuid('updated_by')
-    .notNull()
-    .references(() => users.id),
-});
+// R9 — `tenant_fee_config` table DROPPED. F4 `tenant_invoice_settings`
+// is the single source of truth for tenant-level fiscal config
+// (currency, VAT, registration fee). See migration 0029. F2 readers
+// go through `PlansDeps.taxPolicy` which adapts
+// `getTenantTaxPolicy` from the F4 barrel.
 
 // --- Inferred row types (Infrastructure → Application translation) ------------
 
 export type MembershipPlanRow = typeof membershipPlans.$inferSelect;
 export type MembershipPlanInsert = typeof membershipPlans.$inferInsert;
-export type TenantFeeConfigRow = typeof tenantFeeConfig.$inferSelect;
-export type TenantFeeConfigInsert = typeof tenantFeeConfig.$inferInsert;

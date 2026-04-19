@@ -23,7 +23,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { and, desc, eq } from 'drizzle-orm';
 import { auditPayloadSchema } from '@/modules/plans/domain/audit-event';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
-import { feeConfigRepo } from '@/modules/plans/infrastructure/db/fee-config-repo';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
 import { stubMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/stub-member-attachment-checker';
 import { activatePlan } from '@/modules/plans/application/activate-plan';
@@ -37,6 +36,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import type { ClockPort, PlanDraftInput } from '@/modules/plans/application/ports';
 import { createActiveTestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 0,
@@ -83,7 +83,6 @@ function buildCtx(tenant: TestTenant) {
   return {
     tenant: tenant.ctx,
     planRepo,
-    feeConfigRepo,
     audit: planAuditAdapter,
     clock,
     members: stubMemberAttachmentChecker,
@@ -114,6 +113,7 @@ async function readLatestAudit(
   return rows[0];
 }
 
+
 describe('Integration: US4 state-mutation audit-diff round-trip (T126a)', () => {
   let tenant: TestTenant;
 
@@ -124,12 +124,7 @@ describe('Integration: US4 state-mutation audit-diff round-trip (T126a)', () => 
   it('plan_activated — payload round-trips with is_active diff', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seed(user.userId, false));
 
     const result = await activatePlan(
@@ -165,12 +160,7 @@ describe('Integration: US4 state-mutation audit-diff round-trip (T126a)', () => 
   it('plan_deactivated — payload round-trips with is_active diff', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seed(user.userId, true));
 
     const result = await deactivatePlan(
@@ -203,12 +193,7 @@ describe('Integration: US4 state-mutation audit-diff round-trip (T126a)', () => 
   it('plan_soft_deleted — payload round-trips with deleted_at diff (before: null, after: ISO)', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seed(user.userId, false));
 
     const result = await softDeletePlan(
@@ -243,12 +228,7 @@ describe('Integration: US4 state-mutation audit-diff round-trip (T126a)', () => 
   it('plan_undeleted — payload round-trips with deleted_at diff (before: ISO, after: null)', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     await planRepo.insert(tenant.ctx, seed(user.userId, false));
 
     // First soft-delete it
@@ -301,12 +281,7 @@ describe('Integration: US4 state-mutation audit-diff round-trip (T126a)', () => 
   it('activate on soft-deleted plan returns not_found (illegal transition guard)', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     // Seed as inactive, then soft-delete
     await planRepo.insert(tenant.ctx, seed(user.userId, false));
     const deleteResult = await softDeletePlan(
@@ -342,12 +317,7 @@ describe('Integration: US4 state-mutation audit-diff round-trip (T126a)', () => 
   it('deactivate on soft-deleted plan returns not_found (illegal transition guard)', async () => {
     const user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    await feeConfigRepo.upsert(tenant.ctx, {
-      currency_code: 'THB',
-      vat_rate: 0.07,
-      registration_fee_minor_units: 100_000,
-      updated_by: user.userId,
-    });
+    await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
     // Seed as inactive, then soft-delete
     await planRepo.insert(tenant.ctx, seed(user.userId, false));
     const deleteResult = await softDeletePlan(

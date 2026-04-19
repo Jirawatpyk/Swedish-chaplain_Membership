@@ -14,10 +14,8 @@ import { and, eq } from 'drizzle-orm';
 import { runInTenant, db } from '@/lib/db';
 import { createMember, timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import {
-  membershipPlans,
-  tenantFeeConfig,
-} from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -46,17 +44,8 @@ async function seedPlanAndMember(
   companyName: string,
 ): Promise<string> {
   const planId = `timeline-plan-${randomUUID().slice(0, 6)}`;
+  await seedTenantFiscal({ tenant, registrationFeeSatang: 100000n });
   await runInTenant(tenant.ctx, async (tx) => {
-    await tx
-      .insert(tenantFeeConfig)
-      .values({
-        tenantId: tenant.ctx.slug,
-        currencyCode: 'THB',
-        vatRate: '0.0700',
-        registrationFeeMinorUnits: 100000,
-        updatedBy: user.userId,
-      })
-      .onConflictDoNothing();
     await tx.insert(membershipPlans).values({
       tenantId: tenant.ctx.slug,
       planId,

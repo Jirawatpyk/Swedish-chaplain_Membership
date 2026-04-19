@@ -30,7 +30,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
-import { membershipPlans, tenantFeeConfig } from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
@@ -83,12 +83,18 @@ describe('F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)', () => {
     // Seed fee config + plan + member per tenant.
     for (const [t, prefix] of [[tenantA, 'alpha'], [tenantB, 'beta']] as const) {
       await runInTenant(t.ctx, async (tx) => {
-        await tx.insert(tenantFeeConfig).values({
+        await tx.insert(tenantInvoiceSettings).values({
           tenantId: t.ctx.slug,
           currencyCode: 'THB',
           vatRate: '0.0700',
-          registrationFeeMinorUnits: 100000,
-          updatedBy: user.userId,
+          registrationFeeSatang: 100000n,
+          legalNameTh: 'Test TH',
+          legalNameEn: 'Test EN',
+          taxId: '0000000000000',
+          registeredAddressTh: 'Test Address TH',
+          registeredAddressEn: 'Test Address EN',
+          invoiceNumberPrefix: 'INV',
+          creditNoteNumberPrefix: 'CN',
         });
         await tx.insert(membershipPlans).values({
           tenantId: t.ctx.slug,
