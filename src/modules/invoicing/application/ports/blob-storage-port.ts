@@ -15,6 +15,18 @@ export interface BlobStoragePort {
   }): Promise<{ readonly key: string; readonly url: string }>;
 
   /**
+   * R7-B2 — upload a tenant logo image. Distinct from uploadPdf so
+   * the content-type narrowing on uploadPdf stays strict. Keys are
+   * callers' responsibility (logos use `invoicing/{tenant}/logos/…`
+   * format; see `uploadTenantLogo` use-case).
+   */
+  uploadLogo(input: {
+    readonly key: string;
+    readonly body: Uint8Array;
+    readonly contentType: 'image/png' | 'image/jpeg';
+  }): Promise<{ readonly key: string; readonly url: string }>;
+
+  /**
    * Issue a short-lived (60s) signed URL for a private key.
    */
   signDownloadUrl(key: string, ttlSeconds?: number): Promise<string>;

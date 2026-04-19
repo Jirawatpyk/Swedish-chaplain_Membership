@@ -171,6 +171,7 @@ function makeDeps(
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
+      upsert: vi.fn(),
     },
     sequenceAllocator: {
       allocateNext: vi.fn(async () => 1),
@@ -183,6 +184,7 @@ function makeDeps(
     },
     blob: {
       uploadPdf: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
+      uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       signDownloadUrl: vi.fn(),
       delete: vi.fn(),
     },

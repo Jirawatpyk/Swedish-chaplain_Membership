@@ -26,6 +26,33 @@ export interface TenantInvoiceSettingsView {
   readonly identity: TenantIdentitySnapshot;
 }
 
+/**
+ * R7-B2 — Partial patch accepted by `upsert`. All fields optional; only
+ * fields explicitly provided are written. `vatRate` is a 4-dp decimal
+ * string (matches `numeric(5,4)` column) — callers build it via
+ * `VatRate.ofUnsafe(x).raw`. Logo management goes through a separate
+ * `uploadTenantLogo` use-case (FR-034); this patch only accepts the
+ * already-validated `logoBlobKey` (output of the upload endpoint).
+ */
+export interface TenantInvoiceSettingsPatch {
+  readonly vatRate?: string;
+  readonly registrationFeeSatang?: bigint;
+  readonly legalNameTh?: string;
+  readonly legalNameEn?: string;
+  readonly taxId?: string;
+  readonly registeredAddressTh?: string;
+  readonly registeredAddressEn?: string;
+  readonly invoiceNumberPrefix?: string;
+  readonly creditNoteNumberPrefix?: string;
+  readonly receiptNumberPrefix?: string | null;
+  readonly receiptNumberingMode?: 'combined' | 'separate';
+  readonly fiscalYearStartMonth?: number;
+  readonly defaultNetDays?: number;
+  readonly proRatePolicy?: 'none' | 'monthly' | 'daily';
+  readonly autoEmailEnabled?: boolean;
+  readonly logoBlobKey?: string | null;
+}
+
 export interface TenantSettingsRepo {
   /**
    * Load current settings for a tenant. Returns null if the settings
@@ -33,4 +60,16 @@ export interface TenantSettingsRepo {
    * FR-010 ("no invoice without settings").
    */
   getForIssue(tenantId: string): Promise<TenantInvoiceSettingsView | null>;
+
+  /**
+   * R7-B2 — Upsert (create-or-update) the settings row. First write
+   * creates the row; subsequent writes patch only caller-provided
+   * fields. Minimum required fields on INITIAL insert (enforced by
+   * column NOT NULL on the DB): `vatRate`, `legalNameTh`, `legalNameEn`,
+   * `taxId`, `registeredAddressTh`, `registeredAddressEn`,
+   * `invoiceNumberPrefix`, `creditNoteNumberPrefix`. If any required
+   * field is missing on the FIRST write, the repo surfaces the DB's
+   * NOT-NULL violation — the caller should validate upstream.
+   */
+  upsert(tenantId: string, patch: TenantInvoiceSettingsPatch): Promise<void>;
 }

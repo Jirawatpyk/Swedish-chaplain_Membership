@@ -46,6 +46,25 @@ export const vercelBlobAdapter: BlobStoragePort = {
     }
   },
 
+  async uploadLogo(input: {
+    readonly key: string;
+    readonly body: Uint8Array;
+    readonly contentType: 'image/png' | 'image/jpeg';
+  }): Promise<{ readonly key: string; readonly url: string }> {
+    // Logos are `access: 'public'` because the tenant invoice PDF
+    // template embeds them and Vercel Blob doesn't support auth on
+    // image fetch. Key includes a random UUID (via the use-case) so
+    // the URL is unguessable even without signed URLs.
+    const result = await put(input.key, Buffer.from(input.body), {
+      access: 'public',
+      contentType: input.contentType,
+      token: env.blob.readWriteToken,
+      addRandomSuffix: false,
+      allowOverwrite: false,
+    });
+    return { key: input.key, url: result.url };
+  },
+
   async signDownloadUrl(key: string, ttlSeconds?: number): Promise<string> {
     // `ttlSeconds` is part of the port signature for future
     // @vercel/blob signed-URL API support; today we return the

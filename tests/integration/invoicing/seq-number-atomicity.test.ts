@@ -171,7 +171,7 @@ function makeIssueDeps(
   };
   const base: IssueInvoiceDeps = {
     invoiceRepo,
-    tenantSettingsRepo: { getForIssue: vi.fn(async () => settingsView) },
+    tenantSettingsRepo: { getForIssue: vi.fn(async () => settingsView), upsert: vi.fn() },
     memberIdentity: {
       getForIssue: vi.fn(async (_tx, _t, memberId) => ({
         memberId,
@@ -198,6 +198,7 @@ function makeIssueDeps(
     },
     blob: {
       uploadPdf: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
+      uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       signDownloadUrl: vi.fn(async () => 'https://blob.test/signed'),
       delete: vi.fn(async () => {}),
     },
@@ -414,6 +415,7 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
       const deps = makeIssueDeps(freshTenant, {
         blob: {
           uploadPdf: failingBlob,
+          uploadLogo: vi.fn(async () => ({ key: '', url: '' })),
           signDownloadUrl: vi.fn(async () => ''),
           delete: vi.fn(async () => {}),
         },

@@ -112,6 +112,19 @@ export {
   type UpdateInvoiceDraftError,
 } from './application/use-cases/update-invoice-draft';
 
+export {
+  updateTenantInvoiceSettings,
+  updateTenantInvoiceSettingsSchema,
+  type UpdateTenantInvoiceSettingsInput,
+  type UpdateTenantInvoiceSettingsError,
+} from './application/use-cases/update-tenant-invoice-settings';
+
+export {
+  uploadTenantLogo,
+  type UploadTenantLogoInput,
+  type UploadTenantLogoError,
+} from './application/use-cases/upload-tenant-logo';
+
 // --- Composition-root factories --------------------------------------------
 // Presentation / route handlers consume these to wire a per-request
 // tenant-scoped dependency graph.
@@ -125,5 +138,7 @@ export {
   makeGetInvoiceDeps,
   makeRecordPaymentDeps,
   makeUpdateInvoiceDraftDeps,
+  makeUpdateTenantInvoiceSettingsDeps,
+  makeUploadTenantLogoDeps,
   isTenantInvoiceSetupComplete,
 } from './application/invoicing-deps';

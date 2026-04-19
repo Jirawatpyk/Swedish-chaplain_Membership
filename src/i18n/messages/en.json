@@ -820,6 +820,87 @@
       "permanentFailed": "{count, plural, one {# email permanently failed} other {# emails permanently failed}} in the last 24 h",
       "stuckPending": "{count, plural, one {# email stuck} other {# emails stuck}} in queue (cron may be down)"
     },
+    "invoiceSettings": {
+      "title": "Invoice settings",
+      "subtitle": "Tenant-level invoice configuration (legal identity, VAT, numbering, logo).",
+      "card": {
+        "title": "Invoice configuration",
+        "description": "Changes apply to future invoices only. Already-issued invoices retain their original snapshot (FR-011).",
+        "firstTimeDescription": "No settings yet. Fill in the required fields to unlock invoice issuance (FR-010)."
+      },
+      "sections": {
+        "identity": "Tenant legal identity",
+        "tax": "Tax",
+        "numbering": "Document numbering",
+        "defaults": "Invoicing defaults",
+        "logo": "Logo"
+      },
+      "labels": {
+        "legalNameTh": "Legal name (Thai)",
+        "legalNameEn": "Legal name (English)",
+        "taxId": "Tax ID",
+        "addressTh": "Registered address (Thai)",
+        "addressEn": "Registered address (English)",
+        "vatPercent": "VAT rate (%)",
+        "registrationFee": "Registration fee (THB)",
+        "invoicePrefix": "Invoice number prefix",
+        "creditNotePrefix": "Credit-note number prefix",
+        "receiptMode": "Receipt numbering mode",
+        "receiptPrefix": "Receipt number prefix",
+        "fiscalYearStartMonth": "Fiscal year start month (1-12)",
+        "defaultNetDays": "Default net days",
+        "proRatePolicy": "Pro-rate policy",
+        "autoEmail": "Auto-email on issue/payment",
+        "logo": "Upload logo"
+      },
+      "hints": {
+        "taxId": "13 digits (Thai Revenue Department format).",
+        "receiptPrefix": "Only used when receipt numbering mode is \"separate\".",
+        "autoEmail": "When on, new invoices default to auto-email their PDF on issue. Can be overridden per-invoice.",
+        "logo": "PNG or JPEG, ≤ 1 MB, width 200-2000 px, height 100-500 px."
+      },
+      "receiptMode": {
+        "combined": "Combined tax invoice + receipt",
+        "separate": "Separate invoice and receipt streams"
+      },
+      "proRate": {
+        "none": "None (full period fee)",
+        "monthly": "Monthly",
+        "daily": "Daily"
+      },
+      "logo": {
+        "uploading": "Uploading…",
+        "currentKey": "Current logo",
+        "toast": {
+          "uploaded": "Logo uploaded — save settings to apply."
+        },
+        "errors": {
+          "mime_rejected": "Only PNG or JPEG allowed.",
+          "too_large": "File is larger than 1 MB.",
+          "dimensions_out_of_range": "Dimensions must be 200-2000 px wide, 100-500 px tall.",
+          "decode_failed": "Image could not be decoded.",
+          "generic": "Logo upload failed."
+        }
+      },
+      "errors": {
+        "vatRange": "VAT must be between 0 and 30 percent.",
+        "regFeeRange": "Registration fee must be 0 or greater.",
+        "fiscalMonth": "Fiscal-year start month must be 1 through 12.",
+        "netDays": "Default net days must be 0-365.",
+        "validation": "Please check the form — some fields need attention.",
+        "forbidden": "Your role cannot modify invoice settings.",
+        "generic": "Save failed. Please try again."
+      },
+      "saving": "Saving…",
+      "actions": {
+        "save": "Save settings",
+        "create": "Create settings"
+      },
+      "toast": {
+        "created": "Invoice settings created.",
+        "updated": "Invoice settings updated."
+      }
+    },
     "invoices": {
       "meta": {
         "title": "Invoices"

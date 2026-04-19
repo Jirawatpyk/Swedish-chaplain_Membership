@@ -820,6 +820,87 @@
       "permanentFailed": "{count, plural, one {# e-post misslyckades permanent} other {# e-postmeddelanden misslyckades permanent}} de senaste 24 h",
       "stuckPending": "{count, plural, one {# e-post fastnad} other {# e-postmeddelanden fastnade}} i kön (cron kanske är nere)"
     },
+    "invoiceSettings": {
+      "title": "Fakturainställningar",
+      "subtitle": "Tenant-nivå fakturakonfiguration (juridisk identitet, moms, numrering, logotyp).",
+      "card": {
+        "title": "Fakturakonfiguration",
+        "description": "Ändringar gäller endast framtida fakturor. Redan utfärdade fakturor behåller sin ursprungliga snapshot (FR-011).",
+        "firstTimeDescription": "Inga inställningar ännu. Fyll i obligatoriska fält för att låsa upp fakturering (FR-010)."
+      },
+      "sections": {
+        "identity": "Juridisk identitet",
+        "tax": "Skatt",
+        "numbering": "Dokumentnumrering",
+        "defaults": "Faktureringsstandard",
+        "logo": "Logotyp"
+      },
+      "labels": {
+        "legalNameTh": "Juridiskt namn (thai)",
+        "legalNameEn": "Juridiskt namn (engelska)",
+        "taxId": "Skatte-ID",
+        "addressTh": "Registrerad adress (thai)",
+        "addressEn": "Registrerad adress (engelska)",
+        "vatPercent": "Momssats (%)",
+        "registrationFee": "Registreringsavgift (THB)",
+        "invoicePrefix": "Fakturanummerprefix",
+        "creditNotePrefix": "Kreditnotaprefix",
+        "receiptMode": "Kvittonumreringsläge",
+        "receiptPrefix": "Kvittonummerprefix",
+        "fiscalYearStartMonth": "Räkenskapsårets startmånad (1-12)",
+        "defaultNetDays": "Standard kreditdagar",
+        "proRatePolicy": "Proportionerlig beräkning",
+        "autoEmail": "Auto-e-post vid utfärdande/betalning",
+        "logo": "Ladda upp logotyp"
+      },
+      "hints": {
+        "taxId": "13 siffror (thailändskt skattemyndighetsformat).",
+        "receiptPrefix": "Används endast när kvittoläge är \"separat\".",
+        "autoEmail": "När på skickas nya fakturor automatiskt via e-post vid utfärdande. Kan åsidosättas per faktura.",
+        "logo": "PNG eller JPEG, ≤ 1 MB, 200-2000 px brett, 100-500 px högt."
+      },
+      "receiptMode": {
+        "combined": "Kombinerad faktura + kvitto",
+        "separate": "Separata faktura- och kvittoströmmar"
+      },
+      "proRate": {
+        "none": "Ingen (full periodavgift)",
+        "monthly": "Månadsvis",
+        "daily": "Dagligen"
+      },
+      "logo": {
+        "uploading": "Laddar upp…",
+        "currentKey": "Aktuell logotyp",
+        "toast": {
+          "uploaded": "Logotyp uppladdad — spara inställningar för att tillämpa."
+        },
+        "errors": {
+          "mime_rejected": "Endast PNG eller JPEG tillåts.",
+          "too_large": "Filen är större än 1 MB.",
+          "dimensions_out_of_range": "Måtten måste vara 200-2000 px breda, 100-500 px höga.",
+          "decode_failed": "Bilden kunde inte avkodas.",
+          "generic": "Uppladdning misslyckades."
+        }
+      },
+      "errors": {
+        "vatRange": "Moms måste vara mellan 0 och 30 procent.",
+        "regFeeRange": "Registreringsavgift måste vara 0 eller mer.",
+        "fiscalMonth": "Startmånad måste vara 1-12.",
+        "netDays": "Standard kreditdagar måste vara 0-365.",
+        "validation": "Kontrollera formuläret — vissa fält behöver uppmärksamhet.",
+        "forbidden": "Din roll kan inte ändra fakturainställningar.",
+        "generic": "Sparning misslyckades. Försök igen."
+      },
+      "saving": "Sparar…",
+      "actions": {
+        "save": "Spara inställningar",
+        "create": "Skapa inställningar"
+      },
+      "toast": {
+        "created": "Fakturainställningar skapade.",
+        "updated": "Fakturainställningar uppdaterade."
+      }
+    },
     "invoices": {
       "meta": {
         "title": "Fakturor"

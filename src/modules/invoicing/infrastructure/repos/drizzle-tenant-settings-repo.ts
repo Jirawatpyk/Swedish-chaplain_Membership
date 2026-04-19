@@ -1,12 +1,18 @@
 /**
  * T051 — Drizzle tenant_invoice_settings repo (F4).
- * Read-only for issue-time snapshotting. CRUD for US4 settings UI lives
- * in a separate use case (T093).
+ *
+ * Read path — `getForIssue` loads a snapshot for invoice issuance.
+ *
+ * Write path — R7-B2 adds `upsert` backing the US4 settings UI
+ * (PATCH /api/tenant-invoice-settings). A single INSERT … ON CONFLICT
+ * DO UPDATE patches only the columns explicitly present in the patch,
+ * so partial edits don't overwrite unrelated fields with stale values.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type {
   TenantSettingsRepo,
   TenantInvoiceSettingsView,
+  TenantInvoiceSettingsPatch,
 } from '../../application/ports/tenant-settings-repo';
 import { VatRate } from '../../domain/value-objects/vat-rate';
 import { asProRatePolicyUnsafe } from '../../domain/value-objects/pro-rate-policy';
@@ -43,5 +49,49 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
         logo_blob_key: row.logoBlobKey,
       }),
     };
+  },
+
+  async upsert(tenantId: string, patch: TenantInvoiceSettingsPatch): Promise<void> {
+    const ctx = asTenantContext(tenantId);
+    // Build the patch row — only caller-provided fields are included in
+    // the UPDATE SET. Required fields for INSERT are supplied only if
+    // the caller provided them; on first-time insert, missing required
+    // fields surface as a DB NOT NULL violation (caller validates
+    // upstream).
+    const insertValues: Record<string, unknown> = { tenantId };
+    const updateValues: Record<string, unknown> = { updatedAt: sql`now()` };
+    const copyFields: Array<[keyof TenantInvoiceSettingsPatch, string]> = [
+      ['vatRate', 'vatRate'],
+      ['registrationFeeSatang', 'registrationFeeSatang'],
+      ['legalNameTh', 'legalNameTh'],
+      ['legalNameEn', 'legalNameEn'],
+      ['taxId', 'taxId'],
+      ['registeredAddressTh', 'registeredAddressTh'],
+      ['registeredAddressEn', 'registeredAddressEn'],
+      ['invoiceNumberPrefix', 'invoiceNumberPrefix'],
+      ['creditNoteNumberPrefix', 'creditNoteNumberPrefix'],
+      ['receiptNumberingMode', 'receiptNumberingMode'],
+      ['fiscalYearStartMonth', 'fiscalYearStartMonth'],
+      ['defaultNetDays', 'defaultNetDays'],
+      ['proRatePolicy', 'proRatePolicy'],
+      ['autoEmailEnabled', 'autoEmailEnabled'],
+      ['logoBlobKey', 'logoBlobKey'],
+    ];
+    for (const [src, dst] of copyFields) {
+      if (patch[src] !== undefined) {
+        insertValues[dst] = patch[src];
+        updateValues[dst] = patch[src];
+      }
+    }
+
+    await runInTenant(ctx, (tx) =>
+      tx
+        .insert(tenantInvoiceSettings)
+        .values(insertValues as typeof tenantInvoiceSettings.$inferInsert)
+        .onConflictDoUpdate({
+          target: tenantInvoiceSettings.tenantId,
+          set: updateValues,
+        }),
+    );
   },
 };

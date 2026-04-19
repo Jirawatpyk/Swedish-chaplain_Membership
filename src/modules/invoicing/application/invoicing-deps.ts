@@ -71,6 +71,26 @@ export function makeGetInvoicePdfSignedUrlDeps(tenantId: string): GetInvoicePdfS
   };
 }
 
+export function makeUpdateTenantInvoiceSettingsDeps(): {
+  tenantSettingsRepo: typeof drizzleTenantSettingsRepo;
+  audit: typeof f4AuditAdapter;
+} {
+  return {
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    audit: f4AuditAdapter,
+  };
+}
+
+export function makeUploadTenantLogoDeps(): {
+  blob: typeof vercelBlobAdapter;
+  audit: typeof f4AuditAdapter;
+} {
+  return {
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+  };
+}
+
 /**
  * R7-B5 — bootstrap-guard helper for the invoice list page.
  *
