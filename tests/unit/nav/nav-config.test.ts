@@ -23,18 +23,18 @@ describe('staffNavConfig', () => {
     expect(mainSection.items[4]!.titleKey).toBe('nav.staff.users');
   });
 
-  it('second section is Settings with Fees + InvoiceSettings flat items (R7-B2)', () => {
-    // Previously wrapped in a 1-child NavGroup whose single-child-
-    // flatten path collapsed it to a flat link. After R7-B2 added a
-    // 2nd child, the NavGroup wrapper was removed to avoid a
-    // visually-duplicated header ("Settings" section + "Settings"
-    // group). Items now render directly under the section header.
+  it('second section is Settings with only InvoiceSettings (R7 consolidation)', () => {
+    // R7 consolidation removed the Fee Configuration page. VAT +
+    // currency + registration fee all live in Invoice Settings now
+    // (tenant_invoice_settings is the authoritative source). Only
+    // one item remains under Settings; the NavGroup's single-child-
+    // flatten path renders it as a flat link under the section
+    // header.
     const settingsSection = staffNavConfig.sections[1]!;
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
-    expect(settingsSection.items).toHaveLength(2);
-    expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsFees');
-    expect(settingsSection.items[1]!.titleKey).toBe('nav.staff.settingsInvoices');
-    const invoiceSettingsItem = settingsSection.items[1]! as NavItem;
+    expect(settingsSection.items).toHaveLength(1);
+    expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');
+    const invoiceSettingsItem = settingsSection.items[0]! as NavItem;
     expect(invoiceSettingsItem.href).toBe('/admin/settings/invoicing');
   });
 

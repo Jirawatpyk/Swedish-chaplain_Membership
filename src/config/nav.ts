@@ -5,7 +5,6 @@ import {
   FileTextIcon,
   UsersIcon,
   SettingsIcon,
-  DollarSignIcon,
   UserCircleIcon,
   BuildingIcon,
   ReceiptIcon,
@@ -101,21 +100,13 @@ export const staffNavConfig: NavConfig = {
       ],
     },
     {
-      // R7-B2 — flattened from NavGroup to flat items. Previously a
-      // 1-child NavGroup whose single-child-flatten path collapsed it
-      // to a single link using the group's icon; adding a 2nd child
-      // broke that flatten and produced a visually-duplicated header
-      // ("Settings" section + "Settings" group). Since we now have
-      // 2 settings sub-routes, the NavGroup wrapper is redundant —
-      // the section header itself groups them.
+      // R7 consolidation — Fee Configuration removed. VAT + currency
+      // + registration fee consolidated into Invoice Settings as the
+      // authoritative tenant-wide fiscal-config surface. `settingsFees`
+      // i18n key + the previous two-child NavGroup pattern are now
+      // orphaned (harmless; swept in R8 cleanup).
       titleKey: 'nav.staff.sections.settings',
       items: [
-        {
-          titleKey: 'nav.staff.settingsFees',
-          icon: DollarSignIcon,
-          href: '/admin/settings/fees',
-          activePattern: '/admin/settings/fees',
-        },
         {
           titleKey: 'nav.staff.settingsInvoices',
           icon: FileCog2Icon,

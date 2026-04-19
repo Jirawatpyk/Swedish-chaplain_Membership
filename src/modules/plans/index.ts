@@ -249,21 +249,12 @@ export {
   type UndeletePlanDeps,
 } from './application/undelete-plan';
 
-// Phase 7 (US5 — T144-T145) — shipped:
-
-export {
-  getFeeConfig,
-  type GetFeeConfigDeps,
-  type GetFeeConfigError,
-} from './application/get-fee-config';
-
-export {
-  updateFeeConfig,
-  type FeeConfigPatchInput,
-  type UpdateFeeConfigInput,
-  type UpdateFeeConfigError,
-  type UpdateFeeConfigDeps,
-} from './application/update-fee-config';
+// Phase 7 (F2 US5 — T144-T145) — REMOVED in R7 consolidation.
+// Fee Configuration page was deleted after F4 `tenant_invoice_settings`
+// became the authoritative source for VAT + currency + registration
+// fee. `getFeeConfig` / `updateFeeConfig` use-cases were deleted in
+// R7 commit C4; their tests likewise. F4 `getTenantTaxPolicy` is
+// the cross-module replacement.
 
 // --- Schema tables (read-only, for sibling-module joins) --------------------
 //
