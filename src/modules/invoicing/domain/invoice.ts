@@ -43,8 +43,39 @@ export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 declare const InvoiceIdBrand: unique symbol;
 export type InvoiceId = string & { readonly [InvoiceIdBrand]: true };
 
+// UUID v4 (any variant) — InvoiceIds are `uuid` columns on Postgres.
+const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type InvoiceIdError = { kind: 'invalid_invoice_id'; raw: string };
+
+/**
+ * Unchecked brand cast. Use in TRUSTED contexts only:
+ *   - DB row → domain mapping (the DB enforces uuid format)
+ *   - IDs just generated with `randomUUID()`
+ *   - Test fixtures
+ *
+ * For user-supplied input (route parameters, request bodies), use
+ * `parseInvoiceId` which validates UUID format first — letting a
+ * malformed id reach Drizzle would trigger Postgres `22P02
+ * invalid_text_representation` (an opaque 5xx instead of a clean
+ * `invoice_not_found` 404).
+ */
 export function asInvoiceId(raw: string): InvoiceId {
   return raw as InvoiceId;
+}
+
+/**
+ * Validate-and-brand an InvoiceId from an untrusted source. Returns
+ * a Result so the caller can surface a clean 400 `invalid_invoice_id`.
+ * Post-review 2026-04-19 agent finding.
+ */
+export function parseInvoiceId(
+  raw: string,
+): { ok: true; value: InvoiceId } | { ok: false; error: InvoiceIdError } {
+  if (typeof raw !== 'string' || !RE_UUID.test(raw)) {
+    return { ok: false, error: { kind: 'invalid_invoice_id', raw } };
+  }
+  return { ok: true, value: raw as InvoiceId };
 }
 
 export interface Invoice {

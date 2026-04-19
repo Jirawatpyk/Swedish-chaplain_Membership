@@ -56,7 +56,7 @@ export async function previewInvoiceDraft(
 ): Promise<Result<{ bytes: Uint8Array; contentType: 'application/pdf' }, PreviewInvoiceDraftError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   return deps.invoiceRepo.withTx(async (tx) => {
-    const draft = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
+    const draft = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
     if (!draft) {
       // R7-W1 — probe on not-found when actor context is provided.
       if (deps.audit && input.actorUserId) {

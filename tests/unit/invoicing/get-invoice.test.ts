@@ -55,7 +55,7 @@ describe('getInvoice', () => {
       invoiceRepo: {
         withTx: vi.fn(),
         insertDraft: vi.fn(),
-        findDraftById: vi.fn(),
+        findByIdInTx: vi.fn(),
         findById: vi.fn(async () => invoice),
         list: vi.fn(),
         listPaged: vi.fn(),
@@ -76,7 +76,7 @@ describe('getInvoice', () => {
       invoiceRepo: {
         withTx: vi.fn(),
         insertDraft: vi.fn(),
-        findDraftById: vi.fn(),
+        findByIdInTx: vi.fn(),
         findById: vi.fn(async () => null),
         list: vi.fn(),
         listPaged: vi.fn(),

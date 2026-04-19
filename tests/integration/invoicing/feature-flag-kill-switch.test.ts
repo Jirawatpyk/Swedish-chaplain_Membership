@@ -64,11 +64,15 @@ describe('F4 feature-flag kill-switch (T020)', () => {
     const res = proxy(req);
     // Non-F4 paths either pass through (200/next) or hit some other
     // guard (csrf / f3 kill-switch) — they MUST NOT return the F4
-    // kill-switch 503. The marker is the exact response body.
-    if (res.status === 503) {
-      const body = await res.json();
-      expect(body.message).not.toBe('Invoicing is temporarily unavailable.');
-    }
+    // kill-switch 503. Post-review 2026-04-19 agent finding: the
+    // previous conditional-branch assertion silently passed if another
+    // guard happened to return 503 for the right reason. We now check
+    // EVERY 503 response body regardless of the other guard outcome,
+    // then additionally assert the unambiguous marker is never the
+    // F4 kill-switch payload.
+    const body = await res.json().catch(() => ({}));
+    const message = (body as { message?: unknown }).message;
+    expect(message).not.toBe('Invoicing is temporarily unavailable.');
   });
 
   it.each(F4_PATHS)('allows %s when flag=true', async (path) => {

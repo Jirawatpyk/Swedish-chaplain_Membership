@@ -18,6 +18,7 @@ import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { PdfRenderInput } from '../../../application/ports/pdf-render-port';
 import { amountToThaiWords } from '../amount-to-thai';
 import { amountToEnglishWords } from '../amount-to-english';
+import { shapeThai } from '../fonts/register-sarabun';
 
 const styles = StyleSheet.create({
   page: { fontFamily: 'Sarabun', fontSize: 10, padding: 36, color: '#111' },
@@ -96,6 +97,10 @@ export function InvoiceTemplate(input: PdfRenderInput) {
     titleTh = 'ใบเสร็จรับเงิน';
     titleEn = 'Official Receipt';
   }
+  // Thai-RD §86/4 requires the document to mark whether it is the
+  // original or a copy. Previews + voids have their own watermark;
+  // all other rendered tax documents are the tenant's ORIGINAL copy.
+  const originalMarker = isPreview || isVoid ? null : 'ต้นฉบับ / ORIGINAL';
 
   const totalThb = Number(input.total.satang) / 100;
 
@@ -107,54 +112,64 @@ export function InvoiceTemplate(input: PdfRenderInput) {
 
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.h1}>{input.tenant.legal_name_th}</Text>
+            <Text style={styles.h1}>{shapeThai(input.tenant.legal_name_th)}</Text>
             <Text style={styles.h2}>{input.tenant.legal_name_en}</Text>
-            <Text style={styles.value}>{input.tenant.address_th}</Text>
+            <Text style={styles.value}>{shapeThai(input.tenant.address_th)}</Text>
             <Text style={styles.value}>{input.tenant.address_en}</Text>
-            <Text style={styles.label}>เลขประจำตัวผู้เสียภาษี / Tax ID: {input.tenant.tax_id}</Text>
+            <Text style={styles.label}>
+              {shapeThai('เลขประจำตัวผู้เสียภาษี')} / Tax ID: {input.tenant.tax_id}
+            </Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.h1}>{titleTh}</Text>
+            <Text style={styles.h1}>{shapeThai(titleTh)}</Text>
             <Text style={styles.h2}>{titleEn}</Text>
+            {originalMarker && (
+              <Text style={[styles.label, { fontWeight: 700 }]}>
+                {shapeThai(originalMarker)}
+              </Text>
+            )}
             {input.documentNumber && (
               <Text style={styles.value}>No. {input.documentNumber.raw}</Text>
             )}
             {input.issueDate && (
               <Text style={styles.label}>
-                วันที่ / Date: {input.issueDate} (พ.ศ. {beYear(input.issueDate)})
+                {shapeThai('วันที่')} / Date: {input.issueDate} ({shapeThai('พ.ศ.')}{' '}
+                {beYear(input.issueDate)})
               </Text>
             )}
             {input.dueDate && (
-              <Text style={styles.label}>ครบกำหนด / Due: {input.dueDate}</Text>
+              <Text style={styles.label}>
+                {shapeThai('ครบกำหนด')} / Due: {input.dueDate}
+              </Text>
             )}
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.label}>ลูกค้า / Customer</Text>
-          <Text style={styles.value}>{input.member.legal_name}</Text>
+          <Text style={styles.label}>{shapeThai('ลูกค้า')} / Customer</Text>
+          <Text style={styles.value}>{shapeThai(input.member.legal_name)}</Text>
           {input.member.tax_id && (
             <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
           )}
-          <Text style={styles.value}>{input.member.address}</Text>
+          <Text style={styles.value}>{shapeThai(input.member.address)}</Text>
           {input.member.primary_contact_name && (
             <Text style={styles.label}>
-              ผู้ติดต่อ / Contact: {input.member.primary_contact_name}
+              {shapeThai('ผู้ติดต่อ')} / Contact: {shapeThai(input.member.primary_contact_name)}
             </Text>
           )}
         </View>
 
         <View style={styles.table}>
           <View style={styles.trHead}>
-            <Text style={styles.tdDesc}>รายการ / Description</Text>
-            <Text style={styles.tdQty}>จำนวน / Qty</Text>
-            <Text style={styles.tdUnit}>ราคา / Unit</Text>
-            <Text style={styles.tdTotal}>รวม / Total</Text>
+            <Text style={styles.tdDesc}>{shapeThai('รายการ')} / Description</Text>
+            <Text style={styles.tdQty}>{shapeThai('จำนวน')} / Qty</Text>
+            <Text style={styles.tdUnit}>{shapeThai('ราคา')} / Unit</Text>
+            <Text style={styles.tdTotal}>{shapeThai('รวม')} / Total</Text>
           </View>
           {input.lines.map((l) => (
             <View key={l.lineId} style={styles.tr}>
               <View style={styles.tdDesc}>
-                <Text>{l.descriptionTh}</Text>
+                <Text>{shapeThai(l.descriptionTh)}</Text>
                 <Text style={styles.label}>{l.descriptionEn}</Text>
               </View>
               <Text style={styles.tdQty}>{l.quantity}</Text>
@@ -166,7 +181,7 @@ export function InvoiceTemplate(input: PdfRenderInput) {
 
         <View style={styles.totalsBlock}>
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>รวมก่อนภาษี / Subtotal:</Text>
+            <Text style={styles.totalLabel}>{shapeThai('รวมก่อนภาษี')} / Subtotal:</Text>
             <Text style={styles.totalValue}>{formatThbSatang(input.subtotal.satang)}</Text>
           </View>
           <View style={styles.totalRow}>
@@ -176,18 +191,22 @@ export function InvoiceTemplate(input: PdfRenderInput) {
             <Text style={styles.totalValue}>{formatThbSatang(input.vat.satang)}</Text>
           </View>
           <View style={styles.totalRow}>
-            <Text style={[styles.totalLabel, styles.grand]}>รวมทั้งสิ้น / Total (THB):</Text>
+            <Text style={[styles.totalLabel, styles.grand]}>
+              {shapeThai('รวมทั้งสิ้น')} / Total (THB):
+            </Text>
             <Text style={[styles.totalValue, styles.grand]}>
               {formatThbSatang(input.total.satang)}
             </Text>
           </View>
         </View>
 
-        <Text style={styles.wordsLine}>(ตัวอักษร) {amountToThaiWords(totalThb)}</Text>
+        <Text style={styles.wordsLine}>
+          ({shapeThai('ตัวอักษร')}) {shapeThai(amountToThaiWords(totalThb))}
+        </Text>
         <Text style={styles.wordsLine}>({amountToEnglishWords(totalThb)})</Text>
 
         <Text style={styles.footer}>
-          Rendered by Chamber-OS (ใบเอกสารภาษีเพื่อการอ้างอิงตาม ปรล. §86/4)
+          Rendered by Chamber-OS ({shapeThai('เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4')})
         </Text>
       </Page>
     </Document>

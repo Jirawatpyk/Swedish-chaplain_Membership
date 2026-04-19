@@ -21,6 +21,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import sharp from 'sharp';
 import { randomUUID } from 'node:crypto';
+import { logger } from '@/lib/logger';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
 
@@ -113,7 +114,14 @@ export async function uploadTenantLogo(
       outputContentType = 'image/jpeg';
       reencoded = await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer();
     }
-  } catch {
+  } catch (e) {
+    // Log at warn — sharp failure is not PII-sensitive and blind
+    // discard hides real deployment issues (missing libvips shared
+    // object, upstream sharp bug). Post-review 2026-04-19 agent nit.
+    logger.warn(
+      { err: e, tenantId: input.tenantId, declaredMime: input.declaredMime },
+      'uploadTenantLogo: sharp decode / re-encode failed',
+    );
     return err({ code: 'decode_failed' });
   }
 

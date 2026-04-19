@@ -65,7 +65,7 @@ function makeDeps(draft: Invoice | null): TestDeps {
     invoiceRepo: {
       withTx,
       insertDraft: vi.fn(),
-      findDraftById: vi.fn(async () => draft),
+      findByIdInTx: vi.fn(async () => draft),
       findById: vi.fn(),
       list: vi.fn(),
         listPaged: vi.fn(),
@@ -189,7 +189,7 @@ describe('updateInvoiceDraft', () => {
   });
 
   it('W3 — concurrent_state_change when repo throws InvoiceApplyConflictError(applyDraftUpdate)', async () => {
-    // Models the race where findDraftById reads status='draft' but a
+    // Models the race where findByIdInTx reads status='draft' but a
     // concurrent issueInvoice flips the row to 'issued' before our
     // guarded UPDATE fires. The repo's status='draft' WHERE guard then
     // matches zero rows and the repo throws. The use-case MUST map

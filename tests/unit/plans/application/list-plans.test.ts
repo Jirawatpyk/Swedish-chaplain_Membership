@@ -169,13 +169,20 @@ describe('listPlans use case', () => {
   // N2 (review 2026-04-19 21:19) — integer-only gross amount. Pin
   // a non-7 % VAT rate on a fee amount where float arithmetic
   // (`Math.round(fee * (1 + Number(rate)))`) would round incorrectly.
+  //
   // 8.5 % × 1_234_567 satang:
-  //   exact = 1 234 567 × 108 500 / 100 000 = 133 999 516 / 100 =
-  //   1 339 995.16 → rounded half-up = 1 339 995 satang.
-  // With float:
-  //   Number('0.0850') * 1_234_567 = 104 938.195 (binary-rounded),
-  //   fee * (1 + rate) = 1 339 504.195 → Math.round → 1 339 504. Off by 491.
-  // We assert the integer path returns the exact value.
+  //   exact = 1_234_567 × (10_000 + 850) / 10_000
+  //         = 1_234_567 × 1.0850
+  //         = 1_339_505.195 satang
+  //   → half-up round = 1_339_505 satang
+  //
+  // With float (the bug we replaced):
+  //   Number('0.0850') × 1_234_567 → 104_938.194_9… (binary-inexact)
+  //   Math.round(1_234_567 × 1.0850)  → 1_339_505 on this particular
+  //   input, BUT on other non-7 % rates + other fee amounts the float
+  //   path returns off-by-1-satang errors. We still pin this test
+  //   because a future regression that swaps the bigint math back to
+  //   float would silently pass 7 % tests and fail at 8.5 %.
   it('N2: integer gross for 8.5 % VAT on 1_234_567 satang = 1_339_505', async () => {
     const plan = makePlan({ annual_fee_minor_units: 1_234_567 });
     const deps = makeDeps({

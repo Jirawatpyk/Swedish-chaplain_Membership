@@ -7,7 +7,7 @@
  *
  * Branches exercised:
  *  1. settings_missing                    — tenantSettingsRepo returns null
- *  2. invoice_not_found                   — findDraftById returns null
+ *  2. invoice_not_found                   — findByIdInTx returns null
  *  3. invoice_already_issued (status=issued/paid/void/credited)
  *  4. member_not_found                    — memberIdentity returns null
  *  5. member_archived                     — isArchived = true (FR-037)
@@ -141,7 +141,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(opaqueTx)),
       insertDraft: vi.fn(),
-      findDraftById: vi.fn(async () => draft),
+      findByIdInTx: vi.fn(async () => draft),
       findById: vi.fn(),
       list: vi.fn(),
         listPaged: vi.fn(),
@@ -152,7 +152,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
       // Default: returns the status of the provided draft fixture so
-      // the lock check passes through to findDraftById. Individual
+      // the lock check passes through to findByIdInTx. Individual
       // tests override this to test status-race branches.
       lockForUpdate: vi.fn(async () => (draft?.status ?? null) as InvoiceStatus | null),
     },

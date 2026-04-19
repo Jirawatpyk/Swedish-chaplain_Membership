@@ -140,7 +140,7 @@ export async function recordPayment(
 
     // Idempotent replay: already paid → fetch + return the persisted row.
     if (lockedStatus === 'paid') {
-      const loaded = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
+      const loaded = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
       if (!loaded) return err({ code: 'invoice_not_found' });
       return ok(loaded);
     }
@@ -149,7 +149,7 @@ export async function recordPayment(
       return err({ code: 'invalid_status', status: lockedStatus });
     }
 
-    const loaded = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
+    const loaded = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
     if (!loaded) return err({ code: 'invoice_not_found' });
     if (
       !loaded.memberIdentitySnapshot ||
@@ -331,7 +331,7 @@ export async function recordPayment(
     }
 
     // `applyPayment` returns the refreshed row via RETURNING — no need
-    // for a second findDraftById round-trip.
+    // for a second findByIdInTx round-trip.
     return ok(updated);
   });
   } catch (e) {

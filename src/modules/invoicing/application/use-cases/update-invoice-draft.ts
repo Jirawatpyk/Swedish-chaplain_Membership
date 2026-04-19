@@ -52,7 +52,7 @@ export async function updateInvoiceDraft(
   const invoiceId = asInvoiceId(input.invoiceId);
   try {
     return await deps.invoiceRepo.withTx(async (tx) => {
-      const loaded = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
+      const loaded = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
       if (!loaded) {
         // R7-W1 — probe on not-found (RLS may have hidden a row owned
         // by a foreign tenant). Emit via `null` tx so it survives the
@@ -112,13 +112,13 @@ export async function updateInvoiceDraft(
         payload: { invoice_id: invoiceId, diff },
       });
 
-      const refreshed = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
+      const refreshed = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
       if (!refreshed) return err({ code: 'invoice_not_found' });
       return ok(refreshed);
     });
   } catch (e) {
     // W3 fix — map repo-layer concurrency conflict (concurrent
-    // issueInvoice flipped the row between our `findDraftById` read
+    // issueInvoice flipped the row between our `findByIdInTx` read
     // and the repo's guarded UPDATE) to a typed application error.
     if (e instanceof InvoiceApplyConflictError && e.kind === 'applyDraftUpdate') {
       return err({ code: 'concurrent_state_change' });

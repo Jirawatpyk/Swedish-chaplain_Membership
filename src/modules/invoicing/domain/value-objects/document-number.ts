@@ -11,10 +11,13 @@
  * is far beyond realistic load but still bounded.
  */
 
+import { asFiscalYear, type FiscalYear } from './fiscal-year';
+
 export type DocumentNumberError =
   | { kind: 'overflow'; sequenceNumber: number }
   | { kind: 'invalid_prefix'; prefix: string }
   | { kind: 'invalid_sequence'; sequenceNumber: number }
+  | { kind: 'invalid_year'; year: number }
   | { kind: 'malformed'; raw: string };
 
 const RE_PREFIX = /^[A-Z][A-Z0-9]{0,7}$/;
@@ -23,13 +26,13 @@ const MAX_SEQ = 999_999;
 export class DocumentNumber {
   readonly raw: string;
   readonly prefix: string;
-  readonly fiscalYear: number;
+  readonly fiscalYear: FiscalYear;
   readonly sequenceNumber: number;
 
   private constructor(
     raw: string,
     prefix: string,
-    fiscalYear: number,
+    fiscalYear: FiscalYear,
     sequenceNumber: number,
   ) {
     this.raw = raw;
@@ -38,10 +41,18 @@ export class DocumentNumber {
     this.sequenceNumber = sequenceNumber;
   }
 
-  /** Build from parts. Rejects out-of-range / malformed inputs. */
+  /**
+   * Build from parts. Rejects out-of-range / malformed inputs.
+   *
+   * `fiscalYear` accepts a raw `number` OR a pre-validated `FiscalYear`.
+   * Raw numbers are re-validated through `asFiscalYear()` so a caller
+   * passing `99` (two-digit year) or `9999` cannot produce a
+   * structurally-valid but semantically-broken document number.
+   * (Post-review 2026-04-19 agent finding.)
+   */
   static of(
     prefix: string,
-    fiscalYear: number,
+    fiscalYear: number | FiscalYear,
     sequenceNumber: number,
   ):
     | { ok: true; value: DocumentNumber }
@@ -53,9 +64,13 @@ export class DocumentNumber {
     if (sequenceNumber > MAX_SEQ) {
       return { ok: false, error: { kind: 'overflow', sequenceNumber } };
     }
+    const fyResult = asFiscalYear(fiscalYear as number);
+    if (!fyResult.ok) {
+      return { ok: false, error: { kind: 'invalid_year', year: fiscalYear as number } };
+    }
     const padded = sequenceNumber.toString().padStart(6, '0');
-    const raw = `${prefix}-${fiscalYear}-${padded}`;
-    return { ok: true, value: new DocumentNumber(raw, prefix, fiscalYear, sequenceNumber) };
+    const raw = `${prefix}-${fyResult.value}-${padded}`;
+    return { ok: true, value: new DocumentNumber(raw, prefix, fyResult.value, sequenceNumber) };
   }
 
   /** Parse raw string back to parts — used for audit trail reconstruction. */

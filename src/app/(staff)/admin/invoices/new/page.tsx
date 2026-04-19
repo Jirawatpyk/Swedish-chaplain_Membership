@@ -1,11 +1,17 @@
 /**
  * T056 — /admin/invoices/new — create draft form (server-loaded dropdowns).
  */
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('admin.invoices.new');
+  return { title: t('title') };
+}
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { FormContainer } from '@/components/layout';

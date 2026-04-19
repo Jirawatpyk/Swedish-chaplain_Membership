@@ -10,11 +10,13 @@
 export {
   INVOICE_STATUSES,
   asInvoiceId,
+  parseInvoiceId,
   isTerminal,
   canTransition,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,
+  type InvoiceIdError,
 } from './domain/invoice';
 export {
   INVOICE_LINE_KINDS,

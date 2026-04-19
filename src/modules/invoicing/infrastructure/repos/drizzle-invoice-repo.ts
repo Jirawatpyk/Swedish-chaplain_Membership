@@ -228,7 +228,7 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
       return rowsToInvoice(insertedInvoice as InvoiceRow, input.lines);
     },
 
-    async findDraftById(txUnknown, invoiceId: InvoiceId, tenantIdArg: string): Promise<Invoice | null> {
+    async findByIdInTx(txUnknown, invoiceId: InvoiceId, tenantIdArg: string): Promise<Invoice | null> {
       const tx = txUnknown as TenantTx;
       const [row] = await tx
         .select()

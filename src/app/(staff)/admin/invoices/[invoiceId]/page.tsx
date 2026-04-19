@@ -1,10 +1,16 @@
 /**
  * T056 — /admin/invoices/[invoiceId] detail page.
  */
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('admin.invoices.meta');
+  return { title: t('title') };
+}
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';

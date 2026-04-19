@@ -5,8 +5,8 @@
  *
  * Branches:
  *  1. invoice_not_found (raw SQL FOR UPDATE returns []) — skipped: we
- *     mock findDraftById null to hit the second `!loaded` branch
- *  2. invoice_not_found (findDraftById returns null)
+ *     mock findByIdInTx null to hit the second `!loaded` branch
+ *  2. invoice_not_found (findByIdInTx returns null)
  *  3. Idempotent replay — status=paid returns row without re-doing work
  *  4. invalid_status (status=draft/void/credited)
  *  5. no_snapshot_on_invoice (issued invoice missing snapshots)
@@ -149,7 +149,7 @@ function makeDeps(
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(opaqueTx)),
       insertDraft: vi.fn(),
-      findDraftById: vi.fn(async () => draft),
+      findByIdInTx: vi.fn(async () => draft),
       findById: vi.fn(),
       list: vi.fn(),
         listPaged: vi.fn(),
@@ -239,7 +239,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     );
   });
 
-  it('invoice_not_found — findDraftById returns null after row exists (concurrent delete race)', async () => {
+  it('invoice_not_found — findByIdInTx returns null after row exists (concurrent delete race)', async () => {
     const deps = makeDeps(true, null, makeSettings());
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(false);
@@ -294,9 +294,9 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
 
   it('combined numbering — no receipt seq allocation', async () => {
     const deps = makeDeps(true, makeIssuedInvoice(), makeSettings({ receiptNumberingMode: 'combined' }));
-    // Re-mock findDraftById to return paid invoice on second call (after UPDATE).
+    // Re-mock findByIdInTx to return paid invoice on second call (after UPDATE).
     let call = 0;
-    deps.invoiceRepo.findDraftById = vi.fn(async () => {
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
       call++;
       return call === 1 ? makeIssuedInvoice() : makeIssuedInvoice({ status: 'paid', paidAt: '2026-05-18T10:00:00Z' });
     });
@@ -311,7 +311,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
   it('separate numbering — allocates receipt seq', async () => {
     const deps = makeDeps(true, makeIssuedInvoice(), makeSettings({ receiptNumberingMode: 'separate' }));
     let call = 0;
-    deps.invoiceRepo.findDraftById = vi.fn(async () => {
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
       call++;
       return call === 1 ? makeIssuedInvoice() : makeIssuedInvoice({ status: 'paid' });
     });
@@ -330,7 +330,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     const invoice = makeIssuedInvoice();
     const deps = makeDeps(true, invoice, makeSettings());
     let call = 0;
-    deps.invoiceRepo.findDraftById = vi.fn(async () => {
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
       call++;
       return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
     });
@@ -349,7 +349,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     const invoice = makeIssuedInvoice();
     const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }));
     let call = 0;
-    deps.invoiceRepo.findDraftById = vi.fn(async () => {
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
       call++;
       return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
     });
@@ -367,7 +367,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     const invoice = makeIssuedInvoice();
     const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: false }));
     let call = 0;
-    deps.invoiceRepo.findDraftById = vi.fn(async () => {
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
       call++;
       return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
     });
@@ -379,7 +379,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     const invoice = makeIssuedInvoice();
     const deps = makeDeps(true, invoice, makeSettings());
     let call = 0;
-    deps.invoiceRepo.findDraftById = vi.fn(async () => {
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
       call++;
       return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
     });

@@ -8,8 +8,9 @@
  *   4. UPDATE next_sequence_number += 1
  *   5. Return the pre-increment value (what we just "took")
  *
- * Retry: on `deadlock_detected` or serialization failure, retry up to
- * 3× with exponential back-off.
+ * Retry (amended 2026-04-19): deadlock retry belongs at the caller's
+ * `withTx` scope, not inside this function. See the inline comment
+ * below for the rationale.
  */
 import { sql } from 'drizzle-orm';
 import type {
@@ -18,8 +19,6 @@ import type {
 } from '../../application/ports/sequence-allocator-port';
 import type { FiscalYear } from '../../domain/value-objects/fiscal-year';
 import type { TenantTx } from '@/lib/db';
-
-const MAX_RETRIES = 3;
 
 export const postgresSequenceAllocator: SequenceAllocatorPort = {
   async allocateNext(
@@ -56,59 +55,61 @@ export const postgresSequenceAllocator: SequenceAllocatorPort = {
 
     const lockKey = `invoicing:${input.tenantId}:${input.documentType}:${input.fiscalYear}`;
 
-    let lastError: unknown = null;
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      try {
-        // 1. Advisory lock — fingerprint the stream name to a bigint.
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
+    // Post-review 2026-04-19 agent finding — the previous retry loop
+    // sat INSIDE the caller-supplied transaction. On 40P01 (deadlock),
+    // Postgres auto-aborts the whole transaction; every subsequent
+    // statement from this loop would then return `25P02 current
+    // transaction is aborted, commands ignored until end of transaction
+    // block` and the loop eventually threw a misleading "exceeded
+    // MAX_RETRIES" error, masking the real deadlock.
+    //
+    // The correct retry scope for deadlocks is the caller's `withTx`
+    // wrapper, which can start a fresh transaction. Keeping a
+    // "retry" in this in-tx code path was fake safety.
+    //
+    // With the advisory-lock scope being `(tenant, document_type,
+    // fiscal_year)` + `pg_advisory_xact_lock` (exclusive, auto-released
+    // on commit/rollback), real contention between two concurrent
+    // issue-invoice calls is already serialised by the advisory lock —
+    // the allocator itself cannot deadlock against another allocator
+    // on the same tuple. A cross-resource deadlock (e.g. with
+    // `members_fkey` during `apply-member-registration-fee-paid`) is
+    // the only remaining path; if it ever fires, the caller's
+    // `withTx` must be the retry owner.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 
-        // 2. Bootstrap row if absent.
-        await tx.execute(sql`
-          INSERT INTO tenant_document_sequences
-            (tenant_id, document_type, fiscal_year, next_sequence_number)
-          VALUES
-            (${input.tenantId}, ${input.documentType}::document_type, ${input.fiscalYear}, 1)
-          ON CONFLICT (tenant_id, document_type, fiscal_year) DO NOTHING
-        `);
+    await tx.execute(sql`
+      INSERT INTO tenant_document_sequences
+        (tenant_id, document_type, fiscal_year, next_sequence_number)
+      VALUES
+        (${input.tenantId}, ${input.documentType}::document_type, ${input.fiscalYear}, 1)
+      ON CONFLICT (tenant_id, document_type, fiscal_year) DO NOTHING
+    `);
 
-        // 3. Read + lock current value.
-        const rows = (await tx.execute(sql`
-          SELECT next_sequence_number
-            FROM tenant_document_sequences
-           WHERE tenant_id = ${input.tenantId}
-             AND document_type = ${input.documentType}::document_type
-             AND fiscal_year = ${input.fiscalYear}
-             FOR UPDATE
-        `)) as unknown as Array<{ next_sequence_number: number }>;
-        if (!rows[0]) {
-          throw new Error(
-            `postgresSequenceAllocator: missing row after ON CONFLICT — ${lockKey}`,
-          );
-        }
-        const assigned = rows[0].next_sequence_number;
-
-        // 4. Increment — caller will COMMIT with the allocation.
-        await tx.execute(sql`
-          UPDATE tenant_document_sequences
-             SET next_sequence_number = next_sequence_number + 1,
-                 updated_at = now()
-           WHERE tenant_id = ${input.tenantId}
-             AND document_type = ${input.documentType}::document_type
-             AND fiscal_year = ${input.fiscalYear}
-        `);
-
-        return assigned;
-      } catch (e) {
-        lastError = e;
-        // Retry on deadlock / serialization failure only.
-        const code = (e as { code?: string })?.code;
-        if (code !== '40P01' && code !== '40001') throw e;
-        const backoffMs = 25 * 2 ** attempt;
-        await new Promise((r) => setTimeout(r, backoffMs));
-      }
+    const rows = (await tx.execute(sql`
+      SELECT next_sequence_number
+        FROM tenant_document_sequences
+       WHERE tenant_id = ${input.tenantId}
+         AND document_type = ${input.documentType}::document_type
+         AND fiscal_year = ${input.fiscalYear}
+         FOR UPDATE
+    `)) as unknown as Array<{ next_sequence_number: number }>;
+    if (!rows[0]) {
+      throw new Error(
+        `postgresSequenceAllocator: missing row after ON CONFLICT — ${lockKey}`,
+      );
     }
-    throw new Error(
-      `postgresSequenceAllocator: exceeded ${MAX_RETRIES} retries: ${String(lastError)}`,
-    );
+    const assigned = rows[0].next_sequence_number;
+
+    await tx.execute(sql`
+      UPDATE tenant_document_sequences
+         SET next_sequence_number = next_sequence_number + 1,
+             updated_at = now()
+       WHERE tenant_id = ${input.tenantId}
+         AND document_type = ${input.documentType}::document_type
+         AND fiscal_year = ${input.fiscalYear}
+    `);
+
+    return assigned;
   },
 };

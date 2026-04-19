@@ -182,7 +182,7 @@ export async function issueInvoice(
     }
 
     // C2. Draft invoice (now safely inside the row lock)
-    const draft = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
+    const draft = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
     if (!draft) return err({ code: 'invoice_not_found' });
 
     // B. Member lock (FR-037 archive-race)

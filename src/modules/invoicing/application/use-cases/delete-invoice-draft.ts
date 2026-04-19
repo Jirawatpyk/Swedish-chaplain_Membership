@@ -30,7 +30,7 @@ export async function deleteInvoiceDraft(
 ): Promise<Result<void, DeleteInvoiceDraftError>> {
   const invoiceId = asInvoiceId(input.invoiceId);
   return deps.invoiceRepo.withTx(async (tx) => {
-    const row = await deps.invoiceRepo.findDraftById(tx, invoiceId, input.tenantId);
+    const row = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
     if (!row) {
       // R7-W1 — probe on not-found (RLS-hidden vs. truly-missing is
       // indistinguishable from the app side; audit either way per

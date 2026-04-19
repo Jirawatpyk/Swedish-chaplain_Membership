@@ -108,7 +108,7 @@ function makeDeps(
           updatedAt: '2026-04-18T00:00:00Z',
         } as Invoice;
       }),
-      findDraftById: vi.fn(),
+      findByIdInTx: vi.fn(),
       findById: vi.fn(),
       list: vi.fn(),
         listPaged: vi.fn(),

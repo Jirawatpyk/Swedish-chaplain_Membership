@@ -6,9 +6,15 @@
  * numbered `<TablePagination />` (parity with members directory).
  * Default filter excludes drafts (R2-P2); `?status=draft` opts in.
  */
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('admin.invoices.meta');
+  return { title: t('title') };
+}
 import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';

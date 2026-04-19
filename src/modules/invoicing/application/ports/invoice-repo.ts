@@ -25,8 +25,22 @@ export interface InvoiceRepo {
     },
   ): Promise<Invoice>;
 
-  /** Load a draft for update; transaction-scoped. */
-  findDraftById(tx: unknown, invoiceId: InvoiceId, tenantId: string): Promise<Invoice | null>;
+  /**
+   * Transaction-scoped load by id. Status-agnostic — returns the row
+   * regardless of status (draft / issued / paid / void / credited /
+   * partially_credited). Commonly called "for update" in an active tx;
+   * callers that need status discrimination MUST check `.status`
+   * themselves.
+   *
+   * Note (post-review 2026-04-19): this method is deliberately named
+   * without "Draft" since both `issueInvoice` (needs a draft row),
+   * `recordPayment` (needs an issued row, also fetches paid rows on
+   * idempotent replay), and `updateInvoiceDraft` (needs a draft) all
+   * share this loader. A future refactor MUST NOT add a
+   * `WHERE status='draft'` filter here — callers depend on full-row
+   * visibility.
+   */
+  findByIdInTx(tx: unknown, invoiceId: InvoiceId, tenantId: string): Promise<Invoice | null>;
 
   /** Generic loader used by detail / portal / signed-url paths. */
   findById(invoiceId: InvoiceId, tenantId: string): Promise<Invoice | null>;
