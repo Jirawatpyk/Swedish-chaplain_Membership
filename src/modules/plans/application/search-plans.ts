@@ -84,12 +84,10 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     url: '/admin/plans/clone',
     requires: 'admin',
   },
-  {
-    id: 'fee.edit',
-    label: 'palette.actions.editFees',
-    url: '/admin/settings/fees',
-    requires: 'admin',
-  },
+  // R8 consolidation — Fee Configuration palette entry removed.
+  // Admins now edit VAT + currency + registration fee via Invoice
+  // Settings (/admin/settings/invoicing). Palette has a separate
+  // 'invoice.settings' nav entry for that.
   {
     id: 'audit.view',
     label: 'palette.actions.viewAuditLog',
@@ -120,9 +118,9 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     requires: 'read',
   },
   {
-    id: 'nav.fees',
-    label: 'palette.navigate.feeConfig',
-    url: '/admin/settings/fees',
+    id: 'nav.invoiceSettings',
+    label: 'palette.navigate.invoiceSettings',
+    url: '/admin/settings/invoicing',
     requires: 'read',
   },
   {

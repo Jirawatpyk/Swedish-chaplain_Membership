@@ -458,30 +458,6 @@
         "sourceYearEmpty": "Inga paket hittades för {sourceYear}."
       }
     },
-    "settings": {
-      "fees": {
-        "title": "Avgiftskonfiguration",
-        "subtitle": "Valuta, momssats och registreringsavgift per tenant.",
-        "description": "Dessa värden tillämpas på alla paket i din katalog. Valutan är oföränderlig i denna version.",
-        "labels": {
-          "currencyCode": "Valuta",
-          "vatRate": "Momssats (%)",
-          "registrationFee": "Registreringsavgift"
-        },
-        "currencyImmutableNote": "Valutan är låst till {currency} tills en framtida version lägger till stöd för blandade valutor.",
-        "save": "Spara ändringar",
-        "saving": "Sparar…",
-        "toast": {
-          "success": "Avgiftskonfigurationen uppdaterades."
-        },
-        "errors": {
-          "generic": "Något gick fel. Försök igen.",
-          "forbidden": "Endast administratörer kan ändra avgiftskonfigurationen.",
-          "currencyImmutable": "Valutan kan inte ändras medan {count} paket finns. Ta bort alla paket först.",
-          "validation": "Korrigera de markerade fälten."
-        }
-      }
-    },
     "members": {
       "title": "Medlemmar",
       "overrideReason": {
@@ -1094,14 +1070,13 @@
     "actions": {
       "newPlan": "Skapa nytt paket",
       "cloneYear": "Klona år",
-      "editFees": "Redigera avgiftskonfiguration",
       "viewAuditLog": "Visa revisionslogg",
       "newMember": "Skapa ny medlem",
       "newInvoice": "Skapa ny faktura"
     },
     "navigate": {
       "plansList": "Paketlista",
-      "feeConfig": "Avgiftskonfiguration",
+      "invoiceSettings": "Fakturainställningar",
       "usersList": "Användarlista",
       "dashboard": "Instrumentpanel",
       "membersList": "Medlemslista",
@@ -1114,7 +1089,6 @@
       "plans": "Paket",
       "users": "Användare",
       "settings": "Inställningar",
-      "settingsFees": "Avgiftskonfiguration",
       "settingsInvoices": "Fakturainställningar",
       "sections": {
         "main": "Huvud",

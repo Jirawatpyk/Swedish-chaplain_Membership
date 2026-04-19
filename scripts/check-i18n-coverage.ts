@@ -24,8 +24,10 @@ type Locale = (typeof LOCALES)[number];
 /**
  * Feature-required namespaces. Dropping any of these from en.json is a
  * hard error (CI fails immediately) because the feature surface can't
- * render without them. F2 adds `admin.plans.*`, `admin.settings.fees.*`,
- * and `palette.*` — extended here per task T060.
+ * render without them. F2 adds `admin.plans.*` + `palette.*` — extended
+ * here per task T060. R8 consolidation retired `admin.settings.fees.*`
+ * (Fee Configuration page deleted; VAT + currency + registration fee
+ * moved to `admin.invoiceSettings.*`).
  */
 const REQUIRED_NAMESPACES = [
   // F1 — auth surfaces + shell + admin users
@@ -39,10 +41,12 @@ const REQUIRED_NAMESPACES = [
   'buttons',
   'errors',
   'admin.users',
-  // F2 — plans + fee config + command palette
+  // F2 — plans + command palette
   'admin.plans',
-  'admin.settings.fees',
   'palette',
+  // F4 — invoicing (R7 + R8 consolidation)
+  'admin.invoiceSettings',
+  'admin.invoices',
 ] as const;
 
 const RELEASE_BRANCH_PATTERN = /^(main|release\/.+)$/;
