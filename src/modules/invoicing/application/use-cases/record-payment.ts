@@ -39,6 +39,7 @@ import {
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { logger } from '@/lib/logger';
+import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 
@@ -238,6 +239,18 @@ export async function recordPayment(
       throw e;
     }
 
+    // W9 fix — payment_reference is a free-form admin-entered string
+    // that commonly carries partial bank account numbers / cheque
+    // numbers / other PII that falls under the Constitution's
+    // forbidden-in-logs rule. Audit retention is 10 years (FR-029),
+    // which makes the exposure window long even if audit access is
+    // tightly restricted. We persist a sha256 instead so reviewers
+    // can still detect duplicates, correlate with the plaintext on
+    // the invoice row (short-term lookup), and verify against a
+    // submitted reference — without storing the plaintext.
+    const paymentReferenceSha256 = input.paymentReference
+      ? sha256Hex(input.paymentReference)
+      : null;
     await deps.audit.emit(tx, {
       tenantId: input.tenantId,
       requestId: input.requestId ?? null,
@@ -247,7 +260,7 @@ export async function recordPayment(
       payload: {
         invoice_id: invoiceId,
         payment_method: input.paymentMethod,
-        payment_reference: input.paymentReference ?? null,
+        payment_reference_sha256: paymentReferenceSha256,
         payment_date: input.paymentDate,
         recorded_by_user_id: input.actorUserId,
         receipt_document_number: receiptDocNumRaw,
