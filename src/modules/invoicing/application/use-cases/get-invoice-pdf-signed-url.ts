@@ -85,6 +85,18 @@ export async function getInvoicePdfSignedUrl(
   // Drafts have no PDF yet — refuse.
   if (!invoice.pdf) return err({ code: 'forbidden' });
 
+  // TODO(F4-R3-E4): when auto-rerender on Blob-miss lands, wrap this
+  // branch in try/catch on the signed-URL issuance (or a HEAD probe
+  // on the blob key) and, on miss, (a) re-render with the PINNED
+  // `pdf_template_version` from `invoice.pdf.templateVersion`,
+  // (b) compute the regenerated sha256, (c) emit audit event
+  // `invoice_pdf_regenerated` with payload `{ invoice_id,
+  // invoice_number (raw), tenant_id, original_sha256, new_sha256,
+  // reason: 'blob_missing' }`, (d) return the freshly-signed URL.
+  // See specs/007-invoices-receipts/retrospective.md §
+  // "PDF Reproducibility — Best Practice Decision" for the 4-layer
+  // reproducibility rationale + the `invoice_pdf_regenerated` event
+  // contract registered in 0030_audit_invoice_pdf_regenerated.sql.
   const url = await deps.blob.signDownloadUrl(invoice.pdf.blobKey, 60);
   const filename = `${invoice.documentNumber?.raw ?? 'invoice'}.pdf`;
   return ok({ url, filename });

@@ -39,43 +39,31 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle2,
+  Clock,
+  FileText,
+  type LucideIcon,
+} from 'lucide-react';
+import {
+  formatDate,
+  formatSatangThb,
+  statusBadgeVariant,
+  statusIconName,
+  type InvoiceStatusIconName,
+} from '../_utils/format';
 
 const SUMMARY_LIMIT = 3;
 
-function formatSatangThb(satang: bigint | null): string {
-  if (satang === null) return '—';
-  const whole = satang / 100n;
-  const rem = satang % 100n;
-  return `${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')} THB`;
-}
-
-function formatDate(iso: string | null, locale: string): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-type InvoiceStatusBadgeVariant =
-  | 'default'
-  | 'secondary'
-  | 'outline'
-  | 'destructive';
-
-function statusBadgeVariant(status: string): InvoiceStatusBadgeVariant {
-  switch (status) {
-    case 'paid':
-      return 'default';
-    case 'issued':
-      return 'secondary';
-    case 'overdue':
-      return 'destructive';
-    default:
-      return 'outline';
-  }
-}
+const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  FileText,
+  Ban,
+};
 
 export interface InvoicesSummaryCardProps {
   /** The authenticated member-role user from `requireSession('member')`. */
@@ -104,10 +92,19 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
           <CardTitle>{t('summary.heading')}</CardTitle>
           <CardDescription>{t('summary.description')}</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
           <p className="text-caption text-muted-foreground">
             {t('notLinked')}
           </p>
+          <a
+            href="mailto:info@swecham.se"
+            className={cn(
+              buttonVariants({ variant: 'outline', size: 'sm' }),
+              'min-h-11 px-3 self-start',
+            )}
+          >
+            {t('summary.contactAdmin')}
+          </a>
         </CardContent>
       </Card>
     );
@@ -162,9 +159,18 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                     {r.documentNumber?.raw ?? '—'}
                   </span>
                   <div className="flex items-center gap-2">
-                    <Badge variant={statusBadgeVariant(r.status)}>
-                      {tStatus(r.status)}
-                    </Badge>
+                    {(() => {
+                      const Icon = STATUS_ICON_MAP[statusIconName(r.status)];
+                      return (
+                        <Badge
+                          variant={statusBadgeVariant(r.status)}
+                          className="inline-flex items-center gap-1"
+                        >
+                          <Icon className="size-3.5" aria-hidden="true" />
+                          {tStatus(r.status)}
+                        </Badge>
+                      );
+                    })()}
                     <span className="text-caption text-muted-foreground">
                       {formatDate(r.issueDate, userLocale)}
                     </span>
@@ -172,7 +178,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="tabular-nums text-body font-medium">
-                    {formatSatangThb(r.total?.satang ?? null)}
+                    {formatSatangThb(r.total?.satang ?? null, userLocale)}
                   </span>
                   {r.pdf ? (
                     <a
@@ -182,8 +188,6 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                         buttonVariants({ variant: 'ghost', size: 'sm' }),
                         'min-h-11 px-3',
                       )}
-                      target="_blank"
-                      rel="noopener noreferrer"
                       download
                     >
                       {t('actions.download')}

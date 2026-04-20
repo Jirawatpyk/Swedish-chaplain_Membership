@@ -41,9 +41,23 @@ export interface F4AuditEvent {
 }
 
 /**
- * Emit an audit row. MUST be called inside the same transaction as the
- * mutation being audited — the repo layer accepts a tx reference so
- * transactional writes land together.
+ * Emit an audit row.
+ *
+ * `tx` semantics:
+ *   - **Mutation path** (e.g., `issueInvoice`, `recordPayment`): MUST
+ *     pass the Drizzle transaction handle. The audit row lands inside
+ *     the same transaction as the mutation — either both commit or
+ *     both roll back (Constitution Principle I clause 3 atomicity).
+ *   - **Read-path probe** (e.g., cross-tenant-probe emitted by
+ *     `getInvoice` / `getInvoicePdfSignedUrl` / `listInvoices`): pass
+ *     `null`. The use case has no open transaction (read-only) so
+ *     the audit row writes on an auto-commit connection. Probe audit
+ *     failure is logged by the adapter but does NOT fail the read
+ *     (probe logging is best-effort — losing a probe row is less bad
+ *     than a legitimate read returning 500).
+ *
+ * Adapters MUST handle both cases. See `f4AuditAdapter` for the
+ * canonical implementation.
  */
 export interface AuditPort {
   emit(tx: unknown, event: F4AuditEvent & { tenantId: string; requestId: string | null }): Promise<void>;

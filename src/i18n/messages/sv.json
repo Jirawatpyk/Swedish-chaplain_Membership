@@ -1153,7 +1153,8 @@
       "summary": {
         "heading": "Senaste fakturor",
         "description": "Dina tre senaste fakturor — ladda ner PDF eller visa alla.",
-        "viewAll": "Visa alla"
+        "viewAll": "Visa alla",
+        "contactAdmin": "Kontakta din handelskammaradmin"
       },
       "detail": {
         "title": "Faktura",

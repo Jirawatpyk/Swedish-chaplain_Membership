@@ -22,7 +22,12 @@ export default async function Loading() {
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
       <DetailContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <PageHeader
+          title={t('title')}
+          subtitle={t('subtitle')}
+          badge={<SkeletonBlock className="h-6 w-20" />}
+          actions={<SkeletonBlock className="h-11 w-28" />}
+        />
         <Card>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             {Array.from({ length: 4 }).map((_, i) => (

@@ -48,6 +48,29 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle2,
+  Clock,
+  FileText,
+  type LucideIcon,
+} from 'lucide-react';
+import {
+  formatDate,
+  formatSatangThb,
+  statusBadgeVariant,
+  statusIconName,
+  type InvoiceStatusIconName,
+} from '../_utils/format';
+
+const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  FileText,
+  Ban,
+};
 
 interface RouteParams {
   readonly invoiceId: string;
@@ -56,43 +79,6 @@ interface RouteParams {
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.invoices.detail');
   return { title: t('title') };
-}
-
-function formatSatangThb(satang: bigint | null): string {
-  if (satang === null) return '—';
-  const abs = satang < 0n ? -satang : satang;
-  const whole = abs / 100n;
-  const rem = abs % 100n;
-  const sign = satang < 0n ? '-' : '';
-  return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')} THB`;
-}
-
-function formatDate(iso: string | null, locale: string): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-type InvoiceStatusBadgeVariant =
-  | 'default'
-  | 'secondary'
-  | 'outline'
-  | 'destructive';
-
-function statusBadgeVariant(status: string): InvoiceStatusBadgeVariant {
-  switch (status) {
-    case 'paid':
-      return 'default';
-    case 'issued':
-      return 'secondary';
-    case 'overdue':
-      return 'destructive';
-    default:
-      return 'outline';
-  }
 }
 
 export default async function PortalInvoiceDetailPage({
@@ -158,11 +144,18 @@ export default async function PortalInvoiceDetailPage({
       <PageHeader
         title={`${t('title')} ${documentNumber}`}
         subtitle={t('subtitle')}
-        badge={
-          <Badge variant={statusBadgeVariant(invoice.status)}>
-            {tStatus(invoice.status)}
-          </Badge>
-        }
+        badge={(() => {
+          const Icon = STATUS_ICON_MAP[statusIconName(invoice.status)];
+          return (
+            <Badge
+              variant={statusBadgeVariant(invoice.status)}
+              className="inline-flex items-center gap-1"
+            >
+              <Icon className="size-3.5" aria-hidden="true" />
+              {tStatus(invoice.status)}
+            </Badge>
+          );
+        })()}
         actions={
           invoice.pdf ? (
             <a
@@ -172,8 +165,6 @@ export default async function PortalInvoiceDetailPage({
                 buttonVariants({ variant: 'default', size: 'sm' }),
                 'min-h-11 px-4',
               )}
-              target="_blank"
-              rel="noopener noreferrer"
               download
             >
               {tList('actions.download')}
@@ -231,27 +222,39 @@ export default async function PortalInvoiceDetailPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {invoice.lines.map((line) => (
-                  <TableRow key={line.lineId}>
-                    <TableCell className="align-top">
-                      <span className="block">
-                        {userLocale === 'th' ? line.descriptionTh : line.descriptionEn}
-                      </span>
-                      <span className="block text-caption text-muted-foreground">
-                        {userLocale === 'th' ? line.descriptionEn : line.descriptionTh}
-                      </span>
-                    </TableCell>
-                    <TableCell className="align-top text-right tabular-nums">
-                      {line.quantity}
-                    </TableCell>
-                    <TableCell className="align-top text-right tabular-nums">
-                      {formatSatangThb(line.unitPrice.satang)}
-                    </TableCell>
-                    <TableCell className="align-top text-right tabular-nums">
-                      {formatSatangThb(line.total.satang)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {invoice.lines.map((line) => {
+                  const sameText = line.descriptionTh === line.descriptionEn;
+                  const primary =
+                    userLocale === 'th' ? line.descriptionTh : line.descriptionEn;
+                  const secondary =
+                    userLocale === 'th' ? line.descriptionEn : line.descriptionTh;
+                  return (
+                    <TableRow key={line.lineId}>
+                      <TableCell className="align-top">
+                        {/* Thai tax invoices require bilingual display
+                            at co-equal visual weight (§86); primary
+                            locale gets a subtle medium weight so the
+                            reader's chosen language leads without
+                            demoting the other. If the two strings
+                            are identical (common for plan-year items)
+                            collapse to a single row. */}
+                        <span className="block text-body font-medium">{primary}</span>
+                        {!sameText ? (
+                          <span className="block text-body">{secondary}</span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="align-top text-right tabular-nums">
+                        {line.quantity}
+                      </TableCell>
+                      <TableCell className="align-top text-right tabular-nums">
+                        {formatSatangThb(line.unitPrice.satang, userLocale)}
+                      </TableCell>
+                      <TableCell className="align-top text-right tabular-nums">
+                        {formatSatangThb(line.total.satang, userLocale)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -259,27 +262,31 @@ export default async function PortalInvoiceDetailPage({
       </Card>
 
       <Card>
-        <CardContent className="grid gap-2 sm:grid-cols-2 sm:justify-items-end">
-          <div className="contents">
-            <span className="text-caption uppercase tracking-wide text-muted-foreground">
+        {/* dl/dt/dd preserves the semantic label-value pairing for
+            screen readers; the previous `div.contents` flattening
+            caused VoiceOver/NVDA to read the six cells as loose
+            items with no association. */}
+        <CardContent>
+          <dl className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <dt className="text-caption uppercase tracking-wide text-muted-foreground">
               {t('totals.subtotal')}
-            </span>
-            <span className="tabular-nums">{formatSatangThb(subtotal)}</span>
-          </div>
-          <div className="contents">
-            <span className="text-caption uppercase tracking-wide text-muted-foreground">
+            </dt>
+            <dd className="tabular-nums sm:justify-self-end">
+              {formatSatangThb(subtotal, userLocale)}
+            </dd>
+            <dt className="text-caption uppercase tracking-wide text-muted-foreground">
               {t('totals.vat')}
-            </span>
-            <span className="tabular-nums">{formatSatangThb(vat)}</span>
-          </div>
-          <div className="contents">
-            <span className="text-body font-medium uppercase tracking-wide">
+            </dt>
+            <dd className="tabular-nums sm:justify-self-end">
+              {formatSatangThb(vat, userLocale)}
+            </dd>
+            <dt className="text-body font-medium uppercase tracking-wide">
               {t('totals.total')}
-            </span>
-            <span className="text-body font-medium tabular-nums">
-              {formatSatangThb(total)}
-            </span>
-          </div>
+            </dt>
+            <dd className="text-body font-medium tabular-nums sm:justify-self-end">
+              {formatSatangThb(total, userLocale)}
+            </dd>
+          </dl>
         </CardContent>
       </Card>
 

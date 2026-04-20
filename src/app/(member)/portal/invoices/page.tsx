@@ -16,7 +16,7 @@
  * streamed, never exposes Blob URL — same B1 pattern as admin).
  */
 import type { Metadata } from 'next';
-import { getTranslations } from 'next-intl/server';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
@@ -36,8 +36,31 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle2,
+  Clock,
+  FileText,
+  type LucideIcon,
+} from 'lucide-react';
+import {
+  formatDate,
+  formatSatangThb,
+  statusBadgeVariant,
+  statusIconName,
+  type InvoiceStatusIconName,
+} from './_utils/format';
 
 const PAGE_SIZE = 20;
+
+const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  FileText,
+  Ban,
+};
 
 interface SearchParams {
   readonly page?: string;
@@ -48,38 +71,6 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title') };
 }
 
-function formatSatangThb(satang: bigint | null): string {
-  if (satang === null) return '—';
-  const whole = satang / 100n;
-  const rem = satang % 100n;
-  // N11 — explicit locale pins output on server runtimes whose
-  // process locale defaults to `C`. FR-005.
-  return `${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')} THB`;
-}
-
-function formatDate(iso: string | null, locale: string): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-type InvoiceStatusBadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
-function statusBadgeVariant(status: string): InvoiceStatusBadgeVariant {
-  switch (status) {
-    case 'paid':
-      return 'default';
-    case 'issued':
-      return 'secondary';
-    case 'overdue':
-      return 'destructive';
-    default:
-      return 'outline';
-  }
-}
-
 export default async function PortalInvoicesPage({
   searchParams,
 }: {
@@ -88,8 +79,7 @@ export default async function PortalInvoicesPage({
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.invoices');
   const tStatus = await getTranslations('admin.invoices.list.statuses');
-  const locale = (await import('next-intl/server')).getLocale;
-  const userLocale = await locale();
+  const userLocale = await getLocale();
 
   const tenantCtx = resolveTenantFromRequest();
   const memberDeps = buildMembersDeps(tenantCtx);
@@ -175,9 +165,18 @@ export default async function PortalInvoicesPage({
                           {r.documentNumber?.raw ?? '—'}
                         </TableCell>
                         <TableCell className="align-middle">
-                          <Badge variant={statusBadgeVariant(r.status)}>
-                            {tStatus(r.status)}
-                          </Badge>
+                          {(() => {
+                            const Icon = STATUS_ICON_MAP[statusIconName(r.status)];
+                            return (
+                              <Badge
+                                variant={statusBadgeVariant(r.status)}
+                                className="inline-flex items-center gap-1"
+                              >
+                                <Icon className="size-3.5" aria-hidden="true" />
+                                {tStatus(r.status)}
+                              </Badge>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell className="align-middle">
                           {formatDate(r.issueDate, userLocale)}
@@ -186,7 +185,7 @@ export default async function PortalInvoicesPage({
                           {formatDate(r.dueDate, userLocale)}
                         </TableCell>
                         <TableCell className="align-middle text-right tabular-nums">
-                          {formatSatangThb(r.total?.satang ?? null)}
+                          {formatSatangThb(r.total?.satang ?? null, userLocale)}
                         </TableCell>
                         <TableCell className="align-middle text-right">
                           {r.pdf ? (
@@ -197,8 +196,6 @@ export default async function PortalInvoicesPage({
                                 buttonVariants({ variant: 'ghost', size: 'sm' }),
                                 'min-h-11 px-3',
                               )}
-                              target="_blank"
-                              rel="noopener noreferrer"
                               download
                             >
                               {t('actions.download')}

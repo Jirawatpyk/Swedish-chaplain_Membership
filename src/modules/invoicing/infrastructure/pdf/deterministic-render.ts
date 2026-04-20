@@ -43,6 +43,7 @@
  *   uses `node:crypto`, never `Math.random`).
  */
 import { createHash } from 'node:crypto';
+import { logger } from '@/lib/logger';
 
 /**
  * Mulberry32 PRNG — 32-bit integer state, deterministic, well-tested
@@ -52,6 +53,10 @@ import { createHash } from 'node:crypto';
  * the tag is a PDF housekeeping byte sequence, not a security token).
  */
 function mulberry32(seed: number): () => number {
+  // `Math.imul` is a Node 22 built-in (ECMAScript 2015) providing
+  // 32-bit integer multiplication with C-style overflow semantics —
+  // canonical for this PRNG family. Node 22 LTS (project baseline)
+  // guarantees availability; no polyfill needed.
   let s = seed >>> 0;
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -140,7 +145,15 @@ function pinnedDateFromInput(stableInput: unknown): string {
   ) {
     return `${(stableInput as { issueDate: string }).issueDate}T00:00:00Z`;
   }
-  return '1970-01-01T00:00:00Z';
+  // Fail-fast: Domain layer guarantees non-draft documents have an
+  // issueDate; if we reach this branch it means a caller bypassed the
+  // Application boundary (or a future refactor dropped issueDate from
+  // the render-input shape) and the resulting PDF would bake in 1970
+  // as the CreationDate — a silent compliance drift. Throw so CI + E2E
+  // catch the misuse at the render site instead of after deployment.
+  throw new Error(
+    'pdfDeterministicRender: stableInput.issueDate is required for deterministic CreationDate pinning',
+  );
 }
 
 export async function withSeededRandom<T>(
@@ -161,6 +174,17 @@ export async function withSeededRandom<T>(
       Math.random = originalRandom;
     }
   });
-  renderChain = next.catch(() => undefined);
+  // `renderChain` MUST never reject — if it does, every subsequent
+  // render is blocked behind a rejected promise (mutex collapse).
+  // Swallow the error on the chain side BUT log it so ops see the
+  // failure; callers still observe the rejection via the returned
+  // `next` promise.
+  renderChain = next.catch((err: unknown) => {
+    logger.error(
+      { err },
+      'pdf.deterministic-render.mutex-chain-error',
+    );
+    return undefined;
+  });
   return next as Promise<T>;
 }

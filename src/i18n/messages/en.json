@@ -1153,7 +1153,8 @@
       "summary": {
         "heading": "Recent invoices",
         "description": "Your latest 3 invoices — download PDFs or view all.",
-        "viewAll": "View all"
+        "viewAll": "View all",
+        "contactAdmin": "Contact your chamber admin"
       },
       "detail": {
         "title": "Invoice",

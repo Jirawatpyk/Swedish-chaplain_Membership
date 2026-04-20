@@ -25,6 +25,15 @@ import { signInViaForm, waitForLayoutContainer } from './helpers/layout';
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 
+// Fixture-presence env flags (set in the seeded staging env). Tests
+// that need deterministic row counts gate on these so the spec stays
+// green on un-seeded local dev boxes while still asserting the full
+// US3 AS contracts on CI / staging where fixtures are present.
+const EXPECTS_ROWS =
+  process.env.E2E_MEMBER_HAS_INVOICES === '1' ||
+  process.env.E2E_MEMBER_HAS_INVOICES === 'true';
+const EXPECTS_EMPTY = process.env.E2E_MEMBER_EMPTY === '1';
+
 test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
   test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
 
@@ -136,5 +145,90 @@ test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
       summaryHeadingVisible,
       'portal landing must render the invoices summary card heading',
     ).toBe(true);
+  });
+
+  // US3 AS1 — dedicated row-count assertion. Gated on
+  // `E2E_MEMBER_HAS_INVOICES=1` so un-seeded envs skip cleanly
+  // rather than flaking. On seeded envs (CI / staging fixtures) the
+  // table MUST render ≥1 body row with a per-row download link.
+  test('AS1 — seeded member sees invoice rows with download links', async ({
+    page,
+  }) => {
+    test.skip(
+      !EXPECTS_ROWS,
+      'E2E_MEMBER_HAS_INVOICES not set — seeded-row assertion skipped',
+    );
+    await signInViaForm(
+      page,
+      '/portal/sign-in',
+      MEMBER_EMAIL!,
+      MEMBER_PASSWORD!,
+      /^\/portal(\/|$)/,
+    );
+    await page.goto('/portal/invoices');
+    await waitForLayoutContainer(page);
+
+    // Header row + at least one body row.
+    const rowCount = await page.getByRole('row').count();
+    expect(rowCount, 'expected header + ≥1 body row').toBeGreaterThanOrEqual(2);
+
+    // At least one PDF download link wired per the AS1 "download
+    // buttons" requirement.
+    const downloadLinks = page.locator('a[download][href*="/api/portal/invoices/"]');
+    expect(await downloadLinks.count()).toBeGreaterThan(0);
+  });
+
+  // US3 AS3 — dedicated empty-state copy assertion. Gated on
+  // `E2E_MEMBER_EMPTY=1`. Asserts the specific empty-state string,
+  // not a broad OR over "empty | not-linked | h1".
+  test('AS3 — empty-state copy shown for member with zero invoices', async ({
+    page,
+  }) => {
+    test.skip(
+      !EXPECTS_EMPTY,
+      'E2E_MEMBER_EMPTY not set — empty-state assertion skipped',
+    );
+    await signInViaForm(
+      page,
+      '/portal/sign-in',
+      MEMBER_EMAIL!,
+      MEMBER_PASSWORD!,
+      /^\/portal(\/|$)/,
+    );
+    await page.goto('/portal/invoices');
+    await waitForLayoutContainer(page);
+
+    const empty = page.getByText(
+      /no invoices yet|ยังไม่มีใบแจ้งหนี้|inga fakturor ännu/i,
+    );
+    await expect(empty).toBeVisible();
+    // Must NOT render the data table when empty.
+    expect(await page.getByRole('row').count()).toBe(0);
+  });
+
+  // US7 AS4 — summary card "view all" link asserted when rows
+  // present. Gated on fixture flag so un-seeded envs skip.
+  test('US7 AS4 — summary card "view all" link present when rows exist', async ({
+    page,
+  }) => {
+    test.skip(
+      !EXPECTS_ROWS,
+      'E2E_MEMBER_HAS_INVOICES not set — view-all link assertion skipped',
+    );
+    await signInViaForm(
+      page,
+      '/portal/sign-in',
+      MEMBER_EMAIL!,
+      MEMBER_PASSWORD!,
+      /^\/portal(\/|$)/,
+    );
+    await page.goto('/portal');
+    await waitForLayoutContainer(page);
+
+    const viewAll = page.getByRole('link', {
+      name: /view all|ดูทั้งหมด|visa alla/i,
+    });
+    await expect(viewAll).toBeVisible();
+    await expect(viewAll).toHaveAttribute('href', '/portal/invoices');
   });
 });
