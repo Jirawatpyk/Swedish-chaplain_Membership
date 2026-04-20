@@ -20,11 +20,11 @@ export type F4AuditEventType =
   | 'invoice_draft_deleted'
   | 'invoice_issued'
   | 'invoice_paid'
-  | 'invoice_voided'
+  | 'invoice_voided' // TODO T100: also add to F4MemberTimelineAuditEventType below when emit ships (US5 / Phase 9)
   | 'invoice_overdue_detected'
   | 'credit_note_issued'
   | 'tenant_invoice_settings_updated'
-  | 'invoice_pdf_resent'
+  | 'invoice_pdf_resent' // TODO T107: also add to F4MemberTimelineAuditEventType below when emit ships (Phase 10)
   | 'receipt_pdf_resent'
   | 'credit_note_pdf_resent'
   | 'invoice_pdf_regenerated'
