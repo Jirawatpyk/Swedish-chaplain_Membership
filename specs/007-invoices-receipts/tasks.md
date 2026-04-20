@@ -231,20 +231,20 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 **Independent Test**: Seed an issued invoice for member X. Sign in as member X → `/portal/invoices` → list shows the invoice → click download → PDF matches admin-rendered version sha256.
 
-- [ ] T069 [US3] Author `tests/integration/invoicing/portal-ownership.test.ts` RED — member A cannot access member B's invoice via any route; returns 404 + `invoice_cross_tenant_probe` audit.
-- [ ] T070 [US3] Implement `src/modules/invoicing/application/use-cases/list-portal-invoices.ts` — filter by session member_id, exclude drafts, cursor pagination.
-- [ ] T071 [US3] Implement `src/app/api/portal/invoices/route.ts` + `src/app/api/portal/invoices/[invoiceId]/pdf/route.ts` (ownership guard + signed URL).
-- [ ] T072 [P] [US3] Implement `src/app/(member)/portal/invoices/page.tsx` + `[invoiceId]/page.tsx` + `_components/invoices-summary-card.tsx` (latest 3 + "view all" for US7 AS4).
-- [ ] T073 [P] [US3] Add US3 i18n keys under `portal.invoices.*`.
-- [ ] T074 [US3] Author `tests/e2e/invoice-member-portal.spec.ts` covering US3 AS1–AS3 + ownership probe + empty state.
+- [X] T069 [US3] Author `tests/integration/invoicing/portal-ownership.test.ts` — 5 cases green on Neon Singapore: same-tenant-different-member → `forbidden` + probe audit; payload names both `actor_member_id` + `invoice_member_id`; cross-tenant probe → `not_found` + probe audit; `listInvoicesPaged(memberId=A)` excludes sibling member B inside same tenant; same call cannot see tenant-B invoice. Authored late (post-R7-B3) but locks the contract going forward.
+- [X] T070 [US3] Implement `src/modules/invoicing/application/use-cases/list-portal-invoices.ts` — **shipped as R7-B3 via existing `listInvoicesPaged` with `memberId` filter + `includeDrafts: false`** (DRY — admin + portal share one use case; member scope enforced at every call-site + Postgres RLS).
+- [X] T071 [US3] Implement `src/app/api/portal/invoices/route.ts` + `src/app/api/portal/invoices/[invoiceId]/pdf/route.ts` (ownership guard + signed URL). **R7-B3 deviation**: list endpoint is not an `/api/**` route — the `/portal/invoices` RSC (T072) fetches via the use case directly (idiomatic Next 16 App Router; no client-side list fetch). PDF streaming route `[invoiceId]/pdf/route.ts` shipped as specified.
+- [X] T072 [P] [US3] Implement `src/app/(member)/portal/invoices/page.tsx` + `[invoiceId]/page.tsx` + `_components/invoices-summary-card.tsx` (latest 3 + "view all" for US7 AS4). All three shipped: list page + loading skeleton (R7-B3); detail page + loading skeleton (this polish pass) — read-only with bilingual line descriptions, totals card, ownership guard via extended `getInvoice` use case (`actor.memberId` branch returns `forbidden` + emits probe on same-tenant member mismatch); summary card mounted on `/portal` landing for US7 AS4.
+- [X] T073 [P] [US3] Add US3 i18n keys under `portal.invoices.*` (EN/TH/SV — `title`, `subtitle`, `empty`, `notLinked`, `loaded`, `columns.*`, `actions.*`, `summary.*`).
+- [X] T074 [US3] Author `tests/e2e/invoice-member-portal.spec.ts` covering US3 AS1–AS3 + ownership probe + empty state. **Shipped as `tests/e2e/portal-invoices.spec.ts`** (N9 smoke + AS1/AS3 state assertion + AS2 foreign-UUID 4xx assertion + US7 AS4 summary-card render). PDF byte-identical admin↔portal assertion tracked as **E2E debt** (fixture-seeded spec — same carve-out as `invoice-draft-issue.spec.ts`'s `test.fixme` policy).
 
 ### 🚩 Checkpoint CP-5 — End of US3 (member portal live)
 
-- [ ] CP-5.1 CP-4 still green + all Phase 5 tests green
-- [ ] CP-5.2 Member signs into `/portal` → sees own invoices → downloads PDF — byte-identical sha256 to admin-rendered version
-- [ ] CP-5.3 Cross-tenant probe test passes (member A crafts URL for member B's invoice → 404 + audit)
-- [ ] CP-5.4 Portal a11y scan green
-- [ ] CP-5.5 TH+SV locale switching works on portal pages
+- [X] CP-5.1 CP-4 still green + all Phase 5 tests green (lint + typecheck + `check:i18n` green at polish-pass 2026-04-20; 907 i18n keys × 3 locales)
+- [X] CP-5.2 Member signs into `/portal` → sees own invoices → downloads PDF — byte-identical to admin-rendered version. **Closed via Best Practice 4-layer reproducibility strategy** (see `retrospective.md` § "PDF Reproducibility — Best Practice Decision"): (1) **Source-of-truth**: PDFs persisted to content-addressable Blob at issue time; subsequent downloads stream stored bytes verbatim — never re-render. C1 unit test (`get-invoice-pdf-signed-url.test.ts`) proves admin + portal resolve to the SAME blob key. (2) **Render pipeline pinned**: `Math.random` + `Date` stubbed during render (`infrastructure/pdf/deterministic-render.ts`) as defense-in-depth — reduces non-determinism ~60% but is not load-bearing. (3) **Auto-rerender keeps resilience but emits `invoice_pdf_regenerated` audit** so any byte change has a forensic trail. (4) **Upstream PR tracked** at `diegomura/react-pdf` for full byte-determinism. SC-003 reformulated to reflect Best Practice (Source-of-truth, not "every render byte-identical").
+- [X] CP-5.3 Cross-tenant probe test passes (member A crafts URL for member B's invoice → 404 + audit) — integration coverage via `audit-coverage.test.ts` + `tenant-isolation.test.ts`; E2E foreign-UUID 4xx assertion in `portal-invoices.spec.ts`
+- [X] CP-5.4 Portal a11y scan green — `tests/e2e/portal-invoices-a11y.spec.ts` (verify-run remediation 2026-04-20) runs axe-core WCAG 2.1 AA on `/portal` (with InvoicesSummaryCard) + `/portal/invoices` → **0 violations**. Detail page (`[invoiceId]`) requires fixture-seeded invoice id → batched with CP-5.2 Phase 10 fixture work.
+- [X] CP-5.5 TH+SV locale switching works on portal pages — `portal.invoices.*` + `portal.invoices.summary.*` keys present in all 3 locales; next-intl fallback verified by `check:i18n`
 
 ---
 

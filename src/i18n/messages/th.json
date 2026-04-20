@@ -1149,6 +1149,34 @@
       },
       "actions": {
         "download": "PDF"
+      },
+      "summary": {
+        "heading": "ใบแจ้งหนี้ล่าสุด",
+        "description": "ใบแจ้งหนี้ 3 รายการล่าสุด — ดาวน์โหลด PDF หรือดูทั้งหมด",
+        "viewAll": "ดูทั้งหมด"
+      },
+      "detail": {
+        "title": "ใบแจ้งหนี้",
+        "subtitle": "ดูเท่านั้น — ดาวน์โหลด PDF สำหรับเอกสารภาษีอย่างเป็นทางการ",
+        "linesHeading": "รายการ",
+        "backToList": "กลับไปยังรายการใบแจ้งหนี้",
+        "fields": {
+          "issueDate": "วันที่ออก",
+          "dueDate": "วันครบกำหนด",
+          "paidDate": "วันที่ชำระ",
+          "planYear": "ปีของแพ็กเกจ"
+        },
+        "lines": {
+          "description": "รายละเอียด",
+          "quantity": "จำนวน",
+          "unitPrice": "ราคาต่อหน่วย",
+          "lineTotal": "รวม"
+        },
+        "totals": {
+          "subtotal": "รวมก่อนภาษี",
+          "vat": "ภาษีมูลค่าเพิ่ม",
+          "total": "ยอดรวมทั้งสิ้น"
+        }
       }
     },
     "profile": {

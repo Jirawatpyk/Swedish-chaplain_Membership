@@ -179,7 +179,10 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     `);
     const dbEnum = new Set(rows.map((r) => r.enumlabel));
 
-    // The full 16 F4 types — taken from F4AuditEventType union.
+    // The full 17 F4 types — taken from F4AuditEventType union.
+    // `invoice_pdf_regenerated` added 2026-04-20 (SC-003 / CP-5.2
+    // Best Practice closure: emitted by R3-E4 auto-rerender path when
+    // Blob outage forces re-render of an issued invoice).
     const allF4Types: ReadonlyArray<F4AuditEventType> = [
       'invoice_draft_created',
       'invoice_draft_updated',
@@ -193,12 +196,13 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'invoice_pdf_resent',
       'receipt_pdf_resent',
       'credit_note_pdf_resent',
+      'invoice_pdf_regenerated',
       'invoice_cross_tenant_probe',
       'credit_note_cross_tenant_probe',
       'pdf_render_failed',
       'auto_email_delivery_failed',
     ] as const;
-    expect(allF4Types).toHaveLength(16);
+    expect(allF4Types).toHaveLength(17);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }

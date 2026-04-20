@@ -27,15 +27,26 @@ export interface GetInvoiceInput {
    * `invoice_cross_tenant_probe`. Admin/manager detail routes MUST
    * supply this; background jobs that read without a user session
    * may omit it.
+   *
+   * When `role === 'member'` and `memberId` is supplied, an
+   * additional **same-tenant member-mismatch** check fires: if the
+   * resolved invoice belongs to a sibling member inside the same
+   * chamber, the use case emits `invoice_cross_tenant_probe` with
+   * the mismatch payload AND returns `forbidden`. Mirrors the guard
+   * inside `get-invoice-pdf-signed-url` so the detail-page surface
+   * cannot be used to enumerate sibling-member invoice ids.
    */
   readonly actor?: {
     readonly userId: string;
     readonly role: 'admin' | 'manager' | 'member';
     readonly requestId: string | null;
+    readonly memberId?: string;
   };
 }
 
-export type GetInvoiceError = { code: 'not_found' };
+export type GetInvoiceError =
+  | { code: 'not_found' }
+  | { code: 'forbidden' };
 
 export interface GetInvoiceDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -69,5 +80,31 @@ export async function getInvoice(
     }
     return err({ code: 'not_found' });
   }
+
+  // Same-tenant, different-member guard for member-role callers.
+  if (
+    input.actor?.role === 'member' &&
+    input.actor.memberId !== undefined &&
+    invoice.memberId !== input.actor.memberId
+  ) {
+    if (deps.audit) {
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.actor.requestId,
+        eventType: 'invoice_cross_tenant_probe',
+        actorUserId: input.actor.userId,
+        summary: `Member probe on non-owned invoice ${input.invoiceId}`,
+        payload: {
+          attempted_invoice_id: input.invoiceId,
+          actor_role: 'member',
+          actor_member_id: input.actor.memberId,
+          invoice_member_id: invoice.memberId,
+          route: 'get-invoice',
+        },
+      });
+    }
+    return err({ code: 'forbidden' });
+  }
+
   return ok(invoice);
 }

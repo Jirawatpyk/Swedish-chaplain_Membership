@@ -112,6 +112,7 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'invoice_pdf_resent',
   'receipt_pdf_resent',
   'credit_note_pdf_resent',
+  'invoice_pdf_regenerated',
   'invoice_cross_tenant_probe',
   'credit_note_cross_tenant_probe',
   'pdf_render_failed',

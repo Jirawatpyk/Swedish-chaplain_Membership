@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
+import { InvoicesSummaryCard } from './invoices/_components/invoices-summary-card';
 
 /**
  * Member portal landing — `/portal` (Dashboard).
@@ -40,6 +41,9 @@ export default async function MemberPortalHomePage() {
         subtitle={t('intro')}
         badge={<Badge variant="secondary">{t('versionBadge')}</Badge>}
       />
+
+      {/* US7 AS4 — compact invoice summary (latest 3 + view all). */}
+      <InvoicesSummaryCard user={user} />
 
       <Card>
         <CardHeader>

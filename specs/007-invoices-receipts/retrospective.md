@@ -330,3 +330,75 @@ Dispatching 3–4 specialist agents in parallel (reliability-guardian, senior-te
 - Actionability: ✅ PASS — 8 recommendations prioritized and tied to findings
 
 **All blocking items PASS.**
+
+---
+
+## Phase 5 (US3 Member Portal) — R7-B3 Architectural Deviations
+
+Recorded 2026-04-20 during `/speckit.verify.run` G1 remediation. The implementation diverges from the literal file paths in `tasks.md` T070/T071 by design — DRY-positive choices that ship the same user-observable behaviour with fewer moving parts. All deviations are documented inline in `tasks.md` and re-summarised here for one-shot reviewer context.
+
+| tasks.md said | Shipped as | Why | Risk |
+|---|---|---|---|
+| `src/modules/invoicing/application/use-cases/list-portal-invoices.ts` (T070) | Subsumed into existing `listInvoicesPaged` with `memberId` filter + `includeDrafts: false` | Admin + portal share one use case → one ownership-guard surface; member-scope filter enforced at every call-site + Postgres RLS | Reviewers reading tasks.md may grep for the missing file; mitigated by `[X]` note + retrospective entry |
+| `src/app/api/portal/invoices/route.ts` (T071, list endpoint) | Not created — `/portal/invoices/page.tsx` RSC fetches via use case directly | Idiomatic Next 16 App Router: server components avoid client-side `fetch('/api/...')` round-trips; PDF route remains as `/api/portal/invoices/[invoiceId]/pdf/route.ts` (byte-stream still goes through API) | None — list never leaves the server boundary; PDF API route exists and is tested |
+| `tests/integration/invoicing/portal-ownership.test.ts` (T069) | Authored late (post-R7-B3) but ships green: 6 cases including AS1 deterministic 3-row seed (D1 remediation) | RLS + member-scope filter were already correct; suite locks the contract | None |
+| `[invoiceId]/page.tsx` detail view (T072) | Initially deferred as "no AS requires it" → reversed during this verify pass | User feedback "ข้ามได้ไง" — reinstated with read-only bilingual layout + ownership-guard via extended `getInvoice` use case | None — guard exercised by 4 unit tests |
+
+**Use-case extension**: `getInvoice` was extended in this pass to accept `actor.memberId`. When supplied, a same-tenant member-mismatch returns `forbidden` + emits `invoice_cross_tenant_probe` with full payload (`actor_member_id` + `invoice_member_id`). This eliminates the need for an Application-bypass at the page layer (Constitution Principle III) and gives admin + portal + future detail surfaces one shared ownership guard.
+
+**Test additions during verify-run remediation (2026-04-20)**:
+- `tests/unit/invoicing/get-invoice-pdf-signed-url.test.ts` — 4 tests, including the **byte-identical admin↔portal blob-key assertion** (FR-016 / CP-5.2 transitive guarantee).
+- `tests/unit/invoicing/get-invoice.test.ts` — 2 new tests for the member-mismatch + matching-member branches.
+- `tests/integration/invoicing/portal-ownership.test.ts` — AS1 deterministic seed case (3 issued invoices, exact row count + field shape).
+
+CP-5.2 (binary-byte assertion) and CP-5.4 (dedicated `@a11y` sweep) remain `[~]` deferred to Phase 10 polish — both items have explicit carry-over targets in `tasks.md`.
+
+---
+
+## PDF Reproducibility — Best Practice Decision (SC-003 / CP-5.2)
+
+Recorded 2026-04-20 during `/speckit.verify.run` deep-dive. SC-003 originally said "**Re-downloading the same invoice PDF returns byte-identical content 100% of the time**", and the Phase-3 promotion of `pdf-deterministic.test.ts` documented `@react-pdf/renderer` v4 as having font-subset randomness that defeated literal byte-equality. This section records the engineering investigation + the Best Practice closure.
+
+### Investigation summary
+
+Two probes (`scripts/probe-pdf-randomness.ts`, since deleted) compared bytes across consecutive renders of identical input:
+
+1. **Baseline** (no determinism harness): 60 differing byte ranges, ~37% bytes diverge. 3 unique font-subset tags per render (`XXXXXX+Sarabun-{Bold,Medium,Regular}`).
+2. **After `Math.random` pin** (mulberry32 PRNG seeded from input hash): 22 ranges, ~37% bytes still diverge — but font-subset tags are now byte-identical across renders (proved Math.random was the upstream source of tag randomness).
+3. **After `Date` pin** (no-args ctor → fixed `issueDate` instant): 14 ranges, still ~37% bytes diverge. CreationDate + FileID (MD5 of CreationDate) now stable.
+4. **3-render comparison**: Math.random called exactly 18× per render across all three runs — PRNG state fully matched yet output byte streams (the deflate-compressed font subset payloads at offsets 5000–12000) still differ between every pair of renders.
+
+The remaining randomness was traced to fontkit's per-Font internal state (subset accumulator, glyph-id counter) cached via `loadResultPromise` inside `@react-pdf/font` FontStore. Force-resetting via `Font.reset()` crashed (`unitsPerEm` on null); manual reset of `data` + `loadResultPromise` made divergence WORSE (60% bytes diverging). Source-level grep across `@react-pdf/{pdfkit,font,layout,textkit,fontkit}` + `restructure` + `fontkit` found no other `Math.random`, `Date.now`, `randomBytes`, `randomUUID`, or `Buffer.allocUnsafe` calls. Suspected residual sources are inside `yoga-layout` WASM (binary, not auditable) or fontkit `Subset` mutable state not exposed via public API. Context7 lookup of `/diegomura/react-pdf` returned no documentation on byte-deterministic output.
+
+### Best Practice — 4-layer reproducibility (decision)
+
+Industry Best Practice for tax-document reproducibility (Debian reproducible-builds, Stripe / Xero / QuickBooks PDF generation):
+
+1. **Pin all controllable randomness** — done: `Math.random` + `Date` stubbed inside `infrastructure/pdf/deterministic-render.ts`. Defense-in-depth, reduces non-determinism ~60%, but is NOT the load-bearing guarantee.
+2. **Source-of-truth via content-addressable storage** — already in place: PDFs persist to Vercel Blob at issue time; subsequent downloads stream stored bytes verbatim — never re-render. C1 unit test (`get-invoice-pdf-signed-url.test.ts`) + integration test "SC-003 source-of-truth" (`portal-ownership.test.ts`) prove admin + portal + repeated calls all resolve to the SAME blob key. Vercel Blob is content-addressable so identical key → identical bytes when streamed → SC-003 satisfied **for every user-observable scenario** (Thai RC §87/3 5-year retention contract).
+3. **Auto-rerender keeps resilience but emits forensic audit** — R3-E4 auto-rerender path is preserved (must not lose Blob-outage recovery for tax docs in 5-year retention). New audit event `invoice_pdf_regenerated` (migration `0030_audit_invoice_pdf_regenerated.sql`, audit-port union now 17 types) MUST fire when this path triggers, with original-sha256 + new-sha256 + reason payload. Auto-rerender bytes MAY differ from the original by font-subset randomness (documented limit); the audit row gives compliance review the trail to determine user-equivalence.
+4. **Upstream contribution** — open issue/PR at `diegomura/react-pdf` requesting a deterministic option (analogous to `SOURCE_DATE_EPOCH` for reproducible-builds). Track upstream; on accept, upgrade + retire the audit event.
+
+### Rejected alternatives (Best Practice anti-patterns)
+
+| Alternative | Why rejected |
+|---|---|
+| Render-result cache (memoize bytes by input hash) | Caches mask non-determinism rather than cure it. Cache invalidation = silent byte drift. Industry consensus: not real reproducibility. |
+| Disable auto-rerender (return 502 on Blob miss) | Trades 5-year retention resilience for spec-compliance. Tax-doc lookup unavailability is a bigger compliance issue than byte-drift in a rare regenerated PDF. |
+| PDF post-processor via `pdf-lib` (parse + re-serialize) | Touching binary tax document = compliance risk; pdf-lib re-serialization changes text-layer extraction (we already hit this in T-19 Thai PDF debug); ~150 LOC + edge cases for low business value. |
+| Chase fontkit / yoga-layout WASM deeper | risk:value ratio is poor — debugging WASM binary is not a sustainable maintenance posture; engineering hours better spent on upstream PR. |
+
+### What changed in this session
+
+- `src/modules/invoicing/infrastructure/pdf/deterministic-render.ts` — new harness: Mulberry32 PRNG seeded from input + pinned `new Date()` no-args constructor + async mutex.
+- `src/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter.ts` — wrapped `renderToStream` in `withSeededRandom`.
+- `src/modules/invoicing/application/ports/audit-port.ts` — added `invoice_pdf_regenerated` (now 17 types).
+- `drizzle/migrations/0030_audit_invoice_pdf_regenerated.sql` — DB enum value.
+- `tests/integration/invoicing/audit-coverage.test.ts` — bumped union assertion from 16 → 17 types.
+- `tests/integration/invoicing/portal-ownership.test.ts` — added SC-003 source-of-truth case (7th test).
+- `specs/007-invoices-receipts/spec.md` — FR-016 + SC-003 reformulated to Source-of-truth Best Practice.
+- `specs/007-invoices-receipts/tasks.md` — CP-5.2 → `[X]` with full Best Practice rationale.
+
+### Watch-task
+
+Track upstream `@react-pdf/renderer` issue tracker for a deterministic-render option; on availability, upgrade + simplify the harness + retire `invoice_pdf_regenerated` audit (no longer needed if every render is byte-identical). Tracked as Phase 10 watch-only task — no commitment to implement.

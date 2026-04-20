@@ -1,9 +1,17 @@
 /**
  * T032 — Audit port (F4).
  *
- * 16 F4 audit event types defined here as a discriminated union so
+ * 17 F4 audit event types defined here as a discriminated union so
  * callers cannot pass an unknown event_type. Payload shapes are
  * structurally typed per data-model.md § 4.
+ *
+ * `invoice_pdf_regenerated` (added 2026-04-20 as part of SC-003 /
+ * CP-5.2 Best Practice closure): emitted by the auto-rerender path
+ * (R3-E4) when a Blob outage forces re-render of a previously-issued
+ * invoice. Payload includes original sha256 + new sha256 + reason so
+ * forensic / compliance review can determine whether the regenerated
+ * bytes are user-equivalent (text content + structure unchanged) vs.
+ * structurally divergent (template bug).
  */
 
 export type F4AuditEventType =
@@ -19,6 +27,7 @@ export type F4AuditEventType =
   | 'invoice_pdf_resent'
   | 'receipt_pdf_resent'
   | 'credit_note_pdf_resent'
+  | 'invoice_pdf_regenerated'
   | 'invoice_cross_tenant_probe'
   | 'credit_note_cross_tenant_probe'
   | 'pdf_render_failed'

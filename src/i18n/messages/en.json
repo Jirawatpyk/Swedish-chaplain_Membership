@@ -1149,6 +1149,34 @@
       },
       "actions": {
         "download": "PDF"
+      },
+      "summary": {
+        "heading": "Recent invoices",
+        "description": "Your latest 3 invoices — download PDFs or view all.",
+        "viewAll": "View all"
+      },
+      "detail": {
+        "title": "Invoice",
+        "subtitle": "Read-only view — download the PDF for the official tax document.",
+        "linesHeading": "Line items",
+        "backToList": "Back to invoices",
+        "fields": {
+          "issueDate": "Issued",
+          "dueDate": "Due",
+          "paidDate": "Paid",
+          "planYear": "Plan year"
+        },
+        "lines": {
+          "description": "Description",
+          "quantity": "Qty",
+          "unitPrice": "Unit price",
+          "lineTotal": "Total"
+        },
+        "totals": {
+          "subtotal": "Subtotal",
+          "vat": "VAT",
+          "total": "Total"
+        }
       }
     },
     "profile": {

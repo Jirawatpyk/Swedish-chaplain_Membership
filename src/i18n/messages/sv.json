@@ -1149,6 +1149,34 @@
       },
       "actions": {
         "download": "PDF"
+      },
+      "summary": {
+        "heading": "Senaste fakturor",
+        "description": "Dina tre senaste fakturor — ladda ner PDF eller visa alla.",
+        "viewAll": "Visa alla"
+      },
+      "detail": {
+        "title": "Faktura",
+        "subtitle": "Skrivskyddad vy — ladda ner PDF för det officiella skattedokumentet.",
+        "linesHeading": "Rader",
+        "backToList": "Tillbaka till fakturor",
+        "fields": {
+          "issueDate": "Utfärdad",
+          "dueDate": "Förfaller",
+          "paidDate": "Betald",
+          "planYear": "Planår"
+        },
+        "lines": {
+          "description": "Beskrivning",
+          "quantity": "Antal",
+          "unitPrice": "Pris per enhet",
+          "lineTotal": "Summa"
+        },
+        "totals": {
+          "subtotal": "Delsumma",
+          "vat": "Moms",
+          "total": "Totalt"
+        }
       }
     },
     "profile": {
