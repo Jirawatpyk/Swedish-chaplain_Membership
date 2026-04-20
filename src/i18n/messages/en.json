@@ -1148,7 +1148,11 @@
         "actions": "Actions"
       },
       "actions": {
-        "download": "PDF"
+        "download": "PDF",
+        "viewDetail": "View invoice"
+      },
+      "filters": {
+        "noMatch": "No invoices match your filters."
       },
       "summary": {
         "heading": "Recent invoices",

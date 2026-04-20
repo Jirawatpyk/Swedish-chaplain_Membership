@@ -1148,7 +1148,11 @@
         "actions": "Åtgärder"
       },
       "actions": {
-        "download": "PDF"
+        "download": "PDF",
+        "viewDetail": "Visa faktura"
+      },
+      "filters": {
+        "noMatch": "Inga fakturor matchar dina filter."
       },
       "summary": {
         "heading": "Senaste fakturor",

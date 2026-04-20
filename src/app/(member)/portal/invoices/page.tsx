@@ -36,6 +36,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
 import {
   AlertTriangle,
   Ban,
@@ -51,6 +52,7 @@ import {
   statusIconName,
   type InvoiceStatusIconName,
 } from './_utils/format';
+import { InvoiceFilters } from '@/app/(staff)/admin/invoices/_components/invoice-filters';
 
 const PAGE_SIZE = 20;
 
@@ -64,6 +66,23 @@ const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
 
 interface SearchParams {
   readonly page?: string;
+  readonly q?: string;
+  readonly status?: string;
+}
+
+type StatusFilter = 'all' | 'issued' | 'paid' | 'void' | 'credited' | 'partially_credited';
+
+function parseStatusFilter(raw: string | undefined): StatusFilter {
+  switch (raw) {
+    case 'issued':
+    case 'paid':
+    case 'void':
+    case 'credited':
+    case 'partially_credited':
+      return raw;
+    default:
+      return 'all';
+  }
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -94,7 +113,7 @@ export default async function PortalInvoicesPage({
   if (!memberResult.ok) {
     return (
       <TableContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <PageHeader title={t('title')} />
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">{t('notLinked')}</p>
@@ -109,6 +128,8 @@ export default async function PortalInvoicesPage({
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 1000) : 1;
   const offset = (page - 1) * PAGE_SIZE;
+  const searchTerm = (query.q ?? '').trim().slice(0, 100);
+  const statusFilter = parseStatusFilter(query.status);
 
   const invoicesResult = await listInvoicesPaged(
     makeListInvoicesDeps(tenantCtx.slug),
@@ -118,19 +139,31 @@ export default async function PortalInvoicesPage({
       pageSize: PAGE_SIZE,
       includeDrafts: false, // members never see drafts
       memberId: member.memberId,
+      search: searchTerm.length > 0 ? searchTerm : undefined,
+      status: statusFilter,
     },
   );
   const rows = invoicesResult.ok ? invoicesResult.value.rows : [];
   const total = invoicesResult.ok ? invoicesResult.value.total : 0;
 
+  const hasActiveFilter = searchTerm.length > 0 || statusFilter !== 'all';
+
   return (
     <TableContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <PageHeader title={t('title')} />
       <Card>
         <CardContent className="flex flex-col gap-4">
+          {/* Reuse the admin InvoiceFilters client component for
+              UI parity (same shadcn Select, same debounced search,
+              same X-clear affordance). The URL contract is identical
+              — members just see a subset of statuses that return
+              rows (drafts are always excluded at the use-case level). */}
+          <InvoiceFilters />
           {rows.length === 0 ? (
             <div className="py-12 text-center">
-              <p className="text-muted-foreground">{t('empty')}</p>
+              <p className="text-muted-foreground">
+                {hasActiveFilter ? t('filters.noMatch') : t('empty')}
+              </p>
             </div>
           ) : (
             <>
@@ -162,7 +195,13 @@ export default async function PortalInvoicesPage({
                     {rows.map((r) => (
                       <TableRow key={r.invoiceId}>
                         <TableCell className="align-middle font-mono text-xs">
-                          {r.documentNumber?.raw ?? '—'}
+                          <Link
+                            href={`/portal/invoices/${r.invoiceId}`}
+                            className="underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                            aria-label={`${t('actions.viewDetail')} ${r.documentNumber?.raw ?? r.invoiceId}`}
+                          >
+                            {r.documentNumber?.raw ?? '—'}
+                          </Link>
                         </TableCell>
                         <TableCell className="align-middle">
                           {(() => {

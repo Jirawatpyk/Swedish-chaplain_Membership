@@ -155,9 +155,13 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                 className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
               >
                 <div className="flex flex-col gap-1">
-                  <span className="font-mono text-caption text-muted-foreground">
+                  <Link
+                    href={`/portal/invoices/${r.invoiceId}`}
+                    className="font-mono text-caption text-muted-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 self-start"
+                    aria-label={`${t('actions.viewDetail')} ${r.documentNumber?.raw ?? r.invoiceId}`}
+                  >
                     {r.documentNumber?.raw ?? '—'}
-                  </span>
+                  </Link>
                   <div className="flex items-center gap-2">
                     {(() => {
                       const Icon = STATUS_ICON_MAP[statusIconName(r.status)];

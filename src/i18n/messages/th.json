@@ -1148,7 +1148,11 @@
         "actions": "การดำเนินการ"
       },
       "actions": {
-        "download": "PDF"
+        "download": "PDF",
+        "viewDetail": "ดูใบแจ้งหนี้"
+      },
+      "filters": {
+        "noMatch": "ไม่พบใบแจ้งหนี้ตามตัวกรอง"
       },
       "summary": {
         "heading": "ใบแจ้งหนี้ล่าสุด",

@@ -24,7 +24,6 @@ export default async function Loading() {
       <DetailContainer>
         <PageHeader
           title={t('title')}
-          subtitle={t('subtitle')}
           badge={<SkeletonBlock className="h-6 w-20" />}
           actions={<SkeletonBlock className="h-11 w-28" />}
         />

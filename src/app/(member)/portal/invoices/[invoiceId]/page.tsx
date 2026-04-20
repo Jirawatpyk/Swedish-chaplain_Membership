@@ -143,7 +143,6 @@ export default async function PortalInvoiceDetailPage({
     <DetailContainer>
       <PageHeader
         title={`${t('title')} ${documentNumber}`}
-        subtitle={t('subtitle')}
         badge={(() => {
           const Icon = STATUS_ICON_MAP[statusIconName(invoice.status)];
           return (

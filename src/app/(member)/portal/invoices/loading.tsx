@@ -21,9 +21,16 @@ export default async function Loading() {
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
       <TableContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <PageHeader title={t('title')} />
         <Card>
-          <CardContent className="flex flex-col gap-3">
+          <CardContent className="flex flex-col gap-4">
+            {/* Reserve InvoiceFilters shape: search input (flex-1) +
+                status select (12rem) — keeps CLS-0 when real form
+                paints. */}
+            <div className="flex flex-wrap items-end gap-3">
+              <SkeletonBlock className="h-9 flex-1 min-w-[10rem]" />
+              <SkeletonBlock className="h-9 w-[12rem]" />
+            </div>
             <div className="grid grid-cols-6 gap-3">
               {Array.from({ length: 6 }).map((_, c) => (
                 <SkeletonBlock key={c} className="h-4 w-20" />

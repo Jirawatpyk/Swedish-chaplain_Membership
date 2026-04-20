@@ -43,7 +43,14 @@ import { users } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { argon2Hasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import { reactPdfRenderAdapter } from '@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter';
+import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
+import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
+import { Money } from '@/modules/invoicing/domain/value-objects/money';
+import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
+import { asInvoiceLineId } from '@/modules/invoicing/domain/invoice-line';
 
 // --- Constants ----------------------------------------------------------------
 
@@ -242,6 +249,80 @@ interface InvoiceSeed {
 }
 
 /**
+ * Render a real PDF for the given invoice seed + upload it to Vercel
+ * Blob. Returns the blob key + sha256 as stored on the invoice row
+ * so the /portal/invoices/[id]/pdf route can byte-stream it back.
+ *
+ * This exists because the pdf route proxies `fetch(blobUrl)` — a
+ * placeholder key would return 404 from Blob and the route would
+ * 502. Real render + upload = member can download the seeded PDFs.
+ */
+async function renderAndUploadPdf(
+  ctx: TenantContext,
+  seed: InvoiceSeed,
+  invoiceId: string,
+): Promise<{ blobKey: string; sha256: string }> {
+  const docR = DocumentNumber.of(
+    'SC',
+    2026,
+    seed.sequenceNumber,
+  );
+  if (!docR.ok) {
+    throw new Error(
+      `seed-e2e-portal-invoices: DocumentNumber.of failed for ${seed.docNumber}`,
+    );
+  }
+  const subtotalSatang = (seed.totalSatang * 100n) / 107n;
+  const vatSatang = seed.totalSatang - subtotalSatang;
+  const rendered = await reactPdfRenderAdapter.render({
+    kind: seed.status === 'paid' ? 'receipt_combined' : 'invoice',
+    templateVersion: 1,
+    documentNumber: docR.value,
+    issueDate: '2026-04-15',
+    dueDate: '2026-05-15',
+    tenant: {
+      legal_name_th: 'หอการค้าไทย-สวีเดน',
+      legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+      tax_id: '0000000000000',
+      address_th: 'กรุงเทพมหานคร',
+      address_en: 'Bangkok',
+      logo_blob_key: null,
+    },
+    member: {
+      legal_name: 'E2E Alpha Co., Ltd.',
+      tax_id: '1234567890123',
+      address: '99/1 E2E Road, Bangkok',
+      primary_contact_name: 'E2E Alpha',
+      primary_contact_email: 'e2e-member@swecham.test',
+    },
+    lines: [
+      {
+        lineId: asInvoiceLineId(randomUUID()),
+        kind: 'membership_fee',
+        descriptionTh: 'ค่าสมาชิก ปี 2026 (E2E fixture)',
+        descriptionEn: 'Membership 2026 (E2E fixture)',
+        unitPrice: Money.fromSatangUnsafe(subtotalSatang),
+        quantity: '1.0000',
+        proRateFactor: '1.0000',
+        total: Money.fromSatangUnsafe(subtotalSatang),
+        position: 1,
+      },
+    ],
+    subtotal: Money.fromSatangUnsafe(subtotalSatang),
+    vatRate: VatRate.ofUnsafe('0.0700'),
+    vat: Money.fromSatangUnsafe(vatSatang),
+    total: Money.fromSatangUnsafe(seed.totalSatang),
+  });
+  const blobKey = `tenants/${ctx.slug}/invoices/${invoiceId}/v1.pdf`;
+  await vercelBlobAdapter.uploadPdf({
+    key: blobKey,
+    body: rendered.bytes,
+    contentType: 'application/pdf',
+  });
+  return { blobKey, sha256: rendered.sha256 };
+}
+
+/**
  * Seed 3 issued invoices for the given member. Each invoice satisfies
  * the `invoices_non_draft_has_snapshots` + `invoices_paid_has_payment`
  * CHECK constraints with placeholder snapshot + PDF fields (the
@@ -298,6 +379,11 @@ async function seedInvoicesIfMissing(
       const subtotal = (s.totalSatang * 100n) / 107n;
       const vat = s.totalSatang - subtotal;
       const invoiceId = randomUUID();
+      // Render + upload the real PDF BEFORE inserting the row so the
+      // blob key we persist always points at a retrievable object.
+      // If upload fails, the transaction rolls back and the row is
+      // never created — no dangling DB record with a ghost key.
+      const pdf = await renderAndUploadPdf(ctx, s, invoiceId);
       await tx.insert(invoices).values({
         tenantId: ctx.slug,
         invoiceId,
@@ -321,16 +407,30 @@ async function seedInvoicesIfMissing(
         netDaysSnapshot: 30,
         tenantIdentitySnapshot: tenantSnap,
         memberIdentitySnapshot: memberSnap,
-        // Placeholder PDF meta — /portal/invoices list tolerates null
-        // `pdf` (shows em-dash) but we fill it so the download action
-        // renders. Real PDFs get generated on-demand by the admin
-        // issue flow; for the E2E seed we just need the cells to
-        // exist so the table + action button paint correctly.
-        pdfBlobKey: `tenants/${ctx.slug}/invoices/${invoiceId}/v1.pdf`,
-        pdfSha256: 'a'.repeat(64),
+        pdfBlobKey: pdf.blobKey,
+        pdfSha256: pdf.sha256,
         pdfTemplateVersion: 1,
       });
-      console.log(`  seeded invoice ${s.docNumber} (${s.status})`);
+
+      // Seed a single membership-fee line so the detail page renders
+      // a non-empty line-items table. Matches the PDF render call
+      // above (single-line membership_fee) so downloaded bytes align
+      // with what the UI shows.
+      await tx.insert(invoiceLines).values({
+        tenantId: ctx.slug,
+        invoiceId,
+        kind: 'membership_fee',
+        descriptionTh: 'ค่าสมาชิก ปี 2026 (E2E fixture)',
+        descriptionEn: 'Membership 2026 (E2E fixture)',
+        unitPriceSatang: subtotal,
+        quantity: '1.0000',
+        totalSatang: subtotal,
+        position: 1,
+      });
+
+      console.log(
+        `  seeded invoice ${s.docNumber} (${s.status}) + PDF ${pdf.blobKey}`,
+      );
     }
   });
 }
