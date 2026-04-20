@@ -12,6 +12,7 @@ import {
   asCreditNoteId,
   type CreditNoteId,
 } from '@/modules/invoicing/domain/credit-note';
+import { logger } from '@/lib/logger';
 
 export interface GetCreditNotePdfSignedUrlInput {
   readonly tenantId: string;
@@ -58,7 +59,31 @@ export async function getCreditNotePdfSignedUrl(
     return err({ code: 'credit_note_not_found' });
   }
 
-  const url = await deps.blob.signDownloadUrl(cn.pdf.blobKey, 60);
+  // Review fix IM-4 (2026-04-20) — wrap the signed-URL issuance in
+  // try/catch. The Vercel Blob SDK throws `BlobNotFoundError` when the
+  // key is missing (e.g., deleted by an orphan sweeper, migrated away,
+  // never uploaded due to a half-committed past transaction). Map to
+  // the typed `blob_missing` error so the route handler can surface a
+  // 502 instead of leaking a raw 500.
+  let url: string;
+  try {
+    url = await deps.blob.signDownloadUrl(cn.pdf.blobKey, 60);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const notFound = /not found|404|BlobNotFoundError/i.test(msg);
+    logger.error(
+      {
+        err: msg,
+        creditNoteId,
+        tenantId: input.tenantId,
+        blobKey: cn.pdf.blobKey,
+        notFound,
+      },
+      'getCreditNotePdfSignedUrl: blob sign failed',
+    );
+    if (notFound) return err({ code: 'blob_missing', key: cn.pdf.blobKey });
+    throw e;
+  }
   const filename = `${cn.documentNumber.raw}.pdf`;
   return ok({ url, filename });
 }

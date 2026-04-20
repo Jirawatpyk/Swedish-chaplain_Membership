@@ -10,9 +10,11 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { CreditNoteRepo } from '../../application/ports/credit-note-repo';
 import {
   asCreditNoteId,
+  assertCreditNoteVatBalance,
   type CreditNote,
   type CreditNoteId,
 } from '../../domain/credit-note';
+import { logger } from '@/lib/logger';
 import {
   asInvoiceId,
   type InvoiceId,
@@ -39,17 +41,27 @@ function rowToCreditNote(row: CreditNoteRow): CreditNote {
   // DocumentNumber.of — parse re-validates, unsafe is safe here.
   const docNum = DocumentNumber.parse(row.documentNumber);
   if (!docNum.ok) {
+    // SG-2 — log with structured context so operators can locate
+    // the corrupt row without tailing a naked Error message.
+    logger.error(
+      { creditNoteId: row.creditNoteId, tenantId: row.tenantId, documentNumber: row.documentNumber },
+      'drizzle-credit-note-repo: corrupt document_number',
+    );
     throw new Error(
       `drizzle-credit-note-repo: corrupt document_number on row ${row.creditNoteId}: ${row.documentNumber}`,
     );
   }
   const sha = Sha256Hex.parse(row.pdfSha256);
   if (!sha.ok) {
+    logger.error(
+      { creditNoteId: row.creditNoteId, tenantId: row.tenantId },
+      'drizzle-credit-note-repo: corrupt pdf_sha256',
+    );
     throw new Error(
       `drizzle-credit-note-repo: corrupt pdf_sha256 on row ${row.creditNoteId}: '${row.pdfSha256}'`,
     );
   }
-  return {
+  const cn: CreditNote = {
     tenantId: row.tenantId,
     creditNoteId: asCreditNoteId(row.creditNoteId),
     originalInvoiceId: asInvoiceId(row.originalInvoiceId),
@@ -76,6 +88,51 @@ function rowToCreditNote(row: CreditNoteRow): CreditNote {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+  // IM-5 — invariant guard: credit_amount + vat === total.
+  // Protects against a direct DB write or migration that bypasses
+  // the use case. Domain integrity violations are logged and thrown
+  // so no downstream code sees an inconsistent row.
+  const balance = assertCreditNoteVatBalance(cn);
+  if (!balance.ok) {
+    logger.error(
+      {
+        creditNoteId: row.creditNoteId,
+        tenantId: row.tenantId,
+        creditAmountSatang: balance.error.creditAmountSatang.toString(),
+        vatSatang: balance.error.vatSatang.toString(),
+        totalSatang: balance.error.totalSatang.toString(),
+      },
+      'drizzle-credit-note-repo: vat_balance_violated',
+    );
+    throw new Error(
+      `drizzle-credit-note-repo: vat balance violated on row ${row.creditNoteId}`,
+    );
+  }
+  return cn;
+}
+
+/**
+ * Shared query builder for "all CNs against one invoice". The only
+ * difference between `findByOriginalInvoice` (opens its own
+ * `runInTenant`) and `findByOriginalInvoiceInTx` (re-uses the caller's
+ * tx) is HOW the tx is acquired; the SELECT shape + filter + order are
+ * identical, so they share this single builder. SG-7 (review fix).
+ */
+function selectByOriginalInvoice(
+  tx: TenantTx,
+  originalInvoiceId: InvoiceId,
+  tenantIdArg: string,
+) {
+  return tx
+    .select()
+    .from(creditNotes)
+    .where(
+      and(
+        eq(creditNotes.tenantId, tenantIdArg),
+        eq(creditNotes.originalInvoiceId, originalInvoiceId),
+      ),
+    )
+    .orderBy(desc(creditNotes.createdAt));
 }
 
 export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
@@ -133,18 +190,9 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
       originalInvoiceId: InvoiceId,
       tenantIdArg: string,
     ): Promise<readonly CreditNote[]> {
-      const rows = await runInTenant(ctx, async (tx) => {
-        return tx
-          .select()
-          .from(creditNotes)
-          .where(
-            and(
-              eq(creditNotes.tenantId, tenantIdArg),
-              eq(creditNotes.originalInvoiceId, originalInvoiceId),
-            ),
-          )
-          .orderBy(desc(creditNotes.createdAt));
-      });
+      const rows = await runInTenant(ctx, async (tx) =>
+        selectByOriginalInvoice(tx, originalInvoiceId, tenantIdArg),
+      );
       return rows.map((r) => rowToCreditNote(r as CreditNoteRow));
     },
 
@@ -153,17 +201,11 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
       originalInvoiceId: InvoiceId,
       tenantIdArg: string,
     ): Promise<readonly CreditNote[]> {
-      const tx = txUnknown as TenantTx;
-      const rows = await tx
-        .select()
-        .from(creditNotes)
-        .where(
-          and(
-            eq(creditNotes.tenantId, tenantIdArg),
-            eq(creditNotes.originalInvoiceId, originalInvoiceId),
-          ),
-        )
-        .orderBy(desc(creditNotes.createdAt));
+      const rows = await selectByOriginalInvoice(
+        txUnknown as TenantTx,
+        originalInvoiceId,
+        tenantIdArg,
+      );
       return rows.map((r) => rowToCreditNote(r as CreditNoteRow));
     },
   };

@@ -57,6 +57,10 @@ export interface CreditNoteRepo {
    * inserted row) without opening a nested `runInTenant` — that would
    * risk the same pool-exhaustion pattern we hit with
    * `tenantSettingsRepo.getForIssue` (see issue-credit-note.ts header).
+   *
+   * Returns rows ordered by `created_at DESC` (newest first), matching
+   * `findByOriginalInvoice`. Callers needing sequence-number order
+   * (e.g., the AS4 annotation template) MUST re-sort.
    */
   findByOriginalInvoiceInTx(
     tx: unknown,

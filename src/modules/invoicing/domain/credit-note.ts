@@ -16,6 +16,7 @@
  *
  * Pure TypeScript — no framework/ORM imports.
  */
+import { err, ok, type Result } from '@/lib/result';
 import type { Money } from './value-objects/money';
 import type { DocumentNumber } from './value-objects/document-number';
 import type { FiscalYear } from './value-objects/fiscal-year';
@@ -75,4 +76,38 @@ export interface CreditNote {
 
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export type CreditNoteBalanceError = {
+  readonly kind: 'vat_balance_violated';
+  readonly creditAmountSatang: bigint;
+  readonly vatSatang: bigint;
+  readonly totalSatang: bigint;
+};
+
+/**
+ * Review fix IM-5 (2026-04-20) — assert the money invariant
+ * `creditAmount + vat === total`.
+ *
+ * Called by the repo's row-to-domain mapping in `drizzle-credit-note-repo`
+ * before returning a CreditNote object. A direct DB UPDATE or a
+ * future migration that bypasses the use case could leave an
+ * inconsistent row; without this guard it would flow through to the
+ * PDF template + audit unnoticed. Runtime rather than compile-time
+ * because the three Money values are independent structurally (sharing
+ * a single `(credit, vat)` pair type would constrain the CN creation
+ * API in ways that complicate the use case's flow).
+ */
+export function assertCreditNoteVatBalance(
+  parts: Pick<CreditNote, 'creditAmount' | 'vat' | 'total'>,
+): Result<void, CreditNoteBalanceError> {
+  if (parts.creditAmount.satang + parts.vat.satang !== parts.total.satang) {
+    return err({
+      kind: 'vat_balance_violated',
+      creditAmountSatang: parts.creditAmount.satang,
+      vatSatang: parts.vat.satang,
+      totalSatang: parts.total.satang,
+    });
+  }
+  return ok(undefined);
 }

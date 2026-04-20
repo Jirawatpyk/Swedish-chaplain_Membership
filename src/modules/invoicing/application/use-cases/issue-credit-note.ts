@@ -207,8 +207,25 @@ export async function issueCreditNote(
         originalTotal: loaded.total,
       });
       if (!vatCalc.ok) {
-        // Unreachable under the remainder guard above, but fold into a
-        // uniform error envelope just in case.
+        // IM-7 (review 2026-04-20) — this branch is unreachable under
+        // the remainder guard + the ZeroBalance DB CHECK, but a
+        // defensive log is still emitted so a Money-arithmetic edge
+        // case (e.g., a future refactor relaxing the remainder guard)
+        // is diagnosable rather than silently collapsed. The caller
+        // still sees a typed remainder error for uniform handling;
+        // the logger line carries the REAL vatCalc.error for
+        // operators who need to debug.
+        logger.error(
+          {
+            tenantId: input.tenantId,
+            invoiceId,
+            vatErrorKind: vatCalc.error.kind,
+            invoiceTotalSatang: loaded.total.satang.toString(),
+            creditedTotalSatang: loaded.creditedTotal.satang.toString(),
+            proposedSatang: proposed.satang.toString(),
+          },
+          'issueCreditNote: vat calculation failed after remainder guard (unreachable — investigate)',
+        );
         return err({
           code: 'credit_exceeds_remainder',
           invoiceTotalSatang: loaded.total.satang,
@@ -365,13 +382,16 @@ export async function issueCreditNote(
           invoiceId,
           input.tenantId,
         );
+        // IM-6 — `total: Money` (not stringified satang) for uniformity
+        // with the rest of PdfRenderInput's money fields. The template
+        // adapter stringifies for display at render time.
         const annotationRefs = allCreditNotes
           .slice()
           .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
           .map((x) => ({
             documentNumber: x.documentNumber.raw,
             issueDate: x.issueDate,
-            totalSatang: x.total.satang.toString(),
+            total: x.total,
           }));
 
         let rerendered;
@@ -406,6 +426,12 @@ export async function issueCreditNote(
             key: loaded.pdf.blobKey,
             body: rerendered.bytes,
             contentType: 'application/pdf',
+            // Review CR-1 (2026-04-20) — MUST overwrite: the AS4
+            // re-render produces DIFFERENT bytes (adds the overlay).
+            // Without allowOverwrite=true the adapter's default path
+            // silently treats the already-exists conflict as success,
+            // DB pdf_sha256 would then drift from Blob content.
+            allowOverwrite: true,
           });
         } catch (e) {
           throw new IssueCreditNoteInternalError({
@@ -420,10 +446,11 @@ export async function issueCreditNote(
           pdfSha256: rerendered.sha256,
         });
 
-        // Companion audit event (the existing `invoice_pdf_regenerated`
-        // type introduced for R3-E4 / CP-5.2 — same payload shape).
-        // Captures the before/after sha256 so the 10-year audit trail
-        // can reconstruct the exact document state at any point.
+        // Companion audit event `invoice_pdf_regenerated` (introduced
+        // in F4 alongside R3-E4 / CP-5.2 Best-Practice PDF integrity —
+        // see audit-port.ts doc). Captures the before/after sha256 so
+        // the 10-year audit trail can reconstruct the exact document
+        // state at any point.
         await deps.audit.emit(tx, {
           tenantId: input.tenantId,
           requestId: input.requestId ?? null,
@@ -460,9 +487,14 @@ export async function issueCreditNote(
         },
       });
 
-      // L. Outbox (auto-email — per-invoice flag respected, falling back
-      // to tenant default). Recipient is the snapshotted primary contact
-      // on the invoice, NOT the live contact (FR-038 consistency).
+      // L. Outbox (auto-email). The `autoEmailOnIssue` flag name comes
+      // from the invoice-issue flow but the per-invoice override
+      // applies uniformly to credit-note dispatch; falling back to
+      // tenant `autoEmailEnabled` when unset. Recipient is the
+      // snapshotted primary contact on the invoice at issue time
+      // (SG-5 — fixed citation: the snapshot rule is FR-038, but the
+      // email-toggle rule is the tenant `autoEmailEnabled` setting;
+      // keeping both here for clarity).
       const shouldAutoEmail = loaded.autoEmailOnIssue ?? settings.autoEmailEnabled;
       if (shouldAutoEmail) {
         await deps.outbox.enqueue(tx, {

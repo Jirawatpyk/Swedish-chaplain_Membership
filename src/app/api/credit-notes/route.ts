@@ -20,6 +20,23 @@ import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/lib/auth-deps';
 import { stripReason } from '../invoices/_serialise';
 import { serialiseCreditNote } from './_serialise';
+import type { IssueCreditNoteError } from '@/modules/invoicing';
+
+// SG-7 — error-code → HTTP status lookup. Cleaner than a nested
+// ternary chain and easier to extend when new typed errors land.
+// Any future addition to `IssueCreditNoteError` that isn't listed
+// here falls through to HTTP 422 (see the `?? 422` below).
+const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
+  invoice_not_found: 404,
+  invalid_status: 409,
+  concurrent_state_change: 409,
+  credit_exceeds_remainder: 409,
+  settings_missing: 409,
+  no_snapshot_on_invoice: 422,
+  overflow: 422,
+  pdf_render_failed: 500,
+  blob_upload_failed: 500,
+};
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const ctx = await requireAdminContext(request, {
@@ -106,17 +123,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       'POST /api/credit-notes failed',
     );
-    const status =
-      result.error.code === 'invoice_not_found' ? 404
-      : result.error.code === 'invalid_status' ? 409
-      : result.error.code === 'concurrent_state_change' ? 409
-      : result.error.code === 'credit_exceeds_remainder' ? 409
-      : result.error.code === 'settings_missing' ? 409
-      : result.error.code === 'no_snapshot_on_invoice' ? 422
-      : result.error.code === 'overflow' ? 422
-      : result.error.code === 'pdf_render_failed' ? 500
-      : result.error.code === 'blob_upload_failed' ? 500
-      : 422;
+    const status = ERROR_STATUS[result.error.code] ?? 422;
     // `credit_exceeds_remainder` carries bigints — coerce to strings
     // so JSON.stringify doesn't throw. Other errors pass through the
     // shared stripReason helper which already tolerates plain codes.

@@ -32,7 +32,14 @@ type Props = {
 };
 
 function formatSatang(satang: string): string {
-  const n = BigInt(satang);
+  // SG-1 — clamp negatives to 0 defensively. Under normal state the
+  // remainder is always ≥ 0 (DB CHECK `invoices_credited_total_in_range`
+  // enforces it), but a stale-server-render race mid-rollup could
+  // momentarily surface a negative value. Showing "0.00" reads
+  // cleaner than "-0.-01" and matches the enforce policy's own
+  // `remainingSatang < 0n ? 0n` clamp.
+  const raw = BigInt(satang);
+  const n = raw < 0n ? 0n : raw;
   const whole = n / 100n;
   const rem = n % 100n;
   return `${whole.toString()}.${rem.toString().padStart(2, '0')}`;

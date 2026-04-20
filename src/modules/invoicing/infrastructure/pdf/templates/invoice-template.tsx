@@ -313,7 +313,7 @@ export function InvoiceTemplate(input: PdfRenderInput) {
                   <Text style={styles.cnRefFooterCell}>{r.documentNumber}</Text>
                   <Text style={styles.cnRefFooterCell}>{r.issueDate}</Text>
                   <Text style={styles.cnRefFooterCellAmt}>
-                    {formatThbSatang(BigInt(r.totalSatang))} THB
+                    {formatThbSatang(r.total.satang)} THB
                   </Text>
                 </View>
               ))}

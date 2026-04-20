@@ -99,15 +99,17 @@ describe('calculateCreditNoteVat — rejection', () => {
 });
 
 describe('calculateCreditNoteVat — property: partition VAT-sum invariant', () => {
-  // Spec T076 writes the invariant as `≤ original-vat + 1`. That bound is
-  // exact for 1-part (equality) and 2-part (±1), but a proportional split
-  // into N parts with half-away-from-zero rounding has a theoretical
-  // worst-case drift of ⌈N/2⌉ satang — a natural consequence of each
-  // independent rounding step contributing up to ½ satang. The test
-  // asserts the tighter practical bound ≤ +1 for N ≤ 2 (the AS1/AS2
-  // shapes) AND the general-case mathematical bound ⌈N/2⌉ for larger
-  // partitions. Credit-note workflows do not issue >2 partial credits
-  // in real bookkeeping; the larger-N case is defence-in-depth.
+  // Spec T076 writes the invariant as `≤ original-vat + 1`. That bound
+  // is exact only for 1-part (equality) and 2-part (±1) partitions; a
+  // proportional split into N parts with half-away-from-zero rounding
+  // has a theoretical worst-case drift of ⌈N/2⌉ satang — a natural
+  // consequence of each independent rounding step contributing up to
+  // ½ satang. This property test bounds N to 2 (covers AS1 full +
+  // AS2 partial exactly); the mathematical ⌈N/2⌉ bound for N ≥ 3 is
+  // documented but NOT asserted here because real bookkeeping does
+  // not issue >2 partial credits per invoice. SG-4 (review 2026-04-20)
+  // — previously this comment claimed "≤ 6 partitions" which was
+  // inconsistent with the `maxLength: 2` array cap below.
   it('forAll (total ≥ 100 THB) (partition into 1..2 parts) (vatRate ∈ [0, 0.30]) → sum(cn-vats) is within 1 satang of originalVat', () => {
     fc.assert(
       fc.property(

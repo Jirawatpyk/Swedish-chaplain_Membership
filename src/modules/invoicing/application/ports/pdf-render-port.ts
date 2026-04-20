@@ -61,7 +61,7 @@ export interface PdfRenderInput {
     readonly references: ReadonlyArray<{
       readonly documentNumber: string;
       readonly issueDate: string;
-      readonly totalSatang: string;
+      readonly total: Money;
     }>;
   } | null;
 }

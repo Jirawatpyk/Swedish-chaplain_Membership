@@ -74,10 +74,18 @@ const SNAP_MEMBER = {
   primary_contact_email: 'n@n.n',
 };
 
-async function seedPaidInvoice(
+/**
+ * Seed an invoice in a specified non-draft status. `paid` is the
+ * happy-path shape for the credit-note flow; `issued` / `voided` /
+ * `credited` are used by the rejection-branch tests below. The
+ * `payment_*` fields satisfy the DB CHECK `invoices_paid_has_payment`
+ * which is only relevant when status='paid'.
+ */
+async function seedInvoiceInStatus(
   tenant: TestTenant,
   user: TestUser,
   planId: string,
+  status: 'paid' | 'issued' | 'void',
 ): Promise<{ invoiceId: string; memberId: string }> {
   const invoiceId = randomUUID();
   const memberId = randomUUID();
@@ -100,7 +108,7 @@ async function seedPaidInvoice(
       planYear: 2026,
       planId,
       draftByUserId: user.userId,
-      status: 'paid',
+      status,
       fiscalYear: 2026,
       sequenceNumber: 1,
       documentNumber: 'CNIT-2026-000001',
@@ -118,12 +126,15 @@ async function seedPaidInvoice(
       pdfBlobKey: 'invoicing/x/2026/seed.pdf',
       pdfSha256: 'a'.repeat(64),
       pdfTemplateVersion: 1,
-      paymentMethod: 'bank_transfer',
-      paymentReference: 'seed-ref',
+      paymentMethod: status === 'paid' ? 'bank_transfer' : null,
+      paymentReference: status === 'paid' ? 'seed-ref' : null,
       paymentNotes: null,
-      paymentRecordedByUserId: user.userId,
-      paymentDate: '2026-02-01',
-      paidAt: new Date('2026-02-01T03:00:00Z'),
+      paymentRecordedByUserId: status === 'paid' ? user.userId : null,
+      paymentDate: status === 'paid' ? '2026-02-01' : null,
+      paidAt: status === 'paid' ? new Date('2026-02-01T03:00:00Z') : null,
+      voidedAt: status === 'void' ? new Date('2026-03-01T03:00:00Z') : null,
+      voidReason: status === 'void' ? 'seed void' : null,
+      voidedByUserId: status === 'void' ? user.userId : null,
     });
     await tx.insert(invoiceLines).values({
       tenantId: tenant.ctx.slug,
@@ -226,7 +237,7 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
   });
 
   it('two partials sum-to-total flip paid → partially_credited → credited', async () => {
-    const { invoiceId } = await seedPaidInvoice(tenant, user, planId);
+    const { invoiceId } = await seedInvoiceInStatus(tenant, user, planId, 'paid');
     const deps = makeDeps(tenant.ctx.slug);
 
     // First partial — 60% of total.
@@ -289,7 +300,7 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
   }, 60_000);
 
   it('rejects a third partial against a fully-credited invoice', async () => {
-    const { invoiceId } = await seedPaidInvoice(tenant, user, planId);
+    const { invoiceId } = await seedInvoiceInStatus(tenant, user, planId, 'paid');
     const deps = makeDeps(tenant.ctx.slug);
 
     const r1 = await issueCreditNote(deps, {
@@ -317,7 +328,7 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
   }, 60_000);
 
   it('rejects partial that exceeds remainder by 1 satang (no seq gap)', async () => {
-    const { invoiceId } = await seedPaidInvoice(tenant, user, planId);
+    const { invoiceId } = await seedInvoiceInStatus(tenant, user, planId, 'paid');
     const deps = makeDeps(tenant.ctx.slug);
 
     const r = await issueCreditNote(deps, {
@@ -351,7 +362,7 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
   // is updated to match. An `invoice_pdf_regenerated` audit row is
   // emitted alongside the `credit_note_issued` row.
   it('AS4 — CN rollup re-renders invoice PDF with annotation + emits invoice_pdf_regenerated audit', async () => {
-    const { invoiceId } = await seedPaidInvoice(tenant, user, planId);
+    const { invoiceId } = await seedInvoiceInStatus(tenant, user, planId, 'paid');
 
     // Capture the original sha256 from the seeded invoice row.
     const [beforeRow] = await runInTenant(tenant.ctx, (tx) =>
@@ -363,21 +374,42 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
     const originalSha = beforeRow!.sha;
     const originalBlobKey = beforeRow!.blobKey;
 
-    // Use a render-capturing deps so we can assert the rendered bytes
-    // differ from a baseline (no-annotation) render. We re-use the
-    // real adapters for everything except a spy on pdfRender + blob.
-    const captured: Array<{ key: string; bytes: Uint8Array }> = [];
+    // Spy on the blob adapter AND the audit emitter so we can assert:
+    //   (a) CN PDF upload at a NEW key (allowOverwrite unset/false)
+    //   (b) invoice re-render upload at the ORIGINAL key with
+    //       allowOverwrite=true (review fix CR-1 — without this the
+    //       upload silently no-ops and the DB sha drifts)
+    //   (c) the re-rendered bytes differ from the seeded placeholder
+    //   (d) invoice_pdf_regenerated audit row is emitted with the
+    //       correct payload (original_sha256, new_sha256,
+    //       triggered_by_credit_note_id)
+    const captured: Array<{
+      key: string;
+      bytes: Uint8Array;
+      allowOverwrite: boolean | undefined;
+    }> = [];
+    const auditEvents: Array<{ eventType: string; payload: unknown }> = [];
     const deps = makeDeps(tenant.ctx.slug);
-    // Wrap the blob adapter so we can inspect the final uploaded bytes.
     const originalUpload = deps.blob.uploadPdf;
     const blobSpy = {
       ...deps.blob,
       uploadPdf: vi.fn(async (input: Parameters<typeof originalUpload>[0]) => {
-        captured.push({ key: input.key, bytes: input.body as Uint8Array });
+        captured.push({
+          key: input.key,
+          bytes: input.body as Uint8Array,
+          allowOverwrite: input.allowOverwrite,
+        });
         return originalUpload(input);
       }),
     };
-    const depsWithSpy = { ...deps, blob: blobSpy };
+    const originalAuditEmit = deps.audit.emit;
+    const auditSpy = {
+      emit: vi.fn(async (tx: unknown, evt: { eventType: string; payload: unknown }) => {
+        auditEvents.push({ eventType: evt.eventType, payload: evt.payload });
+        return originalAuditEmit(tx, evt as never);
+      }),
+    };
+    const depsWithSpy = { ...deps, blob: blobSpy, audit: auditSpy };
 
     const r = await issueCreditNote(depsWithSpy, {
       tenantId: tenant.ctx.slug,
@@ -388,12 +420,21 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
     });
     expect(r.ok).toBe(true);
 
-    // 2 uploads expected in the successful path:
-    //   1. credit-note PDF at a NEW key (creditNote_<id>_v1.pdf)
-    //   2. invoice PDF re-render at the ORIGINAL invoice blob key
+    // (a) + (b): two uploads — CN (new key, overwrite not required)
+    //            + invoice re-render (original key, allowOverwrite=true)
     expect(captured.length).toBeGreaterThanOrEqual(2);
     const reRenderUpload = captured.find((c) => c.key === originalBlobKey);
     expect(reRenderUpload, 'invoice re-render upload at original key').toBeDefined();
+    expect(
+      reRenderUpload!.allowOverwrite,
+      'CR-1: AS4 re-upload MUST set allowOverwrite=true',
+    ).toBe(true);
+
+    // (c): re-rendered bytes are non-empty (the mocked renderer
+    // returns a fixed 4-byte magic, so we don't assert size here;
+    // the allowOverwrite=true flag above + the sha256 change below
+    // are the load-bearing correctness assertions for CR-1).
+    expect(reRenderUpload!.bytes.byteLength).toBeGreaterThan(0);
 
     // sha256 on the invoice row differs from the original (annotation
     // was rendered and the row was updated via applyInvoicePdfRegeneration).
@@ -410,10 +451,111 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
     expect(afterRow!.blobKey).toBe(originalBlobKey); // same key
     expect(afterRow!.sha).not.toBe(originalSha); // new bytes
     expect(afterRow!.status).toBe('partially_credited');
+
+    // (d): audit trail — both `credit_note_issued` and
+    // `invoice_pdf_regenerated` emitted, with the regeneration payload
+    // carrying the before/after sha + triggered_by_credit_note_id.
+    const regenEvent = auditEvents.find(
+      (e) => e.eventType === 'invoice_pdf_regenerated',
+    );
+    expect(regenEvent, 'invoice_pdf_regenerated audit must be emitted').toBeDefined();
+    const payload = regenEvent!.payload as Record<string, unknown>;
+    expect(payload.original_sha256).toBe(originalSha);
+    expect(payload.new_sha256).toBe(afterRow!.sha);
+    expect(payload.reason).toBe('credit_note_annotation');
+    expect(payload.triggered_by_credit_note_id).toBeDefined();
+
+    const cnIssuedEvent = auditEvents.find((e) => e.eventType === 'credit_note_issued');
+    expect(cnIssuedEvent, 'credit_note_issued audit must be emitted').toBeDefined();
+  }, 60_000);
+
+  // IM-1 (US6 AS3) — unpaid invoice is rejected with invalid_status.
+  // The use-case's `lockedStatus !== 'paid' && !== 'partially_credited'`
+  // guard covers draft / issued / voided / credited-terminal. Here
+  // we test `issued` (unpaid) and `voided`; `draft` is blocked at the
+  // DB (no `documentNumber`, would fail earlier), `credited` terminal
+  // is already exercised in the "rejects a 3rd partial" test.
+  it('AS3 — issued (unpaid) invoice → invalid_status, no CN written', async () => {
+    const { invoiceId } = await seedInvoiceInStatus(tenant, user, planId, 'issued');
+    const deps = makeDeps(tenant.ctx.slug);
+
+    const r = await issueCreditNote(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      creditTotalSatang: 53_500n,
+      reason: 'should be rejected',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('invalid_status');
+      if (r.error.code === 'invalid_status') {
+        expect(r.error.status).toBe('issued');
+      }
+    }
+    const cnCount = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(creditNotes).where(eq(creditNotes.tenantId, tenant.ctx.slug)),
+    );
+    expect(cnCount).toHaveLength(0);
+  }, 60_000);
+
+  it('AS3 — voided invoice → invalid_status, no CN written', async () => {
+    const { invoiceId } = await seedInvoiceInStatus(tenant, user, planId, 'void');
+    const deps = makeDeps(tenant.ctx.slug);
+    const r = await issueCreditNote(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      creditTotalSatang: 53_500n,
+      reason: 'should be rejected',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('invalid_status');
+  }, 60_000);
+
+  // SG-3 — settings_missing branch. Delete the tenant_invoice_settings
+  // row before calling the use-case; the initial getForIssue returns
+  // null and the flow bails at the settings_missing check.
+  it('SG-3 — settings_missing branch surfaces cleanly when settings row is absent', async () => {
+    const { invoiceId } = await seedInvoiceInStatus(tenant, user, planId, 'paid');
+    // Temporarily drop the settings row (we restore via beforeEach +
+    // the top-level afterAll tenant teardown).
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .delete(tenantInvoiceSettings)
+        .where(eq(tenantInvoiceSettings.tenantId, tenant.ctx.slug)),
+    );
+    const deps = makeDeps(tenant.ctx.slug);
+    const r = await issueCreditNote(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      creditTotalSatang: 53_500n,
+      reason: 'test',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('settings_missing');
+    // Restore settings for subsequent tests (beforeEach only wipes
+    // CN + invoice + lines + members; it does NOT reset settings).
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(tenantInvoiceSettings).values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 0n,
+        legalNameTh: 'ทดสอบ',
+        legalNameEn: 'Test',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'CNIT',
+        creditNoteNumberPrefix: 'CN',
+      }),
+    );
   }, 60_000);
 
   it('R2-E1 concurrent race — 2 admins issue 60% each; exactly one succeeds', async () => {
-    const { invoiceId } = await seedPaidInvoice(tenant, user, planId);
+    const { invoiceId } = await seedInvoiceInStatus(tenant, user, planId, 'paid');
     // Separate deps per caller so the mock `vi.fn` instances don't share
     // pending-promise state between the two concurrent withTx flows.
     const depsA = makeDeps(tenant.ctx.slug);
