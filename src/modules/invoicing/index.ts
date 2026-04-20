@@ -52,17 +52,27 @@ export type { F4AuditEventType, F4AuditEvent } from './application/ports/audit-p
 
 /**
  * US7 — F4 audit event types surfaced in the F3 member timeline.
- * The 6 events here all carry `member_id` in their payload so the F3
+ * All events here carry `member_id` in their payload so the F3
  * timeline repo (which filters by `payload->>'member_id'`) picks them
- * up without any JOIN. This list is the contract between F4 emit
- * sites and the copy resolver.
+ * up without any JOIN. This is the contract between F4 emit sites +
+ * the copy resolver.
  *
- * Scope:
- *   - `invoice_voided` is included for US5/Phase 9; copy mapping ready.
- *   - `invoice_pdf_resent` covers admin re-sends of the invoice PDF.
- *   - `receipt_pdf_resent` + `credit_note_pdf_resent` are deliberately
- *     NOT in this list — they duplicate the underlying pay/credit
- *     event and would double-render in the timeline.
+ * Runtime-only vs. compile-time contract:
+ *   This list is WIDER than `F4MemberTimelineAuditEventType` in
+ *   `ports/audit-port.ts`. The audit-port union only declares types
+ *   that ALREADY have an emit site, so the compile-time `member_id`
+ *   guarantee isn't hollow. The runtime array below additionally
+ *   carries types whose emit is deferred but whose copy mapping is
+ *   ready — the resolver + timeline pick them up automatically when
+ *   the emit lands.
+ *
+ * Deferred emit sites:
+ *   - `invoice_voided`       — US5 / Phase 9 T105.
+ *   - `invoice_pdf_resent`   — Phase 10 T107.
+ *
+ * Deliberately excluded (operational duplicates):
+ *   - `receipt_pdf_resent` + `credit_note_pdf_resent` — dup the
+ *     underlying pay/credit event and would double-render.
  */
 export const F4_MEMBER_TIMELINE_EVENT_TYPES = [
   'invoice_draft_created',

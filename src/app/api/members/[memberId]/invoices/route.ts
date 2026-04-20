@@ -21,7 +21,7 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { getMember, type MemberId } from '@/modules/members';
-import { buildMembersDeps } from '@/modules/members/members-deps';
+import { buildMemberProbeDeps } from '@/modules/members/members-deps';
 import {
   listInvoicesByMember,
   listInvoicesByMemberSchema,
@@ -83,12 +83,14 @@ export async function GET(
 
   // Existence + tenant-scope probe. `getMember` already emits
   // `member_cross_tenant_probe` on miss — reuse it rather than adding
-  // a second probe site for the same decision.
-  const membersDeps = buildMembersDeps(tenantCtx);
+  // a second probe site for the same decision. Use the minimal
+  // probe-deps factory to avoid allocating the full F3 deps bag on
+  // every invoice-list request.
+  const probeDeps = buildMemberProbeDeps(tenantCtx);
   const memberResult = await getMember(
     paramsParsed.data.memberId as MemberId,
     { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
-    membersDeps,
+    probeDeps,
   );
   if (!memberResult.ok) {
     if (memberResult.error.type === 'not_found') {
@@ -97,8 +99,11 @@ export async function GET(
         { status: 404 },
       );
     }
+    // Log only the discriminated error-type tag — pino serialises a
+    // raw `cause: unknown` which may spill infra paths + stack traces
+    // into log storage. The Result tag is enough for correlation.
     logger.error(
-      { requestId: ctx.requestId, err: memberResult.error },
+      { requestId: ctx.requestId, errType: memberResult.error.type },
       'member-invoices: member lookup failed',
     );
     return NextResponse.json(
@@ -123,8 +128,10 @@ export async function GET(
   );
 
   if (!result.ok) {
+    // Log only the discriminated error-type tag (same reasoning as
+    // the member-probe log above).
     logger.error(
-      { requestId: ctx.requestId, err: result.error },
+      { requestId: ctx.requestId, errType: result.error.type },
       'list-invoices-by-member: unhandled',
     );
     return NextResponse.json(

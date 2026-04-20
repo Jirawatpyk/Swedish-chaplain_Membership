@@ -147,7 +147,7 @@ export async function MemberInvoicesSection({
             </span>
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent data-testid="member-invoices-content">
           {rows.length === 0 ? (
             <div className="flex flex-col items-start gap-3 py-4">
               <p className="text-sm text-muted-foreground">{t('empty')}</p>

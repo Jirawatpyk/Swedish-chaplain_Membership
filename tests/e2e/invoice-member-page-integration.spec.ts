@@ -96,11 +96,13 @@ test.describe('@us7 F3 × F4 integration on admin member page', () => {
       .first();
     await expect(invoicesCard).toBeVisible();
 
-    // Pre-condition: prove the section is actually rendered (either
-    // table or empty-state). Without this, the `toHaveCount(0)` below
-    // would trivially pass if the section failed to render at all.
+    // Pre-condition: prove the section's content container is
+    // actually rendered (either table or empty-state). Scoped via
+    // data-testid — a broad text regex would match column headers,
+    // action labels, or status chips and pass even when the section
+    // failed to render.
     await expect(
-      invoicesCard.getByText(/(no invoices|invoice|faktura|ใบแจ้งหนี้)/i).first(),
+      invoicesCard.getByTestId('member-invoices-content'),
     ).toBeVisible();
 
     // Mutating actions MUST NOT render as <Link> for manager — they

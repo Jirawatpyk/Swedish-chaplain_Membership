@@ -67,11 +67,15 @@ function payloadFor(
         plan_year: 2026,
       };
     case 'invoice_issued':
+      // Mixed type on purpose: DB jsonb preserves the number-vs-string
+      // distinction, and the copy resolver must coerce either shape.
+      // Unit tests cover the resolver in isolation; integration test
+      // proves the coercion survives the DB round-trip.
       return {
         invoice_id: invoiceId,
         member_id: memberId,
         document_number: 'INV-2026-0042',
-        total_satang: '107000',
+        total_satang: 107000,
       };
     case 'invoice_paid':
       return {

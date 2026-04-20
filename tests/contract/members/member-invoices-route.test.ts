@@ -13,7 +13,7 @@ import { ok, err } from '@/lib/result';
 const requireAdminContextMock = vi.fn();
 const getMemberMock = vi.fn();
 const listInvoicesByMemberMock = vi.fn();
-const buildMembersDepsMock = vi.fn();
+const buildMemberProbeDepsMock = vi.fn();
 
 vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
@@ -28,7 +28,8 @@ vi.mock('@/modules/members', async () => {
   };
 });
 vi.mock('@/modules/members/members-deps', () => ({
-  buildMembersDeps: (...args: unknown[]) => buildMembersDepsMock(...args),
+  buildMemberProbeDeps: (...args: unknown[]) =>
+    buildMemberProbeDepsMock(...args),
 }));
 vi.mock('@/modules/invoicing', async () => {
   const actual = await vi.importActual<typeof import('@/modules/invoicing')>(
@@ -114,6 +115,8 @@ describe('contract: GET /api/members/[memberId]/invoices', () => {
       { params: Promise.resolve({ memberId: VALID_MEMBER }) },
     );
     expect(res.status).toBe(401);
+    // Guard: auth short-circuit MUST NOT allocate probe deps.
+    expect(buildMemberProbeDepsMock).not.toHaveBeenCalled();
   });
 
   it('404 when memberId is not a UUID', async () => {
@@ -128,6 +131,9 @@ describe('contract: GET /api/members/[memberId]/invoices', () => {
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error.code).toBe('not_found');
+    // Guard: param validation failure MUST short-circuit before deps
+    // are allocated.
+    expect(buildMemberProbeDepsMock).not.toHaveBeenCalled();
   });
 
   it('400 when query params are invalid (status out of enum)', async () => {
@@ -144,11 +150,14 @@ describe('contract: GET /api/members/[memberId]/invoices', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error.code).toBe('invalid_query');
+    // Guard: query validation failure MUST short-circuit before deps
+    // are allocated.
+    expect(buildMemberProbeDepsMock).not.toHaveBeenCalled();
   });
 
   it('404 when member does not exist in this tenant (cross-tenant probe)', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
-    buildMembersDepsMock.mockReturnValueOnce({ memberRepo: {}, audit: {} });
+    buildMemberProbeDepsMock.mockReturnValueOnce({ memberRepo: {}, audit: {} });
     getMemberMock.mockResolvedValueOnce(err({ type: 'not_found' }));
     const { GET } = await import(
       '@/app/api/members/[memberId]/invoices/route'
@@ -164,7 +173,7 @@ describe('contract: GET /api/members/[memberId]/invoices', () => {
 
   it('200 happy path — returns rows + total', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
-    buildMembersDepsMock.mockReturnValueOnce({ memberRepo: {}, audit: {} });
+    buildMemberProbeDepsMock.mockReturnValueOnce({ memberRepo: {}, audit: {} });
     getMemberMock.mockResolvedValueOnce(
       ok({
         member: { memberId: VALID_MEMBER, companyName: 'Acme' },
@@ -191,7 +200,7 @@ describe('contract: GET /api/members/[memberId]/invoices', () => {
 
   it('500 when use case surfaces repo_error', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
-    buildMembersDepsMock.mockReturnValueOnce({ memberRepo: {}, audit: {} });
+    buildMemberProbeDepsMock.mockReturnValueOnce({ memberRepo: {}, audit: {} });
     getMemberMock.mockResolvedValueOnce(
       ok({
         member: { memberId: VALID_MEMBER, companyName: 'Acme' },

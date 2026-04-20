@@ -35,20 +35,31 @@ export type F4AuditEventType =
 
 /**
  * F4 event types that MUST appear in the F3 member timeline
- * (`payload->>'member_id'` query). This list is duplicated in the
- * invoicing barrel (`F4_MEMBER_TIMELINE_EVENT_TYPES`) for consumers;
- * the audit port uses the literal union so the discriminated-union
- * payload contract below forces compile-time `member_id` presence
- * on every emit site, closing the gap where a new member-surfaceable
- * event type silently omits the field and never appears in timelines.
+ * (`payload->>'member_id'` query) AND have an implemented emit site.
+ * The discriminated-union payload contract below forces compile-time
+ * `member_id` presence on every emit site so a new member-surfaceable
+ * event type cannot silently omit the field.
+ *
+ * This union is DELIBERATELY narrower than `F4_MEMBER_TIMELINE_EVENT_TYPES`
+ * in the invoicing barrel — types without an implemented emit site
+ * (today: `invoice_voided` Phase 9 / T105, `invoice_pdf_resent`
+ * Phase 10 / T107) are excluded until the emit ships, otherwise the
+ * compile-time guarantee is inert for those types. The runtime array
+ * in the barrel keeps them declared so the copy-resolver is ready
+ * on day one when the emit lands.
+ *
+ * `invoice_cross_tenant_probe` / `credit_note_cross_tenant_probe` are
+ * intentionally NOT in this union — probes fire BEFORE the member is
+ * validated, so `member_id` is not available at emit time. If a future
+ * use-case can supply `attempted_member_id`, promote the probe type
+ * into a dedicated probe-timeline variant rather than relaxing this
+ * one.
  */
 export type F4MemberTimelineAuditEventType =
   | 'invoice_draft_created'
   | 'invoice_issued'
   | 'invoice_paid'
-  | 'invoice_voided'
-  | 'credit_note_issued'
-  | 'invoice_pdf_resent';
+  | 'credit_note_issued';
 
 /** Payload contract for events that surface in the F3 member timeline. */
 export type MemberTimelineAuditPayload = {

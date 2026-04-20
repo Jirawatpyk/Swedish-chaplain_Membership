@@ -48,6 +48,16 @@ describe('resolveInvoiceEventCopy', () => {
     expect(copy?.link).toBe(`/admin/invoices/${INVOICE_ID}`);
   });
 
+  it('invoice_paid without document_number OR receipt_document_number: vars.documentNumber undefined', () => {
+    const copy = resolveInvoiceEventCopy('invoice_paid', {
+      invoice_id: INVOICE_ID,
+      payment_method: 'bank_transfer',
+    });
+    expect(copy?.i18nKey).toBe('invoicePaid');
+    expect(copy?.vars.documentNumber).toBeUndefined();
+    expect(copy?.vars.paymentMethod).toBe('bank_transfer');
+  });
+
   it('invoice_paid: vars include paymentMethod + receipt_document_number fallback', () => {
     const copy = resolveInvoiceEventCopy('invoice_paid', {
       invoice_id: INVOICE_ID,
