@@ -158,4 +158,26 @@ export interface InvoiceRepo {
     invoiceId: InvoiceId,
     tenantId: string,
   ): Promise<InvoiceStatus | null>;
+
+  /**
+   * T078 — issue-credit-note rollup: atomically update the parent
+   * invoice's `credited_total_satang` and transition its status to
+   * `partially_credited` (remainder > 0) or `credited` (remainder == 0).
+   * Runs inside the same transaction as the credit-note insert so both
+   * writes commit together.
+   *
+   * The DB CHECK `invoices_credited_status_matches` doubles as a
+   * defense-in-depth guard: if the caller passes an inconsistent
+   * (newCreditedTotalSatang, newStatus) pair, Postgres rejects and the
+   * tx rolls back.
+   */
+  applyCreditNoteRollup(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly invoiceId: InvoiceId;
+      readonly newCreditedTotalSatang: bigint;
+      readonly newStatus: 'partially_credited' | 'credited';
+    },
+  ): Promise<Invoice>;
 }

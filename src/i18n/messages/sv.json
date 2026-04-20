@@ -881,6 +881,32 @@
         "updated": "Fakturainställningar uppdaterade."
       }
     },
+    "creditNotes": {
+      "new": {
+        "title": "Utfärda kreditnota",
+        "description": "Utfärda en formell kreditnota (ใบลดหนี้) mot denna betalda faktura. Ett nytt sekventiellt skattedokumentnummer tilldelas och originalfakturan övergår till krediterad eller delvis krediterad.",
+        "backToInvoice": "Tillbaka till fakturan",
+        "againstInvoice": "Mot faktura",
+        "remainingLabel": "Återstående krediterbart belopp:",
+        "amountLabel": "Kreditbelopp (inkl. moms)",
+        "amountHelp": "Ange bruttobeloppet att kreditera, inkl. moms. Moms fördelas proportionellt mot originalfakturan.",
+        "exceedsRemainder": "Beloppet överstiger återstoden ({remaining}).",
+        "reasonLabel": "Orsak",
+        "reasonHelp": "Visas på kreditnotans PDF och i revisionsspåret. Obligatoriskt, upp till 500 tecken.",
+        "confirmPhrase": "CREDIT",
+        "confirmCopy": "Skriv {phrase} för att bekräfta denna oåterkalleliga åtgärd.",
+        "confirmMismatch": "Frasen måste vara {phrase}.",
+        "submit": "Utfärda kreditnota",
+        "submitting": "Utfärdar…",
+        "cancel": "Avbryt",
+        "success": "Kreditnota utfärdad.",
+        "errors": {
+          "failed": "Kreditnotan kunde inte utfärdas.",
+          "unknown": "Ett okänt fel uppstod. Försök igen.",
+          "codeFallback": "Felkod: {code}"
+        }
+      }
+    },
     "invoices": {
       "meta": {
         "title": "Fakturor"
@@ -963,7 +989,8 @@
           "preview": "Förhandsgranska",
           "issue": "Utfärda…",
           "download": "Ladda ner PDF",
-          "pay": "Registrera betalning"
+          "pay": "Registrera betalning",
+          "issueCreditNote": "Utfärda kreditnota"
         },
         "fields": {
           "memberId": "Medlem",

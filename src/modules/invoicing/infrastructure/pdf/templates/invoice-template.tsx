@@ -87,6 +87,19 @@ const styles = StyleSheet.create({
     transform: 'rotate(-20deg)',
   },
   footer: { marginTop: 24, fontSize: 8, color: '#777', textAlign: 'center' },
+  // T079 — credit-note reference block. Rendered between the customer
+  // section and the line-items table so the reader's eye scans the
+  // legal continuity (this document references invoice #X) before the
+  // monetary amounts. Framed with a left accent border to set it
+  // visually apart from regular metadata without adding colour.
+  cnRefBlock: {
+    marginBottom: 12,
+    padding: 8,
+    borderLeft: '3 solid #444',
+    backgroundColor: '#fafafa',
+  },
+  cnRefLine: { fontSize: 10, marginBottom: 2 },
+  cnRefLabel: { fontSize: 9, color: '#555', marginBottom: 2 },
 });
 
 function formatThbSatang(satang: bigint): string {
@@ -180,6 +193,25 @@ export function InvoiceTemplate(input: PdfRenderInput) {
             </Text>
           )}
         </View>
+
+        {input.kind === 'credit_note' && input.creditNote && (
+          <View style={styles.cnRefBlock}>
+            <Text style={styles.cnRefLabel}>
+              {shapeThai('อ้างอิงใบกำกับภาษีต้นฉบับ')} / Reference to Original Tax Invoice
+            </Text>
+            <Text style={styles.cnRefLine}>
+              {shapeThai('เลขที่')} / No.: {input.creditNote.originalDocumentNumber}
+            </Text>
+            <Text style={styles.cnRefLine}>
+              {shapeThai('วันที่')} / Date: {input.creditNote.originalIssueDate}
+              {' ('}{shapeThai('พ.ศ.')} {beYear(input.creditNote.originalIssueDate)}
+              {')'}
+            </Text>
+            <Text style={styles.cnRefLine}>
+              {shapeThai('เหตุผล')} / Reason: {shapeThai(input.creditNote.reason)}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.table}>
           <View style={styles.trHead}>

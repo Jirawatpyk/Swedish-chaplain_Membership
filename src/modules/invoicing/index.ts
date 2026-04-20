@@ -108,6 +108,32 @@ export {
 } from './application/use-cases/record-payment';
 
 export {
+  issueCreditNote,
+  issueCreditNoteSchema,
+  type IssueCreditNoteInput,
+  type IssueCreditNoteError,
+} from './application/use-cases/issue-credit-note';
+
+export {
+  getCreditNote,
+  type GetCreditNoteInput,
+  type GetCreditNoteError,
+} from './application/use-cases/get-credit-note';
+
+export {
+  getCreditNotePdfSignedUrl,
+  type GetCreditNotePdfSignedUrlInput,
+  type GetCreditNotePdfSignedUrlError,
+} from './application/use-cases/get-credit-note-pdf-signed-url';
+
+export {
+  asCreditNoteId,
+  parseCreditNoteId,
+  type CreditNote,
+  type CreditNoteId,
+} from './domain/credit-note';
+
+export {
   updateInvoiceDraft,
   updateInvoiceDraftSchema,
   type UpdateInvoiceDraftInput,
@@ -144,6 +170,9 @@ export {
   makeDeleteInvoiceDraftDeps,
   makeGetInvoiceDeps,
   makeRecordPaymentDeps,
+  makeIssueCreditNoteDeps,
+  makeGetCreditNoteDeps,
+  makeGetCreditNotePdfSignedUrlDeps,
   makeUpdateInvoiceDraftDeps,
   makeUpdateTenantInvoiceSettingsDeps,
   makeUploadTenantLogoDeps,

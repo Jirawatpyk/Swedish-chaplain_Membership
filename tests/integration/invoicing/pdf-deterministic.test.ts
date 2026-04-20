@@ -142,6 +142,44 @@ describe('F4 PDF deterministic render — SC-003 (T017)', () => {
     assertPdfStructurallyEquivalent(a, b);
   }, 60_000);
 
+  // T079 — credit-note reference block presence. When the template
+  // receives the `creditNote` context, the rendered PDF MUST include
+  // the original-invoice reference block (Thai RD ใบลดหนี้ content
+  // requirement / FR-020 AS1). We assert the byte length grows versus
+  // a credit-note WITHOUT the context — the reference block's labels,
+  // document number, date, and reason contribute physical page real
+  // estate that the baseline lacks.
+  //
+  // We do NOT substring-search for ASCII tokens in the PDF byte
+  // stream because @react-pdf encodes all text through the Sarabun
+  // font subset — ASCII characters are mapped to glyph indices and
+  // are not recoverable without decompressing the content stream and
+  // decoding through the font's CMap (~excessive for this unit test).
+  // Visual verification happens in the manual QA + E2E paths.
+  //
+  // The length-grew check is the load-bearing assertion: it fails if
+  // someone accidentally removes the template branch or breaks the
+  // `input.creditNote` conditional, which is exactly the regression
+  // this test is protecting against.
+  it('credit-note with creditNote context renders the reference block', async () => {
+    const baseline = makeInput('credit_note');
+    const withCtx: PdfRenderInput = {
+      ...baseline,
+      creditNote: {
+        originalDocumentNumber: 'SC-2026-000042',
+        originalIssueDate: '2026-03-01',
+        reason: 'Membership cancelled mid-year',
+      },
+    };
+    const a = await reactPdfRenderAdapter.render(baseline);
+    const b = await reactPdfRenderAdapter.render(withCtx);
+    expect(b.bytes.byteLength).toBeGreaterThan(a.bytes.byteLength);
+    // Re-render with ctx should be structurally equivalent (length +
+    // magic) to itself — regression guard on the new branch.
+    const bb = await reactPdfRenderAdapter.render(withCtx);
+    assertPdfStructurallyEquivalent(b, bb);
+  }, 90_000);
+
   it('void-stamped invoice template — render twice → structurally identical', async () => {
     const input: PdfRenderInput = {
       ...makeInput('void_stamped_invoice'),

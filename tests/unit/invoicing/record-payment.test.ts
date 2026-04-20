@@ -169,6 +169,7 @@ function makeDeps(
       lockForUpdate: vi.fn(async () =>
         rowExists ? ((draft?.status ?? 'issued') as InvoiceStatus) : null,
       ),
+      applyCreditNoteRollup: vi.fn(),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),

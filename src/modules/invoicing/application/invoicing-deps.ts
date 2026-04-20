@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { systemClock } from './ports/clock-port';
 import { makeDrizzleInvoiceRepo } from '../infrastructure/repos/drizzle-invoice-repo';
+import { makeDrizzleCreditNoteRepo } from '../infrastructure/repos/drizzle-credit-note-repo';
 import { drizzleTenantSettingsRepo } from '../infrastructure/repos/drizzle-tenant-settings-repo';
 import { postgresSequenceAllocator } from '../infrastructure/adapters/postgres-sequence-allocator';
 import { reactPdfRenderAdapter } from '../infrastructure/adapters/react-pdf-render-adapter';
@@ -29,6 +30,9 @@ import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
 import type { GetInvoiceDeps } from './use-cases/get-invoice';
 import type { RecordPaymentDeps } from './use-cases/record-payment';
 import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
+import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
+import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
+import type { GetCreditNotePdfSignedUrlDeps } from './use-cases/get-credit-note-pdf-signed-url';
 
 export function makeCreateInvoiceDraftDeps(tenantId: string): CreateInvoiceDraftDeps {
   return {
@@ -152,6 +156,38 @@ export function makeGetInvoiceDeps(tenantId: string): GetInvoiceDeps {
 export function makeUpdateInvoiceDraftDeps(tenantId: string): UpdateInvoiceDraftDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    audit: f4AuditAdapter,
+  };
+}
+
+export function makeIssueCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    sequenceAllocator: postgresSequenceAllocator,
+    pdfRender: reactPdfRenderAdapter,
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+    clock: systemClock,
+    outbox: resendEmailOutboxAdapter,
+    currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+  };
+}
+
+export function makeGetCreditNoteDeps(tenantId: string): GetCreditNoteDeps {
+  return {
+    creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
+    audit: f4AuditAdapter,
+  };
+}
+
+export function makeGetCreditNotePdfSignedUrlDeps(
+  tenantId: string,
+): GetCreditNotePdfSignedUrlDeps {
+  return {
+    creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
+    blob: vercelBlobAdapter,
     audit: f4AuditAdapter,
   };
 }

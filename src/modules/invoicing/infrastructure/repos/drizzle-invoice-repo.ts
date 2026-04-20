@@ -546,5 +546,43 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
         .returning({ invoiceId: invoices.invoiceId });
       if (!updated) throw new InvoiceApplyConflictError('applyDraftUpdate');
     },
+
+    async applyCreditNoteRollup(txUnknown, input): Promise<Invoice> {
+      const tx = txUnknown as TenantTx;
+      // Single atomic UPDATE: bump credited_total + flip status. The
+      // WHERE guard requires the pre-rollup status be paid OR
+      // partially_credited — anything else (draft / issued / void /
+      // credited) means a concurrent state change raced ahead and we
+      // must bail so the caller can roll back.
+      const [updated] = await tx
+        .update(invoices)
+        .set({
+          creditedTotalSatang: input.newCreditedTotalSatang,
+          status: input.newStatus,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            // allow rollup from paid OR partially_credited only
+            sql`${invoices.status} IN ('paid', 'partially_credited')`,
+          ),
+        )
+        .returning();
+      if (!updated) throw new InvoiceApplyConflictError('applyCreditNoteRollup');
+
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, input.tenantId),
+            eq(invoiceLines.invoiceId, input.invoiceId),
+          ),
+        )
+        .orderBy(asc(invoiceLines.position));
+      return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
+    },
   };
 }

@@ -110,6 +110,7 @@ function makeDeps(invoice: Invoice | null) {
         applyPayment: vi.fn(),
         applyDraftUpdate: vi.fn(),
         lockForUpdate: vi.fn(async () => 'issued' as const),
+        applyCreditNoteRollup: vi.fn(),
       },
       blob: { signDownloadUrl: blob.signDownloadUrl } as unknown as Parameters<
         typeof getInvoicePdfSignedUrl

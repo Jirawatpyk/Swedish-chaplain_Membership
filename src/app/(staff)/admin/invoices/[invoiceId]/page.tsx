@@ -253,6 +253,15 @@ export default async function InvoiceDetailPage({
                 issueDate={invoice.issueDate}
               />
             )}
+            {(invoice.status === 'paid' || invoice.status === 'partially_credited') &&
+              isAdmin && (
+                <Link
+                  href={`/admin/invoices/${invoice.invoiceId}/credit-notes/new`}
+                  className={buttonVariants({ variant: 'outline' })}
+                >
+                  {t('actions.issueCreditNote')}
+                </Link>
+              )}
             {!isDraft && invoice.pdf && (
               // Plain <a> (not <Link>) — the PDF endpoint returns a
               // binary stream, which Next.js Link misinterprets as an

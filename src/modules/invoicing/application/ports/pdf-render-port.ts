@@ -35,6 +35,18 @@ export interface PdfRenderInput {
   readonly vat: Money;
   readonly total: Money;
   readonly voidReason?: string | null;
+  /**
+   * T078/T079 — credit-note-specific context. Required when
+   * `kind === 'credit_note'`; ignored otherwise. Carries the reference
+   * to the original invoice so the template can render the required
+   * "in reference to invoice #… dated …" block (Thai RD ใบลดหนี้
+   * content requirement).
+   */
+  readonly creditNote?: {
+    readonly originalDocumentNumber: string;
+    readonly originalIssueDate: string;
+    readonly reason: string;
+  } | null;
 }
 
 export interface PdfRenderResult {

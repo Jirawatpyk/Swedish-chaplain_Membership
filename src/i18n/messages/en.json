@@ -881,6 +881,32 @@
         "updated": "Invoice settings updated."
       }
     },
+    "creditNotes": {
+      "new": {
+        "title": "Issue credit note",
+        "description": "Issue a formal credit note (ใบลดหนี้) against this paid invoice. A new sequential tax-document number is assigned and the original invoice moves to credited or partially credited.",
+        "backToInvoice": "Back to invoice",
+        "againstInvoice": "Against invoice",
+        "remainingLabel": "Creditable remainder:",
+        "amountLabel": "Credit amount (incl. VAT)",
+        "amountHelp": "Enter the gross amount to credit, inclusive of VAT. VAT is split proportionally to the original invoice.",
+        "exceedsRemainder": "Amount exceeds remainder ({remaining}).",
+        "reasonLabel": "Reason",
+        "reasonHelp": "Shown on the credit note PDF and audit trail. Required, up to 500 characters.",
+        "confirmPhrase": "CREDIT",
+        "confirmCopy": "Type {phrase} to confirm this irreversible action.",
+        "confirmMismatch": "The phrase must be {phrase}.",
+        "submit": "Issue credit note",
+        "submitting": "Issuing…",
+        "cancel": "Cancel",
+        "success": "Credit note issued.",
+        "errors": {
+          "failed": "Credit note could not be issued.",
+          "unknown": "An unknown error occurred. Please try again.",
+          "codeFallback": "Error code: {code}"
+        }
+      }
+    },
     "invoices": {
       "meta": {
         "title": "Invoices"
@@ -963,7 +989,8 @@
           "preview": "Preview",
           "issue": "Issue…",
           "download": "Download PDF",
-          "pay": "Record payment"
+          "pay": "Record payment",
+          "issueCreditNote": "Issue credit note"
         },
         "fields": {
           "memberId": "Member",
