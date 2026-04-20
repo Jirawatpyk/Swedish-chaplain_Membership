@@ -11,7 +11,7 @@
  *   - 404 invoice_not_found → HTTP 404
  *   - 409 invalid_status → HTTP 409
  *   - 409 credit_exceeds_remainder → HTTP 409 with bigint→string payload
- *   - 409 settings_missing → HTTP 409
+ *   - 422 settings_missing → HTTP 422 (aligned with issue-invoice)
  *   - 422 no_snapshot_on_invoice → HTTP 422
  *   - 422 overflow → HTTP 422
  *   - 500 pdf_render_failed → HTTP 500
@@ -166,6 +166,19 @@ describe('POST /api/credit-notes — contract', () => {
     expect((await res.json()).error.code).toBe('invalid_body');
   });
 
+  it('400 invalid_body on zero creditTotalSatang (S-3)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+    const POST = await loadHandler();
+    const res = await POST(makeReq(makeBody({ creditTotalSatang: '0' })));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('invalid_body');
+    // A zero-value "credit note" is semantically meaningless — the
+    // schema's positive-bigint refinement must reject it at the
+    // boundary before the use-case ever runs.
+    expect(issueCreditNoteMock).not.toHaveBeenCalled();
+  });
+
   it('400 invalid_body on non-numeric creditTotalSatang string', async () => {
     requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
@@ -203,7 +216,7 @@ describe('POST /api/credit-notes — contract', () => {
     ['invoice_not_found', 404],
     ['invalid_status', 409],
     ['concurrent_state_change', 409],
-    ['settings_missing', 409],
+    ['settings_missing', 422],
     ['no_snapshot_on_invoice', 422],
     ['pdf_render_failed', 500],
     ['blob_upload_failed', 500],

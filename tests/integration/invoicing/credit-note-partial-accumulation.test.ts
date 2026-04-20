@@ -450,6 +450,11 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
     );
     expect(afterRow!.blobKey).toBe(originalBlobKey); // same key
     expect(afterRow!.sha).not.toBe(originalSha); // new bytes
+    // Review I-6 — pin that the DB row's sha is the EXACT value the
+    // render adapter produced (mock returns 'b'*64). This catches a
+    // regression where `applyInvoicePdfRegeneration` writes the wrong
+    // value (e.g. the CN's sha instead of the re-render's sha).
+    expect(afterRow!.sha).toBe('b'.repeat(64));
     expect(afterRow!.status).toBe('partially_credited');
 
     // (d): audit trail — both `credit_note_issued` and
@@ -462,6 +467,7 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
     const payload = regenEvent!.payload as Record<string, unknown>;
     expect(payload.original_sha256).toBe(originalSha);
     expect(payload.new_sha256).toBe(afterRow!.sha);
+    expect(payload.new_sha256).toBe('b'.repeat(64)); // audit mirrors DB row
     expect(payload.reason).toBe('credit_note_annotation');
     expect(payload.triggered_by_credit_note_id).toBeDefined();
 

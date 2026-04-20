@@ -94,6 +94,24 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // 2. Test-tenant data: members, contacts, plans, invoice_settings,
   //    tokens, outbox. Scoped by tenant_id LIKE 'test-%'. Order matters:
   //    child tables first, then parents.
+  // F4 invoicing cascade — credit_notes → invoice_lines → invoices.
+  // invoices.draft_by_user_id / paid_by_user_id / voided_by_user_id
+  // reference users(id) with ON DELETE restrict to preserve tax audit
+  // trails; test users cannot be deleted while any test-tenant invoice
+  // row still references them. Must happen BEFORE the users DELETE.
+  await db.execute(
+    sql`DELETE FROM credit_notes WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM invoice_lines WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM invoices WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM tenant_document_sequences WHERE tenant_id LIKE 'test-%'`,
+  );
+
   const emailTokensDeleted = await db.execute(
     sql`DELETE FROM email_change_tokens WHERE tenant_id LIKE 'test-%' RETURNING id`,
   );

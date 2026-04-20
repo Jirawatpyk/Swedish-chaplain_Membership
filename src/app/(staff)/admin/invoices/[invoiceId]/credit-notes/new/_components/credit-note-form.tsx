@@ -106,8 +106,10 @@ export function CreditNoteForm({
         return;
       }
       toast.success(t('success'));
+      // Destination page (`/admin/invoices/[id]`) is a server component
+      // that fetches fresh on mount; `router.refresh()` here would
+      // invalidate the abandoned form route, not the target. Drop it.
       router.push(`/admin/invoices/${invoiceId}`);
-      router.refresh();
     });
   }, [canSubmit, proposedSatang, invoiceId, reason, t, router]);
 

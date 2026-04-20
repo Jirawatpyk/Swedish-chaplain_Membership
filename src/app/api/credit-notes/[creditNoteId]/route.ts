@@ -23,24 +23,39 @@ export async function GET(
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
 
-  const result = await getCreditNote(makeGetCreditNoteDeps(tenantCtx.slug), {
-    tenantId: tenantCtx.slug,
-    creditNoteId,
-    actor: {
-      userId: ctx.current.user.id,
-      role: ctx.current.user.role as 'admin' | 'manager',
-      requestId,
-    },
-  });
-  if (!result.ok) {
-    logger.warn(
-      { requestId, tenantId: tenantCtx.slug, creditNoteId, errorCode: result.error.code },
-      'GET /api/credit-notes/[id] failed',
+  // Wrap the whole use-case + serialisation path: the repo's
+  // row→domain mapping can throw on corrupt `document_number` /
+  // `pdf_sha256` / VAT-balance violations. Without this catch the
+  // throw escapes Result handling and surfaces as an unlogged 500.
+  try {
+    const result = await getCreditNote(makeGetCreditNoteDeps(tenantCtx.slug), {
+      tenantId: tenantCtx.slug,
+      creditNoteId,
+      actor: {
+        userId: ctx.current.user.id,
+        role: ctx.current.user.role as 'admin' | 'manager',
+        requestId,
+      },
+    });
+    if (!result.ok) {
+      logger.warn(
+        { requestId, tenantId: tenantCtx.slug, creditNoteId, errorCode: result.error.code },
+        'GET /api/credit-notes/[id] failed',
+      );
+      return NextResponse.json(
+        { error: { code: result.error.code } },
+        { status: result.error.code === 'not_found' ? 404 : 500 },
+      );
+    }
+    return NextResponse.json(serialiseCreditNote(result.value));
+  } catch (err) {
+    logger.error(
+      { requestId, tenantId: tenantCtx.slug, creditNoteId, err: String(err) },
+      'GET /api/credit-notes/[id] — unexpected error',
     );
     return NextResponse.json(
-      { error: { code: result.error.code } },
-      { status: result.error.code === 'not_found' ? 404 : 500 },
+      { error: { code: 'internal_error' } },
+      { status: 500 },
     );
   }
-  return NextResponse.json(serialiseCreditNote(result.value));
 }

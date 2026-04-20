@@ -29,16 +29,31 @@ export async function GET(
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
 
-  const result = await getCreditNotePdfSignedUrl(
-    makeGetCreditNotePdfSignedUrlDeps(tenantCtx.slug),
-    {
-      tenantId: tenantCtx.slug,
-      actorUserId: ctx.current.user.id,
-      actorRole: ctx.current.user.role as 'admin' | 'manager',
-      requestId,
-      creditNoteId,
-    },
-  );
+  let result: Awaited<ReturnType<typeof getCreditNotePdfSignedUrl>>;
+  try {
+    result = await getCreditNotePdfSignedUrl(
+      makeGetCreditNotePdfSignedUrlDeps(tenantCtx.slug),
+      {
+        tenantId: tenantCtx.slug,
+        actorUserId: ctx.current.user.id,
+        actorRole: ctx.current.user.role as 'admin' | 'manager',
+        requestId,
+        creditNoteId,
+      },
+    );
+  } catch (err) {
+    // Blob `head()` failure, repo row-map throws on corrupt data, or
+    // any other unexpected throw escape the use-case. Without this
+    // catch the route surfaces a 500 with no structured log.
+    logger.error(
+      { requestId, tenantId: tenantCtx.slug, creditNoteId, err: String(err) },
+      'GET /api/credit-notes/[id]/pdf — unexpected error',
+    );
+    return NextResponse.json(
+      { error: { code: 'internal_error' } },
+      { status: 500 },
+    );
+  }
   if (!result.ok) {
     logger.warn(
       { requestId, tenantId: tenantCtx.slug, creditNoteId, errorCode: result.error.code },

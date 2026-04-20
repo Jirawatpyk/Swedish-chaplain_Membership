@@ -76,18 +76,18 @@ export const vercelBlobAdapter: BlobStoragePort = {
   },
 
   async signDownloadUrl(key: string, ttlSeconds?: number): Promise<string> {
-    // `ttlSeconds` is part of the port signature for future
-    // @vercel/blob signed-URL API support; today we return the
-    // stable public URL regardless. See comment below.
+    // `ttlSeconds` is part of the port signature; the current
+    // implementation returns the stable URL emitted by `put`.
     void ttlSeconds;
-    // Vercel Blob does not currently support per-request signed URLs
-    // with arbitrary TTL via the SDK; the URL returned by `put` is
-    // stable but the access (public vs private) is set at upload.
-    // We use `access: 'public'` with a randomised unguessable path
-    // prefix per tenant. Rotate keys periodically to invalidate.
-    // A dedicated @vercel/blob signed-URL API is on Vercel's roadmap;
-    // when it lands we'll switch this adapter to 60s TTL issuance
-    // (spec intent — FR-005 T-05 mitigation).
+    // Current Chamber-OS approach: `put` uses access mode selected at
+    // upload and returns a stable URL. Access control is enforced by
+    // the server fetching + proxying bytes through our own route
+    // (`/api/invoices/[id]/pdf`, `/api/credit-notes/[id]/pdf`); the
+    // Blob URL is never exposed to the client. Per-request signed
+    // URLs with arbitrary TTL via the SDK are not used here even
+    // where available, because the proxy path gives us one consistent
+    // auth boundary + audit point regardless of Blob-SDK capability
+    // drift. FR-005 T-05 mitigation is satisfied by the proxy.
     const blob = await head(key, { token: env.blob.readWriteToken });
     return blob.url;
   },

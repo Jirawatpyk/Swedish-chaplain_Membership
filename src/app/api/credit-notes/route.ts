@@ -31,7 +31,7 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
   invalid_status: 409,
   concurrent_state_change: 409,
   credit_exceeds_remainder: 409,
-  settings_missing: 409,
+  settings_missing: 422,
   no_snapshot_on_invoice: 422,
   overflow: 422,
   pdf_render_failed: 500,

@@ -98,18 +98,65 @@ describe('calculateCreditNoteVat — rejection', () => {
   });
 });
 
+describe('calculateCreditNoteVat — partition VAT-sum invariant (N ≥ 3 deterministic cases)', () => {
+  // Review I-7 — property test below bounds N to 2 with a ±1-satang
+  // drift tolerance. FR-022 does not cap the number of partial credits
+  // per invoice, so we pin representative N=3 and N=5 deterministic
+  // cases here to guarantee the ⌈N/2⌉ theoretical drift bound holds in
+  // practice. If a future rounding-policy change regresses this, one of
+  // these assertions will fail loudly without relying on shrinkage.
+  it('3-part equal split holds ⌈3/2⌉ = 2 satang drift bound', () => {
+    // 333.33 + 333.33 + 333.34 THB against a 1000 THB @ 7% invoice.
+    const v = calculateVat(Money.fromTHB(1000), VatRate.ofUnsafe('0.0700'));
+    const parts = [
+      Money.fromSatangUnsafe(35666n),
+      Money.fromSatangUnsafe(35666n),
+      Money.fromSatangUnsafe(35668n), // remainder absorber
+    ];
+    expect(parts[0]!.satang + parts[1]!.satang + parts[2]!.satang).toBe(v.total.satang);
+    let sum = 0n;
+    for (const p of parts) {
+      const r = expectOk(
+        calculateCreditNoteVat({ creditTotal: p, originalVat: v.vat, originalTotal: v.total }),
+      );
+      sum += r.vat.satang;
+    }
+    const drift = sum - v.vat.satang;
+    // ⌈3/2⌉ = 2 satang worst case
+    expect(drift).toBeLessThanOrEqual(2n);
+    expect(drift).toBeGreaterThanOrEqual(-2n);
+  });
+
+  it('5-part equal split holds ⌈5/2⌉ = 3 satang drift bound', () => {
+    // 5 × 214 THB = 1070 THB (exact — avoids remainder asymmetry).
+    const v = calculateVat(Money.fromTHB(1000), VatRate.ofUnsafe('0.0700'));
+    const parts = [
+      Money.fromSatangUnsafe(21400n),
+      Money.fromSatangUnsafe(21400n),
+      Money.fromSatangUnsafe(21400n),
+      Money.fromSatangUnsafe(21400n),
+      Money.fromSatangUnsafe(21400n),
+    ];
+    expect(parts.reduce((a, b) => a + b.satang, 0n)).toBe(v.total.satang);
+    let sum = 0n;
+    for (const p of parts) {
+      const r = expectOk(
+        calculateCreditNoteVat({ creditTotal: p, originalVat: v.vat, originalTotal: v.total }),
+      );
+      sum += r.vat.satang;
+    }
+    const drift = sum - v.vat.satang;
+    // ⌈5/2⌉ = 3 satang worst case
+    expect(drift).toBeLessThanOrEqual(3n);
+    expect(drift).toBeGreaterThanOrEqual(-3n);
+  });
+});
+
 describe('calculateCreditNoteVat — property: partition VAT-sum invariant', () => {
-  // Spec T076 writes the invariant as `≤ original-vat + 1`. That bound
-  // is exact only for 1-part (equality) and 2-part (±1) partitions; a
-  // proportional split into N parts with half-away-from-zero rounding
-  // has a theoretical worst-case drift of ⌈N/2⌉ satang — a natural
-  // consequence of each independent rounding step contributing up to
-  // ½ satang. This property test bounds N to 2 (covers AS1 full +
-  // AS2 partial exactly); the mathematical ⌈N/2⌉ bound for N ≥ 3 is
-  // documented but NOT asserted here because real bookkeeping does
-  // not issue >2 partial credits per invoice. SG-4 (review 2026-04-20)
-  // — previously this comment claimed "≤ 6 partitions" which was
-  // inconsistent with the `maxLength: 2` array cap below.
+  // The property test bounds N to 2 with the spec's tight ±1-satang
+  // guarantee. The mathematical ⌈N/2⌉ bound for N ≥ 3 is asserted by
+  // deterministic cases above; real bookkeeping rarely issues >2
+  // partial credits per invoice, so fast-check stays narrow.
   it('forAll (total ≥ 100 THB) (partition into 1..2 parts) (vatRate ∈ [0, 0.30]) → sum(cn-vats) is within 1 satang of originalVat', () => {
     fc.assert(
       fc.property(

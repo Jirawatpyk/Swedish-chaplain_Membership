@@ -52,6 +52,7 @@ import {
   type InvoiceId,
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
+import { asInvoiceLineId } from '@/modules/invoicing/domain/invoice-line';
 import {
   asCreditNoteId,
   type CreditNote,
@@ -258,6 +259,27 @@ export async function issueCreditNote(
 
       // G. Render PDF (bilingual ใบลดหนี้ / Credit Note + original-invoice
       // reference block via `creditNote` context).
+      //
+      // Review C-1 — the CN PDF body shows a SINGLE synthetic line
+      // whose amount equals the credit amount, not the original
+      // invoice's itemised lines. Rationale: on a partial credit
+      // (e.g. 10,700 of a 53,500 invoice), rendering the original
+      // line amounts verbatim would leave line-sum ≠ totals-block,
+      // which is both visually inconsistent and a Thai RD §86/4
+      // interpretation risk. A single aggregated "Credit against
+      // {original doc #}" line keeps the PDF arithmetically coherent
+      // across full + partial + multi-partial credit notes.
+      const syntheticLine = {
+        lineId: asInvoiceLineId(creditNoteId),
+        kind: 'registration_fee' as const,
+        descriptionTh: `ลดหนี้ตาม ${loaded.documentNumber.raw}`,
+        descriptionEn: `Credit against ${loaded.documentNumber.raw}`,
+        unitPrice: creditAmount,
+        quantity: '1.0000',
+        proRateFactor: null,
+        total: creditAmount,
+        position: 1,
+      };
       let rendered;
       try {
         rendered = await deps.pdfRender.render({
@@ -268,7 +290,7 @@ export async function issueCreditNote(
           dueDate: null,
           tenant: loaded.tenantIdentitySnapshot,
           member: loaded.memberIdentitySnapshot,
-          lines: loaded.lines,
+          lines: [syntheticLine],
           // Money fields carry the credit-note's own amounts — the
           // template reads these for the totals block.
           subtotal: creditAmount,
@@ -440,11 +462,19 @@ export async function issueCreditNote(
           });
         }
 
-        await deps.invoiceRepo.applyInvoicePdfRegeneration(tx, {
-          tenantId: input.tenantId,
-          invoiceId,
-          pdfSha256: rerendered.sha256,
-        });
+        try {
+          await deps.invoiceRepo.applyInvoicePdfRegeneration(tx, {
+            tenantId: input.tenantId,
+            invoiceId,
+            pdfSha256: rerendered.sha256,
+          });
+        } catch (e) {
+          logger.error(
+            { err: String(e), invoiceId, creditNoteId },
+            'issueCreditNote: applyInvoicePdfRegeneration failed',
+          );
+          throw new IssueCreditNoteInternalError({ code: 'concurrent_state_change' });
+        }
 
         // Companion audit event `invoice_pdf_regenerated` (introduced
         // in F4 alongside R3-E4 / CP-5.2 Best-Practice PDF integrity —
