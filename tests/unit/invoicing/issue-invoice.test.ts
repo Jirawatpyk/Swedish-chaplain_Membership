@@ -156,6 +156,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       // tests override this to test status-race branches.
       lockForUpdate: vi.fn(async () => (draft?.status ?? null) as InvoiceStatus | null),
       applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),

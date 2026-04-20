@@ -65,6 +65,7 @@ describe('getInvoice', () => {
       applyDraftUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => 'issued' as const),
       applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
       },
     };
     const r = await getInvoice(deps, { tenantId: 't', invoiceId: 'i' });
@@ -87,6 +88,7 @@ describe('getInvoice', () => {
       applyDraftUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => 'issued' as const),
       applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
       },
     };
     const r = await getInvoice(deps, { tenantId: 't', invoiceId: 'missing' });
@@ -116,6 +118,7 @@ describe('getInvoice', () => {
         applyDraftUpdate: vi.fn(),
         lockForUpdate: vi.fn(async () => 'issued' as const),
       applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
       },
       audit: { emit: auditEmit },
     };
@@ -165,6 +168,7 @@ describe('getInvoice', () => {
         applyDraftUpdate: vi.fn(),
         lockForUpdate: vi.fn(async () => 'issued' as const),
       applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
       },
       audit: { emit: auditEmit },
     };

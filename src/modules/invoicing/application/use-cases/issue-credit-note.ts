@@ -343,6 +343,104 @@ export async function issueCreditNote(
         throw e;
       }
 
+      // J2. US6 AS4 — re-render the original invoice PDF with a
+      // CREDITED / PARTIALLY CREDITED annotation + CN-reference
+      // footer, then overwrite at the SAME Blob key (content-address
+      // preserved). Mirrors the VOID-stamping pattern (FR-008) so
+      // downstream readers (admin, member, bookkeeper email export)
+      // see the status change on the invoice document itself. We
+      // re-render with the PINNED `invoice.pdf.templateVersion` (NOT
+      // currentTemplateVersion) so R3-E4 / FR-016 layout-integrity
+      // rules hold — the annotation is additive, template layout is
+      // unchanged.
+      //
+      // `pdfBlobKey` is guaranteed non-null here because the paid-
+      // state guard at the top of the use case implies the invoice
+      // was issued (has `pdf`). TypeScript can't prove this statically
+      // so we re-check and bail cleanly if the snapshot is somehow
+      // missing (this branch is unreachable under valid state).
+      if (loaded.pdf) {
+        const allCreditNotes = await deps.creditNoteRepo.findByOriginalInvoiceInTx(
+          tx,
+          invoiceId,
+          input.tenantId,
+        );
+        const annotationRefs = allCreditNotes
+          .slice()
+          .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+          .map((x) => ({
+            documentNumber: x.documentNumber.raw,
+            issueDate: x.issueDate,
+            totalSatang: x.total.satang.toString(),
+          }));
+
+        let rerendered;
+        try {
+          rerendered = await deps.pdfRender.render({
+            kind: 'invoice',
+            templateVersion: loaded.pdf.templateVersion,
+            documentNumber: loaded.documentNumber,
+            issueDate: loaded.issueDate,
+            dueDate: loaded.dueDate,
+            tenant: loaded.tenantIdentitySnapshot,
+            member: loaded.memberIdentitySnapshot,
+            lines: loaded.lines,
+            subtotal: loaded.subtotal,
+            vatRate: loaded.vatRate,
+            vat: loaded.vat,
+            total: loaded.total,
+            creditedAnnotation: {
+              fullyCredited,
+              references: annotationRefs,
+            },
+          });
+        } catch (e) {
+          throw new IssueCreditNoteInternalError({
+            code: 'pdf_render_failed',
+            reason: `annotation render: ${String(e)}`,
+          });
+        }
+
+        try {
+          await deps.blob.uploadPdf({
+            key: loaded.pdf.blobKey,
+            body: rerendered.bytes,
+            contentType: 'application/pdf',
+          });
+        } catch (e) {
+          throw new IssueCreditNoteInternalError({
+            code: 'blob_upload_failed',
+            reason: `annotation upload: ${String(e)}`,
+          });
+        }
+
+        await deps.invoiceRepo.applyInvoicePdfRegeneration(tx, {
+          tenantId: input.tenantId,
+          invoiceId,
+          pdfSha256: rerendered.sha256,
+        });
+
+        // Companion audit event (the existing `invoice_pdf_regenerated`
+        // type introduced for R3-E4 / CP-5.2 — same payload shape).
+        // Captures the before/after sha256 so the 10-year audit trail
+        // can reconstruct the exact document state at any point.
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'invoice_pdf_regenerated',
+          actorUserId: input.actorUserId,
+          summary: `Invoice ${loaded.documentNumber.raw} PDF regenerated with ${fullyCredited ? 'CREDITED' : 'PARTIALLY CREDITED'} annotation`,
+          payload: {
+            invoice_id: invoiceId,
+            invoice_number: loaded.documentNumber.raw,
+            original_sha256: loaded.pdf.sha256,
+            new_sha256: rerendered.sha256,
+            reason: 'credit_note_annotation',
+            triggered_by_credit_note_id: creditNoteId,
+          },
+        });
+      }
+
       // K. Audit.
       await deps.audit.emit(tx, {
         tenantId: input.tenantId,

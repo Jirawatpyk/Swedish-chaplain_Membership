@@ -147,5 +147,24 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
       });
       return rows.map((r) => rowToCreditNote(r as CreditNoteRow));
     },
+
+    async findByOriginalInvoiceInTx(
+      txUnknown,
+      originalInvoiceId: InvoiceId,
+      tenantIdArg: string,
+    ): Promise<readonly CreditNote[]> {
+      const tx = txUnknown as TenantTx;
+      const rows = await tx
+        .select()
+        .from(creditNotes)
+        .where(
+          and(
+            eq(creditNotes.tenantId, tenantIdArg),
+            eq(creditNotes.originalInvoiceId, originalInvoiceId),
+          ),
+        )
+        .orderBy(desc(creditNotes.createdAt));
+      return rows.map((r) => rowToCreditNote(r as CreditNoteRow));
+    },
   };
 }

@@ -75,6 +75,7 @@ function makeDeps(draft: Invoice | null): TestDeps {
       applyDraftUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => 'issued' as const),
       applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
     },
     audit: { emit: vi.fn(async () => {}) },
     _tx: tx,

@@ -100,6 +100,41 @@ const styles = StyleSheet.create({
   },
   cnRefLine: { fontSize: 10, marginBottom: 2 },
   cnRefLabel: { fontSize: 9, color: '#555', marginBottom: 2 },
+  // US6 AS4 — credited-invoice diagonal overlay. Colour matches the
+  // VOID stamp pattern (warm red at 35% opacity) so the visual
+  // vocabulary is consistent: "this document carries a status-change
+  // annotation". Angle, size, and position are IDENTICAL to the VOID
+  // stamp so both can never overlap (an invoice cannot be both VOID
+  // and CREDITED — state machine makes them mutually exclusive).
+  creditedStamp: {
+    position: 'absolute',
+    top: 260,
+    left: 100,
+    fontSize: 64,
+    color: 'rgba(180,80,0,0.32)',
+    fontWeight: 700,
+    transform: 'rotate(-20deg)',
+  },
+  // Footer table listing referencing credit notes. Rendered below the
+  // amount-in-words lines, above the document footer.
+  cnRefFooterBlock: {
+    marginTop: 12,
+    padding: 8,
+    borderTop: '1 solid #ccc',
+  },
+  cnRefFooterLabel: {
+    fontSize: 9,
+    color: '#555',
+    marginBottom: 4,
+    fontWeight: 500,
+  },
+  cnRefFooterRow: {
+    flexDirection: 'row',
+    fontSize: 9,
+    marginBottom: 2,
+  },
+  cnRefFooterCell: { flex: 1 },
+  cnRefFooterCellAmt: { flex: 1, textAlign: 'right' },
 });
 
 function formatThbSatang(satang: bigint): string {
@@ -144,6 +179,13 @@ export function InvoiceTemplate(input: PdfRenderInput) {
       <Page size="A4" style={styles.page}>
         {isPreview && <Text style={styles.watermark}>PREVIEW</Text>}
         {isVoid && <Text style={styles.voidStamp}>VOID / ยกเลิก</Text>}
+        {input.kind === 'invoice' && input.creditedAnnotation && (
+          <Text style={styles.creditedStamp}>
+            {input.creditedAnnotation.fullyCredited
+              ? shapeThai('ลดหนี้แล้ว') + ' / CREDITED'
+              : shapeThai('ลดหนี้บางส่วน') + ' / PARTIALLY CREDITED'}
+          </Text>
+        )}
 
         <View style={styles.headerRow}>
           <View style={styles.headerLeft}>
@@ -258,6 +300,25 @@ export function InvoiceTemplate(input: PdfRenderInput) {
           ({shapeThai('ตัวอักษร')}) {shapeThai(amountToThaiWords(totalThb))}
         </Text>
         <Text style={styles.wordsLine}>({amountToEnglishWords(totalThb)})</Text>
+
+        {input.kind === 'invoice' &&
+          input.creditedAnnotation &&
+          input.creditedAnnotation.references.length > 0 && (
+            <View style={styles.cnRefFooterBlock}>
+              <Text style={styles.cnRefFooterLabel}>
+                {shapeThai('อ้างอิงใบลดหนี้')} / Referenced by credit note(s):
+              </Text>
+              {input.creditedAnnotation.references.map((r) => (
+                <View key={r.documentNumber} style={styles.cnRefFooterRow}>
+                  <Text style={styles.cnRefFooterCell}>{r.documentNumber}</Text>
+                  <Text style={styles.cnRefFooterCell}>{r.issueDate}</Text>
+                  <Text style={styles.cnRefFooterCellAmt}>
+                    {formatThbSatang(BigInt(r.totalSatang))} THB
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
         <Text style={styles.footer}>
           Rendered by Chamber-OS ({shapeThai('เอกสารภาษีตามประมวลรัษฎากร มาตรา 86/4')})

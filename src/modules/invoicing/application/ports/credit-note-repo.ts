@@ -50,4 +50,17 @@ export interface CreditNoteRepo {
     originalInvoiceId: InvoiceId,
     tenantId: string,
   ): Promise<readonly CreditNote[]>;
+
+  /**
+   * Transaction-scoped variant of `findByOriginalInvoice`. Required by
+   * `issueCreditNote` to read the complete CN list (including the just-
+   * inserted row) without opening a nested `runInTenant` — that would
+   * risk the same pool-exhaustion pattern we hit with
+   * `tenantSettingsRepo.getForIssue` (see issue-credit-note.ts header).
+   */
+  findByOriginalInvoiceInTx(
+    tx: unknown,
+    originalInvoiceId: InvoiceId,
+    tenantId: string,
+  ): Promise<readonly CreditNote[]>;
 }

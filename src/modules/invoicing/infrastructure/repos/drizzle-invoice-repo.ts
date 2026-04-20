@@ -584,5 +584,27 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
         .orderBy(asc(invoiceLines.position));
       return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
     },
+
+    async applyInvoicePdfRegeneration(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // Single-column UPDATE — pdf_sha256 only. Blob key + template
+      // version are fixed by the content-addressed key + the pinned
+      // templateVersion stored at issue time. The invoices
+      // immutability trigger explicitly whitelists pdf_sha256 for
+      // re-render scenarios (VOID + CREDITED annotations + R3-E4
+      // blob-miss recovery).
+      await tx
+        .update(invoices)
+        .set({
+          pdfSha256: input.pdfSha256,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        );
+    },
   };
 }

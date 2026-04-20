@@ -170,6 +170,7 @@ function makeDeps(
         rowExists ? ((draft?.status ?? 'issued') as InvoiceStatus) : null,
       ),
       applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
