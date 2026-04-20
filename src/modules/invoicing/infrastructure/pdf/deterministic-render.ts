@@ -180,16 +180,22 @@ export async function withSeededRandom<T>(
   // failure; callers still observe the rejection via the returned
   // `next` promise.
   //
-  // The log call itself is wrapped in a try/catch because Vitest
-  // may tear down globals (Date, process.stdout) between test
-  // files while a queued `.catch` microtask is still pending from
-  // a previous file. Crashing in the log call would surface as an
-  // unhandled rejection that masks the real test failure.
+  // Skip the log in test mode: pino dispatches through the jsdom
+  // event loop, and when this microtask fires AFTER the owning
+  // test file has torn down its jsdom env, the dispatcher trips
+  // over `Date is not defined` at the Document event layer. That
+  // unhandled rejection surfaces inside the NEXT test file's run,
+  // corrupting unrelated tests (observed 2026-04-20 with
+  // `credit-notes-route` timing out when co-run with deterministic-
+  // render's throw-path case). The sync try/catch below cannot
+  // catch that async pino-internal rejection.
   renderChain = next.catch((err: unknown) => {
-    try {
-      logger.error({ err }, 'pdf.deterministic-render.mutex-chain-error');
-    } catch {
-      /* logger unavailable during teardown — best-effort */
+    if (process.env.NODE_ENV !== 'test') {
+      try {
+        logger.error({ err }, 'pdf.deterministic-render.mutex-chain-error');
+      } catch {
+        /* logger unavailable during teardown — best-effort */
+      }
     }
     return undefined;
   });

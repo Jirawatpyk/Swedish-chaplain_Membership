@@ -107,6 +107,11 @@ describe('POST /api/credit-notes — contract', () => {
     vi.clearAllMocks();
   });
 
+  // First test in the file eats the cold-load cost of importing the
+  // route handler (transitively pulls @react-pdf, Vercel Blob SDK,
+  // Sarabun fonts, Upstash). On a dev laptop running the full
+  // invoicing unit suite in parallel this can push past the 10s
+  // default (see vitest.config.ts note). 30s is comfortable headroom.
   it('201 happy path — returns serialised credit note', async () => {
     requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
@@ -139,7 +144,7 @@ describe('POST /api/credit-notes — contract', () => {
     expect(body.document_number).toBe('CN-2026-000001');
     // bigints serialise as strings.
     expect(body.total_satang).toBe('53500');
-  });
+  }, 30_000);
 
   it('400 invalid_json on malformed body', async () => {
     requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
