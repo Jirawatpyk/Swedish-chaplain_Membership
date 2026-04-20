@@ -25,14 +25,30 @@ import { signInViaForm, waitForLayoutContainer } from './helpers/layout';
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 
-// Fixture-presence env flags (set in the seeded staging env). Tests
-// that need deterministic row counts gate on these so the spec stays
-// green on un-seeded local dev boxes while still asserting the full
-// US3 AS contracts on CI / staging where fixtures are present.
+// Fixture-presence env flags (set in the seeded staging env by
+// `scripts/seed-e2e-portal-invoices.ts`). Tests that need
+// deterministic row counts gate on these so the spec stays green on
+// un-seeded local dev boxes while still asserting the full US3 AS
+// contracts on CI / staging where fixtures are present.
+//
+// AS3 (zero-invoice member) requires a DIFFERENT sign-in than AS1 /
+// AS4 because the same member cannot simultaneously have 3 invoices
+// and 0 invoices — so we gate AS3 on a separate credential pair.
 const EXPECTS_ROWS =
   process.env.E2E_MEMBER_HAS_INVOICES === '1' ||
   process.env.E2E_MEMBER_HAS_INVOICES === 'true';
-const EXPECTS_EMPTY = process.env.E2E_MEMBER_EMPTY === '1';
+const EXPECTS_EMPTY =
+  process.env.E2E_MEMBER_EMPTY === '1' ||
+  process.env.E2E_MEMBER_EMPTY === 'true';
+
+// AS3-only credentials (zero-invoice member seeded by
+// `seed-e2e-portal-invoices.ts`). Falls back to the main member
+// creds if unset so the gate degrades gracefully — but AS3 will then
+// skip because the main member has 3 invoices, not 0.
+const MEMBER_EMAIL_EMPTY =
+  process.env.E2E_MEMBER_EMAIL_EMPTY ?? MEMBER_EMAIL;
+const MEMBER_PASSWORD_EMPTY =
+  process.env.E2E_MEMBER_PASSWORD_EMPTY ?? MEMBER_PASSWORD;
 
 test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
   test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
@@ -179,8 +195,11 @@ test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
   });
 
   // US3 AS3 — dedicated empty-state copy assertion. Gated on
-  // `E2E_MEMBER_EMPTY=1`. Asserts the specific empty-state string,
-  // not a broad OR over "empty | not-linked | h1".
+  // `E2E_MEMBER_EMPTY=1` with a SEPARATE sign-in
+  // (`E2E_MEMBER_EMAIL_EMPTY` / `E2E_MEMBER_PASSWORD_EMPTY`) because
+  // the same member cannot simultaneously have 3 invoices (AS1 +
+  // AS4) and 0 invoices (AS3). Asserts the specific empty-state
+  // string, not a broad OR over "empty | not-linked | h1".
   test('AS3 — empty-state copy shown for member with zero invoices', async ({
     page,
   }) => {
@@ -188,11 +207,15 @@ test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
       !EXPECTS_EMPTY,
       'E2E_MEMBER_EMPTY not set — empty-state assertion skipped',
     );
+    test.skip(
+      !MEMBER_EMAIL_EMPTY || !MEMBER_PASSWORD_EMPTY,
+      'E2E_MEMBER_EMAIL_EMPTY/PASSWORD_EMPTY not set',
+    );
     await signInViaForm(
       page,
       '/portal/sign-in',
-      MEMBER_EMAIL!,
-      MEMBER_PASSWORD!,
+      MEMBER_EMAIL_EMPTY!,
+      MEMBER_PASSWORD_EMPTY!,
       /^\/portal(\/|$)/,
     );
     await page.goto('/portal/invoices');

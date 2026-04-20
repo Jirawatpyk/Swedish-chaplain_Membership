@@ -14,7 +14,10 @@
  *   5. Same input → same Math.random sequence across renders.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { withSeededRandom } from '@/modules/invoicing/infrastructure/pdf/deterministic-render';
+import {
+  withSeededRandom,
+  _resetRenderChainForTesting,
+} from '@/modules/invoicing/infrastructure/pdf/deterministic-render';
 
 describe('withSeededRandom', () => {
   const OriginalRandom = Math.random;
@@ -25,6 +28,10 @@ describe('withSeededRandom', () => {
     Math.random = OriginalRandom;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).Date = OriginalDate;
+    // Drain any pending rejection on the module-level chain so a
+    // prior test's throw doesn't surface as an "unhandled error"
+    // during Vitest teardown.
+    _resetRenderChainForTesting();
   });
 
   it('restores Math.random + Date after successful render', async () => {

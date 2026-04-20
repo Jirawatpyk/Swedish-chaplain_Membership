@@ -179,12 +179,28 @@ export async function withSeededRandom<T>(
   // Swallow the error on the chain side BUT log it so ops see the
   // failure; callers still observe the rejection via the returned
   // `next` promise.
+  //
+  // The log call itself is wrapped in a try/catch because Vitest
+  // may tear down globals (Date, process.stdout) between test
+  // files while a queued `.catch` microtask is still pending from
+  // a previous file. Crashing in the log call would surface as an
+  // unhandled rejection that masks the real test failure.
   renderChain = next.catch((err: unknown) => {
-    logger.error(
-      { err },
-      'pdf.deterministic-render.mutex-chain-error',
-    );
+    try {
+      logger.error({ err }, 'pdf.deterministic-render.mutex-chain-error');
+    } catch {
+      /* logger unavailable during teardown — best-effort */
+    }
     return undefined;
   });
   return next as Promise<T>;
+}
+
+/**
+ * Test-only: reset the module-level mutex chain so leaked rejections
+ * from one test file don't pollute the next. Exported for Vitest
+ * test isolation; never call from production code.
+ */
+export function _resetRenderChainForTesting(): void {
+  renderChain = Promise.resolve();
 }
