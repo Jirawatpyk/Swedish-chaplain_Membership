@@ -65,6 +65,10 @@ export function makeListInvoicesDeps(tenantId: string): ListInvoicesDeps {
   return { invoiceRepo: makeDrizzleInvoiceRepo(tenantId) };
 }
 
+export function makeListInvoicesByMemberDeps(tenantId: string): import('./use-cases/list-invoices-by-member').ListInvoicesByMemberDeps {
+  return { invoiceRepo: makeDrizzleInvoiceRepo(tenantId) };
+}
+
 export function makeGetInvoicePdfSignedUrlDeps(tenantId: string): GetInvoicePdfSignedUrlDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),

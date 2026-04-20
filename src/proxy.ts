@@ -152,7 +152,11 @@ export function proxy(request: NextRequest): NextResponse {
     nextUrl.pathname.startsWith('/api/invoices') ||
     nextUrl.pathname.startsWith('/api/credit-notes') ||
     nextUrl.pathname.startsWith('/api/tenant-invoice-settings') ||
-    nextUrl.pathname.startsWith('/api/portal/invoices');
+    nextUrl.pathname.startsWith('/api/portal/invoices') ||
+    // US7 — /api/members/<uuid>/invoices is an F4 read surface embedded
+    // under the F3 members namespace; gate it under the F4 kill-switch
+    // so "invoicing disabled" is uniform across every F4-bearing route.
+    /^\/api\/members\/[^/]+\/invoices(?:\/|$)/.test(nextUrl.pathname);
   if (!env.features.f4Invoicing && isF4Path) {
     const response = NextResponse.json(
       {

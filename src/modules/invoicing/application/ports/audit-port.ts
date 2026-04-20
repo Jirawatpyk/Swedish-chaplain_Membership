@@ -33,12 +33,41 @@ export type F4AuditEventType =
   | 'pdf_render_failed'
   | 'auto_email_delivery_failed';
 
-export interface F4AuditEvent {
-  readonly eventType: F4AuditEventType;
-  readonly actorUserId: string;
-  readonly summary: string;
-  readonly payload: Record<string, unknown>;
-}
+/**
+ * F4 event types that MUST appear in the F3 member timeline
+ * (`payload->>'member_id'` query). This list is duplicated in the
+ * invoicing barrel (`F4_MEMBER_TIMELINE_EVENT_TYPES`) for consumers;
+ * the audit port uses the literal union so the discriminated-union
+ * payload contract below forces compile-time `member_id` presence
+ * on every emit site, closing the gap where a new member-surfaceable
+ * event type silently omits the field and never appears in timelines.
+ */
+export type F4MemberTimelineAuditEventType =
+  | 'invoice_draft_created'
+  | 'invoice_issued'
+  | 'invoice_paid'
+  | 'invoice_voided'
+  | 'credit_note_issued'
+  | 'invoice_pdf_resent';
+
+/** Payload contract for events that surface in the F3 member timeline. */
+export type MemberTimelineAuditPayload = {
+  readonly member_id: string;
+} & Record<string, unknown>;
+
+export type F4AuditEvent =
+  | {
+      readonly eventType: F4MemberTimelineAuditEventType;
+      readonly actorUserId: string;
+      readonly summary: string;
+      readonly payload: MemberTimelineAuditPayload;
+    }
+  | {
+      readonly eventType: Exclude<F4AuditEventType, F4MemberTimelineAuditEventType>;
+      readonly actorUserId: string;
+      readonly summary: string;
+      readonly payload: Record<string, unknown>;
+    };
 
 /**
  * Emit an audit row.

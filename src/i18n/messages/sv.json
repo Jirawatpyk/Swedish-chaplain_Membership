@@ -616,6 +616,42 @@
         "payload": {
           "primary": "primär",
           "primaryContactPromoted": "primär kontakt befordrad"
+        },
+        "invoiceDraftCreated": "Fakturautkast skapat",
+        "invoiceIssued": "Faktura {documentNumber} utställd",
+        "invoicePaid": "Faktura betald via {paymentMethod}",
+        "invoiceVoided": "Faktura makulerad — {reason}",
+        "creditNoteIssued": "Kreditnota {documentNumber} utställd",
+        "invoicePdfResent": "PDF för faktura {documentNumber} skickad på nytt"
+      },
+      "invoices": {
+        "title": "Fakturor",
+        "count": "{count, plural, =0 {inga fakturor} one {# faktura} other {# fakturor}}",
+        "empty": "Inga fakturor för denna medlem än.",
+        "emptyCta": "Skapa första fakturan",
+        "draftPlaceholder": "(utkast)",
+        "cols": {
+          "number": "Nummer",
+          "status": "Status",
+          "issued": "Utställd",
+          "due": "Förfallodag",
+          "total": "Totalt",
+          "remaining": "Återstår",
+          "actions": "Åtgärder"
+        },
+        "statuses": {
+          "draft": "Utkast",
+          "issued": "Utställd",
+          "paid": "Betald",
+          "void": "Makulerad",
+          "credited": "Krediterad",
+          "partially_credited": "Delvis krediterad"
+        },
+        "actions": {
+          "view": "Visa",
+          "recordPayment": "Bokför betalning",
+          "issueCreditNote": "Utfärda kreditnota",
+          "disabledForManager": "Chefer har läsbehörighet. Kontakta en administratör."
         }
       },
       "create": {

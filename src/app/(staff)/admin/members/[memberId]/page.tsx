@@ -40,6 +40,9 @@ import { CopyButton } from '@/components/members/copy-button';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
+import { Suspense } from 'react';
+import { MemberInvoicesSection } from './_components/member-invoices-section';
+import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
 import {
   Popover,
   PopoverContent,
@@ -167,7 +170,7 @@ export default async function MemberDetailPage({ params }: PageProps) {
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
 
-  await requireSession('staff');
+  const session = await requireSession('staff');
   const tenant = resolveTenantFromRequest();
   const h = await headers();
   const requestId = requestIdFromHeaders(h);
@@ -456,6 +459,20 @@ export default async function MemberDetailPage({ params }: PageProps) {
               />
             ))}
           </>
+        )}
+
+        {/* US7 AS1 — Invoice history on member page. Wrapped in its
+            own Suspense boundary so member metadata + contacts paint
+            first and an invoice-fetch failure stays isolated to this
+            section (parent page's `getMember` call is unaffected). */}
+        {(session.user.role === 'admin' || session.user.role === 'manager') && (
+          <Suspense fallback={<MemberInvoicesSkeleton />}>
+            <MemberInvoicesSection
+              tenant={tenant}
+              memberId={member.memberId}
+              role={session.user.role}
+            />
+          </Suspense>
         )}
     </DetailContainer>
   );

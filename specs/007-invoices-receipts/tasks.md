@@ -279,21 +279,25 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 **Independent Test**: Seed member with 2 issued + 1 paid + 1 CN → open member detail page → Invoices section lists all 4 docs with status + actions → timeline tab shows chronological `invoice_issued ×2, invoice_paid, credit_note_issued` alongside existing F3 events.
 
-- [ ] T083 [US7] Author `tests/integration/invoicing/f3-timeline-integration.test.ts` RED — all 6 F4 audit event types appear correctly in `memberTimeline` output with actor + payload + chronology.
-- [ ] T084 [US7] Implement `src/modules/invoicing/application/use-cases/list-invoices-by-member.ts` + export via `src/modules/invoicing/index.ts` barrel.
-- [ ] T085 [US7] Extend `src/modules/members/application/use-cases/member-timeline.ts` to include F4 audit event types (`invoice_draft_created`, `invoice_issued`, `invoice_paid`, `invoice_voided`, `credit_note_issued`, `invoice_pdf_resent`) — reads types from `@/modules/invoicing` barrel-exported enumeration.
-- [ ] T086 [US7] Implement `src/modules/members/infrastructure/timeline/resolve-invoice-event-copy.ts` — maps F4 event types to i18n keys (`admin.members.timeline.invoiceIssued`, etc.) for display.
-- [ ] T087 [P] [US7] Implement `src/app/(staff)/admin/members/[memberId]/_components/member-invoices-section.tsx` — calls `/api/members/[memberId]/invoices` (FR-032) + renders list + role-gated actions.
-- [ ] T088 [P] [US7] Implement `src/app/api/members/[memberId]/invoices/route.ts` — admin+manager scope, calls `listInvoicesByMember` use case.
-- [ ] T089 [P] [US7] Add US7 i18n keys under `admin.members.timeline.invoice*` + `admin.members.invoices.*`.
-- [ ] T090 [US7] Author `tests/e2e/invoice-member-page-integration.spec.ts` covering US7 AS1–AS4.
+- [X] T083 [US7] Author `tests/integration/invoicing/f3-timeline-integration.test.ts` RED — all 6 F4 audit event types appear correctly in `memberTimeline` output with actor + payload + chronology.
+- [X] T084 [US7] Implement `src/modules/invoicing/application/use-cases/list-invoices-by-member.ts` + export via `src/modules/invoicing/index.ts` barrel.
+- [X] T085 [US7] Extend `src/modules/members/application/use-cases/member-timeline.ts` to include F4 audit event types (`invoice_draft_created`, `invoice_issued`, `invoice_paid`, `invoice_voided`, `credit_note_issued`, `invoice_pdf_resent`) — reads types from `@/modules/invoicing` barrel-exported enumeration.
+- [X] T086 [US7] Implement `src/modules/members/infrastructure/timeline/resolve-invoice-event-copy.ts` — maps F4 event types to i18n keys (`admin.members.timeline.invoiceIssued`, etc.) for display.
+- [X] T087 [P] [US7] Implement `src/app/(staff)/admin/members/[memberId]/_components/member-invoices-section.tsx` — calls `/api/members/[memberId]/invoices` (FR-032) + renders list + role-gated actions.
+- [X] T088 [P] [US7] Implement `src/app/api/members/[memberId]/invoices/route.ts` — admin+manager scope, calls `listInvoicesByMember` use case.
+- [X] T089 [P] [US7] Add US7 i18n keys under `admin.members.timeline.invoice*` + `admin.members.invoices.*`.
+- [X] T090 [US7] Author `tests/e2e/invoice-member-page-integration.spec.ts` covering US7 AS1–AS4.
 
 ### 🚩 Checkpoint CP-7 — End of US7 (F3 + F4 unified product surface)
 
-- [ ] CP-7.1 F3 member detail page's Invoices section shows all statuses + quick actions by role
-- [ ] CP-7.2 F3 timeline shows all 6 F4 event types chronologically alongside existing F3 events (SC-011: within 5s)
-- [ ] CP-7.3 F3's existing tests remain green (no regression)
-- [ ] CP-7.4 SC-010 manual validation: admin reconstructs a member's complete billing history in < 30s from the member page
+- [X] CP-7.1 F3 member detail page's Invoices section shows all statuses + quick actions by role
+- [X] CP-7.2 F3 timeline shows all 6 F4 event types chronologically alongside existing F3 events (SC-011: within 5s) — verified by 4/4 green in `f3-timeline-integration.test.ts`
+- [X] CP-7.3 F3's existing tests remain green (no regression) — 1419/1419 unit + contract tests green after `deterministic-render.test.ts` teardown fix
+- [ ] CP-7.4 SC-010 manual validation: admin reconstructs a member's complete billing history in < 30s from the member page <!-- gated on full F4 E2E seeder (T115) — deferred to Phase 10 per spec -->
+
+**Phase 7 notes (2026-04-20)**:
+- Pre-existing `tests/integration/scripts/clear-test-data.test.ts` FK failures on `invoices_draft_by_user_id_fkey` are orphaned data in live Neon (invoices whose `tenant_id` does not match `test-%` but whose `draft_by_user_id` points to a test user). Not in Phase 7 scope; tracked for Phase 10 cleanup.
+- `tests/unit/invoicing/deterministic-render.test.ts` had an unhandled-rejection Date teardown race under jsdom. Switched to `node` environment via top-level `@vitest-environment node` directive — 0 errors + 7/7 green.
 
 ---
 

@@ -1,5 +1,17 @@
 /**
+ * @vitest-environment node
+ *
  * Unit tests for the deterministic-render harness (SC-003 / CP-5.2).
+ *
+ * Runs under the `node` environment (not the project-default `jsdom`).
+ * Reason: the harness swaps `globalThis.Date` with a Proxy that pins
+ * `new Date()` to the pinned issueDate. Under jsdom, async cleanup
+ * (document `readystatechange` event dispatch) fires during vitest's
+ * teardown and calls `new Date()` — but by then `Date` has been
+ * restored and the jsdom sandbox's own `Date` reference is stale,
+ * surfacing as `ReferenceError: Date is not defined` "Unhandled
+ * Rejection". This test is pure JS and has no DOM dependency, so
+ * `node` env is both faster and side-effect-free.
  *
  * Tests the pure-JS invariants of `withSeededRandom`:
  *   1. Math.random is restored to the original impl after render

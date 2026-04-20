@@ -616,6 +616,42 @@
         "payload": {
           "primary": "primary",
           "primaryContactPromoted": "primary contact promoted"
+        },
+        "invoiceDraftCreated": "Invoice draft created",
+        "invoiceIssued": "Invoice {documentNumber} issued",
+        "invoicePaid": "Invoice paid via {paymentMethod}",
+        "invoiceVoided": "Invoice voided — {reason}",
+        "creditNoteIssued": "Credit note {documentNumber} issued",
+        "invoicePdfResent": "Invoice {documentNumber} PDF re-sent"
+      },
+      "invoices": {
+        "title": "Invoices",
+        "count": "{count, plural, =0 {no invoices} one {# invoice} other {# invoices}}",
+        "empty": "No invoices for this member yet.",
+        "emptyCta": "Create first invoice",
+        "draftPlaceholder": "(draft)",
+        "cols": {
+          "number": "Number",
+          "status": "Status",
+          "issued": "Issued",
+          "due": "Due",
+          "total": "Total",
+          "remaining": "Remaining",
+          "actions": "Actions"
+        },
+        "statuses": {
+          "draft": "Draft",
+          "issued": "Issued",
+          "paid": "Paid",
+          "void": "Void",
+          "credited": "Credited",
+          "partially_credited": "Partially credited"
+        },
+        "actions": {
+          "view": "View",
+          "recordPayment": "Record payment",
+          "issueCreditNote": "Issue credit note",
+          "disabledForManager": "Managers have read-only access. Ask an administrator."
         }
       },
       "create": {

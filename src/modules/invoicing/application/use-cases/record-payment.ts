@@ -292,6 +292,10 @@ export async function recordPayment(
       summary: `Invoice ${loaded.documentNumber?.raw} marked paid`,
       payload: {
         invoice_id: invoiceId,
+        // US7 — surfaces this event in the F3 member timeline, which
+        // queries `payload->>'member_id'`. Required for the timeline
+        // contract even though invoices.member_id is derivable.
+        member_id: loaded.memberId,
         payment_method: input.paymentMethod,
         payment_reference_sha256: paymentReferenceSha256,
         payment_date: input.paymentDate,

@@ -508,6 +508,9 @@ export async function issueCreditNote(
         payload: {
           credit_note_id: creditNoteId,
           original_invoice_id: invoiceId,
+          // US7 — surfaces in the F3 member timeline (filter is on
+          // `payload->>'member_id'`).
+          member_id: loaded.memberId,
           credit_amount_satang: creditAmount.satang.toString(),
           vat_satang: vat.satang.toString(),
           total_satang: total.satang.toString(),

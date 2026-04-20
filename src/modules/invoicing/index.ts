@@ -50,6 +50,38 @@ export { Sha256Hex } from './domain/value-objects/sha256-hex';
 // --- Audit event types (for F3 timeline integration US7) --------------------
 export type { F4AuditEventType, F4AuditEvent } from './application/ports/audit-port';
 
+/**
+ * US7 — F4 audit event types surfaced in the F3 member timeline.
+ * The 6 events here all carry `member_id` in their payload so the F3
+ * timeline repo (which filters by `payload->>'member_id'`) picks them
+ * up without any JOIN. This list is the contract between F4 emit
+ * sites and the copy resolver.
+ *
+ * Scope:
+ *   - `invoice_voided` is included for US5/Phase 9; copy mapping ready.
+ *   - `invoice_pdf_resent` covers admin re-sends of the invoice PDF.
+ *   - `receipt_pdf_resent` + `credit_note_pdf_resent` are deliberately
+ *     NOT in this list — they duplicate the underlying pay/credit
+ *     event and would double-render in the timeline.
+ */
+export const F4_MEMBER_TIMELINE_EVENT_TYPES = [
+  'invoice_draft_created',
+  'invoice_issued',
+  'invoice_paid',
+  'invoice_voided',
+  'credit_note_issued',
+  'invoice_pdf_resent',
+] as const;
+
+export type F4MemberTimelineEventType =
+  (typeof F4_MEMBER_TIMELINE_EVENT_TYPES)[number];
+
+export function isF4MemberTimelineEventType(
+  v: string,
+): v is F4MemberTimelineEventType {
+  return (F4_MEMBER_TIMELINE_EVENT_TYPES as readonly string[]).includes(v);
+}
+
 // --- Use cases --------------------------------------------------------------
 export {
   createInvoiceDraft,
@@ -158,6 +190,14 @@ export {
   type TenantTaxPolicy,
 } from './application/use-cases/get-tenant-tax-policy';
 
+export {
+  listInvoicesByMember,
+  listInvoicesByMemberSchema,
+  type ListInvoicesByMemberInput,
+  type ListInvoicesByMemberOutput,
+  type ListInvoicesByMemberError,
+} from './application/use-cases/list-invoices-by-member';
+
 // --- Composition-root factories --------------------------------------------
 // Presentation / route handlers consume these to wire a per-request
 // tenant-scoped dependency graph.
@@ -165,6 +205,7 @@ export {
   makeCreateInvoiceDraftDeps,
   makeIssueInvoiceDeps,
   makeListInvoicesDeps,
+  makeListInvoicesByMemberDeps,
   makeGetInvoicePdfSignedUrlDeps,
   makePreviewInvoiceDraftDeps,
   makeDeleteInvoiceDraftDeps,
