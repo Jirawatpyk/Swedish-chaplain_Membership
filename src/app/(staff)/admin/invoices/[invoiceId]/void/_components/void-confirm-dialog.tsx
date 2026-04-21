@@ -14,7 +14,7 @@ import { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { AlertTriangleIcon } from 'lucide-react';
+import { AlertTriangleIcon, Loader2Icon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -144,7 +144,15 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
       </div>
 
       <div className="flex items-center gap-2">
-        <Button type="submit" variant="destructive" disabled={!canSubmit}>
+        <Button
+          type="submit"
+          variant="destructive"
+          disabled={!canSubmit}
+          aria-busy={pending}
+        >
+          {pending && (
+            <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+          )}
           {pending ? t('submitting') : t('submit')}
         </Button>
         <Button

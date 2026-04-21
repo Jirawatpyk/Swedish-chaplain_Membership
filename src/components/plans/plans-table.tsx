@@ -446,7 +446,7 @@ export function PlansTable({
                               )}
                               <DropdownMenuItem
                                 onClick={() => openDialog('delete', plan)}
-                                data-destructive
+                                variant="destructive"
                               >
                                 {tActions('delete')}
                               </DropdownMenuItem>

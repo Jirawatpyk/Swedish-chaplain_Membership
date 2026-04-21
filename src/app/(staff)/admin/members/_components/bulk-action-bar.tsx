@@ -123,7 +123,7 @@ export function BulkActionBar({
           {/* Center: action buttons */}
           <div className="flex items-center gap-2">
             <Button
-              variant="outline"
+              variant="destructive-outline"
               size="sm"
               disabled={executing || overCap}
               onClick={() => setArchiveDialogOpen(true)}

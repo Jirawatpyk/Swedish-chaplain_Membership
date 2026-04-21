@@ -31,7 +31,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 
 type Props = {
   readonly invoiceId: string;
@@ -66,10 +65,7 @@ export function DeleteDraftDialog({ invoiceId }: Props) {
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger
-        className={cn(
-          buttonVariants({ variant: 'outline' }),
-          'border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive',
-        )}
+        className={buttonVariants({ variant: 'destructive-outline' })}
       >
         {t('trigger')}
       </AlertDialogTrigger>

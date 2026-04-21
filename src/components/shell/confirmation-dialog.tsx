@@ -15,6 +15,7 @@
  * callers can localise them via `useTranslations` at the call site.
  */
 import { useRef, type ReactNode } from 'react';
+import { buttonVariants } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,11 +67,7 @@ export function ConfirmationDialog({
               event.preventDefault();
               void Promise.resolve(onConfirm()).then(() => onOpenChange(false));
             }}
-            className={
-              destructive
-                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                : undefined
-            }
+            className={destructive ? buttonVariants({ variant: 'destructive' }) : undefined}
           >
             {confirmLabel}
           </AlertDialogAction>

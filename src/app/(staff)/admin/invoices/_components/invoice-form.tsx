@@ -24,6 +24,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition, useMemo } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
@@ -172,7 +173,14 @@ export function CreateDraftForm({
       )}
 
       <div className="flex justify-end gap-3">
-        <Button type="submit" disabled={pending || noMembers || !memberId || !selectedPlan}>
+        <Button
+          type="submit"
+          disabled={pending || noMembers || !memberId || !selectedPlan}
+          aria-busy={pending}
+        >
+          {pending && (
+            <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+          )}
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>

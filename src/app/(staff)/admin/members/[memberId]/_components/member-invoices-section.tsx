@@ -117,12 +117,11 @@ function ManagerDisabledAction({
       <TooltipTrigger
         render={
           <Button
-            variant="outline"
+            variant={destructive ? 'destructive-outline' : 'outline'}
             size="sm"
             disabled
             aria-disabled="true"
             {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
-            className={destructive ? 'text-destructive' : undefined}
           >
             {label}
           </Button>
@@ -401,13 +400,10 @@ export async function MemberInvoicesSection({
                                 (canMutate ? (
                                   <Link
                                     href={`/admin/invoices/${inv.invoiceId}/void`}
-                                    className={cn(
-                                      buttonVariants({
-                                        variant: 'outline',
-                                        size: 'sm',
-                                      }),
-                                      'text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive',
-                                    )}
+                                    className={buttonVariants({
+                                      variant: 'destructive-outline',
+                                      size: 'sm',
+                                    })}
                                     aria-label={t('actions.voidAriaLabel', {
                                       number: inv.documentNumber?.raw ?? inv.invoiceId,
                                     })}

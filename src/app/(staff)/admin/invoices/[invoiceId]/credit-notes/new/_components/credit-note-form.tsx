@@ -18,6 +18,7 @@
 import { useMemo, useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -209,7 +210,10 @@ export function CreditNoteForm({
       </div>
 
       <div className="flex items-center gap-2">
-        <Button type="submit" disabled={!canSubmit}>
+        <Button type="submit" disabled={!canSubmit} aria-busy={pending}>
+          {pending && (
+            <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+          )}
           {pending ? t('submitting') : t('submit')}
         </Button>
         <Button

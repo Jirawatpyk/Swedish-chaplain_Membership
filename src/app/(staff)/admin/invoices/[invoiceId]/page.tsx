@@ -44,7 +44,6 @@ import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -288,10 +287,7 @@ export default async function InvoiceDetailPage({
               // outranking it as a primary action.
               <Link
                 href={`/admin/invoices/${invoice.invoiceId}/void`}
-                className={cn(
-                  buttonVariants({ variant: 'outline' }),
-                  'border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive',
-                )}
+                className={buttonVariants({ variant: 'destructive-outline' })}
               >
                 {t('actions.void')}
               </Link>
