@@ -40,6 +40,7 @@ import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -143,6 +144,12 @@ export default async function CreditNoteDetailPage({
 
   return (
     <DetailContainer>
+      {/* Replace the raw UUID segment in the breadcrumb with the
+        * human-readable CN document number (e.g. CN-2026-000001).
+        * Same pattern as the invoice detail page — registers a
+        * dynamic label against the creditNoteId path segment so
+        * BreadcrumbNav's `useBreadcrumbLabelMap` picks it up. */}
+      <PlanBreadcrumbLabel segment={creditNoteId} label={cn.documentNumber.raw} />
       <PageHeader
         title={
           <span className="flex flex-wrap items-center gap-3">
