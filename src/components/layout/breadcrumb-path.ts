@@ -53,19 +53,39 @@ export function parseBreadcrumbPath({
   };
 
   // Route-group pseudo-segments: URL pieces that exist in the path but
-  // have no corresponding page.tsx (only nested routes). Clicking the
-  // breadcrumb link for one returns 404. Rewrite the href back to the
-  // closest ancestor that DOES route so the link still goes somewhere
-  // useful (typically the parent resource detail).
+  // have no corresponding page.tsx at THAT specific location (only
+  // nested routes). Clicking the breadcrumb link for one would return
+  // 404. Rewrite the href back to the closest ancestor that DOES route
+  // so the link still goes somewhere useful.
   //
-  // Currently: `credit-notes` under `/admin/invoices/<id>/credit-notes/
-  // new` — the `credit-notes` index has no page (only `/new/` exists).
-  // Falling back to `/admin/invoices/<id>` takes the admin to the
-  // invoice detail where the credit-notes list is inline.
-  const NON_ROUTE_SEGMENTS: ReadonlySet<string> = new Set(['credit-notes']);
+  // Context-aware: we key each non-route segment by its REQUIRED
+  // parent. `credit-notes` under `/admin/invoices/<id>/credit-notes/new`
+  // has no index page (only `/new/` exists) — so that occurrence points
+  // back to `/admin/invoices/<id>`. But `/admin/credit-notes` IS a real
+  // page (the standalone directory), so `credit-notes` with parent
+  // `admin` must NOT be rewritten — doing so was the cause of the bug
+  // where clicking the Credit Notes breadcrumb on a detail page bounced
+  // admins to `/admin` dashboard.
+  const NON_ROUTE_BY_PARENT: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+    ['invoices', new Set(['credit-notes'])],
+  ]);
   const isNonRouteSegment = (idx: number): boolean => {
     if (idx === 0) return false;
-    return NON_ROUTE_SEGMENTS.has(decodedParts[idx] ?? '');
+    const segment = decodedParts[idx];
+    if (!segment) return false;
+    // Find the nearest non-UUID ancestor as the semantic parent. We
+    // skip dynamic id segments so `/invoices/<uuid>/credit-notes/new`
+    // resolves the rule under the real parent `invoices`, not `<uuid>`.
+    let parent: string | undefined;
+    for (let i = idx - 1; i >= 0; i--) {
+      const candidate = decodedParts[i];
+      if (candidate && !/^[0-9a-f-]{8,}$/i.test(candidate)) {
+        parent = candidate;
+        break;
+      }
+    }
+    if (!parent) return false;
+    return NON_ROUTE_BY_PARENT.get(parent)?.has(segment) ?? false;
   };
 
   return rawParts.map((rawSegment, index) => {
