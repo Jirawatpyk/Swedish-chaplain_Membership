@@ -1097,7 +1097,7 @@
           "voidedAt": "Voided at",
           "voidedBy": "Voided by",
           "reason": "Reason",
-          "creditNoteHint": "To legally reverse this invoice, issue a credit note (available in F4 US6)."
+          "creditNoteHint": "This invoice is permanently voided. Its sequential tax-document number is retired and will not be reused. The VOID-stamped PDF above is the authoritative record; no further action is required."
         },
         "creditNotesSection": {
           "title": "Credit notes ({count})",

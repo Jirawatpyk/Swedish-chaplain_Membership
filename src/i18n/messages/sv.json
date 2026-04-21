@@ -1097,7 +1097,7 @@
           "voidedAt": "Annullerad",
           "voidedBy": "Annullerad av",
           "reason": "Orsak",
-          "creditNoteHint": "För att legalt återställa denna faktura, utfärda en kreditnota (tillgänglig i F4 US6)."
+          "creditNoteHint": "Denna faktura är permanent annullerad. Dess sekventiella skattedokumentnummer är pensionerat och kommer inte att återanvändas. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs."
         },
         "creditNotesSection": {
           "title": "Kreditnotor ({count})",
