@@ -630,11 +630,15 @@
         "empty": "No invoices for this member yet.",
         "emptyFiltered": "No invoices match the current filters.",
         "emptyCta": "Create first invoice",
+        "newInvoice": "New invoice",
         "filters": {
           "statusAria": "Filter invoices by status",
           "yearAria": "Filter invoices by fiscal year",
+          "search": "Search document number…",
+          "fiscalYear": "Year",
           "status": { "all": "All statuses" },
           "year": { "all": "All years" },
+          "apply": "Apply",
           "clear": "Clear filters"
         },
         "draftPlaceholder": "(draft)",
@@ -1179,6 +1183,20 @@
         },
         "draftLabel": "Draft",
         "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm."
+      },
+      "deleteDraft": {
+        "trigger": "Delete draft",
+        "title": "Delete this draft?",
+        "description": "The draft invoice and its line items will be permanently removed. No sequential tax-document number has been allocated yet, so nothing will be retired. This action is audited.",
+        "cancel": "Cancel",
+        "deleteButton": "Delete draft",
+        "deleting": "Deleting…",
+        "success": "Draft deleted",
+        "errors": {
+          "failed": "Could not delete draft",
+          "codeFallback": "Error code: {code}",
+          "unknown": "An unknown error occurred. Please try again."
+        }
       },
       "pay": {
         "title": "Record payment",

@@ -630,11 +630,15 @@
         "empty": "Inga fakturor för denna medlem än.",
         "emptyFiltered": "Inga fakturor matchar de aktuella filtren.",
         "emptyCta": "Skapa första fakturan",
+        "newInvoice": "Ny faktura",
         "filters": {
           "statusAria": "Filtrera fakturor efter status",
           "yearAria": "Filtrera fakturor efter räkenskapsår",
+          "search": "Sök dokumentnummer…",
+          "fiscalYear": "År",
           "status": { "all": "Alla statusar" },
           "year": { "all": "Alla år" },
+          "apply": "Tillämpa",
           "clear": "Rensa filter"
         },
         "draftPlaceholder": "(utkast)",
@@ -1179,6 +1183,20 @@
         },
         "draftLabel": "Utkast",
         "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta."
+      },
+      "deleteDraft": {
+        "trigger": "Ta bort utkast",
+        "title": "Ta bort detta utkast?",
+        "description": "Utkastfakturan och dess rader tas bort permanent. Inget sekventiellt skattedokumentnummer har tilldelats än, så inget nummer återkallas. Åtgärden loggas i audit.",
+        "cancel": "Avbryt",
+        "deleteButton": "Ta bort utkast",
+        "deleting": "Tar bort…",
+        "success": "Utkast borttaget",
+        "errors": {
+          "failed": "Kunde inte ta bort utkast",
+          "codeFallback": "Felkod: {code}",
+          "unknown": "Ett okänt fel inträffade. Försök igen."
+        }
       },
       "pay": {
         "title": "Registrera betalning",

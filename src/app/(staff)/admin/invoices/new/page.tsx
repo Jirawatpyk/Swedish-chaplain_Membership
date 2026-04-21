@@ -23,10 +23,27 @@ import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { CreateDraftForm, type MemberOption, type PlanOption } from '../_components/invoice-form';
 
-export default async function NewInvoiceDraftPage() {
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export default async function NewInvoiceDraftPage({
+  searchParams,
+}: {
+  readonly searchParams: Promise<
+    Record<string, string | string[] | undefined>
+  >;
+}) {
   const t = await getTranslations('admin.invoices.new');
   const { user } = await requireSession('staff');
   if (user.role !== 'admin') notFound();
+
+  // Deep-link pre-fill from F3 member detail page CTA. UUID-validated
+  // here so a malformed query string can't smuggle an attacker-chosen
+  // string into the client form's initial state.
+  const sp = await searchParams;
+  const memberIdParam = typeof sp.memberId === 'string' ? sp.memberId : undefined;
+  const initialMemberId =
+    memberIdParam && UUID_RE.test(memberIdParam) ? memberIdParam : undefined;
 
   const hdrs = await headers();
   const pseudoReq = new Request('http://localhost:3100', { headers: hdrs });
@@ -86,7 +103,11 @@ export default async function NewInvoiceDraftPage() {
       <PageHeader title={t('title')} subtitle={t('description')} />
       <Card>
         <CardContent>
-          <CreateDraftForm members={members} plans={plans} />
+          <CreateDraftForm
+            members={members}
+            plans={plans}
+            {...(initialMemberId ? { initialMemberId } : {})}
+          />
         </CardContent>
       </Card>
       <Link

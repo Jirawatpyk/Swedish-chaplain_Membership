@@ -176,11 +176,17 @@ export default async function MemberDetailPage({
   const sp = await searchParams;
   const invStatusRaw = typeof sp.invStatus === 'string' ? sp.invStatus : undefined;
   const invYearRaw = typeof sp.invYear === 'string' ? sp.invYear : undefined;
+  const invQRaw = typeof sp.invQ === 'string' ? sp.invQ : undefined;
   const invStatus = invStatusRaw && invStatusRaw !== 'all' ? invStatusRaw : undefined;
   const invYear = (() => {
     if (!invYearRaw || invYearRaw === 'all') return undefined;
     const n = Number.parseInt(invYearRaw, 10);
     return Number.isFinite(n) && n >= 2020 && n <= 2100 ? n : undefined;
+  })();
+  const invQ = (() => {
+    if (!invQRaw) return undefined;
+    const trimmed = invQRaw.trim().slice(0, 64);
+    return trimmed.length > 0 ? trimmed : undefined;
   })();
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
@@ -488,6 +494,7 @@ export default async function MemberDetailPage({
               role={session.user.role}
               statusFilter={invStatus}
               fiscalYearFilter={invYear}
+              searchFilter={invQ}
             />
           </Suspense>
         )}

@@ -1,32 +1,30 @@
 'use client';
 
 /**
- * G-U7F — Status + fiscal-year filter for the member-page invoice
- * section (spec US7 AS1 "sortable, filterable by status + year").
+ * G-U7F — Status + fiscal-year + doc-number search filter for the
+ * member-page invoice section (spec US7 AS1 "sortable, filterable").
  *
- * Inline compact filter bar (NOT a full directory filter — this
- * lives inside the member-detail page's invoice Card). Two Select
- * controls + Clear button. URL-synced via `?invStatus=` + `?invYear=`
- * so state is bookmarkable and survives page refresh.
+ * Form-based Apply/Clear pattern matching `/admin/credit-notes`
+ * (`credit-note-filters.tsx`) — three controls stage locally, URL
+ * is only patched on Apply (avoids mid-typing router churn).
  *
- * Auto-applies on Select change (no Apply button needed — Selects
- * are single-click, unlike the debounced text search where the
- * previous credit-note filter revert was about typing noise).
- *
- * URL param prefix `inv` leaves room for future filters on the
- * member page (timeline, contacts) without collision.
+ *   - Search (`?invQ=`) — document-number substring, ILIKE %q%
+ *   - Status (`?invStatus=`) — Select, 7 values + "all"
+ *   - Fiscal year (`?invYear=`) — free-text number, matches the
+ *     credit-notes `fy` UX (typed is more flexible than a Select
+ *     when admins paste a year from an email)
  */
-import { useTransition } from 'react';
+import { useCallback, useMemo, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 
 const STATUSES = [
@@ -39,87 +37,134 @@ const STATUSES = [
   'partially_credited',
 ] as const;
 
-type FilterProps = {
-  readonly years: readonly number[];
-};
-
-export function MemberInvoicesFilters({ years }: FilterProps) {
+export function MemberInvoicesFilters() {
   const t = useTranslations('admin.members.invoices.filters');
   const tStatuses = useTranslations('admin.members.invoices.statuses');
   const router = useRouter();
   const pathname = usePathname();
-  const sp = useSearchParams();
-  const [, startTransition] = useTransition();
+  const params = useSearchParams();
+  const [pending, startTransition] = useTransition();
 
-  const status = sp.get('invStatus') ?? 'all';
-  const year = sp.get('invYear') ?? 'all';
-  const isFiltered = status !== 'all' || year !== 'all';
+  const [q, setQ] = useState(params.get('invQ') ?? '');
+  const [status, setStatus] = useState(params.get('invStatus') ?? 'all');
+  const [year, setYear] = useState(params.get('invYear') ?? '');
 
-  const patch = (key: 'invStatus' | 'invYear', value: string) => {
-    const next = new URLSearchParams(sp.toString());
-    if (value === 'all') next.delete(key);
-    else next.set(key, value);
-    const qs = next.toString();
-    startTransition(() => {
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    });
-  };
+  const hasFilters = useMemo(
+    () =>
+      (params.get('invQ') ?? '').length > 0 ||
+      (params.get('invStatus') ?? 'all') !== 'all' ||
+      (params.get('invYear') ?? '').length > 0,
+    [params],
+  );
 
-  const clear = () => {
-    const next = new URLSearchParams(sp.toString());
-    next.delete('invStatus');
-    next.delete('invYear');
-    const qs = next.toString();
-    startTransition(() => {
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    });
-  };
+  const applyFilters = useCallback(
+    (nextQ: string, nextStatus: string, nextYear: string) => {
+      const next = new URLSearchParams(params.toString());
+      if (nextQ.trim()) next.set('invQ', nextQ.trim());
+      else next.delete('invQ');
+      if (nextStatus && nextStatus !== 'all') next.set('invStatus', nextStatus);
+      else next.delete('invStatus');
+      if (nextYear.trim()) next.set('invYear', nextYear.trim());
+      else next.delete('invYear');
+      const qs = next.toString();
+      startTransition(() => {
+        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      });
+    },
+    [params, pathname, router],
+  );
 
   return (
-    <div className="flex flex-wrap items-center gap-2 pb-3">
-      <Select
-        value={status}
-        onValueChange={(v) => patch('invStatus', v ?? 'all')}
+    <form
+      className="mb-4 flex w-full flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-end"
+      onSubmit={(e) => {
+        e.preventDefault();
+        applyFilters(q, status, year);
+      }}
+    >
+      {/* Mobile: inputs stack full-width (touch target 36px). Desktop
+        * (sm+): search grows via flex-1, status + year compact. */}
+      <Input
+        id="member-inv-q"
+        type="search"
+        inputMode="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={t('search')}
+        aria-label={t('search')}
+        className="h-10 w-full sm:h-9 sm:min-w-[10rem] sm:flex-1"
+        autoComplete="off"
+      />
+      {/* Status + Year share a row on mobile (grid-cols-2) so they
+        * don't dominate vertical space; go inline on desktop. */}
+      <div className="grid grid-cols-2 gap-3 sm:contents">
+        <Select value={status} onValueChange={(v) => setStatus(v ?? 'all')}>
+          <SelectTrigger
+            className="h-10 w-full sm:h-9 sm:w-[11rem]"
+            aria-label={t('statusAria')}
+          >
+            <TranslatedSelectValue
+              placeholder={t('status.all')}
+              translate={(v) =>
+                v === 'all' || !v ? t('status.all') : tStatuses(v)
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {STATUSES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s === 'all' ? t('status.all') : tStatuses(s)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          id="member-inv-fy"
+          type="number"
+          inputMode="numeric"
+          min="2020"
+          max="2100"
+          value={year}
+          onChange={(e) => setYear(e.target.value)}
+          placeholder={t('fiscalYear')}
+          aria-label={t('yearAria')}
+          className="h-10 w-full sm:h-9 sm:w-32"
+          autoComplete="off"
+        />
+      </div>
+      {/* Action buttons — full-width on mobile (stacked via grid-cols-2
+        * when Clear is visible, single-column otherwise) for easy
+        * one-handed reach; compact inline on desktop. */}
+      <div
+        className={`grid gap-3 sm:contents ${
+          hasFilters ? 'grid-cols-2' : 'grid-cols-1'
+        }`}
       >
-        <SelectTrigger className="h-9 w-[11rem]" aria-label={t('statusAria')}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {STATUSES.map((s) => (
-            <SelectItem key={s} value={s}>
-              {s === 'all' ? t('status.all') : tStatuses(s)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select value={year} onValueChange={(v) => patch('invYear', v ?? 'all')}>
-        <SelectTrigger className="h-9 w-[9rem]" aria-label={t('yearAria')}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t('year.all')}</SelectItem>
-          {years.map((y) => (
-            <SelectItem key={y} value={String(y)}>
-              {String(y)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {isFiltered && (
         <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={clear}
-          className="h-9"
-          aria-label={t('clear')}
+          type="submit"
+          variant="outline"
+          disabled={pending}
+          className="h-10 w-full sm:h-9 sm:w-auto"
         >
-          <XIcon className="size-4" aria-hidden="true" />
-          {t('clear')}
+          {t('apply')}
         </Button>
-      )}
-    </div>
+        {hasFilters && (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => {
+              setQ('');
+              setStatus('all');
+              setYear('');
+              applyFilters('', 'all', '');
+            }}
+            className="h-10 w-full sm:h-9 sm:w-auto"
+          >
+            {t('clear')}
+          </Button>
+        )}
+      </div>
+    </form>
   );
 }

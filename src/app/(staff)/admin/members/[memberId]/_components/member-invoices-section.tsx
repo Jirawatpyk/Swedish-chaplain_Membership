@@ -21,7 +21,7 @@
  */
 import Link from 'next/link';
 import { getTranslations, getFormatter } from 'next-intl/server';
-import { FileTextIcon, ReceiptIcon } from 'lucide-react';
+import { FileTextIcon, PlusIcon, ReceiptIcon } from 'lucide-react';
 import {
   listInvoicesByMember,
   makeListInvoicesByMemberDeps,
@@ -66,6 +66,8 @@ interface MemberInvoicesSectionProps {
   readonly statusFilter?: string | undefined;
   /** G-U7F — fiscal-year filter from URL (`?invYear=2026`). */
   readonly fiscalYearFilter?: number | undefined;
+  /** G-U7F — document-number substring search from URL (`?invQ=`). */
+  readonly searchFilter?: string | undefined;
 }
 
 function statusBadgeVariant(
@@ -98,26 +100,20 @@ export async function MemberInvoicesSection({
   role,
   statusFilter,
   fiscalYearFilter,
+  searchFilter,
 }: MemberInvoicesSectionProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.members.invoices');
   const format = await getFormatter();
 
-  // G-U7F — fetch all (unfiltered by year) to derive the year-
-  // options list, then fetch filtered for the actual display. This
-  // costs one extra query but keeps the year Select populated even
-  // when the year filter is narrowing the visible set. At member
-  // scale (≤20 invoices typical) this is cheap.
+  // G-U7F — fetch the unfiltered count once so we know whether to
+  // show the filter bar at all (member with zero invoices gets the
+  // empty-CTA without filter noise). Year derivation was moved to
+  // the filter component (now a free-text number input; no dropdown
+  // options needed).
   const allYearsResult = await listInvoicesByMember(
     makeListInvoicesByMemberDeps(tenant.slug),
-    { tenantId: tenant.slug, memberId, pageSize: 200, offset: 0, status: 'all' },
+    { tenantId: tenant.slug, memberId, pageSize: 1, offset: 0, status: 'all' },
   );
-  const yearsSet = new Set<number>();
-  if (allYearsResult.ok) {
-    for (const inv of allYearsResult.value.rows) {
-      if (inv.fiscalYear !== null) yearsSet.add(inv.fiscalYear);
-    }
-  }
-  const yearOptions = [...yearsSet].sort((a, b) => b - a);
 
   const VALID_STATUSES = new Set([
     'draft',
@@ -147,6 +143,7 @@ export async function MemberInvoicesSection({
       offset: 0,
       status: narrowedStatus,
       ...(fiscalYearFilter !== undefined ? { fiscalYear: fiscalYearFilter } : {}),
+      ...(searchFilter ? { search: searchFilter } : {}),
     },
   );
 
@@ -183,7 +180,7 @@ export async function MemberInvoicesSection({
   return (
     <section aria-labelledby="member-invoices-heading">
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle
             id="member-invoices-heading"
             className="text-base flex items-center gap-2"
@@ -194,6 +191,20 @@ export async function MemberInvoicesSection({
               {t('count', { count: total })}
             </span>
           </CardTitle>
+          {/* "New invoice" CTA visible whenever the member already
+            * has any invoices — complements the empty-state CTA
+            * inside the card body (which only shows on first
+            * invoice). Admin-only: managers are read-only on
+            * finance per Constitution Principle V. */}
+          {canMutate && total > 0 && (
+            <Link
+              href={`/admin/invoices/new?memberId=${encodeURIComponent(memberId)}`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              <PlusIcon className="size-3.5" aria-hidden="true" />
+              {t('newInvoice')}
+            </Link>
+          )}
         </CardHeader>
         <CardContent data-testid="member-invoices-content">
           {/* G-U7F — status + year filter. Only render when the
@@ -201,7 +212,7 @@ export async function MemberInvoicesSection({
             * invoices there is nothing to filter, so the empty-CTA
             * stays the dominant focus. */}
           {allYearsResult.ok && allYearsResult.value.total > 0 && (
-            <MemberInvoicesFilters years={yearOptions} />
+            <MemberInvoicesFilters />
           )}
           {/* G-U7S — Spec US7 AS1 "sortable" deferred to Phase 10
             * polish. Rationale: typical member has ≤20 invoices;
@@ -214,7 +225,9 @@ export async function MemberInvoicesSection({
           {rows.length === 0 ? (
             <div className="flex flex-col items-start gap-3 py-4">
               <p className="text-sm text-muted-foreground">
-                {statusFilter !== undefined || fiscalYearFilter !== undefined
+                {statusFilter !== undefined ||
+                fiscalYearFilter !== undefined ||
+                searchFilter !== undefined
                   ? t('emptyFiltered')
                   : t('empty')}
               </p>

@@ -55,6 +55,7 @@ import {
 } from '@/components/ui/table';
 import { IssueInvoiceDialog } from '../_components/issue-invoice-dialog';
 import { RecordPaymentDialog } from '../_components/record-payment-dialog';
+import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -247,6 +248,7 @@ export default async function InvoiceDetailPage({
                     F2 clone-year). Confirmation stays in-context so
                     the admin sees the summary numbers as they type
                     the irreversible phrase. */}
+                <DeleteDraftDialog invoiceId={invoice.invoiceId} />
                 <IssueInvoiceDialog
                   invoiceId={invoice.invoiceId}
                   summary={{

@@ -26,6 +26,12 @@ export const listInvoicesByMemberSchema = z.object({
    * boundary for the member-page filter UI.
    */
   fiscalYear: z.number().int().min(2020).max(2100).optional(),
+  /**
+   * Document-number substring search (ILIKE %q%). Matches the
+   * credit-notes directory pattern so the two related billing
+   * surfaces share UX.
+   */
+  search: z.string().trim().min(1).max(64).optional(),
 });
 
 export type ListInvoicesByMemberInput = z.infer<typeof listInvoicesByMemberSchema>;
@@ -56,6 +62,7 @@ export async function listInvoicesByMember(
       status: (input.status as InvoiceStatus | 'all' | undefined) ?? 'all',
       includeDrafts: true,
       ...(input.fiscalYear !== undefined ? { fiscalYear: input.fiscalYear } : {}),
+      ...(input.search ? { search: input.search } : {}),
     });
     return ok({ rows, total });
   } catch (cause) {

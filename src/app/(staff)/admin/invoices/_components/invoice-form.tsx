@@ -53,9 +53,17 @@ function formatSatang(satang: number): string {
 export function CreateDraftForm({
   members,
   plans,
+  initialMemberId,
 }: {
   readonly members: readonly MemberOption[];
   readonly plans: readonly PlanOption[];
+  /**
+   * Pre-fill the member picker from a `?memberId=` deep-link (e.g.
+   * "New invoice" CTA on the F3 member detail page). Falls back to
+   * empty when missing / not in the active-members list (archived
+   * members won't appear here — FR-037 rejects issue on archived).
+   */
+  readonly initialMemberId?: string | undefined;
 }) {
   const t = useTranslations('admin.invoices.form');
   const tPicker = useTranslations('admin.invoices.form.memberPicker');
@@ -63,7 +71,12 @@ export function CreateDraftForm({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  const [memberId, setMemberId] = useState('');
+  const [memberId, setMemberId] = useState(() => {
+    if (!initialMemberId) return '';
+    return members.some((m) => m.memberId === initialMemberId)
+      ? initialMemberId
+      : '';
+  });
   const selectedMember = members.find((m) => m.memberId === memberId);
 
   const memberOptions: ComboboxOption[] = useMemo(
