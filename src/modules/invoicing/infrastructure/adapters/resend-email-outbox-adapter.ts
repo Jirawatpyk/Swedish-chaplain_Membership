@@ -12,7 +12,7 @@ import type {
   F4OutboxEventType,
   F4OutboxLocale,
 } from '../../application/ports/email-outbox-port';
-import type { TenantTx } from '@/lib/db';
+import { db, type TenantTx } from '@/lib/db';
 
 export const resendEmailOutboxAdapter: EmailOutboxPort = {
   async enqueue(
@@ -30,7 +30,12 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       readonly voidReason?: string;
     },
   ): Promise<void> {
-    const tx = txUnknown as TenantTx;
+    // T107 — `null` tx = "enqueue standalone" (used by resend-pdf,
+    // which runs outside a mutating financial tx). Mirrors the
+    // `f4AuditAdapter` fallback pattern. `notifications_outbox` is
+    // platform-scoped (no RLS) so `db` auto-commit is safe — the same
+    // table is written by the F1 invitation flow with tenant_id=null.
+    const tx = (txUnknown as TenantTx | null) ?? db;
     const contextData = {
       event_type: input.eventType,
       invoice_id: input.invoiceId ?? null,

@@ -23,7 +23,7 @@ import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId, type CreditNote } from '@/modules/invoicing/domain/credit-note';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
-import { asFiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
+import { asFiscalYearUnsafe } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { makeMemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
@@ -77,7 +77,7 @@ function issuedInvoice(overrides: Partial<Invoice> = {}): Invoice {
     planYear: 2026,
     status: 'issued',
     draftByUserId: 'u-admin',
-    fiscalYear: asFiscalYear(2026),
+    fiscalYear: asFiscalYearUnsafe(2026),
     sequenceNumber: 1,
     documentNumber: docNum(),
     issueDate: '2026-04-18',
@@ -128,7 +128,7 @@ function creditNoteFixture(): CreditNote {
     creditNoteId: asCreditNoteId(CN_UUID),
     originalInvoiceId: asInvoiceId(INVOICE_UUID),
     originalInvoiceMemberId: 'member-m1',
-    fiscalYear: asFiscalYear(2026),
+    fiscalYear: asFiscalYearUnsafe(2026),
     sequenceNumber: 1,
     documentNumber: docNum(),
     issueDate: '2026-04-21',
