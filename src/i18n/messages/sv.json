@@ -1043,7 +1043,10 @@
         "filters": {
           "allStatuses": "Alla status",
           "clearAll": "Rensa filter"
-        }
+        },
+        "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
+        "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
+        "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat"
       },
       "new": {
         "title": "Nytt fakturautkast",

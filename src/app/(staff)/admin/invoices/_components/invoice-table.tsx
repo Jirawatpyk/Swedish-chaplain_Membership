@@ -37,6 +37,16 @@ export type InvoicesTableRow = {
   readonly dueDate: string | null;
   readonly totalSatang: string;
   readonly hasPdf: boolean;
+  /**
+   * G-2 — count of credit notes issued against this invoice.
+   * Zero on 99% of invoices (paid/void/etc. rarely credited).
+   * Rendered as a small outline chip beside the status badge so
+   * admins can spot partially/fully credited rows without drilling
+   * into detail.
+   */
+  readonly creditNoteCount: number;
+  /** G-2 — cumulative credited amount in satang (stringified bigint). */
+  readonly creditedTotalSatang: string;
 };
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
@@ -138,7 +148,31 @@ export function InvoicesTable({ rows }: { rows: readonly InvoicesTableRow[] }) {
                 </Link>
               </TableCell>
               <TableCell className="align-middle">
-                <StatusBadge status={r.status} />
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <StatusBadge status={r.status} />
+                  {r.creditNoteCount > 0 && (
+                    // G-2 — CN indicator chip. Shows only when ≥1 CN
+                    // exists on the row. Tooltip (title) + aria-label
+                    // carry both the count AND the credited amount so
+                    // admins can answer 'how much is still outstanding?'
+                    // at a glance. Not clickable — the row itself links
+                    // to the invoice detail which has the full CN section.
+                    <Badge
+                      variant="outline"
+                      className="font-mono text-[10px] tabular-nums"
+                      title={t('creditedTooltip', {
+                        count: r.creditNoteCount,
+                        amount: formatSatang(r.creditedTotalSatang),
+                      })}
+                      aria-label={t('creditedAria', {
+                        count: r.creditNoteCount,
+                        amount: formatSatang(r.creditedTotalSatang),
+                      })}
+                    >
+                      {t('creditedSuffix', { count: r.creditNoteCount })}
+                    </Badge>
+                  )}
+                </div>
               </TableCell>
               <TableCell className="align-middle">{r.issueDate ?? '—'}</TableCell>
               <TableCell className="align-middle">{r.dueDate ?? '—'}</TableCell>

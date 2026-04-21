@@ -118,6 +118,46 @@ export default async function AdminInvoicesPage({
     ...(qTrim ? { search: qTrim } : {}),
   });
 
+  // G-2 — batched CN count per invoice on the current page. Single
+  // GROUP BY query keyed by original_invoice_id so we avoid N+1
+  // roundtrips while still getting an exact count that matches the
+  // running credited_total_satang snapshot on each invoice row.
+  // Zero rows on 99% of invoices (only paid/partially_credited/
+  // credited have CNs) — the map lookup falls back to 0 / '0' so
+  // the table row shape stays consistent.
+  const creditNoteCountById = new Map<string, number>();
+  if (invoicesResult.ok && invoicesResult.value.rows.length > 0) {
+    const { runInTenant } = await import('@/lib/db');
+    const { creditNotes } = await import(
+      '@/modules/invoicing/infrastructure/db'
+    );
+    const { inArray, eq, and, sql } = await import('drizzle-orm');
+    const invoiceIds = invoicesResult.value.rows.map((r) => r.invoiceId);
+    try {
+      const counts = await runInTenant(tenantCtx, (tx) =>
+        tx
+          .select({
+            originalInvoiceId: creditNotes.originalInvoiceId,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(creditNotes)
+          .where(
+            and(
+              eq(creditNotes.tenantId, tenantCtx.slug),
+              inArray(creditNotes.originalInvoiceId, invoiceIds),
+            ),
+          )
+          .groupBy(creditNotes.originalInvoiceId),
+      );
+      for (const c of counts) {
+        creditNoteCountById.set(c.originalInvoiceId, Number(c.count));
+      }
+    } catch {
+      // Best-effort: count failures never 500 the list page. Missing
+      // map entries fall back to 0 in the row mapper below.
+    }
+  }
+
   const memberNameById = new Map<string, string>();
   // Only run the member directory scan when the result set may include
   // drafts (tabs/filters that enable them) OR when any returned row is
@@ -163,6 +203,11 @@ export default async function AdminInvoicesPage({
         dueDate: r.dueDate,
         totalSatang: r.total?.satang.toString() ?? '0',
         hasPdf: r.pdf !== null,
+        // G-2 — indicator pair. `creditedTotal` is already on the
+        // Invoice entity (frozen + rolled up by applyCreditNoteRollup);
+        // `creditNoteCount` comes from the batched GROUP BY above.
+        creditNoteCount: creditNoteCountById.get(r.invoiceId) ?? 0,
+        creditedTotalSatang: r.creditedTotal.satang.toString(),
       }))
     : [];
 

@@ -1043,7 +1043,10 @@
         "filters": {
           "allStatuses": "All statuses",
           "clearAll": "Clear filters"
-        }
+        },
+        "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
+        "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
+        "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited"
       },
       "new": {
         "title": "New invoice draft",
