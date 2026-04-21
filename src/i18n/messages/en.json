@@ -635,6 +635,8 @@
           "status": "Status",
           "issued": "Issued",
           "due": "Due",
+          "paid": "Paid",
+          "paidEmpty": "Not paid yet",
           "total": "Total",
           "remaining": "Remaining",
           "actions": "Actions"
@@ -651,6 +653,8 @@
           "view": "View",
           "recordPayment": "Record payment",
           "issueCreditNote": "Issue credit note",
+          "void": "Void",
+          "voidAriaLabel": "Void invoice {number}",
           "disabledForManager": "Managers have read-only access. Ask an administrator."
         }
       },
@@ -1359,6 +1363,13 @@
           "description": "A credit has been issued against this invoice. The invoice total stays the same (tax-document immutability); the credit note below records the amount credited back.",
           "view": "View",
           "viewAria": "View credit note {number}"
+        },
+        "void": {
+          "title": "Invoice voided",
+          "voidedAt": "Voided on",
+          "reasonLabel": "Reason",
+          "notPayable": "This invoice is no longer payable. You do not need to take any action.",
+          "downloadVoidedPdf": "Download voided invoice (VOID-stamped)"
         }
       }
     },

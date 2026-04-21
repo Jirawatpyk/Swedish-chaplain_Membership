@@ -170,6 +170,8 @@ export async function MemberInvoicesSection({
                       <TableHead scope="col">{t('cols.status')}</TableHead>
                       <TableHead scope="col">{t('cols.issued')}</TableHead>
                       <TableHead scope="col">{t('cols.due')}</TableHead>
+                      {/* G-U7P — spec US7 AS1 requires "issue/due/paid dates" */}
+                      <TableHead scope="col">{t('cols.paid')}</TableHead>
                       <TableHead scope="col" className="text-right">
                         {t('cols.total')}
                       </TableHead>
@@ -186,6 +188,10 @@ export async function MemberInvoicesSection({
                       const docNum =
                         inv.documentNumber?.raw ?? t('draftPlaceholder');
                       const canRecordPayment = inv.status === 'issued';
+                      // G-V1 / US7 AS1 — spec-required Void action
+                      // per-row. Gate matches /admin/invoices/[id]/page.tsx
+                      // Void button exactly: status === 'issued'.
+                      const canVoid = inv.status === 'issued';
                       const canIssueCreditNote =
                         inv.status === 'paid' ||
                         inv.status === 'partially_credited';
@@ -205,6 +211,21 @@ export async function MemberInvoicesSection({
                           </TableCell>
                           <TableCell className="text-xs">
                             {formatDate(inv.dueDate)}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {/* G-U7P — paid date. SR aria-label on the
+                              * em-dash so screen readers read 'Not
+                              * paid yet' instead of a meaningless dash. */}
+                            {inv.paidAt ? (
+                              formatDate(inv.paidAt)
+                            ) : (
+                              <span
+                                className="text-muted-foreground"
+                                aria-label={t('cols.paidEmpty')}
+                              >
+                                —
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-mono text-xs">
                             {formatBaht(inv.total?.satang ?? null)}
@@ -257,6 +278,42 @@ export async function MemberInvoicesSection({
                                           aria-disabled="true"
                                         >
                                           {t('actions.recordPayment')}
+                                        </Button>
+                                      }
+                                    />
+                                    <TooltipContent>
+                                      {t('actions.disabledForManager')}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                ))}
+                              {canVoid &&
+                                (canMutate ? (
+                                  <Link
+                                    href={`/admin/invoices/${inv.invoiceId}/void`}
+                                    className={buttonVariants({
+                                      variant: 'outline',
+                                      size: 'sm',
+                                      className:
+                                        'text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive',
+                                    })}
+                                    aria-label={t('actions.voidAriaLabel', {
+                                      number: inv.documentNumber?.raw ?? inv.invoiceId,
+                                    })}
+                                  >
+                                    {t('actions.void')}
+                                  </Link>
+                                ) : (
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          disabled
+                                          aria-disabled="true"
+                                          className="text-destructive"
+                                        >
+                                          {t('actions.void')}
                                         </Button>
                                       }
                                     />

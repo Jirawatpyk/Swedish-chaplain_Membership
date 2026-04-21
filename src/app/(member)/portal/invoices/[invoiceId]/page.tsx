@@ -178,18 +178,58 @@ export default async function PortalInvoiceDetailPage({
           invoice.pdf ? (
             <a
               href={`/api/portal/invoices/${invoice.invoiceId}/pdf`}
-              aria-label={`${tList('actions.download')} — ${documentNumber}`}
+              aria-label={`${
+                invoice.status === 'void'
+                  ? t('void.downloadVoidedPdf')
+                  : tList('actions.download')
+              } — ${documentNumber}`}
               className={cn(
                 buttonVariants({ variant: 'default', size: 'sm' }),
                 'min-h-11 px-4',
               )}
               download
             >
-              {tList('actions.download')}
+              {invoice.status === 'void'
+                ? t('void.downloadVoidedPdf')
+                : tList('actions.download')}
             </a>
           ) : null
         }
       />
+
+      {/* G-V2 — voided-invoice state banner. Inline section (not
+        * <Alert>, not <Card>) mirrors the admin voidDetails pattern
+        * at /admin/invoices/[id]/page.tsx so member/admin/email
+        * carry the same destructive visual vocabulary. Renders above
+        * the totals block because void IS the most load-bearing
+        * fact on the page for a voided invoice — everything below
+        * is archival reference. */}
+      {invoice.status === 'void' && invoice.voidedAt && (
+        <section
+          aria-labelledby="invoice-void-heading"
+          className="rounded-md border border-destructive/30 bg-destructive/5 p-4"
+        >
+          <h2
+            id="invoice-void-heading"
+            className="mb-3 text-sm font-medium text-destructive"
+          >
+            {t('void.title')}
+          </h2>
+          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-6">
+            <dt className="text-muted-foreground">{t('void.voidedAt')}</dt>
+            <dd>{formatDate(invoice.voidedAt, userLocale)}</dd>
+            {invoice.voidReason ? (
+              <>
+                <dt className="text-muted-foreground">
+                  {t('void.reasonLabel')}
+                </dt>
+                <dd className="whitespace-pre-wrap">{invoice.voidReason}</dd>
+              </>
+            ) : null}
+          </dl>
+          <p className="mt-3 text-sm text-destructive">{t('void.notPayable')}</p>
+        </section>
+      )}
 
       <Card>
         <CardContent className="grid gap-4 sm:grid-cols-2">
