@@ -170,6 +170,14 @@ export {
 } from './application/use-cases/get-credit-note';
 
 export {
+  listCreditNotes,
+  type ListCreditNotesInput,
+  type ListCreditNotesOutput,
+  type ListCreditNotesRow,
+  type ListCreditNotesError,
+} from './application/use-cases/list-credit-notes';
+
+export {
   getCreditNotePdfSignedUrl,
   type GetCreditNotePdfSignedUrlInput,
   type GetCreditNotePdfSignedUrlError,
@@ -232,6 +240,7 @@ export {
   makeVoidInvoiceDeps,
   makeIssueCreditNoteDeps,
   makeGetCreditNoteDeps,
+  makeListCreditNotesDeps,
   makeGetCreditNotePdfSignedUrlDeps,
   makeUpdateInvoiceDraftDeps,
   makeUpdateTenantInvoiceSettingsDeps,

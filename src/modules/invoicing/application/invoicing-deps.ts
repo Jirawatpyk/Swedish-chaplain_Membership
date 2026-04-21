@@ -187,6 +187,13 @@ export function makeGetCreditNoteDeps(tenantId: string): GetCreditNoteDeps {
   };
 }
 
+/** G-3 — admin CN directory deps. Repo only; no audit / clock needed. */
+export function makeListCreditNotesDeps(tenantId: string): {
+  creditNoteRepo: ReturnType<typeof makeDrizzleCreditNoteRepo>;
+} {
+  return { creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId) };
+}
+
 export function makeGetCreditNotePdfSignedUrlDeps(
   tenantId: string,
 ): GetCreditNotePdfSignedUrlDeps {

@@ -67,4 +67,36 @@ export interface CreditNoteRepo {
     originalInvoiceId: InvoiceId,
     tenantId: string,
   ): Promise<readonly CreditNote[]>;
+
+  /**
+   * G-3 — paged tenant-scoped list for the `/admin/credit-notes`
+   * directory. Supports optional `fiscalYear` filter and `search`
+   * prefix/substring on `document_number`. Order: `issue_date DESC,
+   * credit_note_id DESC` (stable secondary sort for deterministic
+   * pagination across same-day issues).
+   *
+   * Each row carries a lightweight projection sufficient for the
+   * list UI — avoids hydrating full snapshots / PDF metadata for
+   * rows that the admin only scans.
+   */
+  listPaged(input: {
+    readonly tenantId: string;
+    readonly offset: number;
+    /** Caller-supplied bound; implementations MUST clamp to 1..100. */
+    readonly pageSize: number;
+    readonly fiscalYear?: number;
+    readonly search?: string;
+  }): Promise<{
+    readonly rows: readonly {
+      readonly creditNoteId: string;
+      readonly documentNumberRaw: string;
+      readonly issueDate: string;
+      readonly originalInvoiceId: string;
+      readonly originalInvoiceNumberRaw: string | null;
+      readonly memberLegalName: string;
+      readonly totalSatang: bigint;
+      readonly reason: string;
+    }[];
+    readonly total: number;
+  }>;
 }

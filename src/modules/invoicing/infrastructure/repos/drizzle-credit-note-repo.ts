@@ -6,7 +6,7 @@
  * every row touched, even on paths that forget a WHERE tenant_id
  * filter.
  */
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, ilike, sql } from 'drizzle-orm';
 import type { CreditNoteRepo } from '../../application/ports/credit-note-repo';
 import {
   asCreditNoteId,
@@ -277,6 +277,91 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
           ? [rowToCreditNote(r.creditNote as CreditNoteRow, r.originalInvoiceMemberId)]
           : [],
       );
+    },
+
+    async listPaged(input): Promise<{
+      readonly rows: readonly {
+        readonly creditNoteId: string;
+        readonly documentNumberRaw: string;
+        readonly issueDate: string;
+        readonly originalInvoiceId: string;
+        readonly originalInvoiceNumberRaw: string | null;
+        readonly memberLegalName: string;
+        readonly totalSatang: bigint;
+        readonly reason: string;
+      }[];
+      readonly total: number;
+    }> {
+      // G-3 — admin directory. Clamp pageSize to 1..100 per port
+      // contract so callers can't accidentally pull the whole tenant
+      // via `pageSize: Number.MAX_SAFE_INTEGER`.
+      const pageSize = Math.max(1, Math.min(100, input.pageSize | 0));
+      const offset = Math.max(0, input.offset | 0);
+
+      const filters: ReturnType<typeof and>[] = [
+        eq(creditNotes.tenantId, input.tenantId),
+      ];
+      if (typeof input.fiscalYear === 'number' && Number.isFinite(input.fiscalYear)) {
+        filters.push(eq(creditNotes.fiscalYear, input.fiscalYear));
+      }
+      if (input.search && input.search.trim().length > 0) {
+        filters.push(ilike(creditNotes.documentNumber, `%${input.search.trim()}%`));
+      }
+      const whereClause = filters.length === 1 ? filters[0] : and(...filters);
+
+      return runInTenant(ctx, async (tx) => {
+        // Paged rows — LEFT JOIN invoices to project document_number
+        // + member_id for the per-row display. Projection is narrow
+        // (no snapshot/PDF hydration) because the list UI only
+        // scans summary fields.
+        const rows = await tx
+          .select({
+            creditNoteId: creditNotes.creditNoteId,
+            documentNumberRaw: creditNotes.documentNumber,
+            issueDate: creditNotes.issueDate,
+            originalInvoiceId: creditNotes.originalInvoiceId,
+            originalInvoiceNumberRaw: invoices.documentNumber,
+            memberIdentitySnapshot: creditNotes.memberIdentitySnapshot,
+            totalSatang: creditNotes.totalSatang,
+            reason: creditNotes.reason,
+          })
+          .from(creditNotes)
+          .leftJoin(
+            invoices,
+            and(
+              eq(invoices.tenantId, creditNotes.tenantId),
+              eq(invoices.invoiceId, creditNotes.originalInvoiceId),
+            ),
+          )
+          .where(whereClause)
+          .orderBy(desc(creditNotes.issueDate), desc(creditNotes.creditNoteId))
+          .limit(pageSize)
+          .offset(offset);
+
+        // Parallel COUNT(*) for offset pagination "Showing X of N"
+        // UI. Runs against the same WHERE filters so the count
+        // matches the paged result set.
+        const [{ total } = { total: 0 }] = await tx
+          .select({ total: sql<number>`COUNT(*)::int` })
+          .from(creditNotes)
+          .where(whereClause);
+
+        const projected = rows.map((r) => {
+          const snap = r.memberIdentitySnapshot as { legal_name?: string } | null;
+          return {
+            creditNoteId: r.creditNoteId,
+            documentNumberRaw: r.documentNumberRaw,
+            issueDate: r.issueDate,
+            originalInvoiceId: r.originalInvoiceId,
+            originalInvoiceNumberRaw: r.originalInvoiceNumberRaw,
+            memberLegalName: snap?.legal_name ?? '—',
+            totalSatang: BigInt(r.totalSatang as unknown as string),
+            reason: r.reason,
+          };
+        });
+
+        return { rows: projected, total: Number(total ?? 0) };
+      });
     },
   };
 }

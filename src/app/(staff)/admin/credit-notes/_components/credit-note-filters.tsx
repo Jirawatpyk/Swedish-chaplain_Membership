@@ -1,0 +1,110 @@
+'use client';
+
+/**
+ * G-3 — Filter bar for `/admin/credit-notes` directory.
+ *
+ * Small client component that syncs two URL search params
+ * (`?q=` for document-number substring, `?fy=` for fiscal year)
+ * into the current path, with a Clear link that drops both.
+ * Page navigation is reset to page=1 on any filter change.
+ */
+import { useCallback, useMemo, useState, useTransition } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+
+export function CreditNoteFilters() {
+  const t = useTranslations('admin.creditNotes.list.filters');
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const [pending, startTransition] = useTransition();
+
+  const [q, setQ] = useState(params.get('q') ?? '');
+  const [fy, setFy] = useState(params.get('fy') ?? '');
+
+  const hasFilters = useMemo(
+    () => (params.get('q') ?? '').length > 0 || (params.get('fy') ?? '').length > 0,
+    [params],
+  );
+
+  const applyFilters = useCallback(
+    (nextQ: string, nextFy: string) => {
+      const next = new URLSearchParams(params.toString());
+      if (nextQ.trim()) next.set('q', nextQ.trim());
+      else next.delete('q');
+      if (nextFy.trim()) next.set('fy', nextFy.trim());
+      else next.delete('fy');
+      // Any filter change resets paging — paged offsets from the
+      // previous filter window don't map to the new result set.
+      next.delete('page');
+      const qs = next.toString();
+      startTransition(() => {
+        router.push(qs ? `${pathname}?${qs}` : pathname);
+      });
+    },
+    [params, pathname, router],
+  );
+
+  return (
+    <form
+      className="flex flex-wrap items-end gap-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        applyFilters(q, fy);
+      }}
+    >
+      <div className="grid gap-1">
+        <Label htmlFor="cn-filter-q" className="text-xs">
+          {t('search')}
+        </Label>
+        <Input
+          id="cn-filter-q"
+          type="search"
+          inputMode="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="CN-…"
+          className="min-w-[16rem]"
+          autoComplete="off"
+        />
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor="cn-filter-fy" className="text-xs">
+          {t('fiscalYear')}
+        </Label>
+        <Input
+          id="cn-filter-fy"
+          type="number"
+          inputMode="numeric"
+          min="2020"
+          max="2100"
+          value={fy}
+          onChange={(e) => setFy(e.target.value)}
+          placeholder="2026"
+          className="w-24"
+          autoComplete="off"
+        />
+      </div>
+      <Button type="submit" variant="outline" disabled={pending}>
+        {t('apply')}
+      </Button>
+      {hasFilters && (
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={pending}
+          onClick={() => {
+            setQ('');
+            setFy('');
+            applyFilters('', '');
+          }}
+        >
+          {t('clear')}
+        </Button>
+      )}
+    </form>
+  );
+}

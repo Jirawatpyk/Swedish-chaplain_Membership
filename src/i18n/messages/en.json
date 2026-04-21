@@ -942,6 +942,35 @@
           "codeFallback": "Error code: {code}"
         }
       },
+      "list": {
+        "meta": { "title": "Credit Notes" },
+        "title": "Credit notes",
+        "description": "All credit notes issued against tax invoices. Read-only audit trail.",
+        "empty": "Credit notes appear here after an admin issues one against a paid invoice.",
+        "filteredEmpty": "No credit notes match the current filters.",
+        "columns": {
+          "documentNumber": "Number",
+          "issueDate": "Issued",
+          "originalInvoice": "Original invoice",
+          "member": "Member",
+          "reason": "Reason",
+          "total": "Total",
+          "actions": "Actions"
+        },
+        "filters": {
+          "search": "Search document number",
+          "fiscalYear": "Fiscal year",
+          "apply": "Apply",
+          "clear": "Clear"
+        },
+        "actions": {
+          "view": "View",
+          "viewAria": "View credit note {number}",
+          "pdf": "PDF",
+          "pdfAria": "Download PDF for credit note {number}",
+          "clearFilters": "Clear filters"
+        }
+      },
       "detail": {
         "meta": { "title": "Credit Note" },
         "subtitle": "Read-only credit-note record against the original invoice.",
