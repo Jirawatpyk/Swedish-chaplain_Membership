@@ -272,6 +272,24 @@ export default async function InvoiceDetailPage({
                 issueDate={invoice.issueDate}
               />
             )}
+            {invoice.status === 'issued' && isAdmin && (
+              // Void — destructive terminal action on issued-unpaid
+              // invoices (US5 / FR-008). Routes to the typed-phrase
+              // confirm page at /admin/invoices/[id]/void rather than
+              // using an in-context dialog — a typed-phrase gate is
+              // high-friction by design (the phrase is the invoice's
+              // document number; see void-confirm-dialog.tsx) and
+              // deserves its own route for deep-linking + staging walk-
+              // throughs (CP-9.3). Rendered as a destructive outline
+              // button so it sits visually next to Pay without
+              // outranking it as a primary action.
+              <Link
+                href={`/admin/invoices/${invoice.invoiceId}/void`}
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                {t('actions.void')}
+              </Link>
+            )}
             {(invoice.status === 'paid' || invoice.status === 'partially_credited') &&
               isAdmin && (
                 <Link

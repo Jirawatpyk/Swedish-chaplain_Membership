@@ -1057,6 +1057,7 @@
           "issue": "Utfärda…",
           "download": "Ladda ner PDF",
           "pay": "Registrera betalning",
+          "void": "Annullera…",
           "issueCreditNote": "Utfärda kreditnota"
         },
         "fields": {

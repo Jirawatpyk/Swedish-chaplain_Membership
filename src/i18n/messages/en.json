@@ -1057,6 +1057,7 @@
           "issue": "Issue…",
           "download": "Download PDF",
           "pay": "Record payment",
+          "void": "Void…",
           "issueCreditNote": "Issue credit note"
         },
         "fields": {
