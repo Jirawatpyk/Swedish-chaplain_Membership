@@ -14,7 +14,15 @@ export async function generateMetadata(): Promise<Metadata> {
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getInvoice, makeGetInvoiceDeps, Money, calculateVat } from '@/modules/invoicing';
+import {
+  getInvoice,
+  makeGetInvoiceDeps,
+  Money,
+  calculateVat,
+  computeIsOverdue,
+  maybeEmitOverdueDetected,
+  makeOverdueAuditPort,
+} from '@/modules/invoicing';
 // Direct infra import for the settings read — same escape-hatch as
 // the B2 settings page. This is a READ against the public port
 // `getForIssue`, not a deep reach into internals.
@@ -190,6 +198,25 @@ export default async function InvoiceDetailPage({
   const isDraft = invoice.status === 'draft';
   const isAdmin = currentUser.role === 'admin';
 
+  // T109 — derive the presentation-only `overdue` variant + fire the
+  // opportunistic `invoice_overdue_detected` audit on first detection
+  // per Bangkok-local day (idempotent via migration 0021's partial
+  // unique idx). Detail page is a single-invoice read, so the emit
+  // is cheap (one insert, dedup by index on repeat views the same
+  // day). Fire-and-forget — swallowed-adapter errors do not 500 the
+  // page because the adapter's catch logs pino and returns false.
+  const nowUtcIso = new Date().toISOString();
+  const overdueDetected = computeIsOverdue(invoice, nowUtcIso);
+  const displayStatus = overdueDetected ? 'overdue' : invoice.status;
+  if (overdueDetected) {
+    void maybeEmitOverdueDetected(
+      makeOverdueAuditPort(),
+      invoice,
+      nowUtcIso,
+      { userId: currentUser.id, requestId: requestId ?? null },
+    );
+  }
+
   // Drafts don't persist subtotal/vat/total on the row (those are
   // frozen snapshots set on issue). For display, compute a live
   // preview from line totals + current F2 VAT rate. Issued invoices
@@ -228,8 +255,8 @@ export default async function InvoiceDetailPage({
         title={
           <span className="flex items-center gap-3">
             <span>{invoice.documentNumber?.raw ?? t('draftTitle')}</span>
-            <Badge variant={statusBadgeVariant(invoice.status)}>
-              {tStatus(invoice.status)}
+            <Badge variant={statusBadgeVariant(displayStatus)}>
+              {tStatus(displayStatus)}
             </Badge>
           </span>
         }

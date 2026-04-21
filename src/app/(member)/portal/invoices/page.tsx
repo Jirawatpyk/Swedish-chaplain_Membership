@@ -19,7 +19,11 @@ import type { Metadata } from 'next';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
+import {
+  listInvoicesPaged,
+  makeListInvoicesDeps,
+  computeIsOverdue,
+} from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -144,8 +148,18 @@ export default async function PortalInvoicesPage({
       status: statusFilter,
     },
   );
-  const rows = invoicesResult.ok ? invoicesResult.value.rows : [];
+  const rawRows = invoicesResult.ok ? invoicesResult.value.rows : [];
   const total = invoicesResult.ok ? invoicesResult.value.total : 0;
+  // T109 — presentation-only overdue derivation (FR-028). Each row
+  // carries a `displayStatus` that swaps `'issued'` for `'overdue'`
+  // when Bangkok-today has passed dueDate. Audit emit is NOT done on
+  // portal list reads — the admin surface handles that opportunistically
+  // to avoid multiplying per-row inserts on self-service page loads.
+  const nowUtcIso = new Date().toISOString();
+  const rows = rawRows.map((r) => ({
+    row: r,
+    displayStatus: computeIsOverdue(r, nowUtcIso) ? 'overdue' : r.status,
+  }));
 
   const hasActiveFilter = searchTerm.length > 0 || statusFilter !== 'all';
 
@@ -193,7 +207,7 @@ export default async function PortalInvoicesPage({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((r) => (
+                    {rows.map(({ row: r, displayStatus }) => (
                       <TableRow key={r.invoiceId}>
                         <TableCell className="align-middle font-mono text-xs">
                           <Link
@@ -206,14 +220,14 @@ export default async function PortalInvoicesPage({
                         </TableCell>
                         <TableCell className="align-middle">
                           {(() => {
-                            const Icon = STATUS_ICON_MAP[statusIconName(r.status)];
+                            const Icon = STATUS_ICON_MAP[statusIconName(displayStatus)];
                             return (
                               <Badge
-                                variant={statusBadgeVariant(r.status)}
+                                variant={statusBadgeVariant(displayStatus)}
                                 className="inline-flex items-center gap-1"
                               >
                                 <Icon className="size-3.5" aria-hidden="true" />
-                                {tStatus(r.status)}
+                                {tStatus(displayStatus)}
                               </Badge>
                             );
                           })()}

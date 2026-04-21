@@ -32,7 +32,11 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
+import {
+  getInvoice,
+  makeGetInvoiceDeps,
+  computeIsOverdue,
+} from '@/modules/invoicing';
 // Portal CN list — same escape-hatch pattern already used for the
 // tenant-settings + credit-note reads on the admin invoice detail
 // page. An Application-layer use-case is a Phase-10 consolidation
@@ -145,6 +149,13 @@ export default async function PortalInvoiceDetailPage({
     notFound();
   }
 
+  // T109 — derive presentation-only overdue status. Portal detail
+  // does not fire the audit emit; the admin detail page handles the
+  // opportunistic audit on their read path.
+  const displayStatus = computeIsOverdue(invoice, new Date().toISOString())
+    ? 'overdue'
+    : invoice.status;
+
   const documentNumber = invoice.documentNumber?.raw ?? '—';
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
@@ -164,14 +175,14 @@ export default async function PortalInvoiceDetailPage({
       <PageHeader
         title={`${t('title')} ${documentNumber}`}
         badge={(() => {
-          const Icon = STATUS_ICON_MAP[statusIconName(invoice.status)];
+          const Icon = STATUS_ICON_MAP[statusIconName(displayStatus)];
           return (
             <Badge
-              variant={statusBadgeVariant(invoice.status)}
+              variant={statusBadgeVariant(displayStatus)}
               className="inline-flex items-center gap-1"
             >
               <Icon className="size-3.5" aria-hidden="true" />
-              {tStatus(invoice.status)}
+              {tStatus(displayStatus)}
             </Badge>
           );
         })()}

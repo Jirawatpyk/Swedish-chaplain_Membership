@@ -18,7 +18,12 @@ export async function generateMetadata(): Promise<Metadata> {
 import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { listInvoicesPaged, makeListInvoicesDeps, isTenantInvoiceSetupComplete } from '@/modules/invoicing';
+import {
+  listInvoicesPaged,
+  makeListInvoicesDeps,
+  isTenantInvoiceSetupComplete,
+  computeIsOverdue,
+} from '@/modules/invoicing';
 import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { TableContainer } from '@/components/layout';
@@ -189,11 +194,18 @@ export default async function AdminInvoicesPage({
   // fallback to a placeholder if directorySearch's 100-row window
   // didn't include the member (rare — tenant with >100 active members
   // AND an old draft).
+  // T109 — derive presentation-only `overdue` status per FR-028.
+  // `status` stays the stored value for non-derived consumers; the
+  // `overdue` variant is injected ONLY when the read-time rule
+  // (issued + Bangkok-today > dueDate) fires, so recording payment
+  // or voiding immediately returns the row to its stored status on
+  // the next fetch.
+  const nowUtcIso = new Date().toISOString();
   const rows: InvoicesTableRow[] = invoicesResult.ok
     ? invoicesResult.value.rows.map((r) => ({
         invoiceId: r.invoiceId,
         documentNumber: r.documentNumber?.raw ?? '—',
-        status: r.status,
+        status: computeIsOverdue(r, nowUtcIso) ? 'overdue' : r.status,
         memberId: r.memberId,
         memberName:
           r.memberIdentitySnapshot?.legal_name ??
