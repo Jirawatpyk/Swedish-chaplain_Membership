@@ -51,10 +51,17 @@ export function BreadcrumbNav() {
       className="px-[var(--page-padding-x)] [padding-block-start:var(--page-padding-y)]"
     >
       {/* Desktop: full trail */}
+      {/* Key composes `href` + `idx` because non-route segments
+        * (NON_ROUTE_SEGMENTS in breadcrumb-path.ts) rewrite their
+        * href to the parent path — e.g. `/admin/credit-notes/<id>`
+        * has a `credit-notes` segment whose fallback href is
+        * `/admin`, which duplicates the `admin` segment's href.
+        * React key uniqueness requires disambiguation via position.
+        */}
       <BreadcrumbList className="hidden sm:flex">
         {segments.map((seg, idx) => (
           <BreadcrumbFragment
-            key={seg.href}
+            key={`${idx}:${seg.href}`}
             segment={seg}
             isLast={idx === segments.length - 1}
           />
@@ -73,7 +80,7 @@ export function BreadcrumbNav() {
         ) : null}
         {mobile.visible.map((seg, idx) => (
           <BreadcrumbFragment
-            key={seg.href}
+            key={`${idx}:${seg.href}`}
             segment={seg}
             isLast={idx === mobile.visible.length - 1}
           />

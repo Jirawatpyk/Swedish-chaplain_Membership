@@ -157,7 +157,7 @@ export default async function CreditNoteDetailPage({
           <div className="flex flex-wrap gap-2">
             <Link
               href={invoiceHref}
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              className={buttonVariants({ variant: 'outline' })}
             >
               <ArrowLeftIcon className="size-4" aria-hidden="true" />
               {t('actions.backToInvoice')}
@@ -166,7 +166,7 @@ export default async function CreditNoteDetailPage({
               href={pdfHref}
               target="_blank"
               rel="noopener noreferrer"
-              className={buttonVariants({ variant: 'default', size: 'sm' })}
+              className={buttonVariants({ variant: 'outline' })}
             >
               <DownloadIcon className="size-4" aria-hidden="true" />
               {t('actions.download')}
