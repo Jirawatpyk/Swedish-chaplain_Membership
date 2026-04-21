@@ -122,6 +122,17 @@ const schema = z.object({
   // production to avoid leaking stack traces in hot paths.
   DEBUG_RLS_STATE: booleanFromString.default(false),
 
+  // T115t — test-only flag enabling `X-Tenant` header override in
+  // `resolveTenantFromRequest`. When TRUE, a request's `X-Tenant`
+  // header value is used as the tenant slug instead of
+  // `env.tenant.slug`. Required by Playwright throwaway-tenant
+  // fixtures that provision per-test tenants.
+  //
+  // REFUSED in production: the validator below throws at boot if
+  // NODE_ENV='production' AND this flag is TRUE. In prod this
+  // header is silently ignored regardless of header presence.
+  E2E_X_TENANT_HEADER_ENABLED: booleanFromString.default(false),
+
   // --- F3 Feature flag ------------------------------------------------------
   // Kill-switch for the Members & Contacts feature. When FALSE every
   // `/api/members/**` and `/api/portal/**` route returns 503 `read_only_mode`
@@ -219,6 +230,19 @@ if (raw.NODE_ENV === 'production' && raw.DEBUG_RLS_STATE) {
   );
 }
 
+// T115t — E2E_X_TENANT_HEADER_ENABLED must NEVER be set in production.
+// It lets an incoming request override the deployed tenant slug via
+// the `X-Tenant` header, which is test-harness-only and would be a
+// trivial tenant-enumeration vector if enabled in prod.
+if (raw.NODE_ENV === 'production' && raw.E2E_X_TENANT_HEADER_ENABLED) {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - E2E_X_TENANT_HEADER_ENABLED must be false (or unset) when NODE_ENV=production. ' +
+      'This flag is a Playwright throwaway-tenant test harness, not a production feature. ' +
+      'Enabling it in prod would allow any client to override the deployed tenant slug via the X-Tenant header.',
+  );
+}
+
 // --- Public, typed env object -------------------------------------------------
 
 export const env = {
@@ -270,6 +294,11 @@ export const env = {
   tenant: {
     slug: raw.TENANT_SLUG,
     debugRlsState: raw.DEBUG_RLS_STATE,
+    // T115t — Playwright throwaway-tenant harness. Guarded at boot
+    // (refused in production, see validator above) + runtime-checked
+    // by `resolveTenantFromRequest` before honouring the X-Tenant
+    // header.
+    xHeaderEnabled: raw.E2E_X_TENANT_HEADER_ENABLED,
   },
 
   // F3 + F4 feature flags

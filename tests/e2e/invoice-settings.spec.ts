@@ -80,15 +80,44 @@ test.describe('@us4 tenant-invoice-settings', () => {
     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
   });
 
-  test.fixme(
-    'AS1 admin saves new VAT 7→10, next invoice uses 10% (needs throwaway-tenant infra — T115t)',
-    async () => {
-      // Flow: open settings → change vat_percent to 10 → Save →
-      // verify toast + API 200 → issue new invoice → assert
-      // vat_rate_snapshot=0.1000 on new doc, existing issued docs
-      // unchanged (FR-011).
-    },
-  );
+  // T115t — AS1 un-fixme'd. Tests the settings-change UI path only
+  // (API + DB + FR-011 snapshot immutability on existing issued docs
+  // is covered behaviorally by integration tests —
+  // settings-form.test.ts + vat-source-chain.test.ts T123).
+  test.describe('AS1 VAT change via throwaway tenant', () => {
+    test.skip(
+      process.env.E2E_X_TENANT_HEADER_ENABLED !== '1',
+      'E2E_X_TENANT_HEADER_ENABLED=1 required for throwaway-tenant (T115t)',
+    );
+
+    test('AS1 — admin changes VAT 7→10 on settings form', async ({ page }) => {
+      const { createThrowawayTenant } = await import('./helpers/throwaway-tenant');
+      const tenant = await createThrowawayTenant({ seedSettings: true });
+      try {
+        await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
+        await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+        await page.goto('/admin/settings/invoicing');
+        await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+
+        // Replace the pre-seeded 7.00 value with 10.00.
+        const vatField = page.getByLabel(/VAT rate|อัตรา VAT|momssats/i);
+        await vatField.fill('10.00');
+        await page.getByRole('button', { name: /^(save|บันทึก|spara)$/i }).click();
+        await page.waitForLoadState('networkidle');
+        await expect(
+          page.getByText(/saved|บันทึกแล้ว|sparad/i).first(),
+        ).toBeVisible({ timeout: 10_000 });
+
+        // Re-fetch the page — the VAT field should persist at 10.00
+        // (round-trip through PATCH /api/tenant-invoice-settings →
+        // DB → GET /api/tenant-invoice-settings).
+        await page.reload();
+        await expect(vatField).toHaveValue(/10\.00|10/);
+      } finally {
+        await tenant.cleanup().catch(() => {});
+      }
+    });
+  });
 
   test.fixme(
     'AS2 logo upload → preview → save → PDF renders logo (needs throwaway-tenant infra — T115t)',
@@ -107,14 +136,57 @@ test.describe('@us4 tenant-invoice-settings', () => {
     },
   );
 
-  test.fixme(
-    'AS5 first-time bootstrap flow (needs fresh-tenant fixture)',
-    async () => {
-      // Flow: sign in to a freshly-provisioned tenant that has NO
-      // tenant_invoice_settings row → /admin/settings/invoicing
-      // renders bootstrap empty-state card + "Create settings" CTA →
-      // save with all required fields → row created, issuance
-      // unblocked (FR-010).
-    },
-  );
+  // T115t — AS5 un-fixme'd via throwaway-tenant fixture + X-Tenant
+  // header override. Gated on E2E_X_TENANT_HEADER_ENABLED=1 in
+  // .env.local (env validator refuses the flag in production so a
+  // forgotten flag cannot be weaponised as a tenant-override vector).
+  test.describe('AS5 bootstrap via throwaway tenant', () => {
+    test.skip(
+      process.env.E2E_X_TENANT_HEADER_ENABLED !== '1',
+      'E2E_X_TENANT_HEADER_ENABLED=1 required for throwaway-tenant (T115t)',
+    );
+
+    test('AS5 — first-time bootstrap: empty-state → fill + save → row created', async ({
+      page,
+    }) => {
+      const { createThrowawayTenant } = await import('./helpers/throwaway-tenant');
+      // No settings row seeded → empty-state path.
+      const tenant = await createThrowawayTenant({ seedSettings: false });
+      try {
+        await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
+        await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+        await page.goto('/admin/settings/invoicing');
+        await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+
+        // Fill every required field + Save (first write creates the
+        // row per R7-B2, unlocking issuance per FR-010).
+        await page.getByLabel(/VAT rate|อัตรา VAT|momssats/i).fill('7.00');
+        await page
+          .getByLabel(/tax id|เลขประจำตัวผู้เสียภาษี|skatte.*id/i)
+          .fill('0105500000000');
+        await page
+          .getByLabel(/^(legal name|ชื่อ|juridiskt namn).* Thai.*/i)
+          .fill('ทดสอบ Throwaway');
+        await page
+          .getByLabel(/^(legal name|ชื่อ|juridiskt namn).* English.*/i)
+          .fill('Throwaway Test');
+        await page
+          .getByLabel(/^(address|ที่อยู่|adress).* Thai.*/i)
+          .fill('1 ถนนทดสอบ, กรุงเทพฯ');
+        await page
+          .getByLabel(/^(address|ที่อยู่|adress).* English.*/i)
+          .fill('1 Test Rd, Bangkok');
+        await page.getByLabel(/invoice.*prefix/i).fill('E2E');
+        await page.getByLabel(/credit.*prefix/i).fill('E2EC');
+
+        await page.getByRole('button', { name: /^(save|บันทึก|spara)$/i }).click();
+        await page.waitForLoadState('networkidle');
+        await expect(
+          page.getByText(/saved|บันทึกแล้ว|sparad/i).first(),
+        ).toBeVisible({ timeout: 10_000 });
+      } finally {
+        await tenant.cleanup().catch(() => {});
+      }
+    });
+  });
 });
