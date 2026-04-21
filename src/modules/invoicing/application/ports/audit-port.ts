@@ -30,6 +30,7 @@ export type F4AuditEventType =
   | 'invoice_pdf_regenerated'
   | 'invoice_cross_tenant_probe'
   | 'credit_note_cross_tenant_probe'
+  | 'tenant_invoice_settings_cross_tenant_probe'
   | 'pdf_render_failed'
   | 'auto_email_delivery_failed';
 

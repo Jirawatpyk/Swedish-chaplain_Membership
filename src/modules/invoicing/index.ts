@@ -267,5 +267,6 @@ export {
   makeGetTenantTaxPolicyDeps,
   makeResendPdfDeps,
   makeOverdueAuditPort,
+  makeF4AuditPort,
   isTenantInvoiceSetupComplete,
 } from './application/invoicing-deps';

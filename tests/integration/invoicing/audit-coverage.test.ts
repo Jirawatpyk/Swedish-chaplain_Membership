@@ -215,10 +215,11 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'invoice_pdf_regenerated',
       'invoice_cross_tenant_probe',
       'credit_note_cross_tenant_probe',
+      'tenant_invoice_settings_cross_tenant_probe',
       'pdf_render_failed',
       'auto_email_delivery_failed',
     ] as const;
-    expect(allF4Types).toHaveLength(17);
+    expect(allF4Types).toHaveLength(18);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -527,6 +528,12 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         status: 'covered',
         where: 'tenant-isolation.test.ts',
       },
+      tenant_invoice_settings_cross_tenant_probe: {
+        status: 'covered',
+        where:
+          'tenant-invoice-settings-probe.test.ts (T120 live-Neon host/deployed slug mismatch)',
+        since: '2026-04-21',
+      },
       pdf_render_failed: {
         status: 'covered',
         where:
@@ -569,6 +576,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'invoice_pdf_regenerated',
       'invoice_cross_tenant_probe',
       'credit_note_cross_tenant_probe',
+      'tenant_invoice_settings_cross_tenant_probe',
       'pdf_render_failed',
       'auto_email_delivery_failed',
     ] as const;
@@ -587,10 +595,10 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     const deferredCount = Object.values(coverage).filter(
       (c) => c.status === 'deferred',
     ).length;
-    expect(coveredCount + deferredCount).toBe(17);
-    // Behavioral coverage target: 16/17. Remaining 1 is a post-MVP
+    expect(coveredCount + deferredCount).toBe(18);
+    // Behavioral coverage target: 17/18. Remaining 1 is a post-MVP
     // deferral (Blob-outage auto-rerender path — not routinely
     // exercisable without simulated Blob 404s).
-    expect(coveredCount).toBeGreaterThanOrEqual(16);
+    expect(coveredCount).toBeGreaterThanOrEqual(17);
   });
 });

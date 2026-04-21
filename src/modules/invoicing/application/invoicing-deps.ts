@@ -233,6 +233,17 @@ export function makeOverdueAuditPort() {
   return overdueAuditAdapter;
 }
 
+/**
+ * T120 — expose the generic F4 audit adapter for route handlers that
+ * need to emit standalone audit rows (no mutating tx involved), e.g.
+ * the host-header MTA dual-bind probe in PATCH /api/tenant-invoice-settings.
+ * Non-happy-path routes use this to emit `*_cross_tenant_probe` events
+ * without needing to plumb a full use-case dependency graph.
+ */
+export function makeF4AuditPort() {
+  return f4AuditAdapter;
+}
+
 export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),

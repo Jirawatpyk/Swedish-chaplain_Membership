@@ -44,6 +44,8 @@ import {
 // eslint-disable-next-line no-restricted-imports
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
+import { makeF4AuditPort } from '@/modules/invoicing';
 
 // N4 (review 2026-04-19 21:19) — strict per-field constraints at the
 // route boundary. Matches `updateTenantInvoiceSettingsSchema` in the
@@ -155,6 +157,51 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
 
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
+
+  // T120 — Host-header / session-bound-tenant dual-bind probe.
+  //
+  // `resolveTenantFromRequest` currently hard-codes to `env.tenant.slug`
+  // (STD deployment), so this check is dormant today. When F10 MTA
+  // rolls out and the resolver starts parsing subdomain / session
+  // claims, a mismatch between the host-header-resolved tenant and the
+  // deployment-bound tenant signals either (a) an MTA misconfiguration
+  // or (b) a deliberate cross-tenant probe by an attacker with a valid
+  // admin session on a different tenant. Either way: audit + 403.
+  //
+  // We compare against `env.tenant.slug` rather than a session-bound
+  // tenant claim because F1 `UserAccount` does not carry a `tenantId`
+  // field (sessions are cross-tenant by design — membership is via
+  // `contacts.linked_user_id`). The env-bound slug IS the
+  // authoritative deployed tenant for STD; for MTA this comparison
+  // evolves to a session-claim check without needing a route-handler
+  // rewrite.
+  if (tenantCtx.slug !== env.tenant.slug) {
+    logger.warn(
+      {
+        requestId,
+        hostResolvedSlug: tenantCtx.slug,
+        deployedSlug: env.tenant.slug,
+        userId: ctx.current.user.id,
+      },
+      'PATCH /api/tenant-invoice-settings host / deployed-tenant mismatch',
+    );
+    await makeF4AuditPort().emit(null, {
+      tenantId: tenantCtx.slug,
+      requestId,
+      eventType: 'tenant_invoice_settings_cross_tenant_probe',
+      actorUserId: ctx.current.user.id,
+      summary: `Cross-tenant probe on tenant-invoice-settings (host=${tenantCtx.slug}, deployed=${env.tenant.slug})`,
+      payload: {
+        host_resolved_slug: tenantCtx.slug,
+        deployed_slug: env.tenant.slug,
+        route: 'PATCH /api/tenant-invoice-settings',
+      },
+    });
+    return NextResponse.json(
+      { error: { code: 'cross_tenant_forbidden' } },
+      { status: 403 },
+    );
+  }
 
   // N5 — rate-limit. Settings mutation is high-value (legal identity
   // snapshots into every future invoice) + feeds an audit emit on
