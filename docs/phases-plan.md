@@ -208,12 +208,12 @@ Manual payment entry is fine at this stage — online payment comes in Phase 2.
 - Admin can generate Thai-tax-compliant PDF invoices
 - No more Excel for core operations
 
-| Order | Feature | `/speckit.specify` branch name | Reviewers |
-|-------|---------|-------------------------------|-----------|
-| 1     | **F1 — Auth & RBAC** | `001-auth-rbac` | ≥2 (security) |
-| 2     | **F2 — Membership Types Catalog** | `002-membership-types` | ≥1 |
-| 3     | **F3 — Member & Contact Management** | `003-members-contacts` | ≥2 (PII) |
-| 4     | **F4 — Membership Invoicing + PDF** | `004-mb-invoicing` | ≥2 (finance+TH tax) |
+| Order | Feature | `/speckit.specify` branch name | Status | Reviewers |
+|-------|---------|-------------------------------|--------|-----------|
+| 1     | **F1 — Auth & RBAC** | `001-auth-rbac` | ✅ Shipped (PR #1) | ≥2 (security) |
+| 2     | **F2 — Membership Plans Catalog** | `002-membership-plans` | ✅ Review-ready | ≥1 |
+| 3     | **F3 — Member & Contact Management** | `005-members-contacts` | ✅ Review-ready | ≥2 (PII) |
+| 4     | **F4 — Invoices & Receipts (Thai tax)** | `007-invoices-receipts` | ✅ Review-ready | ≥2 (finance+TH tax) |
 
 **Phase 1 ships when**: an admin can log in, create a member with its contacts,
 issue a membership invoice, mark it paid, and download a Thai-tax-compliant PDF.
