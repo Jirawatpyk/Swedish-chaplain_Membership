@@ -995,7 +995,8 @@
           "backToInvoice": "Tillbaka till faktura",
           "download": "Ladda ner PDF",
           "resend": "Skicka kreditnota-mejl igen",
-          "resendAria": "Mejla en ny kopia av kreditnota {number} till medlemmens primära kontakt"
+          "resendAria": "Mejla en ny kopia av kreditnota {number} till medlemmens primära kontakt",
+          "moreAria": "Fler åtgärder för {number}"
         },
         "toast": {
           "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",

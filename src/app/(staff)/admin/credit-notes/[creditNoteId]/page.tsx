@@ -21,7 +21,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
-import { ArrowLeftIcon, DownloadIcon } from 'lucide-react';
+import { ArrowLeftIcon } from 'lucide-react';
 
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -45,7 +45,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { buttonVariants } from '@/components/ui/button';
-import { ResendCnButton } from '../_components/resend-cn-button';
+import { CreditNoteMoreMenu } from '../_components/credit-note-more-menu';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.creditNotes.detail.meta');
@@ -128,7 +128,6 @@ export default async function CreditNoteDetailPage({
   const issuerLabel = issuerUser?.email ?? cn.issuedByUserId;
 
   const invoiceHref = `/admin/invoices/${cn.originalInvoiceId}`;
-  const pdfHref = `/api/credit-notes/${creditNoteId}/pdf`;
 
   // G-5 — sibling CNs on the same original invoice. Best-effort:
   // a repo failure never 500s the page (this is a convenience nav
@@ -170,16 +169,10 @@ export default async function CreditNoteDetailPage({
               <ArrowLeftIcon className="size-4" aria-hidden="true" />
               {t('actions.backToInvoice')}
             </Link>
-            <a
-              href={pdfHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              <DownloadIcon className="size-4" aria-hidden="true" />
-              {t('actions.download')}
-            </a>
-            <ResendCnButton
+            {/* Download PDF + Resend email collapse into one ghost
+                icon-only dropdown — mirrors InvoiceMoreMenu per the
+                ux-standards.md § 19 Icon-trigger zones guideline. */}
+            <CreditNoteMoreMenu
               creditNoteId={cn.creditNoteId}
               documentNumber={cn.documentNumber.raw}
             />

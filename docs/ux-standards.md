@@ -722,3 +722,64 @@ export default function Page() {
 `src/app/(member)/**/page.tsx` imports zero or multiple of the three
 containers. Adding a new page? Add an import; the pre-push hook blocks
 merges that forget.
+
+## 19. Icon-trigger zones (⋯ overflow menus)
+
+Use one consistent pattern for `MoreHorizontal` (⋯) dropdown triggers based
+on **where** the trigger lives on the page. Do not mix variants — it reads
+as visual noise when triggers at different scales share the same viewport.
+
+| Zone | Example | `variant` | `size` | Resulting box |
+|---|---|---|---|---|
+| **App-shell header** | User menu, theme toggle | `ghost` | `icon` | 32×32 |
+| **Table row action cell** | `plans-table.tsx`, members bulk-row | `ghost` | `icon` | 32×32 |
+| **Page-header action row** | `invoice-more-menu.tsx`, `credit-note-more-menu.tsx` | `ghost` | `icon-lg` | 36×36 |
+
+### Why `ghost` everywhere
+
+The ⋯ trigger is a **tertiary** action. Giving it a border (`outline`) at
+page-header scale makes it compete with primary (`default` solid) and
+destructive (`destructive-outline`) neighbours for attention — the
+hierarchy `solid > outline > ghost` reads clearly only when tertiary
+actions stay borderless.
+
+### Why `icon-lg` on page headers, `icon` elsewhere
+
+Page-header action rows use default `h-9` (36px) buttons (Pay / Issue /
+Void / Issue credit note). A 32×32 (`size-icon`) trigger in that row reads
+as visually shorter than its neighbours. `size-icon-lg` compiles to
+`size-9` = 36px, so vertical alignment stays perfect. Table rows and the
+app shell use a tighter 32×32 because they sit in higher-density zones
+where a 36×36 trigger would crowd the row.
+
+### Menu content
+
+```tsx
+<DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
+```
+
+- `align="end"` — trigger sits at the end of the action row; start-align
+  would overflow the viewport on mobile.
+- `min-w-56` (14rem / 224px) — fits the longest Thai label
+  ("ส่งอีเมลใบแจ้งหนี้อีกครั้ง") + icon + padding. Widen to `min-w-64`
+  only if a Swedish/Thai translation breaks the container.
+- `whitespace-nowrap` — prevents `Download PDF`, `Resend invoice email`
+  etc. from wrapping mid-label at narrow `--anchor-width`.
+
+### Destructive actions in an overflow menu
+
+Destructive actions (Void, Delete draft, Archive) **must not** live inside
+an overflow menu on a page header — they belong as standalone
+`destructive-outline` buttons. Menus hide items behind an extra click and
+allow accidental activation via keyboard-arrow drift; both are
+unacceptable failure modes for irreversible actions. Only `DropdownMenuItem
+variant="destructive"` with `ConfirmationDialog` gating is allowed inside a
+menu, and only for low-irreversibility items.
+
+### Reduced-motion
+
+Spinner icons (`Loader2 animate-spin`) inside menu items inherit the
+global `@media (prefers-reduced-motion: reduce)` rule in
+`src/app/globals.css` that neutralises `.animate-spin/pulse/bounce/ping`
+for every caller. Do **not** add per-component `motion-reduce:animate-none`
+modifiers — the global rule covers them.

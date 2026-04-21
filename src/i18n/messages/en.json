@@ -995,7 +995,8 @@
           "backToInvoice": "Back to invoice",
           "download": "Download PDF",
           "resend": "Resend credit note email",
-          "resendAria": "Email a fresh copy of credit note {number} to the member's primary contact"
+          "resendAria": "Email a fresh copy of credit note {number} to the member's primary contact",
+          "moreAria": "More actions for {number}"
         },
         "toast": {
           "resendSuccess": "Queued — {recipient} will receive a fresh copy shortly.",

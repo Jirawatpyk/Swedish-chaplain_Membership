@@ -414,7 +414,7 @@ export function PlansTable({
                               aria-label={t('columns.actions')}
                               data-row-actions-trigger
                             >
-                              <MoreHorizontal className="h-4 w-4" />
+                              <MoreHorizontal className="size-4" aria-hidden="true" />
                             </Button>
                           )}
                         />

@@ -363,6 +363,20 @@ body {
     transition-duration: 0s !important;
     animation-duration: 0s !important;
   }
+
+  /* Tailwind v4 utility animations (animate-spin, animate-pulse,
+     animate-bounce, animate-ping) carry no built-in reduced-motion
+     guard. Neutralise them globally so every <Loader2 animate-spin>
+     and <Spinner animate-pulse> across the codebase respects user
+     OS settings without requiring per-component `motion-reduce:`
+     modifiers. WCAG 2.3.3 (Animation from Interactions). */
+  .animate-spin,
+  .animate-pulse,
+  .animate-bounce,
+  .animate-ping {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 /* --- Cursor: Tailwind v4 does not set cursor-pointer on buttons by default --- */

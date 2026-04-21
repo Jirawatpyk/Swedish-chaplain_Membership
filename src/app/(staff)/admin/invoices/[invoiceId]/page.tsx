@@ -64,7 +64,7 @@ import {
 import { IssueInvoiceDialog } from '../_components/issue-invoice-dialog';
 import { RecordPaymentDialog } from '../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
-import { ResendAdminButton } from '../_components/resend-admin-button';
+import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -329,42 +329,24 @@ export default async function InvoiceDetailPage({
                   {t('actions.issueCreditNote')}
                 </Link>
               )}
-            {!isDraft && invoice.pdf && (
-              // Plain <a> (not <Link>) — the PDF endpoint returns a
-              // binary stream, which Next.js Link misinterprets as an
-              // RSC navigation and then fails the fetch. `download`
-              // hints the browser to save to disk; `target="_blank"`
-              // additionally gives mobile a chance to use the share
-              // sheet (FR-041).
-              <a
-                href={`/api/invoices/${invoice.invoiceId}/pdf`}
-                className={buttonVariants({ variant: 'outline' })}
-                target="_blank"
-                rel="noopener noreferrer"
-                download
-              >
-                {t('actions.download')}
-              </a>
-            )}
-            {/* T107 — resend invoice email (admin). Visible on every
-                non-draft, non-voided invoice. Voided cancellation
-                notices flow through the void dispatcher, not this
-                generic resend path. */}
-            {!isDraft && invoice.status !== 'void' && invoice.pdf && isAdmin && (
-              <ResendAdminButton
+            {/* Secondary actions (Download PDF, Resend invoice, Resend
+                receipt) collapse into one "⋯" icon dropdown so the
+                action row exposes only primary/destructive CTAs as
+                standalone buttons. Menu returns null when nothing to
+                show. T107 visibility rules preserved inside the menu. */}
+            {!isDraft && (
+              <InvoiceMoreMenu
                 invoiceId={invoice.invoiceId}
                 documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
-                variant="invoice"
-              />
-            )}
-            {/* T107 — resend receipt email (paid + separate-mode
-                receipt). Hidden on combined-mode (receiptPdf null)
-                and non-paid states. */}
-            {invoice.status === 'paid' && invoice.receiptPdf && isAdmin && (
-              <ResendAdminButton
-                invoiceId={invoice.invoiceId}
-                documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
-                variant="receipt"
+                showDownload={Boolean(invoice.pdf)}
+                showResendInvoice={
+                  isAdmin && invoice.status !== 'void' && Boolean(invoice.pdf)
+                }
+                showResendReceipt={
+                  isAdmin &&
+                  invoice.status === 'paid' &&
+                  Boolean(invoice.receiptPdf)
+                }
               />
             )}
           </div>
