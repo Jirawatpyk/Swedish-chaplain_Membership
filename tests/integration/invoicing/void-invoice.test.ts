@@ -17,7 +17,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq, and, sql } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
@@ -304,7 +304,14 @@ describe('F4 US5 — void-invoice (T098)', () => {
     const payload = auditRows[0]!.payload as Record<string, unknown>;
     expect(payload.invoice_id).toBe(invoiceId);
     expect(payload.member_id).toBe(memberId);
-    expect(payload.void_reason).toBe('Wrong tier selected');
+    // N-1 — B-1 redaction: audit carries SHA-256 of the void reason,
+    // NOT the plaintext. Plaintext must be absent from the payload to
+    // prevent free-text PII from accumulating in the append-only audit
+    // log (GDPR Art. 5(1)(c) minimisation / PDPA §23).
+    expect(payload.void_reason).toBeUndefined();
+    expect(payload.void_reason_sha256).toBe(
+      createHash('sha256').update('Wrong tier selected').digest('hex'),
+    );
     expect(payload.new_pdf_sha256).toBe(RERENDERED_SHA);
 
     // Outbox enqueued (auto_email_on_issue=true). T-2 — documentNumber
@@ -378,6 +385,68 @@ describe('F4 US5 — void-invoice (T098)', () => {
     expect(r.error.code).toBe('invalid_status');
     if (r.error.code === 'invalid_status') expect(r.error.status).toBe('void');
     expect(deps.renderCalls).toHaveLength(0);
+  }, 60_000);
+
+  it('T-PH2 — Phase 2 blob upload failure keeps void committed, emits invoice_pdf_sync_failed', async () => {
+    const { invoiceId } = await seedInvoice(tenant, user, planId, 'issued');
+    const deps = makeDeps(tenant.ctx.slug);
+    // Force Phase 2 blob upload to throw. Phase 1 (render, applyVoid,
+    // audit, outbox) is ALREADY committed by the time this fires — so
+    // the invoice MUST still reflect void state, pdf_sha256 MUST stay
+    // at ORIGINAL_SHA (blob bytes unchanged), and a new audit row
+    // `invoice_pdf_sync_failed` MUST document the partial state.
+    deps.blob.uploadPdf = vi.fn(async () => {
+      throw new Error('simulated blob outage');
+    });
+
+    const r = await voidInvoice(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      voidReason: 'Phase 2 blob fail test',
+    });
+
+    // Void IS committed — caller sees ok=true despite blob failure.
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.status).toBe('void');
+
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          status: invoices.status,
+          pdfSha256: invoices.pdfSha256,
+        })
+        .from(invoices)
+        .where(eq(invoices.invoiceId, invoiceId)),
+    );
+    expect(row?.status).toBe('void');
+    // Blob never accepted the new bytes, so DB's pdf_sha256 was NEVER
+    // updated (Phase 2 never reached applyInvoicePdfRegeneration).
+    // State: (old sha + old bytes) — CONSISTENT but INCOMPLETE.
+    expect(row?.pdfSha256).toBe(ORIGINAL_SHA);
+
+    // R-1a audit event documents the partial state via the umbrella
+    // `pdf_render_failed` type + `context: 'invoice_void_phase2_sync'`
+    // discriminator (see void-invoice.ts Phase 2 catch comment for
+    // rationale — DB enum reuse vs new migration).
+    const syncFailedRows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'pdf_render_failed'),
+            sql`${auditLog.payload}->>'context' = 'invoice_void_phase2_sync'`,
+          ),
+        ),
+    );
+    expect(syncFailedRows).toHaveLength(1);
+    const pl = syncFailedRows[0]!.payload as Record<string, unknown>;
+    expect(pl.phase).toBe('blob_upload');
+    expect(pl.blob_bytes_uploaded).toBe(false);
+    expect(pl.invoice_id).toBe(invoiceId);
   }, 60_000);
 
   it('does not enqueue outbox when auto_email_on_issue=false', async () => {

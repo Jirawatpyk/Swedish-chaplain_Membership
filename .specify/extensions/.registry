@@ -153,6 +153,22 @@
       },
       "registered_skills": [],
       "installed_at": "2026-04-15T01:29:44.600833+00:00"
+    },
+    "diagram": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:a2ab4ddf44a45c8bfd7f0a0a75e3aa2075d0135e1e288c6d70974f8b37d0621d",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.diagram.workflow",
+          "speckit.diagram.status",
+          "speckit.diagram.dependencies"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-04-21T04:02:56.382059+00:00"
     }
   }
 }

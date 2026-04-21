@@ -290,9 +290,16 @@ export async function voidInvoice(
   const { voided, blobKey, rendered } = phase1.value;
 
   // Phase 2 — post-commit Blob overwrite + pdf_sha256 sync. Best-effort:
-  // failures leave (old sha + old bytes) which is a CONSISTENT but
-  // INCOMPLETE state. A sweeper (future Phase 10 task) can reconcile by
-  // re-rendering and retrying the upload.
+  // on failure the invoice is ALREADY committed as void in the DB.
+  // State after failure:
+  //   - blob upload fails     → (old sha + old bytes)  CONSISTENT, stale
+  //   - sha-sync fails        → (old sha + new bytes)  SPLIT, detectable
+  // Both are detectable via sha-mismatch check; the emitted
+  // `invoice_pdf_sync_failed` audit event carries the `phase` so a
+  // sweeper + ops dashboards can target the right recovery action.
+  let blobUploaded = false;
+  let syncFailure: { phase: 'blob_upload' | 'sha_sync'; err: unknown } | null =
+    null;
   try {
     await deps.blob.uploadPdf({
       key: blobKey,
@@ -300,6 +307,7 @@ export async function voidInvoice(
       contentType: 'application/pdf',
       allowOverwrite: true,
     });
+    blobUploaded = true;
     await deps.invoiceRepo.withTx(async (tx2) => {
       await deps.invoiceRepo.applyInvoicePdfRegeneration(tx2, {
         tenantId: input.tenantId,
@@ -308,19 +316,63 @@ export async function voidInvoice(
       });
     });
   } catch (e) {
-    // Intentionally swallow — the void IS committed. Log loud so ops
-    // sees the reconciliation gap; a sweeper or admin action will
-    // complete the Blob overlay later.
+    syncFailure = {
+      phase: blobUploaded ? 'sha_sync' : 'blob_upload',
+      err: e,
+    };
+  }
+
+  if (syncFailure) {
+    // N-2 — DO NOT log blobKey (PG-1 regression — key embeds tenant +
+    // invoice path segments). `invoiceId + tenantId` correlate the row
+    // uniquely without leaking the storage layout.
     logger.error(
       {
-        err: e,
+        err: syncFailure.err,
         invoiceId: input.invoiceId,
         tenantId: input.tenantId,
-        blobKey,
+        phase: syncFailure.phase,
       },
       'voidInvoice: phase 2 blob+sha sync failed; invoice voided but PDF overlay deferred',
     );
+    // R-1a — emit an audit row so the partial state is visible in the
+    // append-only compliance trail + monitoring. Reuses the existing
+    // `pdf_render_failed` event type (the DB enum does not include a
+    // dedicated `invoice_pdf_sync_failed` value and the semantic
+    // umbrella "a PDF operation failed" fits). The `context` field
+    // discriminates render-phase failures (already used by the Phase-1
+    // render-throw path) from sync-phase failures (this branch).
+    // `null` tx because the Phase-1 tx is long committed.
+    await deps.audit.emit(null, {
+      tenantId: input.tenantId,
+      requestId: input.requestId ?? null,
+      eventType: 'pdf_render_failed',
+      actorUserId: input.actorUserId,
+      summary: `Invoice ${invoiceId} voided but PDF overlay deferred (phase=${syncFailure.phase})`,
+      payload: {
+        context: 'invoice_void_phase2_sync',
+        invoice_id: invoiceId,
+        phase: syncFailure.phase,
+        expected_sha256: rendered.sha256,
+        blob_bytes_uploaded: blobUploaded,
+      },
+    });
+    // Return the row with the Phase-1 state (void committed, old sha).
+    // Caller sees a void invoice whose pdf_sha256 still matches the
+    // (unchanged) blob bytes when blob_upload failed, or the
+    // now-stale value when sha_sync failed.
+    return ok(voided);
   }
 
-  return ok(voided);
+  // R-1b — Phase 2 succeeded: the DB row now has the new sha256 but
+  // `voided` was captured from `applyVoid`'s RETURNING (Phase 1, old
+  // sha). Patch the in-memory representation so callers serialising
+  // this Invoice (e.g., the route handler's JSON response) see the
+  // freshly-committed sha matching the blob bytes.
+  return ok({
+    ...voided,
+    pdf: voided.pdf
+      ? { ...voided.pdf, sha256: rendered.sha256 }
+      : voided.pdf,
+  });
 }

@@ -121,6 +121,13 @@ hooks:
     prompt: Commit task changes?
     description: Auto-commit after task generation
     condition: null
+  - extension: diagram
+    command: speckit.diagram.dependencies
+    enabled: true
+    optional: true
+    prompt: Generate task dependency diagram after task breakdown?
+    description: Auto-generate dependency DAG after tasks are created
+    condition: null
   after_implement:
   - extension: git
     command: speckit.git.commit
