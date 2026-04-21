@@ -51,6 +51,18 @@ export interface CreditNote {
   readonly tenantId: string;
   readonly creditNoteId: CreditNoteId;
   readonly originalInvoiceId: InvoiceId;
+  /**
+   * G-1 — memberId of the original invoice, projected via JOIN by the
+   * repo. Required for the portal-side ownership check in
+   * `getCreditNote` / `getCreditNotePdfSignedUrl` when the actor is a
+   * member role: the CN's owner is implicitly the original invoice's
+   * member. Storing the value on the CN row was considered but the
+   * invoice's member_id is already immutable post-issue (F3 archive
+   * does not cascade), so a lookup-time JOIN is cheaper than schema
+   * churn. Typed as `string` (not `MemberId`) to avoid a cross-module
+   * domain coupling; callers narrow as needed.
+   */
+  readonly originalInvoiceMemberId: string;
 
   readonly fiscalYear: FiscalYear;
   readonly sequenceNumber: number;

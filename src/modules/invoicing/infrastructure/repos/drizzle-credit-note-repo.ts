@@ -31,11 +31,14 @@ import {
   makeMemberIdentitySnapshot,
   type MemberIdentitySnapshot,
 } from '../../domain/value-objects/member-identity-snapshot';
-import { creditNotes, type CreditNoteRow } from '../db';
+import { creditNotes, invoices, type CreditNoteRow } from '../db';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 
-function rowToCreditNote(row: CreditNoteRow): CreditNote {
+function rowToCreditNote(
+  row: CreditNoteRow,
+  originalInvoiceMemberId: string,
+): CreditNote {
   const fy = asFiscalYearUnsafe(row.fiscalYear);
   // The document_number in the DB is the canonical value emitted by
   // DocumentNumber.of — parse re-validates, unsafe is safe here.
@@ -65,6 +68,7 @@ function rowToCreditNote(row: CreditNoteRow): CreditNote {
     tenantId: row.tenantId,
     creditNoteId: asCreditNoteId(row.creditNoteId),
     originalInvoiceId: asInvoiceId(row.originalInvoiceId),
+    originalInvoiceMemberId,
     fiscalYear: fy,
     sequenceNumber: row.sequenceNumber,
     documentNumber: docNum.value,
@@ -123,9 +127,26 @@ function selectByOriginalInvoice(
   originalInvoiceId: InvoiceId,
   tenantIdArg: string,
 ) {
+  // G-1 — LEFT JOIN invoices to project `member_id` (required for the
+  // portal-side ownership check; see CreditNote.originalInvoiceMemberId
+  // doc comment). The join is cheap (composite PK lookup) and returns
+  // the same row count as the unjoined query because every CN has
+  // exactly one original invoice (FK-enforced). Using LEFT to be
+  // resilient to a future orphan row (schema allows the FK but we
+  // prefer not to 500 the UI if an invoice is ever hard-deleted).
   return tx
-    .select()
+    .select({
+      creditNote: creditNotes,
+      originalInvoiceMemberId: invoices.memberId,
+    })
     .from(creditNotes)
+    .leftJoin(
+      invoices,
+      and(
+        eq(invoices.tenantId, creditNotes.tenantId),
+        eq(invoices.invoiceId, creditNotes.originalInvoiceId),
+      ),
+    )
     .where(
       and(
         eq(creditNotes.tenantId, tenantIdArg),
@@ -166,14 +187,44 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
       if (!inserted) {
         throw new Error('drizzle-credit-note-repo: insertCreditNote returned no row');
       }
-      return rowToCreditNote(inserted as CreditNoteRow);
+      // G-1 — the caller (issue-credit-note.ts) holds the original
+      // invoice row under a FOR UPDATE lock in the same tx; we could
+      // have the caller pass the memberId in, but a one-shot JOIN
+      // SELECT here keeps the port contract narrow (caller only
+      // supplies insert data) and the JOIN is a composite-PK lookup.
+      const [joinRow] = await tx
+        .select({ memberId: invoices.memberId })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.originalInvoiceId),
+          ),
+        )
+        .limit(1);
+      if (!joinRow) {
+        throw new Error(
+          'drizzle-credit-note-repo: insertCreditNote — original invoice not found for JOIN',
+        );
+      }
+      return rowToCreditNote(inserted as CreditNoteRow, joinRow.memberId);
     },
 
     async findById(creditNoteId: CreditNoteId, tenantIdArg: string): Promise<CreditNote | null> {
-      const row = await runInTenant(ctx, async (tx) => {
+      const result = await runInTenant(ctx, async (tx) => {
         const rows = await tx
-          .select()
+          .select({
+            creditNote: creditNotes,
+            originalInvoiceMemberId: invoices.memberId,
+          })
           .from(creditNotes)
+          .leftJoin(
+            invoices,
+            and(
+              eq(invoices.tenantId, creditNotes.tenantId),
+              eq(invoices.invoiceId, creditNotes.originalInvoiceId),
+            ),
+          )
           .where(
             and(
               eq(creditNotes.tenantId, tenantIdArg),
@@ -183,7 +234,18 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
           .limit(1);
         return rows[0] ?? null;
       });
-      return row ? rowToCreditNote(row as CreditNoteRow) : null;
+      if (!result) return null;
+      if (!result.originalInvoiceMemberId) {
+        logger.error(
+          { creditNoteId, tenantId: tenantIdArg },
+          'drizzle-credit-note-repo: findById — CN row has no matching invoice (orphan)',
+        );
+        return null;
+      }
+      return rowToCreditNote(
+        result.creditNote as CreditNoteRow,
+        result.originalInvoiceMemberId,
+      );
     },
 
     async findByOriginalInvoice(
@@ -193,7 +255,11 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
       const rows = await runInTenant(ctx, async (tx) =>
         selectByOriginalInvoice(tx, originalInvoiceId, tenantIdArg),
       );
-      return rows.map((r) => rowToCreditNote(r as CreditNoteRow));
+      return rows.flatMap((r) =>
+        r.originalInvoiceMemberId
+          ? [rowToCreditNote(r.creditNote as CreditNoteRow, r.originalInvoiceMemberId)]
+          : [],
+      );
     },
 
     async findByOriginalInvoiceInTx(
@@ -206,7 +272,11 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
         originalInvoiceId,
         tenantIdArg,
       );
-      return rows.map((r) => rowToCreditNote(r as CreditNoteRow));
+      return rows.flatMap((r) =>
+        r.originalInvoiceMemberId
+          ? [rowToCreditNote(r.creditNote as CreditNoteRow, r.originalInvoiceMemberId)]
+          : [],
+      );
     },
   };
 }

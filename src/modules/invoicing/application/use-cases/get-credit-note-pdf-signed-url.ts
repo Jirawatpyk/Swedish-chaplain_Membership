@@ -17,7 +17,15 @@ import { logger } from '@/lib/logger';
 export interface GetCreditNotePdfSignedUrlInput {
   readonly tenantId: string;
   readonly actorUserId: string;
-  readonly actorRole: 'admin' | 'manager';
+  readonly actorRole: 'admin' | 'manager' | 'member';
+  /**
+   * G-1 — REQUIRED when `actorRole === 'member'`. The use-case
+   * enforces that the CN's `originalInvoiceMemberId` matches this id
+   * so a member cannot sign-URL another member's CN PDF. Ignored for
+   * admin/manager (tenant-scoped trust via RLS + role gate is
+   * sufficient there).
+   */
+  readonly actorMemberId?: string;
   readonly requestId?: string | null;
   readonly creditNoteId: string;
 }
@@ -57,6 +65,28 @@ export async function getCreditNotePdfSignedUrl(
       },
     });
     return err({ code: 'credit_note_not_found' });
+  }
+
+  // G-1 — member ownership check. Members signing a download URL for
+  // a CN must own the original invoice. Mismatch → opaque
+  // `credit_note_not_found` (do not leak existence) + audit.
+  if (input.actorRole === 'member') {
+    if (!input.actorMemberId || cn.originalInvoiceMemberId !== input.actorMemberId) {
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'credit_note_cross_tenant_probe',
+        actorUserId: input.actorUserId,
+        summary: `Member ownership mismatch on credit note ${creditNoteId} (signed URL)`,
+        payload: {
+          attempted_credit_note_id: creditNoteId,
+          actor_role: 'member',
+          attempted_member_id: input.actorMemberId ?? null,
+          route: 'get-credit-note-pdf-signed-url',
+        },
+      });
+      return err({ code: 'credit_note_not_found' });
+    }
   }
 
   // Review fix IM-4 (2026-04-20) — wrap the signed-URL issuance in
