@@ -1320,7 +1320,33 @@
           "subtotal": "Subtotal",
           "vat": "VAT",
           "total": "Total"
+        },
+        "creditNotes": {
+          "heading": "Credit Notes",
+          "description": "A credit has been issued against this invoice. The invoice total stays the same (tax-document immutability); the credit note below records the amount credited back.",
+          "view": "View",
+          "viewAria": "View credit note {number}"
         }
+      }
+    },
+    "creditNotes": {
+      "detail": {
+        "meta": { "title": "Credit Note" },
+        "subtitle": "A credit has been issued against your invoice.",
+        "status": { "issued": "Issued" },
+        "actions": {
+          "backToInvoice": "Back to invoice",
+          "download": "Download PDF"
+        },
+        "fields": {
+          "issueDate": "Issue date",
+          "originalInvoice": "Original invoice",
+          "originalInvoiceLinkLabel": "Open invoice",
+          "creditAmount": "Credit amount (excl. VAT)",
+          "vat": "VAT",
+          "total": "Total credit (incl. VAT)"
+        },
+        "reason": { "heading": "Reason" }
       }
     },
     "profile": {

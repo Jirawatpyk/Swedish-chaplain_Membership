@@ -33,6 +33,16 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
+// Portal CN list — same escape-hatch pattern already used for the
+// tenant-settings + credit-note reads on the admin invoice detail
+// page. An Application-layer use-case is a Phase-10 consolidation
+// candidate. Ownership is still enforced: the repo is tenant-scoped
+// via RLS, and this page reaches here only after getInvoice has
+// already validated member ownership of the invoice — any CN rows
+// against that invoice are, by construction, this member's.
+// eslint-disable-next-line no-restricted-imports
+import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
+import { asInvoiceId } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -138,6 +148,15 @@ export default async function PortalInvoiceDetailPage({
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;
+
+  // G-1 — load any credit notes attached to this invoice so the
+  // member sees + can download them. Best-effort: a repo failure
+  // falls back to an empty list rather than 500-ing the detail
+  // page. 99% of invoices have zero CNs so rendering is gated on
+  // the list being non-empty (no single-item noise).
+  const portalCreditNotes = await makeDrizzleCreditNoteRepo(tenantCtx.slug)
+    .findByOriginalInvoice(asInvoiceId(invoice.invoiceId), tenantCtx.slug)
+    .catch(() => [] as never[]);
 
   return (
     <DetailContainer>
@@ -288,6 +307,47 @@ export default async function PortalInvoiceDetailPage({
           </dl>
         </CardContent>
       </Card>
+
+      {portalCreditNotes.length > 0 && (
+        <Card>
+          <CardContent className="flex flex-col gap-4">
+            <h2 className="text-h4">{t('creditNotes.heading')}</h2>
+            <p className="text-caption text-muted-foreground">
+              {t('creditNotes.description')}
+            </p>
+            <ul role="list" className="flex flex-col gap-2">
+              {portalCreditNotes.map((pcn) => (
+                <li
+                  key={pcn.creditNoteId}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3"
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-mono text-sm font-medium">
+                      {pcn.documentNumber.raw}
+                    </span>
+                    <span className="text-caption text-muted-foreground tabular-nums">
+                      {pcn.issueDate} ·{' '}
+                      {formatSatangThb(pcn.total.satang, userLocale)} THB
+                    </span>
+                  </div>
+                  <Link
+                    href={`/portal/credit-notes/${pcn.creditNoteId}`}
+                    className={cn(
+                      buttonVariants({ variant: 'outline', size: 'sm' }),
+                      'min-h-11 px-4',
+                    )}
+                    aria-label={t('creditNotes.viewAria', {
+                      number: pcn.documentNumber.raw,
+                    })}
+                  >
+                    {t('creditNotes.view')}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <div>
         <Link

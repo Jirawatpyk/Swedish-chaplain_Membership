@@ -1320,7 +1320,33 @@
           "subtotal": "Delsumma",
           "vat": "Moms",
           "total": "Totalt"
+        },
+        "creditNotes": {
+          "heading": "Kreditnotor",
+          "description": "En kreditnota har utfärdats mot denna faktura. Fakturans totalbelopp förblir detsamma (skattedokument kan inte ändras); kreditnotan nedan registrerar det krediterade beloppet separat.",
+          "view": "Visa",
+          "viewAria": "Visa kreditnota {number}"
         }
+      }
+    },
+    "creditNotes": {
+      "detail": {
+        "meta": { "title": "Kreditnota" },
+        "subtitle": "En kreditnota har utfärdats mot din faktura.",
+        "status": { "issued": "Utfärdad" },
+        "actions": {
+          "backToInvoice": "Tillbaka till faktura",
+          "download": "Ladda ner PDF"
+        },
+        "fields": {
+          "issueDate": "Utfärdandedatum",
+          "originalInvoice": "Ursprunglig faktura",
+          "originalInvoiceLinkLabel": "Öppna faktura",
+          "creditAmount": "Kreditbelopp (exkl. moms)",
+          "vat": "Moms",
+          "total": "Totalt kredit (inkl. moms)"
+        },
+        "reason": { "heading": "Anledning" }
       }
     },
     "profile": {
