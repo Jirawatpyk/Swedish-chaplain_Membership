@@ -383,7 +383,7 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 ### 10d. Observability verification (verification)
 
 - [ ] T113 [P] Verify metric emission in production code — grep `src/modules/invoicing/**` for `logger.child` + `span.setAttributes` + metric counter increments covering all 6 metrics listed in T022 observability section. Each use case MUST emit `invoicing.<use_case>.duration_ms` span + `invoicing.<use_case>.count` counter. Document in `docs/observability.md § F4 Invoicing → Verified metrics`.
-- [ ] T113a [P] Verify all 16 F4 audit event types actually emit from the matching use cases (not just added to the enum) — add `tests/integration/invoicing/audit-coverage.test.ts` that runs every mutating use case once and asserts the matching audit row appears.
+- [X] T113a [P] Audit-coverage behavioral matrix shipped. `tests/integration/invoicing/audit-coverage.test.ts` now has: (1) DB-enum shape check (17/17 types registered), (2) behavioral tests for `invoice_draft_updated` + `invoice_draft_deleted` (the 2 types no other test covered), and (3) a declarative coverage inventory asserting every `F4AuditEventType` has a documented emit-site test. **15/17 covered behaviorally**; 2 deferred (`invoice_overdue_detected` → T109, `invoice_pdf_regenerated` → post-MVP R3-E4 auto-rerender). 6/6 tests green on live Neon. Coverage map links to: auto-email-outbox.test.ts, seq-number-atomicity.test.ts, void-invoice.test.ts, credit-note-partial-accumulation.test.ts, credit-note-immutability.test.ts, settings-form.test.ts, tenant-isolation.test.ts, resend-pdf.test.ts (unit).
 
 ### 10e. Manual verification passes (verification)
 

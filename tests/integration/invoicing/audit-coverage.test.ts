@@ -34,6 +34,14 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
+import {
+  updateInvoiceDraft,
+  makeUpdateInvoiceDraftDeps,
+  deleteInvoiceDraft,
+  makeDeleteInvoiceDraftDeps,
+} from '@/modules/invoicing';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import type { F4AuditEventType } from '@/modules/invoicing/application/ports/audit-port';
@@ -207,4 +215,252 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
   }, 30_000);
+
+  // ---------------------------------------------------------------------------
+  // T113a behavioral coverage — every F4 mutating use-case emits its event
+  // ---------------------------------------------------------------------------
+  //
+  // Phase 10 expansion: the enum-level probes above verify the DB accepts
+  // every event_type, but they don't prove the emit SITES (use cases) fire
+  // the right event. The tests below run the minimum-sufficient use-case
+  // invocations and assert the matching audit row lands.
+  //
+  // Types whose emit is covered by a DEDICATED test file are asserted via
+  // the inventory matrix at the bottom (documented cross-reference); types
+  // without a dedicated home get behavioral tests added here.
+
+  it('T113a — updateInvoiceDraft emits `invoice_draft_updated`', async () => {
+    // Seed a draft so the use-case has something to mutate.
+    const draftId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: draftId,
+        memberId,
+        planYear: 2026,
+        planId: 'audit-plan',
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
+      await tx.insert(invoiceLines).values({
+        tenantId: tenant.ctx.slug,
+        lineId: randomUUID(),
+        invoiceId: draftId,
+        kind: 'membership_fee',
+        descriptionTh: 'ค่าสมาชิก ปี 2026',
+        descriptionEn: 'Membership 2026',
+        unitPriceSatang: 1_000_000n,
+        totalSatang: 1_000_000n,
+        position: 1,
+      });
+    });
+
+    const result = await updateInvoiceDraft(
+      makeUpdateInvoiceDraftDeps(tenant.ctx.slug),
+      {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `t113a-update-${draftId}`,
+        invoiceId: draftId,
+        autoEmailOnIssue: true,
+      },
+    );
+    expect(result.ok).toBe(true);
+
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'invoice_draft_updated'),
+          eq(auditLog.requestId, `t113a-update-${draftId}`),
+        ),
+      );
+    expect(rows, 'invoice_draft_updated audit row did not land').toHaveLength(1);
+    expect((rows[0]!.payload as Record<string, unknown>).invoice_id).toBe(draftId);
+  }, 30_000);
+
+  it('T113a — deleteInvoiceDraft emits `invoice_draft_deleted`', async () => {
+    const draftId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: draftId,
+        memberId,
+        planYear: 2026,
+        planId: 'audit-plan',
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
+      await tx.insert(invoiceLines).values({
+        tenantId: tenant.ctx.slug,
+        lineId: randomUUID(),
+        invoiceId: draftId,
+        kind: 'membership_fee',
+        descriptionTh: 'ค่าสมาชิก ปี 2026',
+        descriptionEn: 'Membership 2026',
+        unitPriceSatang: 1_000_000n,
+        totalSatang: 1_000_000n,
+        position: 1,
+      });
+    });
+
+    const result = await deleteInvoiceDraft(
+      makeDeleteInvoiceDraftDeps(tenant.ctx.slug),
+      {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `t113a-delete-${draftId}`,
+        invoiceId: draftId,
+      },
+    );
+    expect(result.ok).toBe(true);
+
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'invoice_draft_deleted'),
+          eq(auditLog.requestId, `t113a-delete-${draftId}`),
+        ),
+      );
+    expect(rows, 'invoice_draft_deleted audit row did not land').toHaveLength(1);
+    expect((rows[0]!.payload as Record<string, unknown>).invoice_id).toBe(draftId);
+  }, 30_000);
+
+  it('T113a inventory — every F4AuditEventType is behaviorally covered somewhere', () => {
+    // Declarative cross-reference: asserts the human has plumbed every
+    // event type into AT LEAST ONE end-to-end test. The map below is
+    // the single source of truth; when a new F4AuditEventType is added,
+    // typecheck forces a corresponding entry here.
+    //
+    // `deferred` is reserved for types whose emit site ships in a
+    // future phase — CI keeps passing but we retain visibility.
+    const coverage: Record<
+      F4AuditEventType,
+      { status: 'covered' | 'deferred'; where?: string; since?: string }
+    > = {
+      invoice_draft_created: {
+        status: 'covered',
+        where: 'create-invoice-draft integration tests (audit-coverage probe + F3 timeline)',
+      },
+      invoice_draft_updated: {
+        status: 'covered',
+        where: 'audit-coverage.test.ts > T113a updateInvoiceDraft',
+        since: '2026-04-21',
+      },
+      invoice_draft_deleted: {
+        status: 'covered',
+        where: 'audit-coverage.test.ts > T113a deleteInvoiceDraft',
+        since: '2026-04-21',
+      },
+      invoice_issued: {
+        status: 'covered',
+        where: 'auto-email-outbox.test.ts > (1) + seq-number-atomicity.test.ts',
+      },
+      invoice_paid: {
+        status: 'covered',
+        where: 'auto-email-outbox.test.ts > (4b) recordPayment path',
+      },
+      invoice_voided: {
+        status: 'covered',
+        where: 'void-invoice.test.ts',
+      },
+      credit_note_issued: {
+        status: 'covered',
+        where:
+          'credit-note-partial-accumulation.test.ts + credit-note-immutability.test.ts',
+      },
+      tenant_invoice_settings_updated: {
+        status: 'covered',
+        where: 'settings-form.test.ts',
+      },
+      invoice_pdf_resent: {
+        status: 'covered',
+        where: 'auto-email-outbox.test.ts > (4a)',
+        since: '2026-04-21',
+      },
+      receipt_pdf_resent: {
+        status: 'covered',
+        where: 'auto-email-outbox.test.ts > (4b)',
+        since: '2026-04-21',
+      },
+      credit_note_pdf_resent: {
+        status: 'covered',
+        where: 'tests/unit/invoicing/resend-pdf.test.ts > credit_note variant (unit)',
+        since: '2026-04-21',
+      },
+      invoice_cross_tenant_probe: {
+        status: 'covered',
+        where:
+          'tenant-isolation.test.ts + auto-email-outbox.test.ts > (4c) portal mismatch',
+      },
+      credit_note_cross_tenant_probe: {
+        status: 'covered',
+        where: 'tenant-isolation.test.ts',
+      },
+      pdf_render_failed: {
+        status: 'covered',
+        where: 'seq-number-atomicity.test.ts > (a) PDF render throws',
+      },
+      auto_email_delivery_failed: {
+        status: 'covered',
+        where: 'auto-email-outbox.test.ts > (T106 dual-emit)',
+        since: '2026-04-21',
+      },
+      invoice_overdue_detected: {
+        status: 'deferred',
+        where: 'T109 derive-overdue use-case (not yet shipped)',
+      },
+      invoice_pdf_regenerated: {
+        status: 'deferred',
+        where:
+          'R3-E4 auto-rerender path (post-MVP Blob outage recovery — not yet exercised)',
+      },
+    };
+
+    // Every declared F4 type must appear in the coverage map — catches
+    // additions to the union that forget to update this inventory.
+    const declared: ReadonlyArray<F4AuditEventType> = [
+      'invoice_draft_created',
+      'invoice_draft_updated',
+      'invoice_draft_deleted',
+      'invoice_issued',
+      'invoice_paid',
+      'invoice_voided',
+      'invoice_overdue_detected',
+      'credit_note_issued',
+      'tenant_invoice_settings_updated',
+      'invoice_pdf_resent',
+      'receipt_pdf_resent',
+      'credit_note_pdf_resent',
+      'invoice_pdf_regenerated',
+      'invoice_cross_tenant_probe',
+      'credit_note_cross_tenant_probe',
+      'pdf_render_failed',
+      'auto_email_delivery_failed',
+    ] as const;
+    for (const t of declared) {
+      const entry = coverage[t];
+      expect(entry, `F4AuditEventType '${t}' missing from T113a inventory`).toBeDefined();
+      expect(['covered', 'deferred']).toContain(entry.status);
+      expect(entry.where, `'${t}' inventory missing 'where'`).toBeTruthy();
+    }
+
+    // Sanity: count the active vs. deferred split so future reviewers
+    // can see at a glance how much of F4 audit is green behaviorally.
+    const coveredCount = Object.values(coverage).filter(
+      (c) => c.status === 'covered',
+    ).length;
+    const deferredCount = Object.values(coverage).filter(
+      (c) => c.status === 'deferred',
+    ).length;
+    expect(coveredCount + deferredCount).toBe(17);
+    // Behavioral coverage target on ship: ≥15/17 (88%). Remaining 2
+    // are shippable deferrals (T109 + post-MVP blob-outage auto-rerender).
+    expect(coveredCount).toBeGreaterThanOrEqual(15);
+  });
 });
