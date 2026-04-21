@@ -1244,7 +1244,8 @@
       "usersList": "รายการผู้ใช้",
       "dashboard": "แดชบอร์ด",
       "membersList": "รายการสมาชิก",
-      "invoicesList": "รายการใบแจ้งหนี้"
+      "invoicesList": "รายการใบแจ้งหนี้",
+      "creditNotesList": "รายการใบลดหนี้"
     }
   },
   "nav": {

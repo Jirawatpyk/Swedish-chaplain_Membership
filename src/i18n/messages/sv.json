@@ -1244,7 +1244,8 @@
       "usersList": "Användarlista",
       "dashboard": "Instrumentpanel",
       "membersList": "Medlemslista",
-      "invoicesList": "Fakturalista"
+      "invoicesList": "Fakturalista",
+      "creditNotesList": "Kreditnotalista"
     }
   },
   "nav": {

@@ -147,6 +147,16 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/invoices',
     requires: 'read',
   },
+  {
+    // G-4 — Credit notes directory (/admin/credit-notes). Typing
+    // 'CN' / 'credit' / 'kreditnota' hits the palette fuzzy match
+    // via the i18n label so bookkeepers can jump straight to the
+    // directory from any surface.
+    id: 'nav.creditNotes',
+    label: 'palette.navigate.creditNotesList',
+    url: '/admin/credit-notes',
+    requires: 'read',
+  },
 ];
 
 function filterByRole<T extends { requires: 'admin' | 'read' }>(

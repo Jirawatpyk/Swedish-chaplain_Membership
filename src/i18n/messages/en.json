@@ -1244,7 +1244,8 @@
       "usersList": "Users list",
       "dashboard": "Dashboard",
       "membersList": "Members list",
-      "invoicesList": "Invoices list"
+      "invoicesList": "Invoices list",
+      "creditNotesList": "Credit notes list"
     }
   },
   "nav": {
