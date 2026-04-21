@@ -25,7 +25,7 @@
  * direct upsert path since US4 UI is post-MVP — the event is still
  * registered at DB level and emitted when code writes the row).
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -42,6 +42,14 @@ import {
   deleteInvoiceDraft,
   makeDeleteInvoiceDraftDeps,
 } from '@/modules/invoicing';
+import { issueInvoice } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
+import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
+import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
+import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import type { F4AuditEventType } from '@/modules/invoicing/application/ports/audit-port';
@@ -281,6 +289,123 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     expect((rows[0]!.payload as Record<string, unknown>).invoice_id).toBe(draftId);
   }, 30_000);
 
+  it('T122 — issueInvoice PDF-render failure emits `pdf_render_failed` audit', async () => {
+    const draftId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: draftId,
+        memberId,
+        planYear: 2026,
+        planId: 'audit-plan',
+        draftByUserId: user.userId,
+        status: 'draft',
+      });
+      await tx.insert(invoiceLines).values({
+        tenantId: tenant.ctx.slug,
+        lineId: randomUUID(),
+        invoiceId: draftId,
+        kind: 'membership_fee',
+        descriptionTh: 'ค่าสมาชิก ปี 2026',
+        descriptionEn: 'Membership 2026',
+        unitPriceSatang: 1_000_000n,
+        totalSatang: 1_000_000n,
+        position: 1,
+      });
+    });
+
+    const failingPdf = {
+      render: vi.fn(async () => {
+        throw new Error('T122 synthetic render failure');
+      }),
+    };
+    const settingsView: TenantInvoiceSettingsView = {
+      tenantId: tenant.ctx.slug,
+      currencyCode: 'THB',
+      vatRate: VatRate.ofUnsafe('0.0700'),
+      registrationFeeSatang: 0n,
+      invoiceNumberPrefix: 'AC',
+      creditNoteNumberPrefix: 'ACN',
+      receiptNumberingMode: 'combined',
+      fiscalYearStartMonth: 1,
+      defaultNetDays: 30,
+      proRatePolicy: 'monthly',
+      autoEmailEnabled: false,
+      identity: {
+        legal_name_th: 'ทดสอบ',
+        legal_name_en: 'Test',
+        tax_id: '0000000000000',
+        address_th: 'Bangkok',
+        address_en: 'Bangkok',
+        logo_blob_key: null,
+      },
+    };
+    const deps: IssueInvoiceDeps = {
+      invoiceRepo: makeDrizzleInvoiceRepo(tenant.ctx.slug),
+      tenantSettingsRepo: {
+        getForIssue: vi.fn(async () => settingsView),
+        upsert: vi.fn(),
+        withTx: vi.fn(async (_t, fn) => fn({})),
+      },
+      memberIdentity: {
+        getForIssue: vi.fn(async (_tx, _t, mid) => ({
+          memberId: mid,
+          isActive: true,
+          isArchived: false,
+          registrationFeePaid: true,
+          registrationDate: '2026-01-01',
+          snapshot: {
+            legal_name: 'Audit Co',
+            tax_id: '1234567890123',
+            address: 'Bangkok',
+            primary_contact_name: 'n',
+            primary_contact_email: 'n@n.n',
+          },
+        })),
+        markRegistrationFeePaid: vi.fn(async () => {}),
+      },
+      sequenceAllocator: postgresSequenceAllocator,
+      pdfRender: failingPdf,
+      blob: {
+        uploadPdf: vi.fn(),
+        uploadLogo: vi.fn(),
+        signDownloadUrl: vi.fn(),
+        downloadBytes: vi.fn(),
+        delete: vi.fn(),
+        list: vi.fn(),
+      },
+      audit: f4AuditAdapter,
+      clock: { nowIso: () => '2026-04-21T03:00:00Z' },
+      outbox: resendEmailOutboxAdapter,
+      currentTemplateVersion: 1,
+    };
+
+    const result = await issueInvoice(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `t122-${draftId}`,
+      invoiceId: draftId,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('pdf_render_failed');
+
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'pdf_render_failed'),
+          eq(auditLog.requestId, `t122-${draftId}`),
+        ),
+      );
+    expect(rows, 'pdf_render_failed audit row did not land').toHaveLength(1);
+    const payload = rows[0]!.payload as Record<string, unknown>;
+    expect(payload.invoice_id).toBe(draftId);
+    expect(payload.render_kind).toBe('invoice');
+    expect(typeof payload.reason).toBe('string');
+  }, 30_000);
+
   it('T113a — deleteInvoiceDraft emits `invoice_draft_deleted`', async () => {
     const draftId = randomUUID();
     await runInTenant(tenant.ctx, async (tx) => {
@@ -404,7 +529,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       },
       pdf_render_failed: {
         status: 'covered',
-        where: 'seq-number-atomicity.test.ts > (a) PDF render throws',
+        where:
+          'audit-coverage.test.ts > T122 (behavioral emit via issueInvoice failing-render) + seq-number-atomicity.test.ts > (a) rollback-path assertions',
+        since: '2026-04-21',
       },
       auto_email_delivery_failed: {
         status: 'covered',
