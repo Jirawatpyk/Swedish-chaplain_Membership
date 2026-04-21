@@ -218,6 +218,7 @@ function makeIssueDeps(
       uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       signDownloadUrl: vi.fn(async () => 'https://blob.test/signed'),
       delete: vi.fn(async () => {}),
+      list: vi.fn(async () => []),
     },
     audit: { emit: vi.fn(async () => {}) },
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
@@ -435,6 +436,7 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
           uploadLogo: vi.fn(async () => ({ key: '', url: '' })),
           signDownloadUrl: vi.fn(async () => ''),
           delete: vi.fn(async () => {}),
+          list: vi.fn(async () => []),
         },
       });
       const r = await issueInvoice(deps, {

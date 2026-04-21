@@ -181,6 +181,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       signDownloadUrl: vi.fn(),
       delete: vi.fn(),
+      list: vi.fn(async () => []),
     },
     audit: {
       emit: vi.fn(async () => {}),

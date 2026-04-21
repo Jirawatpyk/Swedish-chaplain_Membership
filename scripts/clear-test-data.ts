@@ -49,6 +49,9 @@ function unwrap<T>(result: unknown): T[] {
 export type ClearTestDataReport = {
   readonly e2eMembers: number;
   readonly e2eContacts: number;
+  /** F-04 — F4 E2E admin-mutation fixtures purged (990000-series). */
+  readonly f4MutationInvoices: number;
+  readonly f4MutationLines: number;
   readonly testUsers: number;
   readonly testTenantRows: {
     readonly members: number;
@@ -90,6 +93,30 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
     );
     e2eMembers = unwrap(membersDeleted).length;
   }
+
+  // F-04 — Purge stale F4 E2E admin-mutation fixtures.
+  // Scoped tightly to (a) the dedicated member `E2E Mutation Co`
+  // and (b) the reserved 990000–999999 sequence_number block. Safe
+  // to run against production-shaped tenants; real invoices live
+  // in 000001…<current>.
+  const mutationCleanup = await db.execute(
+    sql`DELETE FROM invoice_lines
+        WHERE invoice_id IN (
+          SELECT i.invoice_id FROM invoices i
+          JOIN members m ON i.tenant_id = m.tenant_id AND i.member_id = m.member_id
+          WHERE m.company_name = 'E2E Mutation Co'
+            AND i.sequence_number BETWEEN 990000 AND 999999
+        ) RETURNING line_id`,
+  );
+  const mutationLines = unwrap(mutationCleanup).length;
+  const mutationInvoiceCleanup = await db.execute(
+    sql`DELETE FROM invoices
+        WHERE sequence_number BETWEEN 990000 AND 999999
+          AND member_id IN (
+            SELECT member_id FROM members WHERE company_name = 'E2E Mutation Co'
+          ) RETURNING invoice_id`,
+  );
+  const mutationInvoices = unwrap(mutationInvoiceCleanup).length;
 
   // 2. Test-tenant data: members, contacts, plans, invoice_settings,
   //    tokens, outbox. Scoped by tenant_id LIKE 'test-%'. Order matters:
@@ -140,6 +167,106 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   //    invitee OR (b) a test user as inviter, BEFORE deleting users.
   //    Narrow pattern: only `test-*@swecham.test` (not .com), so
   //    production accounts are safe.
+  //
+  // F-04 follow-up (2026-04-21) — F4 invoices also hold `ON DELETE
+  // restrict` FKs on `draft_by_user_id`, `issued_by_user_id`,
+  // `paid_by_user_id`, `voided_by_user_id`. Past integration-test
+  // sessions have left orphan invoice rows where the invoice's
+  // `tenant_id` does NOT match `test-%` (stale slug, partial cleanup)
+  // while the `draft_by_user_id` STILL points at a `test-*@swecham.test`
+  // user. The step (2) filter above misses them → user DELETE blocks.
+  // Purge ANY invoice (and its dependent rows) referencing a test user
+  // regardless of tenant_id. Scope is tightly bounded: only rows
+  // referencing test-*@swecham.test users are touched.
+  await db.execute(
+    sql`DELETE FROM credit_notes
+        WHERE original_invoice_id IN (
+          SELECT invoice_id FROM invoices
+          WHERE draft_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+          OR payment_recorded_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+          OR voided_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+        )`,
+  );
+  await db.execute(
+    sql`DELETE FROM invoice_lines
+        WHERE invoice_id IN (
+          SELECT invoice_id FROM invoices
+          WHERE draft_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+          OR payment_recorded_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+          OR voided_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+        )`,
+  );
+  await db.execute(
+    sql`DELETE FROM invoices
+        WHERE draft_by_user_id IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )
+        OR payment_recorded_by_user_id IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )
+        OR voided_by_user_id IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )`,
+  );
+
+  // Same orphan-pattern cleanup for membership_plans — `created_by`
+  // + `updated_by` are ON DELETE restrict and block user delete when
+  // a stale plan row still references a test user (tenant_id may not
+  // match 'test-%' after a partial prior cleanup).
+  //
+  // Dependency order: a member may reference a test-user-created plan
+  // via `members_plan_tenant_year_fk`, so delete those members (and
+  // their contacts) BEFORE the plans.
+  await db.execute(
+    sql`DELETE FROM contacts
+        WHERE (tenant_id, member_id) IN (
+          SELECT m.tenant_id, m.member_id FROM members m
+          JOIN membership_plans p
+            ON m.tenant_id = p.tenant_id
+           AND m.plan_id = p.plan_id
+           AND m.plan_year = p.plan_year
+          WHERE p.created_by IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+          OR p.updated_by IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+        )`,
+  );
+  await db.execute(
+    sql`DELETE FROM members
+        WHERE (tenant_id, plan_id, plan_year) IN (
+          SELECT tenant_id, plan_id, plan_year FROM membership_plans
+          WHERE created_by IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+          OR updated_by IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+        )`,
+  );
+  await db.execute(
+    sql`DELETE FROM membership_plans
+        WHERE created_by IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )
+        OR updated_by IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )`,
+  );
+
   await db.execute(
     sql`DELETE FROM invitations
         WHERE user_id IN (
@@ -158,6 +285,8 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   return {
     e2eMembers,
     e2eContacts,
+    f4MutationInvoices: mutationInvoices,
+    f4MutationLines: mutationLines,
     testUsers: unwrap(usersDeleted).length,
     testTenantRows: {
       members: unwrap(testMembersDeleted).length,
@@ -177,6 +306,8 @@ async function main(): Promise<void> {
   console.log('');
   console.log('  E2E members:    ', report.e2eMembers);
   console.log('  E2E contacts:   ', report.e2eContacts);
+  console.log('  F4 mutation inv:', report.f4MutationInvoices);
+  console.log('  F4 mutation lns:', report.f4MutationLines);
   console.log('  Test users:     ', report.testUsers);
   console.log('  Test-tenant rows:');
   console.log('    members:      ', report.testTenantRows.members);

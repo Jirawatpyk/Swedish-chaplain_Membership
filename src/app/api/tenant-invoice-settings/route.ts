@@ -38,6 +38,11 @@ import {
   updateTenantInvoiceSettings,
   makeUpdateTenantInvoiceSettingsDeps,
 } from '@/modules/invoicing';
+// Direct infra import for GET — same escape-hatch pattern used by
+// /admin/settings/invoicing/page.tsx (SSR read). Keeps GET a thin
+// projection over the repo without a trivial use-case wrapper.
+// eslint-disable-next-line no-restricted-imports
+import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
 
 // N4 (review 2026-04-19 21:19) — strict per-field constraints at the
@@ -90,8 +95,62 @@ const bodySchema = z.object({
     .optional(),
 });
 
+/**
+ * T094 — GET /api/tenant-invoice-settings (F4 US4 / FR-009).
+ *
+ * Returns the current settings snapshot in the same snake_case shape
+ * as PATCH accepts. `null` body (HTTP 200) signals "not yet
+ * bootstrapped" so the admin UI renders the FR-010 empty-state.
+ * Admin-only (manager is read-only on finance per FR-012; a manager
+ * GET is allowed — read-only — in a later revision when the UI grows
+ * a read-only view).
+ */
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const ctx = await requireAdminContext(request, {
+    resource: 'tenant_invoice_settings',
+    action: 'read',
+  });
+  if ('response' in ctx) return ctx.response;
+
+  const tenantCtx = resolveTenantFromRequest(request);
+  const view = await drizzleTenantSettingsRepo.getForIssue(tenantCtx.slug);
+
+  if (!view) {
+    return NextResponse.json({ settings: null }, { status: 200 });
+  }
+
+  return NextResponse.json(
+    {
+      settings: {
+        tenant_id: view.tenantId,
+        currency_code: view.currencyCode,
+        vat_rate: view.vatRate.raw,
+        registration_fee_satang: String(view.registrationFeeSatang),
+        legal_name_th: view.identity.legal_name_th,
+        legal_name_en: view.identity.legal_name_en,
+        tax_id: view.identity.tax_id,
+        registered_address_th: view.identity.address_th,
+        registered_address_en: view.identity.address_en,
+        invoice_number_prefix: view.invoiceNumberPrefix,
+        credit_note_number_prefix: view.creditNoteNumberPrefix,
+        receipt_number_prefix: view.receiptNumberPrefix ?? null,
+        receipt_numbering_mode: view.receiptNumberingMode,
+        fiscal_year_start_month: view.fiscalYearStartMonth,
+        default_net_days: view.defaultNetDays,
+        pro_rate_policy: view.proRatePolicy,
+        auto_email_enabled: view.autoEmailEnabled,
+        logo_blob_key: view.identity.logo_blob_key ?? null,
+      },
+    },
+    { status: 200 },
+  );
+}
+
 export async function PATCH(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'write' });
+  const ctx = await requireAdminContext(request, {
+    resource: 'tenant_invoice_settings',
+    action: 'write',
+  });
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

@@ -47,4 +47,18 @@ export interface BlobStoragePort {
 
   /** Delete a key (used by transactional sweeper). */
   delete(key: string): Promise<void>;
+
+  /**
+   * T092b — list keys under a prefix. Used by the logo-upload use case
+   * to enforce the 50-logo-per-tenant history cap (FR-034 + R2-E6).
+   * Returns keys only (URLs not needed for the count gate).
+   *
+   * `limit` is REQUIRED so callers explicitly name their page bound —
+   * prevents silent truncation surprises (F-06). For count-gate callers
+   * (cap ≤ N), pass `N + headroom` and assert `result.length >= N`.
+   * Implementations MUST cap at `limit` and MUST NOT paginate — if a
+   * caller needs the full namespace they should add a dedicated paged
+   * method. Currently no such need.
+   */
+  list(prefix: string, limit: number): Promise<readonly string[]>;
 }

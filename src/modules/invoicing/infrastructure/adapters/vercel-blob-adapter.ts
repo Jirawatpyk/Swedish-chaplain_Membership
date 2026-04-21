@@ -7,7 +7,7 @@
  *
  * Uses `@vercel/blob` SDK; BLOB_READ_WRITE_TOKEN from env.
  */
-import { put, head, del } from '@vercel/blob';
+import { put, head, del, list } from '@vercel/blob';
 import type { BlobStoragePort } from '../../application/ports/blob-storage-port';
 import { env } from '@/lib/env';
 
@@ -94,5 +94,17 @@ export const vercelBlobAdapter: BlobStoragePort = {
 
   async delete(key: string): Promise<void> {
     await del(key, { token: env.blob.readWriteToken });
+  },
+
+  async list(prefix: string, limit: number): Promise<readonly string[]> {
+    // T092b — caller-named bound per port contract. For the logo cap
+    // (50), callers pass ≥ 51 so the count gate distinguishes
+    // "exactly at cap" from "over cap".
+    const result = await list({
+      prefix,
+      limit,
+      token: env.blob.readWriteToken,
+    });
+    return result.blobs.map((b) => b.pathname);
   },
 };

@@ -34,11 +34,21 @@ export interface UploadTenantLogoInput {
   readonly declaredSize: number;
 }
 
+/**
+ * T092b — enforce a per-tenant logo-history cap so a pathological
+ * client (or a buggy auto-save that re-uploads on every keystroke)
+ * cannot exhaust the Blob store. `50` matches the R2-E6 spec value
+ * and is generous: a normal tenant replaces their logo 1–3 times in
+ * the lifetime of the account.
+ */
+export const LOGO_HISTORY_CAP = 50;
+
 export type UploadTenantLogoError =
   | { code: 'mime_rejected'; mime: string }
   | { code: 'too_large'; size: number; maxBytes: 1_048_576 }
   | { code: 'dimensions_out_of_range'; width: number; height: number }
-  | { code: 'decode_failed' };
+  | { code: 'decode_failed' }
+  | { code: 'logo_history_cap_reached'; current: number; cap: typeof LOGO_HISTORY_CAP };
 
 export interface UploadTenantLogoDeps {
   readonly blob: BlobStoragePort;
@@ -125,10 +135,30 @@ export async function uploadTenantLogo(
     return err({ code: 'decode_failed' });
   }
 
-  // 5. Upload — unique key per upload so logo history can be
+  // 5. History-cap gate (T092b) — list existing logos under the
+  // per-tenant prefix and refuse if at or above the cap. Runs AFTER
+  // the validation gates above (cheap fast-fails first) and BEFORE
+  // the upload so a capped tenant does not waste Blob write quota.
+  const prefix = `invoicing/${input.tenantId}/logos/`;
+  // Pass `LOGO_HISTORY_CAP + 1` so the result distinguishes
+  // "exactly at cap" from "over cap" in a single call.
+  const existing = await deps.blob.list(prefix, LOGO_HISTORY_CAP + 1);
+  if (existing.length >= LOGO_HISTORY_CAP) {
+    logger.warn(
+      { tenantId: input.tenantId, count: existing.length, cap: LOGO_HISTORY_CAP },
+      'uploadTenantLogo: logo history cap reached',
+    );
+    return err({
+      code: 'logo_history_cap_reached',
+      current: existing.length,
+      cap: LOGO_HISTORY_CAP,
+    });
+  }
+
+  // 6. Upload — unique key per upload so logo history can be
   // inspected / rolled back via audit trail without namespace
   // collision on the Blob store.
-  const logoBlobKey = `invoicing/${input.tenantId}/logos/${randomUUID()}.${ext}`;
+  const logoBlobKey = `${prefix}${randomUUID()}.${ext}`;
   await deps.blob.uploadLogo({
     key: logoBlobKey,
     body: new Uint8Array(reencoded),

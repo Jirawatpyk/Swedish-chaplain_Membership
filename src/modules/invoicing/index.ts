@@ -191,6 +191,7 @@ export {
 
 export {
   uploadTenantLogo,
+  LOGO_HISTORY_CAP,
   type UploadTenantLogoInput,
   type UploadTenantLogoError,
 } from './application/use-cases/upload-tenant-logo';

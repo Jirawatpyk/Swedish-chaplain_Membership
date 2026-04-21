@@ -168,6 +168,7 @@ function makeDeps(tenantId: string): IssueCreditNoteDeps {
       uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       signDownloadUrl: vi.fn(async () => 'https://blob.test/signed'),
       delete: vi.fn(async () => {}),
+      list: vi.fn(async () => [] as string[]),
     },
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
