@@ -33,7 +33,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
-import { ArrowLeftIcon, DownloadIcon } from 'lucide-react';
+import { DownloadIcon } from 'lucide-react';
 
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -136,24 +136,18 @@ export default async function PortalCreditNoteDetailPage({
         }
         subtitle={t('subtitle')}
         actions={
-          <>
-            <Link
-              href={invoiceHref}
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              <ArrowLeftIcon className="size-4" aria-hidden="true" />
-              {t('actions.backToInvoice')}
-            </Link>
-            <a
-              href={pdfHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              <DownloadIcon className="size-4" aria-hidden="true" />
-              {t('actions.download')}
-            </a>
-          </>
+          // Back navigation handled by the portal BreadcrumbNav (see
+          // portal/layout.tsx). Action row only surfaces the feature
+          // action (Download PDF).
+          <a
+            href={pdfHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonVariants({ variant: 'outline' })}
+          >
+            <DownloadIcon className="size-4" aria-hidden="true" />
+            {t('actions.download')}
+          </a>
         }
       />
 

@@ -18,8 +18,6 @@ export default async function Loading() {
         subtitle={t('subtitle')}
         actions={
           <>
-            {/* Back to members */}
-            <Skeleton className="h-9 w-36" />
             {/* Recent activity (US6 timeline) */}
             <Skeleton className="h-9 w-36" />
             {/* Archive member (US7) — destructive, left of primary */}

@@ -30,7 +30,11 @@
  * header swaps the resolved tenant mid-suite.
  */
 
-process.loadEnvFile?.('.env.local');
+// Env vars loaded by Playwright's config (`playwright.config.ts`
+// § `loadEnvLocal()`) — no `process.loadEnvFile` here; ESM hoists
+// the imports below ABOVE any top-level statement, so calling
+// `loadEnvFile` at this line position would run AFTER `@/lib/db`
+// has already read process.env via its zod validator.
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';

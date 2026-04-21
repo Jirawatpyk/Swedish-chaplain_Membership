@@ -15,6 +15,7 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from './fixtures';
+import { createThrowawayTenant } from './helpers/throwaway-tenant';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -91,7 +92,6 @@ test.describe('@us4 tenant-invoice-settings', () => {
     );
 
     test('AS1 — admin changes VAT 7→10 on settings form', async ({ page }) => {
-      const { createThrowawayTenant } = await import('./helpers/throwaway-tenant');
       const tenant = await createThrowawayTenant({ seedSettings: true });
       try {
         await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
@@ -149,7 +149,6 @@ test.describe('@us4 tenant-invoice-settings', () => {
     test('AS5 — first-time bootstrap: empty-state → fill + save → row created', async ({
       page,
     }) => {
-      const { createThrowawayTenant } = await import('./helpers/throwaway-tenant');
       // No settings row seeded → empty-state path.
       const tenant = await createThrowawayTenant({ seedSettings: false });
       try {

@@ -21,8 +21,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
-import { ArrowLeftIcon } from 'lucide-react';
-
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -161,22 +159,15 @@ export default async function CreditNoteDetailPage({
         }
         subtitle={t('subtitle')}
         actions={
-          <>
-            <Link
-              href={invoiceHref}
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              <ArrowLeftIcon className="size-4" aria-hidden="true" />
-              {t('actions.backToInvoice')}
-            </Link>
-            {/* Download PDF + Resend email collapse into one ghost
-                icon-only dropdown — mirrors InvoiceMoreMenu per the
-                ux-standards.md § 19 Icon-trigger zones guideline. */}
-            <CreditNoteMoreMenu
-              creditNoteId={cn.creditNoteId}
-              documentNumber={cn.documentNumber.raw}
-            />
-          </>
+          // Back navigation is handled by the global BreadcrumbNav
+          // (admin/layout.tsx) — "Admin > Invoices > [INV#] > Credit
+          // Notes > [CN#]" — so the action row only surfaces feature
+          // actions (Download + Resend), collapsed into one ghost
+          // icon-only dropdown per ux-standards.md § 19.
+          <CreditNoteMoreMenu
+            creditNoteId={cn.creditNoteId}
+            documentNumber={cn.documentNumber.raw}
+          />
         }
       />
 

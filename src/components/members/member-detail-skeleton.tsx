@@ -5,9 +5,11 @@
  *
  * Structure mirrors the real detail page BODY (the route `loading.tsx`
  * owns the `<PageHeader>` shell + its action-button skeletons):
- *   - Company card: dt/dd grid (3 cols on lg) with ~13 fields
- *   - Contacts heading
- *   - Primary contact card: 4-field dl grid
+ *   - Company Card: dt/dd grid (3 cols on lg) with ~13 fields
+ *   - Contacts Card: single outer card with CardTitle + one primary
+ *     contact block inside (name header row + 4-field dl grid). Matches
+ *     the real page where individual contacts are flat rows inside the
+ *     outer card, separated by <Separator /> — no nested cards.
  */
 
 import { Skeleton } from '@/components/ui/skeleton';
@@ -43,15 +45,19 @@ export function MemberDetailSkeleton() {
         </CardContent>
       </Card>
 
-      <Skeleton className="h-5 w-24" aria-hidden />
-
       <Card aria-hidden>
         <CardHeader>
           <CardTitle className="text-base">
-            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-4 w-24" />
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {/* One flat primary-contact block — name row + 4-field grid.
+              No nested card shell; parent CardContent owns the framing. */}
+          <div className="mb-3 flex flex-row items-start justify-between gap-4">
+            <Skeleton className="h-5 w-48" />
+            <Skeleton className="h-9 w-28" />
+          </div>
           <div className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
             {Array.from({ length: 4 }).map((_, i) => (
               <DlRowSkeleton key={i} />

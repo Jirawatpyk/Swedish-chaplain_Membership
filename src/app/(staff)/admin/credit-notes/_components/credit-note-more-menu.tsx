@@ -95,6 +95,13 @@ export function CreditNoteMoreMenu({
             {...props}
             variant="ghost"
             size="icon-lg"
+            // `flex-none!` (note the `!` important suffix) prevents
+            // PageHeader's mobile `[&>*]:flex-1` rule from stretching
+            // the overflow trigger. The parent selector carries higher
+            // specificity (0,1,1) than a bare `.flex-none` class (0,1,0),
+            // so `!` is required to force the compact 36×36 square
+            // mandated by ux-standards.md § 19.
+            className="flex-none!"
             aria-label={t('actions.moreAria', { number: documentNumber })}
           >
             <MoreHorizontal aria-hidden="true" />
