@@ -47,7 +47,7 @@ import {
 /* eslint-enable no-restricted-imports */
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { outboxMetrics } from '@/lib/metrics';
+import { outboxMetrics, invoicingMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 /* eslint-disable no-restricted-imports --
  * Cron dispatcher is operational infrastructure — the same escape
@@ -358,6 +358,9 @@ async function dispatchOne(
           row.notificationType,
           'no_template_handler',
         );
+        if (row.notificationType === 'invoice_auto_email') {
+          invoicingMetrics.autoEmailBounce('no_template_handler');
+        }
         return 'permanent';
       }
 
@@ -484,6 +487,17 @@ async function dispatchOne(
           ? 'invalid_recipient'
           : 'max_retries',
       );
+      // T113 — F4 auto-email bounce counter. Fires alongside the
+      // generic outbox counter above so F4 observability dashboards
+      // can alert on bounce rate without grep'ing a notification_type
+      // label off the generic counter.
+      if (row.notificationType === 'invoice_auto_email') {
+        invoicingMetrics.autoEmailBounce(
+          result.error.code === 'invalid-recipient'
+            ? 'invalid_recipient'
+            : 'max_retries',
+        );
+      }
       return 'permanent';
     }
 

@@ -278,3 +278,105 @@ export const outboxMetrics = {
     ).add(count);
   },
 } as const;
+
+// --- F4 invoicing metrics ----------------------------------------------------
+//
+// T113 / plan.md § VII Perf & Observability declares 6 named metrics for the
+// invoicing bounded context. Implementation uses the same meter cache as
+// auth/outbox above — labels are bounded enums (event_type, route,
+// document_type) to keep cardinality under control.
+//
+// SLO alignment (docs/observability.md § F4 Invoicing):
+//   - issuance p95 < 1.5s        → invoicing_issue_duration_ms.p95
+//   - pdf render p95 < 800ms     → invoicing_pdf_render_duration_ms.p95
+//   - cross-tenant probe alerts  → rate(invoicing_cross_tenant_probe_total[5m]) > 0
+//   - auto-email bounce rate     → rate(invoicing_auto_email_bounces_total[1h])
+//                                    / rate(invoicing_auto_email_sent_total[1h]) > 5%
+//
+// Cardinality ceilings:
+//   - `probe_type` ∈ {invoice, credit_note, tenant_invoice_settings} (3 values)
+//   - `document_type` ∈ {invoice, receipt, credit_note} (3 values)
+//   - `bounce_reason` ∈ {max_retries, invalid_recipient, no_template_handler} (3)
+
+export const invoicingMetrics = {
+  /**
+   * Successful invoice issuance count. Incremented inside the
+   * `issueInvoice` use-case after the tx commits (i.e., only on
+   * post-commit success — failures that roll back are NOT counted
+   * because they don't consume a §87 sequence number). Paired with
+   * the duration histogram below.
+   */
+  issueCount(): void {
+    counter(
+      'invoicing_issue_total',
+      'Successful invoice issuances — §87 sequence numbers consumed',
+    ).add(1);
+  },
+
+  /**
+   * End-to-end issuance latency (load draft → lock → render → blob →
+   * persist → audit → outbox enqueue → commit). Target p95 < 1.5s
+   * per the plan. Fired once per successful issuance.
+   */
+  issueDurationMs(ms: number): void {
+    histogram(
+      'invoicing_issue_duration_ms',
+      'End-to-end issuance latency, p95 target 1500ms',
+      'ms',
+    ).record(ms);
+  },
+
+  /**
+   * PDF render latency (reactPdfRenderAdapter.render). Target
+   * p95 < 800ms per post-critique E6. Fired on every render call —
+   * invoice, receipt, credit note, void-stamp overlay, preview.
+   */
+  pdfRenderDurationMs(kind: string, ms: number): void {
+    histogram(
+      'invoicing_pdf_render_duration_ms',
+      'PDF render latency by document kind, p95 target 800ms',
+      'ms',
+    ).record(ms, { kind });
+  },
+
+  /**
+   * Sequence-allocator contention retries — incremented when the
+   * advisory-xact-lock wait was non-zero (i.e., another writer held
+   * the (tenant, doc_type, fiscal_year) lock when we tried to
+   * allocate). Fires once per retry. Steady background noise under
+   * concurrent load; a sustained spike indicates a hot tenant.
+   */
+  seqContentionRetry(documentType: string, fiscalYear: number): void {
+    counter(
+      'invoicing_seq_allocator_contention_retries_total',
+      'Advisory-lock contentions on sequence-allocator — labelled by doc_type + fy',
+    ).add(1, { document_type: documentType, fiscal_year: String(fiscalYear) });
+  },
+
+  /**
+   * Auto-email bounces — incremented when an `invoice_auto_email`
+   * outbox row reaches `permanently_failed` with `invalid-recipient`
+   * OR when the receiving Resend webhook reports a hard bounce.
+   * Alert: bounce rate > 5% over 1h (see docs/observability.md).
+   */
+  autoEmailBounce(reason: 'invalid_recipient' | 'max_retries' | 'no_template_handler'): void {
+    counter(
+      'invoicing_auto_email_bounces_total',
+      'F4 auto-email permanent failures — alert on bounce rate > 5% / 1h',
+    ).add(1, { reason });
+  },
+
+  /**
+   * Cross-tenant probe count — one per `{invoice,credit_note,
+   * tenant_invoice_settings}_cross_tenant_probe` audit emit. Alert:
+   * any non-zero rate over 5 min indicates enumeration attack.
+   */
+  crossTenantProbe(
+    probeType: 'invoice' | 'credit_note' | 'tenant_invoice_settings',
+  ): void {
+    counter(
+      'invoicing_cross_tenant_probe_total',
+      'F4 cross-tenant probe audit emissions — alert on any non-zero rate',
+    ).add(1, { probe_type: probeType });
+  },
+} as const;

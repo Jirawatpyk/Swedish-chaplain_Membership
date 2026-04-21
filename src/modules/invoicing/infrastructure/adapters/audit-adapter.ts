@@ -7,6 +7,7 @@
 import { sql } from 'drizzle-orm';
 import type { AuditPort, F4AuditEvent } from '../../application/ports/audit-port';
 import { db, type TenantTx } from '@/lib/db';
+import { invoicingMetrics } from '@/lib/metrics';
 
 export const f4AuditAdapter: AuditPort = {
   async emit(
@@ -31,5 +32,17 @@ export const f4AuditAdapter: AuditPort = {
          ${JSON.stringify(event.payload)}::jsonb,
          ${event.tenantId})
     `);
+
+    // T113 — cross-tenant-probe counter (alert: any non-zero rate
+    // over 5 min signals an enumeration attack). Bumped for the 3
+    // F4 probe event types only; every other audit type is
+    // operational / transactional and doesn't need a metric tail.
+    if (event.eventType === 'invoice_cross_tenant_probe') {
+      invoicingMetrics.crossTenantProbe('invoice');
+    } else if (event.eventType === 'credit_note_cross_tenant_probe') {
+      invoicingMetrics.crossTenantProbe('credit_note');
+    } else if (event.eventType === 'tenant_invoice_settings_cross_tenant_probe') {
+      invoicingMetrics.crossTenantProbe('tenant_invoice_settings');
+    }
   },
 };

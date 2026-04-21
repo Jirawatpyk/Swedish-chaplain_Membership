@@ -604,6 +604,47 @@ All metrics emitted by the `invoicing` bounded context. Every use case creates a
 | `invoicing.overdue.detected` | counter | tenant_slug | Lazy overdue derivation (once per day per invoice) |
 | `invoicing.resend.count` | counter | tenant_slug, doc_type | Manual PDF resend (admin clicks resend button) |
 
+### 16.5 Verified metrics at F4 Phase 10 ship (T113)
+
+The § 16.1–16.4 catalogue is the **full target set**. The subset actually emitting
+counters on the wire as of the Phase 10 ship is smaller — the other entries stay
+catalogued here as a post-MVP observability roadmap. The emit names use
+Prometheus-style underscores to match the F1/F3 `outboxMetrics` convention
+already in place; dot-notation names in the tables above map 1:1 via the OTel
+SDK exporter.
+
+| Catalogue name | Wire name | Status | Emit site |
+|---|---|---|---|
+| `invoicing.issue.count` | `invoicing_issue_total` | ✅ Wired | `issueInvoice` post-commit (counts consumed §87 sequences only — rolled-back attempts excluded) |
+| `invoicing.issue.duration_ms` | `invoicing_issue_duration_ms` | ✅ Wired | `issueInvoice` wall-clock (performance.now() at entry → .record() at ok-return) |
+| `invoicing.pdf_render.duration_ms` | `invoicing_pdf_render_duration_ms` | ✅ Wired | `reactPdfRenderAdapter.render` labelled by `kind` ∈ {invoice, receipt_combined, receipt_separate, credit_note, void_stamped_invoice, invoice_preview} |
+| `invoicing.auto_email.bounces` | `invoicing_auto_email_bounces_total` | ✅ Wired | `/api/cron/outbox-dispatch` perm-fail branches — labelled by `reason` ∈ {invalid_recipient, max_retries, no_template_handler} |
+| `invoicing.cross_tenant_probe.count` | `invoicing_cross_tenant_probe_total` | ✅ Wired | `f4AuditAdapter.emit` fires on 3 probe event types — labelled by `probe_type` ∈ {invoice, credit_note, tenant_invoice_settings} |
+| `invoicing.seq_allocator.contention_retries` | `invoicing_seq_allocator_contention_retries_total` | ⏸ Instrument ready, no emit | `postgresSequenceAllocator.allocateNext` uses `pg_advisory_xact_lock` which BLOCKS rather than retrying; this counter awaits a future claim-release allocator rewrite. |
+| `invoicing.blob_upload.duration_ms` | — | ⏸ Deferred | Covered indirectly via `invoicing_issue_duration_ms` tail; add later if blob becomes the dominant issuance latency contributor. |
+| `invoicing.auto_email.enqueued` | — | ⏸ Deferred | Enqueue count derivable from `notifications_outbox` COUNT + dashboard join; low-signal separate counter. |
+| `invoicing.auto_email.sent` | — | ⏸ Deferred | Same rationale as `enqueued`; plus Resend's own dashboard reports send count. |
+| `invoicing.auto_email.throttled` | — | ⏸ Deferred | Resend route 1/5-min rate-limit exists (T107); counter add when the 429 rate becomes interesting. |
+| `invoicing.logo_blob.count` | — | ⏸ Deferred | Tenant-level lifetime counter (50 cap per tenant) already asserted in `update-tenant-invoice-settings` use-case; metric is monitoring-only. |
+| `invoicing.logo_upload_rejected.count` | — | ⏸ Deferred | Reason classes surface via `pdf_render_failed` + `tenant_invoice_settings_updated` audit chaining; counter add if upload abuse patterns emerge. |
+| `invoicing.overdue.detected` | — | ⏸ Deferred | Covered via `invoice_overdue_detected` audit row count (idempotent-per-day); metric would be audit-row-count redundant. |
+| `invoicing.resend.count` | — | ⏸ Deferred | Covered via `invoice_pdf_resent` + `receipt_pdf_resent` + `credit_note_pdf_resent` audit rows; resend is ≪ daily volume so counter adds little beyond audit trail. |
+
+**SLO coverage at ship:**
+
+| SLO | Evidence source |
+|---|---|
+| SLO-F4-001 issuance success rate | `invoicing_issue_total` (post-commit only) vs total issue calls via pino logs |
+| SLO-F4-002 issuance p95 latency | `invoicing_issue_duration_ms` histogram |
+| SLO-F4-003 PDF render determinism | `pdf-deterministic.test.ts` (SC-003) + staging re-render probe |
+| SLO-F4-004 auto-email bounce rate | `invoicing_auto_email_bounces_total` / Resend send count |
+| SLO-F4-005 cross-tenant probes | `invoicing_cross_tenant_probe_total` — any non-zero rate alerts |
+| SLO-F4-006 invoice list query p95 | T110a perf test (RUN_PERF=1, p95=324ms observed vs 500ms budget) + prod p95 via Vercel Speed Insights once deployed |
+
+Deferred metrics can be added post-ship without migration — all go through the
+existing `@opentelemetry/api` → `@vercel/otel` pipeline. Adding a new emit
+site is a ~5-line patch (instrument + call site + doc row).
+
 ## 17. SLOs — F4
 
 | Objective | Window | Budget | Measurement |

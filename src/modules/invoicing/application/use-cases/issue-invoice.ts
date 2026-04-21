@@ -78,6 +78,7 @@ import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/f
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
 import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
@@ -140,6 +141,14 @@ export async function issueInvoice(
 ): Promise<Result<Invoice, IssueInvoiceError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   const now = deps.clock.nowIso();
+
+  // T113 — issuance-latency histogram (`invoicing_issue_duration_ms`,
+  // p95 target 1.5s per plan § VII). Start the clock at the use-case
+  // entry; the `.record()` call on success lives at the end of the
+  // happy-path branch so rolled-back attempts aren't logged (would
+  // pollute the SLO signal with timings that never produced a §87
+  // sequence number).
+  const issueStartedAt = performance.now();
 
   try {
   return await deps.invoiceRepo.withTx(async (tx) => {
@@ -346,6 +355,11 @@ export async function issueInvoice(
       });
     }
 
+    // T113 — happy-path emit. Count + duration fire together so
+    // rate(issue_total) × avg(issue_duration_ms) = total issuance
+    // wall-time on the dashboard.
+    invoicingMetrics.issueCount();
+    invoicingMetrics.issueDurationMs(performance.now() - issueStartedAt);
     return ok(issued);
   });
   } catch (e) {

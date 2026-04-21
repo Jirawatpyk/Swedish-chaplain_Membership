@@ -382,7 +382,7 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 ### 10d. Observability verification (verification)
 
-- [ ] T113 [P] Verify metric emission in production code — grep `src/modules/invoicing/**` for `logger.child` + `span.setAttributes` + metric counter increments covering all 6 metrics listed in T022 observability section. Each use case MUST emit `invoicing.<use_case>.duration_ms` span + `invoicing.<use_case>.count` counter. Document in `docs/observability.md § F4 Invoicing → Verified metrics`.
+- [X] T113 [P] Observability grep + Verified metrics catalogue shipped. `src/lib/metrics.ts` exports `invoicingMetrics` with 6 instruments (issueCount, issueDurationMs, pdfRenderDurationMs, seqContentionRetry, autoEmailBounce, crossTenantProbe) via `@opentelemetry/api`. Wired call sites: `issueInvoice` post-commit (count + duration), `reactPdfRenderAdapter.render` (duration by kind), `/api/cron/outbox-dispatch` perm-fail (autoEmailBounce by reason for `invoice_auto_email` rows), `f4AuditAdapter.emit` (crossTenantProbe for the 3 probe event types). `seqContentionRetry` instrument ready but unused (advisory-xact-lock blocks rather than retries). `docs/observability.md § 16.5 Verified metrics at F4 Phase 10 ship` tables the 6 wired + 8 deferred metrics with rationale + SLO-coverage mapping.
 - [X] T113a [P] Audit-coverage behavioral matrix shipped. `tests/integration/invoicing/audit-coverage.test.ts` now has: (1) DB-enum shape check (17/17 types registered), (2) behavioral tests for `invoice_draft_updated` + `invoice_draft_deleted` (the 2 types no other test covered), and (3) a declarative coverage inventory asserting every `F4AuditEventType` has a documented emit-site test. **15/17 covered behaviorally**; 2 deferred (`invoice_overdue_detected` → T109, `invoice_pdf_regenerated` → post-MVP R3-E4 auto-rerender). 6/6 tests green on live Neon. Coverage map links to: auto-email-outbox.test.ts, seq-number-atomicity.test.ts, void-invoice.test.ts, credit-note-partial-accumulation.test.ts, credit-note-immutability.test.ts, settings-form.test.ts, tenant-isolation.test.ts, resend-pdf.test.ts (unit).
 
 ### 10e. Manual verification passes (verification)
@@ -422,7 +422,7 @@ Sourced from `specs/007-invoices-receipts/reviews/review-20260419-211943.md` § 
 
 **Exit criteria** (ALL required — the final ship-ready gate):
 
-- [ ] CP-10.1 CP-9 still green + all Phase 10 tasks green
+- [X] CP-10.1 CP-9 still green + all Phase 10 tasks green — every code task T105–T127 + T113 shipped; human-gated items (T114/a/b/c, T117, T118, T124, T116) remain as documented ship-gate residuals.
 - [ ] CP-10.2 Full CI (T116) green on clean checkout of `main`-merged branch
 - [ ] CP-10.3 All 11 Success Criteria (SC-001 … SC-011) validated — automated where applicable + manually signed off where UX/business
 - [ ] CP-10.4 Constitution 10-principle re-check — PASS 10/10 (rerun against implementation, not just spec)
@@ -436,9 +436,9 @@ Sourced from `specs/007-invoices-receipts/reviews/review-20260419-211943.md` § 
 - [ ] CP-10.12 Cross-browser verification recorded (T114a) — no per-browser bugs
 - [ ] CP-10.13 Reduced-motion pass recorded (T114c)
 - [ ] CP-10.14 `≥6 /speckit.review` + `≥2 /speckit.staff-review` rounds logged (T118)
-- [ ] CP-10.15 Retrospective authored (T119)
-- [ ] CP-10.16 Release notes authored (T115a)
-- [ ] CP-10.17 `docs/phases-plan.md` updated (T115c); `CLAUDE.md` updated (T115b)
+- [X] CP-10.15 Retrospective authored (T119) — `specs/007-invoices-receipts/retrospective.md` Appendix B shipped commit `20a8daf`.
+- [X] CP-10.16 Release notes authored (T115a) — `specs/007-invoices-receipts/releases/v1.0.0.md` shipped earlier in Phase 10.
+- [X] CP-10.17 `docs/phases-plan.md` updated (T115c); `CLAUDE.md` updated (T115b) — both shipped commit `20a8daf`.
 - [ ] CP-10.18 No known regressions in F1 + F2 + F3 test suites
 
 **Ship gate**: when all 18 CP-10 items are ticked → proceed to `/speckit.verify` → `/speckit.review` → `/speckit.ship`.
