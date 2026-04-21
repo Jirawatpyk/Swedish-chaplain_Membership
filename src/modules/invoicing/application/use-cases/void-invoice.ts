@@ -104,8 +104,13 @@ export interface VoidInvoiceDeps {
  * PG-3 — sanitise a potentially PII-laden error message before it lands
  * in a typed error returned across the Application boundary. Truncate
  * to 200 chars and redact 13-digit sequences that could be Thai tax IDs.
+ *
+ * Exported for unit testing (T-SAN). Callers within the module use it
+ * directly; external consumers SHOULD NOT — the return-value semantics
+ * ("best-effort redacted, not a security guarantee") are
+ * call-site-specific.
  */
-function sanitiseErrorReason(raw: unknown): string {
+export function sanitiseErrorReason(raw: unknown): string {
   const s = String(raw).replace(/\d{13}/g, '[REDACTED-TAXID]');
   return s.length > 200 ? s.slice(0, 200) + '…' : s;
 }
@@ -131,7 +136,6 @@ export async function voidInvoice(
   type Phase1Success = {
     readonly voided: Invoice;
     readonly blobKey: string;
-    readonly templateVersion: number;
     readonly rendered: { readonly bytes: Uint8Array; readonly sha256: Sha256Hex };
   };
 
@@ -261,13 +265,18 @@ export async function voidInvoice(
           pdfBlobKey: loaded.pdf.blobKey,
           pdfTemplateVersion: loaded.pdf.templateVersion,
           documentNumber: loaded.documentNumber.raw,
+          // B-1 / FR-036 — admin-entered reason rendered into the
+          // cancellation email body. Plaintext in the OUTBOX
+          // context_data is acceptable (row purged after 90 days per
+          // B-2 cron); the append-only audit log carries only
+          // `void_reason_sha256` to avoid 10-year PII retention.
+          voidReason: input.voidReason,
         });
       }
 
       return ok({
         voided,
         blobKey: loaded.pdf.blobKey,
-        templateVersion: loaded.pdf.templateVersion,
         rendered,
       });
     });
@@ -343,20 +352,40 @@ export async function voidInvoice(
     // discriminates render-phase failures (already used by the Phase-1
     // render-throw path) from sync-phase failures (this branch).
     // `null` tx because the Phase-1 tx is long committed.
-    await deps.audit.emit(null, {
-      tenantId: input.tenantId,
-      requestId: input.requestId ?? null,
-      eventType: 'pdf_render_failed',
-      actorUserId: input.actorUserId,
-      summary: `Invoice ${invoiceId} voided but PDF overlay deferred (phase=${syncFailure.phase})`,
-      payload: {
-        context: 'invoice_void_phase2_sync',
-        invoice_id: invoiceId,
-        phase: syncFailure.phase,
-        expected_sha256: rendered.sha256,
-        blob_bytes_uploaded: blobUploaded,
-      },
-    });
+    //
+    // M-1 — wrap in try/catch: if the audit insert itself fails
+    // (connection pool exhaustion, DB outage), the Phase-2 signal
+    // would otherwise bubble as an uncaught exception past the
+    // use-case boundary — converting a (committed-void + deferred-
+    // overlay) state into a `rejected promise` that the route
+    // handler has to surface as a 500. The logger.error above
+    // preserves the signal regardless; catching here keeps the
+    // public API contract (Result<Invoice, VoidInvoiceError>).
+    try {
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'pdf_render_failed',
+        actorUserId: input.actorUserId,
+        summary: `Invoice ${invoiceId} voided but PDF overlay deferred (phase=${syncFailure.phase})`,
+        payload: {
+          context: 'invoice_void_phase2_sync',
+          invoice_id: invoiceId,
+          phase: syncFailure.phase,
+          expected_sha256: rendered.sha256,
+          blob_bytes_uploaded: blobUploaded,
+        },
+      });
+    } catch (auditErr) {
+      logger.error(
+        {
+          err: auditErr,
+          invoiceId: input.invoiceId,
+          tenantId: input.tenantId,
+        },
+        'voidInvoice: phase 2 audit emit failed; sync-gap signal preserved only via logger.error above',
+      );
+    }
     // Return the row with the Phase-1 state (void committed, old sha).
     // Caller sees a void invoice whose pdf_sha256 still matches the
     // (unchanged) blob bytes when blob_upload failed, or the

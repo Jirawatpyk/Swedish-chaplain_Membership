@@ -329,6 +329,18 @@ describe('F4 US5 — void-invoice (T098)', () => {
     expect(ob.invoiceId).toBe(invoiceId);
     expect(ob.pdfBlobKey).toBe(ORIGINAL_BLOB_KEY);
     expect(ob.documentNumber).toBe('VDIT-2026-000001');
+    // B-1 / FR-036 — voidReason MUST propagate so the cancellation
+    // email body can render the "Reason: X" clause per spec.
+    expect((ob as { voidReason?: string }).voidReason).toBe(
+      'Wrong tier selected',
+    );
+
+    // T-R1b — after Phase 2 success the returned in-memory Invoice
+    // MUST reflect the freshly-committed pdf_sha256 (not the Phase-1
+    // RETURNING value which captured the old sha). Route handlers
+    // serialise this object to JSON — a stale value would drift from
+    // the actual Blob contents until the next fetch.
+    expect(r.value.pdf?.sha256).toBe(RERENDERED_SHA);
 
     // T-1 — §87 no-reuse invariant. `VoidInvoiceDeps` does not include
     // a `sequenceAllocator`, so the use case is STRUCTURALLY unable to
@@ -461,6 +473,29 @@ describe('F4 US5 — void-invoice (T098)', () => {
     });
     expect(r.ok).toBe(true);
     expect(deps.outboxCalls).toHaveLength(0);
+  }, 60_000);
+
+  it('T-DISP — auto_email_on_issue=null falls back to tenant settings.autoEmailEnabled', async () => {
+    // The use-case resolves `loaded.autoEmailOnIssue ?? settings.
+    // autoEmailEnabled`. When the invoice-level override is NULL
+    // (the default for tenants who have not overridden), the tenant
+    // settings value decides. The seeded tenant has autoEmailEnabled
+    // defaulting to true (tenant_invoice_settings row seeded in
+    // beforeAll), so the outbox MUST enqueue even without the
+    // per-invoice explicit boolean.
+    const { invoiceId } = await seedInvoice(tenant, user, planId, 'issued', 1, null);
+    const deps = makeDeps(tenant.ctx.slug);
+
+    const r = await voidInvoice(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      voidReason: 'Fallback branch test',
+    });
+    expect(r.ok).toBe(true);
+    // Fallback branch reached the tenant-level default (true) →
+    // outbox row enqueued.
+    expect(deps.outboxCalls).toHaveLength(1);
   }, 60_000);
 
   it('emits cross-tenant probe audit on unknown invoice id', async () => {

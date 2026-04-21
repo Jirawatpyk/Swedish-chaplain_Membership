@@ -157,6 +157,9 @@ async function buildPayload(
       const pdfBlobKey = typeof ctx.pdf_blob_key === 'string' ? ctx.pdf_blob_key : '';
       const documentNumber =
         typeof ctx.document_number === 'string' ? ctx.document_number : undefined;
+      // B-1 / FR-036 — void reason for invoice_voided body copy.
+      const voidReason =
+        typeof ctx.void_reason === 'string' ? ctx.void_reason : undefined;
       if (!pdfBlobKey || !isInvoiceAutoEmailEventType(eventType)) return null;
       // R-2 — external HTTP work (Blob head + fetch) happens BEFORE
       // the FOR UPDATE SKIP LOCKED tx wraps this buildPayload call.
@@ -173,6 +176,7 @@ async function buildPayload(
           downloadUrl,
           locale,
           ...(documentNumber ? { documentNumber } : {}),
+          ...(voidReason ? { voidReason } : {}),
           // PG-2 — copy adapts based on whether the bytes are actually
           // shipped. `prefetchedBytes` is only populated when the
           // FEATURE_F4_VOID_ATTACHMENT flag is on.

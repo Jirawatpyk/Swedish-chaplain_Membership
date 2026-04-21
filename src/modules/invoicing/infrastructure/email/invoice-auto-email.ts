@@ -52,6 +52,14 @@ export interface InvoiceAutoEmailInput {
    * that isn't there. Only read for `invoice_voided`.
    */
   readonly hasAttachment?: boolean;
+  /**
+   * B-1 / FR-036 — admin-entered void reason, rendered into the
+   * `invoice_voided` body. Ignored for other event types. Untrimmed
+   * plaintext is fine here: this value is routed through the outbox
+   * `context_data` (purged after 90 days per B-2) and does not reach
+   * the append-only audit log (that path uses void_reason_sha256).
+   */
+  readonly voidReason?: string;
 }
 
 interface BuiltPayload {
@@ -77,12 +85,12 @@ const COPY: Record<
     },
     invoice_voided: {
       subject: 'Invoice {docNumber} has been voided',
-      // `{attachmentClause}` is replaced at render time based on the
-      // PG-2 `hasAttachment` flag — attached=attached copy, else
-      // download-link copy.
+      // `{attachmentClause}` + `{reasonClause}` are replaced at render
+      // time. PG-2 `hasAttachment` flag → attachmentClause;
+      // B-1 `voidReason` presence → reasonClause (empty when omitted).
       body:
         'Invoice {docNumber} has been voided and is no longer payable. ' +
-        'Please disregard any outstanding payment request for this invoice. ' +
+        'Please disregard any outstanding payment request for this invoice.{reasonClause} ' +
         '{attachmentClause}',
       cta: 'Download voided invoice (VOID)',
     },
@@ -122,7 +130,7 @@ const COPY: Record<
       subject: 'ใบแจ้งหนี้ {docNumber} ถูกยกเลิกแล้ว',
       body:
         'ใบแจ้งหนี้ {docNumber} ถูกยกเลิก เอกสารฉบับนี้ยกเลิกแล้วและไม่ต้องชำระเงิน ' +
-        'หากท่านได้รับการเรียกเก็บเงินของใบแจ้งหนี้ฉบับนี้ กรุณาไม่ต้องดำเนินการชำระ ' +
+        'หากท่านได้รับการเรียกเก็บเงินของใบแจ้งหนี้ฉบับนี้ กรุณาไม่ต้องดำเนินการชำระ{reasonClause} ' +
         '{attachmentClause}',
       cta: 'ดาวน์โหลดใบแจ้งหนี้ที่ยกเลิก (VOID)',
     },
@@ -162,7 +170,7 @@ const COPY: Record<
       subject: 'Faktura {docNumber} har annullerats',
       body:
         'Faktura {docNumber} har annullerats och ska inte längre betalas. ' +
-        'Bortse från eventuella betalningspåminnelser för denna faktura. ' +
+        'Bortse från eventuella betalningspåminnelser för denna faktura.{reasonClause} ' +
         '{attachmentClause}',
       cta: 'Ladda ner annullerad faktura (VOID)',
     },
@@ -220,6 +228,32 @@ const ATTACHMENT_CLAUSE: Record<
   },
 };
 
+/**
+ * B-1 / FR-036 — "Reason: <voidReason>" prefix per locale. Rendered
+ * only when `voidReason` is supplied (invoice_voided path). Empty
+ * string otherwise so the outer spacing stays clean.
+ */
+const REASON_PREFIX: Record<InvoiceAutoEmailLocale, string> = {
+  en: ' Reason: ',
+  th: ' เหตุผล: ',
+  sv: ' Orsak: ',
+};
+
+/**
+ * Minimal HTML-entity escape for user-supplied free text (voidReason)
+ * rendered into the email HTML body. Plain-text body does not need
+ * escape. Covers the standard 5 (Council of Europe OWASP guidance):
+ * `&`, `<`, `>`, `"`, `'`.
+ */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function buildInvoiceAutoEmail(input: InvoiceAutoEmailInput): BuiltPayload {
   const copy = COPY[input.locale][input.eventType];
   // FR-036 — substitute the original document number into subject +
@@ -230,10 +264,29 @@ export function buildInvoiceAutoEmail(input: InvoiceAutoEmailInput): BuiltPayloa
   const docNumber = input.documentNumber ?? '';
   const attachmentVariant = input.hasAttachment === true ? 'withAttachment' : 'linkOnly';
   const attachmentClause = ATTACHMENT_CLAUSE[input.locale][attachmentVariant];
-  const interpolate = (s: string): string =>
-    s.replace(/\{docNumber\}/g, docNumber).replace(/\{attachmentClause\}/g, attachmentClause);
-  const subject = interpolate(copy.subject);
-  const body = interpolate(copy.body);
+  // B-1 — render REASON_PREFIX + trimmed voidReason when present.
+  // Plain text goes into the `text` output; the HTML output receives
+  // an escaped version (user-supplied free text renders inside HTML).
+  const trimmedReason = input.voidReason?.trim() ?? '';
+  const reasonClausePlain =
+    trimmedReason.length > 0 ? `${REASON_PREFIX[input.locale]}${trimmedReason}` : '';
+  const reasonClauseHtml =
+    trimmedReason.length > 0
+      ? `${REASON_PREFIX[input.locale]}${escapeHtml(trimmedReason)}`
+      : '';
+  const interpolatePlain = (s: string): string =>
+    s
+      .replace(/\{docNumber\}/g, docNumber)
+      .replace(/\{attachmentClause\}/g, attachmentClause)
+      .replace(/\{reasonClause\}/g, reasonClausePlain);
+  const interpolateHtml = (s: string): string =>
+    s
+      .replace(/\{docNumber\}/g, docNumber)
+      .replace(/\{attachmentClause\}/g, attachmentClause)
+      .replace(/\{reasonClause\}/g, reasonClauseHtml);
+  const subject = interpolatePlain(copy.subject);
+  const bodyPlain = interpolatePlain(copy.body);
+  const bodyHtml = interpolateHtml(copy.body);
   const cta = copy.cta;
   const safeUrl = input.downloadUrl;
 
@@ -241,7 +294,7 @@ export function buildInvoiceAutoEmail(input: InvoiceAutoEmailInput): BuiltPayloa
 <html lang="${input.locale}">
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111">
   <h1 style="font-size: 18px; margin: 0 0 16px">${subject}</h1>
-  <p style="font-size: 14px; line-height: 1.6; margin: 0 0 24px">${body}</p>
+  <p style="font-size: 14px; line-height: 1.6; margin: 0 0 24px">${bodyHtml}</p>
   <p style="margin: 0 0 24px">
     <a href="${safeUrl}" style="display: inline-block; padding: 10px 20px; background: #111; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px">${cta}</a>
   </p>
@@ -252,6 +305,6 @@ export function buildInvoiceAutoEmail(input: InvoiceAutoEmailInput): BuiltPayloa
 </body>
 </html>`;
 
-  const text = `${subject}\n\n${body}\n\n${cta}: ${safeUrl}`;
+  const text = `${subject}\n\n${bodyPlain}\n\n${cta}: ${safeUrl}`;
   return { subject, html, text };
 }

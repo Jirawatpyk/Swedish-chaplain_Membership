@@ -56,6 +56,14 @@ export interface EmailOutboxPort {
        * event types (link-based emails ignore it).
        */
       readonly documentNumber?: string;
+      /**
+       * B-1 / FR-036 — void reason for `invoice_voided` cancellation
+       * emails. Spec requires the notice "state the void reason"; the
+       * use-case passes the admin-entered free text here. Not persisted
+       * in audit (the audit row carries only `void_reason_sha256`);
+       * this copy is for the member-facing email body only.
+       */
+      readonly voidReason?: string;
     },
   ): Promise<void>;
 }

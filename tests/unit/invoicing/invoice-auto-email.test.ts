@@ -120,6 +120,110 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.html).toContain(DOWNLOAD_URL);
   });
 
+  it('T-3b TH — hasAttachment=false renders link-only clause (ผ่านลิงก์ด้านล่าง)', () => {
+    const out = buildInvoiceAutoEmail({
+      toEmail: 'member@example.com',
+      eventType: 'invoice_voided',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'th',
+      documentNumber: DOC_NUMBER,
+      hasAttachment: false,
+    });
+    expect(out.html).toContain('ผ่านลิงก์ด้านล่าง');
+    expect(out.html).not.toContain('ระบบได้แนบสำเนา');
+    expect(out.text).toContain('ผ่านลิงก์ด้านล่าง');
+  });
+
+  it('T-3b SV — hasAttachment=false renders link-only clause (via länken nedan)', () => {
+    const out = buildInvoiceAutoEmail({
+      toEmail: 'member@example.com',
+      eventType: 'invoice_voided',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'sv',
+      documentNumber: DOC_NUMBER,
+      hasAttachment: false,
+    });
+    expect(out.html).toContain('via länken nedan');
+    expect(out.html).not.toContain('bifogas för dina register');
+    expect(out.text).toContain('via länken nedan');
+  });
+
+  it('B-1 EN — voidReason renders as "Reason:" clause + HTML-escaped', () => {
+    const out = buildInvoiceAutoEmail({
+      toEmail: 'member@example.com',
+      eventType: 'invoice_voided',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'en',
+      documentNumber: DOC_NUMBER,
+      hasAttachment: false,
+      voidReason: 'Wrong <tier> selected & filed',
+    });
+    // Plain-text preserves the raw reason verbatim.
+    expect(out.text).toContain('Reason: Wrong <tier> selected & filed');
+    // HTML output must escape < > &.
+    expect(out.html).toContain('Reason: Wrong &lt;tier&gt; selected &amp; filed');
+    // Placeholder must not leak.
+    expect(out.html).not.toContain('{reasonClause}');
+    expect(out.text).not.toContain('{reasonClause}');
+  });
+
+  it('B-1 TH — voidReason renders with Thai "เหตุผล:" prefix', () => {
+    const out = buildInvoiceAutoEmail({
+      toEmail: 'member@example.com',
+      eventType: 'invoice_voided',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'th',
+      documentNumber: DOC_NUMBER,
+      hasAttachment: true,
+      voidReason: 'เลือกแพ็กเกจผิด',
+    });
+    expect(out.text).toContain('เหตุผล: เลือกแพ็กเกจผิด');
+    expect(out.html).toContain('เหตุผล: เลือกแพ็กเกจผิด');
+  });
+
+  it('B-1 SV — voidReason renders with Swedish "Orsak:" prefix', () => {
+    const out = buildInvoiceAutoEmail({
+      toEmail: 'member@example.com',
+      eventType: 'invoice_voided',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'sv',
+      documentNumber: DOC_NUMBER,
+      hasAttachment: true,
+      voidReason: 'Fel medlemsnivå vald',
+    });
+    expect(out.text).toContain('Orsak: Fel medlemsnivå vald');
+    expect(out.html).toContain('Orsak: Fel medlemsnivå vald');
+  });
+
+  it('B-1 — voidReason omitted → no "Reason:" clause + no placeholder leak', () => {
+    const out = buildInvoiceAutoEmail({
+      toEmail: 'member@example.com',
+      eventType: 'invoice_voided',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'en',
+      documentNumber: DOC_NUMBER,
+      hasAttachment: false,
+      // voidReason omitted
+    });
+    expect(out.html).not.toContain('Reason:');
+    expect(out.text).not.toContain('Reason:');
+    expect(out.html).not.toContain('{reasonClause}');
+  });
+
+  it('B-1 — whitespace-only voidReason treated as omitted', () => {
+    const out = buildInvoiceAutoEmail({
+      toEmail: 'member@example.com',
+      eventType: 'invoice_voided',
+      downloadUrl: DOWNLOAD_URL,
+      locale: 'en',
+      documentNumber: DOC_NUMBER,
+      hasAttachment: false,
+      voidReason: '   ',
+    });
+    expect(out.html).not.toContain('Reason:');
+    expect(out.text).not.toContain('Reason:');
+  });
+
   it('downloadUrl appears in both CTA link and plain-text fallback', () => {
     const out = buildInvoiceAutoEmail({
       toEmail: 'member@example.com',

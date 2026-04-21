@@ -27,6 +27,7 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       readonly pdfBlobKey: string;
       readonly pdfTemplateVersion: number;
       readonly documentNumber?: string;
+      readonly voidReason?: string;
     },
   ): Promise<void> {
     const tx = txUnknown as TenantTx;
@@ -38,6 +39,8 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       pdf_template_version: input.pdfTemplateVersion,
       // FR-036 — snapshotted document number for invoice_voided copy.
       document_number: input.documentNumber ?? null,
+      // B-1 — void reason for invoice_voided cancellation email body.
+      void_reason: input.voidReason ?? null,
     };
     // R7-S2 — use caller-supplied locale (member's primary-contact
     // preferred_locale when known). Defaults to 'en' for callers
