@@ -119,22 +119,166 @@ test.describe('@us4 tenant-invoice-settings', () => {
     });
   });
 
-  test.fixme(
-    'AS2 logo upload → preview → save → PDF renders logo (needs throwaway-tenant infra — T115t)',
-    async () => {
-      // Flow: open settings → upload 400×200 PNG → assert success
-      // toast + logo_blob_key stored → Save → next invoice PDF embeds
-      // logo (tenant identity snapshot carries logo_blob_key).
-    },
-  );
+  // T115t — AS2 (happy path) + AS4 (rejection paths) un-fixme'd via
+  // throwaway-tenant fixture. Real Blob writes land in the throwaway
+  // tenant's prefix (`invoicing/{throwaway-slug}/logos/...`) — blob
+  // residue under a short-lived slug is acceptable (slug is unique
+  // per test so no cross-test contamination) and `cleanup()` below
+  // drops the settings row reference; orphaned blob bytes get swept
+  // by the tenant-wide purge job.
+  test.describe('AS2 + AS4 logo upload via throwaway tenant', () => {
+    test.skip(
+      process.env.E2E_X_TENANT_HEADER_ENABLED !== '1',
+      'E2E_X_TENANT_HEADER_ENABLED=1 required for throwaway-tenant (T115t)',
+    );
 
-  test.fixme(
-    'AS4 logo-upload rejects SVG / oversized / bad-dims (needs throwaway-tenant infra — T115t)',
-    async () => {
-      // Flow covered by T092 at the Application layer. E2E variant
-      // deferred to avoid real-Blob-store side effects in CI.
-    },
-  );
+    // Generate PNG bytes inline via sharp — avoids checked-in fixture
+    // files + guarantees deterministic bytes regardless of CI image.
+    async function makePng(width: number, height: number): Promise<Buffer> {
+      const sharp = (await import('sharp')).default;
+      return sharp({
+        create: {
+          width,
+          height,
+          channels: 3,
+          background: { r: 0x2e, g: 0x4a, b: 0x7a },
+        },
+      })
+        .png({ compressionLevel: 9 })
+        .toBuffer();
+    }
+
+    test('AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists', async ({
+      page,
+    }) => {
+      const tenant = await createThrowawayTenant({ seedSettings: true });
+      try {
+        await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
+        await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+        await page.goto('/admin/settings/invoicing');
+        await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+
+        const validPng = await makePng(400, 200);
+        await page.locator('input#logo_file').setInputFiles({
+          name: 'logo.png',
+          mimeType: 'image/png',
+          buffer: validPng,
+        });
+
+        // Success toast + current-key status both surface.
+        await expect(
+          page.getByText(/logo uploaded|อัปโหลดโลโก้แล้ว|logotyp uppladdad/i).first(),
+        ).toBeVisible({ timeout: 15_000 });
+        const keyLabel = page.locator('#logo_status').getByText(
+          new RegExp(`invoicing/${tenant.slug}/logos/`),
+        );
+        await expect(keyLabel).toBeVisible({ timeout: 5_000 });
+
+        // Save and verify persistence via page reload — the hidden
+        // `logo_blob_key` should survive the PATCH round-trip.
+        await page.getByRole('button', { name: /^(save|บันทึก|spara)$/i }).click();
+        await page.waitForLoadState('networkidle');
+        await expect(
+          page.getByText(/saved|บันทึกแล้ว|sparad/i).first(),
+        ).toBeVisible({ timeout: 10_000 });
+
+        await page.reload();
+        await expect(
+          page.locator('#logo_status').getByText(
+            new RegExp(`invoicing/${tenant.slug}/logos/`),
+          ),
+        ).toBeVisible({ timeout: 10_000 });
+      } finally {
+        await tenant.cleanup().catch(() => {});
+      }
+    });
+
+    test('AS4 — SVG rejected with mime_rejected error', async ({ page }) => {
+      const tenant = await createThrowawayTenant({ seedSettings: true });
+      try {
+        await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
+        await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+        await page.goto('/admin/settings/invoicing');
+        await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+
+        const svgBytes = Buffer.from(
+          '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"/>',
+        );
+        await page.locator('input#logo_file').setInputFiles({
+          name: 'logo.svg',
+          mimeType: 'image/svg+xml',
+          buffer: svgBytes,
+        });
+
+        // MIME whitelist rejects → `mime_rejected` localised error.
+        await expect(page.locator('p[role="alert"]').first()).toBeVisible({
+          timeout: 10_000,
+        });
+        // Status line should NOT show a logo_blob_key — upload failed.
+        await expect(
+          page.locator('#logo_status').getByText(
+            new RegExp(`invoicing/${tenant.slug}/logos/`),
+          ),
+        ).toHaveCount(0);
+      } finally {
+        await tenant.cleanup().catch(() => {});
+      }
+    });
+
+    test('AS4 — 2400×600 PNG rejected with dimensions_out_of_range error', async ({
+      page,
+    }) => {
+      const tenant = await createThrowawayTenant({ seedSettings: true });
+      try {
+        await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
+        await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+        await page.goto('/admin/settings/invoicing');
+        await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+
+        // Width 2400 > MAX_WIDTH=2000 → dimensions_out_of_range.
+        const oversizePng = await makePng(2400, 600);
+        await page.locator('input#logo_file').setInputFiles({
+          name: 'too-wide.png',
+          mimeType: 'image/png',
+          buffer: oversizePng,
+        });
+
+        await expect(page.locator('p[role="alert"]').first()).toBeVisible({
+          timeout: 15_000,
+        });
+        await expect(
+          page.locator('#logo_status').getByText(
+            new RegExp(`invoicing/${tenant.slug}/logos/`),
+          ),
+        ).toHaveCount(0);
+      } finally {
+        await tenant.cleanup().catch(() => {});
+      }
+    });
+
+    test('AS4 — 100×50 PNG rejected (below MIN dimensions)', async ({ page }) => {
+      const tenant = await createThrowawayTenant({ seedSettings: true });
+      try {
+        await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
+        await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+        await page.goto('/admin/settings/invoicing');
+
+        // 100 < MIN_WIDTH=200 AND 50 < MIN_HEIGHT=100 → both fail.
+        const tinyPng = await makePng(100, 50);
+        await page.locator('input#logo_file').setInputFiles({
+          name: 'too-small.png',
+          mimeType: 'image/png',
+          buffer: tinyPng,
+        });
+
+        await expect(page.locator('p[role="alert"]').first()).toBeVisible({
+          timeout: 15_000,
+        });
+      } finally {
+        await tenant.cleanup().catch(() => {});
+      }
+    });
+  });
 
   // T115t — AS5 un-fixme'd via throwaway-tenant fixture + X-Tenant
   // header override. Gated on E2E_X_TENANT_HEADER_ENABLED=1 in
