@@ -1205,7 +1205,14 @@
     "members": "Medlemmar",
     "memberDetail": "Detaljer",
     "newMember": "Ny medlem",
-    "editMember": "Redigera"
+    "editMember": "Redigera",
+    "invoices": "Fakturor",
+    "invoiceDetail": "Detaljer",
+    "newInvoice": "Ny faktura",
+    "credit-notes": "Kreditnotor",
+    "newCreditNote": "Ny kreditnota",
+    "void": "Annullera",
+    "pay": "Registrera betalning"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",

@@ -118,6 +118,10 @@ const STATIC_LABEL_KEYS = {
   settings: 'settings',
   fees: 'fees',
   account: 'account',
+  invoices: 'invoices',
+  'credit-notes': 'credit-notes',
+  void: 'void',
+  pay: 'pay',
 } as const;
 
 // Verb segments resolve by parent resource. The outer key is the parent
@@ -126,6 +130,8 @@ const STATIC_LABEL_KEYS = {
 const CONTEXTUAL_VERBS: Record<string, Record<string, string>> = {
   plans: { new: 'newPlan', edit: 'editPlan', clone: 'clonePlan' },
   members: { new: 'newMember' },
+  invoices: { new: 'newInvoice' },
+  'credit-notes': { new: 'newCreditNote' },
 };
 
 // Match a UUID v4 (32 hex with dashes). When we hit a UUID segment
@@ -137,6 +143,7 @@ const UUID_RE =
 
 const DETAIL_LABEL_KEYS_BY_PARENT: Record<string, string> = {
   members: 'memberDetail',
+  invoices: 'invoiceDetail',
 };
 
 function buildStaticLabels(

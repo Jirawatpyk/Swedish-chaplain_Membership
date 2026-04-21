@@ -1205,7 +1205,14 @@
     "members": "สมาชิก",
     "memberDetail": "รายละเอียด",
     "newMember": "เพิ่มสมาชิก",
-    "editMember": "แก้ไข"
+    "editMember": "แก้ไข",
+    "invoices": "ใบแจ้งหนี้",
+    "invoiceDetail": "รายละเอียด",
+    "newInvoice": "ใบแจ้งหนี้ใหม่",
+    "credit-notes": "ใบลดหนี้",
+    "newCreditNote": "ใบลดหนี้ใหม่",
+    "void": "ยกเลิก",
+    "pay": "บันทึกการชำระ"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",

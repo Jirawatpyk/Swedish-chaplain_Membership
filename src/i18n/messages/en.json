@@ -1205,7 +1205,14 @@
     "members": "Members",
     "memberDetail": "Details",
     "newMember": "New Member",
-    "editMember": "Edit"
+    "editMember": "Edit",
+    "invoices": "Invoices",
+    "invoiceDetail": "Details",
+    "newInvoice": "New Invoice",
+    "credit-notes": "Credit Notes",
+    "newCreditNote": "New Credit Note",
+    "void": "Void",
+    "pay": "Record Payment"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
