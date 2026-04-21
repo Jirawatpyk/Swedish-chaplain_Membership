@@ -42,6 +42,7 @@ import { logger } from '@/lib/logger';
 import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
+import { renderAndUploadPdf } from '../lib/render-and-upload';
 
 export const recordPaymentSchema = z.object({
   tenantId: z.string().min(1),
@@ -199,48 +200,36 @@ export async function recordPayment(
       receiptDocNumRaw = receiptDoc.value.raw;
     }
 
-    // H. Render PDF — throw (not return err) on failure so withTx rolls
-    // back and the sequence increment is NOT consumed.
-    let rendered: Awaited<ReturnType<typeof deps.pdfRender.render>>;
-    try {
-      rendered = await deps.pdfRender.render({
-        kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
-        templateVersion: deps.currentTemplateVersion,
-        // Separate-mode receipt MUST use its own document number (the
-        // one just allocated); combined-mode reuses the invoice
-        // number because the document IS the same physical page
-        // (one combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
-        documentNumber: combinedMode ? loaded.documentNumber : receiptDocNum,
-        issueDate: loaded.issueDate,
-        dueDate: loaded.dueDate,
-        tenant: loaded.tenantIdentitySnapshot,
-        member: loaded.memberIdentitySnapshot,
-        lines: loaded.lines,
-        subtotal: loaded.subtotal,
-        vatRate: loaded.vatRate,
-        vat: loaded.vat,
-        total: loaded.total,
-      });
-    } catch (e) {
-      throw new RecordPaymentInternalError({
-        code: 'pdf_render_failed',
-        reason: String(e),
-      });
-    }
-
+    // H+I. Render receipt PDF + upload to Blob (T126 shared helper).
+    // Throws via `RecordPaymentInternalError` on either failure so
+    // `withTx` rolls back — the receipt sequence increment is NOT
+    // consumed (separate-mode) and the invoice stays `issued`.
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
-    try {
-      await deps.blob.uploadPdf({
-        key: receiptBlobKey,
-        body: rendered.bytes,
-        contentType: 'application/pdf',
-      });
-    } catch (e) {
-      throw new RecordPaymentInternalError({
-        code: 'blob_upload_failed',
-        reason: String(e),
-      });
-    }
+    const rendered = await renderAndUploadPdf(
+      { pdfRender: deps.pdfRender, blob: deps.blob },
+      {
+        renderInput: {
+          kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
+          templateVersion: deps.currentTemplateVersion,
+          // Separate-mode receipt MUST use its own document number (the
+          // one just allocated); combined-mode reuses the invoice
+          // number because the document IS the same physical page
+          // (one combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
+          documentNumber: combinedMode ? loaded.documentNumber : receiptDocNum,
+          issueDate: loaded.issueDate,
+          dueDate: loaded.dueDate,
+          tenant: loaded.tenantIdentitySnapshot,
+          member: loaded.memberIdentitySnapshot,
+          lines: loaded.lines,
+          subtotal: loaded.subtotal,
+          vatRate: loaded.vatRate,
+          vat: loaded.vat,
+          total: loaded.total,
+        },
+        blobKey: receiptBlobKey,
+      },
+      (code, reason) => new RecordPaymentInternalError({ code, reason }),
+    );
 
     // Atomic issued→paid UPDATE with payment fields + receipt PDF
     // metadata. The repo throws `applyPayment: no row updated` when

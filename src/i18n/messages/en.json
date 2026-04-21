@@ -1116,7 +1116,9 @@
           "issueCreditNote": "Issue credit note",
           "resendInvoice": "Resend invoice email",
           "resendReceipt": "Resend receipt email",
-          "resendAria": "Email a fresh copy of {documentType} {number} to the member's primary contact"
+          "resendAria": "Email a fresh copy of {documentType} {number} to the member's primary contact",
+          "more": "More",
+          "moreAria": "More actions for {number}"
         },
         "toast": {
           "resendSuccess": "Queued — {recipient} will receive a fresh copy shortly.",

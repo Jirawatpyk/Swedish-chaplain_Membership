@@ -1116,7 +1116,9 @@
           "issueCreditNote": "Utfärda kreditnota",
           "resendInvoice": "Skicka faktura-mejl igen",
           "resendReceipt": "Skicka kvitto-mejl igen",
-          "resendAria": "Mejla en ny kopia av {documentType} {number} till medlemmens primära kontakt"
+          "resendAria": "Mejla en ny kopia av {documentType} {number} till medlemmens primära kontakt",
+          "more": "Fler",
+          "moreAria": "Fler åtgärder för {number}"
         },
         "toast": {
           "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",

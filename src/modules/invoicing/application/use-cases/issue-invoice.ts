@@ -80,6 +80,7 @@ import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
+import { renderAndUploadPdf } from '../lib/render-and-upload';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -246,49 +247,31 @@ export async function issueInvoice(
     const issueDate = bangkokLocalDate(now);
     const dueDate = addDays(issueDate, settings.defaultNetDays);
 
-    // H. Render PDF — typed error on failure. Returning `err(...)` here
-    // inside `withTx` still resolves the callback, which WILL commit the
-    // sequence allocation — so we throw to force rollback, then catch
-    // below and map to a typed Result.
-    let rendered;
-    try {
-      rendered = await deps.pdfRender.render({
-        kind: 'invoice',
-        templateVersion: deps.currentTemplateVersion,
-        documentNumber: docNum.value,
-        issueDate,
-        dueDate,
-        tenant: tenantSnap,
-        member: memberSnap,
-        lines: draft.lines,
-        subtotal,
-        vatRate: settings.vatRate,
-        vat,
-        total,
-      });
-    } catch (e) {
-      throw new IssueInvoiceInternalError({
-        code: 'pdf_render_failed',
-        reason: String(e),
-      });
-    }
-
-    // I. Blob upload — content-addressed key. Wrap in try/catch so blob
-    // failures also propagate as typed errors AND roll back the sequence
-    // allocation (throw → withTx rollback).
+    // H+I. Render PDF + upload to Blob (T126 shared helper).
+    // Throws via `IssueInvoiceInternalError` on either failure so
+    // `withTx` rolls back — sequence allocation is NOT consumed.
     const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
-    try {
-      await deps.blob.uploadPdf({
-        key: blobKey,
-        body: rendered.bytes,
-        contentType: 'application/pdf',
-      });
-    } catch (e) {
-      throw new IssueInvoiceInternalError({
-        code: 'blob_upload_failed',
-        reason: String(e),
-      });
-    }
+    const rendered = await renderAndUploadPdf(
+      { pdfRender: deps.pdfRender, blob: deps.blob },
+      {
+        renderInput: {
+          kind: 'invoice',
+          templateVersion: deps.currentTemplateVersion,
+          documentNumber: docNum.value,
+          issueDate,
+          dueDate,
+          tenant: tenantSnap,
+          member: memberSnap,
+          lines: draft.lines,
+          subtotal,
+          vatRate: settings.vatRate,
+          vat,
+          total,
+        },
+        blobKey,
+      },
+      (code, reason) => new IssueInvoiceInternalError({ code, reason }),
+    );
 
     // J. UPDATE invoices row. The repo throws if the status guard
     // (WHERE status='draft') doesn't match — treat that as a

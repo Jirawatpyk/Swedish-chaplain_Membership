@@ -1116,7 +1116,9 @@
           "issueCreditNote": "ออกใบลดหนี้",
           "resendInvoice": "ส่งอีเมลใบแจ้งหนี้อีกครั้ง",
           "resendReceipt": "ส่งอีเมลใบเสร็จอีกครั้ง",
-          "resendAria": "ส่งสำเนา {documentType} เลขที่ {number} ไปที่อีเมลผู้ติดต่อหลักของสมาชิก"
+          "resendAria": "ส่งสำเนา {documentType} เลขที่ {number} ไปที่อีเมลผู้ติดต่อหลักของสมาชิก",
+          "more": "เพิ่มเติม",
+          "moreAria": "การดำเนินการเพิ่มเติมสำหรับ {number}"
         },
         "toast": {
           "resendSuccess": "เข้าคิวแล้ว — ระบบจะส่งสำเนาไปที่ {recipient} ในอีกสักครู่",

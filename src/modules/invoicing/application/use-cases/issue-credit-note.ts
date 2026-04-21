@@ -66,6 +66,7 @@ import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
+import { renderAndUploadPdf } from '../lib/render-and-upload';
 
 export const issueCreditNoteSchema = z.object({
   tenantId: z.string().min(1),
@@ -280,50 +281,36 @@ export async function issueCreditNote(
         total: creditAmount,
         position: 1,
       };
-      let rendered;
-      try {
-        rendered = await deps.pdfRender.render({
-          kind: 'credit_note',
-          templateVersion: deps.currentTemplateVersion,
-          documentNumber: docNum.value,
-          issueDate,
-          dueDate: null,
-          tenant: loaded.tenantIdentitySnapshot,
-          member: loaded.memberIdentitySnapshot,
-          lines: [syntheticLine],
-          // Money fields carry the credit-note's own amounts — the
-          // template reads these for the totals block.
-          subtotal: creditAmount,
-          vatRate: loaded.vatRate,
-          vat,
-          total,
-          creditNote: {
-            originalDocumentNumber: loaded.documentNumber.raw,
-            originalIssueDate: loaded.issueDate,
-            reason: input.reason,
-          },
-        });
-      } catch (e) {
-        throw new IssueCreditNoteInternalError({
-          code: 'pdf_render_failed',
-          reason: String(e),
-        });
-      }
-
-      // H. Blob upload — content-addressed key. Wrap for typed error.
+      // G+H. Render CN PDF + upload to Blob (T126 shared helper).
       const blobKey = `invoicing/${input.tenantId}/${fy}/credit-note_${creditNoteId}_v${deps.currentTemplateVersion}.pdf`;
-      try {
-        await deps.blob.uploadPdf({
-          key: blobKey,
-          body: rendered.bytes,
-          contentType: 'application/pdf',
-        });
-      } catch (e) {
-        throw new IssueCreditNoteInternalError({
-          code: 'blob_upload_failed',
-          reason: String(e),
-        });
-      }
+      const rendered = await renderAndUploadPdf(
+        { pdfRender: deps.pdfRender, blob: deps.blob },
+        {
+          renderInput: {
+            kind: 'credit_note',
+            templateVersion: deps.currentTemplateVersion,
+            documentNumber: docNum.value,
+            issueDate,
+            dueDate: null,
+            tenant: loaded.tenantIdentitySnapshot,
+            member: loaded.memberIdentitySnapshot,
+            lines: [syntheticLine],
+            // Money fields carry the credit-note's own amounts — the
+            // template reads these for the totals block.
+            subtotal: creditAmount,
+            vatRate: loaded.vatRate,
+            vat,
+            total,
+            creditNote: {
+              originalDocumentNumber: loaded.documentNumber.raw,
+              originalIssueDate: loaded.issueDate,
+              reason: input.reason,
+            },
+          },
+          blobKey,
+        },
+        (code, reason) => new IssueCreditNoteInternalError({ code, reason }),
+      );
 
       // I. Insert credit_notes row.
       let cn: CreditNote;
@@ -416,51 +403,39 @@ export async function issueCreditNote(
             total: x.total,
           }));
 
-        let rerendered;
-        try {
-          rerendered = await deps.pdfRender.render({
-            kind: 'invoice',
-            templateVersion: loaded.pdf.templateVersion,
-            documentNumber: loaded.documentNumber,
-            issueDate: loaded.issueDate,
-            dueDate: loaded.dueDate,
-            tenant: loaded.tenantIdentitySnapshot,
-            member: loaded.memberIdentitySnapshot,
-            lines: loaded.lines,
-            subtotal: loaded.subtotal,
-            vatRate: loaded.vatRate,
-            vat: loaded.vat,
-            total: loaded.total,
-            creditedAnnotation: {
-              fullyCredited,
-              references: annotationRefs,
+        // J2 re-annotation (T126 shared helper, `annotation` prefix
+        // differentiates from initial G+H failure). MUST overwrite
+        // per Review CR-1 — the re-render produces DIFFERENT bytes
+        // (adds the credit-annotation overlay) so DB pdf_sha256
+        // diverges from the original; without allowOverwrite the
+        // adapter silently treats already-exists as success.
+        const rerendered = await renderAndUploadPdf(
+          { pdfRender: deps.pdfRender, blob: deps.blob },
+          {
+            renderInput: {
+              kind: 'invoice',
+              templateVersion: loaded.pdf.templateVersion,
+              documentNumber: loaded.documentNumber,
+              issueDate: loaded.issueDate,
+              dueDate: loaded.dueDate,
+              tenant: loaded.tenantIdentitySnapshot,
+              member: loaded.memberIdentitySnapshot,
+              lines: loaded.lines,
+              subtotal: loaded.subtotal,
+              vatRate: loaded.vatRate,
+              vat: loaded.vat,
+              total: loaded.total,
+              creditedAnnotation: {
+                fullyCredited,
+                references: annotationRefs,
+              },
             },
-          });
-        } catch (e) {
-          throw new IssueCreditNoteInternalError({
-            code: 'pdf_render_failed',
-            reason: `annotation render: ${String(e)}`,
-          });
-        }
-
-        try {
-          await deps.blob.uploadPdf({
-            key: loaded.pdf.blobKey,
-            body: rerendered.bytes,
-            contentType: 'application/pdf',
-            // Review CR-1 (2026-04-20) — MUST overwrite: the AS4
-            // re-render produces DIFFERENT bytes (adds the overlay).
-            // Without allowOverwrite=true the adapter's default path
-            // silently treats the already-exists conflict as success,
-            // DB pdf_sha256 would then drift from Blob content.
+            blobKey: loaded.pdf.blobKey,
             allowOverwrite: true,
-          });
-        } catch (e) {
-          throw new IssueCreditNoteInternalError({
-            code: 'blob_upload_failed',
-            reason: `annotation upload: ${String(e)}`,
-          });
-        }
+            reasonPrefix: 'annotation',
+          },
+          (code, reason) => new IssueCreditNoteInternalError({ code, reason }),
+        );
 
         try {
           await deps.invoiceRepo.applyInvoicePdfRegeneration(tx, {
