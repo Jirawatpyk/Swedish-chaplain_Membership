@@ -941,6 +941,33 @@
           "unknown": "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ กรุณาลองใหม่",
           "codeFallback": "รหัสข้อผิดพลาด: {code}"
         }
+      },
+      "detail": {
+        "meta": { "title": "ใบลดหนี้" },
+        "subtitle": "บันทึกใบลดหนี้ที่ออกสำหรับใบแจ้งหนี้อ้างอิง (อ่านอย่างเดียว)",
+        "status": { "issued": "ออกแล้ว" },
+        "actions": {
+          "backToInvoice": "กลับไปที่ใบแจ้งหนี้",
+          "download": "ดาวน์โหลด PDF"
+        },
+        "fields": {
+          "issueDate": "วันที่ออกเอกสาร",
+          "issuedBy": "ออกโดย",
+          "originalInvoice": "ใบแจ้งหนี้อ้างอิง",
+          "originalInvoiceLinkLabel": "เปิดใบแจ้งหนี้",
+          "creditAmount": "จำนวนเงินที่ลดหนี้ (ไม่รวม VAT)",
+          "vat": "ภาษีมูลค่าเพิ่ม",
+          "total": "ยอดรวมที่ลดหนี้ (รวม VAT)"
+        },
+        "reason": { "heading": "เหตุผล" },
+        "parties": {
+          "issuer": "ผู้ออกเอกสาร",
+          "customer": "ลูกค้า",
+          "legalName": "ชื่อตามกฎหมาย",
+          "taxId": "เลขประจำตัวผู้เสียภาษี",
+          "address": "ที่อยู่",
+          "contactEmail": "อีเมลผู้ติดต่อ"
+        }
       }
     },
     "invoices": {

@@ -941,6 +941,33 @@
           "unknown": "An unknown error occurred. Please try again.",
           "codeFallback": "Error code: {code}"
         }
+      },
+      "detail": {
+        "meta": { "title": "Credit Note" },
+        "subtitle": "Read-only credit-note record against the original invoice.",
+        "status": { "issued": "Issued" },
+        "actions": {
+          "backToInvoice": "Back to invoice",
+          "download": "Download PDF"
+        },
+        "fields": {
+          "issueDate": "Issue date",
+          "issuedBy": "Issued by",
+          "originalInvoice": "Original invoice",
+          "originalInvoiceLinkLabel": "Open invoice",
+          "creditAmount": "Credit amount (excl. VAT)",
+          "vat": "VAT",
+          "total": "Total credit (incl. VAT)"
+        },
+        "reason": { "heading": "Reason" },
+        "parties": {
+          "issuer": "Issuer",
+          "customer": "Customer",
+          "legalName": "Legal name",
+          "taxId": "Tax ID",
+          "address": "Address",
+          "contactEmail": "Contact email"
+        }
       }
     },
     "invoices": {

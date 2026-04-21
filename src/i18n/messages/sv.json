@@ -941,6 +941,33 @@
           "unknown": "Ett okänt fel uppstod. Försök igen.",
           "codeFallback": "Felkod: {code}"
         }
+      },
+      "detail": {
+        "meta": { "title": "Kreditnota" },
+        "subtitle": "Skrivskyddad kreditnotaregistrering mot den ursprungliga fakturan.",
+        "status": { "issued": "Utfärdad" },
+        "actions": {
+          "backToInvoice": "Tillbaka till faktura",
+          "download": "Ladda ner PDF"
+        },
+        "fields": {
+          "issueDate": "Utfärdandedatum",
+          "issuedBy": "Utfärdad av",
+          "originalInvoice": "Ursprunglig faktura",
+          "originalInvoiceLinkLabel": "Öppna faktura",
+          "creditAmount": "Kreditbelopp (exkl. moms)",
+          "vat": "Moms",
+          "total": "Totalt krediterat (inkl. moms)"
+        },
+        "reason": { "heading": "Anledning" },
+        "parties": {
+          "issuer": "Utfärdare",
+          "customer": "Kund",
+          "legalName": "Juridiskt namn",
+          "taxId": "Skatt-ID",
+          "address": "Adress",
+          "contactEmail": "Kontaktepost"
+        }
       }
     },
     "invoices": {
