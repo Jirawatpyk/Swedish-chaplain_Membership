@@ -1,26 +1,15 @@
 /**
- * T106 — F4 auto-email template.
+ * T108 — F4 auto-email copy matrix.
  *
- * Rendered by the shared outbox dispatcher (`/api/cron/outbox-dispatch`)
- * when a `notifications_outbox` row with `notification_type =
- * 'invoice_auto_email'` becomes due. Covers the two MVP event types:
- *   - invoice_issued  → "Your invoice is ready"
- *   - invoice_paid    → "Receipt for payment received"
+ * Extracted from `invoice-auto-email.ts` so the React-based templates
+ * (one per event-type family) can re-use the same localised strings
+ * without duplicating the 7×3 matrix. The plain-text render path
+ * also reads from here — no locale lookup is done twice.
  *
- * Why a download LINK and not an attachment:
- *   - EmailSender.send currently does not carry attachments; adding it
- *     would touch the F1 infrastructure layer.
- *   - Vercel Blob URLs are stable (access: 'public' + unguessable path
- *     prefix per vercel-blob-adapter.ts). Emails therefore stay small
- *     and the link keeps working.
- *   - Spec FR-026 ("member receives the PDF automatically") is
- *     satisfied by a direct download — the admin intent is delivery,
- *     not inline rendering.
- *
- * i18n: we do not have a localised tenant brand yet at this layer;
- * the template reads `locale` from the outbox row and falls back to
- * English. TH/SV strings kept minimal — full templated copy is a
- * Phase-10 polish once US4 tenant-branding settings land.
+ * Locale coverage: EN default, TH + SV verified via i18n CI.
+ * Deliberately narrow to email subject + body + CTA copy; any
+ * tenant-brand text (e.g. "Thailand-Swedish Chamber of Commerce")
+ * lives in `base-layout.tsx` as the email footer, not here.
  */
 
 export type InvoiceAutoEmailEventType =
@@ -34,43 +23,15 @@ export type InvoiceAutoEmailEventType =
 
 export type InvoiceAutoEmailLocale = 'en' | 'th' | 'sv';
 
-export interface InvoiceAutoEmailInput {
-  readonly toEmail: string;
-  readonly eventType: InvoiceAutoEmailEventType;
-  readonly downloadUrl: string;
-  readonly locale: InvoiceAutoEmailLocale;
-  /**
-   * FR-036 — original document number. Required for `invoice_voided`
-   * so the cancellation notice references the exact invoice the
-   * member received; optional for other events (backwards-compat).
-   */
-  readonly documentNumber?: string;
-  /**
-   * PG-2 — whether the VOID-stamped PDF actually ships as an email
-   * attachment (FR-036 full). When FALSE the copy adapts to
-   * reference the download link instead of promising an attachment
-   * that isn't there. Only read for `invoice_voided`.
-   */
-  readonly hasAttachment?: boolean;
-  /**
-   * B-1 / FR-036 — admin-entered void reason, rendered into the
-   * `invoice_voided` body. Ignored for other event types. Untrimmed
-   * plaintext is fine here: this value is routed through the outbox
-   * `context_data` (purged after 90 days per B-2) and does not reach
-   * the append-only audit log (that path uses void_reason_sha256).
-   */
-  readonly voidReason?: string;
+export interface EmailCopy {
+  readonly subject: string;
+  readonly body: string;
+  readonly cta: string;
 }
 
-interface BuiltPayload {
-  subject: string;
-  html: string;
-  text: string;
-}
-
-const COPY: Record<
+export const COPY: Record<
   InvoiceAutoEmailLocale,
-  Record<InvoiceAutoEmailEventType, { subject: string; body: string; cta: string }>
+  Record<InvoiceAutoEmailEventType, EmailCopy>
 > = {
   en: {
     invoice_issued: {
@@ -85,9 +46,6 @@ const COPY: Record<
     },
     invoice_voided: {
       subject: 'Invoice {docNumber} has been voided',
-      // `{attachmentClause}` + `{reasonClause}` are replaced at render
-      // time. PG-2 `hasAttachment` flag → attachmentClause;
-      // B-1 `voidReason` presence → reasonClause (empty when omitted).
       body:
         'Invoice {docNumber} has been voided and is no longer payable. ' +
         'Please disregard any outstanding payment request for this invoice.{reasonClause} ' +
@@ -198,13 +156,9 @@ const COPY: Record<
 };
 
 /**
- * PG-2 — attachment-clause copy per locale. When the DPA gate is OPEN
- * (`hasAttachment=true`) the body ends with a sentence promising the
- * attached VOID-stamped PDF. When CLOSED the body points at the
- * download link instead, so the member is never told "attached" when
- * the email actually ships link-only.
+ * PG-2 — attachment-clause copy per locale (FR-036 VOID PDF attachment).
  */
-const ATTACHMENT_CLAUSE: Record<
+export const ATTACHMENT_CLAUSE: Record<
   InvoiceAutoEmailLocale,
   { readonly withAttachment: string; readonly linkOnly: string }
 > = {
@@ -228,83 +182,58 @@ const ATTACHMENT_CLAUSE: Record<
   },
 };
 
-/**
- * B-1 / FR-036 — "Reason: <voidReason>" prefix per locale. Rendered
- * only when `voidReason` is supplied (invoice_voided path). Empty
- * string otherwise so the outer spacing stays clean.
- */
-const REASON_PREFIX: Record<InvoiceAutoEmailLocale, string> = {
+/** B-1 / FR-036 — "Reason: <voidReason>" prefix per locale. */
+export const REASON_PREFIX: Record<InvoiceAutoEmailLocale, string> = {
   en: ' Reason: ',
   th: ' เหตุผล: ',
   sv: ' Orsak: ',
 };
 
 /**
- * Minimal HTML-entity escape for user-supplied free text (voidReason)
- * rendered into the email HTML body. Plain-text body does not need
- * escape. Covers the standard 5 (Council of Europe OWASP guidance):
- * `&`, `<`, `>`, `"`, `'`.
+ * Resolve the interpolated subject + body + CTA once per build. The
+ * React template + plain-text fallback share this single string so
+ * the two rendering paths stay bit-consistent — a divergence between
+ * HTML and plain-text would reach the member as two different
+ * messages.
+ *
+ * No HTML-escape happens here: the React template auto-escapes via
+ * JSX (React's default), and the plain-text path doesn't need escape.
+ * Double-escape in this file would produce `&amp;lt;` in the HTML
+ * output.
  */
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+export interface ResolvedCopy {
+  readonly subject: string;
+  readonly body: string;
+  readonly cta: string;
 }
 
-export function buildInvoiceAutoEmail(input: InvoiceAutoEmailInput): BuiltPayload {
+export interface ResolveCopyInput {
+  readonly locale: InvoiceAutoEmailLocale;
+  readonly eventType: InvoiceAutoEmailEventType;
+  readonly documentNumber?: string | undefined;
+  readonly hasAttachment?: boolean | undefined;
+  readonly voidReason?: string | undefined;
+}
+
+export function resolveCopy(input: ResolveCopyInput): ResolvedCopy {
   const copy = COPY[input.locale][input.eventType];
-  // FR-036 — substitute the original document number into subject +
-  // body. Falls back to the literal placeholder only if the caller
-  // supplied none (should never happen for invoice_voided but avoids
-  // a thrown error for backwards-compat callers on other event types
-  // whose copy doesn't reference {docNumber}).
   const docNumber = input.documentNumber ?? '';
   const attachmentVariant = input.hasAttachment === true ? 'withAttachment' : 'linkOnly';
   const attachmentClause = ATTACHMENT_CLAUSE[input.locale][attachmentVariant];
-  // B-1 — render REASON_PREFIX + trimmed voidReason when present.
-  // Plain text goes into the `text` output; the HTML output receives
-  // an escaped version (user-supplied free text renders inside HTML).
+
   const trimmedReason = input.voidReason?.trim() ?? '';
-  const reasonClausePlain =
+  const reasonClause =
     trimmedReason.length > 0 ? `${REASON_PREFIX[input.locale]}${trimmedReason}` : '';
-  const reasonClauseHtml =
-    trimmedReason.length > 0
-      ? `${REASON_PREFIX[input.locale]}${escapeHtml(trimmedReason)}`
-      : '';
-  const interpolatePlain = (s: string): string =>
+
+  const interpolate = (s: string): string =>
     s
       .replace(/\{docNumber\}/g, docNumber)
       .replace(/\{attachmentClause\}/g, attachmentClause)
-      .replace(/\{reasonClause\}/g, reasonClausePlain);
-  const interpolateHtml = (s: string): string =>
-    s
-      .replace(/\{docNumber\}/g, docNumber)
-      .replace(/\{attachmentClause\}/g, attachmentClause)
-      .replace(/\{reasonClause\}/g, reasonClauseHtml);
-  const subject = interpolatePlain(copy.subject);
-  const bodyPlain = interpolatePlain(copy.body);
-  const bodyHtml = interpolateHtml(copy.body);
-  const cta = copy.cta;
-  const safeUrl = input.downloadUrl;
+      .replace(/\{reasonClause\}/g, reasonClause);
 
-  const html = `<!DOCTYPE html>
-<html lang="${input.locale}">
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111">
-  <h1 style="font-size: 18px; margin: 0 0 16px">${subject}</h1>
-  <p style="font-size: 14px; line-height: 1.6; margin: 0 0 24px">${bodyHtml}</p>
-  <p style="margin: 0 0 24px">
-    <a href="${safeUrl}" style="display: inline-block; padding: 10px 20px; background: #111; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px">${cta}</a>
-  </p>
-  <p style="font-size: 12px; color: #666; line-height: 1.5">
-    If the button does not work, copy this link:<br>
-    <a href="${safeUrl}" style="color: #666; word-break: break-all">${safeUrl}</a>
-  </p>
-</body>
-</html>`;
-
-  const text = `${subject}\n\n${bodyPlain}\n\n${cta}: ${safeUrl}`;
-  return { subject, html, text };
+  return {
+    subject: interpolate(copy.subject),
+    body: interpolate(copy.body),
+    cta: copy.cta,
+  };
 }

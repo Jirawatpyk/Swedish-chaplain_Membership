@@ -16,8 +16,8 @@ const DOWNLOAD_URL = 'https://blob.test/invoice-voided.pdf';
 const DOC_NUMBER = 'TI-2026-000042';
 
 describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
-  it('EN: references documentNumber in subject + body + declares not payable', () => {
-    const out = buildInvoiceAutoEmail({
+  it('EN: references documentNumber in subject + body + declares not payable', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -40,8 +40,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.text).not.toContain('{attachmentClause}');
   });
 
-  it('EN: hasAttachment=false switches copy to link-only (PG-2 DPA gate)', () => {
-    const out = buildInvoiceAutoEmail({
+  it('EN: hasAttachment=false switches copy to link-only (PG-2 DPA gate)', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -57,8 +57,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.html).not.toContain('{attachmentClause}');
   });
 
-  it('TH: references documentNumber + contains "เอกสารฉบับนี้ยกเลิกแล้ว"', () => {
-    const out = buildInvoiceAutoEmail({
+  it('TH: references documentNumber + contains "เอกสารฉบับนี้ยกเลิกแล้ว"', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -75,8 +75,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.html).not.toContain('{docNumber}');
   });
 
-  it('SV: references documentNumber + declares "ska inte längre betalas"', () => {
-    const out = buildInvoiceAutoEmail({
+  it('SV: references documentNumber + declares "ska inte längre betalas"', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -92,8 +92,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.subject).not.toContain('{docNumber}');
   });
 
-  it('documentNumber omitted → placeholder substitutes to empty string (not literal)', () => {
-    const out = buildInvoiceAutoEmail({
+  it('documentNumber omitted → placeholder substitutes to empty string (not literal)', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -107,8 +107,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.subject.toLowerCase()).toContain('voided');
   });
 
-  it('non-void event types unaffected by docNumber (no interpolation, no throw)', () => {
-    const out = buildInvoiceAutoEmail({
+  it('non-void event types unaffected by docNumber (no interpolation, no throw)', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_issued',
       downloadUrl: DOWNLOAD_URL,
@@ -120,8 +120,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.html).toContain(DOWNLOAD_URL);
   });
 
-  it('T-3b TH — hasAttachment=false renders link-only clause (ผ่านลิงก์ด้านล่าง)', () => {
-    const out = buildInvoiceAutoEmail({
+  it('T-3b TH — hasAttachment=false renders link-only clause (ผ่านลิงก์ด้านล่าง)', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -134,8 +134,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.text).toContain('ผ่านลิงก์ด้านล่าง');
   });
 
-  it('T-3b SV — hasAttachment=false renders link-only clause (via länken nedan)', () => {
-    const out = buildInvoiceAutoEmail({
+  it('T-3b SV — hasAttachment=false renders link-only clause (via länken nedan)', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -148,8 +148,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.text).toContain('via länken nedan');
   });
 
-  it('B-1 EN — voidReason renders as "Reason:" clause + HTML-escaped', () => {
-    const out = buildInvoiceAutoEmail({
+  it('B-1 EN — voidReason renders as "Reason:" clause + HTML-escaped', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -167,8 +167,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.text).not.toContain('{reasonClause}');
   });
 
-  it('B-1 TH — voidReason renders with Thai "เหตุผล:" prefix', () => {
-    const out = buildInvoiceAutoEmail({
+  it('B-1 TH — voidReason renders with Thai "เหตุผล:" prefix', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -181,8 +181,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.html).toContain('เหตุผล: เลือกแพ็กเกจผิด');
   });
 
-  it('B-1 SV — voidReason renders with Swedish "Orsak:" prefix', () => {
-    const out = buildInvoiceAutoEmail({
+  it('B-1 SV — voidReason renders with Swedish "Orsak:" prefix', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -195,8 +195,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.html).toContain('Orsak: Fel medlemsnivå vald');
   });
 
-  it('B-1 — voidReason omitted → no "Reason:" clause + no placeholder leak', () => {
-    const out = buildInvoiceAutoEmail({
+  it('B-1 — voidReason omitted → no "Reason:" clause + no placeholder leak', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -210,8 +210,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.html).not.toContain('{reasonClause}');
   });
 
-  it('B-1 — whitespace-only voidReason treated as omitted', () => {
-    const out = buildInvoiceAutoEmail({
+  it('B-1 — whitespace-only voidReason treated as omitted', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,
@@ -224,8 +224,8 @@ describe('buildInvoiceAutoEmail — invoice_voided FR-036 copy', () => {
     expect(out.text).not.toContain('Reason:');
   });
 
-  it('downloadUrl appears in both CTA link and plain-text fallback', () => {
-    const out = buildInvoiceAutoEmail({
+  it('downloadUrl appears in both CTA link and plain-text fallback', async () => {
+    const out = await buildInvoiceAutoEmail({
       toEmail: 'member@example.com',
       eventType: 'invoice_voided',
       downloadUrl: DOWNLOAD_URL,

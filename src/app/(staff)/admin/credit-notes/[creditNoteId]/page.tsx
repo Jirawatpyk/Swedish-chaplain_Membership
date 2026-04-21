@@ -161,7 +161,7 @@ export default async function CreditNoteDetailPage({
         }
         subtitle={t('subtitle')}
         actions={
-          <div className="flex flex-wrap gap-2">
+          <>
             <Link
               href={invoiceHref}
               className={buttonVariants({ variant: 'outline' })}
@@ -176,7 +176,7 @@ export default async function CreditNoteDetailPage({
               creditNoteId={cn.creditNoteId}
               documentNumber={cn.documentNumber.raw}
             />
-          </div>
+          </>
         }
       />
 

@@ -170,7 +170,7 @@ async function buildPayload(
       // signal — return null, the outbox retry ladder re-attempts.
       try {
         const downloadUrl = await vercelBlobAdapter.signDownloadUrl(pdfBlobKey);
-        const payload = buildInvoiceAutoEmail({
+        const payload = await buildInvoiceAutoEmail({
           toEmail: row.toEmail,
           eventType,
           downloadUrl,

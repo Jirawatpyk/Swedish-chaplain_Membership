@@ -501,6 +501,16 @@ in the user menu.
 - **Inline errors** below the field (§ 4.1).
 - **Submit button** at the bottom, with a secondary "Cancel" button to
   its left (desktop) or below (mobile).
+- **Footer alignment** — 2-button footer (Cancel + submit) uses
+  `flex items-center justify-end gap-2` — **both buttons right-aligned**.
+  Primary rightmost (Fitts's Law). This matches `DialogFooter` /
+  `AlertDialogFooter` behaviour so the visual language is the same
+  whether the form lives inside a modal or a page.
+- **Wizard exception** — forms with ≥3 footer buttons that split by
+  role (Cancel on the far left, Back + Next on the right) may use
+  `justify-between`. Example: `plan-form-wizard.tsx`. Do NOT use
+  `justify-between` for a plain 2-button footer with a `<span/>` spacer —
+  it reads as misaligned next to other forms in the same portal.
 
 ### 11.2 Input behaviour
 

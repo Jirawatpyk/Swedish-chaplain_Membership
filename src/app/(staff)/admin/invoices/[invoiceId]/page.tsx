@@ -261,7 +261,7 @@ export default async function InvoiceDetailPage({
           </span>
         }
         actions={
-          <div className="flex flex-wrap gap-2">
+          <>
             {isDraft && isAdmin && (
               <>
                 <a
@@ -349,7 +349,7 @@ export default async function InvoiceDetailPage({
                 }
               />
             )}
-          </div>
+          </>
         }
       />
       <Card>

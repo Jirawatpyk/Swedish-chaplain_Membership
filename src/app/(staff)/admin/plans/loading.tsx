@@ -25,10 +25,10 @@ export default async function Loading() {
           title={t('title')}
           subtitle={t('listDescription')}
           actions={
-            <div className="flex gap-2">
+            <>
               <SkeletonBlock className="h-9 w-28" />
               <SkeletonBlock className="h-9 w-24" />
-            </div>
+            </>
           }
         />
         <Card>

@@ -17,7 +17,7 @@ export default async function Loading() {
         title={<Skeleton className="h-8 w-64" />}
         subtitle={t('subtitle')}
         actions={
-          <div className="flex gap-2">
+          <>
             {/* Back to members */}
             <Skeleton className="h-9 w-36" />
             {/* Recent activity (US6 timeline) */}
@@ -26,7 +26,7 @@ export default async function Loading() {
             <Skeleton className="h-9 w-36" />
             {/* Edit (primary, rightmost per Fitts's Law) */}
             <Skeleton className="h-9 w-20" />
-          </div>
+          </>
         }
       />
       <MemberDetailSkeleton />

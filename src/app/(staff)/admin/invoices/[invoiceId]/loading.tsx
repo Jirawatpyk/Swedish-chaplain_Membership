@@ -31,7 +31,7 @@ export default async function Loading() {
           </span>
         }
         actions={
-          <div className="flex flex-wrap gap-2">
+          <>
             {/* Worst-case action set (draft branch): Delete draft +
               * Preview + Issue. Other branches render subsets, so
               * this skeleton never understates the layout height and
@@ -39,7 +39,7 @@ export default async function Loading() {
             <Skeleton className="h-9 w-28" />
             <Skeleton className="h-9 w-24" />
             <Skeleton className="h-9 w-28" />
-          </div>
+          </>
         }
       />
       <Card>
