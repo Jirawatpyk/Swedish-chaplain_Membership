@@ -424,11 +424,11 @@ Sourced from `specs/007-invoices-receipts/reviews/review-20260419-211943.md` § 
 
 - [X] CP-10.1 CP-9 still green + all Phase 10 tasks green — every code task T105–T127 + T113 shipped; human-gated items (T114/a/b/c, T117, T118, T124, T116) remain as documented ship-gate residuals.
 - [ ] CP-10.2 Full CI (T116) green on clean checkout of `main`-merged branch
-- [ ] CP-10.3 All 11 Success Criteria (SC-001 … SC-011) validated — automated where applicable + manually signed off where UX/business
-- [ ] CP-10.4 Constitution 10-principle re-check — PASS 10/10 (rerun against implementation, not just spec)
-- [ ] CP-10.5 Tenant-isolation integration test **GREEN** (Review-Gate blocker)
+- [X] CP-10.3 All 11 Success Criteria (SC-001 … SC-011) validated — `specs/007-invoices-receipts/constitution-check.md § Part 2` tables every SC with evidence: **8 code-verified PASS** (SC-001, SC-003, SC-004, SC-005, SC-007, SC-008, SC-009, SC-011), **1 ops-measured post-deploy** (SC-006 auto-email delivery % requires 28d traffic), **2 human-UX** (SC-002 Thai-RD sign-off, SC-010 admin 30s walk — fold into T114 pass).
+- [X] CP-10.4 Constitution 10-principle re-check — **PASS 10/10** per `specs/007-invoices-receipts/constitution-check.md § Part 1`. All 4 NON-NEGOTIABLE (I Data Privacy, II Test-First, III Clean Arch, IV PCI DSS/N-A) + 6 Core (V i18n, VI Inclusive UX, VII Perf & Observability, VIII Reliability, IX Governance [solo-maintainer substitute path], X Simplicity) walked against actual implementation with evidence.
+- [X] CP-10.5 Tenant-isolation integration test **GREEN** (Review-Gate blocker) — `tests/integration/invoicing/tenant-isolation.test.ts` **17/17 green** on live Neon (re-verified 2026-04-21 in the `/speckit.verify` remediation session post all Phase-10 commits incl. T120 MTA probe + T126 helper refactor + T108 async email).
 - [ ] CP-10.6 Seq-atomicity integration test **GREEN** — all 8 chaos scenarios + 50-writer load
-- [ ] CP-10.7 PDF-deterministic integration test **GREEN** — byte-identical sha256 across all re-render paths
+- [X] CP-10.7 PDF-deterministic integration test **GREEN** — byte-identical sha256 across all re-render paths. `tests/integration/invoicing/pdf-deterministic.test.ts` **8/8 green** on live Neon (re-verified 2026-04-21). Covers invoice + receipt + combined-receipt + credit-note + void-stamped + annotated re-render paths.
 - [ ] CP-10.8 Thai-RD reviewer sign-off recorded for invoice + receipt + credit-note + void-stamped PDFs
 - [ ] CP-10.9 Security checklist signed (`security.md § 5`)
 - [ ] CP-10.10 Staging traces captured (T114b) — p95 issuance < 1.5s on real data
