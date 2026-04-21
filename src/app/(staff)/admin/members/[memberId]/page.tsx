@@ -54,6 +54,9 @@ const UUID_RE =
 
 interface PageProps {
   readonly params: Promise<{ memberId: string }>;
+  readonly searchParams: Promise<
+    Record<string, string | string[] | undefined>
+  >;
 }
 
 export async function generateMetadata({
@@ -166,7 +169,19 @@ function ContactBlock({
   );
 }
 
-export default async function MemberDetailPage({ params }: PageProps) {
+export default async function MemberDetailPage({
+  params,
+  searchParams,
+}: PageProps) {
+  const sp = await searchParams;
+  const invStatusRaw = typeof sp.invStatus === 'string' ? sp.invStatus : undefined;
+  const invYearRaw = typeof sp.invYear === 'string' ? sp.invYear : undefined;
+  const invStatus = invStatusRaw && invStatusRaw !== 'all' ? invStatusRaw : undefined;
+  const invYear = (() => {
+    if (!invYearRaw || invYearRaw === 'all') return undefined;
+    const n = Number.parseInt(invYearRaw, 10);
+    return Number.isFinite(n) && n >= 2020 && n <= 2100 ? n : undefined;
+  })();
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
 
@@ -471,6 +486,8 @@ export default async function MemberDetailPage({ params }: PageProps) {
               tenant={tenant}
               memberId={member.memberId}
               role={session.user.role}
+              statusFilter={invStatus}
+              fiscalYearFilter={invYear}
             />
           </Suspense>
         )}

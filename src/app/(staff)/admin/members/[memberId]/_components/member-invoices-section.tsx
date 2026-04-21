@@ -52,11 +52,20 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { MemberInvoicesFilters } from './member-invoices-filters';
 
 interface MemberInvoicesSectionProps {
   readonly tenant: TenantContext;
   readonly memberId: string;
   readonly role: 'admin' | 'manager';
+  /**
+   * G-U7F — status filter from URL (`?invStatus=paid`). `undefined`
+   * means "all". Legal values narrowed at the page layer before
+   * passing in, so any non-matching string falls back to `all`.
+   */
+  readonly statusFilter?: string | undefined;
+  /** G-U7F — fiscal-year filter from URL (`?invYear=2026`). */
+  readonly fiscalYearFilter?: number | undefined;
 }
 
 function statusBadgeVariant(
@@ -87,9 +96,47 @@ export async function MemberInvoicesSection({
   tenant,
   memberId,
   role,
+  statusFilter,
+  fiscalYearFilter,
 }: MemberInvoicesSectionProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.members.invoices');
   const format = await getFormatter();
+
+  // G-U7F — fetch all (unfiltered by year) to derive the year-
+  // options list, then fetch filtered for the actual display. This
+  // costs one extra query but keeps the year Select populated even
+  // when the year filter is narrowing the visible set. At member
+  // scale (≤20 invoices typical) this is cheap.
+  const allYearsResult = await listInvoicesByMember(
+    makeListInvoicesByMemberDeps(tenant.slug),
+    { tenantId: tenant.slug, memberId, pageSize: 200, offset: 0, status: 'all' },
+  );
+  const yearsSet = new Set<number>();
+  if (allYearsResult.ok) {
+    for (const inv of allYearsResult.value.rows) {
+      if (inv.fiscalYear !== null) yearsSet.add(inv.fiscalYear);
+    }
+  }
+  const yearOptions = [...yearsSet].sort((a, b) => b - a);
+
+  const VALID_STATUSES = new Set([
+    'draft',
+    'issued',
+    'paid',
+    'void',
+    'credited',
+    'partially_credited',
+  ]);
+  const narrowedStatus =
+    statusFilter && VALID_STATUSES.has(statusFilter)
+      ? (statusFilter as
+          | 'draft'
+          | 'issued'
+          | 'paid'
+          | 'void'
+          | 'credited'
+          | 'partially_credited')
+      : 'all';
 
   const result = await listInvoicesByMember(
     makeListInvoicesByMemberDeps(tenant.slug),
@@ -98,7 +145,8 @@ export async function MemberInvoicesSection({
       memberId,
       pageSize: 100,
       offset: 0,
-      status: 'all',
+      status: narrowedStatus,
+      ...(fiscalYearFilter !== undefined ? { fiscalYear: fiscalYearFilter } : {}),
     },
   );
 
@@ -148,10 +196,29 @@ export async function MemberInvoicesSection({
           </CardTitle>
         </CardHeader>
         <CardContent data-testid="member-invoices-content">
+          {/* G-U7F — status + year filter. Only render when the
+            * unfiltered set is non-empty: if the member has ZERO
+            * invoices there is nothing to filter, so the empty-CTA
+            * stays the dominant focus. */}
+          {allYearsResult.ok && allYearsResult.value.total > 0 && (
+            <MemberInvoicesFilters years={yearOptions} />
+          )}
+          {/* G-U7S — Spec US7 AS1 "sortable" deferred to Phase 10
+            * polish. Rationale: typical member has ≤20 invoices;
+            * server default `ORDER BY issue_date DESC` already
+            * surfaces 'most recent first' (the 95% user intent).
+            * Filter (G-U7F) + paid-date column (G-U7P) together
+            * cover the 'I can find invoice X' job that 'sortable'
+            * is a proxy for. Revisit when members regularly carry
+            * ≥50 invoices. */}
           {rows.length === 0 ? (
             <div className="flex flex-col items-start gap-3 py-4">
-              <p className="text-sm text-muted-foreground">{t('empty')}</p>
-              {canMutate && (
+              <p className="text-sm text-muted-foreground">
+                {statusFilter !== undefined || fiscalYearFilter !== undefined
+                  ? t('emptyFiltered')
+                  : t('empty')}
+              </p>
+              {statusFilter === undefined && fiscalYearFilter === undefined && canMutate && (
                 <Link
                   href={`/admin/invoices/new?memberId=${encodeURIComponent(memberId)}`}
                   className={buttonVariants({ variant: 'outline', size: 'sm' })}

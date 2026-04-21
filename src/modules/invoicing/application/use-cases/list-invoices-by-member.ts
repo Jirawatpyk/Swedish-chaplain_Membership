@@ -20,6 +20,12 @@ export const listInvoicesByMemberSchema = z.object({
   status: z
     .enum(['draft', 'issued', 'paid', 'void', 'credited', 'partially_credited', 'all'])
     .optional(),
+  /**
+   * G-U7F — fiscal-year filter (US7 AS1 "filterable by … year").
+   * Port already supports it; this exposes it at the Application
+   * boundary for the member-page filter UI.
+   */
+  fiscalYear: z.number().int().min(2020).max(2100).optional(),
 });
 
 export type ListInvoicesByMemberInput = z.infer<typeof listInvoicesByMemberSchema>;
@@ -49,6 +55,7 @@ export async function listInvoicesByMember(
       memberId: input.memberId,
       status: (input.status as InvoiceStatus | 'all' | undefined) ?? 'all',
       includeDrafts: true,
+      ...(input.fiscalYear !== undefined ? { fiscalYear: input.fiscalYear } : {}),
     });
     return ok({ rows, total });
   } catch (cause) {

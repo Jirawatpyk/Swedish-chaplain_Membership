@@ -628,7 +628,15 @@
         "title": "Fakturor",
         "count": "{count, plural, =0 {inga fakturor} one {# faktura} other {# fakturor}}",
         "empty": "Inga fakturor för denna medlem än.",
+        "emptyFiltered": "Inga fakturor matchar de aktuella filtren.",
         "emptyCta": "Skapa första fakturan",
+        "filters": {
+          "statusAria": "Filtrera fakturor efter status",
+          "yearAria": "Filtrera fakturor efter räkenskapsår",
+          "status": { "all": "Alla statusar" },
+          "year": { "all": "Alla år" },
+          "clear": "Rensa filter"
+        },
         "draftPlaceholder": "(utkast)",
         "cols": {
           "number": "Nummer",
