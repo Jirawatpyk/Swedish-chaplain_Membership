@@ -75,11 +75,8 @@ export const vercelBlobAdapter: BlobStoragePort = {
     return { key: input.key, url: result.url };
   },
 
-  async signDownloadUrl(key: string, ttlSeconds?: number): Promise<string> {
-    // `ttlSeconds` is part of the port signature; the current
-    // implementation returns the stable URL emitted by `put`.
-    void ttlSeconds;
-    // Current Chamber-OS approach: `put` uses access mode selected at
+  async signDownloadUrl(key: string): Promise<string> {
+    // Chamber-OS approach: `put` uses access mode selected at
     // upload and returns a stable URL. Access control is enforced by
     // the server fetching + proxying bytes through our own route
     // (`/api/invoices/[id]/pdf`, `/api/credit-notes/[id]/pdf`); the
@@ -99,10 +96,15 @@ export const vercelBlobAdapter: BlobStoragePort = {
     // for server-side reads at this version) to stay compatible with
     // the same access-mode the adapter uploads with (`public`).
     const blob = await head(key, { token: env.blob.readWriteToken });
-    const response = await fetch(blob.url);
+    // PG-1 — `cache: 'no-store'` avoids serving stale bytes from a CDN
+    // layer after the VOID overlay overwrite.
+    const response = await fetch(blob.url, { cache: 'no-store' });
     if (!response.ok) {
+      // PG-1 — DO NOT embed the Blob key in the thrown message: keys
+      // contain tenant + invoice path segments that must not leak into
+      // Vercel logs via any default error serialiser.
       throw new Error(
-        `vercel-blob downloadBytes: HTTP ${response.status} for key ${key}`,
+        `vercel-blob downloadBytes: HTTP ${response.status} fetching invoice PDF`,
       );
     }
     const ab = await response.arrayBuffer();

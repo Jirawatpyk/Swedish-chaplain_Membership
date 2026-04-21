@@ -307,12 +307,39 @@ describe('F4 US5 — void-invoice (T098)', () => {
     expect(payload.void_reason).toBe('Wrong tier selected');
     expect(payload.new_pdf_sha256).toBe(RERENDERED_SHA);
 
-    // Outbox enqueued (auto_email_on_issue=true)
+    // Outbox enqueued (auto_email_on_issue=true). T-2 — documentNumber
+    // MUST propagate so `buildInvoiceAutoEmail` can interpolate it into
+    // the cancellation email subject/body; without it the member would
+    // receive a literal "{docNumber}" placeholder (FR-036 regression).
     expect(deps.outboxCalls).toHaveLength(1);
-    const ob = deps.outboxCalls[0] as { eventType: string; invoiceId: string; pdfBlobKey: string };
+    const ob = deps.outboxCalls[0] as {
+      eventType: string;
+      invoiceId: string;
+      pdfBlobKey: string;
+      documentNumber?: string;
+    };
     expect(ob.eventType).toBe('invoice_voided');
     expect(ob.invoiceId).toBe(invoiceId);
     expect(ob.pdfBlobKey).toBe(ORIGINAL_BLOB_KEY);
+    expect(ob.documentNumber).toBe('VDIT-2026-000001');
+
+    // T-1 — §87 no-reuse invariant. `VoidInvoiceDeps` does not include
+    // a `sequenceAllocator`, so the use case is STRUCTURALLY unable to
+    // consume a fiscal-year sequence slot. Belt-and-suspenders DB
+    // check: the invoice row's sequenceNumber + documentNumber stay
+    // pinned to the issue-time values. A subsequent real-allocator
+    // call would take seq=2; seq=1 is retired with the voided row.
+    const [rowAfter] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          sequenceNumber: invoices.sequenceNumber,
+          documentNumber: invoices.documentNumber,
+        })
+        .from(invoices)
+        .where(eq(invoices.invoiceId, invoiceId)),
+    );
+    expect(rowAfter?.sequenceNumber).toBe(1);
+    expect(rowAfter?.documentNumber).toBe('VDIT-2026-000001');
   }, 60_000);
 
   it('refuses to void a paid invoice (directs admin to credit-note flow)', async () => {

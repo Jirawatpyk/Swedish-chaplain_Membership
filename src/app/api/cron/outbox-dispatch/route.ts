@@ -105,6 +105,7 @@ interface BuiltPayload {
  */
 async function buildPayload(
   row: NotificationsOutboxRow,
+  prefetchedBytes?: Uint8Array,
 ): Promise<BuiltPayload | null> {
   const locale: Locale = isLocale(row.locale) ? row.locale : 'en';
   const ctx = row.contextData as Record<string, unknown>;
@@ -157,39 +158,47 @@ async function buildPayload(
       const documentNumber =
         typeof ctx.document_number === 'string' ? ctx.document_number : undefined;
       if (!pdfBlobKey || !isInvoiceAutoEmailEventType(eventType)) return null;
+      // R-2 — external HTTP work (Blob head + fetch) happens BEFORE
+      // the FOR UPDATE SKIP LOCKED tx wraps this buildPayload call.
+      // The caller `dispatchOne` prefetches `prefetchedAttachmentBytes`
+      // for `invoice_voided` rows outside the tx; here we only resolve
+      // the download URL (`head` only) plus use the prefetched bytes
+      // if present. A failure to read the URL is still a transient
+      // signal — return null, the outbox retry ladder re-attempts.
       try {
-        const downloadUrl = await vercelBlobAdapter.signDownloadUrl(pdfBlobKey, 60);
+        const downloadUrl = await vercelBlobAdapter.signDownloadUrl(pdfBlobKey);
         const payload = buildInvoiceAutoEmail({
           toEmail: row.toEmail,
           eventType,
           downloadUrl,
           locale,
           ...(documentNumber ? { documentNumber } : {}),
+          // PG-2 — copy adapts based on whether the bytes are actually
+          // shipped. `prefetchedBytes` is only populated when the
+          // FEATURE_F4_VOID_ATTACHMENT flag is on.
+          hasAttachment: eventType === 'invoice_voided' && !!prefetchedBytes,
         });
-        if (eventType === 'invoice_voided') {
-          // FR-036 — fetch the VOID-stamped bytes and attach. Failure
-          // to read the blob bubbles to the outer catch → null → the
-          // outbox retry ladder re-attempts.
-          const bytes = await vercelBlobAdapter.downloadBytes(pdfBlobKey);
+        if (eventType === 'invoice_voided' && prefetchedBytes) {
           const filenameBase = documentNumber ? documentNumber : 'invoice';
           return {
             ...payload,
             attachments: [
               {
                 filename: `${filenameBase}-VOID.pdf`,
-                content: bytes,
+                content: prefetchedBytes,
                 contentType: 'application/pdf',
               },
             ],
           };
         }
         return payload;
-      } catch {
-        // Blob lookup failed — treat as transient failure. Returning
-        // null lets the dispatcher's retry ladder re-attempt per
-        // RETRY_BACKOFF_SECONDS. If the blob has been garbage-
-        // collected the row will hit MAX_ATTEMPTS and flip to
-        // permanently_failed with an audit emit.
+      } catch (blobErr) {
+        // R-3 — log before returning null so ops can distinguish blob-
+        // fetch failures from other render-path nulls in Vercel logs.
+        logger.warn(
+          { outboxRowId: row.id, err: blobErr },
+          'cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed',
+        );
         return null;
       }
     }
@@ -223,6 +232,48 @@ async function dispatchOne(
   rowId: string,
   requestId: string,
 ): Promise<DispatchOutcome> {
+  // R-2 — prefetch the `invoice_voided` PDF attachment bytes OUTSIDE
+  // the db.transaction() so the Blob head+fetch latency does not
+  // extend the FOR UPDATE SKIP LOCKED window (which also covers the
+  // Resend send). A lock-less peek determines whether prefetch is
+  // needed; the tx does its own re-select with the lock so a
+  // concurrent tick winning the race simply wastes the prefetch.
+  let prefetchedBytes: Uint8Array | undefined;
+  try {
+    const [peek] = await db
+      .select({
+        notificationType: notificationsOutbox.notificationType,
+        contextData: notificationsOutbox.contextData,
+      })
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, rowId))
+      .limit(1);
+    if (peek && peek.notificationType === 'invoice_auto_email') {
+      const ctx = peek.contextData as Record<string, unknown>;
+      const eventType = ctx.event_type;
+      const pdfBlobKey = typeof ctx.pdf_blob_key === 'string' ? ctx.pdf_blob_key : '';
+      // PG-2 gate — only prefetch bytes when attachment is enabled by
+      // DPA clearance. When the flag is OFF, the dispatcher ships a
+      // link-only email (FR-036 partial) and never transfers PDF
+      // bytes to Resend.
+      if (
+        eventType === 'invoice_voided' &&
+        pdfBlobKey &&
+        env.features.f4VoidAttachment
+      ) {
+        prefetchedBytes = await vercelBlobAdapter.downloadBytes(pdfBlobKey);
+      }
+    }
+  } catch (prefetchErr) {
+    // R-3 — prefetch failure is a transient signal; log and continue
+    // into the tx without bytes. `buildPayload` will return null and
+    // the row retries per the outbox backoff ladder.
+    logger.warn(
+      { outboxRowId: rowId, err: prefetchErr },
+      'cron.outbox_dispatch.invoice_voided.prefetch_bytes_failed',
+    );
+  }
+
   return db.transaction(async (tx) => {
     // Re-select inside the tx with the lock. If another tick holds
     // the lock OR the row is no longer pending, return 'skipped'.
@@ -240,7 +291,7 @@ async function dispatchOne(
 
     if (!row) return 'skipped';
 
-    const payload = await buildPayload(row);
+    const payload = await buildPayload(row, prefetchedBytes);
     const now = new Date();
 
     if (!payload) {

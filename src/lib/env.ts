@@ -153,6 +153,19 @@ const schema = z.object({
   // disable without a code deploy — useful for emergency write-freeze
   // of financial mutations.
   FEATURE_F4_INVOICING: booleanFromString.default(true),
+
+  // PG-2 DPA gate — FR-036 cancellation emails CAN include the VOID-
+  // stamped invoice PDF as an email attachment. Shipping the PDF
+  // bytes (which contain member tax ID + legal name + address) to
+  // Resend (EU processor) expands the PDPA §28 / GDPR Art. 28 cross-
+  // border transfer scope beyond what the existing F1 Resend DPA
+  // explicitly covers. Default FALSE until DPO/legal confirms the
+  // DPA extension covers binary attachments containing tax-document
+  // PII. When FALSE the cancellation email still references the
+  // voided document number and declares "no longer payable" (FR-036
+  // partial), but ships a download LINK instead of an attachment.
+  // Flip to TRUE in Vercel env once the DPA amendment is signed.
+  FEATURE_F4_VOID_ATTACHMENT: booleanFromString.default(false),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -263,6 +276,7 @@ export const env = {
   features: {
     f3Members: raw.FEATURE_F3_MEMBERS,
     f4Invoicing: raw.FEATURE_F4_INVOICING,
+    f4VoidAttachment: raw.FEATURE_F4_VOID_ATTACHMENT,
   },
 
   // F4 Invoicing

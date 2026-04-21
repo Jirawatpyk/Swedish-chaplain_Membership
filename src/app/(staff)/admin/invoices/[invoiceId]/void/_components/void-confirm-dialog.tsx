@@ -14,10 +14,12 @@ import { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { AlertTriangleIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 type Props = {
   readonly invoiceId: string;
@@ -73,15 +75,18 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
       }}
       className="flex flex-col gap-6"
     >
-      <div className="rounded-md border bg-muted/40 p-3 text-sm">
-        <p className="text-muted-foreground">
+      {/* UX-1 — destructive Alert gives terminal-action warning
+        * the visual weight it deserves (AlertTriangle + destructive
+        * palette). Previous muted-card treatment under-signalled the
+        * irreversibility of void vs the rest of the form copy. */}
+      <Alert variant="destructive">
+        <AlertTriangleIcon aria-hidden="true" />
+        <AlertTitle>
           {t('voiding')}{' '}
-          <span className="font-mono font-medium text-foreground">
-            {documentNumber}
-          </span>
-        </p>
-        <p className="mt-2 text-xs text-muted-foreground">{t('terminalNotice')}</p>
-      </div>
+          <span className="font-mono">{documentNumber}</span>
+        </AlertTitle>
+        <AlertDescription>{t('terminalNotice')}</AlertDescription>
+      </Alert>
 
       <div className="grid gap-2">
         <Label htmlFor="void-reason">{t('reasonLabel')}</Label>
@@ -93,8 +98,16 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
           maxLength={500}
           required
           aria-describedby="void-reason-help"
+          // UX-3 — surface empty-state invalidity to SR once user has
+          // touched and cleared the field (non-empty → empty-after-trim).
+          aria-invalid={reason.length > 0 && !reasonValid}
         />
-        <p id="void-reason-help" className="text-xs text-muted-foreground">
+        <p
+          id="void-reason-help"
+          className="text-xs text-muted-foreground"
+          // UX-4 — announce character-counter updates to screen readers.
+          aria-live="polite"
+        >
           {t('reasonHelp')} ({reason.length}/500)
         </p>
       </div>
@@ -112,7 +125,11 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
           inputMode="text"
           enterKeyHint="done"
           autoCorrect="off"
-          autoCapitalize="characters"
+          // UX-2 — DO NOT force uppercase: the compare is already
+          // locale-aware case-insensitive (toLocaleUpperCase above).
+          // Forcing characters-uppercase breaks mixed-case document
+          // numbers on mobile keyboards.
+          autoCapitalize="off"
           spellCheck={false}
           aria-invalid={typed.length > 0 && !matches}
           aria-describedby={

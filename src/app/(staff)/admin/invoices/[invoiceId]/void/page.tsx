@@ -54,6 +54,15 @@ export default async function VoidInvoicePage({
 
   return (
     <FormContainer>
+      {/* UX-5 — back-link above the form card so the escape route is
+        * visible without scrolling past the destructive button. */}
+      <Link
+        href={`/admin/invoices/${invoiceId}`}
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
+      >
+        <ArrowLeftIcon className="size-4" aria-hidden="true" />
+        {t('backToInvoice')}
+      </Link>
       <PageHeader title={t('title')} subtitle={t('description')} />
       <Card>
         <CardContent>
@@ -63,13 +72,6 @@ export default async function VoidInvoicePage({
           />
         </CardContent>
       </Card>
-      <Link
-        href={`/admin/invoices/${invoiceId}`}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
-      >
-        <ArrowLeftIcon className="size-4" aria-hidden="true" />
-        {t('backToInvoice')}
-      </Link>
     </FormContainer>
   );
 }

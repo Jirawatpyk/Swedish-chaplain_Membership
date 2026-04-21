@@ -97,7 +97,7 @@ export async function getInvoicePdfSignedUrl(
   // "PDF Reproducibility — Best Practice Decision" for the 4-layer
   // reproducibility rationale + the `invoice_pdf_regenerated` event
   // contract registered in 0030_audit_invoice_pdf_regenerated.sql.
-  const url = await deps.blob.signDownloadUrl(invoice.pdf.blobKey, 60);
+  const url = await deps.blob.signDownloadUrl(invoice.pdf.blobKey);
   const filename = `${invoice.documentNumber?.raw ?? 'invoice'}.pdf`;
   return ok({ url, filename });
 }

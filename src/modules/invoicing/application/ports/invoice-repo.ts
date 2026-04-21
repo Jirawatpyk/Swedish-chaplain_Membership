@@ -202,18 +202,21 @@ export interface InvoiceRepo {
   ): Promise<void>;
 
   /**
-   * T100 — US5 void transition. Atomic issued → void with void_reason +
-   * voided_by_user_id + voided_at + pdf_sha256 (VOID-stamped re-render).
+   * T100 / R-1 fix — US5 void transition. Atomic issued → void with
+   * void_reason + voided_by_user_id + voided_at. The PDF sha256 is
+   * DELIBERATELY NOT written here: the blob upload happens AFTER this
+   * transaction commits, so sha256 is updated in a second transaction
+   * via `applyInvoicePdfRegeneration` once the blob upload succeeds.
+   * This ordering means a post-commit blob failure leaves a stale-but-
+   * consistent state (old sha, old bytes) that a sweeper can re-render.
+   *
    * WHERE guard requires `status='issued'` — a concurrent paid/void
    * race returns no rows and the repo throws `InvoiceApplyConflictError`
    * which the use case maps to typed `concurrent_state_change`.
    *
    * The invoices immutability trigger whitelists `void_reason`,
-   * `voided_by_user_id`, `voided_at`, `status`, and `pdf_sha256` — see
+   * `voided_by_user_id`, `voided_at`, `status` — see
    * `0019_invoicing_tables.sql § invoices_enforce_immutability`.
-   * Blob key + template version stay the PINNED issue-time values so
-   * content-addressed storage remains coherent (the re-rendered VOID
-   * PDF overwrites at the SAME key per FR-008).
    */
   applyVoid(
     tx: unknown,
@@ -222,7 +225,6 @@ export interface InvoiceRepo {
       readonly invoiceId: InvoiceId;
       readonly voidReason: string;
       readonly voidedByUserId: string;
-      readonly pdfSha256: Sha256Hex;
     },
   ): Promise<Invoice>;
 }

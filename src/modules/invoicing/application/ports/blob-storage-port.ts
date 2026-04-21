@@ -41,9 +41,16 @@ export interface BlobStoragePort {
   }): Promise<{ readonly key: string; readonly url: string }>;
 
   /**
-   * Issue a short-lived (60s) signed URL for a private key.
+   * Return the stable download URL for a stored key. The Chamber-OS
+   * architecture proxies every user-facing download through an
+   * authenticated route (`/api/invoices/[id]/pdf`, `/api/credit-notes/[id]/pdf`)
+   * — the Blob URL itself is never exposed to the client — so a per-
+   * request TTL is not required here. If a future caller needs a
+   * short-lived URL independent of the proxy (e.g. a direct external
+   * share), add a dedicated `signDownloadUrlWithTtl` method rather
+   * than re-adding an ignored parameter to this signature.
    */
-  signDownloadUrl(key: string, ttlSeconds?: number): Promise<string>;
+  signDownloadUrl(key: string): Promise<string>;
 
   /**
    * FR-036 email-attachment path — read the stored bytes of a private

@@ -45,6 +45,13 @@ export interface InvoiceAutoEmailInput {
    * member received; optional for other events (backwards-compat).
    */
   readonly documentNumber?: string;
+  /**
+   * PG-2 — whether the VOID-stamped PDF actually ships as an email
+   * attachment (FR-036 full). When FALSE the copy adapts to
+   * reference the download link instead of promising an attachment
+   * that isn't there. Only read for `invoice_voided`.
+   */
+  readonly hasAttachment?: boolean;
 }
 
 interface BuiltPayload {
@@ -70,10 +77,13 @@ const COPY: Record<
     },
     invoice_voided: {
       subject: 'Invoice {docNumber} has been voided',
+      // `{attachmentClause}` is replaced at render time based on the
+      // PG-2 `hasAttachment` flag — attached=attached copy, else
+      // download-link copy.
       body:
         'Invoice {docNumber} has been voided and is no longer payable. ' +
         'Please disregard any outstanding payment request for this invoice. ' +
-        'A copy of the voided invoice, stamped VOID, is attached for your records.',
+        '{attachmentClause}',
       cta: 'Download voided invoice (VOID)',
     },
     credit_note_issued: {
@@ -113,7 +123,7 @@ const COPY: Record<
       body:
         'ใบแจ้งหนี้ {docNumber} ถูกยกเลิก เอกสารฉบับนี้ยกเลิกแล้วและไม่ต้องชำระเงิน ' +
         'หากท่านได้รับการเรียกเก็บเงินของใบแจ้งหนี้ฉบับนี้ กรุณาไม่ต้องดำเนินการชำระ ' +
-        'ระบบได้แนบสำเนาใบแจ้งหนี้ที่ประทับตรา "ยกเลิก" ไว้กับอีเมลนี้เพื่อใช้อ้างอิง',
+        '{attachmentClause}',
       cta: 'ดาวน์โหลดใบแจ้งหนี้ที่ยกเลิก (VOID)',
     },
     credit_note_issued: {
@@ -153,7 +163,7 @@ const COPY: Record<
       body:
         'Faktura {docNumber} har annullerats och ska inte längre betalas. ' +
         'Bortse från eventuella betalningspåminnelser för denna faktura. ' +
-        'En kopia av den annullerade fakturan, stämplad VOID, bifogas för dina register.',
+        '{attachmentClause}',
       cta: 'Ladda ner annullerad faktura (VOID)',
     },
     credit_note_issued: {
@@ -179,6 +189,37 @@ const COPY: Record<
   },
 };
 
+/**
+ * PG-2 — attachment-clause copy per locale. When the DPA gate is OPEN
+ * (`hasAttachment=true`) the body ends with a sentence promising the
+ * attached VOID-stamped PDF. When CLOSED the body points at the
+ * download link instead, so the member is never told "attached" when
+ * the email actually ships link-only.
+ */
+const ATTACHMENT_CLAUSE: Record<
+  InvoiceAutoEmailLocale,
+  { readonly withAttachment: string; readonly linkOnly: string }
+> = {
+  en: {
+    withAttachment:
+      'A copy of the voided invoice, stamped VOID, is attached for your records.',
+    linkOnly:
+      'A copy of the voided invoice, stamped VOID, is available for download via the link below for your records.',
+  },
+  th: {
+    withAttachment:
+      'ระบบได้แนบสำเนาใบแจ้งหนี้ที่ประทับตรา "ยกเลิก" ไว้กับอีเมลนี้เพื่อใช้อ้างอิง',
+    linkOnly:
+      'สำเนาใบแจ้งหนี้ที่ประทับตรา "ยกเลิก" พร้อมให้ดาวน์โหลดได้ผ่านลิงก์ด้านล่างเพื่อใช้อ้างอิง',
+  },
+  sv: {
+    withAttachment:
+      'En kopia av den annullerade fakturan, stämplad VOID, bifogas för dina register.',
+    linkOnly:
+      'En kopia av den annullerade fakturan, stämplad VOID, finns att ladda ner via länken nedan för dina register.',
+  },
+};
+
 export function buildInvoiceAutoEmail(input: InvoiceAutoEmailInput): BuiltPayload {
   const copy = COPY[input.locale][input.eventType];
   // FR-036 — substitute the original document number into subject +
@@ -187,7 +228,10 @@ export function buildInvoiceAutoEmail(input: InvoiceAutoEmailInput): BuiltPayloa
   // a thrown error for backwards-compat callers on other event types
   // whose copy doesn't reference {docNumber}).
   const docNumber = input.documentNumber ?? '';
-  const interpolate = (s: string): string => s.replace(/\{docNumber\}/g, docNumber);
+  const attachmentVariant = input.hasAttachment === true ? 'withAttachment' : 'linkOnly';
+  const attachmentClause = ATTACHMENT_CLAUSE[input.locale][attachmentVariant];
+  const interpolate = (s: string): string =>
+    s.replace(/\{docNumber\}/g, docNumber).replace(/\{attachmentClause\}/g, attachmentClause);
   const subject = interpolate(copy.subject);
   const body = interpolate(copy.body);
   const cta = copy.cta;

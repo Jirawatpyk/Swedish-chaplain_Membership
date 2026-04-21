@@ -26,7 +26,6 @@ const ERROR_STATUS: Record<VoidInvoiceError['code'], number> = {
   settings_missing: 422,
   no_snapshot_on_invoice: 422,
   pdf_render_failed: 500,
-  blob_upload_failed: 500,
 };
 
 export async function POST(

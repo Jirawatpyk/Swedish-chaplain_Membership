@@ -24,6 +24,8 @@ export default async function Loading() {
             <div className="grid gap-2">
               <SkeletonBlock className="h-3 w-24" />
               <SkeletonBlock className="h-20 w-full" />
+              {/* UX-6 — reserve helper-line shape to prevent CLS. */}
+              <SkeletonBlock className="h-3 w-40" />
             </div>
             <div className="grid gap-2">
               <SkeletonBlock className="h-3 w-48" />

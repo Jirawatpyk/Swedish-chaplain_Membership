@@ -587,10 +587,13 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
 
     async applyVoid(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
-      // Atomic issued → void. The immutability trigger whitelists the
-      // void_* fields + pdf_sha256 so the VOID-stamped re-render can
-      // overwrite the stored hash. WHERE guard on status='issued'
-      // prevents racing paid/credit-note/double-void.
+      // R-1 fix — atomic issued → void. The immutability trigger
+      // whitelists the void_* fields + pdf_sha256, but pdf_sha256 is
+      // INTENTIONALLY NOT written here: the caller updates it via
+      // `applyInvoicePdfRegeneration` in a second transaction AFTER
+      // the blob upload succeeds, preventing DB/Blob desync on blob
+      // failure. WHERE guard on status='issued' prevents racing
+      // paid/credit-note/double-void.
       const [updated] = await tx
         .update(invoices)
         .set({
@@ -598,7 +601,6 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
           voidReason: input.voidReason,
           voidedByUserId: input.voidedByUserId,
           voidedAt: sql`now()`,
-          pdfSha256: input.pdfSha256,
           updatedAt: sql`now()`,
         })
         .where(

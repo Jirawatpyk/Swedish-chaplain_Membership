@@ -67,7 +67,7 @@ export async function getCreditNotePdfSignedUrl(
   // 502 instead of leaking a raw 500.
   let url: string;
   try {
-    url = await deps.blob.signDownloadUrl(cn.pdf.blobKey, 60);
+    url = await deps.blob.signDownloadUrl(cn.pdf.blobKey);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const notFound = /not found|404|BlobNotFoundError/i.test(msg);
