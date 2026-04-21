@@ -621,7 +621,7 @@
         "invoiceIssued": "Invoice {documentNumber} issued",
         "invoicePaid": "Invoice paid via {paymentMethod}",
         "invoiceVoided": "Invoice voided — {reason}",
-        "creditNoteIssued": "Credit note {documentNumber} issued",
+        "creditNoteIssued": "Credit note {documentNumber} issued — {creditAmount} THB",
         "invoicePdfResent": "Invoice {documentNumber} PDF re-sent"
       },
       "invoices": {
@@ -967,6 +967,10 @@
           "taxId": "Tax ID",
           "address": "Address",
           "contactEmail": "Contact email"
+        },
+        "siblings": {
+          "heading": "Other credit notes on this invoice",
+          "viewLabel": "Go to credit note {number}"
         }
       }
     },

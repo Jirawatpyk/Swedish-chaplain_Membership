@@ -68,6 +68,22 @@ export function resolveInvoiceEventCopy(
   }
   if (p.credit_amount_satang !== undefined) {
     vars.creditAmountSatang = String(p.credit_amount_satang);
+    // G-6 — also emit a pre-divided decimal form so locale copy can
+    // interpolate a human-readable amount (e.g. "107.00") without
+    // coupling this pure resolver to a locale-aware formatter. Uses
+    // deterministic two-decimal division with no thousands grouping;
+    // locale-specific grouping is a consumer concern.
+    try {
+      const satang = BigInt(p.credit_amount_satang as string);
+      const abs = satang < 0n ? -satang : satang;
+      const whole = abs / 100n;
+      const rem = abs % 100n;
+      const sign = satang < 0n ? '-' : '';
+      vars.creditAmount = `${sign}${whole.toString()}.${rem.toString().padStart(2, '0')}`;
+    } catch {
+      /* non-coercible input — leave `creditAmount` unset so the copy
+       * falls back to {creditAmount} placeholder; tests cover both. */
+    }
   }
   if (p.payment_method) vars.paymentMethod = p.payment_method;
   if (p.reason) vars.reason = p.reason;

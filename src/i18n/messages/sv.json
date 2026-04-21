@@ -621,7 +621,7 @@
         "invoiceIssued": "Faktura {documentNumber} utställd",
         "invoicePaid": "Faktura betald via {paymentMethod}",
         "invoiceVoided": "Faktura makulerad — {reason}",
-        "creditNoteIssued": "Kreditnota {documentNumber} utställd",
+        "creditNoteIssued": "Kreditnota {documentNumber} utställd — {creditAmount} THB",
         "invoicePdfResent": "PDF för faktura {documentNumber} skickad på nytt"
       },
       "invoices": {
@@ -967,6 +967,10 @@
           "taxId": "Skatt-ID",
           "address": "Adress",
           "contactEmail": "Kontaktepost"
+        },
+        "siblings": {
+          "heading": "Andra kreditnotor på denna faktura",
+          "viewLabel": "Gå till kreditnota {number}"
         }
       }
     },

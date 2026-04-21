@@ -621,7 +621,7 @@
         "invoiceIssued": "ออกใบแจ้งหนี้ {documentNumber}",
         "invoicePaid": "รับชำระเงินผ่าน {paymentMethod}",
         "invoiceVoided": "ยกเลิกใบแจ้งหนี้ — {reason}",
-        "creditNoteIssued": "ออกใบลดหนี้ {documentNumber}",
+        "creditNoteIssued": "ออกใบลดหนี้ {documentNumber} จำนวน {creditAmount} บาท",
         "invoicePdfResent": "ส่ง PDF ใบแจ้งหนี้ {documentNumber} อีกครั้ง"
       },
       "invoices": {
@@ -967,6 +967,10 @@
           "taxId": "เลขประจำตัวผู้เสียภาษี",
           "address": "ที่อยู่",
           "contactEmail": "อีเมลผู้ติดต่อ"
+        },
+        "siblings": {
+          "heading": "ใบลดหนี้อื่นของใบแจ้งหนี้นี้",
+          "viewLabel": "ไปที่ใบลดหนี้ {number}"
         }
       }
     },

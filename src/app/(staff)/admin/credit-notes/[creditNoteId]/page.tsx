@@ -27,6 +27,11 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getCreditNote, makeGetCreditNoteDeps } from '@/modules/invoicing';
+// G-5 — sibling-CN navigation. The list is an admin-view convenience
+// (no new use-case); same escape-hatch pattern as the settings +
+// credit-note list reads already used on the invoice detail page.
+// eslint-disable-next-line no-restricted-imports
+import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
 // Raw repo read mirrors the escape hatch used by the invoice detail
 // page (invoices/[invoiceId]/page.tsx:32). Application-layer
 // `getStaffUser` passthrough is pending Phase-10 consolidation.
@@ -123,6 +128,19 @@ export default async function CreditNoteDetailPage({
   const invoiceHref = `/admin/invoices/${cn.originalInvoiceId}`;
   const pdfHref = `/api/credit-notes/${creditNoteId}/pdf`;
 
+  // G-5 — sibling CNs on the same original invoice. Best-effort:
+  // a repo failure never 500s the page (this is a convenience nav
+  // block, not load-bearing). Filter self + sort oldest→newest so
+  // the visual order matches the sequence the admin issued them in.
+  const siblings = await makeDrizzleCreditNoteRepo(tenantCtx.slug)
+    .findByOriginalInvoice(cn.originalInvoiceId, tenantCtx.slug)
+    .then((all) =>
+      all
+        .filter((s) => s.creditNoteId !== cn.creditNoteId)
+        .sort((a, b) => a.sequenceNumber - b.sequenceNumber),
+    )
+    .catch(() => [] as never[]);
+
   return (
     <DetailContainer>
       <PageHeader
@@ -209,6 +227,34 @@ export default async function CreditNoteDetailPage({
           </section>
         </CardContent>
       </Card>
+
+      {/* G-5 — sibling credit notes against the same invoice. Renders
+        * only when the invoice has multiple CNs (partial credits);
+        * single-CN invoices hide this block to avoid single-item-list
+        * noise. */}
+      {siblings.length > 0 && (
+        <nav aria-labelledby="cn-siblings-heading" className="px-1">
+          <h3
+            id="cn-siblings-heading"
+            className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            {t('siblings.heading')}
+          </h3>
+          <ol role="list" className="flex flex-wrap gap-2">
+            {siblings.map((s) => (
+              <li key={s.creditNoteId}>
+                <Link
+                  href={`/admin/credit-notes/${s.creditNoteId}`}
+                  className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                  aria-label={t('siblings.viewLabel', { number: s.documentNumber.raw })}
+                >
+                  <span className="font-mono">{s.documentNumber.raw}</span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )}
 
       {/* Parties — identity snapshots are frozen at issue time (FR-038). */}
       <Card>

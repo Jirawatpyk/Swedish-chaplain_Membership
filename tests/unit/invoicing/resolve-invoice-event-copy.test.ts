@@ -90,6 +90,10 @@ describe('resolveInvoiceEventCopy', () => {
     expect(copy?.i18nKey).toBe('creditNoteIssued');
     expect(copy?.link).toBe(`/admin/credit-notes/${CREDIT_NOTE_ID}`);
     expect(copy?.vars.creditAmountSatang).toBe('10000');
+    // G-6 — also emits pre-divided decimal form for locale copy
+    // (e.g., "ออกใบลดหนี้ … จำนวน {creditAmount} บาท"). Pure string;
+    // no locale grouping, consumer applies locale-specific formatting.
+    expect(copy?.vars.creditAmount).toBe('100.00');
   });
 
   it('invoice_pdf_resent: vars include documentNumber', () => {
