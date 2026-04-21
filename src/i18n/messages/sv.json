@@ -948,8 +948,6 @@
         "description": "Alla kreditnotor utfärdade mot skattefakturor. Skrivskyddad granskningslogg.",
         "empty": "Kreditnotor visas här efter att en administratör utfärdat en mot en betald faktura.",
         "filteredEmpty": "Inga kreditnotor matchar de aktuella filtren.",
-        "searchPlaceholder": "Sök kreditnotanummer…",
-        "searchLabel": "Sök kreditnotor",
         "columns": {
           "documentNumber": "Nummer",
           "issueDate": "Utfärdad",
@@ -960,9 +958,10 @@
           "actions": "Åtgärder"
         },
         "filters": {
+          "search": "Sök dokumentnummer",
           "fiscalYear": "Räkenskapsår",
-          "allYears": "Alla år",
-          "clearAll": "Rensa filter"
+          "apply": "Tillämpa",
+          "clear": "Rensa"
         },
         "actions": {
           "view": "Visa",

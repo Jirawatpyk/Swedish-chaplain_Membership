@@ -3,127 +3,108 @@
 /**
  * G-3 — Filter bar for `/admin/credit-notes` directory.
  *
- * Mirror of `admin/invoices/_components/invoice-filters.tsx`:
- *   - Search input with magnifier-icon prefix + 300ms debounce
- *   - Fiscal-year Select with "All years" + a rolling 5-year window
- *     around the current CE year (covers past-year audit + next-year
- *     advance drafts)
- *   - Ghost "Clear filters" button with X-icon when any filter set
- *   - URL is source of truth (bookmarkable); `router.replace` so
- *     every keystroke doesn't pollute browser history
- *   - Resets `page` on any filter change (offsets don't map across
- *     filtered result sets)
+ * Small client component that syncs two URL search params
+ * (`?q=` for document-number substring, `?fy=` for fiscal year)
+ * into the current path, with a Clear link that drops both.
+ * Page navigation is reset to page=1 on any filter change.
  */
-import { useCallback, useRef, useTransition } from 'react';
+import { useCallback, useMemo, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SearchIcon, XIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-
-const DEBOUNCE_MS = 300;
-
-/**
- * Build a 5-year window around the current CE year for the fiscal-
- * year select: [current-2, current-1, current, current+1, current+2].
- * At chamber scale (one or two fiscal years of live data) this
- * covers past-year audit + next-year advance drafts without forcing
- * a DB roundtrip to discover the actual distinct years in use.
- */
-function buildYearOptions(): readonly number[] {
-  const now = new Date().getUTCFullYear();
-  return [now - 2, now - 1, now, now + 1, now + 2];
-}
 
 export function CreditNoteFilters() {
-  const t = useTranslations('admin.creditNotes.list');
+  const t = useTranslations('admin.creditNotes.list.filters');
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [, startTransition] = useTransition();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const params = useSearchParams();
+  const [pending, startTransition] = useTransition();
 
-  const currentQ = searchParams.get('q') ?? '';
-  const currentFy = searchParams.get('fy') ?? 'all';
+  const [q, setQ] = useState(params.get('q') ?? '');
+  const [fy, setFy] = useState(params.get('fy') ?? '');
 
-  const pushUrl = useCallback(
-    (patch: Record<string, string | null>) => {
-      const params = new URLSearchParams(searchParams.toString());
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === null || value === '') params.delete(key);
-        else params.set(key, value);
-      }
-      params.delete('page');
-      const query = params.toString();
-      startTransition(() => {
-        router.replace(query ? `${pathname}?${query}` : pathname);
-      });
-    },
-    [searchParams, router, pathname],
+  const hasFilters = useMemo(
+    () => (params.get('q') ?? '').length > 0 || (params.get('fy') ?? '').length > 0,
+    [params],
   );
 
-  const onSearchChange = (value: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      pushUrl({ q: value.trim() || null });
-    }, DEBOUNCE_MS);
-  };
-
-  const hasAnyFilter = currentQ !== '' || currentFy !== 'all';
-  const yearOptions = buildYearOptions();
+  const applyFilters = useCallback(
+    (nextQ: string, nextFy: string) => {
+      const next = new URLSearchParams(params.toString());
+      if (nextQ.trim()) next.set('q', nextQ.trim());
+      else next.delete('q');
+      if (nextFy.trim()) next.set('fy', nextFy.trim());
+      else next.delete('fy');
+      // Any filter change resets paging — paged offsets from the
+      // previous filter window don't map to the new result set.
+      next.delete('page');
+      const qs = next.toString();
+      startTransition(() => {
+        router.push(qs ? `${pathname}?${qs}` : pathname);
+      });
+    },
+    [params, pathname, router],
+  );
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <div className="relative flex-1 min-w-[10rem]">
-        <SearchIcon
-          aria-hidden="true"
-          className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-        />
+    <form
+      className="flex w-full flex-wrap items-end gap-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        applyFilters(q, fy);
+      }}
+    >
+      <div className="grid flex-1 gap-1 min-w-[10rem]">
+        <Label htmlFor="cn-filter-q" className="text-xs">
+          {t('search')}
+        </Label>
         <Input
+          id="cn-filter-q"
           type="search"
-          defaultValue={currentQ}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder={t('searchPlaceholder')}
-          aria-label={t('searchLabel')}
-          className="pl-9"
+          inputMode="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="CN-…"
+          className="w-full"
+          autoComplete="off"
         />
       </div>
-      <Select
-        value={currentFy}
-        onValueChange={(v) => pushUrl({ fy: v && v !== 'all' ? v : null })}
-      >
-        <SelectTrigger className="w-[9rem]" aria-label={t('filters.fiscalYear')}>
-          <TranslatedSelectValue
-            placeholder={t('filters.allYears')}
-            translate={(v) => (v === 'all' || !v ? t('filters.allYears') : v)}
-          />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t('filters.allYears')}</SelectItem>
-          {yearOptions.map((y) => (
-            <SelectItem key={y} value={String(y)}>
-              {String(y)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {hasAnyFilter && (
+      <div className="grid gap-1">
+        <Label htmlFor="cn-filter-fy" className="text-xs">
+          {t('fiscalYear')}
+        </Label>
+        <Input
+          id="cn-filter-fy"
+          type="number"
+          inputMode="numeric"
+          min="2020"
+          max="2100"
+          value={fy}
+          onChange={(e) => setFy(e.target.value)}
+          placeholder="2026"
+          className="w-24"
+          autoComplete="off"
+        />
+      </div>
+      <Button type="submit" variant="outline" disabled={pending}>
+        {t('apply')}
+      </Button>
+      {hasFilters && (
         <Button
+          type="button"
           variant="ghost"
-          onClick={() => pushUrl({ q: null, fy: null })}
-          aria-label={t('filters.clearAll')}
+          disabled={pending}
+          onClick={() => {
+            setQ('');
+            setFy('');
+            applyFilters('', '');
+          }}
         >
-          <XIcon className="size-4" />
-          {t('filters.clearAll')}
+          {t('clear')}
         </Button>
       )}
-    </div>
+    </form>
   );
 }
