@@ -948,6 +948,8 @@
         "description": "All credit notes issued against tax invoices. Read-only audit trail.",
         "empty": "Credit notes appear here after an admin issues one against a paid invoice.",
         "filteredEmpty": "No credit notes match the current filters.",
+        "searchPlaceholder": "Search credit note number…",
+        "searchLabel": "Search credit notes",
         "columns": {
           "documentNumber": "Number",
           "issueDate": "Issued",
@@ -958,10 +960,9 @@
           "actions": "Actions"
         },
         "filters": {
-          "search": "Search document number",
           "fiscalYear": "Fiscal year",
-          "apply": "Apply",
-          "clear": "Clear"
+          "allYears": "All years",
+          "clearAll": "Clear filters"
         },
         "actions": {
           "view": "View",
