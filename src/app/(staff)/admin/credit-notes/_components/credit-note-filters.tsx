@@ -12,7 +12,6 @@ import { useCallback, useMemo, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 
 export function CreditNoteFilters() {
@@ -56,38 +55,34 @@ export function CreditNoteFilters() {
         applyFilters(q, fy);
       }}
     >
-      <div className="grid flex-1 gap-1 min-w-[10rem]">
-        <Label htmlFor="cn-filter-q" className="text-xs">
-          {t('search')}
-        </Label>
-        <Input
-          id="cn-filter-q"
-          type="search"
-          inputMode="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="CN-…"
-          className="w-full"
-          autoComplete="off"
-        />
-      </div>
-      <div className="grid gap-1">
-        <Label htmlFor="cn-filter-fy" className="text-xs">
-          {t('fiscalYear')}
-        </Label>
-        <Input
-          id="cn-filter-fy"
-          type="number"
-          inputMode="numeric"
-          min="2020"
-          max="2100"
-          value={fy}
-          onChange={(e) => setFy(e.target.value)}
-          placeholder="2026"
-          className="w-24"
-          autoComplete="off"
-        />
-      </div>
+      {/* Labels above inputs were removed per user feedback — the
+        * placeholder ("CN-…" / "2026") plus the aria-label on each
+        * Input carry the same semantics without the vertical noise
+        * above the filter bar. */}
+      <Input
+        id="cn-filter-q"
+        type="search"
+        inputMode="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={t('search')}
+        aria-label={t('search')}
+        className="min-w-[10rem] flex-1"
+        autoComplete="off"
+      />
+      <Input
+        id="cn-filter-fy"
+        type="number"
+        inputMode="numeric"
+        min="2020"
+        max="2100"
+        value={fy}
+        onChange={(e) => setFy(e.target.value)}
+        placeholder={t('fiscalYear')}
+        aria-label={t('fiscalYear')}
+        className="w-32"
+        autoComplete="off"
+      />
       <Button type="submit" variant="outline" disabled={pending}>
         {t('apply')}
       </Button>

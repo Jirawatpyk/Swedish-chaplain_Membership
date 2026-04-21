@@ -17,18 +17,12 @@ export default async function Loading() {
         <PageHeader title={t('title')} subtitle={t('description')} />
         <Card>
           <CardContent className="flex flex-col gap-6">
-            {/* Filter bar — mirror real form: grow-to-fit search +
-              * fiscal-year input + Apply/Clear buttons. Match labels
-              * above each input so height reserved prevents CLS. */}
+            {/* Filter bar — grow-to-fit search + fiscal-year input +
+              * Apply button. Labels removed per UX feedback; the
+              * placeholder text inside each input carries the hint. */}
             <div className="flex w-full flex-wrap items-end gap-3">
-              <div className="grid flex-1 gap-1 min-w-[10rem]">
-                <SkeletonBlock className="h-3 w-24" />
-                <SkeletonBlock className="h-9 w-full" />
-              </div>
-              <div className="grid gap-1">
-                <SkeletonBlock className="h-3 w-16" />
-                <SkeletonBlock className="h-9 w-24" />
-              </div>
+              <SkeletonBlock className="h-9 min-w-[10rem] flex-1" />
+              <SkeletonBlock className="h-9 w-32" />
               <SkeletonBlock className="h-9 w-20" />
             </div>
             <div className="space-y-2">
