@@ -44,15 +44,24 @@ export default async function Loading() {
       />
       <Card>
         <CardContent className="flex flex-col gap-4">
-          {/* 2-column DL grid skeleton */}
-          <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+          {/* 2-column grid skeleton — plain `<div role="presentation">`
+              (NOT `<dl>`) because the skeleton has no real `<dt>`/`<dd>`
+              semantic pairs; the live page's `<dl>` only renders after
+              data resolves. Fixes axe-core `definition-list` +
+              `only-dlitems` violations the admin a11y scan caught on
+              the loading state (CP-3.8 / V1). */}
+          <div
+            role="presentation"
+            aria-hidden="true"
+            className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2"
+          >
             {Array.from({ length: 7 }).map((_, i) => (
               <div key={i} className="flex flex-col gap-1">
                 <Skeleton className="h-3 w-20" />
                 <Skeleton className="h-5 w-full" />
               </div>
             ))}
-          </dl>
+          </div>
           {/* Lines table skeleton */}
           <section className="mt-6 flex flex-col gap-2">
             <Skeleton className="h-4 w-24" />
