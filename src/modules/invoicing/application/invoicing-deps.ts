@@ -19,6 +19,7 @@ import { resendEmailOutboxAdapter } from '../infrastructure/adapters/resend-emai
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { f4AuditAdapter } from '../infrastructure/adapters/audit-adapter';
+import { overdueAuditAdapter } from '../infrastructure/adapters/overdue-audit-adapter';
 import { CURRENT_TEMPLATE_VERSION } from '../infrastructure/pdf/template-registry';
 
 import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
@@ -223,6 +224,15 @@ export function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
  * pinned blob key + templateVersion from the stored document (no
  * re-render; no seq allocation).
  */
+/**
+ * T109 — Overdue detection emit dep. Pure derive has no deps; only
+ * the opportunistic audit emit needs the adapter. Kept as a factory
+ * (rather than re-exporting the const) for future DI flexibility.
+ */
+export function makeOverdueAuditPort() {
+  return overdueAuditAdapter;
+}
+
 export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),

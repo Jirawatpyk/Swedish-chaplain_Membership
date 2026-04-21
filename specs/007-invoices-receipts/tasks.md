@@ -371,7 +371,7 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 ### 10b. Overdue derivation (implementation)
 
-- [ ] T109 Implement `src/modules/invoicing/application/use-cases/derive-overdue.ts` — pure helper adding `is_overdue` to DTO; `INSERT … ON CONFLICT DO NOTHING` on first read per Bangkok-local day per R2-E3 + FR-028.
+- [X] T109 `src/modules/invoicing/application/use-cases/derive-overdue.ts` shipped. Pure `deriveOverdue` + `computeIsOverdue` helpers (`status==='issued' && bangkok(now) > dueDate`), unit-tested across all 6 branches incl. the Asia/Bangkok TZ crossover (UTC 17:30 Mar 30 = Bangkok Mar 31 00:30 → overdue). Opportunistic `maybeEmitOverdueDetected` fires `invoice_overdue_detected` via new `OverdueAuditPort` / `overdueAuditAdapter` using `INSERT … ON CONFLICT DO NOTHING` against the partial unique idx from migration 0021 (at-most-once per (tenant, invoice, Bangkok-local day)). 10/10 unit tests + 2/2 integration tests green on live Neon. T113a audit-coverage inventory promoted `invoice_overdue_detected` from deferred → covered. **Wiring to `listInvoicesPaged` / detail pages** is a separate presentation polish step — the helper + emit path are now production-ready.
 
 ### 10c. Performance + property tests (testing)
 

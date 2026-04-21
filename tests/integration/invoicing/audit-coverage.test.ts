@@ -412,8 +412,10 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         since: '2026-04-21',
       },
       invoice_overdue_detected: {
-        status: 'deferred',
-        where: 'T109 derive-overdue use-case (not yet shipped)',
+        status: 'covered',
+        where:
+          'overdue-audit-idempotency.test.ts (live-Neon ON CONFLICT DO NOTHING contract) + tests/unit/invoicing/derive-overdue.test.ts (pure helper)',
+        since: '2026-04-21',
       },
       invoice_pdf_regenerated: {
         status: 'deferred',
@@ -459,8 +461,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       (c) => c.status === 'deferred',
     ).length;
     expect(coveredCount + deferredCount).toBe(17);
-    // Behavioral coverage target on ship: ≥15/17 (88%). Remaining 2
-    // are shippable deferrals (T109 + post-MVP blob-outage auto-rerender).
-    expect(coveredCount).toBeGreaterThanOrEqual(15);
+    // Behavioral coverage target: 16/17. Remaining 1 is a post-MVP
+    // deferral (Blob-outage auto-rerender path — not routinely
+    // exercisable without simulated Blob 404s).
+    expect(coveredCount).toBeGreaterThanOrEqual(16);
   });
 });

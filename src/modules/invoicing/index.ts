@@ -232,6 +232,17 @@ export {
   type ResendPdfActor,
 } from './application/use-cases/resend-pdf';
 
+export {
+  deriveOverdue,
+  computeIsOverdue,
+  maybeEmitOverdueDetected,
+  type InvoiceWithOverdue,
+} from './application/use-cases/derive-overdue';
+export type {
+  OverdueAuditPort,
+  OverdueDetectedEvent,
+} from './application/ports/overdue-audit-port';
+
 // --- Composition-root factories --------------------------------------------
 // Presentation / route handlers consume these to wire a per-request
 // tenant-scoped dependency graph.
@@ -255,5 +266,6 @@ export {
   makeUploadTenantLogoDeps,
   makeGetTenantTaxPolicyDeps,
   makeResendPdfDeps,
+  makeOverdueAuditPort,
   isTenantInvoiceSetupComplete,
 } from './application/invoicing-deps';
