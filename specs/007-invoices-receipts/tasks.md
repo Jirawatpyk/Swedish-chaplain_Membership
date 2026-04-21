@@ -377,8 +377,8 @@ description: "TDD-ordered task list for F4 Membership Invoicing & Thai-Tax Recei
 
 - [ ] T110 [P] Author `tests/perf/pdf-render-benchmark.test.ts` (RUN_PERF=1) — 100 renders, record p50/p95/p99; fails CI if p95 > 800ms (post-critique E6). Run BEFORE T037 is finalized to validate 1.5s issuance budget.
 - [ ] T110a [P] **Invoice-list query performance (SC-005)**: Author `tests/perf/invoice-list-query.test.ts` gated by `RUN_PERF=1` — seed 5,000 invoices across 2 tenants via fixture, assert first-page cursor pagination (50-row) p95 < 500ms via 100 measured calls. Mirrors F3's `search-perf.test.ts` pattern. Fails CI under `RUN_PERF=1` if p95 exceeds budget.
-- [ ] T111 [P] Extend T016 seq-atomicity test to 50-writer load (post-critique E3) under RUN_PERF=1.
-- [ ] T112 [P] Author `tests/integration/invoicing/retention-member-archive.test.ts` covering FR-029 + FR-030: archive member → invoices remain + snapshots intact + timeline still enumerates.
+- [X] T111 [P] **50-writer seq-atomicity perf shipped**. Already live at `tests/integration/invoicing/seq-number-atomicity.test.ts:607` gated by `RUN_PERF=1`. Verified: 50 concurrent `allocateNext` calls produce contiguous 1..50 in ~10s (< 30s budget). Proves the advisory-lock + FOR UPDATE path stays tenant-§87-compliant under adversarial concurrency.
+- [X] T112 [P] **Retention + archive invariant shipped**. `tests/integration/invoicing/retention-member-archive.test.ts` walks FR-029 + FR-030 end-to-end: archive a member → invoice row survives + `tenant_identity_snapshot` + `member_identity_snapshot` + `pdf_blob_key` + `pdf_sha256` + `document_number` byte-identical + `listInvoicesByMember` timeline still enumerates. 1/1 green on live Neon.
 
 ### 10d. Observability verification (verification)
 
