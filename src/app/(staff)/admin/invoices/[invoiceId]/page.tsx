@@ -56,6 +56,7 @@ import {
 import { IssueInvoiceDialog } from '../_components/issue-invoice-dialog';
 import { RecordPaymentDialog } from '../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
+import { ResendAdminButton } from '../_components/resend-admin-button';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -317,6 +318,27 @@ export default async function InvoiceDetailPage({
               >
                 {t('actions.download')}
               </a>
+            )}
+            {/* T107 — resend invoice email (admin). Visible on every
+                non-draft, non-voided invoice. Voided cancellation
+                notices flow through the void dispatcher, not this
+                generic resend path. */}
+            {!isDraft && invoice.status !== 'void' && invoice.pdf && isAdmin && (
+              <ResendAdminButton
+                invoiceId={invoice.invoiceId}
+                documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
+                variant="invoice"
+              />
+            )}
+            {/* T107 — resend receipt email (paid + separate-mode
+                receipt). Hidden on combined-mode (receiptPdf null)
+                and non-paid states. */}
+            {invoice.status === 'paid' && invoice.receiptPdf && isAdmin && (
+              <ResendAdminButton
+                invoiceId={invoice.invoiceId}
+                documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
+                variant="receipt"
+              />
             )}
           </div>
         }

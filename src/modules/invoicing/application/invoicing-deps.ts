@@ -34,6 +34,7 @@ import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
 import type { VoidInvoiceDeps } from './use-cases/void-invoice';
 import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
 import type { GetCreditNotePdfSignedUrlDeps } from './use-cases/get-credit-note-pdf-signed-url';
+import type { ResendPdfDeps } from './use-cases/resend-pdf';
 
 export function makeCreateInvoiceDraftDeps(tenantId: string): CreateInvoiceDraftDeps {
   return {
@@ -212,6 +213,21 @@ export function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
     blob: vercelBlobAdapter,
     audit: f4AuditAdapter,
     clock: systemClock,
+    outbox: resendEmailOutboxAdapter,
+  };
+}
+
+/**
+ * T107 — resend-pdf composition. Wires invoice repo + credit-note repo
+ * + audit + outbox. No clock/pdf-render needed because resend uses the
+ * pinned blob key + templateVersion from the stored document (no
+ * re-render; no seq allocation).
+ */
+export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
+    audit: f4AuditAdapter,
     outbox: resendEmailOutboxAdapter,
   };
 }

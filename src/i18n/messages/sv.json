@@ -993,7 +993,14 @@
         "status": { "issued": "Utfärdad" },
         "actions": {
           "backToInvoice": "Tillbaka till faktura",
-          "download": "Ladda ner PDF"
+          "download": "Ladda ner PDF",
+          "resend": "Skicka kreditnota-mejl igen",
+          "resendAria": "Mejla en ny kopia av kreditnota {number} till medlemmens primära kontakt"
+        },
+        "toast": {
+          "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
+          "resendRateLimited": "Denna kreditnota skickades nyligen igen. Vänta några minuter och försök igen.",
+          "resendFailed": "Kunde inte köa en återsändning. Försök igen."
         },
         "fields": {
           "issueDate": "Utfärdandedatum",
@@ -1106,7 +1113,17 @@
           "download": "Ladda ner PDF",
           "pay": "Registrera betalning",
           "void": "Annullera…",
-          "issueCreditNote": "Utfärda kreditnota"
+          "issueCreditNote": "Utfärda kreditnota",
+          "resendInvoice": "Skicka faktura-mejl igen",
+          "resendReceipt": "Skicka kvitto-mejl igen",
+          "resendAria": "Mejla en ny kopia av {documentType} {number} till medlemmens primära kontakt"
+        },
+        "toast": {
+          "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
+          "resendRateLimited": "Dokumentet skickades nyligen igen. Vänta några minuter och försök igen.",
+          "resendNoReceipt": "Det finns inget kvitto att skicka (kombinerat läge eller obetald).",
+          "resendNotIssued": "Fakturan är fortfarande ett utkast — utfärda den först för att mejla en kopia.",
+          "resendFailed": "Kunde inte köa en återsändning. Försök igen."
         },
         "fields": {
           "memberId": "Medlem",
@@ -1351,10 +1368,17 @@
       },
       "actions": {
         "download": "PDF",
-        "viewDetail": "Visa faktura"
+        "viewDetail": "Visa faktura",
+        "emailCopy": "Mejla mig en kopia",
+        "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"
       },
       "filters": {
         "noMatch": "Inga fakturor matchar dina filter."
+      },
+      "toast": {
+        "resendSuccess": "Köad — du får en ny kopia inom kort.",
+        "resendRateLimited": "Du bad om en kopia nyligen. Vänta några minuter och försök igen.",
+        "resendFailed": "Kunde inte köa en ny kopia. Försök igen."
       },
       "summary": {
         "heading": "Senaste fakturor",

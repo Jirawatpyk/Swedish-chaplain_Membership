@@ -73,6 +73,7 @@ import {
   statusIconName,
   type InvoiceStatusIconName,
 } from '../_utils/format';
+import { ResendInvoiceButton } from '../_components/resend-invoice-button';
 
 const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
   CheckCircle2,
@@ -176,23 +177,37 @@ export default async function PortalInvoiceDetailPage({
         })()}
         actions={
           invoice.pdf ? (
-            <a
-              href={`/api/portal/invoices/${invoice.invoiceId}/pdf`}
-              aria-label={`${
-                invoice.status === 'void'
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Resend is hidden on void — member cannot re-mail a
+                  voided invoice from self-service (an admin would need
+                  to trigger that via the cancellation-notice path). */}
+              {invoice.status !== 'void' ? (
+                <ResendInvoiceButton
+                  invoiceId={invoice.invoiceId}
+                  documentNumber={documentNumber}
+                  variant="ghost"
+                  layout="full"
+                  className="min-h-11 px-3"
+                />
+              ) : null}
+              <a
+                href={`/api/portal/invoices/${invoice.invoiceId}/pdf`}
+                aria-label={`${
+                  invoice.status === 'void'
+                    ? t('void.downloadVoidedPdf')
+                    : tList('actions.download')
+                } — ${documentNumber}`}
+                className={cn(
+                  buttonVariants({ variant: 'default', size: 'sm' }),
+                  'min-h-11 px-4',
+                )}
+                download
+              >
+                {invoice.status === 'void'
                   ? t('void.downloadVoidedPdf')
-                  : tList('actions.download')
-              } — ${documentNumber}`}
-              className={cn(
-                buttonVariants({ variant: 'default', size: 'sm' }),
-                'min-h-11 px-4',
-              )}
-              download
-            >
-              {invoice.status === 'void'
-                ? t('void.downloadVoidedPdf')
-                : tList('actions.download')}
-            </a>
+                  : tList('actions.download')}
+              </a>
+            </div>
           ) : null
         }
       />

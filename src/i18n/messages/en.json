@@ -993,7 +993,14 @@
         "status": { "issued": "Issued" },
         "actions": {
           "backToInvoice": "Back to invoice",
-          "download": "Download PDF"
+          "download": "Download PDF",
+          "resend": "Resend credit note email",
+          "resendAria": "Email a fresh copy of credit note {number} to the member's primary contact"
+        },
+        "toast": {
+          "resendSuccess": "Queued — {recipient} will receive a fresh copy shortly.",
+          "resendRateLimited": "This credit note was resent recently. Please wait a few minutes before retrying.",
+          "resendFailed": "Could not queue a resend. Please try again."
         },
         "fields": {
           "issueDate": "Issue date",
@@ -1106,7 +1113,17 @@
           "download": "Download PDF",
           "pay": "Record payment",
           "void": "Void…",
-          "issueCreditNote": "Issue credit note"
+          "issueCreditNote": "Issue credit note",
+          "resendInvoice": "Resend invoice email",
+          "resendReceipt": "Resend receipt email",
+          "resendAria": "Email a fresh copy of {documentType} {number} to the member's primary contact"
+        },
+        "toast": {
+          "resendSuccess": "Queued — {recipient} will receive a fresh copy shortly.",
+          "resendRateLimited": "This document was resent recently. Please wait a few minutes before retrying.",
+          "resendNoReceipt": "No receipt PDF is available for this invoice (combined mode or unpaid).",
+          "resendNotIssued": "Invoice is still a draft — issue it first to email a copy.",
+          "resendFailed": "Could not queue a resend. Please try again."
         },
         "fields": {
           "memberId": "Member",
@@ -1351,10 +1368,17 @@
       },
       "actions": {
         "download": "PDF",
-        "viewDetail": "View invoice"
+        "viewDetail": "View invoice",
+        "emailCopy": "Email me a copy",
+        "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"
       },
       "filters": {
         "noMatch": "No invoices match your filters."
+      },
+      "toast": {
+        "resendSuccess": "Copy queued — check your inbox shortly.",
+        "resendRateLimited": "You already asked for a copy recently. Please try again in a few minutes.",
+        "resendFailed": "Could not queue a fresh copy. Please try again."
       },
       "summary": {
         "heading": "Recent invoices",

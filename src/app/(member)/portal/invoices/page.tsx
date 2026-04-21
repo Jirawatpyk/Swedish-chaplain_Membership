@@ -53,6 +53,7 @@ import {
   type InvoiceStatusIconName,
 } from './_utils/format';
 import { InvoiceFilters } from '@/app/(staff)/admin/invoices/_components/invoice-filters';
+import { ResendInvoiceButton } from './_components/resend-invoice-button';
 
 const PAGE_SIZE = 20;
 
@@ -228,17 +229,32 @@ export default async function PortalInvoicesPage({
                         </TableCell>
                         <TableCell className="align-middle text-right">
                           {r.pdf ? (
-                            <a
-                              href={`/api/portal/invoices/${r.invoiceId}/pdf`}
-                              aria-label={`${t('actions.download')} — ${r.documentNumber?.raw ?? r.invoiceId}`}
-                              className={cn(
-                                buttonVariants({ variant: 'ghost', size: 'sm' }),
-                                'min-h-11 px-3',
-                              )}
-                              download
-                            >
-                              {t('actions.download')}
-                            </a>
+                            <div className="flex items-center justify-end gap-1">
+                              {/* Compact (icon-only) resend — screen-
+                                  reader label already names the invoice
+                                  number; `title` attr on the Button
+                                  primitive is handled by aria-label. */}
+                              {r.status !== 'void' ? (
+                                <ResendInvoiceButton
+                                  invoiceId={r.invoiceId}
+                                  documentNumber={r.documentNumber?.raw ?? r.invoiceId}
+                                  variant="ghost"
+                                  layout="compact"
+                                  className="min-h-11 min-w-11"
+                                />
+                              ) : null}
+                              <a
+                                href={`/api/portal/invoices/${r.invoiceId}/pdf`}
+                                aria-label={`${t('actions.download')} — ${r.documentNumber?.raw ?? r.invoiceId}`}
+                                className={cn(
+                                  buttonVariants({ variant: 'ghost', size: 'sm' }),
+                                  'min-h-11 px-3',
+                                )}
+                                download
+                              >
+                                {t('actions.download')}
+                              </a>
+                            </div>
                           ) : (
                             <span className="text-sm text-muted-foreground">—</span>
                           )}

@@ -224,6 +224,14 @@ export {
   type ListInvoicesByMemberError,
 } from './application/use-cases/list-invoices-by-member';
 
+export {
+  resendPdf,
+  type ResendPdfInput,
+  type ResendPdfOutput,
+  type ResendPdfError,
+  type ResendPdfActor,
+} from './application/use-cases/resend-pdf';
+
 // --- Composition-root factories --------------------------------------------
 // Presentation / route handlers consume these to wire a per-request
 // tenant-scoped dependency graph.
@@ -246,5 +254,6 @@ export {
   makeUpdateTenantInvoiceSettingsDeps,
   makeUploadTenantLogoDeps,
   makeGetTenantTaxPolicyDeps,
+  makeResendPdfDeps,
   isTenantInvoiceSetupComplete,
 } from './application/invoicing-deps';

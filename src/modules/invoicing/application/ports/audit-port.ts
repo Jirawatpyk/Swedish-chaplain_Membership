@@ -24,7 +24,7 @@ export type F4AuditEventType =
   | 'invoice_overdue_detected'
   | 'credit_note_issued'
   | 'tenant_invoice_settings_updated'
-  | 'invoice_pdf_resent' // TODO T107: also add to F4MemberTimelineAuditEventType below when emit ships (Phase 10)
+  | 'invoice_pdf_resent'
   | 'receipt_pdf_resent'
   | 'credit_note_pdf_resent'
   | 'invoice_pdf_regenerated'
@@ -40,17 +40,17 @@ export type F4AuditEventType =
  * `member_id` presence on every emit site so a new member-surfaceable
  * event type cannot silently omit the field.
  *
- * This union is DELIBERATELY narrower than `F4_MEMBER_TIMELINE_EVENT_TYPES`
- * in the invoicing barrel — types without an implemented emit site
- * (today: `invoice_pdf_resent` Phase 10 / T107) are excluded until
- * the emit ships, otherwise the compile-time guarantee is inert for
- * those types. The runtime array in the barrel keeps them declared
- * so the copy-resolver is ready on day one when the emit lands.
- *
  * `invoice_voided` was promoted into this union in Phase 9 / T100 —
  * the void-invoice use-case emit carries `member_id: invoice.memberId`
  * so the F3 member timeline filter (`payload->>'member_id'`) picks up
  * voids automatically.
+ *
+ * `invoice_pdf_resent` was promoted in Phase 10 / T107 — the manual
+ * resend-pdf use-case emit carries `member_id: invoice.memberId`
+ * so a member's F3 timeline surfaces every time an admin (or the
+ * member themself via portal) triggered a fresh invoice email.
+ * `receipt_pdf_resent` + `credit_note_pdf_resent` stay out by design
+ * (duplicates of `invoice_paid` / `credit_note_issued`).
  *
  * `invoice_cross_tenant_probe` / `credit_note_cross_tenant_probe` are
  * intentionally NOT in this union — probes fire BEFORE the member is
@@ -64,6 +64,7 @@ export type F4MemberTimelineAuditEventType =
   | 'invoice_issued'
   | 'invoice_paid'
   | 'invoice_voided'
+  | 'invoice_pdf_resent'
   | 'credit_note_issued';
 
 /** Payload contract for events that surface in the F3 member timeline. */

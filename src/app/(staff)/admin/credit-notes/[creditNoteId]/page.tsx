@@ -45,6 +45,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { buttonVariants } from '@/components/ui/button';
+import { ResendCnButton } from '../_components/resend-cn-button';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.creditNotes.detail.meta');
@@ -178,6 +179,10 @@ export default async function CreditNoteDetailPage({
               <DownloadIcon className="size-4" aria-hidden="true" />
               {t('actions.download')}
             </a>
+            <ResendCnButton
+              creditNoteId={cn.creditNoteId}
+              documentNumber={cn.documentNumber.raw}
+            />
           </div>
         }
       />
