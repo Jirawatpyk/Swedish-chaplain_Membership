@@ -39,6 +39,12 @@ export interface InvoiceAutoEmailInput {
   readonly eventType: InvoiceAutoEmailEventType;
   readonly downloadUrl: string;
   readonly locale: InvoiceAutoEmailLocale;
+  /**
+   * FR-036 — original document number. Required for `invoice_voided`
+   * so the cancellation notice references the exact invoice the
+   * member received; optional for other events (backwards-compat).
+   */
+  readonly documentNumber?: string;
 }
 
 interface BuiltPayload {
@@ -63,9 +69,12 @@ const COPY: Record<
       cta: 'Download receipt',
     },
     invoice_voided: {
-      subject: 'Invoice voided',
-      body: 'An invoice was voided. A replacement credit note is available.',
-      cta: 'Download voided invoice',
+      subject: 'Invoice {docNumber} has been voided',
+      body:
+        'Invoice {docNumber} has been voided and is no longer payable. ' +
+        'Please disregard any outstanding payment request for this invoice. ' +
+        'A copy of the voided invoice, stamped VOID, is attached for your records.',
+      cta: 'Download voided invoice (VOID)',
     },
     credit_note_issued: {
       subject: 'Credit note issued',
@@ -100,9 +109,12 @@ const COPY: Record<
       cta: 'ดาวน์โหลดใบเสร็จ',
     },
     invoice_voided: {
-      subject: 'ใบแจ้งหนี้ถูกยกเลิก',
-      body: 'ใบแจ้งหนี้ถูกยกเลิก พร้อมออกใบลดหนี้ทดแทน',
-      cta: 'ดาวน์โหลดใบแจ้งหนี้ที่ยกเลิก',
+      subject: 'ใบแจ้งหนี้ {docNumber} ถูกยกเลิกแล้ว',
+      body:
+        'ใบแจ้งหนี้ {docNumber} ถูกยกเลิก เอกสารฉบับนี้ยกเลิกแล้วและไม่ต้องชำระเงิน ' +
+        'หากท่านได้รับการเรียกเก็บเงินของใบแจ้งหนี้ฉบับนี้ กรุณาไม่ต้องดำเนินการชำระ ' +
+        'ระบบได้แนบสำเนาใบแจ้งหนี้ที่ประทับตรา "ยกเลิก" ไว้กับอีเมลนี้เพื่อใช้อ้างอิง',
+      cta: 'ดาวน์โหลดใบแจ้งหนี้ที่ยกเลิก (VOID)',
     },
     credit_note_issued: {
       subject: 'ใบลดหนี้ออกเรียบร้อย',
@@ -137,9 +149,12 @@ const COPY: Record<
       cta: 'Ladda ner kvitto',
     },
     invoice_voided: {
-      subject: 'Fakturan annullerad',
-      body: 'En faktura har annullerats. En ersättningskreditnota finns tillgänglig.',
-      cta: 'Ladda ner annullerad faktura',
+      subject: 'Faktura {docNumber} har annullerats',
+      body:
+        'Faktura {docNumber} har annullerats och ska inte längre betalas. ' +
+        'Bortse från eventuella betalningspåminnelser för denna faktura. ' +
+        'En kopia av den annullerade fakturan, stämplad VOID, bifogas för dina register.',
+      cta: 'Ladda ner annullerad faktura (VOID)',
     },
     credit_note_issued: {
       subject: 'Kreditnota utfärdad',
@@ -166,7 +181,16 @@ const COPY: Record<
 
 export function buildInvoiceAutoEmail(input: InvoiceAutoEmailInput): BuiltPayload {
   const copy = COPY[input.locale][input.eventType];
-  const { subject, body, cta } = copy;
+  // FR-036 — substitute the original document number into subject +
+  // body. Falls back to the literal placeholder only if the caller
+  // supplied none (should never happen for invoice_voided but avoids
+  // a thrown error for backwards-compat callers on other event types
+  // whose copy doesn't reference {docNumber}).
+  const docNumber = input.documentNumber ?? '';
+  const interpolate = (s: string): string => s.replace(/\{docNumber\}/g, docNumber);
+  const subject = interpolate(copy.subject);
+  const body = interpolate(copy.body);
+  const cta = copy.cta;
   const safeUrl = input.downloadUrl;
 
   const html = `<!DOCTYPE html>

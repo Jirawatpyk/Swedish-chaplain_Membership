@@ -200,4 +200,29 @@ export interface InvoiceRepo {
       readonly pdfSha256: Sha256Hex;
     },
   ): Promise<void>;
+
+  /**
+   * T100 — US5 void transition. Atomic issued → void with void_reason +
+   * voided_by_user_id + voided_at + pdf_sha256 (VOID-stamped re-render).
+   * WHERE guard requires `status='issued'` — a concurrent paid/void
+   * race returns no rows and the repo throws `InvoiceApplyConflictError`
+   * which the use case maps to typed `concurrent_state_change`.
+   *
+   * The invoices immutability trigger whitelists `void_reason`,
+   * `voided_by_user_id`, `voided_at`, `status`, and `pdf_sha256` — see
+   * `0019_invoicing_tables.sql § invoices_enforce_immutability`.
+   * Blob key + template version stay the PINNED issue-time values so
+   * content-addressed storage remains coherent (the re-rendered VOID
+   * PDF overwrites at the SAME key per FR-008).
+   */
+  applyVoid(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly invoiceId: InvoiceId;
+      readonly voidReason: string;
+      readonly voidedByUserId: string;
+      readonly pdfSha256: Sha256Hex;
+    },
+  ): Promise<Invoice>;
 }

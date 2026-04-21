@@ -49,6 +49,13 @@ export interface EmailOutboxPort {
       readonly creditNoteId?: string;
       readonly pdfBlobKey: string;
       readonly pdfTemplateVersion: number;
+      /**
+       * FR-036 — original invoice document number. Rendered into
+       * `invoice_voided` email subject/body so the member sees the
+       * exact invoice number being cancelled. Optional for other
+       * event types (link-based emails ignore it).
+       */
+      readonly documentNumber?: string;
     },
   ): Promise<void>;
 }

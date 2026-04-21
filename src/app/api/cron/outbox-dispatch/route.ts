@@ -83,6 +83,17 @@ interface BuiltPayload {
   subject: string;
   html: string;
   text: string;
+  /**
+   * FR-036 — optional file attachments. Currently populated only for
+   * `invoice_voided` (VOID-stamped invoice PDF) so the member's
+   * bookkeeper has a filing-complete record that matches the original
+   * invoice on file.
+   */
+  attachments?: ReadonlyArray<{
+    readonly filename: string;
+    readonly content: Uint8Array;
+    readonly contentType: string;
+  }>;
 }
 
 /**
@@ -135,22 +146,44 @@ async function buildPayload(
     }
     case 'invoice_auto_email': {
       // F4 auto-email row: context_data contains eventType +
-      // pdf_blob_key. Resolve the Blob URL (stable public URL per
-      // vercel-blob-adapter.ts — no TTL concerns) and build a
-      // link-based notification email. We do NOT attach the PDF
-      // bytes — the current EmailSender interface has no attachment
-      // slot and Vercel Blob URLs are stable.
+      // pdf_blob_key (+ document_number for invoice_voided). Resolve
+      // the Blob URL (stable public URL per vercel-blob-adapter.ts —
+      // no TTL concerns) for the download link. For `invoice_voided`
+      // specifically (FR-036) we ALSO fetch the PDF bytes and attach
+      // them so the bookkeeper receives a filing-complete
+      // cancellation record next to the original invoice they filed.
       const eventType = ctx.event_type as string | undefined;
       const pdfBlobKey = typeof ctx.pdf_blob_key === 'string' ? ctx.pdf_blob_key : '';
+      const documentNumber =
+        typeof ctx.document_number === 'string' ? ctx.document_number : undefined;
       if (!pdfBlobKey || !isInvoiceAutoEmailEventType(eventType)) return null;
       try {
         const downloadUrl = await vercelBlobAdapter.signDownloadUrl(pdfBlobKey, 60);
-        return buildInvoiceAutoEmail({
+        const payload = buildInvoiceAutoEmail({
           toEmail: row.toEmail,
           eventType,
           downloadUrl,
           locale,
+          ...(documentNumber ? { documentNumber } : {}),
         });
+        if (eventType === 'invoice_voided') {
+          // FR-036 — fetch the VOID-stamped bytes and attach. Failure
+          // to read the blob bubbles to the outer catch → null → the
+          // outbox retry ladder re-attempts.
+          const bytes = await vercelBlobAdapter.downloadBytes(pdfBlobKey);
+          const filenameBase = documentNumber ? documentNumber : 'invoice';
+          return {
+            ...payload,
+            attachments: [
+              {
+                filename: `${filenameBase}-VOID.pdf`,
+                content: bytes,
+                contentType: 'application/pdf',
+              },
+            ],
+          };
+        }
+        return payload;
       } catch {
         // Blob lookup failed — treat as transient failure. Returning
         // null lets the dispatcher's retry ladder re-attempt per
@@ -283,6 +316,11 @@ async function dispatchOne(
       subject: payload.subject,
       html: payload.html,
       text: payload.text,
+      // FR-036 — attach VOID-stamped PDF when the payload builder
+      // supplied attachments (today: invoice_voided only).
+      ...(payload.attachments && payload.attachments.length > 0
+        ? { attachments: payload.attachments }
+        : {}),
     });
 
     if (result.ok) {

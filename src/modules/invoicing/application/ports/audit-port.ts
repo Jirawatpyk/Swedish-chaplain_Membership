@@ -20,7 +20,7 @@ export type F4AuditEventType =
   | 'invoice_draft_deleted'
   | 'invoice_issued'
   | 'invoice_paid'
-  | 'invoice_voided' // TODO T100: also add to F4MemberTimelineAuditEventType below when emit ships (US5 / Phase 9)
+  | 'invoice_voided'
   | 'invoice_overdue_detected'
   | 'credit_note_issued'
   | 'tenant_invoice_settings_updated'
@@ -42,11 +42,15 @@ export type F4AuditEventType =
  *
  * This union is DELIBERATELY narrower than `F4_MEMBER_TIMELINE_EVENT_TYPES`
  * in the invoicing barrel — types without an implemented emit site
- * (today: `invoice_voided` Phase 9 / T105, `invoice_pdf_resent`
- * Phase 10 / T107) are excluded until the emit ships, otherwise the
- * compile-time guarantee is inert for those types. The runtime array
- * in the barrel keeps them declared so the copy-resolver is ready
- * on day one when the emit lands.
+ * (today: `invoice_pdf_resent` Phase 10 / T107) are excluded until
+ * the emit ships, otherwise the compile-time guarantee is inert for
+ * those types. The runtime array in the barrel keeps them declared
+ * so the copy-resolver is ready on day one when the emit lands.
+ *
+ * `invoice_voided` was promoted into this union in Phase 9 / T100 —
+ * the void-invoice use-case emit carries `member_id: invoice.memberId`
+ * so the F3 member timeline filter (`payload->>'member_id'`) picks up
+ * voids automatically.
  *
  * `invoice_cross_tenant_probe` / `credit_note_cross_tenant_probe` are
  * intentionally NOT in this union — probes fire BEFORE the member is
@@ -59,6 +63,7 @@ export type F4MemberTimelineAuditEventType =
   | 'invoice_draft_created'
   | 'invoice_issued'
   | 'invoice_paid'
+  | 'invoice_voided'
   | 'credit_note_issued';
 
 /** Payload contract for events that surface in the F3 member timeline. */

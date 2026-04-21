@@ -33,12 +33,26 @@ const resend = new Resend(env.resend.apiKey);
 const FALLBACK_FROM = 'SweCham <noreply@swecham.se>';
 const DEFAULT_FROM = env.resend.fromEmail ?? FALLBACK_FROM;
 
+/**
+ * F4 FR-036 — file attachment for cancellation emails (VOID-stamped
+ * invoice PDF). `content` is raw bytes; the sender encodes for
+ * Resend's `attachments[]` API. Callers who only need a download link
+ * should continue to build link-based HTML bodies and omit this field.
+ */
+export interface EmailAttachment {
+  readonly filename: string;
+  readonly content: Uint8Array;
+  readonly contentType: string;
+}
+
 export interface EmailMessage {
   readonly to: string;
   readonly subject: string;
   readonly /** Pre-rendered HTML body (use @react-email to build). */ html: string;
   readonly /** Plain-text fallback for clients that prefer it. */ text?: string;
   readonly from?: string;
+  /** FR-036 — optional file attachments (currently only invoice_voided uses this). */
+  readonly attachments?: readonly EmailAttachment[];
 }
 
 export type EmailError =
@@ -72,6 +86,19 @@ class ResendEmailSender implements EmailSender {
           subject: message.subject,
           html: message.html,
           ...(message.text ? { text: message.text } : {}),
+          // FR-036 — Resend accepts `attachments[]` with either
+          // base64-string `content` or a URL. We pass raw bytes via
+          // Buffer so the sender does not need to know the storage
+          // layer.
+          ...(message.attachments && message.attachments.length > 0
+            ? {
+                attachments: message.attachments.map((a) => ({
+                  filename: a.filename,
+                  content: Buffer.from(a.content),
+                  contentType: a.contentType,
+                })),
+              }
+            : {}),
         });
 
         if (response.error) {

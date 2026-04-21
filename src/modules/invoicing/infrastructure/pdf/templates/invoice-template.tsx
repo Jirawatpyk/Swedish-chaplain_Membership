@@ -77,14 +77,18 @@ const styles = StyleSheet.create({
     transform: 'rotate(-30deg)',
     fontWeight: 700,
   },
+  // FR-008 — diagonal VOID overlay, bilingual (TH+EN), on EVERY page,
+  // 45° rotation, 50% opacity (within the 40-60% band). `position:
+  // absolute` + the `fixed` prop on the Text element makes the stamp
+  // repeat on every page without interleaving with flow content.
   voidStamp: {
     position: 'absolute',
-    top: 260,
-    left: 140,
-    fontSize: 90,
-    color: 'rgba(200,0,0,0.35)',
+    top: 300,
+    left: 90,
+    fontSize: 80,
+    color: 'rgba(200,0,0,0.5)',
     fontWeight: 700,
-    transform: 'rotate(-20deg)',
+    transform: 'rotate(-45deg)',
   },
   footer: { marginTop: 24, fontSize: 8, color: '#777', textAlign: 'center' },
   // T079 — credit-note reference block. Rendered between the customer
@@ -178,7 +182,11 @@ export function InvoiceTemplate(input: PdfRenderInput) {
     <Document>
       <Page size="A4" style={styles.page}>
         {isPreview && <Text style={styles.watermark}>PREVIEW</Text>}
-        {isVoid && <Text style={styles.voidStamp}>VOID / ยกเลิก</Text>}
+        {isVoid && (
+          <Text fixed style={styles.voidStamp}>
+            VOID / {shapeThai('ยกเลิก')}
+          </Text>
+        )}
         {input.kind === 'invoice' && input.creditedAnnotation && (
           <Text style={styles.creditedStamp}>
             {input.creditedAnnotation.fullyCredited

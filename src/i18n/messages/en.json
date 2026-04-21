@@ -1116,6 +1116,26 @@
           "other": "Other"
         },
         "draftLabel": "Draft"
+      },
+      "void": {
+        "title": "Void invoice",
+        "description": "Void this issued-unpaid invoice. The sequential tax-document number is retired and cannot be reused; the PDF is re-stamped VOID; a cancellation notice is emailed to the member.",
+        "voiding": "Voiding invoice",
+        "terminalNotice": "Void is terminal. Once voided, no further actions (pay, credit, edit) are allowed. To reverse a PAID invoice, use the credit-note workflow instead.",
+        "reasonLabel": "Reason",
+        "reasonHelp": "Shown on the voided PDF and in the audit trail. Required, up to 500 characters.",
+        "confirmCopy": "Type the invoice number {phrase} to confirm this irreversible action.",
+        "confirmMismatch": "The phrase must be {phrase}.",
+        "backToInvoice": "Back to invoice",
+        "submit": "Void invoice",
+        "submitting": "Voiding…",
+        "cancel": "Cancel",
+        "success": "Invoice voided.",
+        "errors": {
+          "failed": "Invoice could not be voided.",
+          "unknown": "An unknown error occurred. Please try again.",
+          "codeFallback": "Error code: {code}"
+        }
       }
     }
   },

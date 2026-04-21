@@ -26,6 +26,7 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       readonly creditNoteId?: string;
       readonly pdfBlobKey: string;
       readonly pdfTemplateVersion: number;
+      readonly documentNumber?: string;
     },
   ): Promise<void> {
     const tx = txUnknown as TenantTx;
@@ -35,6 +36,8 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       credit_note_id: input.creditNoteId ?? null,
       pdf_blob_key: input.pdfBlobKey,
       pdf_template_version: input.pdfTemplateVersion,
+      // FR-036 — snapshotted document number for invoice_voided copy.
+      document_number: input.documentNumber ?? null,
     };
     // R7-S2 — use caller-supplied locale (member's primary-contact
     // preferred_locale when known). Defaults to 'en' for callers

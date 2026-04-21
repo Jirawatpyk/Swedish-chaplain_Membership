@@ -585,6 +585,45 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
       return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
     },
 
+    async applyVoid(txUnknown, input): Promise<Invoice> {
+      const tx = txUnknown as TenantTx;
+      // Atomic issued → void. The immutability trigger whitelists the
+      // void_* fields + pdf_sha256 so the VOID-stamped re-render can
+      // overwrite the stored hash. WHERE guard on status='issued'
+      // prevents racing paid/credit-note/double-void.
+      const [updated] = await tx
+        .update(invoices)
+        .set({
+          status: 'void',
+          voidReason: input.voidReason,
+          voidedByUserId: input.voidedByUserId,
+          voidedAt: sql`now()`,
+          pdfSha256: input.pdfSha256,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            eq(invoices.status, 'issued'),
+          ),
+        )
+        .returning();
+      if (!updated) throw new InvoiceApplyConflictError('applyVoid');
+
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, input.tenantId),
+            eq(invoiceLines.invoiceId, input.invoiceId),
+          ),
+        )
+        .orderBy(asc(invoiceLines.position));
+      return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
+    },
+
     async applyInvoicePdfRegeneration(txUnknown, input): Promise<void> {
       const tx = txUnknown as TenantTx;
       // Single-column UPDATE — pdf_sha256 only. Blob key + template

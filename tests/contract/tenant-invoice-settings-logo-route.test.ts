@@ -21,7 +21,9 @@ import { ok, err } from '@/lib/result';
 const requireAdminContextMock = vi.fn();
 const uploadTenantLogoMock = vi.fn();
 const classifyIdempotencyRequestMock = vi.fn();
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest signature required so spread callers type-check (TS2556)
 const reserveIdempotencyRecordMock = vi.fn(async (..._args: unknown[]) => undefined);
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest signature required so spread callers type-check (TS2556)
 const rememberIdempotentResponseMock = vi.fn(async (..._args: unknown[]) => undefined);
 
 vi.mock('@/lib/admin-context', () => ({

@@ -31,6 +31,7 @@ import type { GetInvoiceDeps } from './use-cases/get-invoice';
 import type { RecordPaymentDeps } from './use-cases/record-payment';
 import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
 import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
+import type { VoidInvoiceDeps } from './use-cases/void-invoice';
 import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
 import type { GetCreditNotePdfSignedUrlDeps } from './use-cases/get-credit-note-pdf-signed-url';
 
@@ -193,6 +194,18 @@ export function makeGetCreditNotePdfSignedUrlDeps(
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
     blob: vercelBlobAdapter,
     audit: f4AuditAdapter,
+  };
+}
+
+export function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    pdfRender: reactPdfRenderAdapter,
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+    clock: systemClock,
+    outbox: resendEmailOutboxAdapter,
   };
 }
 

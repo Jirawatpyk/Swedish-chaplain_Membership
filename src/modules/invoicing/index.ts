@@ -157,6 +157,13 @@ export {
 } from './application/use-cases/issue-credit-note';
 
 export {
+  voidInvoice,
+  voidInvoiceSchema,
+  type VoidInvoiceInput,
+  type VoidInvoiceError,
+} from './application/use-cases/void-invoice';
+
+export {
   getCreditNote,
   type GetCreditNoteInput,
   type GetCreditNoteError,
@@ -222,6 +229,7 @@ export {
   makeDeleteInvoiceDraftDeps,
   makeGetInvoiceDeps,
   makeRecordPaymentDeps,
+  makeVoidInvoiceDeps,
   makeIssueCreditNoteDeps,
   makeGetCreditNoteDeps,
   makeGetCreditNotePdfSignedUrlDeps,

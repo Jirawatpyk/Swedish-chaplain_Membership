@@ -46,6 +46,7 @@ function makeFakeBlob(seedKeys: readonly string[] = []) {
       return { key, url: `memory://${key}` };
     },
     signDownloadUrl: async (key) => `memory://${key}`,
+    downloadBytes: async (key) => store.get(key) ?? new Uint8Array(),
     delete: async (key) => {
       store.delete(key);
     },

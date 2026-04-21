@@ -45,6 +45,19 @@ export interface BlobStoragePort {
    */
   signDownloadUrl(key: string, ttlSeconds?: number): Promise<string>;
 
+  /**
+   * FR-036 email-attachment path — read the stored bytes of a private
+   * key. Used by the outbox dispatcher to attach the VOID-stamped
+   * invoice PDF to the cancellation email (a download link is not
+   * sufficient per spec: the bookkeeper needs a filing-complete
+   * attachment matching the original invoice they already filed).
+   *
+   * Throws on missing key / network failure — the caller (dispatcher)
+   * treats the throw as a transient failure and retries per the
+   * outbox retry ladder.
+   */
+  downloadBytes(key: string): Promise<Uint8Array>;
+
   /** Delete a key (used by transactional sweeper). */
   delete(key: string): Promise<void>;
 

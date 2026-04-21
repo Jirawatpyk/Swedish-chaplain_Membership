@@ -171,6 +171,7 @@ function makeDeps(
       ),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
+      applyVoid: vi.fn(),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
@@ -190,6 +191,7 @@ function makeDeps(
       uploadPdf: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       signDownloadUrl: vi.fn(),
+      downloadBytes: vi.fn(async () => new Uint8Array([0x25, 0x50, 0x44, 0x46])),
       delete: vi.fn(),
       list: vi.fn(async () => []),
     },

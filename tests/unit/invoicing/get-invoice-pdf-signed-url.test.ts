@@ -112,6 +112,7 @@ function makeDeps(invoice: Invoice | null) {
         lockForUpdate: vi.fn(async () => 'issued' as const),
         applyCreditNoteRollup: vi.fn(),
         applyInvoicePdfRegeneration: vi.fn(),
+      applyVoid: vi.fn(),
       },
       blob: { signDownloadUrl: blob.signDownloadUrl } as unknown as Parameters<
         typeof getInvoicePdfSignedUrl

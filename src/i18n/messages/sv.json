@@ -1116,6 +1116,26 @@
           "other": "Övrigt"
         },
         "draftLabel": "Utkast"
+      },
+      "void": {
+        "title": "Annullera faktura",
+        "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen.",
+        "voiding": "Annullerar faktura",
+        "terminalNotice": "Annullering är slutgiltig. När fakturan är annullerad är inga fler åtgärder (betala, kreditera, redigera) tillåtna. För att återföra en BETALD faktura, använd kreditnota-flödet i stället.",
+        "reasonLabel": "Orsak",
+        "reasonHelp": "Visas på den annullerade PDF:en och i granskningsloggen. Obligatorisk, upp till 500 tecken.",
+        "confirmCopy": "Skriv fakturanumret {phrase} för att bekräfta denna oåterkalleliga åtgärd.",
+        "confirmMismatch": "Frasen måste vara {phrase}.",
+        "backToInvoice": "Tillbaka till faktura",
+        "submit": "Annullera faktura",
+        "submitting": "Annullerar…",
+        "cancel": "Avbryt",
+        "success": "Fakturan annullerad.",
+        "errors": {
+          "failed": "Fakturan kunde inte annulleras.",
+          "unknown": "Ett okänt fel inträffade. Försök igen.",
+          "codeFallback": "Felkod: {code}"
+        }
       }
     }
   },

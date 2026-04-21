@@ -92,6 +92,23 @@ export const vercelBlobAdapter: BlobStoragePort = {
     return blob.url;
   },
 
+  async downloadBytes(key: string): Promise<Uint8Array> {
+    // FR-036 — fetch the stored PDF bytes so the outbox dispatcher can
+    // attach them to the cancellation email. We go through `head()` +
+    // `fetch()` (not `get`, which the @vercel/blob SDK does not expose
+    // for server-side reads at this version) to stay compatible with
+    // the same access-mode the adapter uploads with (`public`).
+    const blob = await head(key, { token: env.blob.readWriteToken });
+    const response = await fetch(blob.url);
+    if (!response.ok) {
+      throw new Error(
+        `vercel-blob downloadBytes: HTTP ${response.status} for key ${key}`,
+      );
+    }
+    const ab = await response.arrayBuffer();
+    return new Uint8Array(ab);
+  },
+
   async delete(key: string): Promise<void> {
     await del(key, { token: env.blob.readWriteToken });
   },
