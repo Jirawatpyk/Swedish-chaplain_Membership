@@ -159,6 +159,10 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
         // Archive BEFORE issue — simulates the terminal state the
         // race-winner leaves behind. Either order of operations ends
         // here because the issue path locks the member FOR UPDATE.
+        // DB CHECK `members_archived_at_iff_archived` requires both
+        // `status='archived'` AND `archived_at IS NOT NULL` to be set
+        // together — seeding one without the other is rejected.
+        status: 'archived',
         archivedAt: new Date('2026-04-17T10:00:00Z'),
       });
       await tx.insert(invoices).values({

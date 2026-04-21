@@ -190,6 +190,47 @@ describe('F4 PDF deterministic render — SC-003 (T017)', () => {
     assertPdfStructurallyEquivalent(a, b);
   }, 60_000);
 
+  it('CP-9.3 — VOID-stamped PDF renders distinctly from plain invoice (byte-inequality + valid PDF)', async () => {
+    // FR-008 requires the overlay to carry both "VOID" and "ยกเลิก"
+    // and be repeated on every page via `fixed`. `fixed` prop is
+    // structurally verified in the template source
+    // (invoice-template.tsx: `<Text fixed style={styles.voidStamp}>
+    // VOID / {shapeThai('ยกเลิก')}</Text>`). Geometry (45° rotation,
+    // 50% opacity, 80pt font) is verified by thai-tax-compliance-
+    // auditor agent review R13.
+    //
+    // What this test proves mechanically:
+    //   1. Void output differs from plain (byte length differs) —
+    //      guards against the `isVoid` branch being silently merged
+    //      with `isPreview` or ignored in a future refactor.
+    //   2. Void output is a valid PDF (header + trailer).
+    // Note: byte comparison cannot be "void > plain" because the
+    // void variant also DROPS the "ต้นฉบับ / ORIGINAL" marker that
+    // the plain variant carries — so depending on glyph overlap
+    // either direction is possible. What matters is that the
+    // outputs are NOT byte-identical.
+    //
+    // Full text-content inspection is impossible because @react-pdf
+    // zlib-compresses content streams. Visual verification (CP-9.3
+    // human gate) is deferred to staging walkthrough by Thai-RD
+    // reviewer.
+    const plainInput = makeInput('invoice');
+    const voidInput: PdfRenderInput = {
+      ...makeInput('void_stamped_invoice'),
+      voidReason: 'Wrong tier selected',
+    };
+    const plainOut = await reactPdfRenderAdapter.render(plainInput);
+    const voidOut = await reactPdfRenderAdapter.render(voidInput);
+
+    // #1 — Outputs must differ (kind='void_stamped_invoice' branch
+    // produces a distinguishable result).
+    expect(voidOut.bytes.byteLength).not.toBe(plainOut.bytes.byteLength);
+
+    // #2 — PDF header + trailer.
+    expect(Buffer.from(voidOut.bytes.slice(0, 5)).toString('latin1')).toBe('%PDF-');
+    expect(Buffer.from(voidOut.bytes.slice(-6)).toString('latin1').includes('%%EOF')).toBe(true);
+  }, 120_000);
+
   it('post-bump re-render with pinned templateVersion structurally matches ORIGINAL (R3-E4)', async () => {
     // R3-E4 mechanical check: re-render with the same
     // `templateVersion` pin produces the same byte length + valid

@@ -1,0 +1,25 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/invoicing/void-invoice.test.ts" "tests/integration/invoicing/issue-vs-archive-race.test.ts"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"error","time":1776745806287,"service":"swecham-membership","env":"test","err":{"type":"Error","message":"simulated blob outage","stack":"Error: simulated blob outage\n    at Object.<anonymous> (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\tests\\integration\\invoicing\\void-invoice.test.ts:411:13)\n    at Object.mockCall (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+spy@2.1.9/node_modules/@vitest/spy/dist/index.js:61:17)\n    at Object.spy [as uploadPdf] (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/tinyspy@3.0.2/node_modules/tinyspy/dist/index.js:45:80)\n    at Module.voidInvoice (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\modules\\invoicing\\application\\use-cases\\void-invoice.ts:313:21)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\tests\\integration\\invoicing\\void-invoice.test.ts:414:15\n    at file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1205:15)"},"invoiceId":"32df1be9-1ed6-45ba-aed7-f470ce986093","tenantId":"test-chamber-8096d14d","phase":"blob_upload","msg":"voidInvoice: phase 2 blob+sha sync failed; invoice voided but PDF overlay deferred"}
+ [32m✓[39m tests/integration/invoicing/void-invoice.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 10489[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mvoids an issued invoice, re-renders PDF, emits audit + outbox [33m2038[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mrefuses to void a paid invoice (directs admin to credit-note flow) [33m904[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mrefuses to re-void a voided invoice (terminal state) [33m908[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mT-PH2 — Phase 2 blob upload failure keeps void committed, emits invoice_pdf_sync_failed [33m1599[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mdoes not enqueue outbox when auto_email_on_issue=false [33m1375[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mT-DISP — auto_email_on_issue=null falls back to tenant settings.autoEmailEnabled [33m1375[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22memits cross-tenant probe audit on unknown invoice id [33m1059[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/issue-vs-archive-race.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2307[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on archived member returns member_archived and consumes NO sequence [33m1480[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 11:29:58
+[2m   Duration [22m 15.11s[2m (transform 307ms, setup 25ms, collect 1.05s, tests 12.80s, environment 0ms, prepare 97ms)[22m
+
