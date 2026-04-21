@@ -100,7 +100,19 @@ export default async function NewInvoiceDraftPage({
 
   return (
     <FormContainer>
-      <PageHeader title={t('title')} subtitle={t('description')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('description')}
+        actions={
+          <Link
+            href="/admin/invoices"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
+          >
+            <ArrowLeftIcon className="size-4" aria-hidden="true" />
+            {t('cancel')}
+          </Link>
+        }
+      />
       <Card>
         <CardContent>
           <CreateDraftForm
@@ -110,13 +122,6 @@ export default async function NewInvoiceDraftPage({
           />
         </CardContent>
       </Card>
-      <Link
-        href="/admin/invoices"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
-      >
-        <ArrowLeftIcon className="size-4" aria-hidden="true" />
-        {t('cancel')}
-      </Link>
     </FormContainer>
   );
 }

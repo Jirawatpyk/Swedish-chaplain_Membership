@@ -18,6 +18,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { Loader2Icon } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +31,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 type Props = {
   readonly invoiceId: string;
@@ -64,7 +66,10 @@ export function DeleteDraftDialog({ invoiceId }: Props) {
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger
-        className={buttonVariants({ variant: 'outline' })}
+        className={cn(
+          buttonVariants({ variant: 'outline' }),
+          'border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive',
+        )}
       >
         {t('trigger')}
       </AlertDialogTrigger>
@@ -81,8 +86,12 @@ export function DeleteDraftDialog({ invoiceId }: Props) {
               confirm();
             }}
             disabled={pending}
+            aria-busy={pending}
             className={buttonVariants({ variant: 'destructive' })}
           >
+            {pending && (
+              <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+            )}
             {pending ? t('deleting') : t('deleteButton')}
           </AlertDialogAction>
         </AlertDialogFooter>

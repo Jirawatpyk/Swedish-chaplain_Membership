@@ -94,6 +94,45 @@ function remainingSatang(inv: Invoice): bigint | null {
   return inv.total.satang - inv.creditedTotal.satang;
 }
 
+/**
+ * Role-gated action shown as a disabled Button wrapped in a Tooltip
+ * explaining the role constraint. Extracted from three near-identical
+ * inline Tooltip blocks (Record Payment / Void / Issue Credit Note)
+ * per the UX review — centralises tooltip copy and destructive tint so
+ * future changes apply once, not three times.
+ */
+function ManagerDisabledAction({
+  label,
+  tooltipMessage,
+  destructive = false,
+  ariaLabel,
+}: {
+  readonly label: string;
+  readonly tooltipMessage: string;
+  readonly destructive?: boolean;
+  readonly ariaLabel?: string;
+}): React.ReactElement {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled
+            aria-disabled="true"
+            {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
+            className={destructive ? 'text-destructive' : undefined}
+          >
+            {label}
+          </Button>
+        }
+      />
+      <TooltipContent>{tooltipMessage}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export async function MemberInvoicesSection({
   tenant,
   memberId,
@@ -192,16 +231,18 @@ export async function MemberInvoicesSection({
             </span>
           </CardTitle>
           {/* "New invoice" CTA visible whenever the member already
-            * has any invoices — complements the empty-state CTA
-            * inside the card body (which only shows on first
-            * invoice). Admin-only: managers are read-only on
-            * finance per Constitution Principle V. */}
+            * has any invoices (total > 0). MUTUALLY EXCLUSIVE with
+            * the empty-state CTA in CardContent (which only renders
+            * when total === 0 AND no filters active) — so the member
+            * page NEVER shows two "New invoice" buttons at once.
+            * Admin-only: managers are read-only on finance per
+            * Constitution Principle V. */}
           {canMutate && total > 0 && (
             <Link
               href={`/admin/invoices/new?memberId=${encodeURIComponent(memberId)}`}
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              className={buttonVariants({ variant: 'outline' })}
             >
-              <PlusIcon className="size-3.5" aria-hidden="true" />
+              <PlusIcon className="size-4" aria-hidden="true" />
               {t('newInvoice')}
             </Link>
           )}
@@ -231,7 +272,10 @@ export async function MemberInvoicesSection({
                   ? t('emptyFiltered')
                   : t('empty')}
               </p>
-              {statusFilter === undefined && fiscalYearFilter === undefined && canMutate && (
+              {statusFilter === undefined &&
+                fiscalYearFilter === undefined &&
+                searchFilter === undefined &&
+                canMutate && (
                 <Link
                   href={`/admin/invoices/new?memberId=${encodeURIComponent(memberId)}`}
                   className={buttonVariants({ variant: 'outline', size: 'sm' })}
@@ -348,34 +392,22 @@ export async function MemberInvoicesSection({
                                     {t('actions.recordPayment')}
                                   </Link>
                                 ) : (
-                                  <Tooltip>
-                                    <TooltipTrigger
-                                      render={
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          disabled
-                                          aria-disabled="true"
-                                        >
-                                          {t('actions.recordPayment')}
-                                        </Button>
-                                      }
-                                    />
-                                    <TooltipContent>
-                                      {t('actions.disabledForManager')}
-                                    </TooltipContent>
-                                  </Tooltip>
+                                  <ManagerDisabledAction
+                                    label={t('actions.recordPayment')}
+                                    tooltipMessage={t('actions.disabledForManager')}
+                                  />
                                 ))}
                               {canVoid &&
                                 (canMutate ? (
                                   <Link
                                     href={`/admin/invoices/${inv.invoiceId}/void`}
-                                    className={buttonVariants({
-                                      variant: 'outline',
-                                      size: 'sm',
-                                      className:
-                                        'text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive',
-                                    })}
+                                    className={cn(
+                                      buttonVariants({
+                                        variant: 'outline',
+                                        size: 'sm',
+                                      }),
+                                      'text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive',
+                                    )}
                                     aria-label={t('actions.voidAriaLabel', {
                                       number: inv.documentNumber?.raw ?? inv.invoiceId,
                                     })}
@@ -383,24 +415,11 @@ export async function MemberInvoicesSection({
                                     {t('actions.void')}
                                   </Link>
                                 ) : (
-                                  <Tooltip>
-                                    <TooltipTrigger
-                                      render={
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          disabled
-                                          aria-disabled="true"
-                                          className="text-destructive"
-                                        >
-                                          {t('actions.void')}
-                                        </Button>
-                                      }
-                                    />
-                                    <TooltipContent>
-                                      {t('actions.disabledForManager')}
-                                    </TooltipContent>
-                                  </Tooltip>
+                                  <ManagerDisabledAction
+                                    label={t('actions.void')}
+                                    tooltipMessage={t('actions.disabledForManager')}
+                                    destructive
+                                  />
                                 ))}
                               {canIssueCreditNote &&
                                 (canMutate ? (
@@ -414,23 +433,10 @@ export async function MemberInvoicesSection({
                                     {t('actions.issueCreditNote')}
                                   </Link>
                                 ) : (
-                                  <Tooltip>
-                                    <TooltipTrigger
-                                      render={
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          disabled
-                                          aria-disabled="true"
-                                        >
-                                          {t('actions.issueCreditNote')}
-                                        </Button>
-                                      }
-                                    />
-                                    <TooltipContent>
-                                      {t('actions.disabledForManager')}
-                                    </TooltipContent>
-                                  </Tooltip>
+                                  <ManagerDisabledAction
+                                    label={t('actions.issueCreditNote')}
+                                    tooltipMessage={t('actions.disabledForManager')}
+                                  />
                                 ))}
                             </div>
                           </TableCell>

@@ -82,8 +82,9 @@ export function MemberInvoicesFilters() {
         applyFilters(q, status, year);
       }}
     >
-      {/* Mobile: inputs stack full-width (touch target 36px). Desktop
-        * (sm+): search grows via flex-1, status + year compact. */}
+      {/* All controls use project standard h-9 (36px) — matches
+        * `--input-height` + Button default per docs/shadcn-
+        * customizations. Mobile stacks column, desktop wraps inline. */}
       <Input
         id="member-inv-q"
         type="search"
@@ -92,15 +93,13 @@ export function MemberInvoicesFilters() {
         onChange={(e) => setQ(e.target.value)}
         placeholder={t('search')}
         aria-label={t('search')}
-        className="h-10 w-full sm:h-9 sm:min-w-[10rem] sm:flex-1"
+        className="w-full sm:min-w-[10rem] sm:flex-1"
         autoComplete="off"
       />
-      {/* Status + Year share a row on mobile (grid-cols-2) so they
-        * don't dominate vertical space; go inline on desktop. */}
       <div className="grid grid-cols-2 gap-3 sm:contents">
         <Select value={status} onValueChange={(v) => setStatus(v ?? 'all')}>
           <SelectTrigger
-            className="h-10 w-full sm:h-9 sm:w-[11rem]"
+            className="w-full sm:w-[11rem]"
             aria-label={t('statusAria')}
           >
             <TranslatedSelectValue
@@ -128,13 +127,10 @@ export function MemberInvoicesFilters() {
           onChange={(e) => setYear(e.target.value)}
           placeholder={t('fiscalYear')}
           aria-label={t('yearAria')}
-          className="h-10 w-full sm:h-9 sm:w-32"
+          className="w-full sm:w-32"
           autoComplete="off"
         />
       </div>
-      {/* Action buttons — full-width on mobile (stacked via grid-cols-2
-        * when Clear is visible, single-column otherwise) for easy
-        * one-handed reach; compact inline on desktop. */}
       <div
         className={`grid gap-3 sm:contents ${
           hasFilters ? 'grid-cols-2' : 'grid-cols-1'
@@ -144,7 +140,8 @@ export function MemberInvoicesFilters() {
           type="submit"
           variant="outline"
           disabled={pending}
-          className="h-10 w-full sm:h-9 sm:w-auto"
+          aria-busy={pending}
+          className="w-full sm:w-auto"
         >
           {t('apply')}
         </Button>
@@ -159,7 +156,7 @@ export function MemberInvoicesFilters() {
               setYear('');
               applyFilters('', 'all', '');
             }}
-            className="h-10 w-full sm:h-9 sm:w-auto"
+            className="w-full sm:w-auto"
           >
             {t('clear')}
           </Button>

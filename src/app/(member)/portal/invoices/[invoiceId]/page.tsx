@@ -366,7 +366,7 @@ export default async function PortalInvoiceDetailPage({
                       {pcn.documentNumber.raw}
                     </span>
                     <span className="text-caption text-muted-foreground tabular-nums">
-                      {pcn.issueDate} ·{' '}
+                      {formatDate(pcn.issueDate, userLocale)} ·{' '}
                       {formatSatangThb(pcn.total.satang, userLocale)} THB
                     </span>
                   </div>
