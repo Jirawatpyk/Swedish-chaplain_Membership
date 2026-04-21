@@ -333,6 +333,27 @@ async function dispatchOne(
             reason: 'no_template_handler',
           },
         });
+        // T106 — dual-emit the F4-specific `auto_email_delivery_failed`
+        // event alongside the generic `email_dispatch_failed` when the
+        // failed row is an F4 invoice_auto_email. Lets F4 audit-coverage
+        // queries filter by a single event type without having to
+        // join on `payload->>'notification_type'`. Emitted inside the
+        // same tx so both audit rows + the status flip commit atomically.
+        if (row.notificationType === 'invoice_auto_email' && row.tenantId) {
+          await tx.insert(auditLog).values({
+            eventType: 'auto_email_delivery_failed',
+            actorUserId: 'system:cron',
+            summary: `F4 auto-email outbox row ${row.id} permanently failed (no_template_handler) after ${nextAttempt} attempts`,
+            requestId,
+            tenantId: row.tenantId,
+            payload: {
+              outbox_row_id: row.id,
+              notification_type: row.notificationType,
+              attempts: nextAttempt,
+              reason: 'no_template_handler',
+            },
+          });
+        }
         outboxMetrics.permanentFailure(
           row.notificationType,
           'no_template_handler',
@@ -433,6 +454,30 @@ async function dispatchOne(
           last_error: result.error.message,
         },
       });
+      // T106 — dual-emit F4-specific `auto_email_delivery_failed` for
+      // invoice_auto_email rows (same rationale as the no_template_handler
+      // path above). Requires a non-null tenantId because the F4 audit
+      // type is tenant-scoped; F4 rows always carry one, but guard for
+      // defensive symmetry with the generic emit.
+      if (row.notificationType === 'invoice_auto_email' && row.tenantId) {
+        await tx.insert(auditLog).values({
+          eventType: 'auto_email_delivery_failed',
+          actorUserId: 'system:cron',
+          summary: `F4 auto-email outbox row ${row.id} permanently failed after ${nextAttempt} attempts`,
+          requestId,
+          tenantId: row.tenantId,
+          payload: {
+            outbox_row_id: row.id,
+            notification_type: row.notificationType,
+            attempts: nextAttempt,
+            last_error: result.error.message,
+            reason:
+              result.error.code === 'invalid-recipient'
+                ? 'invalid_recipient'
+                : 'max_retries',
+          },
+        });
+      }
       outboxMetrics.permanentFailure(
         row.notificationType,
         result.error.code === 'invalid-recipient'

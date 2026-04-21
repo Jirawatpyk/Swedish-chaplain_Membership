@@ -33,8 +33,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { NextRequest } from 'next/server';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
+import { GET as outboxDispatch } from '@/app/api/cron/outbox-dispatch/route';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
@@ -451,6 +453,80 @@ describe('T105 — F4 auto-email outbox + T107 manual resend (live Neon)', () =>
         expect((row.payload as Record<string, unknown>).member_id).toBeUndefined();
       }
     } finally {
+      await freshTenant.cleanup().catch(() => {});
+    }
+  }, 120_000);
+
+  it('(T106 dual-emit) dispatcher perm-fails F4 invoice_auto_email → emits BOTH email_dispatch_failed AND auto_email_delivery_failed', async () => {
+    const freshTenant = await createTestTenant('test-swecham');
+    const previousCronSecret = process.env.CRON_SECRET;
+    process.env.CRON_SECRET = 'test-t106-dual-emit-secret';
+    const seededIds: string[] = [];
+    try {
+      // Seed an invoice_auto_email row at attempts=4 (next increment =
+      // MAX_ATTEMPTS=5 → permanent) with context_data shaped so
+      // `buildPayload` returns null (missing `pdf_blob_key` → the F4
+      // branch's null-guard triggers no_template_handler → permanent).
+      const outboxId = randomUUID();
+      const pastTs = new Date(Date.now() - 60_000);
+      await db.insert(notificationsOutbox).values({
+        id: outboxId,
+        tenantId: freshTenant.ctx.slug,
+        notificationType: 'invoice_auto_email',
+        toEmail: `t106-${outboxId.slice(0, 8)}@swecham.test`,
+        locale: 'en',
+        // event_type present but pdf_blob_key missing → buildPayload null.
+        contextData: { event_type: 'invoice_issued', pdf_blob_key: '' },
+        status: 'pending',
+        attempts: 4,
+        nextRetryAt: pastTs,
+      });
+      seededIds.push(outboxId);
+
+      const req = new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      });
+      const response = await outboxDispatch(req);
+      expect(response.status).toBe(200);
+
+      // Row flipped to permanently_failed.
+      const [row] = await db
+        .select()
+        .from(notificationsOutbox)
+        .where(eq(notificationsOutbox.id, outboxId));
+      expect(row?.status).toBe('permanently_failed');
+      expect(row?.attempts).toBe(5);
+
+      // BOTH audit rows land in the tenant's audit log.
+      const auditRows = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, freshTenant.ctx.slug));
+      const eventTypes = auditRows.map((r) => r.eventType);
+      expect(eventTypes).toContain('email_dispatch_failed');
+      expect(eventTypes).toContain('auto_email_delivery_failed');
+
+      // F4-specific row references the outbox row id for forensic
+      // correlation + carries the `reason` classification.
+      const f4Row = auditRows.find(
+        (r) => r.eventType === 'auto_email_delivery_failed',
+      );
+      expect(f4Row).toBeDefined();
+      expect((f4Row!.payload as Record<string, unknown>).outbox_row_id).toBe(
+        outboxId,
+      );
+      expect((f4Row!.payload as Record<string, unknown>).reason).toBe(
+        'no_template_handler',
+      );
+    } finally {
+      for (const id of seededIds) {
+        await db.delete(notificationsOutbox).where(eq(notificationsOutbox.id, id));
+      }
+      if (previousCronSecret === undefined) {
+        delete process.env.CRON_SECRET;
+      } else {
+        process.env.CRON_SECRET = previousCronSecret;
+      }
       await freshTenant.cleanup().catch(() => {});
     }
   }, 120_000);

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/outbox-dispatch",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/lockout-cleanup",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/outbox-purge",
+      "schedule": "15 20 * * *"
+    }
+  ]
+}
