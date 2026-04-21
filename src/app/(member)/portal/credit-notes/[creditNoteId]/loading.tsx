@@ -18,10 +18,10 @@ export default async function Loading() {
           title={<SkeletonBlock className="h-8 w-48" />}
           subtitle={t('subtitle')}
           actions={
-            <div className="flex gap-2">
+            <>
               <SkeletonBlock className="h-9 w-36" />
               <SkeletonBlock className="h-9 w-32" />
-            </div>
+            </>
           }
         />
         <Card>

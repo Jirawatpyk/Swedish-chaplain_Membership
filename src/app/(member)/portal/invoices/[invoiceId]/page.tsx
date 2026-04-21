@@ -188,7 +188,7 @@ export default async function PortalInvoiceDetailPage({
         })()}
         actions={
           invoice.pdf ? (
-            <div className="flex flex-wrap items-center gap-2">
+            <>
               {/* Resend is hidden on void — member cannot re-mail a
                   voided invoice from self-service (an admin would need
                   to trigger that via the cancellation-notice path). */}
@@ -218,7 +218,7 @@ export default async function PortalInvoiceDetailPage({
                   ? t('void.downloadVoidedPdf')
                   : tList('actions.download')}
               </a>
-            </div>
+            </>
           ) : null
         }
       />

@@ -98,16 +98,69 @@ test.describe('@us6 credit-note partial-credit flow', () => {
     await expect(submit).toBeDisabled();
   });
 
-  test.fixme(
-    'AS2 happy path: 60% partial → invoice status partially_credited (needs teardown — T115)',
-    async () => {
-      // TODO(T115): covered behaviourally by integration suite.
-      // E2E re-verification would:
-      //   1. Fill amount = 60% of seeded invoice total
-      //   2. Fill reason "E2E partial"
-      //   3. Type "CREDIT"
-      //   4. Submit → 201 → redirect to /admin/invoices/<id>
-      //   5. Assert status badge = "Partially credited"
-    },
-  );
+  // T125 — AS2 happy path (60% partial). Gated on
+  // `E2E_HAS_ADMIN_FIXTURES=1`. Targets the "E2E Mutation Co"
+  // 99xxxx paid fixture (separate from the 900002 member-seeded
+  // invoice used by the non-mutating assertions above, so the two
+  // specs don't cross-talk). Each run mutates the fixture →
+  // partially_credited; re-run the seeder between sessions:
+  //
+  //   node --env-file=.env.local --import tsx scripts/seed-f4-e2e-admin-fixtures.ts
+  //
+  // Integration layer
+  // (`credit-note-partial-accumulation.test.ts`) already covers the
+  // DB-state correctness; this E2E adds the UI-glue assertion on the
+  // "Partially credited" badge flip.
+  test.describe('AS2 mutating happy-path (seeded admin fixture)', () => {
+    test.skip(
+      process.env.E2E_HAS_ADMIN_FIXTURES !== '1',
+      'E2E_HAS_ADMIN_FIXTURES=1 + seed-f4-e2e-admin-fixtures must have run',
+    );
+
+    test('AS2 — 60% partial flips invoice badge to Partially credited', async ({
+      page,
+    }) => {
+      await signInAdmin(page);
+
+      // Pick the "E2E Mutation Co" paid row — the idempotent admin
+      // seeder always keeps exactly one unmutated 99xxxx paid
+      // invoice under that member.
+      await page.goto('/admin/invoices?status=paid');
+      await waitForLayoutContainer(page);
+      const mutationRow = page
+        .getByRole('row')
+        .filter({ hasText: 'E2E Mutation Co' });
+      await mutationRow.first().waitFor({ state: 'visible', timeout: 10_000 });
+      await mutationRow.first().getByRole('link').first().click();
+      await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+      await page
+        .getByRole('link', { name: /issue credit note|ออกใบลดหนี้|utfärda kreditnota/i })
+        .click();
+      await page.waitForURL(/\/credit-notes\/new$/);
+      await waitForLayoutContainer(page);
+
+      // 60% of 1,070.00 THB = 642.00 THB. Round to whole baht to
+      // match the seeder's deterministic amount.
+      await fillField(page.getByLabel(/credit amount|จำนวนเงินลดหนี้|kreditbelopp/i), '642.00');
+      await fillField(page.getByLabel(/reason|เหตุผล|orsak/i), 'E2E AS2 partial 60%');
+      await fillField(page.getByLabel(/type CREDIT|พิมพ์ CREDIT|skriv CREDIT/i), 'CREDIT');
+
+      await page
+        .getByRole('button', {
+          name: /^(issue credit note|ออกใบลดหนี้|utfärda kreditnota)$/i,
+        })
+        .click();
+      await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/, { timeout: 20_000 });
+
+      // Status badge should read "Partially credited" / "เครดิตแล้วบางส่วน" /
+      // "Delvis krediterad". Substring match across locales.
+      const badge = page
+        .getByRole('heading', { level: 1 })
+        .locator('..')
+        .getByText(
+          /^(partially credited|ลดหนี้บางส่วน|delvis krediterad)$/i,
+        );
+      await expect(badge).toBeVisible({ timeout: 10_000 });
+    });
+  });
 });

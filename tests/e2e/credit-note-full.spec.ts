@@ -121,18 +121,74 @@ test.describe('@us6 credit-note full-credit flow', () => {
     await expect(submit).toBeEnabled();
   });
 
-  test.fixme(
-    'AS1 admin issues full credit note → invoice status → credited (mutating, needs teardown — T115)',
-    async () => {
-      // TODO(T115): needs per-test throwaway fixture. Integration suite
-      // `credit-note-partial-accumulation.test.ts` covers this
-      // behaviourally; this E2E would only re-verify the UI glue:
-      //   1. Fill amount = full invoice total (1,070.00 THB for SC-2026-900001)
-      //   2. Fill reason "E2E full credit"
-      //   3. Type "CREDIT"
-      //   4. Submit → POST /api/credit-notes → 201
-      //   5. Wait for navigation to /admin/invoices/<id>
-      //   6. Assert status badge = "Credited"
-    },
+  // T125 — AS1 happy path. Gated on `E2E_HAS_ADMIN_FIXTURES=1` so
+  // the test only runs when the idempotent admin-side seeder has
+  // provisioned a FRESH 990001-series paid invoice under the
+  // "E2E Mutation Co" member. Each run mutates the fixture → paid →
+  // credited; the seeder's auto-provisioning logic re-seeds a new
+  // paid target on the next invocation (see
+  // scripts/seed-f4-e2e-admin-fixtures.ts header comment). Re-run
+  // the seeder between test sessions:
+  //
+  //   node --env-file=.env.local --import tsx scripts/seed-f4-e2e-admin-fixtures.ts
+  //
+  // Integration layer already covers the DB-state correctness
+  // (credit-note-partial-accumulation.test.ts runs the same mutation
+  // on a throwaway test tenant). This E2E adds the UI-glue assertion:
+  // the status-badge flip on /admin/invoices/<id> after a successful
+  // credit-note POST.
+  test.skip(
+    process.env.E2E_HAS_ADMIN_FIXTURES !== '1',
+    'E2E_HAS_ADMIN_FIXTURES=1 + seed-f4-e2e-admin-fixtures must have run',
   );
+
+  test('AS1 — full credit note flips invoice badge to Credited', async ({
+    page,
+  }) => {
+    await signInAdmin(page);
+
+    // Filter to paid + find the "E2E Mutation Co" row. The seeder
+    // keeps exactly one unmutated paid 99xxxx invoice under this
+    // member at any time, so matching on member name + status=paid
+    // converges on the correct target without requiring the test
+    // to know the sequence number.
+    await page.goto('/admin/invoices?status=paid');
+    await waitForLayoutContainer(page);
+    const mutationRow = page
+      .getByRole('row')
+      .filter({ hasText: 'E2E Mutation Co' });
+    await mutationRow.first().waitFor({ state: 'visible', timeout: 10_000 });
+    const docLink = mutationRow.first().getByRole('link').first();
+    await docLink.click();
+    await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+
+    // Open credit-note form.
+    await page
+      .getByRole('link', { name: /issue credit note|ออกใบลดหนี้|utfärda kreditnota/i })
+      .click();
+    await page.waitForURL(/\/credit-notes\/new$/);
+    await waitForLayoutContainer(page);
+
+    // Full-credit: 1,070.00 THB (100% of the seeded 99xxxx total).
+    await fillField(page.getByLabel(/credit amount|จำนวนเงินลดหนี้|kreditbelopp/i), '1070.00');
+    await fillField(page.getByLabel(/reason|เหตุผล|orsak/i), 'E2E AS1 full credit');
+    await fillField(page.getByLabel(/type CREDIT|พิมพ์ CREDIT|skriv CREDIT/i), 'CREDIT');
+
+    // Submit + wait for navigation back to the invoice detail page.
+    await page
+      .getByRole('button', {
+        name: /^(issue credit note|ออกใบลดหนี้|utfärda kreditnota)$/i,
+      })
+      .click();
+    await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/, { timeout: 20_000 });
+
+    // Status badge should read "Credited" (EN) / "เครดิตแล้ว" (TH) /
+    // "Krediterad" (SV). Match any locale to avoid coupling to the
+    // admin's current UI language.
+    const badge = page
+      .getByRole('heading', { level: 1 })
+      .locator('..')
+      .getByText(/^(credited|ลดหนี้แล้ว|ลดหนี้|krediterad)$/i);
+    await expect(badge).toBeVisible({ timeout: 10_000 });
+  });
 });

@@ -136,7 +136,7 @@ export default async function PortalCreditNoteDetailPage({
         }
         subtitle={t('subtitle')}
         actions={
-          <div className="flex flex-wrap gap-2">
+          <>
             <Link
               href={invoiceHref}
               className={buttonVariants({ variant: 'outline' })}
@@ -153,7 +153,7 @@ export default async function PortalCreditNoteDetailPage({
               <DownloadIcon className="size-4" aria-hidden="true" />
               {t('actions.download')}
             </a>
-          </div>
+          </>
         }
       />
 
