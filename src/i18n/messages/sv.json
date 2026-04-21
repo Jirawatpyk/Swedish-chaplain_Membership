@@ -1093,6 +1093,23 @@
           "voidedBy": "Annullerad av",
           "reason": "Orsak",
           "creditNoteHint": "För att legalt återställa denna faktura, utfärda en kreditnota (tillgänglig i F4 US6)."
+        },
+        "creditNotesSection": {
+          "title": "Kreditnotor ({count})",
+          "totalCredited": "Totalt krediterat:",
+          "col": {
+            "number": "Nummer",
+            "issueDate": "Utfärdad",
+            "reason": "Orsak",
+            "total": "Totalt",
+            "actions": "Åtgärder"
+          },
+          "action": {
+            "pdf": "PDF",
+            "pdfAria": "Ladda ner kreditnota {number} som PDF",
+            "view": "Visa",
+            "viewAria": "Visa kreditnota {number}"
+          }
         }
       },
       "issue": {

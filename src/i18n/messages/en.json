@@ -1093,6 +1093,23 @@
           "voidedBy": "Voided by",
           "reason": "Reason",
           "creditNoteHint": "To legally reverse this invoice, issue a credit note (available in F4 US6)."
+        },
+        "creditNotesSection": {
+          "title": "Credit notes ({count})",
+          "totalCredited": "Total credited:",
+          "col": {
+            "number": "Number",
+            "issueDate": "Issued",
+            "reason": "Reason",
+            "total": "Total",
+            "actions": "Actions"
+          },
+          "action": {
+            "pdf": "PDF",
+            "pdfAria": "Download credit note {number} as PDF",
+            "view": "View",
+            "viewAria": "View credit note {number}"
+          }
         }
       },
       "issue": {

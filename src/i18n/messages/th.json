@@ -1093,6 +1093,23 @@
           "voidedBy": "ยกเลิกโดย",
           "reason": "เหตุผล",
           "creditNoteHint": "หากต้องการยกเลิกใบแจ้งหนี้ตามกฎหมาย ต้องออกใบลดหนี้ (จะเปิดใน F4 US6)"
+        },
+        "creditNotesSection": {
+          "title": "ใบลดหนี้ ({count} ฉบับ)",
+          "totalCredited": "ยอดลดหนี้รวม:",
+          "col": {
+            "number": "เลขที่",
+            "issueDate": "วันที่ออก",
+            "reason": "เหตุผล",
+            "total": "ยอดรวม",
+            "actions": "การดำเนินการ"
+          },
+          "action": {
+            "pdf": "PDF",
+            "pdfAria": "ดาวน์โหลดใบลดหนี้ {number} เป็น PDF",
+            "view": "ดู",
+            "viewAria": "ดูใบลดหนี้ {number}"
+          }
         }
       },
       "issue": {

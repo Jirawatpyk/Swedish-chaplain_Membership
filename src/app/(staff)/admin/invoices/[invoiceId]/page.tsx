@@ -20,6 +20,14 @@ import { getInvoice, makeGetInvoiceDeps, Money, calculateVat } from '@/modules/i
 // `getForIssue`, not a deep reach into internals.
 // eslint-disable-next-line no-restricted-imports
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
+// Same escape-hatch as the tenant-settings repo read above: a public-
+// port read (`findByOriginalInvoice`) used to populate the "Credit
+// Notes attached" section. No Application-layer use-case exists yet
+// for this list (Phase 10 candidate); the infra repo is called
+// directly.
+// eslint-disable-next-line no-restricted-imports
+import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
+import { asInvoiceId } from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -165,6 +173,17 @@ export default async function InvoiceDetailPage({
     resolveUserEmail(invoice.paymentRecordedByUserId),
     resolveUserEmail(invoice.voidedByUserId),
   ]);
+
+  // Phase-10 polish — load any credit notes attached to this invoice
+  // so the detail page can surface the CN list inline. Cheap: no CN
+  // rows are returned for 99% of invoices (only paid/credited ones
+  // can have any); the "don't render when empty" rule keeps the
+  // section invisible on the common path.
+  const creditNoteRepo = makeDrizzleCreditNoteRepo(tenantCtx.slug);
+  const creditNotes = await creditNoteRepo.findByOriginalInvoice(
+    asInvoiceId(invoiceId),
+    tenantCtx.slug,
+  );
 
   const isDraft = invoice.status === 'draft';
   const isAdmin = currentUser.role === 'admin';
@@ -427,6 +446,120 @@ export default async function InvoiceDetailPage({
               <p className="mt-3 text-xs text-muted-foreground">
                 {t('voidDetails.creditNoteHint')}
               </p>
+            </section>
+          )}
+
+          {creditNotes.length > 0 && (
+            <section
+              aria-labelledby="credit-notes-heading"
+              className="mt-6 border-t pt-6"
+            >
+              <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+                <h3
+                  id="credit-notes-heading"
+                  className="text-sm font-medium text-muted-foreground"
+                >
+                  {t('creditNotesSection.title', { count: creditNotes.length })}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  <span>{t('creditNotesSection.totalCredited')}</span>{' '}
+                  <span className="font-medium tabular-nums text-foreground">
+                    {formatSatang(invoice.creditedTotal.satang)}{' '}
+                    <span className="text-muted-foreground">THB</span>
+                  </span>
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground"
+                      >
+                        {t('creditNotesSection.col.number')}
+                      </TableHead>
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground"
+                      >
+                        {t('creditNotesSection.col.issueDate')}
+                      </TableHead>
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground"
+                      >
+                        {t('creditNotesSection.col.reason')}
+                      </TableHead>
+                      <TableHead
+                        scope="col"
+                        className="text-right text-xs uppercase tracking-wide text-muted-foreground"
+                      >
+                        {t('creditNotesSection.col.total')}
+                      </TableHead>
+                      <TableHead scope="col" className="w-[1%] text-right">
+                        <span className="sr-only">
+                          {t('creditNotesSection.col.actions')}
+                        </span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {creditNotes.map((cn) => (
+                      <TableRow key={cn.creditNoteId}>
+                        <TableCell className="font-mono font-medium">
+                          {cn.documentNumber.raw}
+                        </TableCell>
+                        <TableCell className="tabular-nums">
+                          {formatDate(cn.issueDate, userLocale)}
+                        </TableCell>
+                        <TableCell
+                          className="max-w-[20rem] truncate"
+                          title={cn.reason}
+                        >
+                          {cn.reason}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatSatang(cn.total.satang)}{' '}
+                          <span className="text-muted-foreground">THB</span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <a
+                              href={`/api/credit-notes/${cn.creditNoteId}/pdf`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={buttonVariants({
+                                variant: 'outline',
+                                size: 'sm',
+                              })}
+                              aria-label={t(
+                                'creditNotesSection.action.pdfAria',
+                                { number: cn.documentNumber.raw },
+                              )}
+                            >
+                              {t('creditNotesSection.action.pdf')}
+                            </a>
+                            <Link
+                              href={`/admin/credit-notes/${cn.creditNoteId}`}
+                              className={buttonVariants({
+                                variant: 'secondary',
+                                size: 'sm',
+                              })}
+                              aria-label={t(
+                                'creditNotesSection.action.viewAria',
+                                { number: cn.documentNumber.raw },
+                              )}
+                            >
+                              {t('creditNotesSection.action.view')}
+                            </Link>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </section>
           )}
 
