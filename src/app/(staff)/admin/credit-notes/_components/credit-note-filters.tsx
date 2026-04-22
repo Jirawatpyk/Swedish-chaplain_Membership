@@ -49,7 +49,13 @@ export function CreditNoteFilters() {
 
   return (
     <form
-      className="flex w-full flex-wrap items-end gap-3"
+      // `data-slot="filter-bar"` activates the global mobile-only
+      // `width: 100%` rule in globals.css (mirrors <FilterBar>).
+      // Used directly on <form> instead of wrapping with <FilterBar>
+      // because this filter submits on Apply — <FilterBar> renders a
+      // <div>, and we need the native <form> submit semantics here.
+      data-slot="filter-bar"
+      className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center"
       onSubmit={(e) => {
         e.preventDefault();
         applyFilters(q, fy);
@@ -67,7 +73,7 @@ export function CreditNoteFilters() {
         onChange={(e) => setQ(e.target.value)}
         placeholder={t('search')}
         aria-label={t('search')}
-        className="min-w-[10rem] flex-1"
+        className="min-w-0 sm:flex-1"
         autoComplete="off"
       />
       <Input
@@ -80,10 +86,14 @@ export function CreditNoteFilters() {
         onChange={(e) => setFy(e.target.value)}
         placeholder={t('fiscalYear')}
         aria-label={t('fiscalYear')}
-        className="w-32"
+        className="sm:w-32"
         autoComplete="off"
       />
-      <Button type="submit" variant="outline" disabled={pending}>
+      <Button
+        type="submit"
+        variant="outline"
+        disabled={pending}
+      >
         {t('apply')}
       </Button>
       {hasFilters && (

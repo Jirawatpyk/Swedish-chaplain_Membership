@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
+import { FilterBar } from '@/components/ui/filter-bar';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -29,14 +30,11 @@ export default async function Loading() {
         <Card>
           <CardContent className="flex flex-col gap-4">
             {/* Filter bar shell — matches <UsersFilters /> shape */}
-            <div
-              className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4"
-              aria-hidden
-            >
-              <SkeletonBlock className="h-9 flex-1 min-w-0" />
-              <SkeletonBlock className="h-9 w-[140px]" />
-              <SkeletonBlock className="h-9 w-[140px]" />
-            </div>
+            <FilterBar aria-hidden>
+              <SkeletonBlock className="h-9 min-w-0 sm:flex-1" />
+              <SkeletonBlock className="h-9 sm:w-36" />
+              <SkeletonBlock className="h-9 sm:w-36" />
+            </FilterBar>
             <TableSkeleton rows={8} columns={5} />
             {/* Pagination row — "Showing X–Y of Z" + page nav */}
             <div

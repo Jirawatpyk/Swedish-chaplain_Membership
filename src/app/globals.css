@@ -379,6 +379,32 @@ body {
   }
 }
 
+/* --- FilterBar responsive children ---
+ *
+ * `<FilterBar>` (src/components/ui/filter-bar.tsx) is a search/filter
+ * row above data tables. Direct children default to full width on
+ * mobile (<640px) so every input/select/button becomes a tap-friendly
+ * full-row block. On desktop (≥640px) this rule does NOT exist, so
+ * Tailwind utilities like `sm:w-36` or `w-fit` apply naturally.
+ *
+ * Unlayered + `@media (max-width)` is deliberate:
+ *   - Unlayered CSS wins over all `@layer` content in the cascade,
+ *     which lets us beat Tailwind's base `.w-fit` on SelectTrigger
+ *     without needing `!important` on every call site.
+ *   - The `@media (max-width: 639.98px)` bound means desktop has
+ *     no rule from us at all — `sm:w-[NNN]` utilities apply
+ *     naturally and size the trigger exactly as authored.
+ *
+ * `:where()` wrapping keeps selector specificity at 0,0,0 so if a
+ * caller ever wants to override even on mobile, any utility class
+ * (e.g. `w-auto`) takes precedence without specificity gymnastics.
+ */
+@media (max-width: 639.98px) {
+  :where([data-slot="filter-bar"]) > :where(*) {
+    width: 100%;
+  }
+}
+
 /* --- Cursor: Tailwind v4 does not set cursor-pointer on buttons by default --- */
 button,
 [role="button"],

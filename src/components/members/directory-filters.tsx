@@ -16,6 +16,7 @@ import { useTranslations } from 'next-intl';
 import { SearchIcon, XIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { FilterBar } from '@/components/ui/filter-bar';
 import {
   Select,
   SelectContent,
@@ -86,11 +87,8 @@ export function DirectoryFilters({ plans = [] }: Props) {
   };
 
   return (
-    <div
-      className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4"
-      role="search"
-    >
-      <div className="relative flex-1 min-w-0">
+    <FilterBar>
+      <div className="relative sm:flex-1 min-w-0">
         <SearchIcon
           className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
           aria-hidden
@@ -112,7 +110,7 @@ export function DirectoryFilters({ plans = [] }: Props) {
         value={currentStatus}
         onValueChange={(v) => pushUrl({ status: v === 'all' ? null : v })}
       >
-        <SelectTrigger className="w-[140px]" aria-label={t('filters.status.label')}>
+        <SelectTrigger className="sm:w-36" aria-label={t('filters.status.label')}>
           <TranslatedSelectValue
             placeholder={t('filters.status.label')}
             translate={(v) => {
@@ -142,7 +140,7 @@ export function DirectoryFilters({ plans = [] }: Props) {
           value={currentPlan}
           onValueChange={(v) => pushUrl({ plan_id: v === 'all' ? null : v })}
         >
-          <SelectTrigger className="w-[180px]" aria-label={t('filters.plan.label')}>
+          <SelectTrigger className="sm:w-56" aria-label={t('filters.plan.label')}>
             <TranslatedSelectValue
               placeholder={t('filters.plan.label')}
               translate={(v) => {
@@ -175,6 +173,6 @@ export function DirectoryFilters({ plans = [] }: Props) {
           {t('clearFilters')}
         </Button>
       )}
-    </div>
+    </FilterBar>
   );
 }

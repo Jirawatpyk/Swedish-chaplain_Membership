@@ -4,6 +4,7 @@
  */
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
+import { FilterBar } from '@/components/ui/filter-bar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -22,14 +23,11 @@ export default async function Loading() {
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* Filter bar — matches DirectoryFilters: search + status select + plan select */}
-          <div
-            className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4"
-            aria-hidden
-          >
-            <Skeleton className="h-9 w-full sm:flex-1" />
-            <Skeleton className="h-9 w-[140px]" />
-            <Skeleton className="h-9 w-[180px]" />
-          </div>
+          <FilterBar aria-hidden>
+            <Skeleton className="h-9 sm:flex-1" />
+            <Skeleton className="h-9 sm:w-36" />
+            <Skeleton className="h-9 sm:w-56" />
+          </FilterBar>
           <MembersTableSkeleton />
         </CardContent>
       </Card>

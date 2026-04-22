@@ -14,6 +14,7 @@ import { useTranslations } from 'next-intl';
 import { SearchIcon, XIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { FilterBar } from '@/components/ui/filter-bar';
 import {
   Select,
   SelectContent,
@@ -74,11 +75,8 @@ export function UsersFilters() {
   };
 
   return (
-    <div
-      className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4"
-      role="search"
-    >
-      <div className="relative flex-1 min-w-0">
+    <FilterBar>
+      <div className="relative sm:flex-1 min-w-0">
         <SearchIcon
           className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
           aria-hidden
@@ -100,7 +98,7 @@ export function UsersFilters() {
         value={currentRole}
         onValueChange={(v) => pushUrl({ role: v === 'all' ? null : v })}
       >
-        <SelectTrigger className="w-[140px]" aria-label={t('role.label')}>
+        <SelectTrigger className="sm:w-36" aria-label={t('role.label')}>
           <TranslatedSelectValue
             placeholder={t('role.label')}
             translate={(v) =>
@@ -124,7 +122,7 @@ export function UsersFilters() {
         value={currentStatus}
         onValueChange={(v) => pushUrl({ status: v === 'all' ? null : v })}
       >
-        <SelectTrigger className="w-[140px]" aria-label={t('status.label')}>
+        <SelectTrigger className="sm:w-36" aria-label={t('status.label')}>
           <TranslatedSelectValue
             placeholder={t('status.label')}
             translate={(v) =>
@@ -156,6 +154,6 @@ export function UsersFilters() {
           {t('clear')}
         </Button>
       )}
-    </div>
+    </FilterBar>
   );
 }

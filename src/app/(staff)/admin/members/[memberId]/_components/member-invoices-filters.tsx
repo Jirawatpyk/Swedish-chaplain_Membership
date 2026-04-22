@@ -76,7 +76,13 @@ export function MemberInvoicesFilters() {
 
   return (
     <form
-      className="mb-4 flex w-full flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-end"
+      // `data-slot="filter-bar"` activates the global mobile-width
+      // rule in globals.css (mobile stacks full-width, desktop defers
+      // to utilities). Outer wrapper keeps the border-b divider used
+      // as a visual section separator between the member header and
+      // the invoice table below.
+      data-slot="filter-bar"
+      className="mb-4 flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-end"
       onSubmit={(e) => {
         e.preventDefault();
         applyFilters(q, status, year);
@@ -93,13 +99,13 @@ export function MemberInvoicesFilters() {
         onChange={(e) => setQ(e.target.value)}
         placeholder={t('search')}
         aria-label={t('search')}
-        className="w-full sm:min-w-[10rem] sm:flex-1"
+        className="sm:min-w-[10rem] sm:flex-1"
         autoComplete="off"
       />
       <div className="grid grid-cols-2 gap-3 sm:contents">
         <Select value={status} onValueChange={(v) => setStatus(v ?? 'all')}>
           <SelectTrigger
-            className="w-full sm:w-[11rem]"
+            className="sm:w-[11rem]"
             aria-label={t('statusAria')}
           >
             <TranslatedSelectValue
@@ -127,7 +133,7 @@ export function MemberInvoicesFilters() {
           onChange={(e) => setYear(e.target.value)}
           placeholder={t('fiscalYear')}
           aria-label={t('yearAria')}
-          className="w-full sm:w-32"
+          className="sm:w-32"
           autoComplete="off"
         />
       </div>
@@ -141,7 +147,6 @@ export function MemberInvoicesFilters() {
           variant="outline"
           disabled={pending}
           aria-busy={pending}
-          className="w-full sm:w-auto"
         >
           {t('apply')}
         </Button>
@@ -156,7 +161,6 @@ export function MemberInvoicesFilters() {
               setYear('');
               applyFilters('', 'all', '');
             }}
-            className="w-full sm:w-auto"
           >
             {t('clear')}
           </Button>
