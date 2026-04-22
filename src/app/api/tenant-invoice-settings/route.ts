@@ -45,6 +45,7 @@ import {
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
+import { buildLogoBlobPrefix } from '@/lib/logo-blob-key';
 import { makeF4AuditPort } from '@/modules/invoicing';
 
 // N4 (review 2026-04-19 21:19) — strict per-field constraints at the
@@ -124,7 +125,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // subdomain/session-claim tenant resolution. Fire-and-forget audit
   // emit (try/catch) so an audit-adapter outage cannot mask the 403
   // into a 500.
-  if (tenantCtx.slug !== env.tenant.slug) {
+  //
+  // T115t — skip when the dev-only X-Tenant header override is enabled
+  // (env validator refuses this flag in production, src/lib/env.ts:237),
+  // so throwaway-tenant E2E fixtures can reach the route.
+  if (!env.tenant.xHeaderEnabled && tenantCtx.slug !== env.tenant.slug) {
     logger.warn(
       {
         requestId,
@@ -148,7 +153,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         },
       });
     } catch (auditErr) {
-      logger.error(
+      // Audit emit failure is secondary — the primary 403 still stands.
+      // Using `warn` (not `error`) keeps primary-error alerting clean.
+      logger.warn(
         { requestId, err: auditErr },
         'GET /api/tenant-invoice-settings: probe audit emit failed',
       );
@@ -219,7 +226,11 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   // authoritative deployed tenant for STD; for MTA this comparison
   // evolves to a session-claim check without needing a route-handler
   // rewrite.
-  if (tenantCtx.slug !== env.tenant.slug) {
+  //
+  // T115t — skip when the dev-only X-Tenant header override is enabled
+  // (env validator refuses this flag in production, src/lib/env.ts:237),
+  // so throwaway-tenant E2E fixtures can reach the route.
+  if (!env.tenant.xHeaderEnabled && tenantCtx.slug !== env.tenant.slug) {
     logger.warn(
       {
         requestId,
@@ -246,7 +257,9 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
         },
       });
     } catch (auditErr) {
-      logger.error(
+      // Audit emit failure is secondary — the primary 403 still stands.
+      // Using `warn` (not `error`) keeps primary-error alerting clean.
+      logger.warn(
         { requestId, err: auditErr },
         'PATCH /api/tenant-invoice-settings: probe audit emit failed',
       );
@@ -300,7 +313,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   // shape; here we assert the encoded tenantId matches the caller's
   // resolved tenant so one tenant cannot reference another's logo.
   if (b.logo_blob_key !== undefined && b.logo_blob_key !== null) {
-    const expectedPrefix = `invoicing/${tenantCtx.slug}/logos/`;
+    const expectedPrefix = buildLogoBlobPrefix(tenantCtx.slug);
     if (!b.logo_blob_key.startsWith(expectedPrefix)) {
       logger.warn(
         { tenantSlug: tenantCtx.slug, userId: ctx.current.user.id, requestId },

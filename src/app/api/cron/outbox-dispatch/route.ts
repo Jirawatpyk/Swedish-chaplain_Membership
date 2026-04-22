@@ -550,6 +550,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // on `CRON_SECRET` enumeration. Length-check first (timingSafeEqual
   // throws on length mismatch), then constant-time byte-compare. Null
   // / missing header is treated as a length-mismatch → unauthorized.
+  //
+  // The `?? ''` fallback is UNREACHABLE in a correctly booted process
+  // — `src/lib/env.ts` validates `CRON_SECRET` as `z.string().min(16)`
+  // at boot and the app refuses to start on miss. The fallback is
+  // defense-in-depth only: if someone ever bypasses the env guard,
+  // `Bearer ` (7 chars) can still never match any realistic 16+ char
+  // Authorization header.
   const expectedAuth = `Bearer ${process.env.CRON_SECRET ?? ''}`;
   const received = authHeader ?? '';
   let authOk = false;

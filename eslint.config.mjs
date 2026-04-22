@@ -391,10 +391,10 @@ const eslintConfig = defineConfig([
     // `Content-Disposition` / `content-disposition` (the HTTP header
     // name). Does NOT match the helper file itself (ignores), nor
     // tests that assert the header shape.
-    files: ["src/**/*.ts", "src/**/*.tsx"],
+    files: ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx"],
     ignores: [
       "src/lib/content-disposition.ts",
-      "src/lib/content-disposition.test.ts",
+      "tests/unit/lib/content-disposition.test.ts",
     ],
     rules: {
       // The antipattern is INLINE CONSTRUCTION of a Content-Disposition
@@ -403,6 +403,14 @@ const eslintConfig = defineConfig([
       // file. Setting `'Content-Disposition': helperOutput` on a
       // headers object is the correct pattern and stays allowed; the
       // rule only fires when someone hand-builds the value.
+      //
+      // Known residual (R2 security review RES-01): the rule matches
+      // static Literal + TemplateLiteral nodes only. Runtime-built
+      // values — `String.raw\`attachment; ...\``, `'attachment' + '; ...'`,
+      // `['attachment', ...].join('; ')` — slip through because
+      // ESLint has no taint-tracking. This is an acceptable lint-scope
+      // limitation; code review remains the backstop for those
+      // patterns. Documented in `specs/007-invoices-receipts/security.md § 5`.
       "no-restricted-syntax": [
         "error",
         {

@@ -47,6 +47,14 @@ const child = spawn(
   },
 );
 
+child.on('error', (err) => {
+  // Fires when spawn itself fails (e.g. `pnpm` not on PATH on a fresh
+  // CI box). `exit` would otherwise fire with code=null and the poor
+  // message would obscure the real cause.
+  console.error('run-perf-tests: failed to spawn pnpm exec vitest:', err);
+  process.exit(1);
+});
+
 child.on('exit', (code) => {
   process.exit(code ?? 1);
 });

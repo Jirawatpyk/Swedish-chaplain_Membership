@@ -99,7 +99,10 @@ describe('T109 — overdue audit emit idempotency (live Neon)', () => {
   it('different invoices on the same day both emit (scoping is per-invoice)', async () => {
     const invoiceA = randomUUID();
     const invoiceB = randomUUID();
-    const todayBkk = new Date().toISOString().slice(0, 10);
+    // Bangkok wall-clock date, matching the partial-unique-index key.
+    // A UTC slice drifts during UTC 17:00–23:59 (Bangkok next day) —
+    // same rationale as the first test above.
+    const todayBkk = LocalDate.now(ZoneId.of('Asia/Bangkok')).toString();
 
     const a = await overdueAuditAdapter.emitOverdueOnce({
       tenantId: tenant.ctx.slug,

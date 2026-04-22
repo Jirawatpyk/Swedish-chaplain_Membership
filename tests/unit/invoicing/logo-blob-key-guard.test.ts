@@ -1,18 +1,21 @@
 /**
  * S10 — `logo_blob_key` cross-tenant guard (PATCH /api/tenant-invoice-settings).
  *
- * The route-level guard builds `expectedPrefix = \`invoicing/${slug}/logos/\``
+ * The route-level guard builds `expectedPrefix = buildLogoBlobPrefix(slug)`
  * and checks `logo_blob_key.startsWith(expectedPrefix)`. This is
  * correct only because of the trailing `/` — without it a slug `abc`
  * would accept keys that begin with `invoicing/abcdef/logos/...`. This
  * unit test pins the property so a future refactor that drops the
  * trailing slash fails loudly.
+ *
+ * R2-I4 — imports the REAL production helper (not a re-implementation)
+ * so any drift in the route handler fails THIS test.
  */
 import { describe, expect, it } from 'vitest';
+import { buildLogoBlobPrefix } from '@/lib/logo-blob-key';
 
 function hasValidPrefix(slug: string, logoBlobKey: string): boolean {
-  const expectedPrefix = `invoicing/${slug}/logos/`;
-  return logoBlobKey.startsWith(expectedPrefix);
+  return logoBlobKey.startsWith(buildLogoBlobPrefix(slug));
 }
 
 describe('logo_blob_key cross-tenant prefix guard', () => {

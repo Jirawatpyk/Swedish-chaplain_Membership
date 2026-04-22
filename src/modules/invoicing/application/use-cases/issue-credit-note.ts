@@ -140,6 +140,13 @@ export async function issueCreditNote(
   // (main CN PDF), `'annotation'` covers J2 (re-stamped original
   // invoice). Mutated inside the withTx closure, read from the outer
   // catch.
+  //
+  // INVARIANT: `deps.invoiceRepo.withTx` MUST NOT auto-retry the
+  // callback. If a future refactor adds retry-on-serialization-fail
+  // behaviour, `pendingRenderKind` would observe stale state from a
+  // prior attempt and lie about the failed site. Reset to `null` at
+  // the top of every attempt OR move the variable inside the closure
+  // if retry is introduced.
   let pendingRenderKind: 'credit_note' | 'annotation' | null = null;
 
   try {
@@ -549,10 +556,15 @@ export async function issueCreditNote(
             requestId: input.requestId ?? null,
             eventType: 'pdf_render_failed',
             actorUserId: input.actorUserId,
-            summary: `PDF render failed for ${pendingRenderKind ?? 'credit_note'} on invoice ${input.invoiceId}`,
+            summary: `PDF render failed for ${pendingRenderKind ?? 'unknown'} on invoice ${input.invoiceId}`,
             payload: {
               invoice_id: input.invoiceId,
-              render_kind: pendingRenderKind ?? 'credit_note',
+              // R2 review — fallback must NOT be 'credit_note' (educated
+              // guess). If `pdf_render_failed` fires before either
+              // render site ran (future code path), the audit should
+              // say 'unknown' not lie about the site. Ops can then
+              // investigate the unusual path.
+              render_kind: pendingRenderKind ?? 'unknown',
               reason: e.error.reason,
             },
           });

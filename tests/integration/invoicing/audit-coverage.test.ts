@@ -56,15 +56,15 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import type { F4AuditEventType } from '@/modules/invoicing/application/ports/audit-port';
 
-// MVP-reachable subset. Full 17 behaviorally probed at DB level below
-// (only `invoice_pdf_regenerated` remains deferred per post-MVP Blob-
-// outage rerender path — see inventory deferred entry).
+// MVP-reachable subset. 17 of 18 F4AuditEventType values probed at DB
+// level below (`invoice_pdf_regenerated` is absent from this array +
+// deferred in the inventory — post-MVP Blob-outage rerender path).
 // C4 (Phase 10 review follow-up) — extended from the original 4 MVP
-// types to the full 17 so every event_type sees at least ONE assertion
-// in THIS file. The full use-case-level behavioral coverage for the
-// newer-in-Phase-10 types (resend trio, overdue, auto-email-delivery-
-// failed, MTA probe) lives in their dedicated test files; the
-// file-existence check in the inventory test pins those references.
+// types to 17 so every reachable event_type sees at least ONE
+// assertion in THIS file. The full use-case-level behavioral coverage
+// for the newer-in-Phase-10 types (resend trio, overdue, auto-email-
+// delivery-failed, MTA probe) lives in their dedicated test files;
+// the file-existence check in the inventory test pins those references.
 const MVP_AUDIT_TYPES_EMITTED: ReadonlyArray<F4AuditEventType> = [
   'invoice_draft_created',
   'invoice_draft_updated',
@@ -632,6 +632,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         'tests/integration/invoicing/tenant-invoice-settings-probe.test.ts',
       'overdue-audit-idempotency.test.ts':
         'tests/integration/invoicing/overdue-audit-idempotency.test.ts',
+      'pdf-routes-cross-tenant-probe.test.ts':
+        'tests/integration/invoicing/pdf-routes-cross-tenant-probe.test.ts',
       'tests/unit/invoicing/derive-overdue.test.ts':
         'tests/unit/invoicing/derive-overdue.test.ts',
       'tests/unit/invoicing/resend-pdf.test.ts':

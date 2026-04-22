@@ -271,14 +271,14 @@ export default async function PortalInvoiceDetailPage({
             </p>
             <p className="text-body">{formatDate(invoice.dueDate, userLocale)}</p>
           </div>
-          {invoice.paidAt ? (
-            <div>
-              <p className="text-caption uppercase tracking-wide text-muted-foreground">
-                {t('fields.paidDate')}
-              </p>
-              <p className="text-body">{formatDate(invoice.paidAt, userLocale)}</p>
-            </div>
-          ) : null}
+          <div>
+            <p className="text-caption uppercase tracking-wide text-muted-foreground">
+              {t('fields.paidDate')}
+            </p>
+            <p className="text-body">
+              {invoice.paidAt ? formatDate(invoice.paidAt, userLocale) : '—'}
+            </p>
+          </div>
           <div>
             <p className="text-caption uppercase tracking-wide text-muted-foreground">
               {t('fields.planYear')}
