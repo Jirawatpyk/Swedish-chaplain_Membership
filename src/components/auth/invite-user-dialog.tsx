@@ -64,6 +64,11 @@ const KNOWN_INVITE_ERROR_KEYS = [
   'invalid-input',
   'email-taken',
   'member-not-found',
+  // Hybrid A+B duplicate-email handling (findByEmail pre-tx check in
+  // `invite-user-for-member`). Both surface as HTTP 409; the dialog
+  // renders action-oriented copy (see admin.users.invite.errors.*).
+  'contact-already-linked',
+  'email-belongs-to-other-member',
   'forbidden',
 ] as const;
 
