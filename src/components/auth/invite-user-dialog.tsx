@@ -77,9 +77,40 @@ function resolveInviteErrorKey(code: string): InviteErrorKey {
 
 export interface InviteUserDialogProps {
   readonly disabled?: boolean;
+  /**
+   * Optional member id to pre-fill the "Link to member company" picker
+   * with. When set together with `lockMember`, the picker becomes a
+   * read-only display and the role is forced to 'member'. This powers
+   * the reverse entry point on the member detail page — admins can
+   * invite a portal user for the currently-viewed company without
+   * re-searching in the picker.
+   */
+  readonly defaultMemberId?: string;
+  /**
+   * When true, the member is locked: the role dropdown is hidden
+   * (role forced to 'member'), the MemberPicker is replaced by a
+   * read-only label, and on close the state resets back to
+   * `defaultMemberId` (not null) to preserve the lock across reopens.
+   */
+  readonly lockMember?: boolean;
+  /**
+   * Company name to display in the locked-member read-only label.
+   * Required when `lockMember` is true; otherwise ignored.
+   */
+  readonly lockedMemberLabel?: string;
+  /** Custom trigger element (replaces the default "Invite user"
+   *  button). Must be a single ReactElement — DialogTrigger's `render`
+   *  prop does not accept fragments or strings. */
+  readonly trigger?: React.ReactElement;
 }
 
-export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
+export function InviteUserDialog({
+  disabled = false,
+  defaultMemberId,
+  lockMember = false,
+  lockedMemberLabel,
+  trigger,
+}: InviteUserDialogProps) {
   const t = useTranslations('admin.users.invite');
   const tLink = useTranslations('admin.users.invite.linkMember');
   const tActions = useTranslations('admin.users.actions');
@@ -88,33 +119,39 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('member');
-  const [memberId, setMemberId] = useState<string | null>(null);
+  const [memberId, setMemberId] = useState<string | null>(
+    defaultMemberId ?? null,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus the email field when the dialog opens. The timeout
   // lets Base UI finish its portal mount before we call .focus().
+  // On close we reset to the pristine state: `defaultMemberId` (not
+  // null) + role='member' so locked reopens preserve the preset.
   useEffect(() => {
     if (!open) {
       setEmail('');
       setRole('member');
-      setMemberId(null);
+      setMemberId(defaultMemberId ?? null);
       setErrorCode(null);
       return;
     }
     const t = setTimeout(() => emailRef.current?.focus(), 50);
     return () => clearTimeout(t);
-  }, [open]);
+  }, [open, defaultMemberId]);
 
   // Clear memberId when role switches away from 'member' — the
   // backend rejects the combination and showing a stale selection
-  // under a disabled picker would be confusing.
+  // under a disabled picker would be confusing. Skip when the member
+  // is locked: role can never leave 'member' in that mode.
   useEffect(() => {
+    if (lockMember) return;
     if (role !== 'member' && memberId !== null) {
       setMemberId(null);
     }
-  }, [role, memberId]);
+  }, [role, memberId, lockMember]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -155,10 +192,12 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          <Button disabled={disabled}>
-            <UserPlusIcon className="size-4" aria-hidden />
-            {tActions('invite')}
-          </Button>
+          trigger ?? (
+            <Button disabled={disabled}>
+              <UserPlusIcon className="size-4" aria-hidden />
+              {tActions('invite')}
+            </Button>
+          )
         }
       />
       <DialogContent>
@@ -182,29 +221,35 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
                 placeholder={t('emailPlaceholder')}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-role">{t('roleLabel')}</Label>
-              <Select
-                value={role}
-                disabled={submitting}
-                onValueChange={(next) => {
-                  if (next && isRole(next)) setRole(next);
-                }}
-              >
-                <SelectTrigger id="invite-role" className="w-full">
-                  <TranslatedSelectValue
-                    translate={(v) => (v ? t(`roles.${v}`) : t('roleLabel'))}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLES.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {t(`roles.${r}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Role dropdown is hidden when invoked in locked-member
+                mode — role is force-set to 'member' for the reverse
+                entry point on the member detail page. The original
+                /admin/users entry point shows the full role selector. */}
+            {!lockMember && (
+              <div className="space-y-1.5">
+                <Label htmlFor="invite-role">{t('roleLabel')}</Label>
+                <Select
+                  value={role}
+                  disabled={submitting}
+                  onValueChange={(next) => {
+                    if (next && isRole(next)) setRole(next);
+                  }}
+                >
+                  <SelectTrigger id="invite-role" className="w-full">
+                    <TranslatedSelectValue
+                      translate={(v) => (v ? t(`roles.${v}`) : t('roleLabel'))}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLES.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {t(`roles.${r}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label
                 id="invite-link-member-label"
@@ -212,18 +257,39 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
               >
                 {tLink('label')}
               </Label>
-              <MemberPicker
-                id="invite-link-member"
-                aria-labelledby="invite-link-member-label"
-                aria-describedby="invite-link-member-help"
-                value={memberId}
-                onChange={setMemberId}
-                disabled={submitting || role !== 'member'}
-              />
+              {lockMember ? (
+                // Read-only display of the pre-selected company.
+                // Mirrors the MemberPicker trigger's visual footprint
+                // so the dialog layout doesn't jump between the two
+                // modes. `aria-readonly` + non-interactive styling
+                // make it unambiguous to SR users that this value
+                // cannot be changed in the current flow.
+                <div
+                  id="invite-link-member"
+                  role="textbox"
+                  aria-readonly="true"
+                  aria-labelledby="invite-link-member-label"
+                  aria-describedby="invite-link-member-help"
+                  className="flex h-9 w-full items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground"
+                >
+                  <span className="truncate">
+                    {lockedMemberLabel ?? tLink('lockedFallback')}
+                  </span>
+                </div>
+              ) : (
+                <MemberPicker
+                  id="invite-link-member"
+                  aria-labelledby="invite-link-member-label"
+                  aria-describedby="invite-link-member-help"
+                  value={memberId}
+                  onChange={setMemberId}
+                  disabled={submitting || role !== 'member'}
+                />
+              )}
               {/* id wired so MemberPicker's trigger can reference this
                   paragraph via aria-describedby when the picker is active. */}
               <p id="invite-link-member-help" className="text-xs text-muted-foreground">
-                {tLink('helpText')}
+                {lockMember ? tLink('lockedHelpText') : tLink('helpText')}
               </p>
             </div>
             {errorCode ? (

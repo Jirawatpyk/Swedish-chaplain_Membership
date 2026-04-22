@@ -41,6 +41,9 @@ import { CopyButton } from '@/components/members/copy-button';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
+import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
+import { UserPlusIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
@@ -282,6 +285,25 @@ export default async function MemberDetailPage({
             </Link>
             {member.status !== 'archived' && (
               <>
+                {/* Reverse entry point — invite a portal user for THIS
+                    member without re-searching in the MemberPicker.
+                    Admin-only (backend enforces via /api/auth/invite;
+                    the `disabled` prop just short-circuits the UI). */}
+                <InviteUserDialog
+                  disabled={session.user.role !== 'admin'}
+                  defaultMemberId={member.memberId}
+                  lockMember
+                  lockedMemberLabel={member.companyName}
+                  trigger={
+                    <Button
+                      variant="outline"
+                      disabled={session.user.role !== 'admin'}
+                    >
+                      <UserPlusIcon className="size-4" aria-hidden />
+                      {t('actions.inviteUser')}
+                    </Button>
+                  }
+                />
                 {/* Destructive action sits LEFT of the primary — Fitts's
                     Law: rightmost button is easiest to click, so Edit
                     (primary + frequent) stays rightmost and Archive

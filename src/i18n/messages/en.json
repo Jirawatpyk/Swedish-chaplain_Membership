@@ -264,7 +264,9 @@
           "clear": "Clear selection",
           "loading": "Loading members…",
           "noMembersFound": "No members found. Try a different search term.",
-          "disabledHint": "Select role Member to link"
+          "disabledHint": "Select role Member to link",
+          "lockedFallback": "Selected member",
+          "lockedHelpText": "This invite is pre-linked to the current member company."
         }
       }
     },
@@ -609,7 +611,11 @@
         "portal": {
           "linked": "Portal linked"
         },
-        "editCta": "Edit"
+        "editCta": "Edit",
+        "actions": {
+          "inviteUser": "Invite user",
+          "inviteUserDescription": "Send a portal invitation for this member company."
+        }
       },
       "timeline": {
         "pageTitle": "Timeline · {companyName} · SweCham",
@@ -646,8 +652,12 @@
           "yearAria": "Filter invoices by fiscal year",
           "search": "Search document number…",
           "fiscalYear": "Year",
-          "status": { "all": "All statuses" },
-          "year": { "all": "All years" },
+          "status": {
+            "all": "All statuses"
+          },
+          "year": {
+            "all": "All years"
+          },
           "apply": "Apply",
           "clear": "Clear filters"
         },
@@ -969,7 +979,9 @@
         }
       },
       "list": {
-        "meta": { "title": "Credit Notes" },
+        "meta": {
+          "title": "Credit Notes"
+        },
         "title": "Credit notes",
         "description": "All credit notes issued against tax invoices. Read-only audit trail.",
         "empty": "Credit notes appear here after an admin issues one against a paid invoice.",
@@ -998,9 +1010,13 @@
         }
       },
       "detail": {
-        "meta": { "title": "Credit Note" },
+        "meta": {
+          "title": "Credit Note"
+        },
         "subtitle": "Read-only credit-note record against the original invoice.",
-        "status": { "issued": "Issued" },
+        "status": {
+          "issued": "Issued"
+        },
         "actions": {
           "backToInvoice": "Back to invoice",
           "download": "Download PDF",
@@ -1022,7 +1038,9 @@
           "vat": "VAT",
           "total": "Total credit (incl. VAT)"
         },
-        "reason": { "heading": "Reason" },
+        "reason": {
+          "heading": "Reason"
+        },
         "parties": {
           "issuer": "Issuer",
           "customer": "Customer",
@@ -1439,9 +1457,13 @@
     },
     "creditNotes": {
       "detail": {
-        "meta": { "title": "Credit Note" },
+        "meta": {
+          "title": "Credit Note"
+        },
         "subtitle": "A credit has been issued against your invoice.",
-        "status": { "issued": "Issued" },
+        "status": {
+          "issued": "Issued"
+        },
         "actions": {
           "backToInvoice": "Back to invoice",
           "download": "Download PDF",
@@ -1455,7 +1477,9 @@
           "vat": "VAT",
           "total": "Total credit (incl. VAT)"
         },
-        "reason": { "heading": "Reason" }
+        "reason": {
+          "heading": "Reason"
+        }
       }
     },
     "profile": {
