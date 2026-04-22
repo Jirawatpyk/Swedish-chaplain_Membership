@@ -255,6 +255,8 @@
           "invalid-input": "Ange en giltig e-postadress och roll.",
           "email-taken": "Den e-postadressen finns redan i systemet.",
           "member-not-found": "Medlemsposten kunde inte hittas. Den kan tillhöra en annan tenant eller vara arkiverad.",
+          "contact-already-linked": "E-postadressen har redan portalåtkomst för detta medlemsföretag. Be dem använda Glömt lösenord om de inte kan logga in.",
+          "email-belongs-to-other-member": "E-postadressen är redan kopplad till en annan medlem. Varje e-postadress kan bara kopplas till ett medlemsföretag åt gången.",
           "forbidden": "Du har inte behörighet att bjuda in användare."
         },
         "linkMember": {

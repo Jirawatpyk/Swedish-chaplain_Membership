@@ -357,4 +357,310 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
   // a separate contract test. The use-case contract here only guarantees
   // behaviour when the caller has already parsed memberId as a branded
   // MemberId — invalid formats never reach this layer.
+
+  // -------------------------------------------------------------------------
+  // Hybrid A+B scenarios — duplicate-email handling (findByEmail pre-tx check)
+  // -------------------------------------------------------------------------
+
+  it('(f) same-member unlinked contact → link to existing contact + contact_linked_to_user audit (NOT contact_created)', async () => {
+    // Seed: manually insert a contact row on memberA with email john@example.com
+    // and linkedUserId = NULL. The use case should detect this existing contact,
+    // skip addInTx, create an F1 user, and call linkUserInTx on the existing row.
+    const inviteeEmail = `john-unlinked-${randomUUID().slice(0, 8)}@example.com`;
+    createdUserEmails.push(inviteeEmail);
+
+    const existingContactId = randomUUID();
+
+    // Insert the pre-existing unlinked contact directly via raw Drizzle
+    // (bypassing the use case to simulate a contact that already exists
+    // from a previous import / manual admin creation).
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(contacts).values({
+        tenantId: tenantA.ctx.slug,
+        contactId: existingContactId,
+        memberId: memberIdA,
+        firstName: 'Existing',
+        lastName: 'Person',
+        email: inviteeEmail.toLowerCase(),
+        phone: null,
+        roleTitle: null,
+        preferredLanguage: 'en',
+        isPrimary: false,
+        dateOfBirth: null,
+        linkedUserId: null,
+        removedAt: null,
+      });
+    });
+
+    const depsA = buildMembersDeps(tenantA.ctx);
+    // Use a fixed requestId so we can scope the audit query to ONLY events
+    // emitted by this specific invite call — beforeEach also creates contacts
+    // under the same actorUserId which would otherwise pollute the audit log.
+    const inviteRequestId = `rq-hybrid-a-${randomUUID().slice(0, 8)}`;
+    const result = await inviteUserForMember(
+      {
+        tenant: tenantA.ctx,
+        contactRepo: depsA.contactRepo,
+        audit: depsA.audit,
+        memberRepo: depsA.memberRepo,
+        createUser: createUserPort,
+        idFactory: depsA.idFactory,
+      },
+      {
+        memberId: memberIdA,
+        email: inviteeEmail,
+        displayName: 'Admin Typed Name',
+        actorUserId: admin.userId,
+        sourceIp: '203.0.113.40',
+        requestId: inviteRequestId,
+      },
+    );
+
+    // 1. Use case succeeds.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const userId = result.value.userId;
+
+    // 2. F1 user was created with the admin-supplied displayName.
+    const userRows = await db.select().from(users).where(eq(users.id, userId));
+    expect(userRows.length).toBe(1);
+    expect(userRows[0]!.email).toBe(inviteeEmail.toLowerCase());
+    expect(userRows[0]!.displayName).toBe('Admin Typed Name');
+
+    // 3. The ORIGINAL contact row was reused — firstName + lastName must NOT
+    //    be overwritten with the admin-typed display name.
+    const contactRows = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select()
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.memberId, memberIdA),
+            eq(contacts.email, inviteeEmail.toLowerCase()),
+          ),
+        ),
+    );
+    // Exactly one contact row (no new row was inserted).
+    expect(contactRows.length).toBe(1);
+    expect(contactRows[0]!.contactId).toBe(existingContactId);
+    expect(contactRows[0]!.firstName).toBe('Existing');
+    expect(contactRows[0]!.lastName).toBe('Person');
+    // And it is now linked to the new F1 user.
+    expect(contactRows[0]!.linkedUserId).toBe(userId);
+
+    // 4. Audit scoped to this request: contact_linked_to_user present, contact_created absent.
+    // Scope by requestId to avoid noise from beforeEach member/contact creation.
+    const auditRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.requestId, inviteRequestId),
+          eq(auditLog.tenantId, tenantA.ctx.slug),
+        ),
+      );
+    const eventTypes = auditRows.map((r) => r.eventType);
+    expect(eventTypes).toContain('contact_linked_to_user');
+    expect(eventTypes).not.toContain('contact_created');
+  });
+
+  it('(g) same-member already-linked contact → 409 contact_already_linked; no new user created', async () => {
+    // Seed: contact with email jane@example.com on memberA, linkedUserId already set.
+    const inviteeEmail = `jane-linked-${randomUUID().slice(0, 8)}@example.com`;
+    // Do NOT push to createdUserEmails — the invite must be rejected before
+    // any F1 user is created.
+
+    // First create the existing "already linked" user so we have a valid UUID.
+    const existingResult = await f1CreateUser({
+      email: `linked-owner-${randomUUID().slice(0, 8)}@example.com`,
+      role: 'member',
+      actorUserId: admin.userId,
+      sourceIp: '203.0.113.41',
+      requestId: `rq-seed-linked-${Date.now()}`,
+    });
+    if (!existingResult.ok) throw new Error('seed existing user failed');
+    const existingUserId = existingResult.value.user.id;
+    // Track for cleanup.
+    createdUserEmails.push(existingResult.value.user.email);
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(contacts).values({
+        tenantId: tenantA.ctx.slug,
+        contactId: randomUUID(),
+        memberId: memberIdA,
+        firstName: 'Jane',
+        lastName: 'Linked',
+        email: inviteeEmail.toLowerCase(),
+        phone: null,
+        roleTitle: null,
+        preferredLanguage: 'en',
+        isPrimary: false,
+        dateOfBirth: null,
+        linkedUserId: existingUserId,   // <-- already linked
+        removedAt: null,
+      });
+    });
+
+    const depsA = buildMembersDeps(tenantA.ctx);
+    const result = await inviteUserForMember(
+      {
+        tenant: tenantA.ctx,
+        contactRepo: depsA.contactRepo,
+        audit: depsA.audit,
+        memberRepo: depsA.memberRepo,
+        createUser: createUserPort,
+        idFactory: depsA.idFactory,
+      },
+      {
+        memberId: memberIdA,
+        email: inviteeEmail,
+        displayName: 'Should Not Matter',
+        actorUserId: admin.userId,
+        sourceIp: '203.0.113.41',
+        requestId: `rq-hybrid-b-linked-${Date.now()}`,
+      },
+    );
+
+    // 1. Use case must reject with contact_already_linked.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.type).toBe('contact_already_linked');
+
+    // 2. No NEW F1 user row was created for inviteeEmail.
+    const newUserRows = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, inviteeEmail.toLowerCase()));
+    expect(newUserRows.length).toBe(0);
+
+    // 3. No new contact row for inviteeEmail (count for memberA must still be 1
+    //    for that email — the pre-seeded row only).
+    const contactRows = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select()
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.memberId, memberIdA),
+            eq(contacts.email, inviteeEmail.toLowerCase()),
+          ),
+        ),
+    );
+    expect(contactRows.length).toBe(1);
+    // Original contact still linked to the original user — not overwritten.
+    expect(contactRows[0]!.linkedUserId).toBe(existingUserId);
+  });
+
+  it('(h) contact on different member (same tenant) → 409 email_belongs_to_other_member; no side-effects on target member', async () => {
+    // Spec: 1 email = 1 member within a tenant. The email bob@example.com is
+    // already registered as a contact on memberA (tenantA). When the admin
+    // tries to invite that same email targeting a SECOND member in the same
+    // tenant (memberDelta), the use case must reject before any F1 side-effects.
+    const inviteeEmail = `bob-crossmember-${randomUUID().slice(0, 8)}@example.com`;
+    // Do NOT push to createdUserEmails — no user should be created.
+
+    // Step 1: Create a second member in tenantA (the "target" member the admin
+    // mistakenly tries to link bob@ to).
+    const depsA = buildMembersDeps(tenantA.ctx);
+    const secondMember = await createMember(
+      {
+        company_name: `Delta Co ${Date.now()}`,
+        country: 'TH',
+        plan_id: PLAN_ID,
+        plan_year: 2026,
+        primary_contact: {
+          first_name: 'Primary',
+          last_name: 'Delta',
+          email: `primary-delta-${randomUUID().slice(0, 8)}@example.com`,
+          preferred_language: 'en',
+        },
+      },
+      { actorUserId: admin.userId, requestId: `rq-seed-delta-${Date.now()}` },
+      depsA,
+    );
+    if (!secondMember.ok)
+      throw new Error(`seed secondMember failed: ${JSON.stringify(secondMember.error)}`);
+    const memberIdDelta = secondMember.value.memberId;
+
+    // Step 2: Seed a contact with inviteeEmail on memberA (the "owner" member).
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(contacts).values({
+        tenantId: tenantA.ctx.slug,
+        contactId: randomUUID(),
+        memberId: memberIdA,
+        firstName: 'Bob',
+        lastName: 'CrossMember',
+        email: inviteeEmail.toLowerCase(),
+        phone: null,
+        roleTitle: null,
+        preferredLanguage: 'en',
+        isPrimary: false,
+        dateOfBirth: null,
+        linkedUserId: null,
+        removedAt: null,
+      });
+    });
+
+    // Step 3: Attempt to invite inviteeEmail, targeting memberIdDelta — the
+    // email belongs to memberA, so this must be rejected.
+    const result = await inviteUserForMember(
+      {
+        tenant: tenantA.ctx,
+        contactRepo: depsA.contactRepo,
+        audit: depsA.audit,
+        memberRepo: depsA.memberRepo,
+        createUser: createUserPort,
+        idFactory: depsA.idFactory,
+      },
+      {
+        memberId: memberIdDelta,
+        email: inviteeEmail,
+        displayName: 'Bob Attempt',
+        actorUserId: admin.userId,
+        sourceIp: '203.0.113.42',
+        requestId: `rq-hybrid-crossmember-${Date.now()}`,
+      },
+    );
+
+    // 1. Rejected with email_belongs_to_other_member.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.type).toBe('email_belongs_to_other_member');
+
+    // 2. No F1 user was created for inviteeEmail.
+    const newUserRows = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, inviteeEmail.toLowerCase()));
+    expect(newUserRows.length).toBe(0);
+
+    // 3. No contact row was created on memberIdDelta.
+    const deltaContactRows = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select()
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.memberId, memberIdDelta),
+            eq(contacts.email, inviteeEmail.toLowerCase()),
+          ),
+        ),
+    );
+    expect(deltaContactRows.length).toBe(0);
+
+    // 4. Original contact on memberIdA is untouched (still unlinked).
+    const originalContactRows = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select()
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.memberId, memberIdA),
+            eq(contacts.email, inviteeEmail.toLowerCase()),
+          ),
+        ),
+    );
+    expect(originalContactRows.length).toBe(1);
+    expect(originalContactRows[0]!.linkedUserId).toBeNull();
+  });
 });

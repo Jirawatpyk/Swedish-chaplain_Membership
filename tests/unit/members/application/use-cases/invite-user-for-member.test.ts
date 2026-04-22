@@ -111,8 +111,47 @@ function makeContact(overrides: Partial<Contact> = {}): Contact {
 // ---------------------------------------------------------------------------
 // Deps builder
 // ---------------------------------------------------------------------------
+
+/**
+ * Fixture: a pre-existing contact with `linkedUserId = null` on the SAME member.
+ * Represents the "unlinked contact" branch (Hybrid A).
+ */
+const EXISTING_CONTACT_ID = asContactId('33333333-3333-4333-8333-333333333333');
+const OTHER_MEMBER_ID = asMemberId('44444444-4444-4444-8444-444444444444');
+
+function makeExistingUnlinkedContact(overrides: Partial<Contact> = {}): Contact {
+  return {
+    tenantId: 'swecham' as never,
+    contactId: EXISTING_CONTACT_ID,
+    memberId,
+    firstName: 'Existing',
+    lastName: 'Person',
+    email: 'jane.doe@example.com' as never,
+    phone: null,
+    roleTitle: null,
+    preferredLanguage: 'en',
+    isPrimary: false,
+    dateOfBirth: null,
+    linkedUserId: null,        // <-- key: not yet linked
+    removedAt: null,
+    createdAt: new Date('2026-01-01'),
+    updatedAt: new Date('2026-01-01'),
+    ...overrides,
+  } as unknown as Contact;
+}
+
 type DepsOverrides = {
   memberFindResult?: 'ok' | 'not_found' | 'unexpected';
+  /**
+   * findByEmail result variants:
+   *   'not_found'       — no existing contact (happy path, create new)
+   *   'same_member_unlinked' — contact exists on same member, linkedUserId = null
+   *   'same_member_linked'   — contact exists on same member, linkedUserId set
+   *   'different_member'     — contact exists on a DIFFERENT member (same tenant)
+   *   'infra_error'          — repo throws / returns unexpected error
+   * Default: 'not_found'
+   */
+  findByEmailResult?: 'not_found' | 'same_member_unlinked' | 'same_member_linked' | 'different_member' | 'infra_error';
   createUserResult?: 'ok' | 'email-taken' | 'invalid-input' | 'unexpected-code';
   addInTxResult?: 'ok' | 'conflict' | 'throw';
   linkUserInTxResult?: 'ok' | 'conflict';
@@ -148,6 +187,21 @@ function makeDeps(overrides: DepsOverrides = {}): InviteUserForMemberDeps {
   });
 
   const contactRepo = {
+    findByEmail: vi.fn(async () => {
+      switch (overrides.findByEmailResult ?? 'not_found') {
+        case 'same_member_unlinked':
+          return ok(makeExistingUnlinkedContact({ linkedUserId: null }));
+        case 'same_member_linked':
+          return ok(makeExistingUnlinkedContact({ linkedUserId: 'already-linked-user-id' as never }));
+        case 'different_member':
+          return ok(makeExistingUnlinkedContact({ memberId: OTHER_MEMBER_ID, linkedUserId: null }));
+        case 'infra_error':
+          return err({ code: 'repo.unexpected' as const });
+        default:
+          // not_found — happy path, no existing contact
+          return err({ code: 'repo.not_found' as const });
+      }
+    }),
     addInTx: vi.fn(async () => {
       switch (overrides.addInTxResult ?? 'ok') {
         case 'conflict':
@@ -440,6 +494,122 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
         actor_tenant_id: tenant.slug,
         context: 'invite-user-for-member',
       });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Hybrid A+B duplicate-email handling — findByEmail branch coverage
+  //
+  // These 5 tests exercise the pre-tx duplicate check added to support:
+  //   (1) no existing contact  → happy path (findByEmail called; flow unchanged)
+  //   (2) same-member unlinked → skip addInTx; call createUser + linkUserInTx
+  //       + emit contact_linked_to_user audit
+  //   (3) same-member linked   → reject contact_already_linked; NO createUser
+  //   (4) different-member     → reject email_belongs_to_other_member; NO createUser
+  //   (5) findByEmail infra error → server_error; NO createUser
+  // -------------------------------------------------------------------------
+  describe('duplicate-email hybrid A+B handling (findByEmail pre-tx check)', () => {
+    it('(1) calls findByEmail before createUser on every invoke (happy path, no existing contact)', async () => {
+      // Ensures the pre-tx lookup is always exercised even on the happy path.
+      // findByEmailResult defaults to 'not_found' → normal create flow.
+      const deps = makeDeps({ findByEmailResult: 'not_found' });
+      const result = await inviteUserForMember(deps, baseInput);
+
+      // findByEmail must be called exactly once before createUser.
+      expect(deps.contactRepo.findByEmail).toHaveBeenCalledTimes(1);
+      const findCall = (deps.contactRepo.findByEmail as ReturnType<typeof vi.fn>).mock.calls[0]!;
+      // Called with (tenant, normalised email).
+      expect(findCall[0]).toMatchObject({ slug: tenant.slug });
+
+      // Happy path: createUser and addInTx proceed as normal.
+      expect(result.ok).toBe(true);
+      expect(deps.createUser).toHaveBeenCalledTimes(1);
+      expect(deps.contactRepo.addInTx).toHaveBeenCalledTimes(1);
+    });
+
+    it('(2) same-member unlinked contact → createUser + linkUserInTx (NOT addInTx) + contact_linked_to_user audit', async () => {
+      // Hybrid A: the contact already exists on the same member but has no
+      // linked user yet. The use case must reuse the existing contact row
+      // instead of creating a duplicate via addInTx.
+      const deps = makeDeps({ findByEmailResult: 'same_member_unlinked' });
+      const result = await inviteUserForMember(deps, baseInput);
+
+      expect(result.ok).toBe(true);
+
+      // createUser MUST run (we still need an F1 user).
+      expect(deps.createUser).toHaveBeenCalledTimes(1);
+
+      // addInTx must NOT run — we reuse the existing contact.
+      expect(deps.contactRepo.addInTx).not.toHaveBeenCalled();
+
+      // linkUserInTx MUST run to bind the new user to the existing contact.
+      expect(deps.contactRepo.linkUserInTx).toHaveBeenCalledTimes(1);
+      const linkCall = (deps.contactRepo.linkUserInTx as ReturnType<typeof vi.fn>).mock.calls[0]!;
+      // Second arg: contactId of the EXISTING contact (not a freshly generated one).
+      expect(linkCall[1]).toBe(EXISTING_CONTACT_ID);
+      // Third arg: the newly created user's id.
+      expect(linkCall[2]).toBe(NEW_USER_ID);
+
+      // Audit must be contact_linked_to_user (NOT contact_created).
+      expect(deps.audit.recordInTx).toHaveBeenCalledTimes(1);
+      const auditCall = (deps.audit.recordInTx as ReturnType<typeof vi.fn>).mock.calls[0]!;
+      expect(auditCall[2]).toMatchObject({ type: 'contact_linked_to_user' });
+    });
+
+    it('(3) same-member already-linked contact → returns contact_already_linked; createUser not called', async () => {
+      // Hybrid B: the contact already has a linked user. The admin is trying to
+      // invite the same email twice — reject with a precise error code.
+      const deps = makeDeps({ findByEmailResult: 'same_member_linked' });
+      const result = await inviteUserForMember(deps, baseInput);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.type).toBe('contact_already_linked');
+      } else {
+        throw new Error('expected err result');
+      }
+
+      // Must not create a user — the check fires before ANY F1 side-effects.
+      expect(deps.createUser).not.toHaveBeenCalled();
+      expect(deps.contactRepo.addInTx).not.toHaveBeenCalled();
+      expect(deps.contactRepo.linkUserInTx).not.toHaveBeenCalled();
+    });
+
+    it('(4) contact on different member (same tenant) → returns email_belongs_to_other_member; createUser not called', async () => {
+      // 1 email = 1 member rule. Even if the contact is unlinked, it belongs
+      // to a different member — the admin cannot steal it via invite.
+      const deps = makeDeps({ findByEmailResult: 'different_member' });
+      const result = await inviteUserForMember(deps, baseInput);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.type).toBe('email_belongs_to_other_member');
+      } else {
+        throw new Error('expected err result');
+      }
+
+      // No F1 user must be created — the guard fires in the pre-tx step.
+      expect(deps.createUser).not.toHaveBeenCalled();
+      expect(deps.contactRepo.addInTx).not.toHaveBeenCalled();
+    });
+
+    it('(5) findByEmail infra failure → returns server_error; createUser not called', async () => {
+      // Defensive: if the duplicate-check query itself fails (e.g. Neon cold
+      // start timeout), the use case must not proceed to createUser — that
+      // would risk creating a duplicate user with no pre-check guarantee.
+      const deps = makeDeps({ findByEmailResult: 'infra_error' });
+      const result = await inviteUserForMember(deps, baseInput);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok && result.error.type === 'server_error') {
+        // Message should indicate the findByEmail step for correlation.
+        expect(result.error.message).toMatch(/findByEmail/);
+      } else {
+        throw new Error('expected server_error result');
+      }
+
+      // Safety: no user creation attempted after infra failure.
+      expect(deps.createUser).not.toHaveBeenCalled();
     });
   });
 });
