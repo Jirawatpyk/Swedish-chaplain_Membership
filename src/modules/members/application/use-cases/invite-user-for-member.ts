@@ -29,6 +29,7 @@
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import { asTenantId, type MemberId } from '../../domain/member';
 import type { ContactId, PreferredLanguage } from '../../domain/contact';
@@ -164,10 +165,11 @@ export async function inviteUserForMember(
   let decision: Decision;
 
   if (existing.ok) {
-    // Defence-in-depth: findByEmail is already RLS-scoped + filters by
-    // tenantId at the repo layer, but a cross-tenant row slipping
-    // through would be routed to linkUserInTx on the wrong contact.
-    // Mirror the F3 `get-member` pattern.
+    // Constitution v1.4.0 Principle I — two-layer tenant isolation:
+    // RLS + app-layer tenantId filter in findByEmail is the first
+    // layer; this explicit check is the app-layer belt-and-suspenders
+    // required for the Review-Gate blocker. Removing it breaks the
+    // two-layer requirement. Mirror the F3 `get-member` pattern.
     if (existing.value.tenantId !== asTenantId(deps.tenant.slug)) {
       logger.error(
         {
@@ -309,7 +311,9 @@ export async function inviteUserForMember(
     logger.error(
       {
         contactId: newContactId,
-        userId: created.value.user.id,
+        // PII hygiene: hash F1 user id to keep cross-request
+        // correlation possible without writing the raw id.
+        userIdHash: hashId(created.value.user.id),
         cause,
         requestId: input.requestId,
         mode: decision.mode,

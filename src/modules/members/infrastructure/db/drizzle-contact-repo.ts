@@ -11,6 +11,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { contacts } from './schema-contacts';
 import type {
   ContactRepo,
@@ -245,8 +246,12 @@ export const drizzleContactRepo: ContactRepo = {
       // member archive, and a partial failure must not block the
       // archive tx. Ops observe the failure via the error log below.
       const msg = e instanceof Error ? e.message : String(e);
-      console.error(
-        `[drizzle-contact-repo] listLinkedUserIdsForMemberInTx failed: ${msg}`,
+      // Use pino logger (not console) so the failure joins the
+      // structured log stream with requestId correlation + CI
+      // forbidden-field lint, per docs/observability.md.
+      logger.error(
+        { cause: msg },
+        'drizzle-contact-repo.listLinkedUserIdsForMemberInTx_failed',
       );
       return [];
     }

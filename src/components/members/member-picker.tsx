@@ -146,6 +146,10 @@ export function MemberPicker({
 
     const run = async () => {
       setLoading(true);
+      // Clear stale error banner before each new fetch — avoids a
+      // confusing "failed to load" message lingering after the user
+      // types a new query and we haven't yet received the response.
+      setFetchError(false);
       const params = new URLSearchParams({ limit: String(FETCH_LIMIT) });
       // Only surface active members in the picker — archived/inactive
       // rows are rarely the right target for admin "link to member" flows.
@@ -262,10 +266,10 @@ export function MemberPicker({
           {effectiveSelected && !disabled ? (
             // Use a real <button> so it receives native keyboard events
             // and participates in the tab order with the correct ARIA
-            // role. WCAG 2.5.5 requires a 44×44 px touch target: we hit
-            // this with `min-h-11 min-w-11` (11rem/4 = 44px) plus a
-            // centred 14 px icon — visible chrome stays compact while
-            // the hit area satisfies the spec.
+            // role. Touch target: `min-h-11 min-w-11` = 2.75rem = 44px
+            // (Tailwind's `11` = 11 × 0.25rem), which satisfies WCAG 2.2
+            // SC 2.5.8 (AA, 24×24) with headroom toward SC 2.5.5 (AAA,
+            // 44×44). Visible chrome stays compact via the smaller icon.
             <button
               ref={clearRef}
               type="button"
