@@ -20,6 +20,7 @@ import { memberIdentityAdapter } from '../infrastructure/adapters/member-identit
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { f4AuditAdapter } from '../infrastructure/adapters/audit-adapter';
 import { overdueAuditAdapter } from '../infrastructure/adapters/overdue-audit-adapter';
+import { sharpImageReencodeAdapter } from '../infrastructure/adapters/sharp-image-reencode-adapter';
 import { CURRENT_TEMPLATE_VERSION } from '../infrastructure/pdf/template-registry';
 
 import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
@@ -93,10 +94,12 @@ export function makeUpdateTenantInvoiceSettingsDeps(): {
 export function makeUploadTenantLogoDeps(): {
   blob: typeof vercelBlobAdapter;
   audit: typeof f4AuditAdapter;
+  imageReencode: typeof sharpImageReencodeAdapter;
 } {
   return {
     blob: vercelBlobAdapter,
     audit: f4AuditAdapter,
+    imageReencode: sharpImageReencodeAdapter,
   };
 }
 

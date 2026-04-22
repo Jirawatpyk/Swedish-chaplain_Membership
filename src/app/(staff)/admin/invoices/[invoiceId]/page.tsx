@@ -614,8 +614,13 @@ export default async function InvoiceDetailPage({
             </section>
           )}
 
-          <section className="mt-6">
-            <h3 className="mb-2 text-sm font-medium text-muted-foreground">{t('lines.title')}</h3>
+          <section className="mt-6" aria-labelledby="invoice-lines-heading">
+            <h3
+              id="invoice-lines-heading"
+              className="mb-2 text-sm font-medium text-muted-foreground"
+            >
+              {t('lines.title')}
+            </h3>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>

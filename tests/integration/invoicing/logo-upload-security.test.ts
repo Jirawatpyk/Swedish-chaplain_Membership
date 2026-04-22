@@ -31,6 +31,7 @@ import sharp from 'sharp';
 import { uploadTenantLogo } from '@/modules/invoicing';
 import type { BlobStoragePort } from '@/modules/invoicing/application/ports/blob-storage-port';
 import type { AuditPort } from '@/modules/invoicing/application/ports/audit-port';
+import { sharpImageReencodeAdapter } from '@/modules/invoicing/infrastructure/adapters/sharp-image-reencode-adapter';
 
 // Fake in-memory Blob adapter — captures uploaded key + bytes so
 // assertions can re-decode and verify EXIF strip behaviour.
@@ -108,7 +109,7 @@ describe('T092 — logo-upload security', () => {
       '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"></svg>',
     );
     const result = await uploadTenantLogo(
-      { blob: adapter, audit: silentAudit },
+      { blob: adapter, audit: silentAudit, imageReencode: sharpImageReencodeAdapter },
       {
         tenantId: TENANT,
         actorUserId: ACTOR,
@@ -125,7 +126,7 @@ describe('T092 — logo-upload security', () => {
     const { adapter } = makeFakeBlob();
     const bytes = new Uint8Array(1_048_577);
     const result = await uploadTenantLogo(
-      { blob: adapter, audit: silentAudit },
+      { blob: adapter, audit: silentAudit, imageReencode: sharpImageReencodeAdapter },
       {
         tenantId: TENANT,
         actorUserId: ACTOR,
@@ -142,7 +143,7 @@ describe('T092 — logo-upload security', () => {
     const { adapter } = makeFakeBlob();
     const tiny = await makeValidPng(100, 50);
     const result = await uploadTenantLogo(
-      { blob: adapter, audit: silentAudit },
+      { blob: adapter, audit: silentAudit, imageReencode: sharpImageReencodeAdapter },
       {
         tenantId: TENANT,
         actorUserId: ACTOR,
@@ -163,7 +164,7 @@ describe('T092 — logo-upload security', () => {
     const { adapter } = makeFakeBlob();
     const bytes = new Uint8Array([0x47, 0x41, 0x52, 0x42, 0x41, 0x47, 0x45]);
     const result = await uploadTenantLogo(
-      { blob: adapter, audit: silentAudit },
+      { blob: adapter, audit: silentAudit, imageReencode: sharpImageReencodeAdapter },
       {
         tenantId: TENANT,
         actorUserId: ACTOR,
@@ -189,7 +190,7 @@ describe('T092 — logo-upload security', () => {
     // since detected format is in the whitelist — the MIME attack
     // surface is bounded by whitelist + re-encode path.
     const result = await uploadTenantLogo(
-      { blob: adapter, audit: silentAudit },
+      { blob: adapter, audit: silentAudit, imageReencode: sharpImageReencodeAdapter },
       {
         tenantId: TENANT,
         actorUserId: ACTOR,
@@ -209,7 +210,7 @@ describe('T092 — logo-upload security', () => {
     const { adapter, store } = makeFakeBlob();
     const bytes = await makePngWithTextMetadata();
     const result = await uploadTenantLogo(
-      { blob: adapter, audit: silentAudit },
+      { blob: adapter, audit: silentAudit, imageReencode: sharpImageReencodeAdapter },
       {
         tenantId: TENANT,
         actorUserId: ACTOR,
@@ -243,7 +244,7 @@ describe('T092 — logo-upload security', () => {
     const { adapter } = makeFakeBlob(seeded);
     const bytes = await makeValidPng();
     const result = await uploadTenantLogo(
-      { blob: adapter, audit: silentAudit },
+      { blob: adapter, audit: silentAudit, imageReencode: sharpImageReencodeAdapter },
       {
         tenantId: TENANT,
         actorUserId: ACTOR,
@@ -266,7 +267,7 @@ describe('T092 — logo-upload security', () => {
     const { adapter } = makeFakeBlob();
     const bytes = await makeValidJpeg(1200, 300);
     const result = await uploadTenantLogo(
-      { blob: adapter, audit: silentAudit },
+      { blob: adapter, audit: silentAudit, imageReencode: sharpImageReencodeAdapter },
       {
         tenantId: TENANT,
         actorUserId: ACTOR,

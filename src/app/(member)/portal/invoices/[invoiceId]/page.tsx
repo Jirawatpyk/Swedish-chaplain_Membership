@@ -310,6 +310,8 @@ export default async function PortalInvoiceDetailPage({
               <TableBody>
                 {invoice.lines.map((line) => {
                   const sameText = line.descriptionTh === line.descriptionEn;
+                  const primaryLang = userLocale === 'th' ? 'th' : 'en';
+                  const secondaryLang = userLocale === 'th' ? 'en' : 'th';
                   const primary =
                     userLocale === 'th' ? line.descriptionTh : line.descriptionEn;
                   const secondary =
@@ -323,10 +325,23 @@ export default async function PortalInvoiceDetailPage({
                             reader's chosen language leads without
                             demoting the other. If the two strings
                             are identical (common for plan-year items)
-                            collapse to a single row. */}
-                        <span className="block text-body font-medium">{primary}</span>
+                            collapse to a single row.
+
+                            R19 / QA TC-04 a11y #2 — always tag both
+                            spans with `lang` so WCAG SC 3.1.2
+                            (Language of Parts) is satisfied for
+                            screen readers switching pronunciation
+                            between TH and EN passages. */}
+                        <span
+                          lang={primaryLang}
+                          className="block text-body font-medium"
+                        >
+                          {primary}
+                        </span>
                         {!sameText ? (
-                          <span className="block text-body">{secondary}</span>
+                          <span lang={secondaryLang} className="block text-body">
+                            {secondary}
+                          </span>
                         ) : null}
                       </TableCell>
                       <TableCell className="align-top text-right tabular-nums">

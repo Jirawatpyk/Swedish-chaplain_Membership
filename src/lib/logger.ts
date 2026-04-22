@@ -128,6 +128,17 @@ export const REDACT_PATHS = [
   'recipient_email',
   '*.recipient_email',
   '*.*.recipient_email',
+  // R19 / QA TC-05 — free-text admin-entered payment reference on
+  // F4 `record-payment`. Stored raw on the invoices row (short-term
+  // operational lookup under tenant scope); the audit payload already
+  // stores a sha256 hash rather than plaintext. This redaction is
+  // defence-in-depth so a future caller that accidentally logs the
+  // request body or the raw Invoice row doesn't leak partial bank-
+  // account numbers / cheque numbers that can appear as free text.
+  'payment_reference',
+  '*.payment_reference',
+  'paymentReference',
+  '*.paymentReference',
 ];
 
 const baseOptions: LoggerOptions = {

@@ -550,7 +550,13 @@ export function InvoiceSettingsForm({
       ) : null}
 
       {isAdmin ? (
-        <Button type="submit" size="lg" className="w-full" disabled={submitting}>
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full"
+          disabled={submitting}
+          aria-busy={submitting}
+        >
           {submitting
             ? t('saving')
             : exists

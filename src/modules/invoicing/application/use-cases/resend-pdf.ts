@@ -39,12 +39,33 @@
  * either way.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { sha256Hex } from '@/lib/crypto';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { EmailOutboxPort, F4OutboxLocale } from '../ports/email-outbox-port';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId } from '@/modules/invoicing/domain/credit-note';
+
+/**
+ * R19 / QA TC-03 H-1 — long-retention PII minimisation.
+ *
+ * Audit rows retain for 10 years (FR-029 tax-document retention). Raw
+ * `recipient_email` in the audit payload is Category B PII per
+ * `security.md § 4`; the append-only append log cannot be edited to
+ * remove it later. Store a normalised sha256 instead so:
+ *   (a) Ops can still correlate resend events against a submitted
+ *       email without carrying plaintext for a decade.
+ *   (b) Identical resends produce identical hashes → duplicate
+ *       detection on the audit trail still works.
+ *
+ * The user-facing `ResendPdfOutput.recipientEmail` keeps the plaintext
+ * because it's the operator's immediate confirmation ("resent to
+ * ops@example.com") — short-lived, not stored.
+ */
+function hashRecipientEmail(raw: string): string {
+  return sha256Hex(raw.trim().toLowerCase());
+}
 
 export type ResendPdfActor =
   | {
@@ -214,18 +235,23 @@ async function resendInvoiceOrReceipt(
   // surface per US7 / FR-033). receipt_pdf_resent does NOT carry
   // member_id by design (operational duplicate; would double-render
   // on the timeline alongside invoice_paid).
+  const recipientHash = hashRecipientEmail(recipientEmail);
   if (outboxEventType === 'invoice_pdf_resent') {
     await deps.audit.emit(null, {
       tenantId: input.tenantId,
       requestId: input.actor.requestId,
       eventType: 'invoice_pdf_resent',
       actorUserId: input.actor.userId,
+      // Summary line is transient (shown on ops dashboards, not
+      // retained as a structured PII field). Keep the email plaintext
+      // here for operator readability; the PAYLOAD is what lives for
+      // 10 years and must carry only the hash.
       summary: `Invoice ${documentNumber} PDF resent to ${recipientEmail}`,
       payload: {
         invoice_id: input.invoiceId,
         member_id: invoice.memberId,
         document_number: documentNumber,
-        recipient_email: recipientEmail,
+        recipient_email_sha256: recipientHash,
         actor_role: input.actor.role,
         pdf_template_version: pdf.templateVersion,
       },
@@ -240,7 +266,7 @@ async function resendInvoiceOrReceipt(
       payload: {
         invoice_id: input.invoiceId,
         document_number: documentNumber,
-        recipient_email: recipientEmail,
+        recipient_email_sha256: recipientHash,
         actor_role: input.actor.role,
         pdf_template_version: pdf.templateVersion,
       },
@@ -318,7 +344,7 @@ async function resendCreditNote(
       credit_note_id: input.creditNoteId,
       original_invoice_id: cn.originalInvoiceId,
       document_number: cn.documentNumber.raw,
-      recipient_email: recipientEmail,
+      recipient_email_sha256: hashRecipientEmail(recipientEmail),
       actor_role: input.actor.role,
       pdf_template_version: cn.pdf.templateVersion,
     },

@@ -33,8 +33,25 @@ import {
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+
+const CORPORATE_MATRIX: BenefitMatrix = {
+  eblast_per_year: 1,
+  website_page_type: 'member_news_update',
+  homepage_logo_category: 'regular',
+  directory_listing_size: 'half_page',
+  event_discount_scope: 'all_employees',
+  events_cobranded_access: false,
+  cultural_tickets_per_year: 0,
+  m2m_benefits_access: true,
+  business_referrals: true,
+  tailor_made_services: false,
+  partnership: null,
+};
 
 const TENANT_SNAP = {
   legal_name_th: 'I5 probe',
@@ -79,6 +96,38 @@ describe('I5 — PDF routes cross-tenant probe (Principle I Review-Gate)', () =>
         registeredAddressEn: TENANT_SNAP.address_en,
         invoiceNumberPrefix: 'I5',
         creditNoteNumberPrefix: 'I5C',
+      });
+      // TC-07 (R19 fix): seed membership_plans + members BEFORE invoices
+      // so the composite FKs `invoices_member_fk` + `invoices_plan_fk`
+      // resolve. Previous fixture inserted invoices first and relied on
+      // FK deferral that schema 0019 no longer grants.
+      await tx.insert(membershipPlans).values({
+        tenantId: tenantA.ctx.slug,
+        planId: 'i5-plan',
+        planYear: 2026,
+        planName: { en: 'I5 Plan' },
+        description: { en: '' },
+        sortOrder: 10,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 100_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: CORPORATE_MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+      await tx.insert(members).values({
+        tenantId: tenantA.ctx.slug,
+        memberId,
+        companyName: MEMBER_SNAP.legal_name,
+        country: 'TH',
+        planId: 'i5-plan',
+        planYear: 2026,
       });
       await tx.insert(invoices).values({
         tenantId: tenantA.ctx.slug,
