@@ -296,6 +296,13 @@ export function MemberPicker({
             ) : (
               items.map((opt) => {
                 const isSelected = value === opt.member_id;
+                // Translate the status enum so EN/TH/SV users see
+                // "Active / ใช้งาน / Aktiv" rather than the raw string.
+                // Falls back to the raw value if the backend ever emits
+                // an unknown status — safer than throwing at render time.
+                const statusLabel = isKnownStatus(opt.status)
+                  ? tStatus(opt.status)
+                  : opt.status;
                 return (
                   <CommandItem
                     key={opt.member_id}
@@ -315,7 +322,7 @@ export function MemberPicker({
                         {opt.country}
                       </span>
                       <span className="inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                        {opt.status}
+                        {statusLabel}
                       </span>
                     </div>
                     {isSelected ? (
