@@ -80,34 +80,38 @@ function resolveInviteErrorKey(code: string): InviteErrorKey {
     : 'generic';
 }
 
-export interface InviteUserDialogProps {
+/**
+ * Discriminated union makes `lockMember: true` structurally require both
+ * `defaultMemberId` AND `lockedMemberLabel` — the compiler rejects the
+ * previously-valid `{ lockMember: true }` (no memberId) state.
+ *
+ * - Free form (default): optional `defaultMemberId` pre-fills the picker
+ *   but the admin can change it. Used by `/admin/users`.
+ * - Locked form: `defaultMemberId` + `lockedMemberLabel` required; role
+ *   is hidden (forced to 'member'). Used by the reverse entry on the
+ *   member detail page so admins don't re-search the picker.
+ */
+type InviteUserDialogBaseProps = {
   readonly disabled?: boolean;
-  /**
-   * Optional member id to pre-fill the "Link to member company" picker
-   * with. When set together with `lockMember`, the picker becomes a
-   * read-only display and the role is forced to 'member'. This powers
-   * the reverse entry point on the member detail page — admins can
-   * invite a portal user for the currently-viewed company without
-   * re-searching in the picker.
-   */
-  readonly defaultMemberId?: string;
-  /**
-   * When true, the member is locked: the role dropdown is hidden
-   * (role forced to 'member'), the MemberPicker is replaced by a
-   * read-only label, and on close the state resets back to
-   * `defaultMemberId` (not null) to preserve the lock across reopens.
-   */
-  readonly lockMember?: boolean;
-  /**
-   * Company name to display in the locked-member read-only label.
-   * Required when `lockMember` is true; otherwise ignored.
-   */
-  readonly lockedMemberLabel?: string;
-  /** Custom trigger element (replaces the default "Invite user"
-   *  button). Must be a single ReactElement — DialogTrigger's `render`
-   *  prop does not accept fragments or strings. */
+  /** Custom trigger element (replaces the default "Invite user" button).
+   *  Must be a single ReactElement — DialogTrigger's `render` prop does
+   *  not accept fragments or strings. */
   readonly trigger?: React.ReactElement;
-}
+};
+
+export type InviteUserDialogProps = InviteUserDialogBaseProps &
+  (
+    | {
+        readonly lockMember?: false;
+        readonly defaultMemberId?: string;
+        readonly lockedMemberLabel?: never;
+      }
+    | {
+        readonly lockMember: true;
+        readonly defaultMemberId: string;
+        readonly lockedMemberLabel: string;
+      }
+  );
 
 export function InviteUserDialog({
   disabled = false,
@@ -131,8 +135,9 @@ export function InviteUserDialog({
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
 
-  // Auto-focus the email field when the dialog opens. The timeout
-  // lets Base UI finish its portal mount before we call .focus().
+  // Auto-focus the email field when the dialog opens. A 0ms timeout
+  // defers the `.focus()` call to the next task so Base UI has time
+  // to finish its portal mount (same pattern as MemberPicker).
   // On close we reset to the pristine state: `defaultMemberId` (not
   // null) + role='member' so locked reopens preserve the preset.
   useEffect(() => {
@@ -143,8 +148,8 @@ export function InviteUserDialog({
       setErrorCode(null);
       return;
     }
-    const t = setTimeout(() => emailRef.current?.focus(), 50);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => emailRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
   }, [open, defaultMemberId]);
 
   // Clear memberId when role switches away from 'member' — the

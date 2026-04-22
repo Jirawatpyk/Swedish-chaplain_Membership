@@ -323,6 +323,17 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
       .from(users)
       .where(eq(users.email, inviteeEmail.toLowerCase()));
     expect(userRows.length).toBe(0);
+
+    // Defence-in-depth: also assert no orphan invitation row exists for
+    // this email. A row here would mean the abort happened AFTER the F1
+    // invitation tx committed — possible regression if someone re-ordered
+    // the steps to put probe audit after createUser.
+    const invitationRows = await db
+      .select({ id: invitations.id })
+      .from(invitations)
+      .innerJoin(users, eq(invitations.userId, users.id))
+      .where(eq(users.email, inviteeEmail.toLowerCase()));
+    expect(invitationRows.length).toBe(0);
   });
 
   it('(e) memberId absent: existing F1 flow still works (standalone user, no contact)', async () => {

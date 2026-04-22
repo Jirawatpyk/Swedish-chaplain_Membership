@@ -356,6 +356,46 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
       expect(body.error).toBe('email-taken');
     });
 
+    it('409 contact-already-linked when inviteUserForMember returns contact_already_linked', async () => {
+      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      inviteUserForMemberMock.mockResolvedValueOnce(
+        err({ type: 'contact_already_linked' }),
+      );
+
+      const { POST } = await import('@/app/api/auth/invite/route');
+      const res = await POST(
+        makeRequest({
+          email: 'linked@swecham.test',
+          role: 'member',
+          memberId: VALID_MEMBER_UUID,
+        }),
+      );
+
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body.error).toBe('contact-already-linked');
+    });
+
+    it('409 email-belongs-to-other-member when inviteUserForMember returns email_belongs_to_other_member', async () => {
+      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      inviteUserForMemberMock.mockResolvedValueOnce(
+        err({ type: 'email_belongs_to_other_member' }),
+      );
+
+      const { POST } = await import('@/app/api/auth/invite/route');
+      const res = await POST(
+        makeRequest({
+          email: 'contact-of-other@swecham.test',
+          role: 'member',
+          memberId: VALID_MEMBER_UUID,
+        }),
+      );
+
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body.error).toBe('email-belongs-to-other-member');
+    });
+
     it('400 invalid-input when inviteUserForMember returns invalid_email', async () => {
       requireAdminContextMock.mockResolvedValueOnce(adminContext);
       inviteUserForMemberMock.mockResolvedValueOnce(

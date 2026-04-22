@@ -81,11 +81,11 @@ export type InviteUserForMemberOutput = {
 // ---------------------------------------------------------------------------
 
 /**
- * Split displayName into first/last name best-effort. If no displayName
- * is provided, fall back to the email local-part as first name and
- * empty string as last name (passes the >=1 char zod rule on first but
- * not on last — so we use `Member` as a placeholder last name so the
- * contact is insertable; admin corrects later via contact edit).
+ * Split displayName into first/last name best-effort. Both fields have a
+ * `>= 1 char` zod rule, so every branch falls back to the literal
+ * `'Member'` as a placeholder when input is missing — admin corrects via
+ * contact edit later. Single-word displayName → lastName='Member';
+ * missing displayName → firstName=email local-part, lastName='Member'.
  */
 function deriveContactName(
   email: string,
@@ -153,23 +153,43 @@ export async function inviteUserForMember(
     emailResult.value,
   );
 
-  // Decision table:
+  // Decision table (discriminated union makes illegal states unrepresentable):
   //   not_found                              -> path A: create new contact
   //   found, member_id DIFFERENT             -> reject email_belongs_to_other_member
   //   found, member_id matches, linked_user  -> reject contact_already_linked
   //   found, member_id matches, unlinked     -> path B: link existing contact
-  let mode: 'create_new' | 'link_existing';
-  let existingContactId: ContactId | null = null;
+  type Decision =
+    | { readonly mode: 'create_new' }
+    | { readonly mode: 'link_existing'; readonly contactId: ContactId };
+  let decision: Decision;
 
   if (existing.ok) {
+    // Defence-in-depth: findByEmail is already RLS-scoped + filters by
+    // tenantId at the repo layer, but a cross-tenant row slipping
+    // through would be routed to linkUserInTx on the wrong contact.
+    // Mirror the F3 `get-member` pattern.
+    if (existing.value.tenantId !== asTenantId(deps.tenant.slug)) {
+      logger.error(
+        {
+          contactId: existing.value.contactId,
+          expectedTenant: deps.tenant.slug,
+          actualTenant: existing.value.tenantId,
+          requestId: input.requestId,
+        },
+        'invite-user-for-member.findByEmail_tenant_mismatch',
+      );
+      return err({
+        type: 'server_error',
+        message: 'findByEmail: tenant mismatch',
+      });
+    }
     if (existing.value.memberId !== input.memberId) {
       return err({ type: 'email_belongs_to_other_member' });
     }
     if (existing.value.linkedUserId !== null) {
       return err({ type: 'contact_already_linked' });
     }
-    mode = 'link_existing';
-    existingContactId = existing.value.contactId;
+    decision = { mode: 'link_existing', contactId: existing.value.contactId };
   } else {
     if (existing.error.code !== 'repo.not_found') {
       return err({
@@ -177,7 +197,7 @@ export async function inviteUserForMember(
         message: `findByEmail: ${existing.error.code}`,
       });
     }
-    mode = 'create_new';
+    decision = { mode: 'create_new' };
   }
 
   // 4. F1 createUser — its own tx. Creates pending user + invitation +
@@ -218,11 +238,13 @@ export async function inviteUserForMember(
   //      a real person typed them, admin's quick-invite form shouldn't
   //      overwrite with less-accurate data.
   const newContactId =
-    mode === 'link_existing' ? existingContactId! : deps.idFactory.contactId();
+    decision.mode === 'link_existing'
+      ? decision.contactId
+      : deps.idFactory.contactId();
 
   try {
     const contact = await runInTenant(deps.tenant, async (tx) => {
-      if (mode === 'create_new') {
+      if (decision.mode === 'create_new') {
         const contactDraft = {
           tenantId: asTenantId(deps.tenant.slug),
           contactId: newContactId,
@@ -251,12 +273,14 @@ export async function inviteUserForMember(
 
       const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
         type:
-          mode === 'create_new' ? 'contact_created' : 'contact_linked_to_user',
+          decision.mode === 'create_new'
+            ? 'contact_created'
+            : 'contact_linked_to_user',
         actorUserId: input.actorUserId,
         targetUserId: created.value.user.id,
         requestId: input.requestId,
         summary:
-          mode === 'create_new'
+          decision.mode === 'create_new'
             ? `admin linked new user to member ${input.memberId}`
             : `admin linked existing contact to new user on member ${input.memberId}`,
         payload: {
@@ -265,7 +289,7 @@ export async function inviteUserForMember(
           user_id: created.value.user.id,
           is_primary: false,
           source:
-            mode === 'create_new'
+            decision.mode === 'create_new'
               ? 'admin_invite_with_member_link'
               : 'admin_invite_link_existing',
         },
@@ -288,7 +312,7 @@ export async function inviteUserForMember(
         userId: created.value.user.id,
         cause,
         requestId: input.requestId,
-        mode,
+        mode: decision.mode,
       },
       'invite-user-for-member.tx_failed: orphan F1 user left for operational reconciliation',
     );

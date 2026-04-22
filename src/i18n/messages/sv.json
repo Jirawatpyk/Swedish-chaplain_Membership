@@ -266,6 +266,7 @@
           "clear": "Rensa val",
           "loading": "Laddar medlemmar…",
           "noMembersFound": "Inga medlemmar hittades. Försök med ett annat sökord.",
+          "fetchError": "Det gick inte att ladda medlemmar. Försök igen.",
           "disabledHint": "Välj rollen Medlem för att länka",
           "lockedFallback": "Vald medlem",
           "lockedHelpText": "Denna inbjudan är förkopplad till det aktuella medlemsbolaget."

@@ -108,6 +108,7 @@ export function MemberPicker({
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<readonly MemberPickerOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
   const [selected, setSelected] = useState<MemberPickerOption | null>(null);
   const commandInputRef = useRef<HTMLInputElement>(null);
 
@@ -158,7 +159,20 @@ export function MemberPicker({
           signal: controller.signal,
           headers: { Accept: 'application/json' },
         });
-        const data: ApiResponse = r.ok ? ((await r.json()) as ApiResponse) : { items: [] };
+        if (!r.ok) {
+          // Non-2xx (e.g. 401/500) — surface a fetch error state so the
+          // dropdown does not silently degrade to "No members found",
+          // which the admin would mistake for an empty directory.
+          if (!cancelled) {
+            setItems([]);
+            setFetchError(true);
+          }
+          console.error(
+            `[member-picker] /api/members responded ${r.status}`,
+          );
+          return;
+        }
+        const data = (await r.json()) as ApiResponse;
         if (cancelled) return;
         const rows = data.items ?? [];
         setItems(
@@ -169,8 +183,15 @@ export function MemberPicker({
             status: row.status,
           })),
         );
-      } catch {
-        if (!cancelled) setItems([]);
+        setFetchError(false);
+      } catch (e) {
+        if (!cancelled) {
+          setItems([]);
+          // AbortError is expected on open/close race — don't flag it.
+          if (!(e instanceof DOMException && e.name === 'AbortError')) {
+            setFetchError(true);
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -239,21 +260,19 @@ export function MemberPicker({
         </span>
         <span className="ms-2 flex shrink-0 items-center gap-1">
           {effectiveSelected && !disabled ? (
-            // Use a real <button> element so it receives native keyboard
-            // events, participates in the tab order without needing an
-            // explicit tabIndex, and gets the correct implicit ARIA role.
-            // WCAG 2.5.5: minimum 44×44 px touch target — achieved via
-            // the -m-1 / p-2 combination which expands the hit area to
-            // ~36 px visible + 8 px invisible margin on each side.
+            // Use a real <button> so it receives native keyboard events
+            // and participates in the tab order with the correct ARIA
+            // role. WCAG 2.5.5 requires a 44×44 px touch target: we hit
+            // this with `min-h-11 min-w-11` (11rem/4 = 44px) plus a
+            // centred 14 px icon — visible chrome stays compact while
+            // the hit area satisfies the spec.
             <button
               ref={clearRef}
               type="button"
               aria-label={t('clear')}
               onClick={handleClear}
               className={cn(
-                // Visual size: 28×28 px icon area with padding
-                // Touch target: -m-1 pulls hit-area outward to ≥44×44 px
-                '-m-1 inline-flex items-center justify-center rounded-sm p-2',
+                'inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm',
                 'hover:bg-muted',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               )}
@@ -303,6 +322,13 @@ export function MemberPicker({
               >
                 <Loader2Icon className="size-4 animate-spin" aria-hidden />
                 <span>{t('loading')}</span>
+              </div>
+            ) : fetchError ? (
+              <div
+                role="alert"
+                className="px-3 py-4 text-sm text-destructive"
+              >
+                {t('fetchError')}
               </div>
             ) : items.length === 0 ? (
               <CommandEmpty>{t('noMembersFound')}</CommandEmpty>

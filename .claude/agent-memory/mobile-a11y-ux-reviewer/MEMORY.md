@@ -1,1 +1,3 @@
 - [F4 Invoicing UI Patterns & Known Gaps](project_f4_invoicing_patterns.md) — US4 settings + US3 portal not yet built; download links missing aria-label; detail skeleton not mobile-first
+- [Avoid span role=button](feedback_span_role_button.md) — use native `<button>` always; `<span role="button">` is a recurring anti-pattern in this codebase (Blocker: WCAG 4.1.2)
+- [Combobox ARIA required attributes checklist](feedback_combobox_aria_checklist.md) — 6 attrs required on every cmdk+Popover trigger; aria-controls must point to CommandList not CommandInput

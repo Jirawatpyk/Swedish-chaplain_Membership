@@ -18,10 +18,12 @@ import {
   HelpCircleIcon,
   PencilIcon,
   ClockIcon,
+  UserPlusIcon,
 } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { logger } from '@/lib/logger';
 import { headers } from 'next/headers';
 import { getMember, archiveWindowStatus } from '@/modules/members';
 import type { MemberId, Contact } from '@/modules/members';
@@ -42,7 +44,6 @@ import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
-import { UserPlusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
@@ -198,8 +199,13 @@ export default async function MemberDetailPage({
   if (!UUID_RE.test(memberId)) notFound();
 
   const session = await requireSession('staff');
-  const tenant = resolveTenantFromRequest();
   const h = await headers();
+  // Pass a pseudo-Request so resolveTenantFromRequest can honour the
+  // T115t `x-tenant` header override used by throwaway-tenant E2E.
+  // Without this the fn falls back to env.tenant.slug, silently
+  // breaking test harnesses that target the member detail page.
+  const pseudoReq = new Request('http://localhost:3100', { headers: h });
+  const tenant = resolveTenantFromRequest(pseudoReq as never);
   const requestId = requestIdFromHeaders(h);
 
   const deps = buildMembersDeps(tenant);
@@ -236,8 +242,14 @@ export default async function MemberDetailPage({
         </DetailContainer>
       );
     }
-    // Generic server error — let the route-level error.tsx handle unknowns.
-    throw new Error(`getMember failed: ${result.error.message}`);
+    // Generic server error — log with full context for ops, throw a
+    // sanitised message so the route-level error.tsx boundary and any
+    // leaked stack trace don't expose internal detail to the client.
+    logger.error(
+      { requestId, err: result.error, memberId },
+      'admin.members.detail.getMember_failed',
+    );
+    throw new Error('admin.members.detail: getMember failed');
   }
 
   const { member, contacts } = result.value;

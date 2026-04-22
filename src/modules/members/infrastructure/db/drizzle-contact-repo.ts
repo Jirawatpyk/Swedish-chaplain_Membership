@@ -191,47 +191,65 @@ export const drizzleContactRepo: ContactRepo = {
 
   async linkUserInTx(tx, contactId, userId) {
     try {
-      // Fetch + check — refuse to overwrite an existing linked user.
-      const [before] = await tx
-        .select({
-          linkedUserId: contacts.linkedUserId,
-          memberId: contacts.memberId,
-        })
-        .from(contacts)
-        .where(eq(contacts.contactId, contactId))
-        .limit(1);
-      if (!before) return err({ code: 'repo.not_found' });
-      if (before.linkedUserId) {
-        return err({
-          code: 'repo.conflict',
-          reason: 'contact already linked to a user',
-        });
-      }
+      // Atomic conditional UPDATE — the `isNull(linkedUserId)` guard in
+      // the WHERE clause eliminates the SELECT-then-UPDATE TOCTOU race
+      // where two concurrent callers could both see `linkedUserId=null`
+      // and race to link. `0 rows updated` means either the contact
+      // doesn't exist OR it's already linked; distinguish with a
+      // targeted follow-up SELECT only when the update affected nothing.
       const updated = await tx
         .update(contacts)
         .set({ linkedUserId: userId, updatedAt: new Date() })
-        .where(eq(contacts.contactId, contactId))
+        .where(
+          and(
+            eq(contacts.contactId, contactId),
+            isNull(contacts.linkedUserId),
+          ),
+        )
         .returning();
-      if (updated.length === 0) return err({ code: 'repo.not_found' });
-      return ok(rowToContact(updated[0]!));
+      if (updated.length > 0) return ok(rowToContact(updated[0]!));
+
+      // 0 rows updated → probe to give a precise error code.
+      const [probe] = await tx
+        .select({ contactId: contacts.contactId })
+        .from(contacts)
+        .where(eq(contacts.contactId, contactId))
+        .limit(1);
+      if (!probe) return err({ code: 'repo.not_found' });
+      return err({
+        code: 'repo.conflict',
+        reason: 'contact already linked to a user',
+      });
     } catch (e) {
       return err(unexpected(e));
     }
   },
 
   async listLinkedUserIdsForMemberInTx(tx, memberId) {
-    const rows = await tx
-      .select({ linkedUserId: contacts.linkedUserId })
-      .from(contacts)
-      .where(
-        and(
-          eq(contacts.memberId, memberId),
-          isNull(contacts.removedAt),
-        ),
+    try {
+      const rows = await tx
+        .select({ linkedUserId: contacts.linkedUserId })
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.memberId, memberId),
+            isNull(contacts.removedAt),
+          ),
+        );
+      return rows
+        .map((r) => r.linkedUserId)
+        .filter((uid): uid is string => uid !== null);
+    } catch (e) {
+      // Contract: return empty array on infra failure rather than
+      // throw — callers use this to cascade-revoke F1 sessions on
+      // member archive, and a partial failure must not block the
+      // archive tx. Ops observe the failure via the error log below.
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(
+        `[drizzle-contact-repo] listLinkedUserIdsForMemberInTx failed: ${msg}`,
       );
-    return rows
-      .map((r) => r.linkedUserId)
-      .filter((uid): uid is string => uid !== null);
+      return [];
+    }
   },
 
   async updateEmailInTx(tx, _ctx, contactId, newEmail) {

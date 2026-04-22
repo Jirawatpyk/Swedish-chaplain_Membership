@@ -163,12 +163,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           { error: 'member-not-found' },
           { status: 404 },
         );
-      default:
+      case 'server_error':
         logger.error(
           { requestId: ctx.requestId, err: error },
           'invite.member_link.server_error',
         );
         return NextResponse.json({ error: 'server-error' }, { status: 500 });
+      default: {
+        // Exhaustiveness check — adding a new variant to
+        // InviteUserForMemberError forces a TS compile error here,
+        // preventing silent 500 on a newly-introduced error code.
+        const _exhaustive: never = error;
+        logger.error(
+          { requestId: ctx.requestId, err: _exhaustive },
+          'invite.member_link.unhandled_variant',
+        );
+        return NextResponse.json({ error: 'server-error' }, { status: 500 });
+      }
     }
   }
 
@@ -207,7 +218,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'email-taken' }, { status: 409 });
     default: {
       logger.error(
-        { requestId: ctx.requestId },
+        { requestId: ctx.requestId, err: error },
         'invite: unhandled error variant',
       );
       return NextResponse.json({ error: 'server-error' }, { status: 500 });

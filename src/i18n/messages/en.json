@@ -266,6 +266,7 @@
           "clear": "Clear selection",
           "loading": "Loading members…",
           "noMembersFound": "No members found. Try a different search term.",
+          "fetchError": "Failed to load members. Please try again.",
           "disabledHint": "Select role Member to link",
           "lockedFallback": "Selected member",
           "lockedHelpText": "This invite is pre-linked to the current member company."
