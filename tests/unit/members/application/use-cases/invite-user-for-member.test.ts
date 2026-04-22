@@ -593,6 +593,63 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       expect(deps.contactRepo.addInTx).not.toHaveBeenCalled();
     });
 
+    it('(2a) Hybrid A + linkUserInTx conflict → server_error; addInTx not called (link_existing branch)', async () => {
+      // Hybrid A path: existing unlinked contact is found → decision=link_existing.
+      // linkUserInTx races with a concurrent invite and returns repo.conflict.
+      // The use case must:
+      //   1. Skip addInTx entirely (reusing existing contact).
+      //   2. Catch the UseCaseAbort thrown by the linkUserInTx err branch.
+      //   3. Return server_error (not contact_already_linked — the pre-tx check
+      //      already passed, so this is an unexpected race, not a user error).
+      const deps = makeDeps({
+        findByEmailResult: 'same_member_unlinked',
+        linkUserInTxResult: 'conflict',
+      });
+      const result = await inviteUserForMember(deps, baseInput);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.type).toBe('server_error');
+      } else {
+        throw new Error('expected server_error result');
+      }
+
+      // addInTx must NOT have been called — link_existing path skips it.
+      expect(deps.contactRepo.addInTx).not.toHaveBeenCalled();
+      // linkUserInTx was attempted (the conflict happened there).
+      expect(deps.contactRepo.linkUserInTx).toHaveBeenCalledTimes(1);
+      // Audit must NOT be emitted after the link failed.
+      expect(deps.audit.recordInTx).not.toHaveBeenCalled();
+    });
+
+    it('(2b) Hybrid A + audit.recordInTx fail → server_error; linkUserInTx was called (link_existing branch)', async () => {
+      // Hybrid A path: existing unlinked contact, linkUserInTx succeeds, but
+      // audit.recordInTx returns err — the UseCaseAbort triggers rollback.
+      // Confirm: server_error returned; audit was attempted exactly once.
+      const deps = makeDeps({
+        findByEmailResult: 'same_member_unlinked',
+        auditRecordInTxResult: 'fail',
+      });
+      const result = await inviteUserForMember(deps, baseInput);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.type).toBe('server_error');
+      } else {
+        throw new Error('expected server_error result');
+      }
+
+      // addInTx was skipped (link_existing mode).
+      expect(deps.contactRepo.addInTx).not.toHaveBeenCalled();
+      // linkUserInTx ran before audit — confirm ordering preserved.
+      expect(deps.contactRepo.linkUserInTx).toHaveBeenCalledTimes(1);
+      // Audit was attempted (failure is at the repo layer, not skipped entirely).
+      expect(deps.audit.recordInTx).toHaveBeenCalledTimes(1);
+      // The audit event type must still have been contact_linked_to_user.
+      const auditCall = (deps.audit.recordInTx as ReturnType<typeof vi.fn>).mock.calls[0]!;
+      expect(auditCall[2]).toMatchObject({ type: 'contact_linked_to_user' });
+    });
+
     it('(5) findByEmail infra failure → returns server_error; createUser not called', async () => {
       // Defensive: if the duplicate-check query itself fails (e.g. Neon cold
       // start timeout), the use case must not proceed to createUser — that
