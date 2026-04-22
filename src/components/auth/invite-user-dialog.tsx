@@ -219,7 +219,9 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
                 onChange={setMemberId}
                 disabled={submitting || role !== 'member'}
               />
-              <p className="text-xs text-muted-foreground">
+              {/* id wired so MemberPicker's trigger can reference this
+                  paragraph via aria-describedby when the picker is active. */}
+              <p id="invite-link-member-help" className="text-xs text-muted-foreground">
                 {tLink('helpText')}
               </p>
             </div>
