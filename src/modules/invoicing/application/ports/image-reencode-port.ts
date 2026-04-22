@@ -29,19 +29,38 @@
  * the port without having to also duplicate validation logic.
  */
 
-export type ImageReEncodeResult = {
-  /** Actual decoded format — authoritative (declared MIME is advisory). */
-  readonly format: 'png' | 'jpeg' | 'unknown';
-  /** Pixel dimensions of the decoded image. */
-  readonly width: number;
-  readonly height: number;
-  /**
-   * Re-encoded bytes stripped of EXIF/metadata/ICC. Empty byte array is
-   * impossible on the success path — the adapter throws before
-   * returning zero-length bytes.
-   */
-  readonly bytes: Uint8Array;
-};
+/**
+ * Discriminated union on `format`. The `'unknown'` variant deliberately
+ * omits `bytes` so that TypeScript narrowing makes it structurally
+ * impossible to read a stale empty buffer downstream — callers MUST
+ * narrow on `format` before accessing `bytes`. R20-01 hardening.
+ */
+export type ImageReEncodeResult =
+  | {
+      /** Actual decoded format — authoritative (declared MIME is advisory). */
+      readonly format: 'png' | 'jpeg';
+      /** Pixel dimensions of the decoded image. */
+      readonly width: number;
+      readonly height: number;
+      /**
+       * Re-encoded bytes stripped of EXIF/metadata/ICC. Always a
+       * non-empty buffer on this variant — the adapter fails to
+       * `decode_failed` rather than returning zero-length bytes.
+       */
+      readonly bytes: Uint8Array;
+    }
+  | {
+      /**
+       * Decoded successfully but NOT in the F4 format whitelist
+       * (GIF / WebP / TIFF / AVIF / …). Callers MUST refuse via the
+       * business-rule format whitelist in the use-case. No bytes are
+       * returned — re-encoding to a supported format would mask a
+       * category-error from the operator.
+       */
+      readonly format: 'unknown';
+      readonly width: number;
+      readonly height: number;
+    };
 
 export type ImageReEncodeError =
   /**

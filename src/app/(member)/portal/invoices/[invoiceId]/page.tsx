@@ -312,6 +312,16 @@ export default async function PortalInvoiceDetailPage({
                   const sameText = line.descriptionTh === line.descriptionEn;
                   const primaryLang = userLocale === 'th' ? 'th' : 'en';
                   const secondaryLang = userLocale === 'th' ? 'en' : 'th';
+                  // R20-03 — `lang` attribute only when it differs from
+                  // the page root locale (userLocale drives the page's
+                  // <html lang>, so the primary span inherits for free).
+                  // Keeps markup cleaner while WCAG 3.1.2 still holds:
+                  // the *secondary* span always gets lang tagged
+                  // because its language differs from the root.
+                  const primaryLangAttr =
+                    primaryLang === userLocale ? undefined : primaryLang;
+                  const secondaryLangAttr =
+                    secondaryLang === userLocale ? undefined : secondaryLang;
                   const primary =
                     userLocale === 'th' ? line.descriptionTh : line.descriptionEn;
                   const secondary =
@@ -325,21 +335,15 @@ export default async function PortalInvoiceDetailPage({
                             reader's chosen language leads without
                             demoting the other. If the two strings
                             are identical (common for plan-year items)
-                            collapse to a single row.
-
-                            R19 / QA TC-04 a11y #2 — always tag both
-                            spans with `lang` so WCAG SC 3.1.2
-                            (Language of Parts) is satisfied for
-                            screen readers switching pronunciation
-                            between TH and EN passages. */}
+                            collapse to a single row. */}
                         <span
-                          lang={primaryLang}
+                          lang={primaryLangAttr}
                           className="block text-body font-medium"
                         >
                           {primary}
                         </span>
                         {!sameText ? (
-                          <span lang={secondaryLang} className="block text-body">
+                          <span lang={secondaryLangAttr} className="block text-body">
                             {secondary}
                           </span>
                         ) : null}

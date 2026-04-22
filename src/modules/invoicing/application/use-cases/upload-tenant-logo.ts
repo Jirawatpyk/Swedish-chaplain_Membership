@@ -112,13 +112,17 @@ export async function uploadTenantLogo(
     );
     return err({ code: 'decode_failed' });
   }
-  const { format, width, height, bytes: reencodedBytes } = reencodeResult.value;
-  // Business rule — detected format must be in the whitelist (PNG or
-  // JPEG only). Covers the case where the declared MIME passed the
-  // typeof-string gate but the actual bytes are GIF/WebP/TIFF/etc.
-  if (format === 'unknown') {
+  // R20-01 — narrow on `format` BEFORE destructuring `bytes`. The port
+  // result is a discriminated union where the `'unknown'` variant has
+  // no `bytes` field; this order lets TS prove `reencodedBytes` is
+  // always defined on the success path.
+  if (reencodeResult.value.format === 'unknown') {
+    // Business rule — detected format must be in the whitelist (PNG or
+    // JPEG only). Covers the case where the declared MIME passed the
+    // typeof-string gate but the actual bytes are GIF/WebP/TIFF/etc.
     return err({ code: 'decode_failed' });
   }
+  const { format, width, height, bytes: reencodedBytes } = reencodeResult.value;
   // Business rule — dimension bounds (FR-034). The port returned
   // detected width/height; enforce the invariant here.
   if (width < MIN_WIDTH || width > MAX_WIDTH || height < MIN_HEIGHT || height > MAX_HEIGHT) {
