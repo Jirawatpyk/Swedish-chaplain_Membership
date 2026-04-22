@@ -88,6 +88,16 @@ function isKnownStatus(s: string): s is MemberStatus {
   return s === 'active' || s === 'inactive' || s === 'archived';
 }
 
+// At-risk visual indicator — `null` means no dot (active / unknown).
+// Keeping the mapping as a const-asserted object lets a future status
+// addition surface as a TS error at the call site rather than silently
+// falling through.
+const STATUS_DOT_CLASS: Record<MemberStatus, string | null> = {
+  active: null,
+  inactive: 'bg-amber-500',
+  archived: 'bg-muted-foreground',
+};
+
 export function MemberPicker({
   value,
   onChange,
@@ -353,12 +363,9 @@ export function MemberPicker({
                 // defensive in case the filter relaxes (e.g. "show all").
                 // SR users still get the full translated status via the
                 // badge, so the dot is purely visual and aria-hidden.
-                const dotClass =
-                  statusKnown && opt.status === 'inactive'
-                    ? 'bg-amber-500'
-                    : statusKnown && opt.status === 'archived'
-                      ? 'bg-muted-foreground'
-                      : null;
+                const dotClass = statusKnown
+                  ? STATUS_DOT_CLASS[opt.status]
+                  : null;
                 return (
                   <CommandItem
                     key={opt.member_id}

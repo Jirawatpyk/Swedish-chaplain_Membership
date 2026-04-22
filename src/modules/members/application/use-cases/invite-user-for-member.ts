@@ -273,27 +273,30 @@ export async function inviteUserForMember(
       );
       if (!linked.ok) throw new UseCaseAbort<RepoError>(linked.error);
 
+      const audit =
+        decision.mode === 'create_new'
+          ? {
+              eventType: 'contact_created' as const,
+              source: 'admin_invite_with_member_link',
+              summary: `admin linked new user to member ${input.memberId}`,
+            }
+          : {
+              eventType: 'contact_linked_to_user' as const,
+              source: 'admin_invite_link_existing',
+              summary: `admin linked existing contact to new user on member ${input.memberId}`,
+            };
       const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
-        type:
-          decision.mode === 'create_new'
-            ? 'contact_created'
-            : 'contact_linked_to_user',
+        type: audit.eventType,
         actorUserId: input.actorUserId,
         targetUserId: created.value.user.id,
         requestId: input.requestId,
-        summary:
-          decision.mode === 'create_new'
-            ? `admin linked new user to member ${input.memberId}`
-            : `admin linked existing contact to new user on member ${input.memberId}`,
+        summary: audit.summary,
         payload: {
           contact_id: newContactId,
           member_id: input.memberId,
           user_id: created.value.user.id,
           is_primary: false,
-          source:
-            decision.mode === 'create_new'
-              ? 'admin_invite_with_member_link'
-              : 'admin_invite_link_existing',
+          source: audit.source,
         },
       });
       if (!auditResult.ok) throw new UseCaseAbort<RepoError>(auditResult.error);
