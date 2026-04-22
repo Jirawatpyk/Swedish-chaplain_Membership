@@ -33,7 +33,7 @@
  * event emission (FR-012c parity for unrenderable rows).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { and, count, eq, lt, lte, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 /* eslint-disable no-restricted-imports --
@@ -69,6 +69,13 @@ import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/v
 // Spec FR-012c: "≥ 5 attempts with exponential backoff 60s / 5m / 30m / 3h / 12h".
 const RETRY_BACKOFF_SECONDS = [60, 300, 1_800, 10_800, 43_200] as const;
 const MAX_ATTEMPTS = 5;
+
+// R18-02 — accepted shape for `expected_pdf_sha256` in `context_data`.
+// Matches `Sha256Hex.parse` in the domain value object. A malformed
+// value (empty / non-hex / wrong length) drives the integrity check
+// into fail-safe permanent-fail instead of silently falling through
+// to unverified shipping.
+const RE_SHA256 = /^[0-9a-f]{64}$/;
 
 // Keeps the function within the Vercel 300s default timeout while giving
 // comfortable headroom above expected throughput (< 50 emails/day per tenant).
@@ -244,6 +251,17 @@ async function dispatchOne(
   // needed; the tx does its own re-select with the lock so a
   // concurrent tick winning the race simply wastes the prefetch.
   let prefetchedBytes: Uint8Array | undefined;
+  // R17-02 — when the void two-phase commit's Phase 2 (post-commit Blob
+  // overwrite) fails, the Blob still holds the ORIGINAL un-stamped
+  // invoice bytes but audit + outbox row reflect the NEW sha256. A
+  // naïve dispatcher would ship those un-stamped bytes as the
+  // "cancellation" attachment — a bookkeeper would receive what looks
+  // like a perfectly valid invoice attached to a cancellation notice.
+  // If `expected_pdf_sha256` is present in ctx, we hash the prefetched
+  // bytes and permanently-fail the row on mismatch instead of
+  // shipping. Mismatch is rare (Phase 2 retry path handles the common
+  // case) but the blast radius of shipping wrong bytes is high.
+  let integrityViolation: 'attachment_sha_mismatch' | null = null;
   try {
     const [peek] = await db
       .select({
@@ -257,6 +275,17 @@ async function dispatchOne(
       const ctx = peek.contextData as Record<string, unknown>;
       const eventType = ctx.event_type;
       const pdfBlobKey = typeof ctx.pdf_blob_key === 'string' ? ctx.pdf_blob_key : '';
+      // R18-02 — tightened validation: the raw value must be a
+      // 64-char lowercase-hex sha256 to count as "present". A stray
+      // empty string / malformed digest would otherwise pass the old
+      // typeof-string check and drive a misleading "mismatch" audit.
+      // Split detection so we can flag malformed vs mismatch distinctly
+      // while keeping the fail-safe outcome (both → permanent-fail).
+      const expectedShaRaw =
+        typeof ctx.expected_pdf_sha256 === 'string' ? ctx.expected_pdf_sha256 : null;
+      const expectedSha =
+        expectedShaRaw !== null && RE_SHA256.test(expectedShaRaw) ? expectedShaRaw : null;
+      const expectedShaMalformed = expectedShaRaw !== null && expectedSha === null;
       // PG-2 gate — only prefetch bytes when attachment is enabled by
       // DPA clearance. When the flag is OFF, the dispatcher ships a
       // link-only email (FR-036 partial) and never transfers PDF
@@ -266,7 +295,43 @@ async function dispatchOne(
         pdfBlobKey &&
         env.features.f4VoidAttachment
       ) {
-        prefetchedBytes = await vercelBlobAdapter.downloadBytes(pdfBlobKey);
+        if (expectedShaMalformed) {
+          // R18-02 — present but malformed. Skip the prefetch entirely
+          // and route into the permanent-fail branch: shipping without
+          // verification would defeat the whole purpose of the check.
+          // Logged at warn (not error) to distinguish malformed-
+          // enqueue (bug upstream) from real content mismatch.
+          logger.warn(
+            {
+              outboxRowId: rowId,
+              expectedShaRawLength: expectedShaRaw?.length ?? 0,
+            },
+            'cron.outbox_dispatch.invoice_voided.expected_sha_malformed',
+          );
+          integrityViolation = 'attachment_sha_mismatch';
+        } else {
+          const bytes = await vercelBlobAdapter.downloadBytes(pdfBlobKey);
+          if (expectedSha) {
+            // Hex-encoded lower-case sha256 — matches Sha256Hex branded
+            // shape emitted by the render adapter.
+            const actualSha = createHash('sha256').update(bytes).digest('hex');
+            if (actualSha !== expectedSha) {
+              logger.error(
+                {
+                  outboxRowId: rowId,
+                  expectedSha,
+                  actualShaPrefix: actualSha.slice(0, 16),
+                },
+                'cron.outbox_dispatch.invoice_voided.attachment_sha_mismatch',
+              );
+              integrityViolation = 'attachment_sha_mismatch';
+            } else {
+              prefetchedBytes = bytes;
+            }
+          } else {
+            prefetchedBytes = bytes;
+          }
+        }
       }
     }
   } catch (prefetchErr) {
@@ -280,6 +345,13 @@ async function dispatchOne(
   }
 
   return db.transaction(async (tx) => {
+    // R18-04 — single `now` for every status-flip branch in this tx
+    // (previously the integrity-violation branch declared its own
+    // `integrityNow` because this declaration used to live later in
+    // the callback). Hoisted so all UPDATE `updated_at` + `next_retry_at`
+    // writes share a consistent wall-clock timestamp per tick.
+    const now = new Date();
+
     // Re-select inside the tx with the lock. If another tick holds
     // the lock OR the row is no longer pending, return 'skipped'.
     const [row] = await tx
@@ -296,8 +368,59 @@ async function dispatchOne(
 
     if (!row) return 'skipped';
 
+    // R17-02 — integrity violation detected during prefetch: do NOT
+    // ship a link-only fallback (the link points at the same Blob key
+    // whose bytes failed verification, so link-only would deliver the
+    // same wrong content). Permanently fail immediately with a
+    // distinct reason so ops can re-render via an admin action once
+    // the underlying Blob is healthy.
+    if (integrityViolation) {
+      const nextAttempt = row.attempts + 1;
+      await tx
+        .update(notificationsOutbox)
+        .set({
+          status: 'permanently_failed' as const,
+          attempts: nextAttempt,
+          lastError: integrityViolation,
+          updatedAt: now,
+        })
+        .where(eq(notificationsOutbox.id, row.id));
+      await tx.insert(auditLog).values({
+        eventType: 'email_dispatch_failed',
+        actorUserId: 'system:cron',
+        summary: `outbox row ${row.id} permanently failed (${integrityViolation})`,
+        requestId,
+        tenantId: row.tenantId,
+        payload: {
+          outbox_row_id: row.id,
+          notification_type: row.notificationType,
+          attempts: nextAttempt,
+          reason: integrityViolation,
+        },
+      });
+      if (row.notificationType === 'invoice_auto_email' && row.tenantId) {
+        await tx.insert(auditLog).values({
+          eventType: 'auto_email_delivery_failed',
+          actorUserId: 'system:cron',
+          summary: `F4 auto-email outbox row ${row.id} permanently failed (${integrityViolation})`,
+          requestId,
+          tenantId: row.tenantId,
+          payload: {
+            outbox_row_id: row.id,
+            notification_type: row.notificationType,
+            attempts: nextAttempt,
+            reason: integrityViolation,
+          },
+        });
+      }
+      outboxMetrics.permanentFailure(row.notificationType, integrityViolation);
+      if (row.notificationType === 'invoice_auto_email') {
+        invoicingMetrics.autoEmailBounce(integrityViolation);
+      }
+      return 'permanent';
+    }
+
     const payload = await buildPayload(row, prefetchedBytes);
-    const now = new Date();
 
     if (!payload) {
       const nextAttempt = row.attempts + 1;

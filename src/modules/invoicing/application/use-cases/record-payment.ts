@@ -112,6 +112,23 @@ export async function recordPayment(
 ): Promise<Result<Invoice, RecordPaymentError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
 
+  // R17-03 — Load settings BEFORE the withTx. The settings repo opens its
+  // own `runInTenant` transaction under the hood; nesting that inside the
+  // outer withTx can deadlock the pool when concurrent payments on
+  // different invoices race for the two connection pool slots (outer tx
+  // holds conn1, inner settings-read waits for conn2 which is held by the
+  // other concurrent caller, and vice versa). Settings are effectively
+  // immutable during a payment record (the immutability trigger on
+  // tenant_invoice_settings makes mid-race mutation a no-op), so reading
+  // outside the tx is safe. Mirrors the identical fix + rationale in
+  // issue-credit-note.ts:126-135 and void-invoice.ts:130-132.
+  const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
+  // R18-03 — early-exit on missing settings BEFORE opening withTx +
+  // acquiring lockForUpdate. Matches the "pre-sequence early exits"
+  // pattern in issue-invoice.ts:155-163 and saves a useless round-trip
+  // + probe audit emit when the tenant has no settings row yet.
+  if (!settings) return err({ code: 'settings_missing' });
+
   try {
   return await deps.invoiceRepo.withTx(async (tx) => {
     // Row-lock first — guards against concurrent pay/void/credit-note
@@ -163,9 +180,6 @@ export async function recordPayment(
     ) {
       return err({ code: 'no_snapshot_on_invoice' });
     }
-
-    const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
-    if (!settings) return err({ code: 'settings_missing' });
 
     // Receipt PDF — reuses invoice snapshot (FR-038 immutability). The
     // kind differs based on tenant setting; combined mode renders a

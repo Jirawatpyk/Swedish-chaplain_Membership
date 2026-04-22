@@ -28,6 +28,7 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       readonly pdfTemplateVersion: number;
       readonly documentNumber?: string;
       readonly voidReason?: string;
+      readonly expectedPdfSha256?: string;
     },
   ): Promise<void> {
     // T107 — `null` tx = "enqueue standalone" (used by resend-pdf,
@@ -46,6 +47,10 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       document_number: input.documentNumber ?? null,
       // B-1 — void reason for invoice_voided cancellation email body.
       void_reason: input.voidReason ?? null,
+      // R17-02 — expected sha256 for dispatcher-side attachment integrity
+      // verification (void two-phase commit protection). Dispatcher
+      // compares against sha256(prefetchedBytes) before attaching.
+      expected_pdf_sha256: input.expectedPdfSha256 ?? null,
     };
     // R7-S2 — use caller-supplied locale (member's primary-contact
     // preferred_locale when known). Defaults to 'en' for callers

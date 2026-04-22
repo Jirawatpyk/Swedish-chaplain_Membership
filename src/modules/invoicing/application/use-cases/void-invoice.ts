@@ -271,6 +271,15 @@ export async function voidInvoice(
           // B-2 cron); the append-only audit log carries only
           // `void_reason_sha256` to avoid 10-year PII retention.
           voidReason: input.voidReason,
+          // R17-02 — sha256 of the freshly-rendered VOID-stamped bytes
+          // we WILL upload in Phase 2. The dispatcher uses this to
+          // verify the Blob's prefetched bytes match what Phase 1
+          // committed to audit — if Phase 2 never uploads (Blob
+          // outage, cold-start timeout), the dispatcher would
+          // otherwise attach the ORIGINAL un-stamped invoice bytes
+          // to a cancellation email. Integrity check preempts that
+          // by permanently-failing the row.
+          expectedPdfSha256: rendered.sha256,
         });
       }
 

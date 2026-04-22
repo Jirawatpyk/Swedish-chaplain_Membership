@@ -57,7 +57,9 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import { env } from '@/lib/env';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
@@ -606,6 +608,126 @@ describe('T105 — F4 auto-email outbox + T107 manual resend (live Neon)', () =>
       );
       expect(matching).toBeDefined();
     } finally {
+      await freshTenant.cleanup().catch(() => {});
+    }
+  }, 120_000);
+
+  it('(R18-01) dispatcher permanently-fails invoice_voided row when prefetched bytes sha256 mismatches expected_pdf_sha256', async () => {
+    // Covers the R17-02 fix: the void two-phase commit's Phase 2 (post-
+    // commit Blob overwrite) can fail while Phase 1 (DB commit + outbox
+    // enqueue + audit) already landed. The dispatcher MUST verify the
+    // prefetched PDF bytes match the sha256 committed by Phase 1 before
+    // attaching — otherwise it would ship the ORIGINAL un-stamped
+    // invoice bytes as a "cancellation" attachment.
+    const freshTenant = await createTestTenant('test-swecham');
+    vi.stubEnv('CRON_SECRET', 'test-r18-01-sha-mismatch-secret');
+
+    // `env.features` is `as const` at the type level but NOT Object.frozen
+    // at runtime (env.ts builds it as a plain object literal), so a direct
+    // assignment + finally-restore is both sufficient and the only way to
+    // flip the DPA-gated flag from a single-test scope without
+    // `vi.mock('@/lib/env')` which would affect every other test in this
+    // file. Cast through a local mutable alias so TS accepts the write.
+    const originalFlag = env.features.f4VoidAttachment;
+    (env.features as { f4VoidAttachment: boolean }).f4VoidAttachment = true;
+
+    // Stub downloadBytes so the sha of prefetched bytes does NOT match
+    // the `expected_pdf_sha256` we put in context_data → triggers the
+    // integrity-violation branch. The real adapter hits Vercel Blob;
+    // bypassing that keeps the test deterministic + offline-safe.
+    const fakeBytes = new Uint8Array([0xDE, 0xAD, 0xBE, 0xEF]);
+    const downloadSpy = vi
+      .spyOn(vercelBlobAdapter, 'downloadBytes')
+      .mockResolvedValue(fakeBytes);
+
+    const seededIds: string[] = [];
+    try {
+      // 64-hex-lowercase sha that definitely does not match sha(fakeBytes).
+      const wrongSha = 'f'.repeat(64);
+      const outboxId = randomUUID();
+      await db.insert(notificationsOutbox).values({
+        id: outboxId,
+        tenantId: freshTenant.ctx.slug,
+        notificationType: 'invoice_auto_email',
+        toEmail: `r18-${outboxId.slice(0, 8)}@swecham.test`,
+        locale: 'en',
+        contextData: {
+          event_type: 'invoice_voided',
+          pdf_blob_key: `invoicing/${freshTenant.ctx.slug}/2026/fake.pdf`,
+          pdf_template_version: 1,
+          document_number: 'T105-2026-000001',
+          // Deliberately wrong → must drive the dispatcher into the
+          // permanent-fail branch instead of sending.
+          expected_pdf_sha256: wrongSha,
+          void_reason: 'test r18-01',
+        },
+        status: 'pending',
+        attempts: 0,
+        nextRetryAt: new Date(Date.now() - 60_000),
+      });
+      seededIds.push(outboxId);
+
+      const req = new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      });
+      const response = await outboxDispatch(req);
+      expect(response.status).toBe(200);
+
+      // Prefetch path fired (integrity check only runs when it does).
+      expect(downloadSpy).toHaveBeenCalled();
+
+      // Row permanently failed with the distinct integrity-violation
+      // reason — NOT 'max_retries' or 'no_template_handler'.
+      const [row] = await db
+        .select()
+        .from(notificationsOutbox)
+        .where(eq(notificationsOutbox.id, outboxId));
+      expect(row?.status).toBe('permanently_failed');
+      expect(row?.lastError).toBe('attachment_sha_mismatch');
+      expect(row?.attempts).toBe(1);
+
+      // Dual audit emission scoped to THIS row (we filter by
+      // `outbox_row_id` so parallel T106 tests' audit rows don't
+      // pollute the assertion).
+      const auditRows = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, freshTenant.ctx.slug));
+      const perms = auditRows.filter(
+        (r) =>
+          (r.payload as Record<string, unknown>).outbox_row_id === outboxId,
+      );
+      const eventTypes = perms.map((r) => r.eventType);
+      expect(eventTypes).toContain('email_dispatch_failed');
+      expect(eventTypes).toContain('auto_email_delivery_failed');
+
+      const f4Row = perms.find(
+        (r) => r.eventType === 'auto_email_delivery_failed',
+      );
+      expect(f4Row).toBeDefined();
+      expect((f4Row!.payload as Record<string, unknown>).reason).toBe(
+        'attachment_sha_mismatch',
+      );
+      expect((f4Row!.payload as Record<string, unknown>).outbox_row_id).toBe(
+        outboxId,
+      );
+
+      // Generic row carries the same reason (label-parity so dashboards
+      // can slice either event type on reason without a JOIN).
+      const genericRow = perms.find(
+        (r) => r.eventType === 'email_dispatch_failed',
+      );
+      expect(genericRow).toBeDefined();
+      expect((genericRow!.payload as Record<string, unknown>).reason).toBe(
+        'attachment_sha_mismatch',
+      );
+    } finally {
+      downloadSpy.mockRestore();
+      (env.features as { f4VoidAttachment: boolean }).f4VoidAttachment = originalFlag;
+      for (const id of seededIds) {
+        await db.delete(notificationsOutbox).where(eq(notificationsOutbox.id, id));
+      }
+      vi.unstubAllEnvs();
       await freshTenant.cleanup().catch(() => {});
     }
   }, 120_000);

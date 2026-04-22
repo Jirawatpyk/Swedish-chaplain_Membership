@@ -227,7 +227,12 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('invoice_not_found — row lock returns empty + emits invoice_cross_tenant_probe (R7-W1)', async () => {
-    const deps = makeDeps(false, null, null);
+    // R18-03 — settings must be present so the use case reaches
+    // lockForUpdate; the pre-R18-03 ordering reached the lock check
+    // even with null settings, but the corrected early-exit now
+    // short-circuits at `settings_missing` when settings are null.
+    // Intent of THIS test is the probe-emit path, not settings-missing.
+    const deps = makeDeps(false, null, makeSettings());
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('invoice_not_found');

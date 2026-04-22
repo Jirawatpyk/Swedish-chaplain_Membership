@@ -253,7 +253,16 @@ export const outboxMetrics = {
    */
   permanentFailure(
     notificationType: string,
-    reason: 'max_retries' | 'invalid_recipient' | 'no_template_handler',
+    reason:
+      | 'max_retries'
+      | 'invalid_recipient'
+      | 'no_template_handler'
+      // R17-02 — void two-phase-commit Phase 2 sync failure: Blob
+      // prefetch bytes don't match the sha256 committed by Phase 1.
+      // Emitted alongside the dual `email_dispatch_failed` +
+      // `auto_email_delivery_failed` audit pair so dashboards can
+      // alert on integrity-mismatch rate independently from bounce.
+      | 'attachment_sha_mismatch',
   ): void {
     counter(
       'outbox_permanent_failures_total',
@@ -359,7 +368,13 @@ export const invoicingMetrics = {
    * OR when the receiving Resend webhook reports a hard bounce.
    * Alert: bounce rate > 5% over 1h (see docs/observability.md).
    */
-  autoEmailBounce(reason: 'invalid_recipient' | 'max_retries' | 'no_template_handler'): void {
+  autoEmailBounce(
+    reason:
+      | 'invalid_recipient'
+      | 'max_retries'
+      | 'no_template_handler'
+      | 'attachment_sha_mismatch',
+  ): void {
     counter(
       'invoicing_auto_email_bounces_total',
       'F4 auto-email permanent failures — alert on bounce rate > 5% / 1h',

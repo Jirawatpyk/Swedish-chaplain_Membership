@@ -6,7 +6,7 @@
  * every row touched, even on paths that forget a WHERE tenant_id
  * filter.
  */
-import { and, desc, eq, ilike, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm';
 import type { CreditNoteRepo } from '../../application/ports/credit-note-repo';
 import {
   asCreditNoteId,
@@ -267,11 +267,38 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
       originalInvoiceId: InvoiceId,
       tenantIdArg: string,
     ): Promise<readonly CreditNote[]> {
-      const rows = await selectByOriginalInvoice(
-        txUnknown as TenantTx,
-        originalInvoiceId,
-        tenantIdArg,
-      );
+      // R17-08 — defensive cap + stable sequence-number ordering for the
+      // annotation-build callsite in `issueCreditNote` (re-renders the
+      // original invoice PDF with the CN reference list). Remainder
+      // guard + partial-accumulation invariant already bound the list
+      // size in practice (typically 1-3 partial credits per invoice);
+      // LIMIT 20 is a pathological-data-state backstop so a direct DB
+      // insert bypassing the use case can't balloon the in-tx query or
+      // produce an unbounded annotation footer. ASC by sequence_number
+      // matches the display order in the annotation footer (callers
+      // can drop their own re-sort).
+      const tx = txUnknown as TenantTx;
+      const rows = await tx
+        .select({
+          creditNote: creditNotes,
+          originalInvoiceMemberId: invoices.memberId,
+        })
+        .from(creditNotes)
+        .leftJoin(
+          invoices,
+          and(
+            eq(invoices.tenantId, creditNotes.tenantId),
+            eq(invoices.invoiceId, creditNotes.originalInvoiceId),
+          ),
+        )
+        .where(
+          and(
+            eq(creditNotes.tenantId, tenantIdArg),
+            eq(creditNotes.originalInvoiceId, originalInvoiceId),
+          ),
+        )
+        .orderBy(asc(creditNotes.sequenceNumber))
+        .limit(20);
       return rows.flatMap((r) =>
         r.originalInvoiceMemberId
           ? [rowToCreditNote(r.creditNote as CreditNoteRow, r.originalInvoiceMemberId)]
