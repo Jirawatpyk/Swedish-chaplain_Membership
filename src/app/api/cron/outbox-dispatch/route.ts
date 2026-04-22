@@ -551,13 +551,24 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // throws on length mismatch), then constant-time byte-compare. Null
   // / missing header is treated as a length-mismatch → unauthorized.
   //
-  // The `?? ''` fallback is UNREACHABLE in a correctly booted process
-  // — `src/lib/env.ts` validates `CRON_SECRET` as `z.string().min(16)`
-  // at boot and the app refuses to start on miss. The fallback is
-  // defense-in-depth only: if someone ever bypasses the env guard,
-  // `Bearer ` (7 chars) can still never match any realistic 16+ char
-  // Authorization header.
-  const expectedAuth = `Bearer ${process.env.CRON_SECRET ?? ''}`;
+  // R15-04 — explicit misconfiguration guard replaces the old `?? ''`
+  // fallback. `src/lib/env.ts` validates `CRON_SECRET` as
+  // `z.string().min(16)` at boot, so the app refuses to start on miss.
+  // If the env var were ever hot-unset in a live process (unit tests
+  // rotate via `process.env.CRON_SECRET = 'new'`), fail loud with a 500
+  // instead of silently comparing against `Bearer ` (7 chars).
+  const secret = process.env.CRON_SECRET;
+  if (!secret || secret.length < 16) {
+    logger.error(
+      { requestId },
+      'cron.outbox_dispatch.secret_misconfigured',
+    );
+    return NextResponse.json(
+      { error: 'server_misconfiguration' },
+      { status: 500 },
+    );
+  }
+  const expectedAuth = `Bearer ${secret}`;
   const received = authHeader ?? '';
   let authOk = false;
   if (received.length === expectedAuth.length) {

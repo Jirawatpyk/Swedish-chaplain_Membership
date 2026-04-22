@@ -145,6 +145,21 @@ function pinnedDateFromInput(stableInput: unknown): string {
   ) {
     return `${(stableInput as { issueDate: string }).issueDate}T00:00:00Z`;
   }
+  // Preview kind legitimately carries `issueDate: null` per the port
+  // contract (pdf-render-port.ts: "null for preview"). Watermarked
+  // drafts are never sequence-allocated, signed, byte-identical-hashed,
+  // or archived — the CreationDate value is cosmetic. Pin to epoch so
+  // preview renders stay deterministic across calls (stable hashes for
+  // caching / snapshot tests) without relaxing the fail-fast rule for
+  // real compliance-bound documents below.
+  if (
+    stableInput &&
+    typeof stableInput === 'object' &&
+    'kind' in stableInput &&
+    (stableInput as { kind: unknown }).kind === 'invoice_preview'
+  ) {
+    return '1970-01-01T00:00:00Z';
+  }
   // Fail-fast: Domain layer guarantees non-draft documents have an
   // issueDate; if we reach this branch it means a caller bypassed the
   // Application boundary (or a future refactor dropped issueDate from

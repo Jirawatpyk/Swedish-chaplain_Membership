@@ -21,16 +21,16 @@ const resend = new Resend(env.resend.apiKey);
  * Default sender address. Resolution order:
  *   1. `RESEND_FROM_EMAIL` env var (set in Vercel + .env.local once
  *      the target domain has been verified in the Resend dashboard).
- *   2. Hardcoded `SweCham <noreply@swecham.se>` fallback — kept for
- *      backwards compatibility with documentation and tests. If the
- *      fallback is used in a real environment where `swecham.se` is
- *      NOT a verified Resend domain, Resend will reject the send
- *      with HTTP 403 "This API key is not authorized to send emails
- *      from swecham.se", which the retry loop logs and the
- *      Application layer tolerates (invitations are still created;
- *      the admin can resend from the UI once the env var is set).
+ *   2. Hardcoded `SweCham <noreply@zyncdata.app>` fallback — the
+ *      verified Resend domain for current deployments. If the fallback
+ *      is used in an environment where `zyncdata.app` is NOT verified
+ *      in Resend, Resend will reject the send with HTTP 403 "This API
+ *      key is not authorized to send emails from zyncdata.app", which
+ *      the retry loop logs and the Application layer tolerates
+ *      (invitations are still created; the admin can resend from the
+ *      UI once the env var is set).
  */
-const FALLBACK_FROM = 'SweCham <noreply@swecham.se>';
+const FALLBACK_FROM = 'SweCham <noreply@zyncdata.app>';
 const DEFAULT_FROM = env.resend.fromEmail ?? FALLBACK_FROM;
 
 /**

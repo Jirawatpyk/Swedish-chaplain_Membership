@@ -15,6 +15,7 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from './fixtures';
+import { signInViaForm } from './helpers/layout';
 import { createThrowawayTenant } from './helpers/throwaway-tenant';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -29,12 +30,8 @@ async function signIn(
   portal: 'admin' | 'portal',
 ): Promise<void> {
   const path = portal === 'admin' ? '/admin/sign-in' : '/portal/sign-in';
-  await page.goto(path);
-  await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  const expectedPrefix = portal === 'admin' ? /\/admin(\/|$)/ : /\/portal(\/|$)/;
-  await page.waitForURL(expectedPrefix, { timeout: 10_000 });
+  const landing = portal === 'admin' ? /^\/admin(\/|$)/ : /^\/portal(\/|$)/;
+  await signInViaForm(page, path, email, password, landing);
 }
 
 test.describe('@us4 tenant-invoice-settings', () => {
@@ -74,10 +71,10 @@ test.describe('@us4 tenant-invoice-settings', () => {
       'Set E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD to run',
     );
     await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!, 'portal');
-    const res = await page.goto('/admin/settings/invoicing');
-    // Route group redirects unauthenticated-for-admin users — expect
-    // either a 4xx from the API guard or a redirect away from /admin.
-    expect([302, 307, 401, 403, 404]).toContain(res?.status() ?? 0);
+    // Playwright auto-follows redirects and reports the terminal
+    // response (200 sign-in / portal page) — assert on final URL
+    // instead of the status code to verify the RBAC redirect.
+    await page.goto('/admin/settings/invoicing');
     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
   });
 
@@ -102,10 +99,16 @@ test.describe('@us4 tenant-invoice-settings', () => {
         // Replace the pre-seeded 7.00 value with 10.00.
         const vatField = page.getByLabel(/VAT rate|อัตรา VAT|momssats/i);
         await vatField.fill('10.00');
-        await page.getByRole('button', { name: /^(save|บันทึก|spara)$/i }).click();
-        await page.waitForLoadState('networkidle');
+        await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).click();
+        // Skip `waitForLoadState('networkidle')` — Next.js dev HMR
+        // websocket keeps network active and never settles. The toast
+        // assertion below is the real signal for save success.
         await expect(
-          page.getByText(/saved|บันทึกแล้ว|sparad/i).first(),
+          page
+            .getByText(
+              /Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i,
+            )
+            .first(),
         ).toBeVisible({ timeout: 10_000 });
 
         // Re-fetch the page — the VAT field should persist at 10.00
@@ -165,21 +168,26 @@ test.describe('@us4 tenant-invoice-settings', () => {
           buffer: validPng,
         });
 
-        // Success toast + current-key status both surface.
-        await expect(
-          page.getByText(/logo uploaded|อัปโหลดโลโก้แล้ว|logotyp uppladdad/i).first(),
-        ).toBeVisible({ timeout: 15_000 });
+        // Success is signalled by the persistent #logo_status key
+        // label (the sonner toast is transient and can dismiss before
+        // the assertion runs on slow first-compile of the logo route).
         const keyLabel = page.locator('#logo_status').getByText(
           new RegExp(`invoicing/${tenant.slug}/logos/`),
         );
-        await expect(keyLabel).toBeVisible({ timeout: 5_000 });
+        await expect(keyLabel).toBeVisible({ timeout: 20_000 });
 
         // Save and verify persistence via page reload — the hidden
         // `logo_blob_key` should survive the PATCH round-trip.
-        await page.getByRole('button', { name: /^(save|บันทึก|spara)$/i }).click();
-        await page.waitForLoadState('networkidle');
+        await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).click();
+        // Skip `waitForLoadState('networkidle')` — Next.js dev HMR
+        // websocket keeps network active and never settles. The toast
+        // assertion below is the real signal for save success.
         await expect(
-          page.getByText(/saved|บันทึกแล้ว|sparad/i).first(),
+          page
+            .getByText(
+              /Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i,
+            )
+            .first(),
         ).toBeVisible({ timeout: 10_000 });
 
         await page.reload();
@@ -271,9 +279,14 @@ test.describe('@us4 tenant-invoice-settings', () => {
           buffer: tinyPng,
         });
 
-        await expect(page.locator('p[role="alert"]').first()).toBeVisible({
-          timeout: 15_000,
-        });
+        // Scope the alert locator under the Logo fieldset so we don't
+        // race with any stale form-level `p[role="alert"]` leftover
+        // from earlier tests. Server-side sharp dimension check can
+        // take longer on the first invocation — widen timeout to 20s.
+        await expect(
+          page.locator('fieldset').filter({ hasText: /Logo/i })
+            .locator('p[role="alert"]').first(),
+        ).toBeVisible({ timeout: 20_000 });
       } finally {
         await tenant.cleanup().catch(() => {});
       }
@@ -308,24 +321,31 @@ test.describe('@us4 tenant-invoice-settings', () => {
           .getByLabel(/tax id|เลขประจำตัวผู้เสียภาษี|skatte.*id/i)
           .fill('0105500000000');
         await page
-          .getByLabel(/^(legal name|ชื่อ|juridiskt namn).* Thai.*/i)
+          .getByLabel(/^(legal name|ชื่อ|juridiskt namn).*Thai.*/i)
           .fill('ทดสอบ Throwaway');
         await page
-          .getByLabel(/^(legal name|ชื่อ|juridiskt namn).* English.*/i)
+          .getByLabel(/^(legal name|ชื่อ|juridiskt namn).*English.*/i)
           .fill('Throwaway Test');
         await page
-          .getByLabel(/^(address|ที่อยู่|adress).* Thai.*/i)
+          .getByLabel(/^(registered address|address|ที่อยู่|adress).*Thai.*/i)
           .fill('1 ถนนทดสอบ, กรุงเทพฯ');
         await page
-          .getByLabel(/^(address|ที่อยู่|adress).* English.*/i)
+          .getByLabel(/^(registered address|address|ที่อยู่|adress).*English.*/i)
           .fill('1 Test Rd, Bangkok');
         await page.getByLabel(/invoice.*prefix/i).fill('E2E');
         await page.getByLabel(/credit.*prefix/i).fill('E2EC');
 
-        await page.getByRole('button', { name: /^(save|บันทึก|spara)$/i }).click();
-        await page.waitForLoadState('networkidle');
+        // Bootstrap path → button label is "Create settings" (no row
+        // exists yet), not "Save settings".
+        await page
+          .getByRole('button', { name: /^(create|สร้าง|skapa)/i })
+          .click();
         await expect(
-          page.getByText(/saved|บันทึกแล้ว|sparad/i).first(),
+          page
+            .getByText(
+              /Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i,
+            )
+            .first(),
         ).toBeVisible({ timeout: 10_000 });
       } finally {
         await tenant.cleanup().catch(() => {});

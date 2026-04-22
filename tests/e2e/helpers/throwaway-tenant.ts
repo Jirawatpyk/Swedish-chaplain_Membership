@@ -39,6 +39,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
+import { users } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
@@ -93,6 +94,20 @@ export interface ThrowawayTenant {
   readonly cleanup: () => Promise<void>;
 }
 
+async function resolveAdminActorUserId(): Promise<string> {
+  const row = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.role, 'admin'))
+    .limit(1);
+  if (row.length === 0) {
+    throw new Error(
+      'throwaway-tenant: no admin user seeded — run scripts/seed-e2e-user.ts first.',
+    );
+  }
+  return row[0]!.id;
+}
+
 export async function createThrowawayTenant(
   opts: ThrowawayTenantSeedOptions = {},
 ): Promise<ThrowawayTenant> {
@@ -101,7 +116,7 @@ export async function createThrowawayTenant(
   const seedPlan = opts.seedPlan ?? true;
   const seedMember = opts.seedMember ?? true;
   const seedSettings = opts.seedSettings ?? false;
-  const actorUserId = opts.actorUserId ?? 'system:throwaway-tenant';
+  const actorUserId = opts.actorUserId ?? (await resolveAdminActorUserId());
 
   let memberId: string | null = null;
 

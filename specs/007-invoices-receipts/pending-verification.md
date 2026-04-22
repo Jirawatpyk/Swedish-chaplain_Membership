@@ -182,9 +182,10 @@ always-on. Blocked on: (a) seeder currently calls `process.exit` at
 module load — needs a `main()` export guard, and (b) `global-setup`
 must not inherit the seeder's exit code. Not a release blocker.
 
-**Owner**: next F4 maintainer session. **Ship-gate**: NO — the
-DB-state assertions are covered by the integration suite; the UI-glue
-assertion is a polish item.
+**Owner**: next F4 maintainer session. **Target-close**: by end of
+Phase 10 post-ship window (2026-05-06 — two weeks after Phase 10
+ship). **Ship-gate**: NO — the DB-state assertions are covered by the
+integration suite; the UI-glue assertion is a polish item.
 
 ### PVR-2 — `invoice-admin-a11y.spec.ts` `disableRules(['scrollable-region-focusable'])`
 
@@ -206,6 +207,7 @@ selection behaviour.
 switching to the `role="grid"` + `aria-rowindex` pattern used by
 TanStack Table v8; backport to invoice detail once validated.
 
-**Owner**: F5 UX lead. **Ship-gate**: NO — WCAG 2.1 AA floor is
-already met by the cell-level focus model. Rule-disable is narrowly
-scoped to one assertion in one file.
+**Owner**: F5 UX lead. **Target-close**: during F5 planning
+(`/speckit.plan` gate, estimated 2026-05-13). **Ship-gate**: NO —
+WCAG 2.1 AA floor is already met by the cell-level focus model.
+Rule-disable is narrowly scoped to one assertion in one file.
