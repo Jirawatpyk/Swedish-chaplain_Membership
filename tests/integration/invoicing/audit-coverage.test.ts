@@ -28,6 +28,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -54,12 +56,33 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import type { F4AuditEventType } from '@/modules/invoicing/application/ports/audit-port';
 
-// MVP-reachable subset. Full 16 covered across Phase 6/9/10.
+// MVP-reachable subset. Full 17 behaviorally probed at DB level below
+// (only `invoice_pdf_regenerated` remains deferred per post-MVP Blob-
+// outage rerender path — see inventory deferred entry).
+// C4 (Phase 10 review follow-up) — extended from the original 4 MVP
+// types to the full 17 so every event_type sees at least ONE assertion
+// in THIS file. The full use-case-level behavioral coverage for the
+// newer-in-Phase-10 types (resend trio, overdue, auto-email-delivery-
+// failed, MTA probe) lives in their dedicated test files; the
+// file-existence check in the inventory test pins those references.
 const MVP_AUDIT_TYPES_EMITTED: ReadonlyArray<F4AuditEventType> = [
   'invoice_draft_created',
+  'invoice_draft_updated',
+  'invoice_draft_deleted',
   'invoice_issued',
   'invoice_paid',
+  'invoice_voided',
+  'invoice_overdue_detected',
+  'credit_note_issued',
+  'tenant_invoice_settings_updated',
+  'invoice_pdf_resent',
+  'receipt_pdf_resent',
+  'credit_note_pdf_resent',
   'invoice_cross_tenant_probe',
+  'credit_note_cross_tenant_probe',
+  'tenant_invoice_settings_cross_tenant_probe',
+  'pdf_render_failed',
+  'auto_email_delivery_failed',
 ] as const;
 
 const CORPORATE_MATRIX: BenefitMatrix = {
@@ -471,7 +494,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     > = {
       invoice_draft_created: {
         status: 'covered',
-        where: 'create-invoice-draft integration tests (audit-coverage probe + F3 timeline)',
+        where:
+          'tests/unit/invoicing/create-invoice-draft.test.ts + f3-timeline-integration.test.ts + audit-coverage.test.ts probe',
       },
       invoice_draft_updated: {
         status: 'covered',
@@ -580,11 +604,66 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'pdf_render_failed',
       'auto_email_delivery_failed',
     ] as const;
+    // C4 — the inventory must reference REAL, CURRENT test files.
+    // Previously `'covered'` entries were declarative-only: if a
+    // referenced file was renamed / deleted the inventory still said
+    // "covered" and the gate silently passed. Extract every
+    // `<file>.test.ts` path mentioned in `where` and prove the file
+    // exists on disk. Fails loudly on rot.
+    const REPO_ROOT = resolvePath(__dirname, '../../..');
+    const KNOWN_TEST_FILES: Record<string, string> = {
+      'tests/unit/invoicing/create-invoice-draft.test.ts':
+        'tests/unit/invoicing/create-invoice-draft.test.ts',
+      'f3-timeline-integration.test.ts':
+        'tests/integration/invoicing/f3-timeline-integration.test.ts',
+      'audit-coverage.test.ts': 'tests/integration/invoicing/audit-coverage.test.ts',
+      'auto-email-outbox.test.ts': 'tests/integration/invoicing/auto-email-outbox.test.ts',
+      'seq-number-atomicity.test.ts':
+        'tests/integration/invoicing/seq-number-atomicity.test.ts',
+      'void-invoice.test.ts': 'tests/integration/invoicing/void-invoice.test.ts',
+      'credit-note-partial-accumulation.test.ts':
+        'tests/integration/invoicing/credit-note-partial-accumulation.test.ts',
+      'credit-note-immutability.test.ts':
+        'tests/integration/invoicing/credit-note-immutability.test.ts',
+      'settings-form.test.ts': 'tests/integration/invoicing/settings-form.test.ts',
+      'tenant-isolation.test.ts':
+        'tests/integration/invoicing/tenant-isolation.test.ts',
+      'tenant-invoice-settings-probe.test.ts':
+        'tests/integration/invoicing/tenant-invoice-settings-probe.test.ts',
+      'overdue-audit-idempotency.test.ts':
+        'tests/integration/invoicing/overdue-audit-idempotency.test.ts',
+      'tests/unit/invoicing/derive-overdue.test.ts':
+        'tests/unit/invoicing/derive-overdue.test.ts',
+      'tests/unit/invoicing/resend-pdf.test.ts':
+        'tests/unit/invoicing/resend-pdf.test.ts',
+    };
+
     for (const t of declared) {
       const entry = coverage[t];
       expect(entry, `F4AuditEventType '${t}' missing from T113a inventory`).toBeDefined();
       expect(['covered', 'deferred']).toContain(entry.status);
       expect(entry.where, `'${t}' inventory missing 'where'`).toBeTruthy();
+
+      if (entry.status === 'covered') {
+        const where = entry.where ?? '';
+        // Every "covered" entry must reference at least ONE file whose
+        // path we can resolve. If the inventory mentions a file that
+        // no longer exists, fail — the reference is stale.
+        const referencedFiles = Object.entries(KNOWN_TEST_FILES)
+          .filter(([needle]) => where.includes(needle))
+          .map(([, path]) => path);
+        expect(
+          referencedFiles.length,
+          `'${t}' inventory 'where' string references no known test file: "${where}"`,
+        ).toBeGreaterThan(0);
+        for (const relPath of referencedFiles) {
+          const abs = resolvePath(REPO_ROOT, relPath);
+          expect(
+            existsSync(abs),
+            `'${t}' inventory points at missing file: ${relPath}`,
+          ).toBe(true);
+        }
+      }
     }
 
     // Sanity: count the active vs. deferred split so future reviewers

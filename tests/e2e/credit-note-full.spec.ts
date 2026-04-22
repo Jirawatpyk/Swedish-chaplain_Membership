@@ -137,9 +137,15 @@ test.describe('@us6 credit-note full-credit flow', () => {
   // on a throwaway test tenant). This E2E adds the UI-glue assertion:
   // the status-badge flip on /admin/invoices/<id> after a successful
   // credit-note POST.
+  // Skip gate tracked as PVR-1 in
+  // `specs/007-invoices-receipts/pending-verification.md` — DB-state
+  // coverage is GREEN via `credit-note-partial-accumulation.test.ts`;
+  // this E2E is the UI-glue-only assertion and is NOT a ship blocker.
+  // Un-fixme recipe: see PVR-1. Long-term fix: fold seeder into
+  // `tests/e2e/global-setup.ts`.
   test.skip(
     process.env.E2E_HAS_ADMIN_FIXTURES !== '1',
-    'E2E_HAS_ADMIN_FIXTURES=1 + seed-f4-e2e-admin-fixtures must have run',
+    'E2E_HAS_ADMIN_FIXTURES=1 + seed-f4-e2e-admin-fixtures must have run — see PVR-1',
   );
 
   test('AS1 — full credit note flips invoice badge to Credited', async ({

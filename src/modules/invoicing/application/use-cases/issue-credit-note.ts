@@ -134,6 +134,14 @@ export async function issueCreditNote(
   // the tx is safe.
   const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
 
+  // T122 — track which render invocation was in-flight when a
+  // `pdf_render_failed` is thrown so the post-rollback audit can
+  // record the correct `render_kind`. `'credit_note'` covers G+H
+  // (main CN PDF), `'annotation'` covers J2 (re-stamped original
+  // invoice). Mutated inside the withTx closure, read from the outer
+  // catch.
+  let pendingRenderKind: 'credit_note' | 'annotation' | null = null;
+
   try {
     return await deps.invoiceRepo.withTx(async (tx) => {
       // B. Row-lock — serialises concurrent credit-note issues on the
@@ -282,6 +290,7 @@ export async function issueCreditNote(
         position: 1,
       };
       // G+H. Render CN PDF + upload to Blob (T126 shared helper).
+      pendingRenderKind = 'credit_note';
       const blobKey = `invoicing/${input.tenantId}/${fy}/credit-note_${creditNoteId}_v${deps.currentTemplateVersion}.pdf`;
       const rendered = await renderAndUploadPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
@@ -409,6 +418,7 @@ export async function issueCreditNote(
         // (adds the credit-annotation overlay) so DB pdf_sha256
         // diverges from the original; without allowOverwrite the
         // adapter silently treats already-exists as success.
+        pendingRenderKind = 'annotation';
         const rerendered = await renderAndUploadPdf(
           { pdfRender: deps.pdfRender, blob: deps.blob },
           {
@@ -527,6 +537,32 @@ export async function issueCreditNote(
         },
         'issueCreditNote: internal error, rolling back',
       );
+      // T122 — emit `pdf_render_failed` audit AFTER rollback so
+      // forensic evidence survives (parity with issue-invoice.ts and
+      // record-payment.ts). `pendingRenderKind` disambiguates which
+      // of the two render sites (G+H main CN vs J2 annotation) was
+      // in-flight. Fire-and-forget: never mask the original error.
+      if (e.error.code === 'pdf_render_failed') {
+        try {
+          await deps.audit.emit(null, {
+            tenantId: input.tenantId,
+            requestId: input.requestId ?? null,
+            eventType: 'pdf_render_failed',
+            actorUserId: input.actorUserId,
+            summary: `PDF render failed for ${pendingRenderKind ?? 'credit_note'} on invoice ${input.invoiceId}`,
+            payload: {
+              invoice_id: input.invoiceId,
+              render_kind: pendingRenderKind ?? 'credit_note',
+              reason: e.error.reason,
+            },
+          });
+        } catch (auditErr) {
+          logger.warn(
+            { err: auditErr, invoiceId: input.invoiceId },
+            'issueCreditNote: pdf_render_failed audit emit also failed',
+          );
+        }
+      }
       return err(e.error);
     }
     throw e;

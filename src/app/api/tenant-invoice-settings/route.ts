@@ -115,6 +115,50 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);
+  const requestId = requestIdFromHeaders(request.headers);
+
+  // T120 symmetric MTA dual-bind probe (Review S5) — mirror the PATCH
+  // guard on GET so a cross-tenant read attempt is logged + audited +
+  // 403'd, not silently served. Dormant in STD deployment (the
+  // resolver hardcodes env.tenant.slug); active once F10 MTA enables
+  // subdomain/session-claim tenant resolution. Fire-and-forget audit
+  // emit (try/catch) so an audit-adapter outage cannot mask the 403
+  // into a 500.
+  if (tenantCtx.slug !== env.tenant.slug) {
+    logger.warn(
+      {
+        requestId,
+        hostResolvedSlug: tenantCtx.slug,
+        deployedSlug: env.tenant.slug,
+        userId: ctx.current.user.id,
+      },
+      'GET /api/tenant-invoice-settings host / deployed-tenant mismatch',
+    );
+    try {
+      await makeF4AuditPort().emit(null, {
+        tenantId: tenantCtx.slug,
+        requestId,
+        eventType: 'tenant_invoice_settings_cross_tenant_probe',
+        actorUserId: ctx.current.user.id,
+        summary: `Cross-tenant probe on tenant-invoice-settings (host=${tenantCtx.slug}, deployed=${env.tenant.slug})`,
+        payload: {
+          host_resolved_slug: tenantCtx.slug,
+          deployed_slug: env.tenant.slug,
+          route: 'GET /api/tenant-invoice-settings',
+        },
+      });
+    } catch (auditErr) {
+      logger.error(
+        { requestId, err: auditErr },
+        'GET /api/tenant-invoice-settings: probe audit emit failed',
+      );
+    }
+    return NextResponse.json(
+      { error: { code: 'cross_tenant_forbidden' } },
+      { status: 403 },
+    );
+  }
+
   const view = await drizzleTenantSettingsRepo.getForIssue(tenantCtx.slug);
 
   if (!view) {
@@ -185,18 +229,28 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
       },
       'PATCH /api/tenant-invoice-settings host / deployed-tenant mismatch',
     );
-    await makeF4AuditPort().emit(null, {
-      tenantId: tenantCtx.slug,
-      requestId,
-      eventType: 'tenant_invoice_settings_cross_tenant_probe',
-      actorUserId: ctx.current.user.id,
-      summary: `Cross-tenant probe on tenant-invoice-settings (host=${tenantCtx.slug}, deployed=${env.tenant.slug})`,
-      payload: {
-        host_resolved_slug: tenantCtx.slug,
-        deployed_slug: env.tenant.slug,
-        route: 'PATCH /api/tenant-invoice-settings',
-      },
-    });
+    // I2 — guard the audit emit. If the audit adapter throws (DB
+    // outage, etc.) the 403 MUST still surface; never let a probe
+    // rewrite into an accidental 500.
+    try {
+      await makeF4AuditPort().emit(null, {
+        tenantId: tenantCtx.slug,
+        requestId,
+        eventType: 'tenant_invoice_settings_cross_tenant_probe',
+        actorUserId: ctx.current.user.id,
+        summary: `Cross-tenant probe on tenant-invoice-settings (host=${tenantCtx.slug}, deployed=${env.tenant.slug})`,
+        payload: {
+          host_resolved_slug: tenantCtx.slug,
+          deployed_slug: env.tenant.slug,
+          route: 'PATCH /api/tenant-invoice-settings',
+        },
+      });
+    } catch (auditErr) {
+      logger.error(
+        { requestId, err: auditErr },
+        'PATCH /api/tenant-invoice-settings: probe audit emit failed',
+      );
+    }
     return NextResponse.json(
       { error: { code: 'cross_tenant_forbidden' } },
       { status: 403 },

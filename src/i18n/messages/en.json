@@ -1117,7 +1117,8 @@
           "issueCreditNote": "Issue credit note",
           "resendInvoice": "Resend invoice email",
           "resendReceipt": "Resend receipt email",
-          "resendAria": "Email a fresh copy of {documentType} {number} to the member's primary contact",
+          "resendInvoiceAria": "Email a fresh copy of invoice {number} to the member's primary contact",
+          "resendReceiptAria": "Email a fresh copy of receipt {number} to the member's primary contact",
           "more": "More",
           "moreAria": "More actions for {number}"
         },
@@ -1433,7 +1434,8 @@
         "status": { "issued": "Issued" },
         "actions": {
           "backToInvoice": "Back to invoice",
-          "download": "Download PDF"
+          "download": "Download PDF",
+          "downloadAria": "Download credit note {number} PDF"
         },
         "fields": {
           "issueDate": "Issue date",

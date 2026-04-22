@@ -144,6 +144,7 @@ export default async function PortalCreditNoteDetailPage({
             target="_blank"
             rel="noopener noreferrer"
             className={buttonVariants({ variant: 'outline' })}
+            aria-label={t('actions.downloadAria', { number: cn.documentNumber.raw })}
           >
             <DownloadIcon className="size-4" aria-hidden="true" />
             {t('actions.download')}

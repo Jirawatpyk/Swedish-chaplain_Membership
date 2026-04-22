@@ -645,6 +645,24 @@ Deferred metrics can be added post-ship without migration — all go through the
 existing `@opentelemetry/api` → `@vercel/otel` pipeline. Adding a new emit
 site is a ~5-line patch (instrument + call site + doc row).
 
+### 16.1 Running perf-gated suites locally / in CI
+
+All three Phase 10 perf tests are marked `it.skipIf(!RUN_PERF)` — they
+run only when the `RUN_PERF=1` env var is set, so the default unit+
+integration pipeline stays fast. To exercise them (budgets fail-close
+the run):
+
+```bash
+pnpm test:perf   # runs T110 (PDF render), T110a (list query), T111 (seq allocator)
+```
+
+`pnpm test:perf` is a tsx wrapper (`scripts/run-perf-tests.ts`) that
+sets `RUN_PERF=1` and spawns vitest against the three perf suites —
+cross-platform, no extra devDep. CI wiring: schedule a nightly job
+with `DATABASE_URL` pointing at live Neon Singapore and run
+`pnpm install && pnpm test:perf`. Exit code propagates so a missed
+p95/p99 budget fails the pipeline.
+
 ## 17. SLOs — F4
 
 | Objective | Window | Budget | Measurement |

@@ -33,6 +33,7 @@
  * event emission (FR-012c parity for unrenderable rows).
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { timingSafeEqual } from 'node:crypto';
 import { and, count, eq, lt, lte, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 /* eslint-disable no-restricted-imports --
@@ -408,7 +409,7 @@ async function dispatchOne(
         .set({
           status: 'sent',
           sentMessageId: result.value.messageId,
-          updatedAt: new Date(),
+          updatedAt: now,
         })
         .where(eq(notificationsOutbox.id, row.id));
       return 'sent';
@@ -425,7 +426,7 @@ async function dispatchOne(
           status: 'permanently_failed',
           attempts: nextAttempt,
           lastError: result.error.message,
-          updatedAt: new Date(),
+          updatedAt: now,
         })
         .where(eq(notificationsOutbox.id, row.id));
 
@@ -513,7 +514,7 @@ async function dispatchOne(
         attempts: nextAttempt,
         nextRetryAt,
         lastError: result.error.message,
-        updatedAt: new Date(),
+        updatedAt: now,
       })
       .where(eq(notificationsOutbox.id, row.id));
 
@@ -545,7 +546,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // prod), the comparison to `Bearer undefined` still triggers 401
   // for any caller — no dev fallback, no unauthenticated drain.
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // T-F4-01 — constant-time comparison to defeat timing side-channel
+  // on `CRON_SECRET` enumeration. Length-check first (timingSafeEqual
+  // throws on length mismatch), then constant-time byte-compare. Null
+  // / missing header is treated as a length-mismatch → unauthorized.
+  const expectedAuth = `Bearer ${process.env.CRON_SECRET ?? ''}`;
+  const received = authHeader ?? '';
+  let authOk = false;
+  if (received.length === expectedAuth.length) {
+    authOk = timingSafeEqual(
+      Buffer.from(received, 'utf8'),
+      Buffer.from(expectedAuth, 'utf8'),
+    );
+  }
+  if (!authOk) {
     logger.warn({ requestId }, 'cron.outbox_dispatch.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }

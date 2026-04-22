@@ -25,6 +25,7 @@ import {
   getCreditNotePdfSignedUrl,
   makeGetCreditNotePdfSignedUrlDeps,
 } from '@/modules/invoicing';
+import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
 import { logger } from '@/lib/logger';
 
 export async function GET(
@@ -87,13 +88,13 @@ export async function GET(
     );
   }
 
-  const raw = result.value.filename;
-  // RFC-5987 `filename*` carries the non-ASCII original (Thai doc
-  // numbers never have non-ASCII in practice, but future
-  // localisation is cheap insurance). `filename` fallback is ASCII-
-  // safe for older clients.
-  const asciiSafe = raw.replace(/["\\]/g, '_').replace(/[^\x20-\x7E]/g, '_');
-  const contentDisposition = `attachment; filename="${asciiSafe}"; filename*=UTF-8''${encodeURIComponent(raw)}`;
+  // T121 — route through the shared helper so CR/LF header-injection
+  // defense stays uniform across all 4 PDF routes. Inline versions
+  // have drifted in the past and lost the \r\n strip.
+  const contentDisposition = buildAttachmentContentDisposition(
+    result.value.filename,
+    { logger, context: 'portal-credit-note-pdf' },
+  );
   const contentLength = blobResponse.headers.get('content-length');
 
   const headers: Record<string, string> = {

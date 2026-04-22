@@ -61,4 +61,72 @@ describe('buildAttachmentContentDisposition', () => {
     const utf8 = h.match(/filename\*=UTF-8''([^;]+)/)?.[1] ?? '';
     expect(decodeURIComponent(utf8)).toBe(raw);
   });
+
+  // S8 — explicit percent-encoded CR/LF variants. The filename* form
+  // percent-encodes CR/LF to %0D%0A (or %0d%0a); both cases must be
+  // present verbatim in the extended-form value because that side
+  // carries the raw bytes. The ASCII fallback side must NOT contain
+  // literal CR/LF regardless of attacker case.
+  it.each([
+    ['lowercase %0a', 'evil\npdf'],
+    ['lowercase %0d', 'evil\rpdf'],
+    ['uppercase CR+LF', 'evil\r\npdf'],
+    ['dual uppercase', 'evil\r\nX-Injected: 1\r\n\r\nevil'],
+  ])(
+    'CRLF variant [%s] never leaks into the ASCII filename fallback',
+    (_label, raw) => {
+      const h = buildAttachmentContentDisposition(raw);
+      const asciiFallback = h.match(/filename="([^"]+)"/)?.[1] ?? '';
+      expect(asciiFallback).not.toContain('\r');
+      expect(asciiFallback).not.toContain('\n');
+      // Full header line must only have the ONE CRLF-less value: no
+      // `\r` or `\n` bytes exist anywhere in the produced string.
+      expect(h.includes('\r')).toBe(false);
+      expect(h.includes('\n')).toBe(false);
+    },
+  );
+
+  it('literal percent-CR/LF sequences in raw are treated as opaque chars (not decoded)', () => {
+    // If an attacker tries to pre-encode CR/LF as literal `%0D%0A`,
+    // those are plain ASCII chars `%`, `0`, `D`, `%`, `0`, `A` —
+    // already in the allowed set. The important property is that
+    // `encodeURIComponent` on the raw re-encodes the `%` to `%25`
+    // so the resulting `filename*=UTF-8''` cannot be decoded by a
+    // browser into CR/LF bytes.
+    const raw = 'evil%0D%0Apdf';
+    const h = buildAttachmentContentDisposition(raw);
+    const utf8 = h.match(/filename\*=UTF-8''([^;]+)/)?.[1] ?? '';
+    // The % sign is re-encoded as %25 — decoded result round-trips to
+    // the literal string, not to an interpreted CR/LF.
+    expect(decodeURIComponent(utf8)).toBe(raw);
+  });
+
+  it('slug-prefix collision — helper output is purely about filename, logo-blob prefix guard is route-level', () => {
+    // Property-level guard: the helper must not accidentally grow any
+    // role in tenant-isolation. The `raw` is echoed byte-for-byte into
+    // the UTF-8 form and strip-sanitised into the ASCII form — no
+    // tenant-ish parsing happens here. This is a contract test, not a
+    // behavioral one.
+    const h = buildAttachmentContentDisposition('invoicing/abcdef/logos/x.pdf');
+    expect(h).toContain('filename="invoicing/abcdef/logos/x.pdf"');
+  });
+
+  it('invokes optional logger warn when strip occurs', () => {
+    const logs: Array<{ obj: Record<string, unknown>; msg: string | undefined }> = [];
+    const logger = {
+      warn: (obj: Record<string, unknown>, msg?: string) => {
+        logs.push({ obj, msg });
+      },
+    };
+    buildAttachmentContentDisposition('evil\r\npdf', { logger, context: 'test' });
+    expect(logs).toHaveLength(1);
+    expect(logs[0]!.obj.context).toBe('test');
+  });
+
+  it('does NOT invoke logger when input is clean', () => {
+    const logs: unknown[] = [];
+    const logger = { warn: (o: Record<string, unknown>) => void logs.push(o) };
+    buildAttachmentContentDisposition('INV-2026-000001.pdf', { logger });
+    expect(logs).toHaveLength(0);
+  });
 });

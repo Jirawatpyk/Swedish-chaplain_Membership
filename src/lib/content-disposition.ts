@@ -41,6 +41,19 @@ function asciiSafe(raw: string): string {
 }
 
 /**
+ * Minimal logger shape — matches pino's public surface without coupling
+ * this helper to the full pino types.
+ */
+export interface ContentDispositionLogger {
+  warn: (obj: Record<string, unknown>, msg?: string) => void;
+}
+
+export interface BuildAttachmentOptions {
+  logger?: ContentDispositionLogger;
+  context?: string;
+}
+
+/**
  * Build an RFC 6266 `Content-Disposition: attachment` header value.
  *
  * Example:
@@ -49,9 +62,25 @@ function asciiSafe(raw: string): string {
  *
  *   buildAttachmentContentDisposition('ใบแจ้งหนี้.pdf')
  *   → `attachment; filename="________.pdf"; filename*=UTF-8''%E0%B9%83%E0%B8%9A%E0%B9%81%E0%B8%88%E0%B9%89%E0%B8%87%E0%B8%AB%E0%B8%99%E0%B8%B5%E0%B9%89.pdf`
+ *
+ * If an optional logger is provided and a strip occurs, emits a warn
+ * so ops/security can observe probing of the filename surface.
  */
-export function buildAttachmentContentDisposition(raw: string): string {
+export function buildAttachmentContentDisposition(
+  raw: string,
+  opts?: BuildAttachmentOptions,
+): string {
   const safe = asciiSafe(raw);
+  if (safe !== raw && opts?.logger) {
+    opts.logger.warn(
+      {
+        context: opts.context ?? 'content-disposition',
+        original_length: raw.length,
+        sanitized_length: safe.length,
+      },
+      'content-disposition: stripped unsafe chars from filename',
+    );
+  }
   return `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(raw)}`;
 }
 

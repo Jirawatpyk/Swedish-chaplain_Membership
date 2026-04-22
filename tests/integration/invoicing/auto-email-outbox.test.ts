@@ -459,8 +459,11 @@ describe('T105 — F4 auto-email outbox + T107 manual resend (live Neon)', () =>
 
   it('(T106 dual-emit) dispatcher perm-fails F4 invoice_auto_email → emits BOTH email_dispatch_failed AND auto_email_delivery_failed', async () => {
     const freshTenant = await createTestTenant('test-swecham');
-    const previousCronSecret = process.env.CRON_SECRET;
-    process.env.CRON_SECRET = 'test-t106-dual-emit-secret';
+    // S2 — `vi.stubEnv` is preferred over manual `process.env` mutation:
+    // it isolates the change to this test and auto-restores via
+    // Vitest's `afterEach`, eliminating the leak risk if a concurrent
+    // test or the `finally` block is skipped.
+    vi.stubEnv('CRON_SECRET', 'test-t106-dual-emit-secret');
     const seededIds: string[] = [];
     try {
       // Seed an invoice_auto_email row at attempts=4 (next increment =
@@ -522,11 +525,7 @@ describe('T105 — F4 auto-email outbox + T107 manual resend (live Neon)', () =>
       for (const id of seededIds) {
         await db.delete(notificationsOutbox).where(eq(notificationsOutbox.id, id));
       }
-      if (previousCronSecret === undefined) {
-        delete process.env.CRON_SECRET;
-      } else {
-        process.env.CRON_SECRET = previousCronSecret;
-      }
+      vi.unstubAllEnvs();
       await freshTenant.cleanup().catch(() => {});
     }
   }, 120_000);

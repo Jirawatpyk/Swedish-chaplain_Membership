@@ -378,6 +378,54 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // D2 (Phase 10 Deferred) — ban bare `Content-Disposition` header
+    // literals outside the canonical helper. All four PDF routes +
+    // any future attachment stream MUST route through
+    // `buildAttachmentContentDisposition` in `src/lib/content-disposition.ts`
+    // so the CR/LF header-injection defense stays uniform (T121
+    // regression guard). Inline construction historically drifted and
+    // lost the `\r\n` strip — this rule catches that at lint time.
+    //
+    // Matches: object properties or string literals equal to
+    // `Content-Disposition` / `content-disposition` (the HTTP header
+    // name). Does NOT match the helper file itself (ignores), nor
+    // tests that assert the header shape.
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: [
+      "src/lib/content-disposition.ts",
+      "src/lib/content-disposition.test.ts",
+    ],
+    rules: {
+      // The antipattern is INLINE CONSTRUCTION of a Content-Disposition
+      // VALUE — i.e. a string literal / template literal shaped like
+      // `attachment; filename="..."` somewhere OTHER than the helper
+      // file. Setting `'Content-Disposition': helperOutput` on a
+      // headers object is the correct pattern and stays allowed; the
+      // rule only fires when someone hand-builds the value.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "Literal[value=/^attachment;\\s*filename/i]",
+          message:
+            "Do not hand-construct `Content-Disposition` values. " +
+            "Use `buildAttachmentContentDisposition()` from " +
+            "`@/lib/content-disposition` so the CR/LF header-injection " +
+            "defense + RFC 6266 extended-form stay uniform across all " +
+            "PDF / attachment streams (T121).",
+        },
+        {
+          // Template literals like `` `attachment; filename="${x}"` ``
+          selector:
+            "TemplateLiteral[quasis.0.value.raw=/^attachment;\\s*filename/i]",
+          message:
+            "Do not hand-construct `Content-Disposition` values with a template literal. " +
+            "Use `buildAttachmentContentDisposition()` from `@/lib/content-disposition`.",
+        },
+      ],
+    },
+  },
   globalIgnores([
     ".next/**",
     "out/**",

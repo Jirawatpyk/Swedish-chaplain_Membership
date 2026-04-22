@@ -337,6 +337,31 @@ export async function recordPayment(
         },
         'recordPayment: internal error, rolling back',
       );
+      // T122 — emit `pdf_render_failed` audit AFTER the tx rolled
+      // back so forensic evidence survives (parity with
+      // issue-invoice.ts:375–399). Fire-and-forget: never mask the
+      // original error with an audit-write failure.
+      if (e.error.code === 'pdf_render_failed') {
+        try {
+          await deps.audit.emit(null, {
+            tenantId: input.tenantId,
+            requestId: input.requestId ?? null,
+            eventType: 'pdf_render_failed',
+            actorUserId: input.actorUserId,
+            summary: `PDF render failed for receipt on invoice ${input.invoiceId}`,
+            payload: {
+              invoice_id: input.invoiceId,
+              render_kind: 'receipt',
+              reason: e.error.reason,
+            },
+          });
+        } catch (auditErr) {
+          logger.warn(
+            { err: auditErr, invoiceId: input.invoiceId },
+            'recordPayment: pdf_render_failed audit emit also failed',
+          );
+        }
+      }
       return err(e.error);
     }
     throw e;

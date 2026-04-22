@@ -185,15 +185,16 @@ Summary from `research.md § 13`; full mitigations + tests listed here.
 
 ## 4. PII catalogue (F4-introduced)
 
-| Field | Column(s) | Lawful basis | Redacted in logs? |
-|---|---|---|---|
-| Tax ID (tenant) | tenant_invoice_settings.tax_id, invoices.tenant_identity_snapshot.tax_id | Legal obligation | Yes |
-| Tax ID (member) | invoices.member_identity_snapshot.tax_id | Legal obligation | Yes |
-| Legal name (member) | invoices.member_identity_snapshot.legal_name | Legal obligation | Yes |
-| Address (member) | invoices.member_identity_snapshot.address | Legal obligation | Yes |
-| Primary contact name/email | invoices.member_identity_snapshot.primary_contact_* | Legal obligation | F3 redact list already covers |
-| Signed URL tokens | transient in logs only | N/A | Yes |
-| PDF bytes | N/A (Blob) | Legal obligation | Yes |
+| Field | Column(s) | Lawful basis | Classification | Redacted in logs? |
+|---|---|---|---|---|
+| Tax ID (tenant) | tenant_invoice_settings.tax_id, invoices.tenant_identity_snapshot.tax_id | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | Yes |
+| Tax ID (member) | invoices.member_identity_snapshot.tax_id | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | Yes |
+| Legal name (member) | invoices.member_identity_snapshot.legal_name | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | Yes |
+| Address (member) | invoices.member_identity_snapshot.address | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | Yes |
+| Primary contact name/email | invoices.member_identity_snapshot.primary_contact_* | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | F3 redact list already covers |
+| **Recipient email (audit)** | `audit_log.payload.recipient_email` on `invoice_issued`, `invoice_paid`, `invoice_voided`, `credit_note_issued`, `invoice_pdf_resent`, `receipt_pdf_resent`, `credit_note_pdf_resent` | Legal obligation + legitimate interest (forensic / delivery proof) | PDPA §24 / GDPR Art. 6(1)(c)+(f) — **Category B PII** | **Deliberately retained as plaintext in audit_log** — access-controlled via RLS + append-only grants. Column-level access policy required before F10 MTA roll-out (T-F4-04). Audit log is never exported raw; CSV/BI exports MUST redact this column. |
+| Signed URL tokens | transient in logs only | N/A | Secret (not PII) | Yes |
+| PDF bytes | N/A (Blob) | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | Yes |
 
 ## 5. Security Review Checklist (co-signature required before CP-4 ship gate)
 
@@ -211,6 +212,11 @@ Summary from `research.md § 13`; full mitigations + tests listed here.
 - [ ] Append-only audit events emit for every mutation: `invoice_draft_*`, `invoice_issued`, `invoice_paid`, `invoice_voided`, `credit_note_issued`, `invoice_*_cross_tenant_probe`, `pdf_render_failed`, `auto_email_delivery_failed` (16 events — verified by `audit-coverage.test.ts`, T113a)
 - [ ] 10-yr retention doc updated in `docs/phases-plan.md` + `docs/observability.md` (Phase 10 T115c)
 - [ ] Resend DPA copy attached to `specs/007-invoices-receipts/releases/v1.0.0.md` (T115a)
+- [ ] **T-F4-01** — `src/app/api/cron/outbox-dispatch/route.ts` CRON_SECRET comparison uses `crypto.timingSafeEqual` after length-check (NOT plain `!==`). Guards against timing side-channel enumeration. (Fixed in Phase 10 staff-review remediation.)
+- [ ] **T-F4-09** — `getInvoicePdfSignedUrl` + `getCreditNotePdfSignedUrl` use-cases scope repo queries by `tenantId`; cross-tenant probe integration test exists at `tests/integration/invoicing/pdf-routes-cross-tenant-probe.test.ts` (Principle I Review-Gate blocker, Phase 10 remediation).
+- [ ] **T-F4-10** — GET handler of `/api/tenant-invoice-settings` carries the same slug-mismatch probe + `tenant_invoice_settings_cross_tenant_probe` emit as PATCH (symmetric pre-MTA). Audit emit is wrapped in try/catch on both verbs so an audit-adapter outage cannot rewrite the 403 into a 500.
+- [ ] **T-F4-04** — `recipient_email` in audit payloads classified as Category-B PII (see § 4 catalogue). Column-level access policy on `audit_log.payload` planned before F10 MTA; CSV/BI exports redact this field today.
+- [ ] **LINDDUN T-F4-03** — Portal resend response echoes the snapshot `recipientEmail` back to the caller (member sees their own PII). Acceptable for MVP; consider email masking (`j***@domain.com`) in a future hardening pass. Document in DPA.
 
 ## 6. Logo upload detailed threat model (T-17 expansion)
 

@@ -17,6 +17,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import '@js-joda/timezone';
+import { LocalDate, ZoneId } from '@js-joda/core';
 import { db } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { overdueAuditAdapter } from '@/modules/invoicing/infrastructure/adapters/overdue-audit-adapter';
@@ -39,7 +41,11 @@ describe('T109 — overdue audit emit idempotency (live Neon)', () => {
   it('second emit for the same (tenant, invoice, day) returns false and writes no row', async () => {
     const invoiceId = randomUUID();
     const memberId = randomUUID();
-    const todayBkk = new Date().toISOString().slice(0, 10); // UTC date ≈ Bangkok date for this test's purpose
+    // Asia/Bangkok wall-clock date — matches the key the production
+    // allocator + partial unique index use. A UTC slice would drift
+    // during UTC 17:00–23:59 (Bangkok next day) and make this test
+    // flaky for a 7-hour window each day.
+    const todayBkk = LocalDate.now(ZoneId.of('Asia/Bangkok')).toString();
 
     // First emit — expect true (new row).
     const first = await overdueAuditAdapter.emitOverdueOnce({

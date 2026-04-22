@@ -1117,7 +1117,8 @@
           "issueCreditNote": "Utfärda kreditnota",
           "resendInvoice": "Skicka faktura-mejl igen",
           "resendReceipt": "Skicka kvitto-mejl igen",
-          "resendAria": "Mejla en ny kopia av {documentType} {number} till medlemmens primära kontakt",
+          "resendInvoiceAria": "Mejla en ny kopia av faktura {number} till medlemmens primära kontakt",
+          "resendReceiptAria": "Mejla en ny kopia av kvitto {number} till medlemmens primära kontakt",
           "more": "Fler",
           "moreAria": "Fler åtgärder för {number}"
         },
@@ -1433,7 +1434,8 @@
         "status": { "issued": "Utfärdad" },
         "actions": {
           "backToInvoice": "Tillbaka till faktura",
-          "download": "Ladda ner PDF"
+          "download": "Ladda ner PDF",
+          "downloadAria": "Ladda ner PDF för kreditnota {number}"
         },
         "fields": {
           "issueDate": "Utfärdandedatum",

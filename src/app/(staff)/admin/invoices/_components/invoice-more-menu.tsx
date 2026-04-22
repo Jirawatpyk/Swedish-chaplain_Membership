@@ -167,8 +167,7 @@ export function InvoiceMoreMenu({
           <DropdownMenuItem
             disabled={pendingVariant !== null || recentlySent.invoice}
             onClick={() => handleResend('invoice')}
-            aria-label={t('actions.resendAria', {
-              documentType: 'invoice',
+            aria-label={t('actions.resendInvoiceAria', {
               number: documentNumber,
             })}
           >
@@ -184,8 +183,7 @@ export function InvoiceMoreMenu({
           <DropdownMenuItem
             disabled={pendingVariant !== null || recentlySent.receipt}
             onClick={() => handleResend('receipt')}
-            aria-label={t('actions.resendAria', {
-              documentType: 'receipt',
+            aria-label={t('actions.resendReceiptAria', {
               number: documentNumber,
             })}
           >

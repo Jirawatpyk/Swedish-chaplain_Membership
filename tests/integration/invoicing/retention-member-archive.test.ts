@@ -267,4 +267,95 @@ describe('T112 — FR-029/FR-030 retention + member-archive invariant (live Neon
     expect(listed, 'the specific paid invoice must be in the timeline').toBeDefined();
     expect(listed!.memberIdentitySnapshot?.legal_name).toBe(MEMBER_SNAP.legal_name);
   }, 60_000);
+
+  // Constitution v1.4.0 Principle I — two-layer tenant isolation
+  // Review-Gate blocker. The archive + retention invariants above must
+  // not leak across tenants: a second tenant's `listInvoicesByMember`
+  // must return ZERO rows for tenant-A's member after archive, even
+  // though the invoice row persists by legal obligation. This probes
+  // both the application-layer `tenantId` scope AND the DB-layer RLS
+  // FORCE policy.
+  it('cross-tenant probe: tenant B cannot enumerate tenant A\u2019s archived invoices', async () => {
+    const memberId = randomUUID();
+    const invoiceId = randomUUID();
+
+    // Seed + archive on tenant A (reusing the primary `tenant`).
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        companyName: 'Retention Co (probe)',
+        country: 'TH',
+        planId,
+        planYear: 2026,
+      });
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        memberId,
+        planYear: 2026,
+        planId,
+        draftByUserId: user.userId,
+        status: 'paid',
+        fiscalYear: 2026,
+        sequenceNumber: 2,
+        documentNumber: 'T112-2026-000002',
+        issueDate: '2026-01-20',
+        dueDate: '2026-02-19',
+        subtotalSatang: 100_000n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 7_000n,
+        totalSatang: 107_000n,
+        creditedTotalSatang: 0n,
+        proRatePolicySnapshot: 'monthly',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: TENANT_SNAP,
+        memberIdentitySnapshot: MEMBER_SNAP,
+        pdfBlobKey: 'invoicing/t112/2026/retention-probe.pdf',
+        pdfSha256: 'd'.repeat(64),
+        pdfTemplateVersion: 1,
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'T112-PAY-2',
+        paymentRecordedByUserId: user.userId,
+        paymentDate: '2026-02-05',
+        paidAt: new Date('2026-02-05T03:00:00Z'),
+      });
+    });
+    const archive = await archiveMember(
+      asMemberId(memberId),
+      { reason: 'cross-tenant probe seed' },
+      { actorUserId: user.userId, requestId: `t112-probe-${invoiceId}` },
+      buildMembersDeps(tenant.ctx),
+    );
+    expect(archive.ok).toBe(true);
+
+    // Create tenant B and attempt to list tenant A's member via its
+    // tenant context. RLS + application-layer scope must both prevent
+    // the leak. Cleanup is registered via afterAll of the parent
+    // describe, but the probe tenant is independent — clean on the
+    // way out.
+    const tenantB = await createTestTenant('test-swecham');
+    try {
+      const listResult = await listInvoicesByMember(
+        makeListInvoicesByMemberDeps(tenantB.ctx.slug),
+        {
+          tenantId: tenantB.ctx.slug,
+          memberId, // tenant A's member id, probed from tenant B
+          offset: 0,
+          pageSize: 100,
+        },
+      );
+      expect(
+        listResult.ok,
+        'cross-tenant list must succeed (empty), not throw',
+      ).toBe(true);
+      if (!listResult.ok) return;
+      expect(
+        listResult.value.rows,
+        'Principle I: tenant B MUST NOT see tenant A\u2019s invoices',
+      ).toHaveLength(0);
+    } finally {
+      await tenantB.cleanup().catch(() => {});
+    }
+  }, 60_000);
 });

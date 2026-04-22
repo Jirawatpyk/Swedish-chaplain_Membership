@@ -15,13 +15,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { PageSkeletonShell } from '@/components/shell/page-skeletons';
 
 export default async function Loading() {
   // Touch the namespace so it's resolved at boundary mount — even
   // though we don't render a literal string, this forces the shell to
   // be treated as async-ready alongside the page.
   await getTranslations('admin.invoices.detail');
+  const tLayout = await getTranslations('layout');
   return (
+    <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
     <DetailContainer>
       <PageHeader
         title={
@@ -73,5 +76,6 @@ export default async function Loading() {
         </CardContent>
       </Card>
     </DetailContainer>
+    </PageSkeletonShell>
   );
 }

@@ -112,9 +112,14 @@ test.describe('@us6 credit-note partial-credit flow', () => {
   // DB-state correctness; this E2E adds the UI-glue assertion on the
   // "Partially credited" badge flip.
   test.describe('AS2 mutating happy-path (seeded admin fixture)', () => {
+    // Skip gate tracked as PVR-1 in
+    // `specs/007-invoices-receipts/pending-verification.md` — see
+    // recipe there to un-fixme; DB-state coverage is GREEN in the
+    // integration suite, so this E2E is UI-glue polish, not a
+    // ship blocker.
     test.skip(
       process.env.E2E_HAS_ADMIN_FIXTURES !== '1',
-      'E2E_HAS_ADMIN_FIXTURES=1 + seed-f4-e2e-admin-fixtures must have run',
+      'E2E_HAS_ADMIN_FIXTURES=1 + seed-f4-e2e-admin-fixtures must have run — see PVR-1',
     );
 
     test('AS2 — 60% partial flips invoice badge to Partially credited', async ({

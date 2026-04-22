@@ -119,7 +119,12 @@ test.describe('F4 admin a11y regressions @a11y @f4', () => {
       // requires adding `tabIndex={0}` to the Table primitive, which
       // affects every table in the app (F1/F2/F3/F4 + future modules)
       // and belongs in a cross-module design-system commit, not in
-      // F4 Phase 10. Tracked as a post-ship a11y polish item.
+      // F4 Phase 10. Tracked as PVR-2 in
+      // `specs/007-invoices-receipts/pending-verification.md` —
+      // re-evaluated during F5 when the `role="grid"` + TanStack
+      // Table v8 pattern lands and can be backported here. WCAG 2.1
+      // AA floor is already met via cell-level focus; the rule-
+      // disable is narrowly scoped to this single assertion.
       .disableRules(['scrollable-region-focusable'])
       .analyze();
     expect(

@@ -1117,7 +1117,8 @@
           "issueCreditNote": "ออกใบลดหนี้",
           "resendInvoice": "ส่งอีเมลใบแจ้งหนี้อีกครั้ง",
           "resendReceipt": "ส่งอีเมลใบเสร็จอีกครั้ง",
-          "resendAria": "ส่งสำเนา {documentType} เลขที่ {number} ไปที่อีเมลผู้ติดต่อหลักของสมาชิก",
+          "resendInvoiceAria": "ส่งสำเนาใบแจ้งหนี้ เลขที่ {number} ไปที่อีเมลผู้ติดต่อหลักของสมาชิก",
+          "resendReceiptAria": "ส่งสำเนาใบเสร็จ เลขที่ {number} ไปที่อีเมลผู้ติดต่อหลักของสมาชิก",
           "more": "เพิ่มเติม",
           "moreAria": "การดำเนินการเพิ่มเติมสำหรับ {number}"
         },
@@ -1433,7 +1434,8 @@
         "status": { "issued": "ออกแล้ว" },
         "actions": {
           "backToInvoice": "กลับไปที่ใบแจ้งหนี้",
-          "download": "ดาวน์โหลด PDF"
+          "download": "ดาวน์โหลด PDF",
+          "downloadAria": "ดาวน์โหลด PDF ใบลดหนี้ {number}"
         },
         "fields": {
           "issueDate": "วันที่ออกเอกสาร",

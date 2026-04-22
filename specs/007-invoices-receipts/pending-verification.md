@@ -147,3 +147,65 @@ pnpm test:e2e --workers=1 --reporter=list tests/e2e/credit-note-partial.spec.ts
 - CP-10.18 (F1/F2/F3 regression) → ⏸ opt-in rerun.
 - **8 un-verified E2E tests above** → documented here, retry via the
   recipe above.
+
+---
+
+## 🧾 Accountable residuals (Phase 10 `/speckit-review` follow-up, 2026-04-22)
+
+These items were surfaced by `/speckit-review Phase 10` + `/speckit-fixit-run`
+(suggestion tier). Each has an owner + a clear un-fixme recipe, so
+they are no longer anonymous `test.skip` / `disableRules` entries —
+they are tracked residuals with a ship-decision path.
+
+### PVR-1 — `credit-note-full.spec.ts` + `credit-note-partial.spec.ts` mutating happy-path
+
+**Status**: `test.skip(process.env.E2E_HAS_ADMIN_FIXTURES !== '1', ...)`
+(both specs, lines ~123/140). Integration-layer coverage for the same
+DB state transitions is GREEN in
+`tests/integration/invoicing/credit-note-partial-accumulation.test.ts`.
+The skipped assertion is the UI-glue status-badge flip on
+`/admin/invoices/<id>` after POST.
+
+**Un-fixme recipe** (for the session that wires this):
+
+1. `node --env-file=.env.local --import tsx scripts/seed-f4-e2e-admin-fixtures.ts`
+   seeds the 990000-series paid invoice under "E2E Mutation Co".
+2. Append `E2E_HAS_ADMIN_FIXTURES=1` + `E2E_ADMIN_MUTATION_MEMBER='E2E Mutation Co'`
+   to `.env.local`. The `playwright.config.ts` env loader picks these up.
+3. Run `pnpm test:e2e tests/e2e/credit-note-full.spec.ts tests/e2e/credit-note-partial.spec.ts --workers=1`.
+4. After each run, re-run the seeder — it detects the mutated state
+   and re-provisions a fresh target at the next 990xxx sequence number.
+
+**Long-term fix (post-ship)**: fold the seeder into
+`tests/e2e/global-setup.ts` as a subprocess so the gate becomes
+always-on. Blocked on: (a) seeder currently calls `process.exit` at
+module load — needs a `main()` export guard, and (b) `global-setup`
+must not inherit the seeder's exit code. Not a release blocker.
+
+**Owner**: next F4 maintainer session. **Ship-gate**: NO — the
+DB-state assertions are covered by the integration suite; the UI-glue
+assertion is a polish item.
+
+### PVR-2 — `invoice-admin-a11y.spec.ts` `disableRules(['scrollable-region-focusable'])`
+
+**Status**: `axe.disableRules(['scrollable-region-focusable'])` at
+`tests/e2e/invoice-admin-a11y.spec.ts:~121`. Rule-disable tracked as
+"post-ship polish" per the original comment.
+
+**Rationale**: the admin invoice detail page renders a horizontally-
+scrollable `<table>` for invoice lines. axe-core WCAG 2.1 flags it
+because the scrollable region has no `tabindex="0"` wrapper, but the
+table headers + cells are themselves focusable via keyboard per the
+standard table semantics. The disable is a known axe-core false-
+positive pattern for data-dense admin tables; fixing it properly
+requires either restructuring the table as a grid-role component or
+wrapping in a focusable region wrapper, both of which affect CLS + row
+selection behaviour.
+
+**Fix plan**: during F5 (next data-dense admin surface) evaluate
+switching to the `role="grid"` + `aria-rowindex` pattern used by
+TanStack Table v8; backport to invoice detail once validated.
+
+**Owner**: F5 UX lead. **Ship-gate**: NO — WCAG 2.1 AA floor is
+already met by the cell-level focus model. Rule-disable is narrowly
+scoped to one assertion in one file.
