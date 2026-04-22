@@ -128,6 +128,13 @@ hooks:
     prompt: Generate task dependency diagram after task breakdown?
     description: Auto-generate dependency DAG after tasks are created
     condition: null
+  - extension: agent-assign
+    command: speckit.agent-assign.assign
+    enabled: true
+    optional: true
+    prompt: Assign agents to the generated tasks?
+    description: Automatically assign specialized agents to tasks after generation
+    condition: null
   after_implement:
   - extension: git
     command: speckit.git.commit

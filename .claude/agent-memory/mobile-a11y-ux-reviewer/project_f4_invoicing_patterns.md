@@ -1,16 +1,26 @@
 ---
-name: F4 Invoicing UI Patterns & Known Gaps
-description: Key UX/a11y/i18n patterns found during F4 (007-invoices-receipts) reviews — updated per Phase 10 review 2026-04-21
+name: F4 Invoicing UI Patterns & A11y Findings (post-Phase-10 final code audit)
+description: Key UX/a11y/i18n patterns found during F4 (007-invoices-receipts) reviews — updated per final code-level sign-off audit 2026-04-22
 type: project
 ---
 
-F4 Invoicing UI patterns accumulated across two reviews (2026-04-19 MVP, 2026-04-21 Phase 10).
+F4 Invoicing UI patterns accumulated across three reviews (2026-04-19 MVP, 2026-04-21 Phase 10, 2026-04-22 final code-gate sign-off).
 
 **Why:** Ongoing F4 review on branch 007-invoices-receipts.
 
 **How to apply:** When reviewing further F4 follow-on work or related features, verify these patterns and gaps.
 
-## Known Gaps / Open Issues (as of 2026-04-21 Phase 10 review)
+## Final Code-Gate Audit Findings (2026-04-22) — all non-blocking
+
+1. **`src/app/(staff)/admin/invoices/[invoiceId]/page.tsx:617`** — `<section className="mt-6">` (invoice lines) missing `aria-labelledby`. Fix: add `id="invoice-lines-heading"` to the h3 and `aria-labelledby="invoice-lines-heading"` to section. Consistent with the 3 sibling sections above it.
+
+2. **`src/app/(member)/portal/invoices/[invoiceId]/page.tsx:327-330`** — TH description string missing `lang="th"` when rendered as secondary language. Fix: wrap in `<span lang="th">`. Admin detail already does this (`[invoiceId]/page.tsx:653`).
+
+3. **`src/components/invoices/invoice-settings-form.tsx:553`** — Submit button missing `aria-busy={submitting}`. Every other async submit button in the codebase has it. Fix: add `aria-busy={submitting}` to the `<Button type="submit">`.
+
+4. **`src/app/(staff)/admin/members/[memberId]/_components/member-invoices-section.tsx:370-430`** — Table row action buttons use `size="sm"` (h-7 = 28px), no `min-h-11` override. On the dense admin-only member detail table this is within the design system's WCAG 2.2 SC 2.5.8 opportunistic floor (24px), but falls below WCAG 2.5.5 AAA (44px). Non-blocker: surface is admin-only (desktop-primary). Note for future mobile hardening pass.
+
+## Known Gaps / Open Issues (as of 2026-04-21 Phase 10 review — carried forward)
 
 1. **`{documentType}` interpolation anti-pattern in `admin.invoices.detail.actions.resendAria`** — The EN template uses `{documentType: 'invoice'}` / `{documentType: 'receipt'}` hardcoded strings that embed raw English into TH/SV aria-labels (WCAG SC 3.1.2 blocker). Fix: split into `resendInvoiceAria` + `resendReceiptAria` keys per locale. See invoice-more-menu.tsx lines 170–188.
 
