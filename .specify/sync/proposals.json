@@ -1,0 +1,30 @@
+{
+  "generated": "2026-04-22T00:00:00Z",
+  "source": ".specify/sync/drift-report.json",
+  "proposals": [
+    {
+      "id": "P-001",
+      "type": "NOOP",
+      "spec": "007-invoices-receipts",
+      "requirement": "FR-044 (cross-reference)",
+      "location": "tests/e2e/members-reduced-motion.spec.ts:2",
+      "description": "Drift report flagged the FR-044 tag as potentially confusing. On re-inspection the file header already reads `F3 member surfaces (FR-044)` with `@f3 @a11y` tags — the F3 context is unambiguous. No code change needed.",
+      "approved": true,
+      "resolution": "CLOSE — false positive in drift report. No fix required."
+    }
+  ],
+  "not_proposed": [
+    {
+      "item": "F4 FR-031 (GDPR/PDPA tax-document retention)",
+      "reason": "Explicit F9 deferral in FR text. Will be picked up when F9 spec is drafted."
+    },
+    {
+      "item": "T114 / T117 / T118 human-gated governance residuals",
+      "reason": "Not drift — Constitution-tracked gate items."
+    },
+    {
+      "item": "PVR-1 mobile-safari / mobile-chrome verification",
+      "reason": "Not drift — verification pending (chromium green)."
+    }
+  ]
+}

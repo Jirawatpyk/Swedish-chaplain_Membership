@@ -1,0 +1,39 @@
+{
+  "applied_at": "2026-04-22T00:00:00Z",
+  "source": ".specify/sync/proposals.json",
+  "changes": {
+    "specs_updated": [],
+    "specs_created": [],
+    "tasks_generated": [],
+    "noop": [
+      {
+        "proposal_id": "P-001",
+        "spec": "007-invoices-receipts",
+        "requirement": "FR-044 (cross-reference)",
+        "location": "tests/e2e/members-reduced-motion.spec.ts:2",
+        "resolution": "false-positive in drift report — file header already clarifies F3 context"
+      }
+    ]
+  },
+  "not_applied": [],
+  "deferred": [
+    {
+      "item": "F4 FR-031",
+      "reason": "F9 scope per FR text"
+    },
+    {
+      "item": "T114 / T117 / T118",
+      "reason": "Constitution-tracked human-gated governance"
+    },
+    {
+      "item": "PVR-1 mobile-safari / mobile-chrome",
+      "reason": "Verification pending — chromium ✅"
+    }
+  ],
+  "next_steps": [
+    "Close R15 staff-review human-gated conditions (T114 + T117 + T118)",
+    "Re-run E2E on mobile-safari + mobile-chrome projects",
+    "Pick up F4 FR-031 when F9 spec is drafted",
+    "Adopt global F<n>-FR-### tag convention"
+  ]
+}

@@ -182,6 +182,13 @@ hooks:
     description: Reviews implementation changes against spec for correctness, security,
       and quality
     condition: null
+  - extension: sync
+    command: speckit.sync.analyze
+    enabled: true
+    optional: true
+    prompt: Check for spec drift after implementation?
+    description: ''
+    condition: null
   after_checklist:
   - extension: git
     command: speckit.git.commit
