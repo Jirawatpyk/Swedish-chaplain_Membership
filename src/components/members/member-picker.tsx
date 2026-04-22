@@ -313,9 +313,22 @@ export function MemberPicker({
                 // "Active / ใช้งาน / Aktiv" rather than the raw string.
                 // Falls back to the raw value if the backend ever emits
                 // an unknown status — safer than throwing at render time.
-                const statusLabel = isKnownStatus(opt.status)
+                const statusKnown = isKnownStatus(opt.status);
+                const statusLabel = statusKnown
                   ? tStatus(opt.status)
                   : opt.status;
+                // At-risk indicator: a small coloured dot before the legal
+                // name when the member is not `active`. The picker today
+                // filters status=active at the API level, but we keep this
+                // defensive in case the filter relaxes (e.g. "show all").
+                // SR users still get the full translated status via the
+                // badge, so the dot is purely visual and aria-hidden.
+                const dotClass =
+                  statusKnown && opt.status === 'inactive'
+                    ? 'bg-amber-500'
+                    : statusKnown && opt.status === 'archived'
+                      ? 'bg-muted-foreground'
+                      : null;
                 return (
                   <CommandItem
                     key={opt.member_id}
@@ -323,6 +336,15 @@ export function MemberPicker({
                     onSelect={() => handleSelect(opt)}
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-2">
+                      {dotClass ? (
+                        <span
+                          aria-hidden
+                          className={cn(
+                            'inline-block size-1.5 shrink-0 rounded-full',
+                            dotClass,
+                          )}
+                        />
+                      ) : null}
                       <span className="truncate font-medium">
                         {opt.company_name}
                       </span>
