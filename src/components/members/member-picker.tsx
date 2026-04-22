@@ -275,7 +275,7 @@ export function MemberPicker({
       )}
 
       <PopoverContent
-        className="w-[var(--radix-popover-trigger-width)] p-0"
+        className="w-[var(--anchor-width)] max-w-[calc(100vw-2rem)] p-0"
         align="start"
       >
         <Command shouldFilter={false}>
