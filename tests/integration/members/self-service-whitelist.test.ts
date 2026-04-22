@@ -92,6 +92,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
   const contactRepo: ContactRepo = {
     listByMember: async () => ok([baseContact]),
     findById: async () => ok(baseContact),
+    findByEmail: async () => err({ code: 'repo.not_found' as const }),
     addInTx: async () => err({ code: 'repo.unexpected' as const }),
     updateInTx: async (_tx, _id, patch) =>
       ok({ ...baseContact, ...patch } as Contact),

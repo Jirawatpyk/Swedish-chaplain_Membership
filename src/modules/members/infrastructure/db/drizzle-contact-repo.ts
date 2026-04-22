@@ -88,6 +88,28 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
+  async findByEmail(ctx, email) {
+    try {
+      const rows = await runInTenant(ctx, (tx) =>
+        tx
+          .select()
+          .from(contacts)
+          .where(
+            and(
+              eq(contacts.tenantId, ctx.slug),
+              eq(contacts.email, email),
+              isNull(contacts.removedAt),
+            ),
+          )
+          .limit(1),
+      );
+      if (rows.length === 0) return err({ code: 'repo.not_found' });
+      return ok(rowToContact(rows[0]!));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async addInTx(tx, draft) {
     try {
       const rows = await tx
