@@ -209,7 +209,7 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       if (!result.ok) expect(result.error.type).toBe('member_not_found');
       // Must emit probe audit BEFORE returning — telemetry integrity.
       expect(deps.audit.record).toHaveBeenCalledTimes(1);
-      const auditCall = (deps.audit.record as ReturnType<typeof vi.fn>).mock.calls[0];
+      const auditCall = (deps.audit.record as ReturnType<typeof vi.fn>).mock.calls[0]!;
       expect(auditCall[1]).toMatchObject({ type: 'member_cross_tenant_probe' });
       // createUser must NOT be called when memberId is foreign.
       expect(deps.createUser).not.toHaveBeenCalled();
@@ -275,10 +275,11 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       const result = await inviteUserForMember(deps, baseInput);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.type).toBe('server_error');
+      if (!result.ok && result.error.type === 'server_error') {
         // The message must mention createUser for operational correlation.
         expect(result.error.message).toMatch(/createUser/);
+      } else {
+        throw new Error('expected server_error result');
       }
       expect(deps.contactRepo.addInTx).not.toHaveBeenCalled();
     });
@@ -299,9 +300,10 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       const result = await inviteUserForMember(deps, baseInput);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.type).toBe('server_error');
+      if (!result.ok && result.error.type === 'server_error') {
         expect(result.error.message).toMatch(/unexpected/);
+      } else {
+        throw new Error('expected server_error result');
       }
       // createUser was called (F1 user is now orphaned).
       expect(deps.createUser).toHaveBeenCalledTimes(1);
@@ -368,7 +370,7 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       await inviteUserForMember(deps, baseInput);
 
       expect(deps.audit.recordInTx).toHaveBeenCalledTimes(1);
-      const auditCall = (deps.audit.recordInTx as ReturnType<typeof vi.fn>).mock.calls[0];
+      const auditCall = (deps.audit.recordInTx as ReturnType<typeof vi.fn>).mock.calls[0]!;
       // auditCall[2] is the event object (tx, ctx, event)
       expect(auditCall[2]).toMatchObject({
         type: 'contact_created',
@@ -385,7 +387,7 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       });
 
       // addInTx receives the contactDraft — inspect the call arg.
-      const addCall = (deps.contactRepo.addInTx as ReturnType<typeof vi.fn>).mock.calls[0];
+      const addCall = (deps.contactRepo.addInTx as ReturnType<typeof vi.fn>).mock.calls[0]!;
       const draft = addCall[1] as { firstName: string; lastName: string };
       expect(draft.firstName).toBe('Anna');
       expect(draft.lastName).toBe('Lindqvist');
@@ -398,7 +400,7 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
         displayName: null,
       });
 
-      const addCall = (deps.contactRepo.addInTx as ReturnType<typeof vi.fn>).mock.calls[0];
+      const addCall = (deps.contactRepo.addInTx as ReturnType<typeof vi.fn>).mock.calls[0]!;
       const draft = addCall[1] as { firstName: string; lastName: string };
       expect(draft.firstName).toBe('jane.doe');
       expect(draft.lastName).toBe('Member');
@@ -408,7 +410,7 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       const deps = makeDeps();
       await inviteUserForMember(deps, baseInput);
 
-      const addCall = (deps.contactRepo.addInTx as ReturnType<typeof vi.fn>).mock.calls[0];
+      const addCall = (deps.contactRepo.addInTx as ReturnType<typeof vi.fn>).mock.calls[0]!;
       const draft = addCall[1] as { isPrimary: boolean };
       expect(draft.isPrimary).toBe(false);
     });
@@ -431,7 +433,7 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
       const deps = makeDeps({ memberFindResult: 'not_found' });
       await inviteUserForMember(deps, baseInput);
 
-      const auditCall = (deps.audit.record as ReturnType<typeof vi.fn>).mock.calls[0];
+      const auditCall = (deps.audit.record as ReturnType<typeof vi.fn>).mock.calls[0]!;
       const event = auditCall[1];
       expect(event.payload).toMatchObject({
         attempted_member_id: memberId,
