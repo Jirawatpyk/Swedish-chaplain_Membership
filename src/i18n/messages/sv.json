@@ -254,7 +254,17 @@
           "network": "Nätverksfel. Kontrollera anslutningen och försök igen.",
           "invalid-input": "Ange en giltig e-postadress och roll.",
           "email-taken": "Den e-postadressen finns redan i systemet.",
+          "member-not-found": "Medlemsposten kunde inte hittas. Den kan tillhöra en annan tenant eller vara arkiverad.",
           "forbidden": "Du har inte behörighet att bjuda in användare."
+        },
+        "linkMember": {
+          "label": "Länka till medlem",
+          "placeholder": "Sök medlemmar…",
+          "helpText": "Valfritt: länka den nya användaren till en befintlig medlemspost. Gäller endast när rollen är Medlem.",
+          "clear": "Rensa val",
+          "loading": "Laddar medlemmar…",
+          "noMembersFound": "Inga medlemmar hittades",
+          "disabledHint": "Välj rollen Medlem för att länka"
         }
       }
     },

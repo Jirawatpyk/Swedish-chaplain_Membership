@@ -254,7 +254,17 @@
           "network": "Network error. Check your connection and try again.",
           "invalid-input": "Please enter a valid email and role.",
           "email-taken": "That email is already on the system.",
+          "member-not-found": "That member record could not be found. It may belong to another tenant or have been archived.",
           "forbidden": "You don't have permission to invite users."
+        },
+        "linkMember": {
+          "label": "Link to member",
+          "placeholder": "Search members…",
+          "helpText": "Optional: link this user to an existing member record. Only applies when role is Member.",
+          "clear": "Clear selection",
+          "loading": "Loading members…",
+          "noMembersFound": "No members found",
+          "disabledHint": "Select role Member to link"
         }
       }
     },
