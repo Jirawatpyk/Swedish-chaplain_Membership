@@ -15,6 +15,11 @@
  *         caller's tenant; returned as 404 to not leak existence
  *         across tenants — consistent with `get-member` pattern)
  *   409 — email-taken
+ *   409 — contact-already-linked (same-member duplicate, already has
+ *         portal access; admin should point user at Forgot Password)
+ *   409 — email-belongs-to-other-member (email is already a contact
+ *         on a DIFFERENT member in the same tenant; 1 email = 1
+ *         company business rule)
  *   500 — server-error
  */
 import { NextResponse, type NextRequest } from 'next/server';
@@ -141,6 +146,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'invalid-input' }, { status: 400 });
       case 'email_taken':
         return NextResponse.json({ error: 'email-taken' }, { status: 409 });
+      case 'contact_already_linked':
+        return NextResponse.json(
+          { error: 'contact-already-linked' },
+          { status: 409 },
+        );
+      case 'email_belongs_to_other_member':
+        return NextResponse.json(
+          { error: 'email-belongs-to-other-member' },
+          { status: 409 },
+        );
       case 'member_not_found':
         // 404 (not 403) to avoid leaking whether the memberId exists
         // in a sibling tenant — consistent with `get-member` pattern.
