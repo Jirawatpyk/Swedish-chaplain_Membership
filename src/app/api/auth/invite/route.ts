@@ -29,7 +29,6 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requireAdminContext } from '@/lib/admin-context';
 import { logger } from '@/lib/logger';
-import { createUser as f1CreateUser } from '@/modules/auth';
 
 const inputSchema = z.object({
   email: z.string().email().max(254),
@@ -44,7 +43,7 @@ const inputSchema = z.object({
 // Adapt F1 createUser to the narrowed CreateUserPort the members use
 // case expects (role constrained to 'member').
 const createUserPort: CreateUserPort = async (input) => {
-  const result = await f1CreateUser({
+  const result = await createUser({
     email: input.email,
     role: input.role,
     displayName: input.displayName ?? null,
