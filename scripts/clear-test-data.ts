@@ -99,6 +99,21 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // and (b) the reserved 990000–999999 sequence_number block. Safe
   // to run against production-shaped tenants; real invoices live
   // in 000001…<current>.
+  //
+  // Bugfix 2026-04-22 — credit_notes reference invoices via
+  // `credit_notes_original_invoice_fk`. Must delete child rows
+  // BEFORE the parent invoice to avoid FK-violation on repeat runs
+  // where the CN mutating E2E (T125 AS2) seeded credit-note rows
+  // against a 995xxx invoice.
+  await db.execute(
+    sql`DELETE FROM credit_notes
+        WHERE original_invoice_id IN (
+          SELECT i.invoice_id FROM invoices i
+          JOIN members m ON i.tenant_id = m.tenant_id AND i.member_id = m.member_id
+          WHERE m.company_name = 'E2E Mutation Co'
+            AND i.sequence_number BETWEEN 990000 AND 999999
+        )`,
+  );
   const mutationCleanup = await db.execute(
     sql`DELETE FROM invoice_lines
         WHERE invoice_id IN (

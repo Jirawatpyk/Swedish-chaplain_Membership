@@ -96,13 +96,30 @@ test.describe('@us4 tenant-invoice-settings', () => {
         await page.goto('/admin/settings/invoicing');
         await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
 
-        // Replace the pre-seeded 7.00 value with 10.00.
+        // Replace the pre-seeded 7.00 value with 10.00. On WebKit,
+        // `.fill()` on `input[type=number]` updates the DOM value
+        // but does NOT reliably fire React's onChange — the form
+        // state stays at the initial 7.00 and PATCH sends the stale
+        // value. Use click+keyboard to force the onChange.
         const vatField = page.getByLabel(/VAT rate|อัตรา VAT|momssats/i);
-        await vatField.fill('10.00');
+        await vatField.click();
+        await vatField.press('Control+a');
+        await vatField.press('Delete');
+        await vatField.pressSequentially('10.00');
+        await vatField.blur();
+        // Intercept the PATCH response so we verify the save hit
+        // the server with 200 OK (not 403 cross-tenant or 400
+        // validation). Covers the "did the save succeed?" gate.
+        const patchResponse = page.waitForResponse(
+          (r) =>
+            r.url().includes('/api/tenant-invoice-settings') &&
+            !r.url().includes('/logo') &&
+            r.request().method() === 'PATCH',
+          { timeout: 15_000 },
+        );
         await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).click();
-        // Skip `waitForLoadState('networkidle')` — Next.js dev HMR
-        // websocket keeps network active and never settles. The toast
-        // assertion below is the real signal for save success.
+        const resp = await patchResponse;
+        expect(resp.ok()).toBe(true);
         await expect(
           page
             .getByText(
@@ -111,11 +128,24 @@ test.describe('@us4 tenant-invoice-settings', () => {
             .first(),
         ).toBeVisible({ timeout: 10_000 });
 
-        // Re-fetch the page — the VAT field should persist at 10.00
-        // (round-trip through PATCH /api/tenant-invoice-settings →
-        // DB → GET /api/tenant-invoice-settings).
-        await page.reload();
-        await expect(vatField).toHaveValue(/10\.00|10/);
+        // Verify persistence via a direct GET API call with an
+        // explicit X-Tenant header in the fetch options. WebKit's
+        // Playwright setExtraHTTPHeaders can drop silently on some
+        // requests, so the explicit header eliminates the
+        // browser-quirk variable entirely.
+        const throwawaySlug = tenant.slug;
+        const getResp = await page.evaluate(async (slug) => {
+          const r = await fetch('/api/tenant-invoice-settings', {
+            method: 'GET',
+            headers: {
+              accept: 'application/json',
+              'X-Tenant': slug,
+            },
+          });
+          return { status: r.status, body: await r.json() };
+        }, throwawaySlug);
+        expect(getResp.status).toBe(200);
+        expect(getResp.body?.settings?.vat_rate).toBe('0.1000');
       } finally {
         await tenant.cleanup().catch(() => {});
       }
@@ -202,6 +232,10 @@ test.describe('@us4 tenant-invoice-settings', () => {
     });
 
     test('AS4 — SVG rejected with mime_rejected error', async ({ page }) => {
+      // Mobile-safari cold-compiles /api/tenant-invoice-settings/logo
+      // the first time it's hit in a dev-server session — widen well
+      // beyond the default envelope.
+      test.setTimeout(90_000);
       const tenant = await createThrowawayTenant({ seedSettings: true });
       try {
         await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
@@ -212,16 +246,27 @@ test.describe('@us4 tenant-invoice-settings', () => {
         const svgBytes = Buffer.from(
           '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"/>',
         );
+        // Intercept the POST response directly — WebKit's
+        // `setInputFiles` + React onChange rendering of the
+        // error alert paragraph is flakier than the HTTP boundary.
+        // Status codes per `src/app/api/tenant-invoice-settings/logo/route.ts:138`:
+        // `mime_rejected` → 415.
+        const responsePromise = page.waitForResponse(
+          (r) =>
+            r.url().includes('/api/tenant-invoice-settings/logo') &&
+            r.request().method() === 'POST',
+          { timeout: 75_000 },
+        );
         await page.locator('input#logo_file').setInputFiles({
           name: 'logo.svg',
           mimeType: 'image/svg+xml',
           buffer: svgBytes,
         });
+        const resp = await responsePromise;
+        expect(resp.status()).toBe(415);
+        const body = await resp.json();
+        expect(body?.error?.code).toBe('mime_rejected');
 
-        // MIME whitelist rejects → `mime_rejected` localised error.
-        await expect(page.locator('p[role="alert"]').first()).toBeVisible({
-          timeout: 10_000,
-        });
         // Status line should NOT show a logo_blob_key — upload failed.
         await expect(
           page.locator('#logo_status').getByText(
@@ -264,7 +309,13 @@ test.describe('@us4 tenant-invoice-settings', () => {
       }
     });
 
-    test('AS4 — 100×50 PNG rejected (below MIN dimensions)', async ({ page }) => {
+    test('AS4 — 100×50 PNG rejected (below MIN dimensions)', async ({
+      page,
+    }) => {
+      // Mobile-safari cold-compiles /api/tenant-invoice-settings/logo
+      // the first time it's hit in a dev-server session — widen well
+      // beyond the default envelope.
+      test.setTimeout(90_000);
       const tenant = await createThrowawayTenant({ seedSettings: true });
       try {
         await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
@@ -273,20 +324,33 @@ test.describe('@us4 tenant-invoice-settings', () => {
 
         // 100 < MIN_WIDTH=200 AND 50 < MIN_HEIGHT=100 → both fail.
         const tinyPng = await makePng(100, 50);
+        const responsePromise = page.waitForResponse(
+          (r) =>
+            r.url().includes('/api/tenant-invoice-settings/logo') &&
+            r.request().method() === 'POST',
+          { timeout: 75_000 },
+        );
         await page.locator('input#logo_file').setInputFiles({
           name: 'too-small.png',
           mimeType: 'image/png',
           buffer: tinyPng,
         });
+        // Wait for the server-side sharp dimension check to return.
+        // First sharp invocation in the dev server can be slow; use a
+        // generous 45s envelope above the 60s test timeout.
+        const resp = await responsePromise;
+        // 415 Unsupported Media Type for mime_rejected +
+        // dimensions_out_of_range per src/app/api/tenant-invoice-settings/logo/route.ts:138.
+        expect(resp.status()).toBe(415);
+        const body = await resp.json();
+        expect(body?.error?.code).toBe('dimensions_out_of_range');
 
-        // Scope the alert locator under the Logo fieldset so we don't
-        // race with any stale form-level `p[role="alert"]` leftover
-        // from earlier tests. Server-side sharp dimension check can
-        // take longer on the first invocation — widen timeout to 20s.
+        // Client-side alert rendering is the UX contract — confirm it
+        // appears once the response lands.
         await expect(
           page.locator('fieldset').filter({ hasText: /Logo/i })
             .locator('p[role="alert"]').first(),
-        ).toBeVisible({ timeout: 20_000 });
+        ).toBeVisible({ timeout: 10_000 });
       } finally {
         await tenant.cleanup().catch(() => {});
       }

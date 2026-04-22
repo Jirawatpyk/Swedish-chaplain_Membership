@@ -1,0 +1,19 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=chromium" "tests/e2e/invoice-settings.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 9 tests using 1 worker
+
+  ✓  1 [chromium] › tests\e2e\invoice-settings.spec.ts:43:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (8.2s)
+  ✓  2 [chromium] › tests\e2e\invoice-settings.spec.ts:58:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan (7.5s)
+  ✓  3 [chromium] › tests\e2e\invoice-settings.spec.ts:68:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (5.4s)
+  ✓  4 [chromium] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (7.7s)
+  ✓  5 [chromium] › tests\e2e\invoice-settings.spec.ts:154:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (12.7s)
+  ✓  6 [chromium] › tests\e2e\invoice-settings.spec.ts:204:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (5.8s)
+  ✓  7 [chromium] › tests\e2e\invoice-settings.spec.ts:236:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (6.3s)
+  ✓  8 [chromium] › tests\e2e\invoice-settings.spec.ts:267:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (6.7s)
+  ✓  9 [chromium] › tests\e2e\invoice-settings.spec.ts:322:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (6.7s)
+
+  9 passed (1.2m)

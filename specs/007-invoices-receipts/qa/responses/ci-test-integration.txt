@@ -1,0 +1,394 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+{"level":"warn","time":1776833415619,"service":"swecham-membership","env":"test","err":{"code":"pdf_render_failed","reason":"Error: T122 synthetic render failure"},"invoiceId":"d2f54888-4ff3-474e-b5e3-a1cc960ec5c0","tenantId":"test-swecham-9cd7525f","msg":"issueInvoice: internal error, rolling back"}
+ [32m✓[39m tests/integration/invoicing/audit-coverage.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 5389[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22maudit_log composite PK + append-only trigger allow F4 event types [33m1153[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT113a — updateInvoiceDraft emits `invoice_draft_updated` [33m815[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT122 — issueInvoice PDF-render failure emits `pdf_render_failed` audit [33m965[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Audit coverage — MVP flows emit the expected event types (T113a)[2m > [22mT113a — deleteInvoiceDraft emits `invoice_draft_deleted` [33m689[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/credit-note-partial-accumulation.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 16756[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mtwo partials sum-to-total flip paid → partially_credited → credited [33m3768[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mrejects a third partial against a fully-credited invoice [33m2341[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mrejects partial that exceeds remainder by 1 satang (no seq gap) [33m1347[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mAS4 — CN rollup re-renders invoice PDF with annotation + emits invoice_pdf_regenerated audit [33m2311[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mAS3 — issued (unpaid) invoice → invalid_status, no CN written [33m1231[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mAS3 — voided invoice → invalid_status, no CN written [33m1032[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mSG-3 — settings_missing branch surfaces cleanly when settings row is absent [33m1552[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US6 — credit-note partial accumulation + concurrent race (T075)[2m > [22mR2-E1 concurrent race — 2 admins issue 60% each; exactly one succeeds [33m2250[2mms[22m[39m
+{"level":"warn","time":1776833440307,"service":"swecham-membership","env":"test","err":{"code":"pdf_render_failed","reason":"Error: PDF render blew up"},"invoiceId":"abe2d2c0-2ec6-49e5-bc1e-e23bad191f45","tenantId":"test-swecham-56e5e6e0","msg":"issueInvoice: internal error, rolling back"}
+{"level":"warn","time":1776833442285,"service":"swecham-membership","env":"test","err":{"code":"blob_upload_failed","reason":"Error: Blob quota exceeded"},"invoiceId":"2d58bba5-ddd4-47e6-979b-1b392a1969e5","tenantId":"test-swecham-de6ad680","msg":"issueInvoice: internal error, rolling back"}
+ [32m✓[39m tests/integration/invoicing/seq-number-atomicity.test.ts [2m([22m[2m10 tests[22m[2m | [22m[33m2 skipped[39m[2m)[22m[33m 13798[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(f) tenant_document_sequences row missing → allocator creates with seq=1 [33m446[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(h) Sequential calls allocate 1 → 2 → 3 with no gaps [33m1143[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(d) 10 concurrent allocations on same (tenant, FY) produce 1..10 with no duplicates [33m2188[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(e) FY-boundary crossover — adjacent fiscal years allocate independently [33m1102[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(a) PDF render throws → rollback, seq unchanged, no invoice row [33m1973[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(b) Blob upload throws → rollback, seq unchanged, no invoice row [33m1933[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(g) Audit emit throws → rollback, no invoice issued, no seq consumed [33m2140[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Seq-number atomicity — T016 (live Neon)[2m > [22m(h-replay) Re-issuing an already-issued invoice does NOT consume a new sequence number [33m2210[2mms[22m[39m
+{"level":"warn","time":1776833454997,"service":"swecham-membership","env":"test","outboxRowId":"e1d36d5e-75ed-48be-b852-2466d4dcd1bc","err":{"type":"BlobNotFoundError","message":"Vercel Blob: The requested blob does not exist","stack":"Error: Vercel Blob: The requested blob does not exist\n    at getBlobError (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vercel+blob@2.3.3/node_modules/@vercel/blob/dist/chunk-WLMB4XQD.js:550:15)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vercel+blob@2.3.3/node_modules/@vercel/blob/dist/chunk-WLMB4XQD.js:651:31\n    at requestApi (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vercel+blob@2.3.3/node_modules/@vercel/blob/dist/chunk-WLMB4XQD.js:597:23)\n    at Module.head (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vercel+blob@2.3.3/node_modules/@vercel/blob/dist/index.js:56:20)\n    at Object.signDownloadUrl (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\modules\\invoicing\\infrastructure\\adapters\\vercel-blob-adapter.ts:88:18)\n    at buildPayload (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\app\\api\\cron\\outbox-dispatch\\route.ts:173:29)\n    at C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\app\\api\\cron\\outbox-dispatch\\route.ts:299:21\n    at scope (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:260:18)\n    at Function.begin (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:243:14)"},"msg":"cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed"}
+{"level":"warn","time":1776833455939,"service":"swecham-membership","env":"test","outboxRowId":"8cc0f045-4853-40d7-bc3c-e527cec61ebf","err":{"type":"BlobNotFoundError","message":"Vercel Blob: The requested blob does not exist","stack":"Error: Vercel Blob: The requested blob does not exist\n    at getBlobError (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vercel+blob@2.3.3/node_modules/@vercel/blob/dist/chunk-WLMB4XQD.js:550:15)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vercel+blob@2.3.3/node_modules/@vercel/blob/dist/chunk-WLMB4XQD.js:651:31\n    at requestApi (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vercel+blob@2.3.3/node_modules/@vercel/blob/dist/chunk-WLMB4XQD.js:597:23)\n    at Module.head (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vercel+blob@2.3.3/node_modules/@vercel/blob/dist/index.js:56:20)\n    at Object.signDownloadUrl (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\modules\\invoicing\\infrastructure\\adapters\\vercel-blob-adapter.ts:88:18)\n    at buildPayload (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\app\\api\\cron\\outbox-dispatch\\route.ts:173:29)\n    at C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\app\\api\\cron\\outbox-dispatch\\route.ts:299:21\n    at scope (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:260:18)\n    at Function.begin (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js:243:14)"},"msg":"cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed"}
+{"level":"info","time":1776833456362,"service":"swecham-membership","env":"test","requestId":"019db386-e0d6-776e-a31a-73f48bf5709a","inspected":3,"sent":0,"retried":2,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+ [32m✓[39m tests/integration/invoicing/auto-email-outbox.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 11326[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(1) + (4a) issue enqueues invoice_auto_email[invoice_issued]; admin resend adds fresh invoice_pdf_resent row + timeline audit [33m2001[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(4b) resend receipt after recordPayment → receipt_pdf_resent outbox + audit WITHOUT member_id [33m3281[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(T106 dual-emit) dispatcher perm-fails F4 invoice_auto_email → emits BOTH email_dispatch_failed AND auto_email_delivery_failed [33m2879[2mms[22m[39m
+   [33m[2m✓[22m[39m T105 — F4 auto-email outbox + T107 manual resend (live Neon)[2m > [22m(4c) portal member-mismatch → no outbox row, probe audit lands, opaque not_found [33m2491[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/portal-ownership.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 6110[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22malpha member hitting gamma invoice → forbidden + probe audit [33m553[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22malpha member hitting tenant-B invoice id → not_found + probe audit [33m475[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22mlistInvoicesPaged(memberId=alpha) excludes gamma invoice (same tenant) [33m413[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22mlistInvoicesPaged(memberId=alpha) under tenant A cannot see tenant-B invoice [33m391[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22mAS1 — seed 3 issued invoices, listInvoicesPaged returns exactly 3 with portal fields [33m884[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US3 — portal ownership (T069)[2m > [22mSC-003 source-of-truth — two getInvoicePdfSignedUrl calls return same blob key [33m925[2mms[22m[39m
+{"level":"error","time":1776833472298,"service":"swecham-membership","env":"test","err":{"type":"Error","message":"simulated blob outage","stack":"Error: simulated blob outage\n    at Object.<anonymous> (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\tests\\integration\\invoicing\\void-invoice.test.ts:411:13)\n    at Object.mockCall (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+spy@2.1.9/node_modules/@vitest/spy/dist/index.js:61:17)\n    at Object.spy [as uploadPdf] (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/tinyspy@3.0.2/node_modules/tinyspy/dist/index.js:45:80)\n    at Module.voidInvoice (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\modules\\invoicing\\application\\use-cases\\void-invoice.ts:313:21)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\tests\\integration\\invoicing\\void-invoice.test.ts:414:15\n    at file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1205:15)"},"invoiceId":"752939c9-f55b-4301-93df-65801946a02e","tenantId":"test-chamber-2657c24a","phase":"blob_upload","msg":"voidInvoice: phase 2 blob+sha sync failed; invoice voided but PDF overlay deferred"}
+ [32m✓[39m tests/integration/invoicing/void-invoice.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 9955[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mvoids an issued invoice, re-renders PDF, emits audit + outbox [33m1917[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mrefuses to void a paid invoice (directs admin to credit-note flow) [33m919[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mrefuses to re-void a voided invoice (terminal state) [33m923[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mT-PH2 — Phase 2 blob upload failure keeps void committed, emits invoice_pdf_sync_failed [33m1652[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mdoes not enqueue outbox when auto_email_on_issue=false [33m1383[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22mT-DISP — auto_email_on_issue=null falls back to tenant settings.autoEmailEnabled [33m1390[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 US5 — void-invoice (T098)[2m > [22memits cross-tenant probe audit on unknown invoice id [33m867[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/tenant-isolation.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 7504[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.update(B invoice) affects 0 rows [33m345[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.delete(B invoice) affects 0 rows [33m343[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.update(B invoice_line) affects 0 rows [33m344[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.delete(B invoice_line) affects 0 rows [33m343[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.update(B credit_note) affects 0 rows [33m348[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)[2m > [22mA.delete(B credit_note) affects 0 rows [33m344[2mms[22m[39m
+ [32m✓[39m tests/integration/members/contact-email-change-atomic.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 7956[2mms[22m[39m
+   [33m[2m✓[22m[39m change-contact-email atomic tx (T072, FR-012a)[2m > [22mhappy path commits all 6 side effects in a single tx [33m2114[2mms[22m[39m
+   [33m[2m✓[22m[39m change-contact-email atomic tx (T072, FR-012a)[2m > [22mchaos (a): outbox enqueue throws → full rollback [33m1807[2mms[22m[39m
+   [33m[2m✓[22m[39m change-contact-email atomic tx (T072, FR-012a)[2m > [22mchaos (b): session revocation throws → full rollback [33m1391[2mms[22m[39m
+   [33m[2m✓[22m[39m change-contact-email atomic tx (T072, FR-012a)[2m > [22mchaos (c): user-email conflict → full rollback [33m1708[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/settings-form.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 5131[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mFR-010 — bootstrap gate[2m > [22mfirst upsert creates the row and emits audit [33m459[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mUS4 AS1 — partial PATCH preserves untouched fields[2m > [22mfull PATCH with only vatRate changed preserves other fields across call [33m403[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mFR-011 — live settings surface to next issue + trigger-enforced snapshot freeze[2m > [22mchanging VAT 10→5 updates what getForIssue returns (next issue snapshots 5%) [33m756[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mFR-011 — live settings surface to next issue + trigger-enforced snapshot freeze[2m > [22mdirect FR-011 — immutability trigger rejects vat_rate_snapshot mutation on issued invoice (F-03) [33m862[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mPrinciple I clause 3 — cross-tenant invisibility[2m > [22mtenant-A settings are not visible to tenant-B reads [33m346[2mms[22m[39m
+   [33m[2m✓[22m[39m T091 — F4 tenant invoice settings lifecycle[2m > [22mPrinciple I clause 3 — cross-tenant invisibility[2m > [22mtenant-B bootstrap does not affect tenant-A state [33m587[2mms[22m[39m
+ [32m✓[39m tests/integration/members/archive-cascade.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 6579[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22marchives a member: flips status + sets archived_at + audit row [33m821[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22mcascade: revokes sessions of linked F1 user on archive [33m1045[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22mre-archive returns state_error [33m753[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22mcascade: dedupes same F1 user linked to multiple contacts (R002) [33m1036[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22mcascade: soft-consumes pending unredeemed invitations for linked users [33m1046[2mms[22m[39m
+   [33m[2m✓[22m[39m archive-member integration (T135, US7)[2m > [22mcross-tenant archive returns not_found (RLS) [33m978[2mms[22m[39m
+ [32m✓[39m tests/integration/members/timeline.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 8179[2mms[22m[39m
+   [33m[2m✓[22m[39m timeline integration (T128, US6)[2m > [22mreturns member-scoped events newest-first (admin role) [33m1494[2mms[22m[39m
+   [33m[2m✓[22m[39m timeline integration (T128, US6)[2m > [22mcursor pagination: limit 2 returns nextCursor; next page continues [33m937[2mms[22m[39m
+   [33m[2m✓[22m[39m timeline integration (T128, US6)[2m > [22mmember role — override_reason_* payload keys are redacted [33m535[2mms[22m[39m
+   [33m[2m✓[22m[39m timeline integration (T128, US6)[2m > [22madmin role — override_reason_* payload keys are preserved [33m535[2mms[22m[39m
+   [33m[2m✓[22m[39m timeline integration (T128, US6)[2m > [22mE2 enrichment — member_plan_changed payload includes resolved old/new_plan_name [33m536[2mms[22m[39m
+ [32m✓[39m tests/integration/members/tenant-isolation.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 5078[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 Tenant isolation — REVIEW GATE BLOCKER (T012)[2m > [22mA.update(B.member_id) affects 0 rows [33m347[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 Tenant isolation — REVIEW GATE BLOCKER (T012)[2m > [22msame contact email in two tenants coexists (consultant across tenants) [33m690[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/retention-member-archive.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 3722[2mms[22m[39m
+   [33m[2m✓[22m[39m T112 — FR-029/FR-030 retention + member-archive invariant (live Neon)[2m > [22marchiving a member preserves: invoice row, frozen snapshots, timeline enumerability [33m1446[2mms[22m[39m
+   [33m[2m✓[22m[39m T112 — FR-029/FR-030 retention + member-archive invariant (live Neon)[2m > [22mcross-tenant probe: tenant B cannot enumerate tenant A’s archived invoices [33m1372[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/audit-diff-state-mutations.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 10265[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_activated — payload round-trips with is_active diff [33m1576[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_deactivated — payload round-trips with is_active diff [33m1590[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_soft_deleted — payload round-trips with deleted_at diff (before: null, after: ISO) [33m1572[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mplan_undeleted — payload round-trips with deleted_at diff (before: ISO, after: null) [33m2108[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mactivate on soft-deleted plan returns not_found (illegal transition guard) [33m1712[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: US4 state-mutation audit-diff round-trip (T126a)[2m > [22mdeactivate on soft-deleted plan returns not_found (illegal transition guard) [33m1707[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/pdf-deterministic.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 1196[2mms[22m[39m
+{"level":"warn","time":1776833536585,"service":"swecham-membership","env":"test","requestId":"it-redeem-1776833535425-replay","reason":"used","msg":"redeem_invite.token_invalid"}
+ [32m✓[39m tests/integration/auth/account-lifecycle.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 4407[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: invitation flow (happy path + replay)[2m > [22mcreateUser then redeemInvite completes the lifecycle [33m1794[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: disable + role change lifecycle[2m > [22mdisableUser kills all sessions + emits two audit events [33m922[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: disable + role change lifecycle[2m > [22mchangeRole manager→admin kills sessions + emits role_changed audit [33m866[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: disable + role change lifecycle[2m > [22mchangeRole rejects staff→member portal crossing [33m484[2mms[22m[39m
+ [32m✓[39m tests/integration/members/verify-contact-email.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 3715[2mms[22m[39m
+   [33m[2m✓[22m[39m verifyContactEmail integration (FR-012a token consumption)[2m > [22mhappy path — all 6 side effects persisted atomically [33m697[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/f3-timeline-integration.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 4149[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 × F4 timeline integration (T083, US7)[2m > [22mtimeline surfaces all 6 F4 member-timeline event types (AS2) [33m544[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 × F4 timeline integration (T083, US7)[2m > [22mevery F4 row preserves actor + payload shape for copy resolver [33m538[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 × F4 timeline integration (T083, US7)[2m > [22mSC-011 — F4 events surface in the member timeline within 5 s [33m536[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 × F4 timeline integration (T083, US7)[2m > [22mF4 events are chronologically interleaved with F3 events (AS2) [33m536[2mms[22m[39m
+   [33m[2m✓[22m[39m F3 × F4 timeline integration (T083, US7)[2m > [22mF4 rows are not visible from a different tenant (RLS) [33m739[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/credit-note-pdf-golden.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2666[2mms[22m[39m
+   [33m[2m✓[22m[39m T127 — credit-note PDF render-input golden (live Neon)[2m > [22mpartial CN (50%) renders exactly 1 synthetic line with unitPrice=total=creditAmount + bilingual original-doc ref [33m1787[2mms[22m[39m
+ [32m✓[39m tests/integration/members/bulk-action-branches.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 830[2mms[22m[39m
+{"level":"error","time":1776833552782,"service":"swecham-membership","env":"test","err":{"code":"repo.unexpected"},"memberId":"11111111-2222-3333-4444-555555555555","requestId":"req-inline-1","field":"status","msg":"inline-edit: findByIdInTx unexpected error"}
+ [32m✓[39m tests/integration/members/inline-edit.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 1517[2mms[22m[39m
+{"level":"warn","time":1776833554315,"service":"swecham-membership","env":"test","userIdHash":"40bfb744","requestId":"it-change-pw-wrong-1776833554181","msg":"change_password.wrong_current"}
+ [32m✓[39m tests/integration/auth/change-password.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2979[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: change-password (US6)[2m > [22mhappy path: rotates session, revokes others, emits both audit events [33m1091[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: change-password (US6)[2m > [22mwrong-current-password: returns error without side effects [33m509[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: change-password (US6)[2m > [22msame-password: short-circuits before HIBP with same-password error [33m394[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: change-password (US6)[2m > [22mweak-password: too-short new password is rejected with too-short reason [33m517[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: change-password (US6)[2m > [22mweak-password: HIBP-breached new password is rejected with breached reason [33m467[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/tenant-isolation.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 3798[2mms[22m[39m
+   [33m[2m✓[22m[39m Tenant isolation — REVIEW GATE BLOCKER (T027)[2m > [22mA.update(B.plan_id) affects 0 rows [33m348[2mms[22m[39m
+   [33m[2m✓[22m[39m Tenant isolation — REVIEW GATE BLOCKER (T027)[2m > [22mA.delete(B.plan_id) affects 0 rows [33m349[2mms[22m[39m
+   [33m[2m✓[22m[39m Tenant isolation — REVIEW GATE BLOCKER (T027)[2m > [22maudit_log permissive policy: F1 NULL-tenant rows visible from both A and B [33m409[2mms[22m[39m
+ [32m✓[39m tests/integration/members/email-change-dual-channel.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 5112[2mms[22m[39m
+   [33m[2m✓[22m[39m email-change revert dual-channel flow (T073, FR-012b)[2m > [22mrevert atomically rolls back email + flags requires_password_reset [33m2577[2mms[22m[39m
+   [33m[2m✓[22m[39m email-change revert dual-channel flow (T073, FR-012b)[2m > [22mrevert with wrong-type token (verification) returns wrong_type [33m1570[2mms[22m[39m
+{"level":"warn","time":1776833565216,"service":"swecham-membership","env":"test","err":{"type":"Error","message":"Input buffer contains unsupported image format","stack":"Error: Input buffer contains unsupported image format\n    at Sharp.metadata (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\node_modules\\.pnpm\\sharp@0.34.5\\node_modules\\sharp\\lib\\input.js:637:17)\n    at Module.uploadTenantLogo (C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\src\\modules\\invoicing\\application\\use-cases\\upload-tenant-logo.ts:106:33)\n    at C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\tests\\integration\\invoicing\\logo-upload-security.test.ts:165:26\n    at file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:146:14\n    at file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:533:11\n    at runWithTimeout (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:39:7)\n    at runTest (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1056:17)\n    at runSuite (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1262:5)"},"tenantId":"test-swecham-logo","declaredMime":"image/png","msg":"uploadTenantLogo: sharp decode / re-encode failed"}
+{"level":"warn","time":1776833565242,"service":"swecham-membership","env":"test","tenantId":"test-swecham-logo","count":50,"cap":50,"msg":"uploadTenantLogo: logo history cap reached"}
+ [32m✓[39m tests/integration/invoicing/logo-upload-security.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 70[2mms[22m[39m
+ [32m✓[39m tests/integration/members/outbox-permanent-failure.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2984[2mms[22m[39m
+   [33m[2m✓[22m[39m outbox permanent failure + admin re-send (T074, FR-012c)[2m > [22moutbox row flips to permanently_failed on 5th attempt + audit row lands [33m678[2mms[22m[39m
+   [33m[2m✓[22m[39m outbox permanent failure + admin re-send (T074, FR-012c)[2m > [22madmin resend creates a fresh token + outbox row + audit row [33m1345[2mms[22m[39m
+{"level":"warn","time":1776833571277,"service":"swecham-membership","env":"test","requestId":"it-replay-1776833570288-second","reason":"used","msg":"reset_password.token_invalid"}
+{"level":"warn","time":1776833571715,"service":"swecham-membership","env":"test","requestId":"it-expired-1776833571654","reason":"expired","msg":"reset_password.token_invalid"}
+ [32m✓[39m tests/integration/auth/password-reset.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 3460[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: forgot-password → reset-password happy path[2m > [22mactive user receives a token and reset completes end-to-end [33m1605[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: forgot-password → reset-password happy path[2m > [22mreplay: consumed token cannot be reused [33m1299[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: forgot-password → reset-password happy path[2m > [22mexpired token is rejected as link-invalid [33m437[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/issue-vs-archive-race.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2445[2mms[22m[39m
+   [33m[2m✓[22m[39m F4 FR-037 — issue-vs-archive race guard (T099)[2m > [22missue on archived member returns member_archived and consumes NO sequence [33m1540[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/prior-year-lock.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 10084[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 1 — edit plan_name.en on 2026 plan (when current=2027) succeeds [33m1580[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 2 — edit description.en on 2026 plan succeeds [33m1583[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 3 — edit sort_order on 2026 plan succeeds [33m1593[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 4 — edit annual_fee_minor_units on 2026 plan returns 422 locked [33m1173[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 5 — edit benefit_matrix on 2026 plan returns 422 locked [33m1162[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 6 — edit annual_fee on current-year (2027) plan succeeds [33m1591[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: prior-year partial lock (T112)[2m > [22mScenario 7 — no-op write of locked field (same value) succeeds [33m1402[2mms[22m[39m
+ [32m✓[39m tests/integration/members/self-service-whitelist.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 110[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/invoice-list-perf.test.ts [2m([22m[2m2 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 819[2mms[22m[39m
+   [33m[2m✓[22m[39m T110a — invoice-list query perf (SC-005)[2m > [22msmoke: listPaged returns at small scale [33m819[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/vat-source-chain.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2536[2mms[22m[39m
+   [33m[2m✓[22m[39m T123 — VAT source chain pin (tenant_invoice_settings → invoice row)[2m > [22minvoice issued under vat_rate=0.0850 snapshots 0.0850 into invoices.vat_rate_snapshot [33m1879[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/search-plans-filter.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 2718[2mms[22m[39m
+[90mstdout[2m | tests/integration/auth/enumeration-timing.test.ts[2m > [22m[2mintegration: enumeration timing defense[2m > [22m[2mtiming: unknown-email and wrong-password medians stay within 2x of each other
+[22m[39m  enumeration-timing: n=30 per side, unknown median=138.8ms p95=142.0ms, wrong-pw median=117.0ms p95=203.1ms, median ratio=1.19x, |p95 delta|=61.0ms
+
+ [32m✓[39m tests/integration/auth/enumeration-timing.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 9565[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: enumeration timing defense[2m > [22mstructural: both unknown-email and wrong-password paths run argon2 exactly once [33m498[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: enumeration timing defense[2m > [22mtiming: unknown-email and wrong-password medians stay within 2x of each other [33m9067[2mms[22m[39m
+ [32m✓[39m tests/integration/members/directory-search-with-count.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 9660[2mms[22m[39m
+   [33m[2m✓[22m[39m directorySearchWithCount integration (offset pagination)[2m > [22moffset skips leading rows without overlap [33m868[2mms[22m[39m
+   [33m[2m✓[22m[39m directorySearchWithCount integration (offset pagination)[2m > [22mtenantA total never leaks tenantB rows (RLS) [33m307[2mms[22m[39m
+ [32m✓[39m tests/integration/members/update-status-in-tx.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 3412[2mms[22m[39m
+   [33m[2m✓[22m[39m updateStatusInTx + findByIdInTx (T3 — round-3)[2m > [22mfindByIdInTx returns the row inside runInTenant [33m342[2mms[22m[39m
+   [33m[2m✓[22m[39m updateStatusInTx + findByIdInTx (T3 — round-3)[2m > [22mfindByIdInTx returns not_found for cross-tenant id [33m903[2mms[22m[39m
+   [33m[2m✓[22m[39m updateStatusInTx + findByIdInTx (T3 — round-3)[2m > [22mupdateStatusInTx writes status + archivedAt + updatedAt in the ambient tx [33m560[2mms[22m[39m
+   [33m[2m✓[22m[39m updateStatusInTx + findByIdInTx (T3 — round-3)[2m > [22mrollback inside runInTenant undoes the status write (FR-019 atomicity) [33m572[2mms[22m[39m
+ [32m✓[39m tests/integration/members/bulk-action-toctou.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2376[2mms[22m[39m
+   [33m[2m✓[22m[39m bulk-action TOCTOU row lock (staff-review SB-1)[2m > [22mconcurrent bulk archive on same member → 2nd sees committed state, returns state_error [33m714[2mms[22m[39m
+   [33m[2m✓[22m[39m bulk-action TOCTOU row lock (staff-review SB-1)[2m > [22mconcurrent bulk archive on DIFFERENT members both succeed in parallel [33m802[2mms[22m[39m
+ [31m❯[39m tests/integration/invoicing/pdf-routes-cross-tenant-probe.test.ts [2m([22m[2m3 tests[22m[2m | [22m[33m3 skipped[39m[2m)[22m[33m 1422[2mms[22m[39m
+ [32m✓[39m tests/integration/members/create-member.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 4332[2mms[22m[39m
+   [33m[2m✓[22m[39m create-member integration (T041, US1)[2m > [22mhappy path: creates member + primary contact + audit events [33m1090[2mms[22m[39m
+   [33m[2m✓[22m[39m create-member integration (T041, US1)[2m > [22msoft-duplicate: repeating (company_name, country) without confirm rejects [33m1032[2mms[22m[39m
+   [33m[2m✓[22m[39m create-member integration (T041, US1)[2m > [22msoft-duplicate: confirm_soft_duplicate=true proceeds [33m1347[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/credit-note-immutability.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 1890[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/pdf-render-benchmark.test.ts [2m([22m[2m2 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[90m 132[2mms[22m[39m
+ [32m✓[39m tests/integration/members/undelete-window.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 3292[2mms[22m[39m
+   [33m[2m✓[22m[39m undelete-member integration (T136, US7)[2m > [22mundeletes a member within 90-day window [33m680[2mms[22m[39m
+   [33m[2m✓[22m[39m undelete-member integration (T136, US7)[2m > [22mrejects undelete beyond 90-day window [33m512[2mms[22m[39m
+   [33m[2m✓[22m[39m undelete-member integration (T136, US7)[2m > [22mrejects undelete on a non-archived (active) member [33m337[2mms[22m[39m
+   [33m[2m✓[22m[39m undelete-member integration (T136, US7)[2m > [22mcross-tenant undelete returns not_found (RLS) [33m901[2mms[22m[39m
+ [32m✓[39m tests/integration/members/primary-contact-race.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2356[2mms[22m[39m
+   [33m[2m✓[22m[39m primary-contact partial-index race (T075)[2m > [22mpromotePrimary happy path demotes old primary then promotes target [33m1136[2mms[22m[39m
+ [31m❯[39m tests/integration/scripts/clear-test-data.test.ts [2m([22m[2m4 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[33m 1155[2mms[22m[39m
+[31m   [31m×[31m clearTestData script[2m > [22mdeletes E2E members (E2E Co %) and their contacts[33m 681[2mms[22m[31m[39m
+[31m     → update or delete on table "invoices" violates foreign key constraint "credit_notes_original_invoice_fk" on table "credit_notes"[39m
+[31m   [31m×[31m clearTestData script[2m > [22mdeletes integration test users (test-*@swecham.test)[90m 169[2mms[22m[31m[39m
+[31m     → update or delete on table "invoices" violates foreign key constraint "credit_notes_original_invoice_fk" on table "credit_notes"[39m
+[31m   [31m×[31m clearTestData script[2m > [22mDOES NOT delete production-shaped users (non-test prefix)[90m 161[2mms[22m[31m[39m
+[31m     → update or delete on table "invoices" violates foreign key constraint "credit_notes_original_invoice_fk" on table "credit_notes"[39m
+[31m   [31m×[31m clearTestData script[2m > [22mis idempotent — second run reports zero deletions[90m 84[2mms[22m[31m[39m
+[31m     → update or delete on table "invoices" violates foreign key constraint "credit_notes_original_invoice_fk" on table "credit_notes"[39m
+ [2m[90m↓[39m[22m tests/integration/members/timeline-perf.test.ts [2m([22m[2m1 test[22m[2m | [22m[33m1 skipped[39m[2m)[22m
+[90mstdout[2m | tests/integration/auth/reset-enumeration-timing.test.ts[2m > [22m[2mintegration: reset-enumeration timing (T093, T-04)[2m > [22m[2mtiming: unknown-email and known-active medians stay within 5x
+[22m[39m  reset-enum: n=25 unknown median=58.3ms known median=228.0ms ratio=3.91x
+
+ [32m✓[39m tests/integration/auth/reset-enumeration-timing.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 8265[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: reset-enumeration timing (T093, T-04)[2m > [22mstructural: unknown-email branch creates no token row and no audit row [33m836[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: reset-enumeration timing (T093, T-04)[2m > [22mtiming: unknown-email and known-active medians stay within 5x [33m7430[2mms[22m[39m
+ [32m✓[39m tests/integration/members/search-perf.test.ts [2m([22m[2m2 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 1310[2mms[22m[39m
+   [33m[2m✓[22m[39m directory search perf — SC-002 (T060)[2m > [22msmoke: substring search returns rows at small scale [33m393[2mms[22m[39m
+ [32m✓[39m tests/integration/auth/last-admin-protection.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 941[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: last-admin-protection guard (T-10)[2m > [22mchangeRole ALLOWS promoting a non-admin even when only one admin remains [33m551[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/create-plan-validation.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 2[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/clone-idempotency.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 10515[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: clone-plans idempotency (T094)[2m > [22mScenario 1 — fresh clone 2026→2027 inserts 9 inactive rows [33m2635[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: clone-plans idempotency (T094)[2m > [22mScenario 2 — second clone with target_year populated returns error [33m2612[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: clone-plans idempotency (T094)[2m > [22mScenario 3 — delete target then re-clone succeeds [33m2792[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: clone-plans idempotency (T094)[2m > [22mScenario 4 — source_year_empty when source has zero plans [33m878[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: clone-plans idempotency (T094)[2m > [22mScenario 5 — activate_cloned=true lands rows active [33m1598[2mms[22m[39m
+[90mstdout[2m | tests/integration/auth/rate-limit.test.ts[2m > [22m[2mintegration: per-IP rate limit (T-01 credential stuffing)[2m > [22m[2mblocks stuffing: attempts > 30 from one IP return rate-limited
+[22m[39m  stuffing results: 35 attempts → invalid-credentials=30, rate-limited=5
+
+ [32m✓[39m tests/integration/auth/rate-limit.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 7600[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: per-IP rate limit (T-01 credential stuffing)[2m > [22mblocks stuffing: attempts > 30 from one IP return rate-limited [33m6566[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: per-IP rate limit (T-01 credential stuffing)[2m > [22mreturns a positive Retry-After when the per-IP bucket is full [33m1034[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/list-plans-filtering.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 3589[2mms[22m[39m
+{"level":"info","time":1776833665673,"service":"swecham-membership","env":"test","requestId":"019db38a-1907-7bcd-8c37-7335d81c5add","inspected":1,"sent":0,"retried":0,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+{"level":"error","time":1776833666180,"service":"swecham-membership","env":"test","requestId":"019db38a-1b44-7a9b-8d95-c0b92bf7622a","outboxRowId":"fbada5b8-9842-4602-8696-dfbdb8ff161b","tenantId":null,"notificationType":"member_invitation","attempts":1,"errorCode":"invalid-recipient","msg":"cron.outbox_dispatch.permanent_failure"}
+{"level":"info","time":1776833666274,"service":"swecham-membership","env":"test","requestId":"019db38a-1b44-7a9b-8d95-c0b92bf7622a","inspected":1,"sent":0,"retried":0,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+{"level":"error","time":1776833666751,"service":"swecham-membership","env":"test","requestId":"019db38a-1d8d-7add-966a-6779ba0307b8","outboxRowId":"fe31d9af-a6c9-4f1b-ad05-6526d7f364a7","tenantId":null,"notificationType":"member_invitation","attempts":5,"errorCode":"provider-error","msg":"cron.outbox_dispatch.permanent_failure"}
+{"level":"info","time":1776833666832,"service":"swecham-membership","env":"test","requestId":"019db38a-1d8d-7add-966a-6779ba0307b8","inspected":1,"sent":0,"retried":0,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+ [32m✓[39m tests/integration/members/outbox-permanent-failure-metrics.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1723[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: outbox permanentFailure metric labels[2m > [22memits permanentFailure(type, 'no_template_handler') when payload is unrenderable at MAX_ATTEMPTS [33m573[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: outbox permanentFailure metric labels[2m > [22memits permanentFailure(type, 'invalid_recipient') when Resend rejects the address [33m585[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: outbox permanentFailure metric labels[2m > [22memits permanentFailure(type, 'max_retries') when transient send failures hit MAX_ATTEMPTS [33m564[2mms[22m[39m
+{"level":"error","time":1776833667380,"service":"swecham-membership","env":"test","requestId":"019db38a-2066-728c-82f7-2b01a9a6f745","stuckCount":2,"msg":"cron.outbox_dispatch.stuck_rows_detected"}
+{"level":"info","time":1776833667861,"service":"swecham-membership","env":"test","requestId":"019db38a-2066-728c-82f7-2b01a9a6f745","inspected":2,"sent":0,"retried":2,"permanent":0,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+ [32m✓[39m tests/integration/members/outbox-stuck-rows.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 1201[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: outbox dispatcher L2 stuck-rows detection[2m > [22memits outboxMetrics.stuckRows(n) when pending rows are > 30 min overdue [33m916[2mms[22m[39m
+ [32m✓[39m tests/integration/members/directory-search.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 4331[2mms[22m[39m
+   [33m[2m✓[22m[39m directory-search integration (T059, US2)[2m > [22mcursor pagination: limit 2 returns nextCursor; second page returns remainder [33m462[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/concurrent-edit-lww.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 3903[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: concurrent edit LWW (T113)[2m > [22mScenario 1 — non-overlapping edits both survive [33m1657[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: concurrent edit LWW (T113)[2m > [22mScenario 2 — overlapping edits last-write-wins [33m2246[2mms[22m[39m
+ [32m✓[39m tests/integration/members/bulk-action-cap.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 127[2mms[22m[39m
+ [32m✓[39m tests/integration/members/bundle-change-warning.test.ts [2m([22m[2m3 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 1457[2mms[22m[39m
+   [33m[2m✓[22m[39m affected-members-count — SC-008 (T076)[2m > [22mcounts only active+inactive (archived excluded) for the target plan [33m341[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/audit-diff-create-clone.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 3998[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: audit-diff round-trip for create + clone (T096)[2m > [22mplan_created audit payload round-trips through auditPayloadSchema [33m1236[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: audit-diff round-trip for create + clone (T096)[2m > [22mplan_cloned audit payload round-trips through auditPayloadSchema [33m2761[2mms[22m[39m
+{"level":"warn","time":1776833683118,"service":"swecham-membership","env":"test","role":"manager","resource":"auth:user","action":"write","userIdHash":"8cf8baa8","requestId":"rbac-mgr-write-1776833683052","msg":"rbac.denied"}
+{"level":"warn","time":1776833683538,"service":"swecham-membership","env":"test","role":"manager","resource":"invoices:invoice","action":"delete","userIdHash":"23aa588f","requestId":"rbac-mgr-del-1776833683483","msg":"rbac.denied"}
+ [32m✓[39m tests/integration/auth/rbac-manager-readonly.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2302[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — manager denied write (US2, FR-003)[2m > [22mdenies manager write on auth:user AND emits manager_denied_write audit [33m440[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — manager denied write (US2, FR-003)[2m > [22mdenies manager delete on invoices:invoice AND emits audit [33m428[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — manager denied write (US2, FR-003)[2m > [22mpermits manager read on staff:dashboard WITHOUT emitting an audit [33m373[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — manager denied write (US2, FR-003)[2m > [22mpermits manager self-service write (own password change) [33m369[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — admin bypass (regression guard)[2m > [22madmin may write on auth:user WITHOUT emitting a denial audit [33m378[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: RBAC — admin bypass (regression guard)[2m > [22madmin may delete on invoices:invoice [33m314[2mms[22m[39m
+ [32m✓[39m tests/integration/members/migration-schema.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 375[2mms[22m[39m
+[90mstdout[2m | tests/integration/auth/brute-force.test.ts[2m > [22m[2mintegration: brute-force rate limit[2m > [22m[2mblocks brute-force: ≤ 10 argon2 calls across 50 attempts
+[22m[39m  brute-force results: 50 attempts → invalid-credentials=5, account-locked=0, rate-limited=45, argon2 calls=5
+
+ [32m✓[39m tests/integration/auth/brute-force.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2692[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: brute-force rate limit[2m > [22mblocks brute-force: ≤ 10 argon2 calls across 50 attempts [33m2692[2mms[22m[39m
+ [32m✓[39m tests/integration/members/bulk-action-rate-limit.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 151[2mms[22m[39m
+[90mstdout[2m | tests/integration/auth/email-latency.test.ts[2m > [22m[2mintegration: email delivery latency budget (T191, SC-002)[2m > [22m[2mforgotPassword completes under 500ms at p99 across 100 requests
+[22m[39m  email-latency: n=100  p50=291ms  p95=299ms  p99=333ms  max=333ms
+
+ [32m✓[39m tests/integration/auth/email-latency.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 33170[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: email delivery latency budget (T191, SC-002)[2m > [22mforgotPassword completes under 500ms at p99 across 100 requests [33m29246[2mms[22m[39m
+ [32m✓[39m tests/integration/auth/password-compare-guard.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 20[2mms[22m[39m
+{"level":"info","time":1776833722330,"service":"swecham-membership","env":"test","userIdHash":"64e575a4","role":"admin","portal":"staff","requestId":"it-signin-1776833721947","msg":"sign_in_success"}
+ [32m✓[39m tests/integration/auth/sign-in.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 1981[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in happy path[2m > [22mcreates a session row, updates last_sign_in_at, emits sign_in_success [33m692[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in happy path[2m > [22mwrong password returns invalid-credentials and increments failed count [33m451[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in happy path[2m > [22munknown email returns invalid-credentials without creating any session [33m410[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in happy path[2m > [22mdisabled user returns account-disabled and does not create a session [33m428[2mms[22m[39m
+{"level":"info","time":1776833724342,"service":"swecham-membership","env":"test","requestId":"019db38a-fe5b-7121-9eb9-4fa763df0f8f","inspected":1,"sent":0,"retried":1,"permanent":0,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+{"level":"info","time":1776833724907,"service":"swecham-membership","env":"test","requestId":"019db38b-0066-75f3-b94d-c2111daa1c42","inspected":1,"sent":0,"retried":0,"permanent":1,"skipped":0,"msg":"cron.outbox_dispatch.done"}
+ [32m✓[39m tests/integration/members/outbox-no-template-backoff.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 1089[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: outbox dispatcher no_template_handler backoff parity[2m > [22mschedules first retry at ~60s (not 300s) for unrenderable member_invitation row [33m528[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: outbox dispatcher no_template_handler backoff parity[2m > [22mpermanent failure on 5th no_template attempt writes audit row (S1 null-tenant parity) [33m561[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/get-plan-404-cross-tenant.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 2420[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: get-plan 404 cross-tenant probe (T066)[2m > [22mgetPlan from Tenant A context returns not_found (not forbidden) [33m343[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: get-plan 404 cross-tenant probe (T066)[2m > [22mappends plan_not_found audit event with the expected payload shape [33m524[2mms[22m[39m
+ [32m✓[39m tests/integration/audit/completeness.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 2231[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/soft-delete-with-members.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 3035[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: soft-delete with attached members (T125)[2m > [22mScenario 1 — stub checker returns 3 → refuses with has_active_members [33m1349[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: soft-delete with attached members (T125)[2m > [22mScenario 2 — stub checker returns 0 → soft-delete succeeds [33m1686[2mms[22m[39m
+ [32m✓[39m tests/integration/auth/sql-injection.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1962[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: SQL injection resistance (T176, T-09)[2m > [22mrejects every payload as invalid credentials and leaves the users table untouched [33m1962[2mms[22m[39m
+{"level":"info","time":1776833735366,"service":"swecham-membership","env":"test","userIdHash":"5eb6e920","role":"member","portal":"member","requestId":"it-member-signin-1776833735044","msg":"sign_in_success"}
+ [32m✓[39m tests/integration/auth/member-sign-in.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1116[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: member sign-in (US5)[2m > [22mmember signing in via portal=member creates a session and succeeds [33m510[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: member sign-in (US5)[2m > [22mmember signing in via portal=staff → invalid-credentials (FR-016 no portal leak) [33m325[2mms[22m[39m
+[90mstdout[2m | tests/integration/auth/role-change-race.test.ts[2m > [22m[2mintegration: concurrent last-admin race (T116, FR-011)[2m > [22m[2mtwo concurrent admin-removals never leave zero admins (invariant)
+[22m[39m  race: baseline=102 disable=ok role=ok
+
+ [32m✓[39m tests/integration/auth/role-change-race.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 909[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: concurrent last-admin race (T116, FR-011)[2m > [22mtwo concurrent admin-removals never leave zero admins (invariant) [33m909[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/audit-diff-update.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1463[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: plan_updated audit-diff round-trip (T114)[2m > [22mpayload round-trips through auditPayloadSchema with correct diff shape [33m1462[2mms[22m[39m
+[90mstdout[2m | tests/integration/auth/dos-rate-limit.test.ts[2m > [22m[2mintegration: DoS rate limit (T179, T-16, SC-010)[2m > [22m[2mcaps argon2 cost at ≤ 35 across 1000 attacker requests
+[22m[39m  DoS burst 1000 → argon2(total)=30 (verify=0, verifyDummy=30)
+
+ [32m✓[39m tests/integration/auth/dos-rate-limit.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 35397[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: DoS rate limit (T179, T-16, SC-010)[2m > [22mcaps argon2 cost at ≤ 35 across 1000 attacker requests [33m35397[2mms[22m[39m
+ [32m✓[39m tests/integration/members/outbox-member-invitation.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2943[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: createUser enqueues outbox row with correct shape[2m > [22minserts member_invitation row with token + role + null tenant_id [33m1052[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: createUser enqueues outbox row with correct shape[2m > [22mpreserves role across the three supported values [33m1890[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/overdue-audit-idempotency.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 1001[2mms[22m[39m
+ [32m✓[39m tests/integration/auth/lockout.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1541[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: lockout after 5 failed sign-ins[2m > [22mlocks the account on attempt #5 and rejects #6 with account-locked [33m1541[2mms[22m[39m
+ [32m✓[39m tests/integration/plans/missing-translation-indicator.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 1779[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/pdf-preview-null-issue-date.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 166[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/dispatcher-f4-gated.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 612[2mms[22m[39m
+   [33m[2m✓[22m[39m R7-B4 — outbox dispatcher query filters invoice_auto_email when F4 off[2m > [22mWITH f4 filter (flag=false) — F4 row is NOT returned [33m307[2mms[22m[39m
+   [33m[2m✓[22m[39m R7-B4 — outbox dispatcher query filters invoice_auto_email when F4 off[2m > [22mWITHOUT f4 filter (flag=true) — both F1 and F4 rows are returned [33m305[2mms[22m[39m
+[90mstdout[2m | tests/integration/auth/token-generation.test.ts[2m > [22m[2mintegration: token generation entropy (T178, T-12)[2m > [22m[2mbyte-frequency chi-square is below the uniform-distribution critical value
+[22m[39m  chi-square(255) over 10000 tokens = 228.01
+
+ [32m✓[39m tests/integration/auth/token-generation.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 642[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: token generation entropy (T178, T-12)[2m > [22mproduces 10000 collision-free tokens of correct length [33m512[2mms[22m[39m
+ [32m✓[39m tests/integration/invoicing/feature-flag-kill-switch.test.ts [2m([22m[2m20 tests[22m[2m)[22m[90m 154[2mms[22m[39m
+ [32m✓[39m tests/integration/middleware/readonly-mode.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+{"level":"warn","time":1776833783701,"service":"swecham-membership","env":"test","userIdHash":"73f3bdd2","requestId":"rate-0","msg":"change_password.wrong_current"}
+{"level":"warn","time":1776833783815,"service":"swecham-membership","env":"test","userIdHash":"73f3bdd2","requestId":"rate-1","msg":"change_password.wrong_current"}
+{"level":"warn","time":1776833783929,"service":"swecham-membership","env":"test","userIdHash":"73f3bdd2","requestId":"rate-2","msg":"change_password.wrong_current"}
+{"level":"warn","time":1776833784055,"service":"swecham-membership","env":"test","userIdHash":"73f3bdd2","requestId":"rate-3","msg":"change_password.wrong_current"}
+{"level":"warn","time":1776833784166,"service":"swecham-membership","env":"test","userIdHash":"73f3bdd2","requestId":"rate-4","msg":"change_password.wrong_current"}
+[90mstdout[2m | tests/integration/auth/change-password-rate-limit.test.ts[2m > [22m[2mintegration: change-password rate limit (T149, FR-006)[2m > [22m[2mallows 5 wrong-current attempts, then rate-limits the 6th
+[22m[39m  change-password rate limit: wrong=5, rate-limited=1
+
+ [32m✓[39m tests/integration/auth/change-password-rate-limit.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1043[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: change-password rate limit (T149, FR-006)[2m > [22mallows 5 wrong-current attempts, then rate-limits the 6th [33m1042[2mms[22m[39m
+ [32m✓[39m tests/integration/auth/enumeration-message.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1021[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: enumeration-safe failure responses[2m > [22mreturns identical error shape for unknown / wrong-password / pending [33m1021[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/integration/plans/rls-debug-state.test.ts [2m([22m[2m1 test[22m[2m | [22m[33m1 skipped[39m[2m)[22m
+ [32m✓[39m tests/integration/invoicing/tenant-invoice-settings-probe.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 802[2mms[22m[39m
+{"level":"info","time":1776833787582,"service":"swecham-membership","env":"test","userIdHash":"69d8cb22","role":"member","portal":"member","requestId":"it-f3-clear-1776833787193","msg":"sign_in_success"}
+ [32m✓[39m tests/integration/auth/sign-in-f3-guards.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1265[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in F3 security guards[2m > [22mrejects sign-in when emailVerified = false (FR-012a) [33m342[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in F3 security guards[2m > [22mrejects sign-in when requiresPasswordReset = true (FR-012b) [33m329[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: sign-in F3 security guards[2m > [22mallows sign-in after flags are cleared [33m452[2mms[22m[39m
+ [32m✓[39m tests/integration/audit/append-only.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 346[2mms[22m[39m
+ [32m✓[39m tests/integration/middleware/feature-flag-f3-kill-switch.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m tests/integration/rls-coverage.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 977[2mms[22m[39m
+{"level":"info","time":1776833789650,"service":"swecham-membership","env":"test","userIdHash":"903279cd","role":"admin","portal":"staff","requestId":"it-rotate-1-1776833789259","msg":"sign_in_success"}
+{"level":"info","time":1776833790038,"service":"swecham-membership","env":"test","userIdHash":"903279cd","role":"admin","portal":"staff","requestId":"it-rotate-2-1776833789650","msg":"sign_in_success"}
+ [32m✓[39m tests/integration/auth/session-rotation.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 985[2mms[22m[39m
+   [33m[2m✓[22m[39m integration: session id rotation on sign-in[2m > [22mproduces a fresh 64-hex id on every sign-in call [33m985[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[1m[7m Failed Suites 2 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/invoicing/pdf-routes-cross-tenant-probe.test.ts[2m > [22mI5 — PDF routes cross-tenant probe (Principle I Review-Gate)
+[31m[1mPostgresError[22m: insert or update on table "invoices" violates foreign key constraint "invoices_member_fk"[39m
+[90m [2m❯[22m ErrorResponse ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m815:30[22m[39m
+[90m [2m❯[22m handle ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m489:6[22m[39m
+[90m [2m❯[22m TLSSocket.data ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m324:9[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/scripts/clear-test-data.test.ts[2m > [22mclearTestData script
+[31m[1mPostgresError[22m: update or delete on table "users" violates foreign key constraint "membership_plans_created_by_users_id_fk" on table "membership_plans"[39m
+[90m [2m❯[22m ErrorResponse ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m815:30[22m[39m
+[90m [2m❯[22m handle ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m489:6[22m[39m
+[90m [2m❯[22m TLSSocket.data ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m324:9[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 4 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/scripts/clear-test-data.test.ts[2m > [22mclearTestData script[2m > [22mdeletes E2E members (E2E Co %) and their contacts
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/scripts/clear-test-data.test.ts[2m > [22mclearTestData script[2m > [22mdeletes integration test users (test-*@swecham.test)
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/scripts/clear-test-data.test.ts[2m > [22mclearTestData script[2m > [22mDOES NOT delete production-shaped users (non-test prefix)
+[31m[1m[7m FAIL [27m[22m[39m tests/integration/scripts/clear-test-data.test.ts[2m > [22mclearTestData script[2m > [22mis idempotent — second run reports zero deletions
+[31m[1mPostgresError[22m: update or delete on table "invoices" violates foreign key constraint "credit_notes_original_invoice_fk" on table "credit_notes"[39m
+[90m [2m❯[22m ErrorResponse ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m815:30[22m[39m
+[90m [2m❯[22m handle ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m489:6[22m[39m
+[90m [2m❯[22m TLSSocket.data ../Swedish%20chaplain_membership/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:[2m324:9[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m89 passed[39m[22m[2m | [22m[33m2 skipped[39m[90m (93)[39m
+[2m      Tests [22m [1m[31m4 failed[39m[22m[2m | [22m[1m[32m439 passed[39m[22m[2m | [22m[33m10 skipped[39m[2m | [22m[90m1 todo[39m[90m (454)[39m
+[2m   Start at [22m 11:50:06
+[2m   Duration [22m 383.91s[2m (transform 2.75s, setup 175ms, collect 14.38s, tests 367.50s, environment 0ms, prepare 140ms)[22m
+
+ ELIFECYCLE  Command failed with exit code 1.

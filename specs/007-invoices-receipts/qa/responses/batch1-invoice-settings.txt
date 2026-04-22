@@ -1,0 +1,1532 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "tests/e2e/invoice-settings.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 27 tests using 1 worker
+
+  ✘   1 [chromium] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (11.7s)
+  ✘   2 [chromium] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (retry #1) (11.4s)
+  ✘   3 [chromium] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (retry #2) (10.7s)
+  ✓   4 [chromium] › tests\e2e\invoice-settings.spec.ts:61:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan (7.5s)
+  ✘   5 [chromium] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (3.0s)
+  ✘   6 [chromium] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (retry #1) (6.3s)
+  ✘   7 [chromium] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (retry #2) (5.9s)
+  ✘   8 [chromium] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (5.5s)
+  ✘   9 [chromium] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #1) (5.0s)
+  ✘  10 [chromium] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #2) (4.8s)
+  ✘  11 [chromium] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (5.0s)
+  ✘  12 [chromium] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (retry #1) (5.4s)
+  ✘  13 [chromium] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (retry #2) (4.8s)
+  ✘  14 [chromium] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (4.8s)
+  ✘  15 [chromium] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (retry #1) (4.8s)
+  ✘  16 [chromium] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (retry #2) (4.7s)
+  ✘  17 [chromium] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (4.7s)
+  ✘  18 [chromium] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (retry #1) (5.2s)
+  ✘  19 [chromium] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (retry #2) (4.7s)
+  ✘  20 [chromium] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (4.7s)
+  ✘  21 [chromium] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (retry #1) (4.6s)
+  ✘  22 [chromium] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (retry #2) (4.5s)
+  ✘  23 [chromium] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (4.8s)
+  ✘  24 [chromium] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (retry #1) (4.9s)
+  ✘  25 [chromium] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (retry #2) (4.9s)
+  ✘  26 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (7.5s)
+  ✘  27 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (retry #1) (8.6s)
+  ✘  28 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (retry #2) (7.6s)
+  ✓  29 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:61:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan (3.4s)
+  ✘  30 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (1.7s)
+  ✘  31 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (retry #1) (2.5s)
+  ✘  32 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (retry #2) (2.3s)
+  ✘  33 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (1.3s)
+  ✘  34 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #1) (1.2s)
+  ✘  35 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #2) (1.2s)
+  ✘  36 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (1.3s)
+  ✘  37 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (retry #1) (1.1s)
+  ✘  38 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (retry #2) (1.2s)
+  ✘  39 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (1.1s)
+  ✘  40 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (retry #1) (1.2s)
+  ✘  41 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (retry #2) (1.1s)
+  ✘  42 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (1.5s)
+  ✘  43 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (retry #1) (1.1s)
+  ✘  44 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (retry #2) (1.1s)
+  ✘  45 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (1.1s)
+  ✘  46 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (retry #1) (1.2s)
+  ✘  47 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (retry #2) (1.1s)
+  ✘  48 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (1.2s)
+  ✘  49 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (retry #1) (1.1s)
+  ✘  50 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (retry #2) (1.1s)
+  ✘  51 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (9.8s)
+  ✘  52 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (retry #1) (10.6s)
+  ✘  53 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (retry #2) (10.3s)
+  ✓  54 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:61:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan (8.1s)
+  ✘  55 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (2.8s)
+  ✘  56 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (retry #1) (6.6s)
+  ✘  57 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (retry #2) (5.8s)
+  ✘  58 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (5.1s)
+  ✘  59 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #1) (4.9s)
+  ✘  60 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #2) (4.7s)
+  ✘  61 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (4.6s)
+  ✘  62 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (retry #1) (16.1s)
+  ✘  63 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (retry #2) (0ms)
+  ✘  64 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (0ms)
+  ✘  65 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (retry #1) (0ms)
+  ✘  66 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (retry #2) (0ms)
+  ✘  67 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (0ms)
+  ✘  68 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (retry #1) (0ms)
+  ✘  69 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (retry #2) (0ms)
+  ✘  70 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (0ms)
+  ✘  71 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (retry #1) (0ms)
+  ✘  72 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (retry #2) (0ms)
+  ✘  73 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (0ms)
+  ✘  74 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (retry #1) (0ms)
+  ✘  75 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (retry #2) (0ms)
+
+
+  1) [chromium] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form 
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/admin\/settings\/invoicing/[39m
+    Received string:  [31m"http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    9 × unexpected value "http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[22m
+
+
+      47 |     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+      48 |     await page.goto('/admin/settings/invoicing');
+    > 49 |     await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+         |                        ^
+      50 |
+      51 |     // Header + all 5 sections (identity, tax, numbering, defaults, logo).
+      52 |     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:49:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/admin\/settings\/invoicing/[39m
+    Received string:  [31m"http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    9 × unexpected value "http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[22m
+
+
+      47 |     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+      48 |     await page.goto('/admin/settings/invoicing');
+    > 49 |     await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+         |                        ^
+      50 |
+      51 |     // Header + all 5 sections (identity, tax, numbering, defaults, logo).
+      52 |     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:49:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/admin\/settings\/invoicing/[39m
+    Received string:  [31m"http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    9 × unexpected value "http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[22m
+
+
+      47 |     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+      48 |     await page.goto('/admin/settings/invoicing');
+    > 49 |     await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+         |                        ^
+      50 |
+      51 |     // Header + all 5 sections (identity, tax, numbering, defaults, logo).
+      52 |     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:49:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-chromium-retry2\error-context.md
+
+  2) [chromium] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected value: [32m200[39m
+    Received array: [31m[302, 307, 401, 403, 404][39m
+
+      78 |     // Route group redirects unauthenticated-for-admin users — expect
+      79 |     // either a 4xx from the API guard or a redirect away from /admin.
+    > 80 |     expect([302, 307, 401, 403, 404]).toContain(res?.status() ?? 0);
+         |                                       ^
+      81 |     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
+      82 |   });
+      83 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:80:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected value: [32m200[39m
+    Received array: [31m[302, 307, 401, 403, 404][39m
+
+      78 |     // Route group redirects unauthenticated-for-admin users — expect
+      79 |     // either a 4xx from the API guard or a redirect away from /admin.
+    > 80 |     expect([302, 307, 401, 403, 404]).toContain(res?.status() ?? 0);
+         |                                       ^
+      81 |     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
+      82 |   });
+      83 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:80:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected value: [32m200[39m
+    Received array: [31m[302, 307, 401, 403, 404][39m
+
+      78 |     // Route group redirects unauthenticated-for-admin users — expect
+      79 |     // either a 4xx from the API guard or a redirect away from /admin.
+    > 80 |     expect([302, 307, 401, 403, 404]).toContain(res?.status() ?? 0);
+         |                                       ^
+      81 |     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
+      82 |   });
+      83 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:80:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-chromium-retry2\error-context.md
+
+  3) [chromium] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry2\error-context.md
+
+  4) [chromium] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry2\error-context.md
+
+  5) [chromium] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-chromium-retry2\error-context.md
+
+  6) [chromium] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-chromium-retry2\error-context.md
+
+  7) [chromium] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium-retry2\error-context.md
+
+  8) [chromium] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry2\error-context.md
+
+  9) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form 
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/admin\/settings\/invoicing/[39m
+    Received string:  [31m"http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    9 × unexpected value "http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[22m
+
+
+      47 |     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+      48 |     await page.goto('/admin/settings/invoicing');
+    > 49 |     await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+         |                        ^
+      50 |
+      51 |     // Header + all 5 sections (identity, tax, numbering, defaults, logo).
+      52 |     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:49:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/admin\/settings\/invoicing/[39m
+    Received string:  [31m"http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    8 × unexpected value "http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[22m
+
+
+      47 |     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+      48 |     await page.goto('/admin/settings/invoicing');
+    > 49 |     await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+         |                        ^
+      50 |
+      51 |     // Header + all 5 sections (identity, tax, numbering, defaults, logo).
+      52 |     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:49:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/admin\/settings\/invoicing/[39m
+    Received string:  [31m"http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    8 × unexpected value "http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[22m
+
+
+      47 |     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+      48 |     await page.goto('/admin/settings/invoicing');
+    > 49 |     await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+         |                        ^
+      50 |
+      51 |     // Header + all 5 sections (identity, tax, numbering, defaults, logo).
+      52 |     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:49:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-safari-retry2\error-context.md
+
+  10) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected value: [32m200[39m
+    Received array: [31m[302, 307, 401, 403, 404][39m
+
+      78 |     // Route group redirects unauthenticated-for-admin users — expect
+      79 |     // either a 4xx from the API guard or a redirect away from /admin.
+    > 80 |     expect([302, 307, 401, 403, 404]).toContain(res?.status() ?? 0);
+         |                                       ^
+      81 |     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
+      82 |   });
+      83 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:80:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected value: [32m200[39m
+    Received array: [31m[302, 307, 401, 403, 404][39m
+
+      78 |     // Route group redirects unauthenticated-for-admin users — expect
+      79 |     // either a 4xx from the API guard or a redirect away from /admin.
+    > 80 |     expect([302, 307, 401, 403, 404]).toContain(res?.status() ?? 0);
+         |                                       ^
+      81 |     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
+      82 |   });
+      83 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:80:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected value: [32m200[39m
+    Received array: [31m[302, 307, 401, 403, 404][39m
+
+      78 |     // Route group redirects unauthenticated-for-admin users — expect
+      79 |     // either a 4xx from the API guard or a redirect away from /admin.
+    > 80 |     expect([302, 307, 401, 403, 404]).toContain(res?.status() ?? 0);
+         |                                       ^
+      81 |     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
+      82 |   });
+      83 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:80:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-safari-retry2\error-context.md
+
+  11) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry2\error-context.md
+
+  12) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-safari-retry2\error-context.md
+
+  13) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari-retry2\error-context.md
+
+  14) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-07654-mensions-out-of-range-error-mobile-safari-retry2\error-context.md
+
+  15) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari-retry2\error-context.md
+
+  16) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-mobile-safari-retry2\error-context.md
+
+  17) [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form 
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/admin\/settings\/invoicing/[39m
+    Received string:  [31m"http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    9 × unexpected value "http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[22m
+
+
+      47 |     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+      48 |     await page.goto('/admin/settings/invoicing');
+    > 49 |     await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+         |                        ^
+      50 |
+      51 |     // Header + all 5 sections (identity, tax, numbering, defaults, logo).
+      52 |     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:49:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/admin\/settings\/invoicing/[39m
+    Received string:  [31m"http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    9 × unexpected value "http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[22m
+
+
+      47 |     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+      48 |     await page.goto('/admin/settings/invoicing');
+    > 49 |     await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+         |                        ^
+      50 |
+      51 |     // Header + all 5 sections (identity, tax, numbering, defaults, logo).
+      52 |     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:49:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mpage[39m[2m).[22mtoHaveURL[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Expected pattern: [32m/\/admin\/settings\/invoicing/[39m
+    Received string:  [31m"http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveURL" with timeout 5000ms[22m
+    [2m    9 × unexpected value "http://localhost:3100/admin/sign-in?returnTo=%2Fadmin%2Fsettings%2Finvoicing"[22m
+
+
+      47 |     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+      48 |     await page.goto('/admin/settings/invoicing');
+    > 49 |     await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
+         |                        ^
+      50 |
+      51 |     // Header + all 5 sections (identity, tax, numbering, defaults, logo).
+      52 |     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:49:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-73834-invoicing-and-sees-the-form-mobile-chrome-retry2\error-context.md
+
+  18) [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected value: [32m200[39m
+    Received array: [31m[302, 307, 401, 403, 404][39m
+
+      78 |     // Route group redirects unauthenticated-for-admin users — expect
+      79 |     // either a 4xx from the API guard or a redirect away from /admin.
+    > 80 |     expect([302, 307, 401, 403, 404]).toContain(res?.status() ?? 0);
+         |                                       ^
+      81 |     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
+      82 |   });
+      83 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:80:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected value: [32m200[39m
+    Received array: [31m[302, 307, 401, 403, 404][39m
+
+      78 |     // Route group redirects unauthenticated-for-admin users — expect
+      79 |     // either a 4xx from the API guard or a redirect away from /admin.
+    > 80 |     expect([302, 307, 401, 403, 404]).toContain(res?.status() ?? 0);
+         |                                       ^
+      81 |     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
+      82 |   });
+      83 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:80:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected value: [32m200[39m
+    Received array: [31m[302, 307, 401, 403, 404][39m
+
+      78 |     // Route group redirects unauthenticated-for-admin users — expect
+      79 |     // either a 4xx from the API guard or a redirect away from /admin.
+    > 80 |     expect([302, 307, 401, 403, 404]).toContain(res?.status() ?? 0);
+         |                                       ^
+      81 |     expect(page.url()).not.toMatch(/\/admin\/settings\/invoicing$/);
+      82 |   });
+      83 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:80:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-12e97-ch-admin-settings-invoicing-mobile-chrome-retry2\error-context.md
+
+  19) [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-chrome-retry2\error-context.md
+
+  20) [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists 
+
+    PostgresError: invalid input syntax for type uuid: "system:throwaway-tenant"
+        at ErrorResponse (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:815:30)
+        at handle (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:489:6)
+        at TLSSocket.data (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\node_modules\.pnpm\postgres@3.4.9\node_modules\postgres\cjs\src\connection.js:324:9)
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-chrome\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-chrome\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-chrome\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: browserContext.newPage: Target page, context or browser has been closed
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-chrome-retry1\error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-chrome-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-chrome-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+  21) [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error 
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+  22) [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error 
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+  23) [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+  24) [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created 
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+  24 failed
+    [chromium] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form 
+    [chromium] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing 
+    [chromium] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+    [chromium] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists 
+    [chromium] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error 
+    [chromium] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error 
+    [chromium] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+    [chromium] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created 
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form 
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing 
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists 
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error 
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error 
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created 
+    [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:46:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form 
+    [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:71:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing 
+    [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:94:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+    [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:151:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists 
+    [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:196:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error 
+    [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:228:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error 
+    [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:259:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+    [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:293:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created 
+  3 passed (7.4m)
+ ELIFECYCLE  Command failed with exit code 1.

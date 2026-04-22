@@ -125,16 +125,22 @@ test.describe('@us6 credit-note partial-credit flow', () => {
     test('AS2 — 60% partial flips invoice badge to Partially credited', async ({
       page,
     }) => {
+      // Credit-note issuance includes DB tx + PDF render (Sarabun font
+      // init + blob upload + audit emit) which can take >20s on the
+      // first dev-server hit. Widen the test envelope.
+      test.setTimeout(90_000);
       await signInAdmin(page);
 
-      // Pick the "E2E Mutation Co" paid row — the idempotent admin
-      // seeder always keeps exactly one unmutated 99xxxx paid
-      // invoice under that member.
+      // Pick the 995xxx paid invoice — the admin seeder keeps exactly
+      // one unmutated 995xxx paid invoice under "E2E Mutation Co".
+      // Filter by document-number prefix because the admin list
+      // renders "—" (no member name) for this member; SC-2026-995xxx
+      // is the credit-target sequence space.
       await page.goto('/admin/invoices?status=paid');
       await waitForLayoutContainer(page);
       const mutationRow = page
         .getByRole('row')
-        .filter({ hasText: 'E2E Mutation Co' });
+        .filter({ hasText: /SC-2026-995\d{3}/ });
       await mutationRow.first().waitFor({ state: 'visible', timeout: 10_000 });
       await mutationRow.first().getByRole('link').first().click();
       await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
@@ -150,12 +156,25 @@ test.describe('@us6 credit-note partial-credit flow', () => {
       await fillField(page.getByLabel(/reason|เหตุผล|orsak/i), 'E2E AS2 partial 60%');
       await fillField(page.getByLabel(/type CREDIT|พิมพ์ CREDIT|skriv CREDIT/i), 'CREDIT');
 
+      const cnResponse = page.waitForResponse(
+        (r) =>
+          r.url().includes('/api/credit-notes') && r.request().method() === 'POST',
+        { timeout: 60_000 },
+      );
       await page
         .getByRole('button', {
           name: /^(issue credit note|ออกใบลดหนี้|utfärda kreditnota)$/i,
         })
         .click();
-      await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/, { timeout: 20_000 });
+      const resp = await cnResponse;
+      console.log(`[AS2-partial] POST /api/credit-notes → ${resp.status()}`);
+      if (!resp.ok()) {
+        const body = await resp.text();
+        throw new Error(
+          `credit-note POST failed: ${resp.status()} ${body.slice(0, 500)}`,
+        );
+      }
+      await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/, { timeout: 60_000 });
 
       // Status badge should read "Partially credited" / "เครดิตแล้วบางส่วน" /
       // "Delvis krediterad". Substring match across locales.

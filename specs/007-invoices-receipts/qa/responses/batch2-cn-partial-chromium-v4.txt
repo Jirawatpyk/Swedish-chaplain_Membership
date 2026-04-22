@@ -1,0 +1,105 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=chromium" "tests/e2e/credit-note-partial.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 3 tests using 1 worker
+
+  ✓  1 [chromium] › tests\e2e\credit-note-partial.spec.ts:62:7 › @us6 credit-note partial-credit flow › remainder display is visible on the form (12.2s)
+  ✓  2 [chromium] › tests\e2e\credit-note-partial.spec.ts:74:7 › @us6 credit-note partial-credit flow › AS2 — over-remainder amount shows inline alert + keeps Submit disabled (9.6s)
+  ✘  3 [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited (1.2m)
+  ✘  4 [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited (retry #1) (1.2m)
+  ✘  5 [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited (retry #2) (1.2m)
+
+
+  1) [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited 
+
+    TimeoutError: page.waitForURL: Timeout 60000ms exceeded.
+    =========================== logs ===========================
+    waiting for navigation until "load"
+    ============================================================
+
+      162 |         })
+      163 |         .click();
+    > 164 |       await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/, { timeout: 60_000 });
+          |                  ^
+      165 |
+      166 |       // Status badge should read "Partially credited" / "เครดิตแล้วบางส่วน" /
+      167 |       // "Delvis krediterad". Substring match across locales.
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:164:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TimeoutError: page.waitForURL: Timeout 60000ms exceeded.
+    =========================== logs ===========================
+    waiting for navigation until "load"
+    ============================================================
+
+      162 |         })
+      163 |         .click();
+    > 164 |       await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/, { timeout: 60_000 });
+          |                  ^
+      165 |
+      166 |       // Status badge should read "Partially credited" / "เครดิตแล้วบางส่วน" /
+      167 |       // "Delvis krediterad". Substring match across locales.
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:164:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TimeoutError: page.waitForURL: Timeout 60000ms exceeded.
+    =========================== logs ===========================
+    waiting for navigation until "load"
+    ============================================================
+
+      162 |         })
+      163 |         .click();
+    > 164 |       await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/, { timeout: 60_000 });
+          |                  ^
+      165 |
+      166 |       // Status badge should read "Partially credited" / "เครดิตแล้วบางส่วน" /
+      167 |       // "Delvis krediterad". Substring match across locales.
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:164:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry2\error-context.md
+
+  1 failed
+    [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited 
+  2 passed (4.3m)
+ ELIFECYCLE  Command failed with exit code 1.

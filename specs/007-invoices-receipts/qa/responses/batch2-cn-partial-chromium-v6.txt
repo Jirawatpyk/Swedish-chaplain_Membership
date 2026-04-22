@@ -1,0 +1,12 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=chromium" "--grep" "AS2 — 60% partial" "tests/e2e/credit-note-partial.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 1 test using 1 worker
+
+[AS2-partial] POST /api/credit-notes → 201
+  ✓  1 [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited (45.3s)
+
+  1 passed (50.1s)

@@ -1,0 +1,113 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=chromium" "tests/e2e/credit-note-full.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 4 tests using 1 worker
+
+  ✓  1 [chromium] › tests\e2e\credit-note-full.spec.ts:67:7 › @us6 credit-note full-credit flow › AS0 — admin sees "Issue credit note" link on a paid invoice (11.1s)
+  ✓  2 [chromium] › tests\e2e\credit-note-full.spec.ts:74:7 › @us6 credit-note full-credit flow › AS0b — credit-note form loads with amount/reason/CREDIT confirmation (9.2s)
+  ✓  3 [chromium] › tests\e2e\credit-note-full.spec.ts:94:7 › @us6 credit-note full-credit flow › AS0c — Submit stays disabled until CREDIT phrase is typed (FR-040 gate) (9.9s)
+  ✘  4 [chromium] › tests\e2e\credit-note-full.spec.ts:151:7 › @us6 credit-note full-credit flow › AS1 — full credit note flips invoice badge to Credited (23.0s)
+  ✘  5 [chromium] › tests\e2e\credit-note-full.spec.ts:151:7 › @us6 credit-note full-credit flow › AS1 — full credit note flips invoice badge to Credited (retry #1) (19.7s)
+  ✘  6 [chromium] › tests\e2e\credit-note-full.spec.ts:151:7 › @us6 credit-note full-credit flow › AS1 — full credit note flips invoice badge to Credited (retry #2) (18.7s)
+
+
+  1) [chromium] › tests\e2e\credit-note-full.spec.ts:151:7 › @us6 credit-note full-credit flow › AS1 — full credit note flips invoice badge to Credited 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('heading', { level: 1 }).locator('..').getByText(/^(credited|ลดหนี้แล้ว|ลดหนี้|krediterad)$/i)
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByRole('heading', { level: 1 }).locator('..').getByText(/^(credited|ลดหนี้แล้ว|ลดหนี้|krediterad)$/i)[22m
+
+
+      196 |       .locator('..')
+      197 |       .getByText(/^(credited|ลดหนี้แล้ว|ลดหนี้|krediterad)$/i);
+    > 198 |     await expect(badge).toBeVisible({ timeout: 10_000 });
+          |                         ^
+      199 |   });
+      200 | });
+      201 |
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-full.spec.ts:198:25
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TimeoutError: locator.waitFor: Timeout 10000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('row').filter({ hasText: /SC-2026-995\d{3}/ }).first() to be visible[22m
+
+
+      164 |       .getByRole('row')
+      165 |       .filter({ hasText: /SC-2026-995\d{3}/ });
+    > 166 |     await mutationRow.first().waitFor({ state: 'visible', timeout: 10_000 });
+          |                               ^
+      167 |     const docLink = mutationRow.first().getByRole('link').first();
+      168 |     await docLink.click();
+      169 |     await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-full.spec.ts:166:31
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TimeoutError: locator.waitFor: Timeout 10000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('row').filter({ hasText: /SC-2026-995\d{3}/ }).first() to be visible[22m
+
+
+      164 |       .getByRole('row')
+      165 |       .filter({ hasText: /SC-2026-995\d{3}/ });
+    > 166 |     await mutationRow.first().waitFor({ state: 'visible', timeout: 10_000 });
+          |                               ^
+      167 |     const docLink = mutationRow.first().getByRole('link').first();
+      168 |     await docLink.click();
+      169 |     await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-full.spec.ts:166:31
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-full--us6-cred-8da07-s-invoice-badge-to-Credited-chromium-retry2\error-context.md
+
+  1 failed
+    [chromium] › tests\e2e\credit-note-full.spec.ts:151:7 › @us6 credit-note full-credit flow › AS1 — full credit note flips invoice badge to Credited 
+  3 passed (1.8m)
+ ELIFECYCLE  Command failed with exit code 1.

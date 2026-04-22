@@ -1,0 +1,746 @@
+
+> swecham-membership@0.1.0 test:coverage C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --coverage --passWithNoTests
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+      [2mCoverage enabled with [22m[33mv8[39m
+
+ [32m✓[39m tests/unit/auth/application/change-password.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/application/sign-in.test.ts [2m([22m[2m29 tests[22m[2m)[22m[90m 50[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/application/reset-password.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/application/soft-delete-plan.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 39[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/application/clone-plans-to-year.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 47[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/application/update-plan.test.ts [2m([22m[2m37 tests[22m[2m)[22m[90m 92[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resend-pdf.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/record-payment.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 57[2mms[22m[39m
+ [32m✓[39m tests/unit/members/application/w1-tx-rollback.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/members/application/change-contact-email.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 34[2mms[22m[39m
+ [32m✓[39m tests/contract/tenant-invoice-settings-logo-route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 107[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/create-invoice-draft.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 39[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/application/create-user.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 35[2mms[22m[39m
+ [32m✓[39m tests/unit/members/application/archive-member.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 35[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/issue-invoice.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 97[2mms[22m[39m
+ [32m✓[39m tests/contract/members/email-change-revert-route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 7692[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST|GET /api/auth/email-change/revert/[token][2m > [22m200 — POST happy path: rate limit passes, token found, type=revert, use case succeeds [33m7555[2mms[22m[39m
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineCountryCell interaction (round-3 T1)[2m > [22m[2mdouble-click enters edit mode (input appears)
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineCountryCell interaction (round-3 T1)[2m > [22m[2minput accepts lowercase and normalises onChange to uppercase
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineCountryCell interaction (round-3 T1)[2m > [22m[2mEscape discards draft — onSave NOT called
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineCountryCell interaction (round-3 T1)[2m > [22m[2mread-only when onInlineEdit undefined
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineCountryCell interaction (round-3 T1)[2m > [22m[2mround-4 R4-T1: input stays open after save error (N-I1 guard)
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineNotesCell interaction (round-3 T1)[2m > [22m[2mdouble-click opens textarea
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineNotesCell interaction (round-3 T1)[2m > [22m[2mtextarea has correct maxLength (4000 chars per FR-040)
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineNotesCell interaction (round-3 T1)[2m > [22m[2mShift+Enter does NOT submit (allows multi-line)
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineNotesCell interaction (round-3 T1)[2m > [22m[2mEscape discards draft — onSave NOT called
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineNotesCell interaction (round-3 T1)[2m > [22m[2mno-op when submitted value equals current notes — onSave NOT called
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/inline-edit-cells.test.tsx[2m > [22m[2mInlineNotesCell interaction (round-3 T1)[2m > [22m[2mread-only when onInlineEdit undefined
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+ [32m✓[39m tests/unit/members/presentation/inline-edit-cells.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 2048[2mms[22m[39m
+   [33m[2m✓[22m[39m InlineCountryCell interaction (round-3 T1)[2m > [22mdouble-click enters edit mode (input appears) [33m1799[2mms[22m[39m
+ [32m✓[39m tests/contract/members/update-contact.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 3576[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)[2m > [22m200 on non-email update [33m3530[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/application/list-plans.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/activate-deactivate.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 5005[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/[year]/[planId]/activate (T122)[2m > [22m200 on activate — returns plan with is_active: true [33m4007[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/[year]/[planId]/deactivate (T122)[2m > [22m200 on deactivate — returns plan with is_active: false [33m964[2mms[22m[39m
+ [32m✓[39m tests/contract/members/email-verification-route.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 57[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/calculate-credit-note-vat.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 89[2mms[22m[39m
+ [32m✓[39m tests/contract/members/archive-undelete.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 2049[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/archive (T134)[2m > [22m200 happy path — archive succeeds [33m1954[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/update-plan.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 914[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/plans/[year]/[planId] (T111)[2m > [22m200 on successful cosmetic update — returns the updated plan [33m892[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/domain/locked-field-rule.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/application/set-plan-active.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 29[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/invoice-auto-email.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 155[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/application/create-plan.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/create-plan.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 1829[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans (T092)[2m > [22m201 on successful create — returns the created plan [33m1806[2mms[22m[39m
+ [32m✓[39m tests/contract/members/invite-portal.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 2621[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/contacts/[contactId]/invite-portal[2m > [22m200 success — returns user_id + email [33m2580[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/application/undelete-plan.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m tests/contract/members/inline-edit.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 2703[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-10)[2m > [22m200 on status change — happy path [33m2666[2mms[22m[39m
+ [32m✓[39m tests/contract/csrf.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m tests/contract/portal/profile.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2672[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/portal/profile (T114)[2m > [22m200 returns member + contacts (notes redacted) [33m2649[2mms[22m[39m
+ [32m✓[39m tests/unit/members/application/invite-colleague.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/clone-plans.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2478[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/clone (T093)[2m > [22m201 on successful clone — returns summary with 9 cloned plan_ids [33m2452[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/update-invoice-draft.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/members/domain/policies.test.ts [2m([22m[2m23 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+[90mstderr[2m | tests/unit/members/presentation/members-table-selection.test.tsx[2m > [22m[2mMembersTable selection (T108 regression)[2m > [22m[2monSelectionChange receives member_id, not row index
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/members-table-selection.test.tsx[2m > [22m[2mMembersTable selection (T108 regression)[2m > [22m[2mheader checkbox selects all member_ids
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/members-table-selection.test.tsx[2m > [22m[2mMembersTable selection (T108 regression)[2m > [22m[2mno checkboxes when enableSelection is false
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/members-table-selection.test.tsx[2m > [22m[2mMembersTable inline-edit rendering (round-2 review I-6)[2m > [22m[2mrenders InlineStatusCell button when enableSelection + onInlineEdit provided (admin)
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+[90mstderr[2m | tests/unit/members/presentation/members-table-selection.test.tsx[2m > [22m[2mMembersTable inline-edit rendering (round-2 review I-6)[2m > [22m[2mdoes NOT render InlineStatusCell when onInlineEdit is undefined (manager read-only)
+[22m[39mIntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+IntlError: MISSING_MESSAGE: Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.
+    at getFallbackFromErrorAndNotify [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:96:19[90m)[39m
+    at translateBaseFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:129:18[90m)[39m
+    at translateFn [90m(file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/[39mnode_modules/[4m.pnpm[24m/use-intl@4.9.0_react@19.2.4/node_modules/[4muse-intl[24m/dist/esm/development/initializeConfig-B5qJiBCm.js:161:20[90m)[39m
+    at StatusBadge [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39msrc\components\members\members-table.tsx:102:17[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\[39mnode_modules\[4m.pnpm[24m\react-dom@19.2.4_react@19.2.4\node_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m {
+  code: [32m'MISSING_MESSAGE'[39m,
+  originalMessage: [32m'Could not resolve `admin.members.directory.filters.status.active` in messages for locale `en`.'[39m
+}
+
+ [32m✓[39m tests/unit/members/presentation/members-table-selection.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 1882[2mms[22m[39m
+   [33m[2m✓[22m[39m MembersTable selection (T108 regression)[2m > [22monSelectionChange receives member_id, not row index [33m1718[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/domain/plan-validators.test.ts [2m([22m[2m24 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/unit/members/domain/member-state.test.ts [2m([22m[2m28 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/get-invoice-pdf-signed-url.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/members/application/undelete-member.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/unit/layout/page-skeletons.test.tsx [2m([22m[2m16 tests[22m[2m)[22m[90m 279[2mms[22m[39m
+ [32m✓[39m tests/contract/credit-notes-route.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 17979[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/credit-notes — contract[2m > [22m201 happy path — returns serialised credit note [33m17923[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/logger-redaction.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/derive-overdue.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/undelete-plan.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 355[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/plans/[year]/[planId]/undelete (T124)[2m > [22m200 on successful undelete — deleted_at cleared, is_active forced false (AS4) [33m330[2mms[22m[39m
+ [32m✓[39m tests/contract/resend-webhook.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 51[2mms[22m[39m
+ [32m✓[39m tests/contract/members/update-member.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 1739[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: PATCH /api/members/[memberId] (T071 / T090)[2m > [22m200 on field update — happy path [33m1720[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/invoice-state-machine.test.ts [2m([22m[2m30 tests[22m[2m)[22m[90m 23[2mms[22m[39m
+ [32m✓[39m tests/contract/change-role.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 110[2mms[22m[39m
+ [32m✓[39m tests/contract/members/member-invoices-route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 7577[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members/[memberId]/invoices[2m > [22m401 when unauthenticated (requireAdminContext returns response) [33m7543[2mms[22m[39m
+ [32m✓[39m tests/contract/members/timeline.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2964[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members/[memberId]/timeline (T127)[2m > [22m200 happy path — returns items + next_cursor [33m2926[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/delete-plan.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2841[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: DELETE /api/plans/[year]/[planId] (T123)[2m > [22m200 on successful soft-delete — returns plan with deleted_at set [33m2820[2mms[22m[39m
+ [32m✓[39m tests/contract/members/create-member.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 4050[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members (T040)[2m > [22m201 happy path — returns member_id + primary_contact_id [33m4030[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/get-invoice.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/layout/breadcrumb-path.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/contract/members/get-member.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 4079[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members/[memberId][2m > [22m200 — returns serialised member with contacts on success [33m4056[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/content-disposition.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/domain/role-policies.test.ts [2m([22m[2m53 tests[22m[2m)[22m[90m 32[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/list-plans.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1500[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans (T062)[2m > [22m200 on success — returns data + meta envelope [33m1472[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/member-form-a11y.test.tsx [2m([22m[2m33 tests[22m[2m)[22m[33m 2237[2mms[22m[39m
+   [33m[2m✓[22m[39m MemberForm FR-035 tri-part required indicator[2m > [22mrenders the form-top required fields note [33m357[2mms[22m[39m
+ [32m✓[39m tests/contract/members/resend-verification.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 4640[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/[memberId]/contacts/[contactId]/resend-verification[2m > [22m200 — returns outbox_row_id and invalidated_prior on successful re-send [33m4611[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/return-url.test.ts [2m([22m[2m29 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/contract/redeem-invite.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 278[2mms[22m[39m
+ [32m✓[39m tests/contract/members/bulk-action.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 12834[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/members/bulk (T099 / US4)[2m > [22m200 on archive action — happy path [33m12807[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/domain/audit-event.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/password/password-policy.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/admin-context.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 56[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/rate-limit/upstash-fail-open.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/contract/reset-password.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 77[2mms[22m[39m
+ [32m✓[39m tests/contract/change-password.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 61[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/get-plan.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2058[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/[year]/[planId] (T063)[2m > [22m200 on found plan — returns the full plan object [33m2036[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/csrf.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 27[2mms[22m[39m
+ [32m✓[39m tests/unit/members/application/directory-search-with-count.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m tests/contract/members/promote-primary.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2238[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /promote-primary (T071)[2m > [22m200 returns { demoted, promoted } envelope [33m2205[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/money.test.ts [2m([22m[2m25 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/auth-cookies.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/application/get-plan.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+{"level":"error","time":1775736000000,"service":"swecham-membership","env":"test","err":{"type":"Error","message":"DB down","stack":"Error: DB down\n    at C:\\Users\\Jirawat.p\\Documents\\Swedish chaplain_membership\\tests\\contract\\sign-out.test.ts:123:47\n    at file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:146:14\n    at file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:533:11\n    at runWithTimeout (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:39:7)\n    at runTest (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1056:17)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at runSuite (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Users/Jirawat.p/Documents/Swedish%20chaplain_membership/node_modules/.pnpm/@vitest+runner@2.1.9/node_modules/@vitest/runner/dist/index.js:1271:3)"},"requestId":"019d721d-0e00-7310-a3d0-ed0ceef11bcf","msg":"sign_out failed — clearing cookie anyway for client safety"}
+ [32m✓[39m tests/contract/sign-out.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 61[2mms[22m[39m
+ [32m✓[39m tests/unit/nav/nav-config.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/contract/plans/palette-search.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 8317[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/search (T064)[2m > [22m200 — returns { results: { plans, actions, navigate } } envelope [33m8300[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/domain/money.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 48[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resolve-invoice-event-copy.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/contract/members/list-members.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 2752[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/members (T058)[2m > [22m200 — returns { items, next_cursor } envelope [33m2738[2mms[22m[39m
+ [32m✓[39m tests/unit/tenants/domain/tenant-context.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m tests/unit/architecture/invoicing-members-bidirectional-dep.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 106[2mms[22m[39m
+ [32m✓[39m tests/contract/invite.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/domain/token.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/contract/heartbeat.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 95[2mms[22m[39m
+ [32m✓[39m tests/contract/disable-user.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 5248[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/auth/users/[id]/disable (T111)[2m > [22m200 on success — returns sessionsRevoked [33m5225[2mms[22m[39m
+ [32m✓[39m tests/unit/nav/active-state.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/pdf-union-partial-state.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/contract/sign-in.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 45[2mms[22m[39m
+ [32m✓[39m tests/unit/layout/breadcrumb-provider.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 1543[2mms[22m[39m
+   [33m[2m✓[22m[39m <BreadcrumbProvider>[2m > [22mdev-mode setter throws with an actionable error when used outside provider [33m1485[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/domain/session-ttl.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/policies/manager-readonly-policy.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/invoice-line.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/contract/enable-user.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2598[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: POST /api/auth/users/[id]/enable (T112)[2m > [22m200 on success [33m2584[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/application/record-audit-event.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/client-ip.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 49[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/application/heartbeat.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/domain/plan.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/rbac-guard-f3.test.ts [2m([22m[2m21 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/sanitise-error-reason.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/members/application/directory-search-cursor.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/contract/forgot-password.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 64[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/domain/user.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/domain/plan-state.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/domain/benefit-matrix.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/log-id.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/members/application/crypto-helpers.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/pro-rate-policy.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/relative-time.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 57[2mms[22m[39m
+ [32m✓[39m tests/contract/members/affected-members.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 6167[2mms[22m[39m
+   [33m[2m✓[22m[39m contract: GET /api/plans/[year]/[planId]/affected-members (T071)[2m > [22m200 — returns { plan_id, plan_year, count } [33m6151[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/password/password-strength-estimator.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/members/application/affected-members-count.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/domain/locale-text.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/password/argon2-hasher.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 376[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/document-number.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/members/domain/override-reason.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/logo-blob-key-guard.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/layout/page-header.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[90m 242[2mms[22m[39m
+ [32m✓[39m tests/unit/members/presentation/timeline-event-item.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[90m 45[2mms[22m[39m
+ [32m✓[39m tests/unit/members/domain/tax-id.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/components/layout/detail-container.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[90m 118[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/enforce-credit-cannot-exceed-remainder.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/components/layout/table-container.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[90m 156[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/list-invoices-by-member.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/components/layout/form-container.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[90m 119[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/resend-authz-policy.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/fiscal-year.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/members/domain/contact.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/calculate-vat.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/domain/policies.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/domain/role.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/vat-rate.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/members/application/whitelist-schema-equals-tuple.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/domain/branded.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/members/domain/email.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/plans/plan-form-wizard-skeleton.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[90m 154[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/domain/audit-event.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/members/domain/phone.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/members/domain/iso-country-code.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/lib/portal-paths.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/members/domain/thai-tax-id-checksum.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/members/domain/user-id.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/change-password-form-skeleton.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[90m 48[2mms[22m[39m
+ [32m✓[39m tests/unit/invoicing/deterministic-render.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/auth/policies/signin-policy.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/members/members-deps.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m152 passed[39m[22m[90m (152)[39m
+[2m      Tests [22m [1m[32m1515 passed[39m[22m[90m (1515)[39m
+[2m   Start at [22m 11:49:18
+[2m   Duration [22m 110.94s[2m (transform 50.69s, setup 79.48s, collect 186.97s, tests 134.29s, environment 177.47s, prepare 138.00s)[22m
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |      63 |     90.8 |   74.02 |      63 |                   
+ lib               |   90.01 |     87.6 |   88.46 |   90.01 |                   
+  auth-cookies.ts  |   72.72 |      100 |   66.66 |   72.72 | 49-54             
+  client-ip.ts     |     100 |      100 |     100 |     100 |                   
+  ...isposition.ts |     100 |    83.33 |     100 |     100 | 77                
+  crypto.ts        |     100 |      100 |     100 |     100 |                   
+  csrf.ts          |     100 |      100 |     100 |     100 |                   
+  env.ts           |    83.7 |    44.44 |     100 |    83.7 | ...26-231,238-244 
+  fiscal-year.ts   |   71.87 |      100 |      75 |   71.87 | 69-77             
+  log-id.ts        |     100 |      100 |     100 |     100 |                   
+  logger.ts        |   89.81 |       25 |      50 |   89.81 | 157-165,179-180   
+  logo-blob-key.ts |     100 |      100 |     100 |     100 |                   
+  ...-constants.ts |     100 |      100 |     100 |     100 |                   
+  portal-paths.ts  |     100 |      100 |     100 |     100 |                   
+  relative-time.ts |   95.45 |    91.66 |     100 |   95.45 | 81-82             
+  request-id.ts    |     100 |      100 |     100 |     100 |                   
+  result.ts        |     100 |      100 |     100 |     100 |                   
+  return-url.ts    |     100 |      100 |     100 |     100 |                   
+  utils.ts         |     100 |      100 |     100 |     100 |                   
+ ...th/application |   67.41 |    97.34 |   71.42 |   67.41 |                   
+  ...e-password.ts |     100 |      100 |     100 |     100 |                   
+  change-role.ts   |    1.78 |      100 |       0 |    1.78 | 55-129            
+  create-user.ts   |     100 |    92.85 |     100 |     100 | 216               
+  disable-user.ts  |    2.12 |      100 |       0 |    2.12 | 68-126            
+  enable-user.ts   |       5 |      100 |       0 |       5 | 38-59             
+  ...t-password.ts |    3.75 |      100 |       0 |    3.75 | 87-195            
+  ...permission.ts |     100 |      100 |     100 |     100 |                   
+  heartbeat.ts     |     100 |      100 |     100 |     100 |                   
+  ...ord-policy.ts |   97.59 |       92 |     100 |   97.59 | 85-86             
+  redeem-invite.ts |    2.59 |      100 |       0 |    2.59 | 100-202           
+  ...t-password.ts |     100 |      100 |     100 |     100 |                   
+  sign-in.ts       |     100 |      100 |     100 |     100 |                   
+  sign-out.ts      |     100 |      100 |     100 |     100 |                   
+  tx-abort.ts      |     100 |      100 |     100 |     100 |                   
+ ...es/auth/domain |     100 |      100 |     100 |     100 |                   
+  audit-event.ts   |     100 |      100 |     100 |     100 |                   
+  branded.ts       |     100 |      100 |     100 |     100 |                   
+  policies.ts      |     100 |      100 |     100 |     100 |                   
+  role.ts          |     100 |      100 |     100 |     100 |                   
+  session.ts       |     100 |      100 |     100 |     100 |                   
+  token.ts         |     100 |      100 |     100 |     100 |                   
+  user.ts          |     100 |      100 |     100 |     100 |                   
+ ...ng/application |   14.11 |      100 |       0 |   14.11 |                   
+  ...icing-deps.ts |   14.11 |      100 |       0 |   14.11 | ...48-254,257-269 
+ ...pplication/lib |    87.5 |    73.33 |     100 |    87.5 |                   
+  ...lict-error.ts |     100 |      100 |     100 |     100 |                   
+  ...and-upload.ts |   79.31 |       70 |     100 |   79.31 | 82,95-99          
+  tx-abort.ts      |     100 |    66.66 |     100 |     100 | 38                
+ ...tion/use-cases |   48.97 |    83.49 |   54.83 |   48.97 |                   
+  ...oice-draft.ts |   96.72 |     86.2 |     100 |   96.72 | 194-195,217-218   
+  ...oice-draft.ts |    2.77 |      100 |       0 |    2.77 | 27-64             
+  ...ve-overdue.ts |     100 |    81.81 |     100 |     100 | 106-107           
+  ...signed-url.ts |    1.61 |      100 |       0 |    1.61 | 43-119            
+  ...redit-note.ts |    2.27 |      100 |       0 |    2.27 | 51-100            
+  ...signed-url.ts |     100 |       80 |     100 |     100 | 76,101            
+  get-invoice.ts   |   72.91 |       80 |     100 |   72.91 | 68-80             
+  ...tax-policy.ts |       0 |      100 |       0 |       0 | 33-44             
+  ...redit-note.ts |    2.94 |        0 |       0 |    2.94 | 101-582           
+  issue-invoice.ts |   93.06 |    80.55 |     100 |   93.06 | ...94-398,402-403 
+  ...edit-notes.ts |    3.03 |      100 |       0 |    3.03 | 55-92             
+  ...-by-member.ts |     100 |    66.66 |     100 |     100 | 64-65             
+  list-invoices.ts |   45.45 |      100 |       0 |   45.45 | 40-54,76-90       
+  ...oice-draft.ts |       2 |      100 |       0 |       2 | 53-108            
+  ...rd-payment.ts |   85.92 |    85.71 |     100 |   85.92 | ...45-364,367-368 
+  resend-pdf.ts    |    98.9 |    84.37 |     100 |    98.9 | 192-193           
+  ...oice-draft.ts |   97.29 |       88 |     100 |   97.29 | 126-127           
+  ...e-settings.ts |   32.98 |      100 |       0 |   32.98 | 71-153            
+  ...enant-logo.ts |      10 |      100 |       0 |      10 | 65-189            
+  void-invoice.ts  |     5.3 |      100 |   33.33 |     5.3 | 89-91,118-407     
+ ...voicing/domain |   78.51 |      100 |      75 |   78.51 |                   
+  credit-note.ts   |   26.92 |      100 |   33.33 |   26.92 | 42-48,114-125     
+  invoice-line.ts  |     100 |      100 |     100 |     100 |                   
+  invoice.ts       |   87.03 |      100 |   83.33 |   87.03 | 73-79             
+ ...omain/policies |   90.52 |       90 |     100 |   90.52 |                   
+  ...t-note-vat.ts |   76.31 |    85.71 |     100 |   76.31 | 82-90             
+  ...ate-factor.ts |     100 |      100 |     100 |     100 |                   
+  calculate-vat.ts |     100 |      100 |     100 |     100 |                   
+  ...-remainder.ts |     100 |    66.66 |     100 |     100 | 41                
+ .../value-objects |   93.71 |    96.59 |   91.89 |   93.71 |                   
+  ...ent-number.ts |    92.3 |    93.33 |      80 |    92.3 | 69-70,89-90       
+  fiscal-year.ts   |     100 |      100 |     100 |     100 |                   
+  ...y-snapshot.ts |     100 |      100 |     100 |     100 |                   
+  money.ts         |     100 |    97.67 |     100 |     100 | 64                
+  ...ate-policy.ts |    37.5 |      100 |       0 |    37.5 | 10-11,14-16       
+  sha256-hex.ts    |   78.94 |       80 |     100 |   78.94 | 50-53             
+  ...y-snapshot.ts |     100 |      100 |     100 |     100 |                   
+  vat-rate.ts      |     100 |      100 |     100 |     100 |                   
+ modules/members   |   89.74 |      100 |   33.33 |   89.74 |                   
+  members-deps.ts  |   89.74 |      100 |   33.33 |   89.74 | 79-82             
+ ...rs/application |     100 |      100 |     100 |     100 |                   
+  ...to-helpers.ts |     100 |      100 |     100 |     100 |                   
+  tx-abort.ts      |     100 |      100 |     100 |     100 |                   
+ ...ation/timeline |   98.11 |    89.28 |     100 |   98.11 |                   
+  ...event-copy.ts |   98.11 |    89.28 |     100 |   98.11 | 86                
+ ...tion/use-cases |    39.4 |    71.73 |    42.1 |    39.4 |                   
+  ...bers-count.ts |     100 |      100 |     100 |     100 |                   
+  ...ive-member.ts |   96.69 |    85.18 |     100 |   96.69 | 110-111,124-125   
+  bulk-action.ts   |   11.96 |      100 |       0 |   11.96 | ...65-366,371-375 
+  ...tact-email.ts |     100 |      100 |     100 |     100 |                   
+  change-plan.ts   |    6.62 |      100 |       0 |    6.62 | 74-246,251-256    
+  contact-crud.ts  |   29.95 |    61.53 |      25 |   29.95 | ...66-167,172-353 
+  create-member.ts |   67.71 |    18.51 |     100 |   67.71 | ...47-350,358-359 
+  ...ory-search.ts |     100 |      100 |     100 |     100 |                   
+  get-member.ts    |    2.63 |      100 |       0 |    2.63 | 36-78             
+  inline-edit.ts   |    8.58 |      100 |       0 |    8.58 | ...5,90-94,99-297 
+  ...-colleague.ts |   96.06 |    88.88 |     100 |   96.06 | 208-212           
+  invite-portal.ts |    1.78 |      100 |       0 |    1.78 | 78-144            
+  ...elf-update.ts |   48.96 |    19.04 |     100 |   48.96 | ...28-332,337-364 
+  ...tion-email.ts |    0.89 |      100 |       0 |    0.89 | 70-198            
+  ...tact-email.ts |    0.84 |      100 |       0 |    0.84 | 76-211            
+  timeline-list.ts |   18.57 |      100 |       0 |   18.57 | 61-142            
+  ...ete-member.ts |   97.33 |    95.45 |     100 |   97.33 | 103-104           
+  update-member.ts |   11.86 |      100 |       0 |   11.86 | 74-194            
+  ...tact-email.ts |    1.29 |      100 |       0 |    1.29 | 61-146            
+ ...members/domain |     100 |      100 |     100 |     100 |                   
+  contact.ts       |     100 |      100 |     100 |     100 |                   
+  member.ts        |     100 |      100 |     100 |     100 |                   
+  ...ate-fields.ts |     100 |      100 |     100 |     100 |                   
+ ...omain/policies |     100 |      100 |     100 |     100 |                   
+  ...ity-policy.ts |     100 |      100 |     100 |     100 |                   
+  ...dow-policy.ts |     100 |      100 |     100 |     100 |                   
+  ...-invariant.ts |     100 |      100 |     100 |     100 |                   
+  ...ion-policy.ts |     100 |      100 |     100 |     100 |                   
+  ...d-checksum.ts |     100 |      100 |     100 |     100 |                   
+  ...ver-policy.ts |     100 |      100 |     100 |     100 |                   
+ .../value-objects |     100 |      100 |     100 |     100 |                   
+  email.ts         |     100 |      100 |     100 |     100 |                   
+  ...untry-code.ts |     100 |      100 |     100 |     100 |                   
+  ...ide-reason.ts |     100 |      100 |     100 |     100 |                   
+  phone.ts         |     100 |      100 |     100 |     100 |                   
+  tax-id.ts        |     100 |      100 |     100 |     100 |                   
+  user-id.ts       |     100 |      100 |     100 |     100 |                   
+  uuid.ts          |     100 |      100 |     100 |     100 |                   
+ ...ns/application |   91.41 |    95.36 |   82.35 |   91.41 |                   
+  activate-plan.ts |     100 |      100 |     100 |     100 |                   
+  ...zod-issues.ts |     100 |      100 |     100 |     100 |                   
+  ...ns-to-year.ts |     100 |      100 |     100 |     100 |                   
+  create-plan.ts   |    93.5 |    82.35 |     100 |    93.5 | 94-98             
+  ...ivate-plan.ts |     100 |      100 |     100 |     100 |                   
+  get-plan.ts      |     100 |      100 |     100 |     100 |                   
+  list-plans.ts    |     100 |    86.66 |     100 |     100 | 119,172           
+  ...udit-event.ts |     100 |      100 |     100 |     100 |                   
+  search-plans.ts  |   52.55 |      100 |       0 |   52.55 | 162-241           
+  ...lan-active.ts |     100 |    91.66 |     100 |     100 | 66,99             
+  ...elete-plan.ts |     100 |      100 |     100 |     100 |                   
+  undelete-plan.ts |     100 |    90.47 |     100 |     100 | 67,93             
+  update-plan.ts   |     100 |      100 |     100 |     100 |                   
+ ...s/plans/domain |     100 |      100 |     100 |     100 |                   
+  audit-event.ts   |     100 |      100 |     100 |     100 |                   
+  locale-text.ts   |     100 |      100 |     100 |     100 |                   
+  ...field-rule.ts |     100 |      100 |     100 |     100 |                   
+  money.ts         |     100 |      100 |     100 |     100 |                   
+  plan-state.ts    |     100 |      100 |     100 |     100 |                   
+  ...validators.ts |     100 |      100 |     100 |     100 |                   
+  plan.ts          |     100 |      100 |     100 |     100 |                   
+  policies.ts      |     100 |      100 |     100 |     100 |                   
+ ...tenants/domain |     100 |      100 |     100 |     100 |                   
+  ...nt-context.ts |     100 |      100 |     100 |     100 |                   
+-------------------|---------|----------|---------|---------|-------------------

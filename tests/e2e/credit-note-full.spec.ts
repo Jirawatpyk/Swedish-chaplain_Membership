@@ -151,18 +151,21 @@ test.describe('@us6 credit-note full-credit flow', () => {
   test('AS1 — full credit note flips invoice badge to Credited', async ({
     page,
   }) => {
+    // Credit-note issuance includes DB tx + PDF render + blob upload +
+    // audit. Widen the test envelope for dev-server first-compile.
+    test.setTimeout(90_000);
     await signInAdmin(page);
 
-    // Filter to paid + find the "E2E Mutation Co" row. The seeder
-    // keeps exactly one unmutated paid 99xxxx invoice under this
-    // member at any time, so matching on member name + status=paid
-    // converges on the correct target without requiring the test
-    // to know the sequence number.
+    // Filter to paid + find the 995xxx credit-target row. The seeder
+    // keeps exactly one unmutated paid SC-2026-995xxx invoice under
+    // "E2E Mutation Co" at any time. Filter by document-number prefix
+    // because the admin list renders "—" (no member name) for this
+    // member, so matching on company name does not converge.
     await page.goto('/admin/invoices?status=paid');
     await waitForLayoutContainer(page);
     const mutationRow = page
       .getByRole('row')
-      .filter({ hasText: 'E2E Mutation Co' });
+      .filter({ hasText: /SC-2026-995\d{3}/ });
     await mutationRow.first().waitFor({ state: 'visible', timeout: 10_000 });
     const docLink = mutationRow.first().getByRole('link').first();
     await docLink.click();
@@ -175,18 +178,31 @@ test.describe('@us6 credit-note full-credit flow', () => {
     await page.waitForURL(/\/credit-notes\/new$/);
     await waitForLayoutContainer(page);
 
-    // Full-credit: 1,070.00 THB (100% of the seeded 99xxxx total).
-    await fillField(page.getByLabel(/credit amount|จำนวนเงินลดหนี้|kreditbelopp/i), '1070.00');
+    // Full-credit: 10,700.00 THB (100% of the seeded 995xxx total,
+    // which is 1_070_000n satang per seed-f4-e2e-admin-fixtures.ts:151).
+    await fillField(page.getByLabel(/credit amount|จำนวนเงินลดหนี้|kreditbelopp/i), '10700.00');
     await fillField(page.getByLabel(/reason|เหตุผล|orsak/i), 'E2E AS1 full credit');
     await fillField(page.getByLabel(/type CREDIT|พิมพ์ CREDIT|skriv CREDIT/i), 'CREDIT');
 
     // Submit + wait for navigation back to the invoice detail page.
+    const cnResponse = page.waitForResponse(
+      (r) =>
+        r.url().includes('/api/credit-notes') && r.request().method() === 'POST',
+      { timeout: 60_000 },
+    );
     await page
       .getByRole('button', {
         name: /^(issue credit note|ออกใบลดหนี้|utfärda kreditnota)$/i,
       })
       .click();
-    await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/, { timeout: 20_000 });
+    const resp = await cnResponse;
+    if (!resp.ok()) {
+      const body = await resp.text();
+      throw new Error(
+        `credit-note POST failed: ${resp.status()} ${body.slice(0, 500)}`,
+      );
+    }
+    await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/, { timeout: 60_000 });
 
     // Status badge should read "Credited" (EN) / "เครดิตแล้ว" (TH) /
     // "Krediterad" (SV). Match any locale to avoid coupling to the

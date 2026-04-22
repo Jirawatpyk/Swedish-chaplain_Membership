@@ -199,16 +199,23 @@ async function seedIssuedInvoice(
     contentType: 'application/pdf',
   });
 
+  // Must match TenantIdentitySnapshot + MemberIdentitySnapshot field
+  // names exactly — used by PDF render and outbox.enqueue on any
+  // downstream credit-note / resend / re-render path.
   const tenantSnap = {
     legal_name_en: 'Thailand-Swedish Chamber of Commerce',
     legal_name_th: 'หอการค้าไทย-สวีเดน',
     tax_id: '0000000000000',
-    address: 'Bangkok',
+    address_th: 'กรุงเทพมหานคร',
+    address_en: 'Bangkok',
+    logo_blob_key: null,
   };
   const memberSnap = {
-    company_name: MUTATION_MEMBER_NAME,
+    legal_name: MUTATION_MEMBER_NAME,
     tax_id: '9999999999999',
     address: '99/99 Mutation Road, Bangkok',
+    primary_contact_name: 'E2E Mutation Admin',
+    primary_contact_email: 'e2e-admin@swecham.test',
   };
 
   await runInTenant(ctx, async (tx) => {

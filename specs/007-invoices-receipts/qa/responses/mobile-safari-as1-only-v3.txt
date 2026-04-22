@@ -1,0 +1,120 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=mobile-safari" "--grep" "AS1 — admin changes VAT" "tests/e2e/invoice-settings.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 1 test using 1 worker
+
+  ✘  1 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (17.1s)
+  ✘  2 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #1) (15.4s)
+  ✘  3 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #2) (11.7s)
+
+
+  1) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveValue[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByLabel(/VAT rate|อัตรา VAT|momssats/i)
+    Expected pattern: [32m/10\.00|10/[39m
+    Received string:  [31m"7.00"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveValue" with timeout 5000ms[22m
+    [2m  - waiting for getByLabel(/VAT rate|อัตรา VAT|momssats/i)[22m
+    [2m    8 × locator resolved to <input min="0" max="30" step="0.01" required="" value="7.00" type="number" id="vat_percent" data-slot="input" inputmode="decimal" class="h-[var(--input-height)] w-full min-w-0 rounded-lg border border-input bg-transparent px-[var(--input-padding-x)] py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:rin…/>[22m
+    [2m      - unexpected value "7.00"[22m
+
+
+      122 |         await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
+      123 |         await page.goto(`/admin/settings/invoicing?_=${Date.now()}`);
+    > 124 |         await expect(vatField).toHaveValue(/10\.00|10/);
+          |                                ^
+      125 |       } finally {
+      126 |         await tenant.cleanup().catch(() => {});
+      127 |       }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:124:32
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveValue[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByLabel(/VAT rate|อัตรา VAT|momssats/i)
+    Expected pattern: [32m/10\.00|10/[39m
+    Received string:  [31m"7.00"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toHaveValue" with timeout 5000ms[22m
+    [2m  - waiting for getByLabel(/VAT rate|อัตรา VAT|momssats/i)[22m
+    [2m    8 × locator resolved to <input min="0" max="30" step="0.01" required="" value="7.00" type="number" id="vat_percent" data-slot="input" inputmode="decimal" class="h-[var(--input-height)] w-full min-w-0 rounded-lg border border-input bg-transparent px-[var(--input-padding-x)] py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:rin…/>[22m
+    [2m      - unexpected value "7.00"[22m
+
+
+      122 |         await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
+      123 |         await page.goto(`/admin/settings/invoicing?_=${Date.now()}`);
+    > 124 |         await expect(vatField).toHaveValue(/10\.00|10/);
+          |                                ^
+      125 |       } finally {
+      126 |         await tenant.cleanup().catch(() => {});
+      127 |       }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:124:32
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: page.goto: Navigation to "http://localhost:3100/admin/settings/invoicing?_=1776835695162" is interrupted by another navigation to "http://localhost:3100/admin/settings/invoicing"
+    Call log:
+    [2m  - navigating to "http://localhost:3100/admin/settings/invoicing?_=1776835695162", waiting until "load"[22m
+
+
+      121 |         // the throwaway-tenant settings are re-fetched fresh.
+      122 |         await page.setExtraHTTPHeaders({ 'X-Tenant': tenant.slug });
+    > 123 |         await page.goto(`/admin/settings/invoicing?_=${Date.now()}`);
+          |                    ^
+      124 |         await expect(vatField).toHaveValue(/10\.00|10/);
+      125 |       } finally {
+      126 |         await tenant.cleanup().catch(() => {});
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:123:20
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry2\error-context.md
+
+  1 failed
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+ ELIFECYCLE  Command failed with exit code 1.

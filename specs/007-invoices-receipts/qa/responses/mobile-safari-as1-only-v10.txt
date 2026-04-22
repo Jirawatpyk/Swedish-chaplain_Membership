@@ -1,0 +1,15 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=mobile-safari" "--grep" "AS1 — admin changes VAT" "tests/e2e/invoice-settings.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 1 test using 1 worker
+
+[AS1] PATCH status=200 hdrs.x-tenant=test-e2e-28850f29
+  req={"currency_code":"THB","legal_name_th":"ทดสอบ","legal_name_en":"Test","tax_id":"0000000000000","registered_address_th":"Bangkok","registered_address_en":"Bangkok","vat_rate":"0.1000","registration_fee_satang":"0","invoice_number_prefix":"E2E","credit_note_number_prefix":"E2EC","receipt_numbering_mod
+  res={"ok":true}
+[AS1] GET status=200 slug=test-e2e-28850f29 body={"settings":{"tenant_id":"test-e2e-28850f29","currency_code":"THB","vat_rate":"0.1000","registration_fee_satang":"0","legal_name_th":"ทดสอบ","legal_name_en":"Test","tax_id":"0000000000000","registered_address_th":"Bangkok","registered_address_en":"Bangkok","invoice_number_prefix":"E2E","credit_note_
+  ✓  1 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (9.9s)
+
+  1 passed (13.1s)
