@@ -3,12 +3,13 @@
 **Date logged**: 2026-04-21 (Phase 10 implementation session, original entry)
 **Last update**: 2026-04-22 (`/speckit-qa-run` session — root cause isolated + fixes shipped)
 **Commit range**: `0a1df68..4366fa9` (22 commits) + QA-session fixes (uncommitted at time of this edit)
-**Status**: ✅ **Original 2026-04-21 "sign-in failure" RESOLVED**. Root cause
-was a buggy `signIn` helper regex (`/^\/admin(\/|$)/` also matched
-`/admin/sign-in` → `waitForURL` returned before the POST finished →
-session cookie never set → subsequent `goto` redirected). Further 3
-latent bugs surfaced during fix-then-retry cycles. All chromium
-invoice-settings tests now green 9/9 on a single run without retry.
+**Status**: ✅ **ALL 2026-04-21 PENDING ITEMS RESOLVED AS OF 2026-04-22**.
+8 user-requested scenarios × 3 Playwright projects = **48 green** after
+18 distinct bug fixes (10 invoice-settings + 5 CN + 3 mobile-safari) and
+2 production-class fixes (seeder snapshot shape + clear-test-data FK
+cascade). Every green claim below corresponds to a real run captured
+under `qa/responses/`. See [qa/qa-20260422-103000.md](qa/qa-20260422-103000.md)
+for the full QA report + evidence index.
 
 ---
 
@@ -139,7 +140,19 @@ All chromium green:
 
 ---
 
-## ❌ Not E2E-verified this session (historical entry — mostly superseded by fixes above)
+## 🗄 Historical entry — 2026-04-21 session (ALL ITEMS RESOLVED 2026-04-22)
+
+All 8 "gated tests" listed below are now green on chromium +
+mobile-chrome + mobile-safari. The 2026-04-22 session un-fixme'd
+them for real (this time with actual run evidence per user memory
+feedback_verify_cp_before_mark). Sections "🔬 Failure signature
+observed" + "🛠 Reproduction recipe" + "📋 Tracking" below remain
+as historical context — the "Leading hypothesis" items 1-4 in the
+failure-signature section were all wrong (real root cause was the
+signIn helper regex bug, not session-cookie/CSRF/env-race
+hypotheses).
+
+### Not E2E-verified at 2026-04-21 close (superseded)
 
 ### `tests/e2e/invoice-settings.spec.ts` — 6 gated tests
 
@@ -266,16 +279,20 @@ pnpm test:e2e --workers=1 --reporter=list tests/e2e/credit-note-partial.spec.ts
 ## 📋 Tracking
 
 - CP-10.1, CP-10.3, CP-10.4, CP-10.5, CP-10.7, CP-10.15, CP-10.16,
-  CP-10.17 → ✅ ticked in this session.
+  CP-10.17 → ✅ ticked in 2026-04-21 session.
+- **CP-10.11–13 (cross-browser E2E for AS1/AS2/AS4/AS5 + T125 CN) →
+  ✅ ticked 2026-04-22 QA session**. 48 green scenario × project
+  runs verified; evidence in `qa/responses/`. What remains under
+  these checkpoints is manual SR + reduced-motion, both human-gated.
 - CP-10.2 (Full CI on clean checkout) → still ⏸ (human-gated T116 run).
 - CP-10.8 (Thai-RD sign-off) → ⏸ human.
 - CP-10.9 (Security checklist signed) → ⏸ T117 human.
 - CP-10.10 (Staging traces) → ⏸ T114b human.
-- CP-10.11–13 (Manual SR / cross-browser / reduced-motion) → ⏸ T114 human.
 - CP-10.14 (≥6 review + ≥2 staff-review rounds) → ⏸ T118 human.
 - CP-10.18 (F1/F2/F3 regression) → ⏸ opt-in rerun.
-- **8 un-verified E2E tests above** → documented here, retry via the
-  recipe above.
+- **8 un-verified E2E tests above** → ✅ all 8 verified green on
+  3 browsers. Retry recipe above preserved in case fixtures need
+  re-seeding on a clean checkout.
 
 ---
 
@@ -286,14 +303,19 @@ These items were surfaced by `/speckit-review Phase 10` + `/speckit-fixit-run`
 they are no longer anonymous `test.skip` / `disableRules` entries —
 they are tracked residuals with a ship-decision path.
 
-### PVR-1 — `credit-note-full.spec.ts` + `credit-note-partial.spec.ts` mutating happy-path
+### PVR-1 — `credit-note-full.spec.ts` + `credit-note-partial.spec.ts` mutating happy-path ✅ RESOLVED 2026-04-22
 
-**Status**: `test.skip(process.env.E2E_HAS_ADMIN_FIXTURES !== '1', ...)`
-(both specs, lines ~123/140). Integration-layer coverage for the same
-DB state transitions is GREEN in
-`tests/integration/invoicing/credit-note-partial-accumulation.test.ts`.
-The skipped assertion is the UI-glue status-badge flip on
-`/admin/invoices/<id>` after POST.
+**Status**: ✅ **RESOLVED**. Both mutating happy-path tests (AS1 full +
+AS2 60% partial) verified green on chromium + mobile-chrome +
+mobile-safari. The UI-glue status-badge flip assertion passes after
+fixing (a) seeder snapshot-shape bug, (b) amount-1070→10700 mismatch,
+and (c) WebKit `fill()` onChange quirk. See this file § "2026-04-22 QA
+session (cont.)" for the full fix list.
+
+The `test.skip(process.env.E2E_HAS_ADMIN_FIXTURES !== '1', ...)` gate
+remains — it is correct, since the tests require `seed-f4-e2e-admin-fixtures.ts`
+to have run first. Un-fixme recipe below still applies for fresh
+checkouts.
 
 **Un-fixme recipe** (for the session that wires this):
 
