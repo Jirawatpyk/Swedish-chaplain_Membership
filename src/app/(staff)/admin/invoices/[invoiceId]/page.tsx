@@ -14,12 +14,28 @@ export async function generateMetadata(): Promise<Metadata> {
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getInvoice, makeGetInvoiceDeps, Money, calculateVat } from '@/modules/invoicing';
+import {
+  getInvoice,
+  makeGetInvoiceDeps,
+  Money,
+  calculateVat,
+  computeIsOverdue,
+  maybeEmitOverdueDetected,
+  makeOverdueAuditPort,
+} from '@/modules/invoicing';
 // Direct infra import for the settings read — same escape-hatch as
 // the B2 settings page. This is a READ against the public port
 // `getForIssue`, not a deep reach into internals.
 // eslint-disable-next-line no-restricted-imports
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
+// Same escape-hatch as the tenant-settings repo read above: a public-
+// port read (`findByOriginalInvoice`) used to populate the "Credit
+// Notes attached" section. No Application-layer use-case exists yet
+// for this list (Phase 10 candidate); the infra repo is called
+// directly.
+// eslint-disable-next-line no-restricted-imports
+import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
+import { asInvoiceId } from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -47,6 +63,8 @@ import {
 } from '@/components/ui/table';
 import { IssueInvoiceDialog } from '../_components/issue-invoice-dialog';
 import { RecordPaymentDialog } from '../_components/record-payment-dialog';
+import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
+import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -166,8 +184,38 @@ export default async function InvoiceDetailPage({
     resolveUserEmail(invoice.voidedByUserId),
   ]);
 
+  // Phase-10 polish — load any credit notes attached to this invoice
+  // so the detail page can surface the CN list inline. Cheap: no CN
+  // rows are returned for 99% of invoices (only paid/credited ones
+  // can have any); the "don't render when empty" rule keeps the
+  // section invisible on the common path.
+  const creditNoteRepo = makeDrizzleCreditNoteRepo(tenantCtx.slug);
+  const creditNotes = await creditNoteRepo.findByOriginalInvoice(
+    asInvoiceId(invoiceId),
+    tenantCtx.slug,
+  );
+
   const isDraft = invoice.status === 'draft';
   const isAdmin = currentUser.role === 'admin';
+
+  // T109 — derive the presentation-only `overdue` variant + fire the
+  // opportunistic `invoice_overdue_detected` audit on first detection
+  // per Bangkok-local day (idempotent via migration 0021's partial
+  // unique idx). Detail page is a single-invoice read, so the emit
+  // is cheap (one insert, dedup by index on repeat views the same
+  // day). Fire-and-forget — swallowed-adapter errors do not 500 the
+  // page because the adapter's catch logs pino and returns false.
+  const nowUtcIso = new Date().toISOString();
+  const overdueDetected = computeIsOverdue(invoice, nowUtcIso);
+  const displayStatus = overdueDetected ? 'overdue' : invoice.status;
+  if (overdueDetected) {
+    void maybeEmitOverdueDetected(
+      makeOverdueAuditPort(),
+      invoice,
+      nowUtcIso,
+      { userId: currentUser.id, requestId: requestId ?? null },
+    );
+  }
 
   // Drafts don't persist subtotal/vat/total on the row (those are
   // frozen snapshots set on issue). For display, compute a live
@@ -207,13 +255,13 @@ export default async function InvoiceDetailPage({
         title={
           <span className="flex items-center gap-3">
             <span>{invoice.documentNumber?.raw ?? t('draftTitle')}</span>
-            <Badge variant={statusBadgeVariant(invoice.status)}>
-              {tStatus(invoice.status)}
+            <Badge variant={statusBadgeVariant(displayStatus)}>
+              {tStatus(displayStatus)}
             </Badge>
           </span>
         }
         actions={
-          <div className="flex flex-wrap gap-2">
+          <>
             {isDraft && isAdmin && (
               <>
                 <a
@@ -228,6 +276,7 @@ export default async function InvoiceDetailPage({
                     F2 clone-year). Confirmation stays in-context so
                     the admin sees the summary numbers as they type
                     the irreversible phrase. */}
+                <DeleteDraftDialog invoiceId={invoice.invoiceId} />
                 <IssueInvoiceDialog
                   invoiceId={invoice.invoiceId}
                   summary={{
@@ -253,24 +302,54 @@ export default async function InvoiceDetailPage({
                 issueDate={invoice.issueDate}
               />
             )}
-            {!isDraft && invoice.pdf && (
-              // Plain <a> (not <Link>) — the PDF endpoint returns a
-              // binary stream, which Next.js Link misinterprets as an
-              // RSC navigation and then fails the fetch. `download`
-              // hints the browser to save to disk; `target="_blank"`
-              // additionally gives mobile a chance to use the share
-              // sheet (FR-041).
-              <a
-                href={`/api/invoices/${invoice.invoiceId}/pdf`}
-                className={buttonVariants({ variant: 'outline' })}
-                target="_blank"
-                rel="noopener noreferrer"
-                download
+            {invoice.status === 'issued' && isAdmin && (
+              // Void — destructive terminal action on issued-unpaid
+              // invoices (US5 / FR-008). Routes to the typed-phrase
+              // confirm page at /admin/invoices/[id]/void rather than
+              // using an in-context dialog — a typed-phrase gate is
+              // high-friction by design (the phrase is the invoice's
+              // document number; see void-confirm-dialog.tsx) and
+              // deserves its own route for deep-linking + staging walk-
+              // throughs (CP-9.3). Rendered as a destructive outline
+              // button so it sits visually next to Pay without
+              // outranking it as a primary action.
+              <Link
+                href={`/admin/invoices/${invoice.invoiceId}/void`}
+                className={buttonVariants({ variant: 'destructive-outline' })}
               >
-                {t('actions.download')}
-              </a>
+                {t('actions.void')}
+              </Link>
             )}
-          </div>
+            {(invoice.status === 'paid' || invoice.status === 'partially_credited') &&
+              isAdmin && (
+                <Link
+                  href={`/admin/invoices/${invoice.invoiceId}/credit-notes/new`}
+                  className={buttonVariants({ variant: 'outline' })}
+                >
+                  {t('actions.issueCreditNote')}
+                </Link>
+              )}
+            {/* Secondary actions (Download PDF, Resend invoice, Resend
+                receipt) collapse into one "⋯" icon dropdown so the
+                action row exposes only primary/destructive CTAs as
+                standalone buttons. Menu returns null when nothing to
+                show. T107 visibility rules preserved inside the menu. */}
+            {!isDraft && (
+              <InvoiceMoreMenu
+                invoiceId={invoice.invoiceId}
+                documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
+                showDownload={Boolean(invoice.pdf)}
+                showResendInvoice={
+                  isAdmin && invoice.status !== 'void' && Boolean(invoice.pdf)
+                }
+                showResendReceipt={
+                  isAdmin &&
+                  invoice.status === 'paid' &&
+                  Boolean(invoice.receiptPdf)
+                }
+              />
+            )}
+          </>
         }
       />
       <Card>
@@ -421,8 +500,127 @@ export default async function InvoiceDetailPage({
             </section>
           )}
 
-          <section className="mt-6">
-            <h3 className="mb-2 text-sm font-medium text-muted-foreground">{t('lines.title')}</h3>
+          {creditNotes.length > 0 && (
+            <section
+              aria-labelledby="credit-notes-heading"
+              className="mt-6 border-t pt-6"
+            >
+              <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+                <h3
+                  id="credit-notes-heading"
+                  className="text-sm font-medium text-muted-foreground"
+                >
+                  {t('creditNotesSection.title', { count: creditNotes.length })}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  <span>{t('creditNotesSection.totalCredited')}</span>{' '}
+                  <span className="font-medium tabular-nums text-foreground">
+                    {formatSatang(invoice.creditedTotal.satang)}{' '}
+                    <span className="text-muted-foreground">THB</span>
+                  </span>
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground"
+                      >
+                        {t('creditNotesSection.col.number')}
+                      </TableHead>
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground"
+                      >
+                        {t('creditNotesSection.col.issueDate')}
+                      </TableHead>
+                      <TableHead
+                        scope="col"
+                        className="text-xs uppercase tracking-wide text-muted-foreground"
+                      >
+                        {t('creditNotesSection.col.reason')}
+                      </TableHead>
+                      <TableHead
+                        scope="col"
+                        className="text-right text-xs uppercase tracking-wide text-muted-foreground"
+                      >
+                        {t('creditNotesSection.col.total')}
+                      </TableHead>
+                      <TableHead scope="col" className="w-[1%] text-right">
+                        <span className="sr-only">
+                          {t('creditNotesSection.col.actions')}
+                        </span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {creditNotes.map((cn) => (
+                      <TableRow key={cn.creditNoteId}>
+                        <TableCell className="font-mono font-medium">
+                          {cn.documentNumber.raw}
+                        </TableCell>
+                        <TableCell className="tabular-nums">
+                          {formatDate(cn.issueDate, userLocale)}
+                        </TableCell>
+                        <TableCell
+                          className="max-w-[20rem] truncate"
+                          title={cn.reason}
+                        >
+                          {cn.reason}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatSatang(cn.total.satang)}{' '}
+                          <span className="text-muted-foreground">THB</span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <a
+                              href={`/api/credit-notes/${cn.creditNoteId}/pdf`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={buttonVariants({
+                                variant: 'outline',
+                                size: 'sm',
+                              })}
+                              aria-label={t(
+                                'creditNotesSection.action.pdfAria',
+                                { number: cn.documentNumber.raw },
+                              )}
+                            >
+                              {t('creditNotesSection.action.pdf')}
+                            </a>
+                            <Link
+                              href={`/admin/credit-notes/${cn.creditNoteId}`}
+                              className={buttonVariants({
+                                variant: 'secondary',
+                                size: 'sm',
+                              })}
+                              aria-label={t(
+                                'creditNotesSection.action.viewAria',
+                                { number: cn.documentNumber.raw },
+                              )}
+                            >
+                              {t('creditNotesSection.action.view')}
+                            </Link>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </section>
+          )}
+
+          <section className="mt-6" aria-labelledby="invoice-lines-heading">
+            <h3
+              id="invoice-lines-heading"
+              className="mb-2 text-sm font-medium text-muted-foreground"
+            >
+              {t('lines.title')}
+            </h3>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>

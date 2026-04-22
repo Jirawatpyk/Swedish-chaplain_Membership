@@ -616,6 +616,58 @@
         "payload": {
           "primary": "primary",
           "primaryContactPromoted": "primary contact promoted"
+        },
+        "invoiceDraftCreated": "Invoice draft created",
+        "invoiceIssued": "Invoice {documentNumber} issued",
+        "invoicePaid": "Invoice paid via {paymentMethod}",
+        "invoiceVoided": "Invoice voided — {reason}",
+        "creditNoteIssued": "Credit note {documentNumber} issued — {creditAmount} THB",
+        "invoicePdfResent": "Invoice {documentNumber} PDF re-sent"
+      },
+      "invoices": {
+        "title": "Invoices",
+        "count": "{count, plural, =0 {no invoices} one {# invoice} other {# invoices}}",
+        "empty": "No invoices for this member yet.",
+        "emptyFiltered": "No invoices match the current filters.",
+        "emptyCta": "Create first invoice",
+        "newInvoice": "New invoice",
+        "filters": {
+          "statusAria": "Filter invoices by status",
+          "yearAria": "Filter invoices by fiscal year",
+          "search": "Search document number…",
+          "fiscalYear": "Year",
+          "status": { "all": "All statuses" },
+          "year": { "all": "All years" },
+          "apply": "Apply",
+          "clear": "Clear filters"
+        },
+        "draftPlaceholder": "(draft)",
+        "cols": {
+          "number": "Number",
+          "status": "Status",
+          "issued": "Issued",
+          "due": "Due",
+          "paid": "Paid",
+          "paidEmpty": "Not paid yet",
+          "total": "Total",
+          "remaining": "Remaining",
+          "actions": "Actions"
+        },
+        "statuses": {
+          "draft": "Draft",
+          "issued": "Issued",
+          "paid": "Paid",
+          "void": "Void",
+          "credited": "Credited",
+          "partially_credited": "Partially credited"
+        },
+        "actions": {
+          "view": "View",
+          "recordPayment": "Record payment",
+          "issueCreditNote": "Issue credit note",
+          "void": "Void",
+          "voidAriaLabel": "Void invoice {number}",
+          "disabledForManager": "Managers have read-only access. Ask an administrator."
         }
       },
       "create": {
@@ -881,6 +933,100 @@
         "updated": "Invoice settings updated."
       }
     },
+    "creditNotes": {
+      "new": {
+        "title": "Issue credit note",
+        "description": "Issue a formal credit note (ใบลดหนี้) against this paid invoice. A new sequential tax-document number is assigned and the original invoice moves to credited or partially credited.",
+        "backToInvoice": "Back to invoice",
+        "againstInvoice": "Against invoice",
+        "remainingLabel": "Creditable remainder:",
+        "amountLabel": "Credit amount (incl. VAT)",
+        "amountHelp": "Enter the gross amount to credit, inclusive of VAT. VAT is split proportionally to the original invoice.",
+        "exceedsRemainder": "Amount exceeds remainder ({remaining}).",
+        "reasonLabel": "Reason",
+        "reasonHelp": "Shown on the credit note PDF and audit trail. Required, up to 500 characters.",
+        "confirmPhrase": "CREDIT",
+        "confirmCopy": "Type {phrase} to confirm this irreversible action.",
+        "confirmMismatch": "The phrase must be {phrase}.",
+        "submit": "Issue credit note",
+        "submitting": "Issuing…",
+        "cancel": "Cancel",
+        "success": "Credit note issued.",
+        "errors": {
+          "failed": "Credit note could not be issued.",
+          "unknown": "An unknown error occurred. Please try again.",
+          "codeFallback": "Error code: {code}"
+        }
+      },
+      "list": {
+        "meta": { "title": "Credit Notes" },
+        "title": "Credit notes",
+        "description": "All credit notes issued against tax invoices. Read-only audit trail.",
+        "empty": "Credit notes appear here after an admin issues one against a paid invoice.",
+        "filteredEmpty": "No credit notes match the current filters.",
+        "columns": {
+          "documentNumber": "Number",
+          "issueDate": "Issued",
+          "originalInvoice": "Original invoice",
+          "member": "Member",
+          "reason": "Reason",
+          "total": "Total",
+          "actions": "Actions"
+        },
+        "filters": {
+          "search": "Search document number",
+          "fiscalYear": "Fiscal year",
+          "apply": "Apply",
+          "clear": "Clear"
+        },
+        "actions": {
+          "view": "View",
+          "viewAria": "View credit note {number}",
+          "pdf": "PDF",
+          "pdfAria": "Download PDF for credit note {number}",
+          "clearFilters": "Clear filters"
+        }
+      },
+      "detail": {
+        "meta": { "title": "Credit Note" },
+        "subtitle": "Read-only credit-note record against the original invoice.",
+        "status": { "issued": "Issued" },
+        "actions": {
+          "backToInvoice": "Back to invoice",
+          "download": "Download PDF",
+          "resend": "Resend credit note email",
+          "resendAria": "Email a fresh copy of credit note {number} to the member's primary contact",
+          "moreAria": "More actions for {number}"
+        },
+        "toast": {
+          "resendSuccess": "Queued — {recipient} will receive a fresh copy shortly.",
+          "resendRateLimited": "This credit note was resent recently. Please wait a few minutes before retrying.",
+          "resendFailed": "Could not queue a resend. Please try again."
+        },
+        "fields": {
+          "issueDate": "Issue date",
+          "issuedBy": "Issued by",
+          "originalInvoice": "Original invoice",
+          "originalInvoiceLinkLabel": "Open invoice",
+          "creditAmount": "Credit amount (excl. VAT)",
+          "vat": "VAT",
+          "total": "Total credit (incl. VAT)"
+        },
+        "reason": { "heading": "Reason" },
+        "parties": {
+          "issuer": "Issuer",
+          "customer": "Customer",
+          "legalName": "Legal name",
+          "taxId": "Tax ID",
+          "address": "Address",
+          "contactEmail": "Contact email"
+        },
+        "siblings": {
+          "heading": "Other credit notes on this invoice",
+          "viewLabel": "Go to credit note {number}"
+        }
+      }
+    },
     "invoices": {
       "meta": {
         "title": "Invoices"
@@ -921,7 +1067,10 @@
         "filters": {
           "allStatuses": "All statuses",
           "clearAll": "Clear filters"
-        }
+        },
+        "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
+        "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
+        "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited"
       },
       "new": {
         "title": "New invoice draft",
@@ -963,7 +1112,22 @@
           "preview": "Preview",
           "issue": "Issue…",
           "download": "Download PDF",
-          "pay": "Record payment"
+          "pay": "Record payment",
+          "void": "Void…",
+          "issueCreditNote": "Issue credit note",
+          "resendInvoice": "Resend invoice email",
+          "resendReceipt": "Resend receipt email",
+          "resendInvoiceAria": "Email a fresh copy of invoice {number} to the member's primary contact",
+          "resendReceiptAria": "Email a fresh copy of receipt {number} to the member's primary contact",
+          "more": "More",
+          "moreAria": "More actions for {number}"
+        },
+        "toast": {
+          "resendSuccess": "Queued — {recipient} will receive a fresh copy shortly.",
+          "resendRateLimited": "This document was resent recently. Please wait a few minutes before retrying.",
+          "resendNoReceipt": "No receipt PDF is available for this invoice (combined mode or unpaid).",
+          "resendNotIssued": "Invoice is still a draft — issue it first to email a copy.",
+          "resendFailed": "Could not queue a resend. Please try again."
         },
         "fields": {
           "memberId": "Member",
@@ -1002,7 +1166,24 @@
           "voidedAt": "Voided at",
           "voidedBy": "Voided by",
           "reason": "Reason",
-          "creditNoteHint": "To legally reverse this invoice, issue a credit note (available in F4 US6)."
+          "creditNoteHint": "This invoice is permanently voided. Its sequential tax-document number is retired and will not be reused. The VOID-stamped PDF above is the authoritative record; no further action is required."
+        },
+        "creditNotesSection": {
+          "title": "Credit notes ({count})",
+          "totalCredited": "Total credited:",
+          "col": {
+            "number": "Number",
+            "issueDate": "Issued",
+            "reason": "Reason",
+            "total": "Total",
+            "actions": "Actions"
+          },
+          "action": {
+            "pdf": "PDF",
+            "pdfAria": "Download credit note {number} as PDF",
+            "view": "View",
+            "viewAria": "View credit note {number}"
+          }
         }
       },
       "issue": {
@@ -1023,6 +1204,20 @@
         },
         "draftLabel": "Draft",
         "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm."
+      },
+      "deleteDraft": {
+        "trigger": "Delete draft",
+        "title": "Delete this draft?",
+        "description": "The draft invoice and its line items will be permanently removed. No sequential tax-document number has been allocated yet, so nothing will be retired. This action is audited.",
+        "cancel": "Cancel",
+        "deleteButton": "Delete draft",
+        "deleting": "Deleting…",
+        "success": "Draft deleted",
+        "errors": {
+          "failed": "Could not delete draft",
+          "codeFallback": "Error code: {code}",
+          "unknown": "An unknown error occurred. Please try again."
+        }
       },
       "pay": {
         "title": "Record payment",
@@ -1053,6 +1248,26 @@
           "other": "Other"
         },
         "draftLabel": "Draft"
+      },
+      "void": {
+        "title": "Void invoice",
+        "description": "Void this issued-unpaid invoice. The sequential tax-document number is retired and cannot be reused; the PDF is re-stamped VOID; a cancellation notice is emailed to the member.",
+        "voiding": "Voiding invoice",
+        "terminalNotice": "Void is terminal. Once voided, no further actions (pay, credit, edit) are allowed. To reverse a PAID invoice, use the credit-note workflow instead.",
+        "reasonLabel": "Reason",
+        "reasonHelp": "Shown on the voided PDF and in the audit trail. Required, up to 500 characters.",
+        "confirmCopy": "Type the invoice number {phrase} to confirm this irreversible action.",
+        "confirmMismatch": "The phrase must be {phrase}.",
+        "backToInvoice": "Back to invoice",
+        "submit": "Void invoice",
+        "submitting": "Voiding…",
+        "cancel": "Cancel",
+        "success": "Invoice voided.",
+        "errors": {
+          "failed": "Invoice could not be voided.",
+          "unknown": "An unknown error occurred. Please try again.",
+          "codeFallback": "Error code: {code}"
+        }
       }
     }
   },
@@ -1080,7 +1295,8 @@
       "usersList": "Users list",
       "dashboard": "Dashboard",
       "membersList": "Members list",
-      "invoicesList": "Invoices list"
+      "invoicesList": "Invoices list",
+      "creditNotesList": "Credit notes list"
     }
   },
   "nav": {
@@ -1122,7 +1338,14 @@
     "members": "Members",
     "memberDetail": "Details",
     "newMember": "New Member",
-    "editMember": "Edit"
+    "editMember": "Edit",
+    "invoices": "Invoices",
+    "invoiceDetail": "Details",
+    "newInvoice": "New Invoice",
+    "credit-notes": "Credit Notes",
+    "newCreditNote": "New Credit Note",
+    "void": "Void",
+    "pay": "Record Payment"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
@@ -1148,7 +1371,81 @@
         "actions": "Actions"
       },
       "actions": {
-        "download": "PDF"
+        "download": "PDF",
+        "viewDetail": "View invoice",
+        "emailCopy": "Email me a copy",
+        "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"
+      },
+      "filters": {
+        "noMatch": "No invoices match your filters."
+      },
+      "toast": {
+        "resendSuccess": "Copy queued — check your inbox shortly.",
+        "resendRateLimited": "You already asked for a copy recently. Please try again in a few minutes.",
+        "resendFailed": "Could not queue a fresh copy. Please try again."
+      },
+      "summary": {
+        "heading": "Recent invoices",
+        "description": "Your latest 3 invoices — download PDFs or view all.",
+        "viewAll": "View all",
+        "contactAdmin": "Contact your chamber admin"
+      },
+      "detail": {
+        "title": "Invoice",
+        "subtitle": "Read-only view — download the PDF for the official tax document.",
+        "linesHeading": "Line items",
+        "backToList": "Back to invoices",
+        "fields": {
+          "issueDate": "Issued",
+          "dueDate": "Due",
+          "paidDate": "Paid",
+          "planYear": "Plan year"
+        },
+        "lines": {
+          "description": "Description",
+          "quantity": "Qty",
+          "unitPrice": "Unit price",
+          "lineTotal": "Total"
+        },
+        "totals": {
+          "subtotal": "Subtotal",
+          "vat": "VAT",
+          "total": "Total"
+        },
+        "creditNotes": {
+          "heading": "Credit Notes",
+          "description": "A credit has been issued against this invoice. The invoice total stays the same (tax-document immutability); the credit note below records the amount credited back.",
+          "view": "View",
+          "viewAria": "View credit note {number}"
+        },
+        "void": {
+          "title": "Invoice voided",
+          "voidedAt": "Voided on",
+          "reasonLabel": "Reason",
+          "notPayable": "This invoice is no longer payable. You do not need to take any action.",
+          "downloadVoidedPdf": "Download voided invoice (VOID-stamped)"
+        }
+      }
+    },
+    "creditNotes": {
+      "detail": {
+        "meta": { "title": "Credit Note" },
+        "subtitle": "A credit has been issued against your invoice.",
+        "status": { "issued": "Issued" },
+        "actions": {
+          "backToInvoice": "Back to invoice",
+          "download": "Download PDF",
+          "downloadAria": "Download credit note {number} PDF"
+        },
+        "fields": {
+          "issueDate": "Issue date",
+          "originalInvoice": "Original invoice",
+          "originalInvoiceLinkLabel": "Open invoice",
+          "creditAmount": "Credit amount (excl. VAT)",
+          "vat": "VAT",
+          "total": "Total credit (incl. VAT)"
+        },
+        "reason": { "heading": "Reason" }
       }
     },
     "profile": {

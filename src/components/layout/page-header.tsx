@@ -27,15 +27,18 @@ export function PageHeader({
       data-slot="page-header"
       className={cn(
         // Below Tailwind's sm breakpoint (640px) stack title + actions
-        // vertically so action groups wrap cleanly on mobile. At 640px+
-        // lay out inline with flex-wrap as a safety net for long titles.
+        // vertically so action groups wrap cleanly on mobile. `items-stretch`
+        // on mobile gives the actions row full container width so multiple
+        // buttons have room to wrap into a proper grid and tap targets
+        // don't bunch up against the left edge. Desktop (sm+) reverts to
+        // `items-start` so title + actions sit naturally side-by-side.
         //
         // No margin-block-end: vertical spacing between PageHeader and
         // the following Cards/content is owned by the parent layout
         // container's `flex flex-col gap-[var(--page-section-gap)]`.
         // Previously the margin here + the parent's gap doubled to 48 px
         // on pages that opted into flex-gap wrappers.
-        'flex flex-col items-start justify-between gap-3 sm:flex-row sm:flex-wrap',
+        'flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:flex-wrap sm:items-start',
         className,
       )}
     >
@@ -61,9 +64,16 @@ export function PageHeader({
         ) : null}
       </div>
       {actions ? (
+        // Mobile (<640px): `[&>*]:flex-1` makes every action child stretch
+        // to share the full-width row equally — maximises tap targets on
+        // narrow viewports per WCAG 2.5.5 / 2.5.8 and avoids buttons
+        // bunching against the left edge.
+        // Desktop (sm+): `sm:[&>*]:flex-none` reverts children to their
+        // natural width so the action group sits neatly on the right of
+        // the title.
         <div
           data-slot="page-header-actions"
-          className="flex flex-wrap items-center gap-2"
+          className="flex flex-wrap items-center gap-2 [&>*]:flex-1 sm:[&>*]:flex-none"
         >
           {actions}
         </div>

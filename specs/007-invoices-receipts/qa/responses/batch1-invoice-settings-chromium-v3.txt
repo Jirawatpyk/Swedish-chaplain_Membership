@@ -1,0 +1,331 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=chromium" "tests/e2e/invoice-settings.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 9 tests using 1 worker
+
+  ✓  1 [chromium] › tests\e2e\invoice-settings.spec.ts:43:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (8.0s)
+  ✓  2 [chromium] › tests\e2e\invoice-settings.spec.ts:58:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan (7.1s)
+  ✓  3 [chromium] › tests\e2e\invoice-settings.spec.ts:68:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (5.9s)
+  ✘  4 [chromium] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (17.4s)
+  ✘  5 [chromium] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #1) (22.4s)
+  ✘  6 [chromium] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #2) (20.0s)
+  ✘  7 [chromium] › tests\e2e\invoice-settings.spec.ts:152:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (21.8s)
+  ✘  8 [chromium] › tests\e2e\invoice-settings.spec.ts:152:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (retry #1) (23.5s)
+  ✘  9 [chromium] › tests\e2e\invoice-settings.spec.ts:152:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (retry #2) (22.5s)
+  ✓  10 [chromium] › tests\e2e\invoice-settings.spec.ts:201:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (10.5s)
+  ✓  11 [chromium] › tests\e2e\invoice-settings.spec.ts:233:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (6.3s)
+  ✘  12 [chromium] › tests\e2e\invoice-settings.spec.ts:264:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (21.4s)
+  ✓  13 [chromium] › tests\e2e\invoice-settings.spec.ts:264:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (retry #1) (9.3s)
+  ✘  14 [chromium] › tests\e2e\invoice-settings.spec.ts:298:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (30.1s)
+  ✘  15 [chromium] › tests\e2e\invoice-settings.spec.ts:298:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (retry #1) (30.4s)
+  ✘  16 [chromium] › tests\e2e\invoice-settings.spec.ts:298:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (retry #2) (30.1s)
+
+
+  1) [chromium] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()[22m
+
+
+      108 |             )
+      109 |             .first(),
+    > 110 |         ).toBeVisible({ timeout: 10_000 });
+          |           ^
+      111 |
+      112 |         // Re-fetch the page — the VAT field should persist at 10.00
+      113 |         // (round-trip through PATCH /api/tenant-invoice-settings →
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:110:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()[22m
+
+
+      108 |             )
+      109 |             .first(),
+    > 110 |         ).toBeVisible({ timeout: 10_000 });
+          |           ^
+      111 |
+      112 |         // Re-fetch the page — the VAT field should persist at 10.00
+      113 |         // (round-trip through PATCH /api/tenant-invoice-settings →
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:110:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()[22m
+
+
+      108 |             )
+      109 |             .first(),
+    > 110 |         ).toBeVisible({ timeout: 10_000 });
+          |           ^
+      111 |
+      112 |         // Re-fetch the page — the VAT field should persist at 10.00
+      113 |         // (round-trip through PATCH /api/tenant-invoice-settings →
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:110:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-chromium-retry2\error-context.md
+
+  2) [chromium] › tests\e2e\invoice-settings.spec.ts:152:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()[22m
+
+
+      186 |             )
+      187 |             .first(),
+    > 188 |         ).toBeVisible({ timeout: 10_000 });
+          |           ^
+      189 |
+      190 |         await page.reload();
+      191 |         await expect(
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:188:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()[22m
+
+
+      186 |             )
+      187 |             .first(),
+    > 188 |         ).toBeVisible({ timeout: 10_000 });
+          |           ^
+      189 |
+      190 |         await page.reload();
+      191 |         await expect(
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:188:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 10000ms[22m
+    [2m  - waiting for getByText(/Invoice settings (updated|created)|การตั้งค่าเรียบร้อย|Fakturainställningar (uppdaterade|skapade)/i).first()[22m
+
+
+      186 |             )
+      187 |             .first(),
+    > 188 |         ).toBeVisible({ timeout: 10_000 });
+          |           ^
+      189 |
+      190 |         await page.reload();
+      191 |         await expect(
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:188:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-chromium-retry2\error-context.md
+
+  3) [chromium] › tests\e2e\invoice-settings.spec.ts:298:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-fed15-e-→-fill-save-→-row-created-chromium-retry2\error-context.md
+
+  4) [chromium] › tests\e2e\invoice-settings.spec.ts:264:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('p[role="alert"]').first()
+    Expected: visible
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 15000ms[22m
+    [2m  - waiting for locator('p[role="alert"]').first()[22m
+
+
+      277 |         });
+      278 |
+    > 279 |         await expect(page.locator('p[role="alert"]').first()).toBeVisible({
+          |                                                               ^
+      280 |           timeout: 15_000,
+      281 |         });
+      282 |       } finally {
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:279:63
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium\error-context.md
+
+  3 failed
+    [chromium] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+    [chromium] › tests\e2e\invoice-settings.spec.ts:152:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists 
+    [chromium] › tests\e2e\invoice-settings.spec.ts:298:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created 
+  1 flaky
+    [chromium] › tests\e2e\invoice-settings.spec.ts:264:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+  5 passed (5.5m)
+ ELIFECYCLE  Command failed with exit code 1.

@@ -546,5 +546,106 @@ export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
         .returning({ invoiceId: invoices.invoiceId });
       if (!updated) throw new InvoiceApplyConflictError('applyDraftUpdate');
     },
+
+    async applyCreditNoteRollup(txUnknown, input): Promise<Invoice> {
+      const tx = txUnknown as TenantTx;
+      // Single atomic UPDATE: bump credited_total + flip status. The
+      // WHERE guard requires the pre-rollup status be paid OR
+      // partially_credited — anything else (draft / issued / void /
+      // credited) means a concurrent state change raced ahead and we
+      // must bail so the caller can roll back.
+      const [updated] = await tx
+        .update(invoices)
+        .set({
+          creditedTotalSatang: input.newCreditedTotalSatang,
+          status: input.newStatus,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            // allow rollup from paid OR partially_credited only
+            sql`${invoices.status} IN ('paid', 'partially_credited')`,
+          ),
+        )
+        .returning();
+      if (!updated) throw new InvoiceApplyConflictError('applyCreditNoteRollup');
+
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, input.tenantId),
+            eq(invoiceLines.invoiceId, input.invoiceId),
+          ),
+        )
+        .orderBy(asc(invoiceLines.position));
+      return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
+    },
+
+    async applyVoid(txUnknown, input): Promise<Invoice> {
+      const tx = txUnknown as TenantTx;
+      // R-1 fix — atomic issued → void. The immutability trigger
+      // whitelists the void_* fields + pdf_sha256, but pdf_sha256 is
+      // INTENTIONALLY NOT written here: the caller updates it via
+      // `applyInvoicePdfRegeneration` in a second transaction AFTER
+      // the blob upload succeeds, preventing DB/Blob desync on blob
+      // failure. WHERE guard on status='issued' prevents racing
+      // paid/credit-note/double-void.
+      const [updated] = await tx
+        .update(invoices)
+        .set({
+          status: 'void',
+          voidReason: input.voidReason,
+          voidedByUserId: input.voidedByUserId,
+          voidedAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            eq(invoices.status, 'issued'),
+          ),
+        )
+        .returning();
+      if (!updated) throw new InvoiceApplyConflictError('applyVoid');
+
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, input.tenantId),
+            eq(invoiceLines.invoiceId, input.invoiceId),
+          ),
+        )
+        .orderBy(asc(invoiceLines.position));
+      return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
+    },
+
+    async applyInvoicePdfRegeneration(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // Single-column UPDATE — pdf_sha256 only. Blob key + template
+      // version are fixed by the content-addressed key + the pinned
+      // templateVersion stored at issue time. The invoices
+      // immutability trigger explicitly whitelists pdf_sha256 for
+      // re-render scenarios (VOID + CREDITED annotations + R3-E4
+      // blob-miss recovery).
+      await tx
+        .update(invoices)
+        .set({
+          pdfSha256: input.pdfSha256,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        );
+    },
   };
 }

@@ -18,7 +18,12 @@ export async function generateMetadata(): Promise<Metadata> {
 import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { listInvoicesPaged, makeListInvoicesDeps, isTenantInvoiceSetupComplete } from '@/modules/invoicing';
+import {
+  listInvoicesPaged,
+  makeListInvoicesDeps,
+  isTenantInvoiceSetupComplete,
+  computeIsOverdue,
+} from '@/modules/invoicing';
 import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { TableContainer } from '@/components/layout';
@@ -118,6 +123,46 @@ export default async function AdminInvoicesPage({
     ...(qTrim ? { search: qTrim } : {}),
   });
 
+  // G-2 — batched CN count per invoice on the current page. Single
+  // GROUP BY query keyed by original_invoice_id so we avoid N+1
+  // roundtrips while still getting an exact count that matches the
+  // running credited_total_satang snapshot on each invoice row.
+  // Zero rows on 99% of invoices (only paid/partially_credited/
+  // credited have CNs) — the map lookup falls back to 0 / '0' so
+  // the table row shape stays consistent.
+  const creditNoteCountById = new Map<string, number>();
+  if (invoicesResult.ok && invoicesResult.value.rows.length > 0) {
+    const { runInTenant } = await import('@/lib/db');
+    const { creditNotes } = await import(
+      '@/modules/invoicing/infrastructure/db'
+    );
+    const { inArray, eq, and, sql } = await import('drizzle-orm');
+    const invoiceIds = invoicesResult.value.rows.map((r) => r.invoiceId);
+    try {
+      const counts = await runInTenant(tenantCtx, (tx) =>
+        tx
+          .select({
+            originalInvoiceId: creditNotes.originalInvoiceId,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(creditNotes)
+          .where(
+            and(
+              eq(creditNotes.tenantId, tenantCtx.slug),
+              inArray(creditNotes.originalInvoiceId, invoiceIds),
+            ),
+          )
+          .groupBy(creditNotes.originalInvoiceId),
+      );
+      for (const c of counts) {
+        creditNoteCountById.set(c.originalInvoiceId, Number(c.count));
+      }
+    } catch {
+      // Best-effort: count failures never 500 the list page. Missing
+      // map entries fall back to 0 in the row mapper below.
+    }
+  }
+
   const memberNameById = new Map<string, string>();
   // Only run the member directory scan when the result set may include
   // drafts (tabs/filters that enable them) OR when any returned row is
@@ -149,11 +194,18 @@ export default async function AdminInvoicesPage({
   // fallback to a placeholder if directorySearch's 100-row window
   // didn't include the member (rare — tenant with >100 active members
   // AND an old draft).
+  // T109 — derive presentation-only `overdue` status per FR-028.
+  // `status` stays the stored value for non-derived consumers; the
+  // `overdue` variant is injected ONLY when the read-time rule
+  // (issued + Bangkok-today > dueDate) fires, so recording payment
+  // or voiding immediately returns the row to its stored status on
+  // the next fetch.
+  const nowUtcIso = new Date().toISOString();
   const rows: InvoicesTableRow[] = invoicesResult.ok
     ? invoicesResult.value.rows.map((r) => ({
         invoiceId: r.invoiceId,
         documentNumber: r.documentNumber?.raw ?? '—',
-        status: r.status,
+        status: computeIsOverdue(r, nowUtcIso) ? 'overdue' : r.status,
         memberId: r.memberId,
         memberName:
           r.memberIdentitySnapshot?.legal_name ??
@@ -163,6 +215,11 @@ export default async function AdminInvoicesPage({
         dueDate: r.dueDate,
         totalSatang: r.total?.satang.toString() ?? '0',
         hasPdf: r.pdf !== null,
+        // G-2 — indicator pair. `creditedTotal` is already on the
+        // Invoice entity (frozen + rolled up by applyCreditNoteRollup);
+        // `creditNoteCount` comes from the batched GROUP BY above.
+        creditNoteCount: creditNoteCountById.get(r.invoiceId) ?? 0,
+        creditedTotalSatang: r.creditedTotal.satang.toString(),
       }))
     : [];
 

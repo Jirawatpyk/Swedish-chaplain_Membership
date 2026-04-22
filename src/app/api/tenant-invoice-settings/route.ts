@@ -38,7 +38,15 @@ import {
   updateTenantInvoiceSettings,
   makeUpdateTenantInvoiceSettingsDeps,
 } from '@/modules/invoicing';
+// Direct infra import for GET — same escape-hatch pattern used by
+// /admin/settings/invoicing/page.tsx (SSR read). Keeps GET a thin
+// projection over the repo without a trivial use-case wrapper.
+// eslint-disable-next-line no-restricted-imports
+import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
+import { buildLogoBlobPrefix } from '@/lib/logo-blob-key';
+import { makeF4AuditPort } from '@/modules/invoicing';
 
 // N4 (review 2026-04-19 21:19) — strict per-field constraints at the
 // route boundary. Matches `updateTenantInvoiceSettingsSchema` in the
@@ -90,12 +98,177 @@ const bodySchema = z.object({
     .optional(),
 });
 
-export async function PATCH(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'write' });
+/**
+ * T094 — GET /api/tenant-invoice-settings (F4 US4 / FR-009).
+ *
+ * Returns the current settings snapshot in the same snake_case shape
+ * as PATCH accepts. `null` body (HTTP 200) signals "not yet
+ * bootstrapped" so the admin UI renders the FR-010 empty-state.
+ * Admin-only (manager is read-only on finance per FR-012; a manager
+ * GET is allowed — read-only — in a later revision when the UI grows
+ * a read-only view).
+ */
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const ctx = await requireAdminContext(request, {
+    resource: 'tenant_invoice_settings',
+    action: 'read',
+  });
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
+
+  // T120 symmetric MTA dual-bind probe (Review S5) — mirror the PATCH
+  // guard on GET so a cross-tenant read attempt is logged + audited +
+  // 403'd, not silently served. Dormant in STD deployment (the
+  // resolver hardcodes env.tenant.slug); active once F10 MTA enables
+  // subdomain/session-claim tenant resolution. Fire-and-forget audit
+  // emit (try/catch) so an audit-adapter outage cannot mask the 403
+  // into a 500.
+  //
+  // T115t — skip when the dev-only X-Tenant header override is enabled
+  // (env validator refuses this flag in production, src/lib/env.ts:237),
+  // so throwaway-tenant E2E fixtures can reach the route.
+  if (!env.tenant.xHeaderEnabled && tenantCtx.slug !== env.tenant.slug) {
+    logger.warn(
+      {
+        requestId,
+        hostResolvedSlug: tenantCtx.slug,
+        deployedSlug: env.tenant.slug,
+        userId: ctx.current.user.id,
+      },
+      'GET /api/tenant-invoice-settings host / deployed-tenant mismatch',
+    );
+    try {
+      await makeF4AuditPort().emit(null, {
+        tenantId: tenantCtx.slug,
+        requestId,
+        eventType: 'tenant_invoice_settings_cross_tenant_probe',
+        actorUserId: ctx.current.user.id,
+        summary: `Cross-tenant probe on tenant-invoice-settings (host=${tenantCtx.slug}, deployed=${env.tenant.slug})`,
+        payload: {
+          host_resolved_slug: tenantCtx.slug,
+          deployed_slug: env.tenant.slug,
+          route: 'GET /api/tenant-invoice-settings',
+        },
+      });
+    } catch (auditErr) {
+      // Audit emit failure is secondary — the primary 403 still stands.
+      // Using `warn` (not `error`) keeps primary-error alerting clean.
+      logger.warn(
+        { requestId, err: auditErr },
+        'GET /api/tenant-invoice-settings: probe audit emit failed',
+      );
+    }
+    return NextResponse.json(
+      { error: { code: 'cross_tenant_forbidden' } },
+      { status: 403 },
+    );
+  }
+
+  const view = await drizzleTenantSettingsRepo.getForIssue(tenantCtx.slug);
+
+  if (!view) {
+    return NextResponse.json({ settings: null }, { status: 200 });
+  }
+
+  return NextResponse.json(
+    {
+      settings: {
+        tenant_id: view.tenantId,
+        currency_code: view.currencyCode,
+        vat_rate: view.vatRate.raw,
+        registration_fee_satang: String(view.registrationFeeSatang),
+        legal_name_th: view.identity.legal_name_th,
+        legal_name_en: view.identity.legal_name_en,
+        tax_id: view.identity.tax_id,
+        registered_address_th: view.identity.address_th,
+        registered_address_en: view.identity.address_en,
+        invoice_number_prefix: view.invoiceNumberPrefix,
+        credit_note_number_prefix: view.creditNoteNumberPrefix,
+        receipt_number_prefix: view.receiptNumberPrefix ?? null,
+        receipt_numbering_mode: view.receiptNumberingMode,
+        fiscal_year_start_month: view.fiscalYearStartMonth,
+        default_net_days: view.defaultNetDays,
+        pro_rate_policy: view.proRatePolicy,
+        auto_email_enabled: view.autoEmailEnabled,
+        logo_blob_key: view.identity.logo_blob_key ?? null,
+      },
+    },
+    { status: 200 },
+  );
+}
+
+export async function PATCH(request: NextRequest): Promise<NextResponse> {
+  const ctx = await requireAdminContext(request, {
+    resource: 'tenant_invoice_settings',
+    action: 'write',
+  });
+  if ('response' in ctx) return ctx.response;
+
+  const tenantCtx = resolveTenantFromRequest(request);
+  const requestId = requestIdFromHeaders(request.headers);
+
+  // T120 — Host-header / session-bound-tenant dual-bind probe.
+  //
+  // `resolveTenantFromRequest` currently hard-codes to `env.tenant.slug`
+  // (STD deployment), so this check is dormant today. When F10 MTA
+  // rolls out and the resolver starts parsing subdomain / session
+  // claims, a mismatch between the host-header-resolved tenant and the
+  // deployment-bound tenant signals either (a) an MTA misconfiguration
+  // or (b) a deliberate cross-tenant probe by an attacker with a valid
+  // admin session on a different tenant. Either way: audit + 403.
+  //
+  // We compare against `env.tenant.slug` rather than a session-bound
+  // tenant claim because F1 `UserAccount` does not carry a `tenantId`
+  // field (sessions are cross-tenant by design — membership is via
+  // `contacts.linked_user_id`). The env-bound slug IS the
+  // authoritative deployed tenant for STD; for MTA this comparison
+  // evolves to a session-claim check without needing a route-handler
+  // rewrite.
+  //
+  // T115t — skip when the dev-only X-Tenant header override is enabled
+  // (env validator refuses this flag in production, src/lib/env.ts:237),
+  // so throwaway-tenant E2E fixtures can reach the route.
+  if (!env.tenant.xHeaderEnabled && tenantCtx.slug !== env.tenant.slug) {
+    logger.warn(
+      {
+        requestId,
+        hostResolvedSlug: tenantCtx.slug,
+        deployedSlug: env.tenant.slug,
+        userId: ctx.current.user.id,
+      },
+      'PATCH /api/tenant-invoice-settings host / deployed-tenant mismatch',
+    );
+    // I2 — guard the audit emit. If the audit adapter throws (DB
+    // outage, etc.) the 403 MUST still surface; never let a probe
+    // rewrite into an accidental 500.
+    try {
+      await makeF4AuditPort().emit(null, {
+        tenantId: tenantCtx.slug,
+        requestId,
+        eventType: 'tenant_invoice_settings_cross_tenant_probe',
+        actorUserId: ctx.current.user.id,
+        summary: `Cross-tenant probe on tenant-invoice-settings (host=${tenantCtx.slug}, deployed=${env.tenant.slug})`,
+        payload: {
+          host_resolved_slug: tenantCtx.slug,
+          deployed_slug: env.tenant.slug,
+          route: 'PATCH /api/tenant-invoice-settings',
+        },
+      });
+    } catch (auditErr) {
+      // Audit emit failure is secondary — the primary 403 still stands.
+      // Using `warn` (not `error`) keeps primary-error alerting clean.
+      logger.warn(
+        { requestId, err: auditErr },
+        'PATCH /api/tenant-invoice-settings: probe audit emit failed',
+      );
+    }
+    return NextResponse.json(
+      { error: { code: 'cross_tenant_forbidden' } },
+      { status: 403 },
+    );
+  }
 
   // N5 — rate-limit. Settings mutation is high-value (legal identity
   // snapshots into every future invoice) + feeds an audit emit on
@@ -140,7 +313,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   // shape; here we assert the encoded tenantId matches the caller's
   // resolved tenant so one tenant cannot reference another's logo.
   if (b.logo_blob_key !== undefined && b.logo_blob_key !== null) {
-    const expectedPrefix = `invoicing/${tenantCtx.slug}/logos/`;
+    const expectedPrefix = buildLogoBlobPrefix(tenantCtx.slug);
     if (!b.logo_blob_key.startsWith(expectedPrefix)) {
       logger.warn(
         { tenantSlug: tenantCtx.slug, userId: ctx.current.user.id, requestId },

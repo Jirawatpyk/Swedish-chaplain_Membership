@@ -49,6 +49,36 @@ export interface EmailOutboxPort {
       readonly creditNoteId?: string;
       readonly pdfBlobKey: string;
       readonly pdfTemplateVersion: number;
+      /**
+       * FR-036 — original invoice document number. Rendered into
+       * `invoice_voided` email subject/body so the member sees the
+       * exact invoice number being cancelled. Optional for other
+       * event types (link-based emails ignore it).
+       */
+      readonly documentNumber?: string;
+      /**
+       * B-1 / FR-036 — void reason for `invoice_voided` cancellation
+       * emails. Spec requires the notice "state the void reason"; the
+       * use-case passes the admin-entered free text here. Not persisted
+       * in audit (the audit row carries only `void_reason_sha256`);
+       * this copy is for the member-facing email body only.
+       */
+      readonly voidReason?: string;
+      /**
+       * R17-02 — expected sha256 of the PDF bytes the dispatcher should
+       * attach. Populated by `voidInvoice` at enqueue time to protect
+       * the two-phase commit: if Phase 2 (post-commit Blob overwrite)
+       * fails, the Blob still holds the ORIGINAL un-stamped bytes at
+       * `pdfBlobKey` and the dispatcher would otherwise ship them as
+       * the "cancellation" attachment. The dispatcher MUST verify
+       * `sha256(prefetchedBytes) === expectedPdfSha256` before
+       * attaching; on mismatch it permanently-fails the row with
+       * `auto_email_delivery_failed` + a distinct reason. Optional for
+       * callers that do not attach bytes (issue / paid / CN ship
+       * link-only emails today — their Blob-read-verbatim guarantee
+       * makes sha pinning redundant).
+       */
+      readonly expectedPdfSha256?: string;
     },
   ): Promise<void>;
 }

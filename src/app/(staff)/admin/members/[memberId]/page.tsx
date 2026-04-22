@@ -34,12 +34,16 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
+import { Suspense } from 'react';
+import { MemberInvoicesSection } from './_components/member-invoices-section';
+import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
 import {
   Popover,
   PopoverContent,
@@ -51,6 +55,9 @@ const UUID_RE =
 
 interface PageProps {
   readonly params: Promise<{ memberId: string }>;
+  readonly searchParams: Promise<
+    Record<string, string | string[] | undefined>
+  >;
 }
 
 export async function generateMetadata({
@@ -122,10 +129,14 @@ function ContactBlock({
   // "Invite to portal" is only shown when the contact has an email and
   // is not already linked to an F1 portal account (FR-012 / T056).
   const canInvite = Boolean(contact.email) && !contact.linkedUserId;
+  // Rendered as a plain flat row (no border, no bg) inside the outer
+  // Contacts Card. Multiple contacts are separated by <Separator />
+  // elements in the parent CardContent — no nested cards, no visual
+  // card-in-card anti-pattern.
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
-        <CardTitle className="text-base">
+    <div>
+      <div className="mb-3 flex flex-row items-start justify-between gap-4">
+        <h3 className="text-base font-semibold">
           {`${contact.firstName} ${contact.lastName}`.trim()}
           {contact.isPrimary && (
             <Badge className="ml-2" variant="default">
@@ -137,37 +148,53 @@ function ContactBlock({
               {t('portal.linked')}
             </Badge>
           )}
-        </CardTitle>
+        </h3>
         {canInvite && (
           <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
         )}
-      </CardHeader>
-      <CardContent>
-        <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
-          <Field
-            label={t('fields.email')}
-            value={contact.email}
-            extra={
-              <CopyButton value={contact.email} label={t('copy.copyEmail')} />
-            }
-          />
-          <Field label={t('fields.phone')} value={contact.phone} />
-          <Field label={t('fields.roleTitle')} value={contact.roleTitle} />
-          <Field
-            label={t('fields.preferredLanguage')}
-            value={contact.preferredLanguage.toUpperCase()}
-          />
-        </dl>
-      </CardContent>
-    </Card>
+      </div>
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
+        <Field
+          label={t('fields.email')}
+          value={contact.email}
+          extra={
+            <CopyButton value={contact.email} label={t('copy.copyEmail')} />
+          }
+        />
+        <Field label={t('fields.phone')} value={contact.phone} />
+        <Field label={t('fields.roleTitle')} value={contact.roleTitle} />
+        <Field
+          label={t('fields.preferredLanguage')}
+          value={contact.preferredLanguage.toUpperCase()}
+        />
+      </dl>
+    </div>
   );
 }
 
-export default async function MemberDetailPage({ params }: PageProps) {
+export default async function MemberDetailPage({
+  params,
+  searchParams,
+}: PageProps) {
+  const sp = await searchParams;
+  const invStatusRaw = typeof sp.invStatus === 'string' ? sp.invStatus : undefined;
+  const invYearRaw = typeof sp.invYear === 'string' ? sp.invYear : undefined;
+  const invQRaw = typeof sp.invQ === 'string' ? sp.invQ : undefined;
+  const invStatus = invStatusRaw && invStatusRaw !== 'all' ? invStatusRaw : undefined;
+  const invYear = (() => {
+    if (!invYearRaw || invYearRaw === 'all') return undefined;
+    const n = Number.parseInt(invYearRaw, 10);
+    return Number.isFinite(n) && n >= 2020 && n <= 2100 ? n : undefined;
+  })();
+  const invQ = (() => {
+    if (!invQRaw) return undefined;
+    const trimmed = invQRaw.trim().slice(0, 64);
+    return trimmed.length > 0 ? trimmed : undefined;
+  })();
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
 
-  await requireSession('staff');
+  const session = await requireSession('staff');
   const tenant = resolveTenantFromRequest();
   const h = await headers();
   const requestId = requestIdFromHeaders(h);
@@ -241,13 +268,11 @@ export default async function MemberDetailPage({ params }: PageProps) {
         subtitle={tRoot('subtitle')}
         actions={
           <>
-            <Link
-              href="/admin/members"
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              <ArrowLeftIcon className="size-4" />
-              {t('notFound.cta')}
-            </Link>
+            {/* "Back to members" button removed per ux-standards.md § 11/19
+              * — the global BreadcrumbNav (admin/layout.tsx) already exposes
+              * back navigation at "Admin > Members > [Company]". Duplicating
+              * it as an action-row button competed with Edit/Archive for
+              * visual attention and diluted the primary-action hierarchy. */}
             <Link
               href={`/admin/members/${member.memberId}/timeline`}
               className={buttonVariants({ variant: 'outline' })}
@@ -413,49 +438,75 @@ export default async function MemberDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        <div className="mt-4 flex items-center gap-2">
-          <h2 className="text-h3 text-lg font-semibold">
-            {t('sections.contacts')}
-          </h2>
-          {/* T097 — Emergency primary contact transfer helper. Clicking
-              the icon opens a Popover (not a hover Tooltip — we need
-              tap-discoverable on mobile) that explains the two-step
-              procedure per spec Edge Cases: add the new person as a
-              secondary contact, then promote them. */}
-          <Popover>
-            <PopoverTrigger
-              aria-label={t('emergencyPrimary.ariaLabel')}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <HelpCircleIcon className="h-4 w-4" aria-hidden="true" />
-            </PopoverTrigger>
-            <PopoverContent className="max-w-sm text-sm" sideOffset={4}>
-              <p className="font-medium">{t('emergencyPrimary.title')}</p>
-              <p className="mt-2 text-muted-foreground">
-                {t('emergencyPrimary.body')}
-              </p>
-            </PopoverContent>
-          </Popover>
-        </div>
+        {/* Single Contacts Card groups primary + secondary contacts
+            under one CardTitle — matches the Company section pattern
+            so every content group on the page has consistent card
+            framing. Individual contacts render as bordered rows inside
+            CardContent (ContactBlock), not as nested cards. */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <CardTitle className="text-base">{t('sections.contacts')}</CardTitle>
+            {/* T097 — Emergency primary contact transfer helper. Clicking
+                the icon opens a Popover (not a hover Tooltip — we need
+                tap-discoverable on mobile) that explains the two-step
+                procedure per spec Edge Cases: add the new person as a
+                secondary contact, then promote them. */}
+            <Popover>
+              <PopoverTrigger
+                aria-label={t('emergencyPrimary.ariaLabel')}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <HelpCircleIcon className="size-4" aria-hidden="true" />
+              </PopoverTrigger>
+              <PopoverContent className="max-w-sm text-sm" sideOffset={4}>
+                <p className="font-medium">{t('emergencyPrimary.title')}</p>
+                <p className="mt-2 text-muted-foreground">
+                  {t('emergencyPrimary.body')}
+                </p>
+              </PopoverContent>
+            </Popover>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-6">
+            {primary ? (
+              <ContactBlock contact={primary} memberId={member.memberId} t={t} />
+            ) : null}
 
-        {primary ? (
-          <ContactBlock contact={primary} memberId={member.memberId} t={t} />
-        ) : null}
+            {secondary.length > 0 && (
+              <>
+                <Separator />
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  {t('sections.secondary')}
+                </h3>
+                {secondary.map((c, i) => (
+                  <div key={c.contactId} className="flex flex-col gap-6">
+                    {i > 0 ? <Separator /> : null}
+                    <ContactBlock
+                      contact={c}
+                      memberId={member.memberId}
+                      t={t}
+                    />
+                  </div>
+                ))}
+              </>
+            )}
+          </CardContent>
+        </Card>
 
-        {secondary.length > 0 && (
-          <>
-            <h3 className="text-sm font-medium text-muted-foreground">
-              {t('sections.secondary')}
-            </h3>
-            {secondary.map((c) => (
-              <ContactBlock
-                key={c.contactId}
-                contact={c}
-                memberId={member.memberId}
-                t={t}
-              />
-            ))}
-          </>
+        {/* US7 AS1 — Invoice history on member page. Wrapped in its
+            own Suspense boundary so member metadata + contacts paint
+            first and an invoice-fetch failure stays isolated to this
+            section (parent page's `getMember` call is unaffected). */}
+        {(session.user.role === 'admin' || session.user.role === 'manager') && (
+          <Suspense fallback={<MemberInvoicesSkeleton />}>
+            <MemberInvoicesSection
+              tenant={tenant}
+              memberId={member.memberId}
+              role={session.user.role}
+              statusFilter={invStatus}
+              fiscalYearFilter={invYear}
+              searchFilter={invQ}
+            />
+          </Suspense>
         )}
     </DetailContainer>
   );

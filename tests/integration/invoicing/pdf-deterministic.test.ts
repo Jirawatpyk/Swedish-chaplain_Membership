@@ -142,6 +142,44 @@ describe('F4 PDF deterministic render — SC-003 (T017)', () => {
     assertPdfStructurallyEquivalent(a, b);
   }, 60_000);
 
+  // T079 — credit-note reference block presence. When the template
+  // receives the `creditNote` context, the rendered PDF MUST include
+  // the original-invoice reference block (Thai RD ใบลดหนี้ content
+  // requirement / FR-020 AS1). We assert the byte length grows versus
+  // a credit-note WITHOUT the context — the reference block's labels,
+  // document number, date, and reason contribute physical page real
+  // estate that the baseline lacks.
+  //
+  // We do NOT substring-search for ASCII tokens in the PDF byte
+  // stream because @react-pdf encodes all text through the Sarabun
+  // font subset — ASCII characters are mapped to glyph indices and
+  // are not recoverable without decompressing the content stream and
+  // decoding through the font's CMap (~excessive for this unit test).
+  // Visual verification happens in the manual QA + E2E paths.
+  //
+  // The length-grew check is the load-bearing assertion: it fails if
+  // someone accidentally removes the template branch or breaks the
+  // `input.creditNote` conditional, which is exactly the regression
+  // this test is protecting against.
+  it('credit-note with creditNote context renders the reference block', async () => {
+    const baseline = makeInput('credit_note');
+    const withCtx: PdfRenderInput = {
+      ...baseline,
+      creditNote: {
+        originalDocumentNumber: 'SC-2026-000042',
+        originalIssueDate: '2026-03-01',
+        reason: 'Membership cancelled mid-year',
+      },
+    };
+    const a = await reactPdfRenderAdapter.render(baseline);
+    const b = await reactPdfRenderAdapter.render(withCtx);
+    expect(b.bytes.byteLength).toBeGreaterThan(a.bytes.byteLength);
+    // Re-render with ctx should be structurally equivalent (length +
+    // magic) to itself — regression guard on the new branch.
+    const bb = await reactPdfRenderAdapter.render(withCtx);
+    assertPdfStructurallyEquivalent(b, bb);
+  }, 90_000);
+
   it('void-stamped invoice template — render twice → structurally identical', async () => {
     const input: PdfRenderInput = {
       ...makeInput('void_stamped_invoice'),
@@ -151,6 +189,47 @@ describe('F4 PDF deterministic render — SC-003 (T017)', () => {
     const b = await reactPdfRenderAdapter.render(input);
     assertPdfStructurallyEquivalent(a, b);
   }, 60_000);
+
+  it('CP-9.3 — VOID-stamped PDF renders distinctly from plain invoice (byte-inequality + valid PDF)', async () => {
+    // FR-008 requires the overlay to carry both "VOID" and "ยกเลิก"
+    // and be repeated on every page via `fixed`. `fixed` prop is
+    // structurally verified in the template source
+    // (invoice-template.tsx: `<Text fixed style={styles.voidStamp}>
+    // VOID / {shapeThai('ยกเลิก')}</Text>`). Geometry (45° rotation,
+    // 50% opacity, 80pt font) is verified by thai-tax-compliance-
+    // auditor agent review R13.
+    //
+    // What this test proves mechanically:
+    //   1. Void output differs from plain (byte length differs) —
+    //      guards against the `isVoid` branch being silently merged
+    //      with `isPreview` or ignored in a future refactor.
+    //   2. Void output is a valid PDF (header + trailer).
+    // Note: byte comparison cannot be "void > plain" because the
+    // void variant also DROPS the "ต้นฉบับ / ORIGINAL" marker that
+    // the plain variant carries — so depending on glyph overlap
+    // either direction is possible. What matters is that the
+    // outputs are NOT byte-identical.
+    //
+    // Full text-content inspection is impossible because @react-pdf
+    // zlib-compresses content streams. Visual verification (CP-9.3
+    // human gate) is deferred to staging walkthrough by Thai-RD
+    // reviewer.
+    const plainInput = makeInput('invoice');
+    const voidInput: PdfRenderInput = {
+      ...makeInput('void_stamped_invoice'),
+      voidReason: 'Wrong tier selected',
+    };
+    const plainOut = await reactPdfRenderAdapter.render(plainInput);
+    const voidOut = await reactPdfRenderAdapter.render(voidInput);
+
+    // #1 — Outputs must differ (kind='void_stamped_invoice' branch
+    // produces a distinguishable result).
+    expect(voidOut.bytes.byteLength).not.toBe(plainOut.bytes.byteLength);
+
+    // #2 — PDF header + trailer.
+    expect(Buffer.from(voidOut.bytes.slice(0, 5)).toString('latin1')).toBe('%PDF-');
+    expect(Buffer.from(voidOut.bytes.slice(-6)).toString('latin1').includes('%%EOF')).toBe(true);
+  }, 120_000);
 
   it('post-bump re-render with pinned templateVersion structurally matches ORIGINAL (R3-E4)', async () => {
     // R3-E4 mechanical check: re-render with the same

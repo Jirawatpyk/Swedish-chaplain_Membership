@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { systemClock } from './ports/clock-port';
 import { makeDrizzleInvoiceRepo } from '../infrastructure/repos/drizzle-invoice-repo';
+import { makeDrizzleCreditNoteRepo } from '../infrastructure/repos/drizzle-credit-note-repo';
 import { drizzleTenantSettingsRepo } from '../infrastructure/repos/drizzle-tenant-settings-repo';
 import { postgresSequenceAllocator } from '../infrastructure/adapters/postgres-sequence-allocator';
 import { reactPdfRenderAdapter } from '../infrastructure/adapters/react-pdf-render-adapter';
@@ -18,6 +19,8 @@ import { resendEmailOutboxAdapter } from '../infrastructure/adapters/resend-emai
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { f4AuditAdapter } from '../infrastructure/adapters/audit-adapter';
+import { overdueAuditAdapter } from '../infrastructure/adapters/overdue-audit-adapter';
+import { sharpImageReencodeAdapter } from '../infrastructure/adapters/sharp-image-reencode-adapter';
 import { CURRENT_TEMPLATE_VERSION } from '../infrastructure/pdf/template-registry';
 
 import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
@@ -29,6 +32,11 @@ import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
 import type { GetInvoiceDeps } from './use-cases/get-invoice';
 import type { RecordPaymentDeps } from './use-cases/record-payment';
 import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
+import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
+import type { VoidInvoiceDeps } from './use-cases/void-invoice';
+import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
+import type { GetCreditNotePdfSignedUrlDeps } from './use-cases/get-credit-note-pdf-signed-url';
+import type { ResendPdfDeps } from './use-cases/resend-pdf';
 
 export function makeCreateInvoiceDraftDeps(tenantId: string): CreateInvoiceDraftDeps {
   return {
@@ -61,6 +69,10 @@ export function makeListInvoicesDeps(tenantId: string): ListInvoicesDeps {
   return { invoiceRepo: makeDrizzleInvoiceRepo(tenantId) };
 }
 
+export function makeListInvoicesByMemberDeps(tenantId: string): import('./use-cases/list-invoices-by-member').ListInvoicesByMemberDeps {
+  return { invoiceRepo: makeDrizzleInvoiceRepo(tenantId) };
+}
+
 export function makeGetInvoicePdfSignedUrlDeps(tenantId: string): GetInvoicePdfSignedUrlDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
@@ -82,10 +94,12 @@ export function makeUpdateTenantInvoiceSettingsDeps(): {
 export function makeUploadTenantLogoDeps(): {
   blob: typeof vercelBlobAdapter;
   audit: typeof f4AuditAdapter;
+  imageReencode: typeof sharpImageReencodeAdapter;
 } {
   return {
     blob: vercelBlobAdapter,
     audit: f4AuditAdapter,
+    imageReencode: sharpImageReencodeAdapter,
   };
 }
 
@@ -153,6 +167,92 @@ export function makeUpdateInvoiceDraftDeps(tenantId: string): UpdateInvoiceDraft
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     audit: f4AuditAdapter,
+  };
+}
+
+export function makeIssueCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    sequenceAllocator: postgresSequenceAllocator,
+    pdfRender: reactPdfRenderAdapter,
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+    clock: systemClock,
+    outbox: resendEmailOutboxAdapter,
+    currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+  };
+}
+
+export function makeGetCreditNoteDeps(tenantId: string): GetCreditNoteDeps {
+  return {
+    creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
+    audit: f4AuditAdapter,
+  };
+}
+
+/** G-3 — admin CN directory deps. Repo only; no audit / clock needed. */
+export function makeListCreditNotesDeps(tenantId: string): {
+  creditNoteRepo: ReturnType<typeof makeDrizzleCreditNoteRepo>;
+} {
+  return { creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId) };
+}
+
+export function makeGetCreditNotePdfSignedUrlDeps(
+  tenantId: string,
+): GetCreditNotePdfSignedUrlDeps {
+  return {
+    creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+  };
+}
+
+export function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    pdfRender: reactPdfRenderAdapter,
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+    clock: systemClock,
+    outbox: resendEmailOutboxAdapter,
+  };
+}
+
+/**
+ * T107 — resend-pdf composition. Wires invoice repo + credit-note repo
+ * + audit + outbox. No clock/pdf-render needed because resend uses the
+ * pinned blob key + templateVersion from the stored document (no
+ * re-render; no seq allocation).
+ */
+/**
+ * T109 — Overdue detection emit dep. Pure derive has no deps; only
+ * the opportunistic audit emit needs the adapter. Kept as a factory
+ * (rather than re-exporting the const) for future DI flexibility.
+ */
+export function makeOverdueAuditPort() {
+  return overdueAuditAdapter;
+}
+
+/**
+ * T120 — expose the generic F4 audit adapter for route handlers that
+ * need to emit standalone audit rows (no mutating tx involved), e.g.
+ * the host-header MTA dual-bind probe in PATCH /api/tenant-invoice-settings.
+ * Non-happy-path routes use this to emit `*_cross_tenant_probe` events
+ * without needing to plumb a full use-case dependency graph.
+ */
+export function makeF4AuditPort() {
+  return f4AuditAdapter;
+}
+
+export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
+    audit: f4AuditAdapter,
+    outbox: resendEmailOutboxAdapter,
   };
 }
 

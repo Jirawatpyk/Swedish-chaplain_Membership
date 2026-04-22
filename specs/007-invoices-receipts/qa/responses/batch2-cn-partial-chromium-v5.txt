@@ -1,0 +1,96 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=chromium" "--grep" "AS2 — 60% partial" "tests/e2e/credit-note-partial.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 1 test using 1 worker
+
+[AS2-partial] POST /api/credit-notes → 500
+  ✘  1 [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited (14.7s)
+[AS2-partial] POST /api/credit-notes → 500
+  ✘  2 [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited (retry #1) (16.0s)
+[AS2-partial] POST /api/credit-notes → 500
+  ✘  3 [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited (retry #2) (14.7s)
+
+
+  1) [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited 
+
+    Error: credit-note POST failed: 500 
+
+      172 |       if (!resp.ok()) {
+      173 |         const body = await resp.text();
+    > 174 |         throw new Error(
+          |               ^
+      175 |           `credit-note POST failed: ${resp.status()} ${body.slice(0, 500)}`,
+      176 |         );
+      177 |       }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:174:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: credit-note POST failed: 500 
+
+      172 |       if (!resp.ok()) {
+      173 |         const body = await resp.text();
+    > 174 |         throw new Error(
+          |               ^
+      175 |           `credit-note POST failed: ${resp.status()} ${body.slice(0, 500)}`,
+      176 |         );
+      177 |       }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:174:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: credit-note POST failed: 500 
+
+      172 |       if (!resp.ok()) {
+      173 |         const body = await resp.text();
+    > 174 |         throw new Error(
+          |               ^
+      175 |           `credit-note POST failed: ${resp.status()} ${body.slice(0, 500)}`,
+      176 |         );
+      177 |       }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:174:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry2\error-context.md
+
+  1 failed
+    [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited 
+ ELIFECYCLE  Command failed with exit code 1.

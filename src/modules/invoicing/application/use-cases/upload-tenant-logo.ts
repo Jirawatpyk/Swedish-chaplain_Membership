@@ -19,11 +19,11 @@
  * so an upload failure never half-applies a settings change.
  */
 import { err, ok, type Result } from '@/lib/result';
-import sharp from 'sharp';
 import { randomUUID } from 'node:crypto';
 import { logger } from '@/lib/logger';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
+import type { ImageReEncodePort } from '../ports/image-reencode-port';
 
 export interface UploadTenantLogoInput {
   readonly tenantId: string;
@@ -34,15 +34,34 @@ export interface UploadTenantLogoInput {
   readonly declaredSize: number;
 }
 
+/**
+ * T092b — enforce a per-tenant logo-history cap so a pathological
+ * client (or a buggy auto-save that re-uploads on every keystroke)
+ * cannot exhaust the Blob store. `50` matches the R2-E6 spec value
+ * and is generous: a normal tenant replaces their logo 1–3 times in
+ * the lifetime of the account.
+ */
+export const LOGO_HISTORY_CAP = 50;
+
 export type UploadTenantLogoError =
   | { code: 'mime_rejected'; mime: string }
   | { code: 'too_large'; size: number; maxBytes: 1_048_576 }
   | { code: 'dimensions_out_of_range'; width: number; height: number }
-  | { code: 'decode_failed' };
+  | { code: 'decode_failed' }
+  | { code: 'logo_history_cap_reached'; current: number; cap: typeof LOGO_HISTORY_CAP };
 
 export interface UploadTenantLogoDeps {
   readonly blob: BlobStoragePort;
   readonly audit: AuditPort;
+  /**
+   * R19 — image decoder + re-encoder. `sharp` lives ONLY in the
+   * adapter for this port (`sharp-image-reencode-adapter.ts`); the
+   * Application layer stays free of binary-library imports per
+   * Constitution Principle III. The port is deliberately narrow
+   * (reencode only) — the use-case keeps MIME + size + dimension
+   * validation because those are business rules, not decoder mechanics.
+   */
+  readonly imageReencode: ImageReEncodePort;
 }
 
 const ALLOWED_MIMES = new Set(['image/png', 'image/jpeg']);
@@ -68,70 +87,78 @@ export async function uploadTenantLogo(
     return err({ code: 'too_large', size: input.declaredSize, maxBytes: MAX_BYTES });
   }
 
-  // 3 + 4. sharp probe → re-encode. A malformed/non-image payload
-  // fails the metadata() call; a re-encode that matches the input
-  // format strips EXIF + XMP + ICC (sharp default behaviour: strips
-  // unless `withMetadata()` is called).
+  // 3 + 4. Port-based probe + re-encode. The port adapter (`sharp-
+  // image-reencode-adapter.ts`) handles the decompression-bomb guard
+  // (`limitInputPixels`), EXIF/ICC metadata stripping, and the
+  // format-appropriate encoder branch. The use-case only enforces
+  // business rules (format whitelist + dimension bounds).
   //
-  // N3 (review 2026-04-19 21:19):
-  //   (a) `limitInputPixels` caps decompression-bomb payloads at the
-  //       dimension bounding box so a 900 KB file declaring
-  //       65 000 × 65 000 pixels fails fast at the decoder rather
-  //       than OOMing the Function.
-  //   (b) Choose the output encoder branch + upload contentType from
-  //       the DETECTED `meta.format`, not the client-supplied
-  //       `declaredMime`. Prevents format-confusion where a client
-  //       declares `image/png` but the bytes are JPEG (or vice
-  //       versa). Declared MIME is still used as a fast-reject gate.
-  let ext: 'png' | 'jpg';
-  let outputContentType: 'image/png' | 'image/jpeg';
-  let reencoded: Buffer;
-  let width: number;
-  let height: number;
-  try {
-    const pipeline = sharp(Buffer.from(input.bytes), {
-      limitInputPixels: MAX_WIDTH * MAX_HEIGHT, // 2000*500 = 1M pixels
-      failOn: 'error',
-    });
-    const meta = await pipeline.metadata();
-    width = meta.width ?? 0;
-    height = meta.height ?? 0;
-    if (width < MIN_WIDTH || width > MAX_WIDTH || height < MIN_HEIGHT || height > MAX_HEIGHT) {
-      return err({ code: 'dimensions_out_of_range', width, height });
-    }
-    // Detected format must also be in the whitelist — otherwise we
-    // have a declared/detected mismatch that could land in Blob with
-    // a misleading contentType.
-    if (meta.format !== 'png' && meta.format !== 'jpeg') {
-      return err({ code: 'decode_failed' });
-    }
-    if (meta.format === 'png') {
-      ext = 'png';
-      outputContentType = 'image/png';
-      reencoded = await pipeline.png({ compressionLevel: 9 }).toBuffer();
-    } else {
-      ext = 'jpg';
-      outputContentType = 'image/jpeg';
-      reencoded = await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer();
-    }
-  } catch (e) {
-    // Log at warn — sharp failure is not PII-sensitive and blind
-    // discard hides real deployment issues (missing libvips shared
-    // object, upstream sharp bug). Post-review 2026-04-19 agent nit.
+  // N3 (review 2026-04-19 21:19) — preserved invariants:
+  //   (a) Decompression-bomb guard: inside the adapter.
+  //   (b) DETECTED-format drives encoder branch + upload contentType
+  //       (NOT declared MIME). Prevents format-confusion where a
+  //       client declares `image/png` but the bytes are JPEG.
+  const reencodeResult = await deps.imageReencode.reencode(input.bytes);
+  if (!reencodeResult.ok) {
+    // Decoder failure (corrupt payload, decompression-bomb limit,
+    // unsupported codec inside the probe).
     logger.warn(
-      { err: e, tenantId: input.tenantId, declaredMime: input.declaredMime },
-      'uploadTenantLogo: sharp decode / re-encode failed',
+      {
+        err: reencodeResult.error.reason,
+        tenantId: input.tenantId,
+        declaredMime: input.declaredMime,
+      },
+      'uploadTenantLogo: image decode / re-encode failed',
     );
     return err({ code: 'decode_failed' });
   }
+  // R20-01 — narrow on `format` BEFORE destructuring `bytes`. The port
+  // result is a discriminated union where the `'unknown'` variant has
+  // no `bytes` field; this order lets TS prove `reencodedBytes` is
+  // always defined on the success path.
+  if (reencodeResult.value.format === 'unknown') {
+    // Business rule — detected format must be in the whitelist (PNG or
+    // JPEG only). Covers the case where the declared MIME passed the
+    // typeof-string gate but the actual bytes are GIF/WebP/TIFF/etc.
+    return err({ code: 'decode_failed' });
+  }
+  const { format, width, height, bytes: reencodedBytes } = reencodeResult.value;
+  // Business rule — dimension bounds (FR-034). The port returned
+  // detected width/height; enforce the invariant here.
+  if (width < MIN_WIDTH || width > MAX_WIDTH || height < MIN_HEIGHT || height > MAX_HEIGHT) {
+    return err({ code: 'dimensions_out_of_range', width, height });
+  }
+  const ext: 'png' | 'jpg' = format === 'png' ? 'png' : 'jpg';
+  const outputContentType: 'image/png' | 'image/jpeg' =
+    format === 'png' ? 'image/png' : 'image/jpeg';
 
-  // 5. Upload — unique key per upload so logo history can be
+  // 5. History-cap gate (T092b) — list existing logos under the
+  // per-tenant prefix and refuse if at or above the cap. Runs AFTER
+  // the validation gates above (cheap fast-fails first) and BEFORE
+  // the upload so a capped tenant does not waste Blob write quota.
+  const prefix = `invoicing/${input.tenantId}/logos/`;
+  // Pass `LOGO_HISTORY_CAP + 1` so the result distinguishes
+  // "exactly at cap" from "over cap" in a single call.
+  const existing = await deps.blob.list(prefix, LOGO_HISTORY_CAP + 1);
+  if (existing.length >= LOGO_HISTORY_CAP) {
+    logger.warn(
+      { tenantId: input.tenantId, count: existing.length, cap: LOGO_HISTORY_CAP },
+      'uploadTenantLogo: logo history cap reached',
+    );
+    return err({
+      code: 'logo_history_cap_reached',
+      current: existing.length,
+      cap: LOGO_HISTORY_CAP,
+    });
+  }
+
+  // 6. Upload — unique key per upload so logo history can be
   // inspected / rolled back via audit trail without namespace
   // collision on the Blob store.
-  const logoBlobKey = `invoicing/${input.tenantId}/logos/${randomUUID()}.${ext}`;
+  const logoBlobKey = `${prefix}${randomUUID()}.${ext}`;
   await deps.blob.uploadLogo({
     key: logoBlobKey,
-    body: new Uint8Array(reencoded),
+    body: reencodedBytes,
     contentType: outputContentType,
   });
 
@@ -151,7 +178,7 @@ export async function uploadTenantLogo(
       declaredSize: input.declaredSize,
       width,
       height,
-      reencodedSize: reencoded.byteLength,
+      reencodedSize: reencodedBytes.byteLength,
     },
   });
 

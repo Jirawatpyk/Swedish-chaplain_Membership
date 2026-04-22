@@ -13,7 +13,7 @@ import { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArchiveIcon } from 'lucide-react';
+import { ArchiveIcon, Loader2Icon } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -87,7 +87,7 @@ export function ArchiveMemberButton({ memberId, companyName }: Props) {
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogTrigger
-        className={buttonVariants({ variant: 'outline' })}
+        className={buttonVariants({ variant: 'destructive-outline' })}
         aria-label={t('archiveCta')}
       >
         <ArchiveIcon className="size-4" aria-hidden="true" />
@@ -128,8 +128,12 @@ export function ArchiveMemberButton({ memberId, companyName }: Props) {
               void handleConfirm();
             }}
             disabled={loading}
+            aria-busy={loading}
             className={buttonVariants({ variant: 'destructive' })}
           >
+            {loading && (
+              <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+            )}
             {loading ? t('archivingInProgress') : t('confirmCta')}
           </AlertDialogAction>
         </AlertDialogFooter>

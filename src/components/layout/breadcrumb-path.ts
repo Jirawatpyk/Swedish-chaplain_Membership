@@ -52,11 +52,54 @@ export function parseBreadcrumbPath({
     return parent === 'plans' && /^\d{4}$/.test(segment ?? '');
   };
 
+  // Route-group pseudo-segments: URL pieces that exist in the path but
+  // have no corresponding page.tsx at THAT specific location (only
+  // nested routes). Clicking the breadcrumb link for one would return
+  // 404. Rewrite the href back to the closest ancestor that DOES route
+  // so the link still goes somewhere useful.
+  //
+  // Context-aware: we key each non-route segment by its REQUIRED
+  // parent. `credit-notes` under `/admin/invoices/<id>/credit-notes/new`
+  // has no index page (only `/new/` exists) — so that occurrence points
+  // back to `/admin/invoices/<id>`. But `/admin/credit-notes` IS a real
+  // page (the standalone directory), so `credit-notes` with parent
+  // `admin` must NOT be rewritten — doing so was the cause of the bug
+  // where clicking the Credit Notes breadcrumb on a detail page bounced
+  // admins to `/admin` dashboard.
+  const NON_ROUTE_BY_PARENT: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+    ['invoices', new Set(['credit-notes'])],
+  ]);
+  const isNonRouteSegment = (idx: number): boolean => {
+    if (idx === 0) return false;
+    const segment = decodedParts[idx];
+    if (!segment) return false;
+    // Find the nearest non-UUID ancestor as the semantic parent. We
+    // skip dynamic id segments so `/invoices/<uuid>/credit-notes/new`
+    // resolves the rule under the real parent `invoices`, not `<uuid>`.
+    let parent: string | undefined;
+    for (let i = idx - 1; i >= 0; i--) {
+      const candidate = decodedParts[i];
+      if (candidate && !/^[0-9a-f-]{8,}$/i.test(candidate)) {
+        parent = candidate;
+        break;
+      }
+    }
+    if (!parent) return false;
+    return NON_ROUTE_BY_PARENT.get(parent)?.has(segment) ?? false;
+  };
+
   return rawParts.map((rawSegment, index) => {
     const decoded = decodedParts[index] ?? rawSegment;
-    const href = isPlansYear(index)
-      ? `/admin/plans?year=${decoded}`
-      : '/' + rawParts.slice(0, index + 1).join('/');
+    let href: string;
+    if (isPlansYear(index)) {
+      href = `/admin/plans?year=${decoded}`;
+    } else if (isNonRouteSegment(index)) {
+      // Point at the parent path (drop THIS segment); parent is the
+      // last routable ancestor.
+      href = '/' + rawParts.slice(0, index).join('/');
+    } else {
+      href = '/' + rawParts.slice(0, index + 1).join('/');
+    }
     return {
       href,
       segment: decoded,

@@ -169,6 +169,9 @@ function makeDeps(
       lockForUpdate: vi.fn(async () =>
         rowExists ? ((draft?.status ?? 'issued') as InvoiceStatus) : null,
       ),
+      applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
+      applyVoid: vi.fn(),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
@@ -188,7 +191,9 @@ function makeDeps(
       uploadPdf: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       signDownloadUrl: vi.fn(),
+      downloadBytes: vi.fn(async () => new Uint8Array([0x25, 0x50, 0x44, 0x46])),
       delete: vi.fn(),
+      list: vi.fn(async () => []),
     },
     audit: {
       emit: vi.fn(async () => {}),
@@ -222,7 +227,12 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('invoice_not_found — row lock returns empty + emits invoice_cross_tenant_probe (R7-W1)', async () => {
-    const deps = makeDeps(false, null, null);
+    // R18-03 — settings must be present so the use case reaches
+    // lockForUpdate; the pre-R18-03 ordering reached the lock check
+    // even with null settings, but the corrected early-exit now
+    // short-circuits at `settings_missing` when settings are null.
+    // Intent of THIS test is the probe-emit path, not settings-missing.
+    const deps = makeDeps(false, null, makeSettings());
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('invoice_not_found');

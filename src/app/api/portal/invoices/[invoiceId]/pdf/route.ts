@@ -22,6 +22,7 @@ import {
   makeGetInvoicePdfSignedUrlDeps,
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
+import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
 
 export async function GET(
   request: NextRequest,
@@ -83,8 +84,7 @@ export async function GET(
   }
 
   const raw = result.value.filename;
-  const asciiSafe = raw.replace(/["\\]/g, '_').replace(/[^\x20-\x7E]/g, '_');
-  const contentDisposition = `attachment; filename="${asciiSafe}"; filename*=UTF-8''${encodeURIComponent(raw)}`;
+  const contentDisposition = buildAttachmentContentDisposition(raw);
   const contentLength = blobResponse.headers.get('content-length');
 
   const headers: Record<string, string> = {

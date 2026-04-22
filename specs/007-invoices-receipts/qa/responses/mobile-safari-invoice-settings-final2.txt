@@ -1,0 +1,174 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=mobile-safari" "tests/e2e/invoice-settings.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 9 tests using 1 worker
+
+  ✓  1 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:43:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (6.7s)
+  ✘  2 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:58:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan (8.5s)
+  ✓  3 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:58:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan (retry #1) (8.5s)
+  ✓  4 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:68:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (7.3s)
+  ✓  5 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (14.1s)
+  ✓  6 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:184:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (14.3s)
+  ✘  7 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:234:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (1.4m)
+  ✓  8 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:234:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (retry #1) (10.2s)
+  ✓  9 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:281:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (9.7s)
+  ✘  10 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:312:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (1.4m)
+  ✓  11 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:312:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (retry #1) (9.0s)
+  ✓  12 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:370:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (8.6s)
+
+
+  1) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:58:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  -  1[39m
+    [31m+ Received  + 69[39m
+
+    [32m- Array [][39m
+    [31m+ Array [[39m
+    [31m+   Object {[39m
+    [31m+     "description": "Ensure every ARIA toggle field has an accessible name",[39m
+    [31m+     "help": "ARIA toggle fields must have an accessible name",[39m
+    [31m+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/aria-toggle-field-name?application=playwright",[39m
+    [31m+     "id": "aria-toggle-field-name",[39m
+    [31m+     "impact": "serious",[39m
+    [31m+     "nodes": Array [[39m
+    [31m+       Object {[39m
+    [31m+         "all": Array [],[39m
+    [31m+         "any": Array [[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "has-visible-text",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element does not have text that is visible to screen readers",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "aria-label",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "aria-label attribute does not exist or is empty",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+           Object {[39m
+    [31m+             "data": null,[39m
+    [31m+             "id": "aria-labelledby",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+           Object {[39m
+    [31m+             "data": Object {[39m
+    [31m+               "messageKey": "noAttr",[39m
+    [31m+             },[39m
+    [31m+             "id": "non-empty-title",[39m
+    [31m+             "impact": "serious",[39m
+    [31m+             "message": "Element has no title attribute",[39m
+    [31m+             "relatedNodes": Array [],[39m
+    [31m+           },[39m
+    [31m+         ],[39m
+    [31m+         "failureSummary": "Fix any of the following:[39m
+    [31m+   Element does not have text that is visible to screen readers[39m
+    [31m+   aria-label attribute does not exist or is empty[39m
+    [31m+   aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty[39m
+    [31m+   Element has no title attribute",[39m
+    [31m+         "html": "<span data-checked=\"\" role=\"switch\" tabindex=\"0\" id=\"base-ui-_R_kiqinebn5...\" aria-checked=\"true\" data-slot=\"switch\" data-size=\"default\" class=\"peer group/switch re...\">",[39m
+    [31m+         "impact": "serious",[39m
+    [31m+         "none": Array [],[39m
+    [31m+         "target": Array [[39m
+    [31m+           "#base-ui-_R_kiqinebn5rkt5ritqlb_",[39m
+    [31m+         ],[39m
+    [31m+       },[39m
+    [31m+     ],[39m
+    [31m+     "tags": Array [[39m
+    [31m+       "cat.aria",[39m
+    [31m+       "wcag2a",[39m
+    [31m+       "wcag412",[39m
+    [31m+       "TTv5",[39m
+    [31m+       "TT5.c",[39m
+    [31m+       "EN-301-549",[39m
+    [31m+       "EN-9.4.1.2",[39m
+    [31m+       "ACT",[39m
+    [31m+       "RGAAv4",[39m
+    [31m+       "RGAA-7.1.1",[39m
+    [31m+     ],[39m
+    [31m+   },[39m
+    [31m+ ][39m
+
+      63 |       .withTags(['wcag2a', 'wcag2aa'])
+      64 |       .analyze();
+    > 65 |     expect(results.violations).toEqual([]);
+         |                                ^
+      66 |   });
+      67 |
+      68 |   test('member cannot reach /admin/settings/invoicing', async ({ page }) => {
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:65:32
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-5fbef-s-WCAG-2-1-AA-axe-core-scan-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-5fbef-s-WCAG-2-1-AA-axe-core-scan-mobile-safari\video-1.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-5fbef-s-WCAG-2-1-AA-axe-core-scan-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-5fbef-s-WCAG-2-1-AA-axe-core-scan-mobile-safari\error-context.md
+
+  2) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:234:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error 
+
+    TimeoutError: page.waitForResponse: Timeout 75000ms exceeded while waiting for event "response"
+
+      252 |         // Status codes per `src/app/api/tenant-invoice-settings/logo/route.ts:138`:
+      253 |         // `mime_rejected` → 415.
+    > 254 |         const responsePromise = page.waitForResponse(
+          |                                      ^
+      255 |           (r) =>
+      256 |             r.url().includes('/api/tenant-invoice-settings/logo') &&
+      257 |             r.request().method() === 'POST',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:254:38
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-021ef-ed-with-mime-rejected-error-mobile-safari\error-context.md
+
+  3) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:312:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+
+    TimeoutError: page.waitForResponse: Timeout 75000ms exceeded while waiting for event "response"
+
+      325 |         // 100 < MIN_WIDTH=200 AND 50 < MIN_HEIGHT=100 → both fail.
+      326 |         const tinyPng = await makePng(100, 50);
+    > 327 |         const responsePromise = page.waitForResponse(
+          |                                      ^
+      328 |           (r) =>
+      329 |             r.url().includes('/api/tenant-invoice-settings/logo') &&
+      330 |             r.request().method() === 'POST',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:327:38
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-safari\error-context.md
+
+  3 flaky
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:58:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan 
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:234:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error 
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:312:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+  6 passed (4.6m)

@@ -1,0 +1,145 @@
+{
+  "generated": "2026-04-22T00:00:00Z",
+  "project": "Chamber-OS (SweCham / TSCC)",
+  "active_branch": "007-invoices-receipts",
+  "summary": {
+    "specs_analyzed": 7,
+    "requirements_checked": 211,
+    "success_criteria_checked": 82,
+    "aligned": 198,
+    "drifted": 3,
+    "not_implemented": 10,
+    "unspecced_features": 0,
+    "alignment_percent": 93.8
+  },
+  "specs": [
+    {
+      "id": "001-auth-rbac",
+      "title": "Auth & RBAC",
+      "status": "shipped",
+      "fr_total": 25,
+      "aligned": ["ALL"],
+      "drifted": [],
+      "not_implemented": []
+    },
+    {
+      "id": "002-membership-plans",
+      "title": "Membership Plans",
+      "status": "review-ready",
+      "fr_total": 36,
+      "aligned": ["ALL"],
+      "drifted": [],
+      "not_implemented": []
+    },
+    {
+      "id": "003-nav-menu",
+      "title": "Nav Menu",
+      "status": "review-ready",
+      "fr_total": 12,
+      "aligned": ["ALL"],
+      "drifted": [],
+      "not_implemented": []
+    },
+    {
+      "id": "004-page-layout-standard",
+      "title": "Page Layout Enterprise Standardization",
+      "status": "shipped",
+      "fr_total": 23,
+      "aligned": ["ALL"],
+      "drifted": [],
+      "not_implemented": []
+    },
+    {
+      "id": "005-members-contacts",
+      "title": "Members & Contacts",
+      "status": "review-ready",
+      "fr_total": 53,
+      "aligned": ["ALL"],
+      "drifted": [],
+      "not_implemented": []
+    },
+    {
+      "id": "006-layout-container-tier2",
+      "title": "Three-tier Layout Container",
+      "status": "review-ready (PR #9)",
+      "fr_total": 19,
+      "aligned": ["ALL"],
+      "drifted": [],
+      "not_implemented": []
+    },
+    {
+      "id": "007-invoices-receipts",
+      "title": "Invoices & Thai-Tax Receipts",
+      "status": "review-ready",
+      "fr_total": 43,
+      "aligned": [
+        "FR-001", "FR-002", "FR-003", "FR-004", "FR-005", "FR-006", "FR-007",
+        "FR-008", "FR-009", "FR-010", "FR-011", "FR-012", "FR-013", "FR-014",
+        "FR-015", "FR-016", "FR-017", "FR-018", "FR-019", "FR-020", "FR-021",
+        "FR-022", "FR-023", "FR-024", "FR-025", "FR-026", "FR-027", "FR-028",
+        "FR-029", "FR-030", "FR-032", "FR-033", "FR-034", "FR-035", "FR-036",
+        "FR-037", "FR-038", "FR-039", "FR-040", "FR-041", "FR-042"
+      ],
+      "drifted": [
+        {
+          "requirement": "FR-044",
+          "spec_text": "FR-044 is not defined in F4 spec (spec ends at FR-042)",
+          "actual": "tests/e2e/members-reduced-motion.spec.ts:2 cites FR-044 which belongs to F3 (005-members-contacts)",
+          "location": "tests/e2e/members-reduced-motion.spec.ts:2",
+          "severity": "minor",
+          "category": "cross-reference",
+          "fix": "Add a one-line header note that FR-044 refers to the F3 spec, not F4. No behavior change."
+        }
+      ],
+      "not_implemented": [
+        {
+          "requirement": "FR-031",
+          "spec_text": "GDPR/PDPA data-access, export, erasure workflows (handled in F9)",
+          "reason": "Explicit F9 deferral in FR text itself",
+          "category": "by-design deferral"
+        }
+      ],
+      "human_gated_residuals": [
+        "T114 manual SR + cross-browser + staging traces + reduced-motion",
+        "T117 security checklist co-sign",
+        "T118 review-counter tickbox",
+        "PVR-1 mobile-safari/chrome run (chromium now green per 2026-04-22 QA)"
+      ]
+    }
+  ],
+  "unspecced": [
+    {
+      "feature": "scripts/seed-f4-e2e-admin-fixtures.ts + purge-e2e-mutation-995xxx.ts",
+      "location": "scripts/",
+      "lines": 300,
+      "classification": "test-infra — no spec entry required"
+    },
+    {
+      "feature": "scripts/check-outbox.mjs",
+      "location": "scripts/",
+      "lines": 50,
+      "classification": "operator tool — belongs in docs/observability.md runbook"
+    },
+    {
+      "feature": "src/lib/logo-blob-key.ts",
+      "location": "src/lib/",
+      "lines": 24,
+      "classification": "architectural hygiene — covered by F4 FR-034"
+    },
+    {
+      "feature": "src/lib/content-disposition.ts",
+      "location": "src/lib/",
+      "lines": 80,
+      "classification": "architectural hygiene — covered by F4 FR-041"
+    }
+  ],
+  "conflicts": [],
+  "recommendations": [
+    "Fix one-line cross-reference comment in tests/e2e/members-reduced-motion.spec.ts (minor polish)",
+    "Close 3 F4 human-gated ship conditions before /speckit.ship (T114 + T117 + T118)",
+    "PVR-1 cross-browser re-run on mobile-safari + mobile-chrome",
+    "Post-ship: fold seed-f4-e2e-admin-fixtures.ts into tests/e2e/global-setup.ts (PVR-1 long-term fix, target-close 2026-05-06)",
+    "F9 planning must pick up FR-031 as an explicit story",
+    "Consider a global F<n>-FR-### namespace to avoid cross-spec tag collisions"
+  ]
+}

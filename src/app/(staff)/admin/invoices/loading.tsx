@@ -9,6 +9,7 @@
  */
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
+import { FilterBar } from '@/components/ui/filter-bar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -25,10 +26,10 @@ export default async function Loading() {
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* Filter bar skeleton — mirrors <InvoiceFilters /> */}
-          <div className="flex flex-wrap items-end gap-3" aria-hidden>
-            <Skeleton className="h-10 flex-1 min-w-[16rem]" />
-            <Skeleton className="h-10 w-[12rem]" />
-          </div>
+          <FilterBar aria-hidden>
+            <Skeleton className="h-9 min-w-0 sm:flex-1" />
+            <Skeleton className="h-9 sm:w-[12rem]" />
+          </FilterBar>
           {/* Table rows skeleton */}
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-full" />

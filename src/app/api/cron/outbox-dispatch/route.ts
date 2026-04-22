@@ -33,6 +33,7 @@
  * event emission (FR-012c parity for unrenderable rows).
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { and, count, eq, lt, lte, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 /* eslint-disable no-restricted-imports --
@@ -47,7 +48,7 @@ import {
 /* eslint-enable no-restricted-imports */
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { outboxMetrics } from '@/lib/metrics';
+import { outboxMetrics, invoicingMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 /* eslint-disable no-restricted-imports --
  * Cron dispatcher is operational infrastructure — the same escape
@@ -69,6 +70,13 @@ import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/v
 const RETRY_BACKOFF_SECONDS = [60, 300, 1_800, 10_800, 43_200] as const;
 const MAX_ATTEMPTS = 5;
 
+// R18-02 — accepted shape for `expected_pdf_sha256` in `context_data`.
+// Matches `Sha256Hex.parse` in the domain value object. A malformed
+// value (empty / non-hex / wrong length) drives the integrity check
+// into fail-safe permanent-fail instead of silently falling through
+// to unverified shipping.
+const RE_SHA256 = /^[0-9a-f]{64}$/;
+
 // Keeps the function within the Vercel 300s default timeout while giving
 // comfortable headroom above expected throughput (< 50 emails/day per tenant).
 const BATCH_SIZE = 50;
@@ -83,6 +91,17 @@ interface BuiltPayload {
   subject: string;
   html: string;
   text: string;
+  /**
+   * FR-036 — optional file attachments. Currently populated only for
+   * `invoice_voided` (VOID-stamped invoice PDF) so the member's
+   * bookkeeper has a filing-complete record that matches the original
+   * invoice on file.
+   */
+  attachments?: ReadonlyArray<{
+    readonly filename: string;
+    readonly content: Uint8Array;
+    readonly contentType: string;
+  }>;
 }
 
 /**
@@ -94,6 +113,7 @@ interface BuiltPayload {
  */
 async function buildPayload(
   row: NotificationsOutboxRow,
+  prefetchedBytes?: Uint8Array,
 ): Promise<BuiltPayload | null> {
   const locale: Locale = isLocale(row.locale) ? row.locale : 'en';
   const ctx = row.contextData as Record<string, unknown>;
@@ -135,28 +155,62 @@ async function buildPayload(
     }
     case 'invoice_auto_email': {
       // F4 auto-email row: context_data contains eventType +
-      // pdf_blob_key. Resolve the Blob URL (stable public URL per
-      // vercel-blob-adapter.ts — no TTL concerns) and build a
-      // link-based notification email. We do NOT attach the PDF
-      // bytes — the current EmailSender interface has no attachment
-      // slot and Vercel Blob URLs are stable.
+      // pdf_blob_key (+ document_number for invoice_voided). Resolve
+      // the Blob URL (stable public URL per vercel-blob-adapter.ts —
+      // no TTL concerns) for the download link. For `invoice_voided`
+      // specifically (FR-036) we ALSO fetch the PDF bytes and attach
+      // them so the bookkeeper receives a filing-complete
+      // cancellation record next to the original invoice they filed.
       const eventType = ctx.event_type as string | undefined;
       const pdfBlobKey = typeof ctx.pdf_blob_key === 'string' ? ctx.pdf_blob_key : '';
+      const documentNumber =
+        typeof ctx.document_number === 'string' ? ctx.document_number : undefined;
+      // B-1 / FR-036 — void reason for invoice_voided body copy.
+      const voidReason =
+        typeof ctx.void_reason === 'string' ? ctx.void_reason : undefined;
       if (!pdfBlobKey || !isInvoiceAutoEmailEventType(eventType)) return null;
+      // R-2 — external HTTP work (Blob head + fetch) happens BEFORE
+      // the FOR UPDATE SKIP LOCKED tx wraps this buildPayload call.
+      // The caller `dispatchOne` prefetches `prefetchedAttachmentBytes`
+      // for `invoice_voided` rows outside the tx; here we only resolve
+      // the download URL (`head` only) plus use the prefetched bytes
+      // if present. A failure to read the URL is still a transient
+      // signal — return null, the outbox retry ladder re-attempts.
       try {
-        const downloadUrl = await vercelBlobAdapter.signDownloadUrl(pdfBlobKey, 60);
-        return buildInvoiceAutoEmail({
+        const downloadUrl = await vercelBlobAdapter.signDownloadUrl(pdfBlobKey);
+        const payload = await buildInvoiceAutoEmail({
           toEmail: row.toEmail,
           eventType,
           downloadUrl,
           locale,
+          ...(documentNumber ? { documentNumber } : {}),
+          ...(voidReason ? { voidReason } : {}),
+          // PG-2 — copy adapts based on whether the bytes are actually
+          // shipped. `prefetchedBytes` is only populated when the
+          // FEATURE_F4_VOID_ATTACHMENT flag is on.
+          hasAttachment: eventType === 'invoice_voided' && !!prefetchedBytes,
         });
-      } catch {
-        // Blob lookup failed — treat as transient failure. Returning
-        // null lets the dispatcher's retry ladder re-attempt per
-        // RETRY_BACKOFF_SECONDS. If the blob has been garbage-
-        // collected the row will hit MAX_ATTEMPTS and flip to
-        // permanently_failed with an audit emit.
+        if (eventType === 'invoice_voided' && prefetchedBytes) {
+          const filenameBase = documentNumber ? documentNumber : 'invoice';
+          return {
+            ...payload,
+            attachments: [
+              {
+                filename: `${filenameBase}-VOID.pdf`,
+                content: prefetchedBytes,
+                contentType: 'application/pdf',
+              },
+            ],
+          };
+        }
+        return payload;
+      } catch (blobErr) {
+        // R-3 — log before returning null so ops can distinguish blob-
+        // fetch failures from other render-path nulls in Vercel logs.
+        logger.warn(
+          { outboxRowId: row.id, err: blobErr },
+          'cron.outbox_dispatch.invoice_voided.blob_url_lookup_failed',
+        );
         return null;
       }
     }
@@ -190,7 +244,114 @@ async function dispatchOne(
   rowId: string,
   requestId: string,
 ): Promise<DispatchOutcome> {
+  // R-2 — prefetch the `invoice_voided` PDF attachment bytes OUTSIDE
+  // the db.transaction() so the Blob head+fetch latency does not
+  // extend the FOR UPDATE SKIP LOCKED window (which also covers the
+  // Resend send). A lock-less peek determines whether prefetch is
+  // needed; the tx does its own re-select with the lock so a
+  // concurrent tick winning the race simply wastes the prefetch.
+  let prefetchedBytes: Uint8Array | undefined;
+  // R17-02 — when the void two-phase commit's Phase 2 (post-commit Blob
+  // overwrite) fails, the Blob still holds the ORIGINAL un-stamped
+  // invoice bytes but audit + outbox row reflect the NEW sha256. A
+  // naïve dispatcher would ship those un-stamped bytes as the
+  // "cancellation" attachment — a bookkeeper would receive what looks
+  // like a perfectly valid invoice attached to a cancellation notice.
+  // If `expected_pdf_sha256` is present in ctx, we hash the prefetched
+  // bytes and permanently-fail the row on mismatch instead of
+  // shipping. Mismatch is rare (Phase 2 retry path handles the common
+  // case) but the blast radius of shipping wrong bytes is high.
+  let integrityViolation: 'attachment_sha_mismatch' | null = null;
+  try {
+    const [peek] = await db
+      .select({
+        notificationType: notificationsOutbox.notificationType,
+        contextData: notificationsOutbox.contextData,
+      })
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, rowId))
+      .limit(1);
+    if (peek && peek.notificationType === 'invoice_auto_email') {
+      const ctx = peek.contextData as Record<string, unknown>;
+      const eventType = ctx.event_type;
+      const pdfBlobKey = typeof ctx.pdf_blob_key === 'string' ? ctx.pdf_blob_key : '';
+      // R18-02 — tightened validation: the raw value must be a
+      // 64-char lowercase-hex sha256 to count as "present". A stray
+      // empty string / malformed digest would otherwise pass the old
+      // typeof-string check and drive a misleading "mismatch" audit.
+      // Split detection so we can flag malformed vs mismatch distinctly
+      // while keeping the fail-safe outcome (both → permanent-fail).
+      const expectedShaRaw =
+        typeof ctx.expected_pdf_sha256 === 'string' ? ctx.expected_pdf_sha256 : null;
+      const expectedSha =
+        expectedShaRaw !== null && RE_SHA256.test(expectedShaRaw) ? expectedShaRaw : null;
+      const expectedShaMalformed = expectedShaRaw !== null && expectedSha === null;
+      // PG-2 gate — only prefetch bytes when attachment is enabled by
+      // DPA clearance. When the flag is OFF, the dispatcher ships a
+      // link-only email (FR-036 partial) and never transfers PDF
+      // bytes to Resend.
+      if (
+        eventType === 'invoice_voided' &&
+        pdfBlobKey &&
+        env.features.f4VoidAttachment
+      ) {
+        if (expectedShaMalformed) {
+          // R18-02 — present but malformed. Skip the prefetch entirely
+          // and route into the permanent-fail branch: shipping without
+          // verification would defeat the whole purpose of the check.
+          // Logged at warn (not error) to distinguish malformed-
+          // enqueue (bug upstream) from real content mismatch.
+          logger.warn(
+            {
+              outboxRowId: rowId,
+              expectedShaRawLength: expectedShaRaw?.length ?? 0,
+            },
+            'cron.outbox_dispatch.invoice_voided.expected_sha_malformed',
+          );
+          integrityViolation = 'attachment_sha_mismatch';
+        } else {
+          const bytes = await vercelBlobAdapter.downloadBytes(pdfBlobKey);
+          if (expectedSha) {
+            // Hex-encoded lower-case sha256 — matches Sha256Hex branded
+            // shape emitted by the render adapter.
+            const actualSha = createHash('sha256').update(bytes).digest('hex');
+            if (actualSha !== expectedSha) {
+              logger.error(
+                {
+                  outboxRowId: rowId,
+                  expectedSha,
+                  actualShaPrefix: actualSha.slice(0, 16),
+                },
+                'cron.outbox_dispatch.invoice_voided.attachment_sha_mismatch',
+              );
+              integrityViolation = 'attachment_sha_mismatch';
+            } else {
+              prefetchedBytes = bytes;
+            }
+          } else {
+            prefetchedBytes = bytes;
+          }
+        }
+      }
+    }
+  } catch (prefetchErr) {
+    // R-3 — prefetch failure is a transient signal; log and continue
+    // into the tx without bytes. `buildPayload` will return null and
+    // the row retries per the outbox backoff ladder.
+    logger.warn(
+      { outboxRowId: rowId, err: prefetchErr },
+      'cron.outbox_dispatch.invoice_voided.prefetch_bytes_failed',
+    );
+  }
+
   return db.transaction(async (tx) => {
+    // R18-04 — single `now` for every status-flip branch in this tx
+    // (previously the integrity-violation branch declared its own
+    // `integrityNow` because this declaration used to live later in
+    // the callback). Hoisted so all UPDATE `updated_at` + `next_retry_at`
+    // writes share a consistent wall-clock timestamp per tick.
+    const now = new Date();
+
     // Re-select inside the tx with the lock. If another tick holds
     // the lock OR the row is no longer pending, return 'skipped'.
     const [row] = await tx
@@ -207,8 +368,59 @@ async function dispatchOne(
 
     if (!row) return 'skipped';
 
-    const payload = await buildPayload(row);
-    const now = new Date();
+    // R17-02 — integrity violation detected during prefetch: do NOT
+    // ship a link-only fallback (the link points at the same Blob key
+    // whose bytes failed verification, so link-only would deliver the
+    // same wrong content). Permanently fail immediately with a
+    // distinct reason so ops can re-render via an admin action once
+    // the underlying Blob is healthy.
+    if (integrityViolation) {
+      const nextAttempt = row.attempts + 1;
+      await tx
+        .update(notificationsOutbox)
+        .set({
+          status: 'permanently_failed' as const,
+          attempts: nextAttempt,
+          lastError: integrityViolation,
+          updatedAt: now,
+        })
+        .where(eq(notificationsOutbox.id, row.id));
+      await tx.insert(auditLog).values({
+        eventType: 'email_dispatch_failed',
+        actorUserId: 'system:cron',
+        summary: `outbox row ${row.id} permanently failed (${integrityViolation})`,
+        requestId,
+        tenantId: row.tenantId,
+        payload: {
+          outbox_row_id: row.id,
+          notification_type: row.notificationType,
+          attempts: nextAttempt,
+          reason: integrityViolation,
+        },
+      });
+      if (row.notificationType === 'invoice_auto_email' && row.tenantId) {
+        await tx.insert(auditLog).values({
+          eventType: 'auto_email_delivery_failed',
+          actorUserId: 'system:cron',
+          summary: `F4 auto-email outbox row ${row.id} permanently failed (${integrityViolation})`,
+          requestId,
+          tenantId: row.tenantId,
+          payload: {
+            outbox_row_id: row.id,
+            notification_type: row.notificationType,
+            attempts: nextAttempt,
+            reason: integrityViolation,
+          },
+        });
+      }
+      outboxMetrics.permanentFailure(row.notificationType, integrityViolation);
+      if (row.notificationType === 'invoice_auto_email') {
+        invoicingMetrics.autoEmailBounce(integrityViolation);
+      }
+      return 'permanent';
+    }
+
+    const payload = await buildPayload(row, prefetchedBytes);
 
     if (!payload) {
       const nextAttempt = row.attempts + 1;
@@ -245,10 +457,34 @@ async function dispatchOne(
             reason: 'no_template_handler',
           },
         });
+        // T106 — dual-emit the F4-specific `auto_email_delivery_failed`
+        // event alongside the generic `email_dispatch_failed` when the
+        // failed row is an F4 invoice_auto_email. Lets F4 audit-coverage
+        // queries filter by a single event type without having to
+        // join on `payload->>'notification_type'`. Emitted inside the
+        // same tx so both audit rows + the status flip commit atomically.
+        if (row.notificationType === 'invoice_auto_email' && row.tenantId) {
+          await tx.insert(auditLog).values({
+            eventType: 'auto_email_delivery_failed',
+            actorUserId: 'system:cron',
+            summary: `F4 auto-email outbox row ${row.id} permanently failed (no_template_handler) after ${nextAttempt} attempts`,
+            requestId,
+            tenantId: row.tenantId,
+            payload: {
+              outbox_row_id: row.id,
+              notification_type: row.notificationType,
+              attempts: nextAttempt,
+              reason: 'no_template_handler',
+            },
+          });
+        }
         outboxMetrics.permanentFailure(
           row.notificationType,
           'no_template_handler',
         );
+        if (row.notificationType === 'invoice_auto_email') {
+          invoicingMetrics.autoEmailBounce('no_template_handler');
+        }
         return 'permanent';
       }
 
@@ -283,6 +519,11 @@ async function dispatchOne(
       subject: payload.subject,
       html: payload.html,
       text: payload.text,
+      // FR-036 — attach VOID-stamped PDF when the payload builder
+      // supplied attachments (today: invoice_voided only).
+      ...(payload.attachments && payload.attachments.length > 0
+        ? { attachments: payload.attachments }
+        : {}),
     });
 
     if (result.ok) {
@@ -291,7 +532,7 @@ async function dispatchOne(
         .set({
           status: 'sent',
           sentMessageId: result.value.messageId,
-          updatedAt: new Date(),
+          updatedAt: now,
         })
         .where(eq(notificationsOutbox.id, row.id));
       return 'sent';
@@ -308,7 +549,7 @@ async function dispatchOne(
           status: 'permanently_failed',
           attempts: nextAttempt,
           lastError: result.error.message,
-          updatedAt: new Date(),
+          updatedAt: now,
         })
         .where(eq(notificationsOutbox.id, row.id));
 
@@ -340,12 +581,47 @@ async function dispatchOne(
           last_error: result.error.message,
         },
       });
+      // T106 — dual-emit F4-specific `auto_email_delivery_failed` for
+      // invoice_auto_email rows (same rationale as the no_template_handler
+      // path above). Requires a non-null tenantId because the F4 audit
+      // type is tenant-scoped; F4 rows always carry one, but guard for
+      // defensive symmetry with the generic emit.
+      if (row.notificationType === 'invoice_auto_email' && row.tenantId) {
+        await tx.insert(auditLog).values({
+          eventType: 'auto_email_delivery_failed',
+          actorUserId: 'system:cron',
+          summary: `F4 auto-email outbox row ${row.id} permanently failed after ${nextAttempt} attempts`,
+          requestId,
+          tenantId: row.tenantId,
+          payload: {
+            outbox_row_id: row.id,
+            notification_type: row.notificationType,
+            attempts: nextAttempt,
+            last_error: result.error.message,
+            reason:
+              result.error.code === 'invalid-recipient'
+                ? 'invalid_recipient'
+                : 'max_retries',
+          },
+        });
+      }
       outboxMetrics.permanentFailure(
         row.notificationType,
         result.error.code === 'invalid-recipient'
           ? 'invalid_recipient'
           : 'max_retries',
       );
+      // T113 — F4 auto-email bounce counter. Fires alongside the
+      // generic outbox counter above so F4 observability dashboards
+      // can alert on bounce rate without grep'ing a notification_type
+      // label off the generic counter.
+      if (row.notificationType === 'invoice_auto_email') {
+        invoicingMetrics.autoEmailBounce(
+          result.error.code === 'invalid-recipient'
+            ? 'invalid_recipient'
+            : 'max_retries',
+        );
+      }
       return 'permanent';
     }
 
@@ -361,7 +637,7 @@ async function dispatchOne(
         attempts: nextAttempt,
         nextRetryAt,
         lastError: result.error.message,
-        updatedAt: new Date(),
+        updatedAt: now,
       })
       .where(eq(notificationsOutbox.id, row.id));
 
@@ -393,7 +669,38 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // prod), the comparison to `Bearer undefined` still triggers 401
   // for any caller — no dev fallback, no unauthenticated drain.
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // T-F4-01 — constant-time comparison to defeat timing side-channel
+  // on `CRON_SECRET` enumeration. Length-check first (timingSafeEqual
+  // throws on length mismatch), then constant-time byte-compare. Null
+  // / missing header is treated as a length-mismatch → unauthorized.
+  //
+  // R15-04 — explicit misconfiguration guard replaces the old `?? ''`
+  // fallback. `src/lib/env.ts` validates `CRON_SECRET` as
+  // `z.string().min(16)` at boot, so the app refuses to start on miss.
+  // If the env var were ever hot-unset in a live process (unit tests
+  // rotate via `process.env.CRON_SECRET = 'new'`), fail loud with a 500
+  // instead of silently comparing against `Bearer ` (7 chars).
+  const secret = process.env.CRON_SECRET;
+  if (!secret || secret.length < 16) {
+    logger.error(
+      { requestId },
+      'cron.outbox_dispatch.secret_misconfigured',
+    );
+    return NextResponse.json(
+      { error: 'server_misconfiguration' },
+      { status: 500 },
+    );
+  }
+  const expectedAuth = `Bearer ${secret}`;
+  const received = authHeader ?? '';
+  let authOk = false;
+  if (received.length === expectedAuth.length) {
+    authOk = timingSafeEqual(
+      Buffer.from(received, 'utf8'),
+      Buffer.from(expectedAuth, 'utf8'),
+    );
+  }
+  if (!authOk) {
     logger.warn({ requestId }, 'cron.outbox_dispatch.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }

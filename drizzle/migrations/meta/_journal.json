@@ -211,6 +211,20 @@
       "when": 1776895200000,
       "tag": "0029_drop_tenant_fee_config",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1776628800000,
+      "tag": "0030_audit_invoice_pdf_regenerated",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1776988800000,
+      "tag": "0031_audit_tenant_invoice_settings_cross_tenant_probe",
+      "breakpoints": true
     }
   ]
 }

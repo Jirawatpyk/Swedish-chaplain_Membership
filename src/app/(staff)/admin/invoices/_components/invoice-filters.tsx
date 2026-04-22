@@ -15,6 +15,7 @@ import { useTranslations } from 'next-intl';
 import { SearchIcon, XIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { FilterBar } from '@/components/ui/filter-bar';
 import {
   Select,
   SelectContent,
@@ -74,11 +75,12 @@ export function InvoiceFilters() {
   const hasAnyFilter = currentQ !== '' || currentStatus !== 'all';
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <FilterBar>
       {/* L5: was min-w-[16rem]=256px — overflowed 320px mobile viewports
-          after padding + sibling Status dropdown. 10rem=160px leaves
-          room for the dropdown alongside on narrow screens. */}
-      <div className="relative flex-1 min-w-[10rem]">
+          after padding + sibling Status dropdown. On mobile (<640px) the
+          search input owns the full row (FilterBar rule); on sm+ it
+          flex-grows alongside the status dropdown. */}
+      <div className="relative min-w-0 sm:flex-1">
         <SearchIcon
           aria-hidden="true"
           className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -99,7 +101,7 @@ export function InvoiceFilters() {
         }
       >
         <SelectTrigger
-          className="w-[12rem]"
+          className="sm:w-[12rem]"
           aria-label={t('columns.status')}
         >
           <TranslatedSelectValue
@@ -130,6 +132,6 @@ export function InvoiceFilters() {
           {t('filters.clearAll')}
         </Button>
       )}
-    </div>
+    </FilterBar>
   );
 }

@@ -121,6 +121,20 @@ hooks:
     prompt: Commit task changes?
     description: Auto-commit after task generation
     condition: null
+  - extension: diagram
+    command: speckit.diagram.dependencies
+    enabled: true
+    optional: true
+    prompt: Generate task dependency diagram after task breakdown?
+    description: Auto-generate dependency DAG after tasks are created
+    condition: null
+  - extension: agent-assign
+    command: speckit.agent-assign.assign
+    enabled: true
+    optional: true
+    prompt: Assign agents to the generated tasks?
+    description: Automatically assign specialized agents to tasks after generation
+    condition: null
   after_implement:
   - extension: git
     command: speckit.git.commit
@@ -174,6 +188,13 @@ hooks:
     prompt: Run staff-level code review?
     description: Reviews implementation changes against spec for correctness, security,
       and quality
+    condition: null
+  - extension: sync
+    command: speckit.sync.analyze
+    enabled: true
+    optional: true
+    prompt: Check for spec drift after implementation?
+    description: ''
     condition: null
   after_checklist:
   - extension: git

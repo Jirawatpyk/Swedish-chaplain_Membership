@@ -616,6 +616,58 @@
         "payload": {
           "primary": "primär",
           "primaryContactPromoted": "primär kontakt befordrad"
+        },
+        "invoiceDraftCreated": "Fakturautkast skapat",
+        "invoiceIssued": "Faktura {documentNumber} utställd",
+        "invoicePaid": "Faktura betald via {paymentMethod}",
+        "invoiceVoided": "Faktura makulerad — {reason}",
+        "creditNoteIssued": "Kreditnota {documentNumber} utställd — {creditAmount} THB",
+        "invoicePdfResent": "PDF för faktura {documentNumber} skickad på nytt"
+      },
+      "invoices": {
+        "title": "Fakturor",
+        "count": "{count, plural, =0 {inga fakturor} one {# faktura} other {# fakturor}}",
+        "empty": "Inga fakturor för denna medlem än.",
+        "emptyFiltered": "Inga fakturor matchar de aktuella filtren.",
+        "emptyCta": "Skapa första fakturan",
+        "newInvoice": "Ny faktura",
+        "filters": {
+          "statusAria": "Filtrera fakturor efter status",
+          "yearAria": "Filtrera fakturor efter räkenskapsår",
+          "search": "Sök dokumentnummer…",
+          "fiscalYear": "År",
+          "status": { "all": "Alla statusar" },
+          "year": { "all": "Alla år" },
+          "apply": "Tillämpa",
+          "clear": "Rensa filter"
+        },
+        "draftPlaceholder": "(utkast)",
+        "cols": {
+          "number": "Nummer",
+          "status": "Status",
+          "issued": "Utställd",
+          "due": "Förfallodag",
+          "paid": "Betald",
+          "paidEmpty": "Ej betald ännu",
+          "total": "Totalt",
+          "remaining": "Återstår",
+          "actions": "Åtgärder"
+        },
+        "statuses": {
+          "draft": "Utkast",
+          "issued": "Utställd",
+          "paid": "Betald",
+          "void": "Makulerad",
+          "credited": "Krediterad",
+          "partially_credited": "Delvis krediterad"
+        },
+        "actions": {
+          "view": "Visa",
+          "recordPayment": "Bokför betalning",
+          "issueCreditNote": "Utfärda kreditnota",
+          "void": "Annullera",
+          "voidAriaLabel": "Annullera faktura {number}",
+          "disabledForManager": "Chefer har läsbehörighet. Kontakta en administratör."
         }
       },
       "create": {
@@ -881,6 +933,100 @@
         "updated": "Fakturainställningar uppdaterade."
       }
     },
+    "creditNotes": {
+      "new": {
+        "title": "Utfärda kreditnota",
+        "description": "Utfärda en formell kreditnota (ใบลดหนี้) mot denna betalda faktura. Ett nytt sekventiellt skattedokumentnummer tilldelas och originalfakturan övergår till krediterad eller delvis krediterad.",
+        "backToInvoice": "Tillbaka till fakturan",
+        "againstInvoice": "Mot faktura",
+        "remainingLabel": "Återstående krediterbart belopp:",
+        "amountLabel": "Kreditbelopp (inkl. moms)",
+        "amountHelp": "Ange bruttobeloppet att kreditera, inkl. moms. Moms fördelas proportionellt mot originalfakturan.",
+        "exceedsRemainder": "Beloppet överstiger återstoden ({remaining}).",
+        "reasonLabel": "Orsak",
+        "reasonHelp": "Visas på kreditnotans PDF och i revisionsspåret. Obligatoriskt, upp till 500 tecken.",
+        "confirmPhrase": "CREDIT",
+        "confirmCopy": "Skriv {phrase} för att bekräfta denna oåterkalleliga åtgärd.",
+        "confirmMismatch": "Frasen måste vara {phrase}.",
+        "submit": "Utfärda kreditnota",
+        "submitting": "Utfärdar…",
+        "cancel": "Avbryt",
+        "success": "Kreditnota utfärdad.",
+        "errors": {
+          "failed": "Kreditnotan kunde inte utfärdas.",
+          "unknown": "Ett okänt fel uppstod. Försök igen.",
+          "codeFallback": "Felkod: {code}"
+        }
+      },
+      "list": {
+        "meta": { "title": "Kreditnotor" },
+        "title": "Kreditnotor",
+        "description": "Alla kreditnotor utfärdade mot skattefakturor. Skrivskyddad granskningslogg.",
+        "empty": "Kreditnotor visas här efter att en administratör utfärdat en mot en betald faktura.",
+        "filteredEmpty": "Inga kreditnotor matchar de aktuella filtren.",
+        "columns": {
+          "documentNumber": "Nummer",
+          "issueDate": "Utfärdad",
+          "originalInvoice": "Ursprungsfaktura",
+          "member": "Medlem",
+          "reason": "Orsak",
+          "total": "Totalt",
+          "actions": "Åtgärder"
+        },
+        "filters": {
+          "search": "Sök dokumentnummer",
+          "fiscalYear": "Räkenskapsår",
+          "apply": "Tillämpa",
+          "clear": "Rensa"
+        },
+        "actions": {
+          "view": "Visa",
+          "viewAria": "Visa kreditnota {number}",
+          "pdf": "PDF",
+          "pdfAria": "Ladda ner PDF för kreditnota {number}",
+          "clearFilters": "Rensa filter"
+        }
+      },
+      "detail": {
+        "meta": { "title": "Kreditnota" },
+        "subtitle": "Skrivskyddad kreditnotaregistrering mot den ursprungliga fakturan.",
+        "status": { "issued": "Utfärdad" },
+        "actions": {
+          "backToInvoice": "Tillbaka till faktura",
+          "download": "Ladda ner PDF",
+          "resend": "Skicka kreditnota-mejl igen",
+          "resendAria": "Mejla en ny kopia av kreditnota {number} till medlemmens primära kontakt",
+          "moreAria": "Fler åtgärder för {number}"
+        },
+        "toast": {
+          "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
+          "resendRateLimited": "Denna kreditnota skickades nyligen igen. Vänta några minuter och försök igen.",
+          "resendFailed": "Kunde inte köa en återsändning. Försök igen."
+        },
+        "fields": {
+          "issueDate": "Utfärdandedatum",
+          "issuedBy": "Utfärdad av",
+          "originalInvoice": "Ursprunglig faktura",
+          "originalInvoiceLinkLabel": "Öppna faktura",
+          "creditAmount": "Kreditbelopp (exkl. moms)",
+          "vat": "Moms",
+          "total": "Totalt krediterat (inkl. moms)"
+        },
+        "reason": { "heading": "Anledning" },
+        "parties": {
+          "issuer": "Utfärdare",
+          "customer": "Kund",
+          "legalName": "Juridiskt namn",
+          "taxId": "Skatt-ID",
+          "address": "Adress",
+          "contactEmail": "Kontaktepost"
+        },
+        "siblings": {
+          "heading": "Andra kreditnotor på denna faktura",
+          "viewLabel": "Gå till kreditnota {number}"
+        }
+      }
+    },
     "invoices": {
       "meta": {
         "title": "Fakturor"
@@ -921,7 +1067,10 @@
         "filters": {
           "allStatuses": "Alla status",
           "clearAll": "Rensa filter"
-        }
+        },
+        "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
+        "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
+        "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat"
       },
       "new": {
         "title": "Nytt fakturautkast",
@@ -963,7 +1112,22 @@
           "preview": "Förhandsgranska",
           "issue": "Utfärda…",
           "download": "Ladda ner PDF",
-          "pay": "Registrera betalning"
+          "pay": "Registrera betalning",
+          "void": "Annullera…",
+          "issueCreditNote": "Utfärda kreditnota",
+          "resendInvoice": "Skicka faktura-mejl igen",
+          "resendReceipt": "Skicka kvitto-mejl igen",
+          "resendInvoiceAria": "Mejla en ny kopia av faktura {number} till medlemmens primära kontakt",
+          "resendReceiptAria": "Mejla en ny kopia av kvitto {number} till medlemmens primära kontakt",
+          "more": "Fler",
+          "moreAria": "Fler åtgärder för {number}"
+        },
+        "toast": {
+          "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
+          "resendRateLimited": "Dokumentet skickades nyligen igen. Vänta några minuter och försök igen.",
+          "resendNoReceipt": "Det finns inget kvitto att skicka (kombinerat läge eller obetald).",
+          "resendNotIssued": "Fakturan är fortfarande ett utkast — utfärda den först för att mejla en kopia.",
+          "resendFailed": "Kunde inte köa en återsändning. Försök igen."
         },
         "fields": {
           "memberId": "Medlem",
@@ -1002,7 +1166,24 @@
           "voidedAt": "Annullerad",
           "voidedBy": "Annullerad av",
           "reason": "Orsak",
-          "creditNoteHint": "För att legalt återställa denna faktura, utfärda en kreditnota (tillgänglig i F4 US6)."
+          "creditNoteHint": "Denna faktura är permanent annullerad. Dess sekventiella skattedokumentnummer är pensionerat och kommer inte att återanvändas. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs."
+        },
+        "creditNotesSection": {
+          "title": "Kreditnotor ({count})",
+          "totalCredited": "Totalt krediterat:",
+          "col": {
+            "number": "Nummer",
+            "issueDate": "Utfärdad",
+            "reason": "Orsak",
+            "total": "Totalt",
+            "actions": "Åtgärder"
+          },
+          "action": {
+            "pdf": "PDF",
+            "pdfAria": "Ladda ner kreditnota {number} som PDF",
+            "view": "Visa",
+            "viewAria": "Visa kreditnota {number}"
+          }
         }
       },
       "issue": {
@@ -1023,6 +1204,20 @@
         },
         "draftLabel": "Utkast",
         "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta."
+      },
+      "deleteDraft": {
+        "trigger": "Ta bort utkast",
+        "title": "Ta bort detta utkast?",
+        "description": "Utkastfakturan och dess rader tas bort permanent. Inget sekventiellt skattedokumentnummer har tilldelats än, så inget nummer återkallas. Åtgärden loggas i audit.",
+        "cancel": "Avbryt",
+        "deleteButton": "Ta bort utkast",
+        "deleting": "Tar bort…",
+        "success": "Utkast borttaget",
+        "errors": {
+          "failed": "Kunde inte ta bort utkast",
+          "codeFallback": "Felkod: {code}",
+          "unknown": "Ett okänt fel inträffade. Försök igen."
+        }
       },
       "pay": {
         "title": "Registrera betalning",
@@ -1053,6 +1248,26 @@
           "other": "Övrigt"
         },
         "draftLabel": "Utkast"
+      },
+      "void": {
+        "title": "Annullera faktura",
+        "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen.",
+        "voiding": "Annullerar faktura",
+        "terminalNotice": "Annullering är slutgiltig. När fakturan är annullerad är inga fler åtgärder (betala, kreditera, redigera) tillåtna. För att återföra en BETALD faktura, använd kreditnota-flödet i stället.",
+        "reasonLabel": "Orsak",
+        "reasonHelp": "Visas på den annullerade PDF:en och i granskningsloggen. Obligatorisk, upp till 500 tecken.",
+        "confirmCopy": "Skriv fakturanumret {phrase} för att bekräfta denna oåterkalleliga åtgärd.",
+        "confirmMismatch": "Frasen måste vara {phrase}.",
+        "backToInvoice": "Tillbaka till faktura",
+        "submit": "Annullera faktura",
+        "submitting": "Annullerar…",
+        "cancel": "Avbryt",
+        "success": "Fakturan annullerad.",
+        "errors": {
+          "failed": "Fakturan kunde inte annulleras.",
+          "unknown": "Ett okänt fel inträffade. Försök igen.",
+          "codeFallback": "Felkod: {code}"
+        }
       }
     }
   },
@@ -1080,7 +1295,8 @@
       "usersList": "Användarlista",
       "dashboard": "Instrumentpanel",
       "membersList": "Medlemslista",
-      "invoicesList": "Fakturalista"
+      "invoicesList": "Fakturalista",
+      "creditNotesList": "Kreditnotalista"
     }
   },
   "nav": {
@@ -1122,7 +1338,14 @@
     "members": "Medlemmar",
     "memberDetail": "Detaljer",
     "newMember": "Ny medlem",
-    "editMember": "Redigera"
+    "editMember": "Redigera",
+    "invoices": "Fakturor",
+    "invoiceDetail": "Detaljer",
+    "newInvoice": "Ny faktura",
+    "credit-notes": "Kreditnotor",
+    "newCreditNote": "Ny kreditnota",
+    "void": "Annullera",
+    "pay": "Registrera betalning"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",
@@ -1148,7 +1371,81 @@
         "actions": "Åtgärder"
       },
       "actions": {
-        "download": "PDF"
+        "download": "PDF",
+        "viewDetail": "Visa faktura",
+        "emailCopy": "Mejla mig en kopia",
+        "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"
+      },
+      "filters": {
+        "noMatch": "Inga fakturor matchar dina filter."
+      },
+      "toast": {
+        "resendSuccess": "Köad — du får en ny kopia inom kort.",
+        "resendRateLimited": "Du bad om en kopia nyligen. Vänta några minuter och försök igen.",
+        "resendFailed": "Kunde inte köa en ny kopia. Försök igen."
+      },
+      "summary": {
+        "heading": "Senaste fakturor",
+        "description": "Dina tre senaste fakturor — ladda ner PDF eller visa alla.",
+        "viewAll": "Visa alla",
+        "contactAdmin": "Kontakta din handelskammaradmin"
+      },
+      "detail": {
+        "title": "Faktura",
+        "subtitle": "Skrivskyddad vy — ladda ner PDF för det officiella skattedokumentet.",
+        "linesHeading": "Rader",
+        "backToList": "Tillbaka till fakturor",
+        "fields": {
+          "issueDate": "Utfärdad",
+          "dueDate": "Förfaller",
+          "paidDate": "Betald",
+          "planYear": "Planår"
+        },
+        "lines": {
+          "description": "Beskrivning",
+          "quantity": "Antal",
+          "unitPrice": "Pris per enhet",
+          "lineTotal": "Summa"
+        },
+        "totals": {
+          "subtotal": "Delsumma",
+          "vat": "Moms",
+          "total": "Totalt"
+        },
+        "creditNotes": {
+          "heading": "Kreditnotor",
+          "description": "En kreditnota har utfärdats mot denna faktura. Fakturans totalbelopp förblir detsamma (skattedokument kan inte ändras); kreditnotan nedan registrerar det krediterade beloppet separat.",
+          "view": "Visa",
+          "viewAria": "Visa kreditnota {number}"
+        },
+        "void": {
+          "title": "Fakturan är annullerad",
+          "voidedAt": "Annullerad den",
+          "reasonLabel": "Anledning",
+          "notPayable": "Denna faktura ska inte längre betalas. Du behöver inte göra något.",
+          "downloadVoidedPdf": "Ladda ner annullerad faktura (VOID-stämplad)"
+        }
+      }
+    },
+    "creditNotes": {
+      "detail": {
+        "meta": { "title": "Kreditnota" },
+        "subtitle": "En kreditnota har utfärdats mot din faktura.",
+        "status": { "issued": "Utfärdad" },
+        "actions": {
+          "backToInvoice": "Tillbaka till faktura",
+          "download": "Ladda ner PDF",
+          "downloadAria": "Ladda ner PDF för kreditnota {number}"
+        },
+        "fields": {
+          "issueDate": "Utfärdandedatum",
+          "originalInvoice": "Ursprunglig faktura",
+          "originalInvoiceLinkLabel": "Öppna faktura",
+          "creditAmount": "Kreditbelopp (exkl. moms)",
+          "vat": "Moms",
+          "total": "Totalt kredit (inkl. moms)"
+        },
+        "reason": { "heading": "Anledning" }
       }
     },
     "profile": {

@@ -1,0 +1,105 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=mobile-safari" "--grep" "AS1 — admin changes VAT" "tests/e2e/invoice-settings.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 1 test using 1 worker
+
+[AS1] PATCH status=200 hdrs.x-tenant=test-e2e-86c817f1 body={"ok":true}
+  ✘  1 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (9.2s)
+[AS1] PATCH status=200 hdrs.x-tenant=test-e2e-55f7935d body={"ok":true}
+  ✘  2 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #1) (9.2s)
+[AS1] PATCH status=200 hdrs.x-tenant=test-e2e-99ff7e2d body={"ok":true}
+  ✘  3 [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (retry #2) (9.0s)
+
+
+  1) [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.[7m1[27m000"[39m
+    Received: [31m"0.0[7m7[27m00"[39m
+
+      143 |         }, throwawaySlug);
+      144 |         expect(getResp.status).toBe(200);
+    > 145 |         expect(getResp.body?.settings?.vat_rate).toBe('0.1000');
+          |                                                  ^
+      146 |       } finally {
+      147 |         await tenant.cleanup().catch(() => {});
+      148 |       }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:145:50
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.[7m1[27m000"[39m
+    Received: [31m"0.0[7m7[27m00"[39m
+
+      143 |         }, throwawaySlug);
+      144 |         expect(getResp.status).toBe(200);
+    > 145 |         expect(getResp.body?.settings?.vat_rate).toBe('0.1000');
+          |                                                  ^
+      146 |       } finally {
+      147 |         await tenant.cleanup().catch(() => {});
+      148 |       }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:145:50
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.[7m1[27m000"[39m
+    Received: [31m"0.0[7m7[27m00"[39m
+
+      143 |         }, throwawaySlug);
+      144 |         expect(getResp.status).toBe(200);
+    > 145 |         expect(getResp.body?.settings?.vat_rate).toBe('0.1000');
+          |                                                  ^
+      146 |       } finally {
+      147 |         await tenant.cleanup().catch(() => {});
+      148 |       }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:145:50
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-a09be-s-VAT-7→10-on-settings-form-mobile-safari-retry2\error-context.md
+
+  1 failed
+    [mobile-safari] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form 
+ ELIFECYCLE  Command failed with exit code 1.

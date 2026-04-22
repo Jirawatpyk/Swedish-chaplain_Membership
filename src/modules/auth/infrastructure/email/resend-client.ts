@@ -21,17 +21,29 @@ const resend = new Resend(env.resend.apiKey);
  * Default sender address. Resolution order:
  *   1. `RESEND_FROM_EMAIL` env var (set in Vercel + .env.local once
  *      the target domain has been verified in the Resend dashboard).
- *   2. Hardcoded `SweCham <noreply@swecham.se>` fallback — kept for
- *      backwards compatibility with documentation and tests. If the
- *      fallback is used in a real environment where `swecham.se` is
- *      NOT a verified Resend domain, Resend will reject the send
- *      with HTTP 403 "This API key is not authorized to send emails
- *      from swecham.se", which the retry loop logs and the
- *      Application layer tolerates (invitations are still created;
- *      the admin can resend from the UI once the env var is set).
+ *   2. Hardcoded `SweCham <noreply@zyncdata.app>` fallback — the
+ *      verified Resend domain for current deployments. If the fallback
+ *      is used in an environment where `zyncdata.app` is NOT verified
+ *      in Resend, Resend will reject the send with HTTP 403 "This API
+ *      key is not authorized to send emails from zyncdata.app", which
+ *      the retry loop logs and the Application layer tolerates
+ *      (invitations are still created; the admin can resend from the
+ *      UI once the env var is set).
  */
-const FALLBACK_FROM = 'SweCham <noreply@swecham.se>';
+const FALLBACK_FROM = 'SweCham <noreply@zyncdata.app>';
 const DEFAULT_FROM = env.resend.fromEmail ?? FALLBACK_FROM;
+
+/**
+ * F4 FR-036 — file attachment for cancellation emails (VOID-stamped
+ * invoice PDF). `content` is raw bytes; the sender encodes for
+ * Resend's `attachments[]` API. Callers who only need a download link
+ * should continue to build link-based HTML bodies and omit this field.
+ */
+export interface EmailAttachment {
+  readonly filename: string;
+  readonly content: Uint8Array;
+  readonly contentType: string;
+}
 
 export interface EmailMessage {
   readonly to: string;
@@ -39,6 +51,8 @@ export interface EmailMessage {
   readonly /** Pre-rendered HTML body (use @react-email to build). */ html: string;
   readonly /** Plain-text fallback for clients that prefer it. */ text?: string;
   readonly from?: string;
+  /** FR-036 — optional file attachments (currently only invoice_voided uses this). */
+  readonly attachments?: readonly EmailAttachment[];
 }
 
 export type EmailError =
@@ -72,6 +86,19 @@ class ResendEmailSender implements EmailSender {
           subject: message.subject,
           html: message.html,
           ...(message.text ? { text: message.text } : {}),
+          // FR-036 — Resend accepts `attachments[]` with either
+          // base64-string `content` or a URL. We pass raw bytes via
+          // Buffer so the sender does not need to know the storage
+          // layer.
+          ...(message.attachments && message.attachments.length > 0
+            ? {
+                attachments: message.attachments.map((a) => ({
+                  filename: a.filename,
+                  content: Buffer.from(a.content),
+                  contentType: a.contentType,
+                })),
+              }
+            : {}),
         });
 
         if (response.error) {

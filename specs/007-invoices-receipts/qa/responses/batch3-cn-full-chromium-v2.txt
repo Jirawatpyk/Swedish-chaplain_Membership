@@ -1,0 +1,14 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=chromium" "tests/e2e/credit-note-full.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 4 tests using 1 worker
+
+  ✓  1 [chromium] › tests\e2e\credit-note-full.spec.ts:67:7 › @us6 credit-note full-credit flow › AS0 — admin sees "Issue credit note" link on a paid invoice (11.1s)
+  ✓  2 [chromium] › tests\e2e\credit-note-full.spec.ts:74:7 › @us6 credit-note full-credit flow › AS0b — credit-note form loads with amount/reason/CREDIT confirmation (8.9s)
+  ✓  3 [chromium] › tests\e2e\credit-note-full.spec.ts:94:7 › @us6 credit-note full-credit flow › AS0c — Submit stays disabled until CREDIT phrase is typed (FR-040 gate) (9.8s)
+  ✓  4 [chromium] › tests\e2e\credit-note-full.spec.ts:151:7 › @us6 credit-note full-credit flow › AS1 — full credit note flips invoice badge to Credited (14.1s)
+
+  4 passed (47.9s)

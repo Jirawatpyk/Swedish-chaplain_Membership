@@ -64,6 +64,9 @@ describe('getInvoice', () => {
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => 'issued' as const),
+      applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
+      applyVoid: vi.fn(),
       },
     };
     const r = await getInvoice(deps, { tenantId: 't', invoiceId: 'i' });
@@ -85,10 +88,105 @@ describe('getInvoice', () => {
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
       lockForUpdate: vi.fn(async () => 'issued' as const),
+      applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
+      applyVoid: vi.fn(),
       },
     };
     const r = await getInvoice(deps, { tenantId: 't', invoiceId: 'missing' });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('not_found');
+  });
+
+  // T069 polish — same-tenant member-mismatch branch added when the
+  // portal detail page started routing through `getInvoice` instead
+  // of duplicating the ownership check at the page layer.
+  it('returns forbidden + emits probe when member actor != invoice memberId', async () => {
+    const invoice = makeStub(); // memberId = 'm'
+    const auditEmit: (a: unknown, b: unknown) => Promise<void> = vi.fn(
+      async () => {},
+    );
+    const deps = {
+      invoiceRepo: {
+        withTx: vi.fn(),
+        insertDraft: vi.fn(),
+        findByIdInTx: vi.fn(),
+        findById: vi.fn(async () => invoice),
+        list: vi.fn(),
+        listPaged: vi.fn(),
+        applyIssue: vi.fn(),
+        deleteDraft: vi.fn(),
+        applyPayment: vi.fn(),
+        applyDraftUpdate: vi.fn(),
+        lockForUpdate: vi.fn(async () => 'issued' as const),
+      applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
+      applyVoid: vi.fn(),
+      },
+      audit: { emit: auditEmit },
+    };
+    const r = await getInvoice(deps, {
+      tenantId: 't',
+      invoiceId: 'i',
+      actor: {
+        userId: 'u-actor',
+        role: 'member',
+        requestId: 'req-1',
+        memberId: 'OTHER-MEMBER',
+      },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('forbidden');
+    expect(auditEmit).toHaveBeenCalledTimes(1);
+    const mockedEmit = auditEmit as unknown as { mock: { calls: unknown[][] } };
+    const event = mockedEmit.mock.calls[0]![1] as {
+      eventType: string;
+      payload: Record<string, unknown>;
+    };
+    expect(event.eventType).toBe('invoice_cross_tenant_probe');
+    expect(event.payload).toMatchObject({
+      attempted_invoice_id: 'i',
+      actor_role: 'member',
+      actor_member_id: 'OTHER-MEMBER',
+      invoice_member_id: 'm',
+    });
+  });
+
+  it('member with matching memberId still receives the invoice', async () => {
+    const invoice = makeStub(); // memberId = 'm'
+    const auditEmit: (a: unknown, b: unknown) => Promise<void> = vi.fn(
+      async () => {},
+    );
+    const deps = {
+      invoiceRepo: {
+        withTx: vi.fn(),
+        insertDraft: vi.fn(),
+        findByIdInTx: vi.fn(),
+        findById: vi.fn(async () => invoice),
+        list: vi.fn(),
+        listPaged: vi.fn(),
+        applyIssue: vi.fn(),
+        deleteDraft: vi.fn(),
+        applyPayment: vi.fn(),
+        applyDraftUpdate: vi.fn(),
+        lockForUpdate: vi.fn(async () => 'issued' as const),
+      applyCreditNoteRollup: vi.fn(),
+      applyInvoicePdfRegeneration: vi.fn(),
+      applyVoid: vi.fn(),
+      },
+      audit: { emit: auditEmit },
+    };
+    const r = await getInvoice(deps, {
+      tenantId: 't',
+      invoiceId: 'i',
+      actor: {
+        userId: 'u-actor',
+        role: 'member',
+        requestId: null,
+        memberId: 'm',
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(auditEmit).not.toHaveBeenCalled();
   });
 });

@@ -18,6 +18,7 @@ import {
   TranslatedSelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { Loader2Icon } from 'lucide-react';
 
 const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
 
@@ -163,7 +164,10 @@ export function PaymentForm({
         />
       </div>
       <div className="flex justify-end">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending} aria-busy={pending}>
+          {pending && (
+            <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+          )}
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>

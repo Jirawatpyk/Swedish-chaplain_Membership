@@ -13,43 +13,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import pino from 'pino';
-
-const REDACT_PATHS = [
-  'password',
-  '*.password',
-  'newPassword',
-  '*.newPassword',
-  'currentPassword',
-  '*.currentPassword',
-  'passwordHash',
-  '*.passwordHash',
-  'token',
-  '*.token',
-  'sessionToken',
-  '*.sessionToken',
-  'resetToken',
-  '*.resetToken',
-  'invitationToken',
-  '*.invitationToken',
-  'secret',
-  '*.secret',
-  'authorization',
-  '*.authorization',
-  'Authorization',
-  '*.Authorization',
-  'cookie',
-  '*.cookie',
-  'Cookie',
-  '*.Cookie',
-  'sessionId',
-  '*.sessionId',
-  'session_id',
-  '*.session_id',
-  'AUTH_COOKIE_SIGNING_SECRET',
-  'RESEND_API_KEY',
-  'KV_REST_API_TOKEN',
-  'UPSTASH_REDIS_REST_TOKEN',
-];
+// R3 — import the canonical REDACT_PATHS from the production logger.
+// Previously a copy-paste sat here and had drifted to omit 22 paths;
+// the mechanical import closes the drift forever.
+import { REDACT_PATHS } from '@/lib/logger';
 
 const SENTINEL = 'SUPER_SECRET_SENTINEL_VALUE_DO_NOT_LEAK';
 
@@ -86,11 +53,16 @@ describe('logger redaction (T158, T-14)', () => {
 
   it('redacts nested password field (one level deep)', () => {
     const { logger, output } = makeCapturingLogger();
-    logger.info({ user: { password: SENTINEL, email: 'visible@test' } }, 'test');
+    // R3 — pair the redacted `password` with a truly-non-sensitive
+    // sibling (`userId`). The previous sibling was `email`, but `email`
+    // is PDPA-classified and *.email is in REDACT_PATHS; the old
+    // assertion passed only because the test file carried a stale
+    // copy of REDACT_PATHS that omitted PII fields.
+    logger.info({ user: { password: SENTINEL, userId: 'visible-123' } }, 'test');
 
     const line = output.join('');
     expect(line).not.toContain(SENTINEL);
-    expect(line).toContain('visible@test'); // non-secret fields stay
+    expect(line).toContain('visible-123'); // non-secret fields stay
   });
 
   it('redacts newPassword / currentPassword / passwordHash', () => {
@@ -182,9 +154,13 @@ describe('logger redaction (T158, T-14)', () => {
 
   it('does NOT redact non-sensitive fields next to sensitive ones', () => {
     const { logger, output } = makeCapturingLogger();
+    // R3 — `email` is PDPA-classified and *IS* in REDACT_PATHS; the
+    // non-sensitive sibling must genuinely be outside the redact list.
+    // `requestId` + `outcome` are both operational-metadata fields
+    // that stay visible by design.
     logger.info(
       {
-        email: 'keep-visible@test',
+        outcome: 'keep-visible-status',
         requestId: 'req-123',
         password: SENTINEL,
       },
@@ -192,8 +168,38 @@ describe('logger redaction (T158, T-14)', () => {
     );
 
     const line = output.join('');
-    expect(line).toContain('keep-visible@test');
+    expect(line).toContain('keep-visible-status');
     expect(line).toContain('req-123');
     expect(line).not.toContain(SENTINEL);
+  });
+
+  // R2-I1 — F4 audit payload PII. Classified as PDPA/GDPR Cat-B in
+  // `specs/007-invoices-receipts/security.md § 4`. Must NEVER leak to
+  // logs even if a caller passes the full audit event object to pino.
+  it('redacts top-level + 1-level + 2-level nested `recipient_email`', () => {
+    const { logger, output } = makeCapturingLogger();
+    logger.info(
+      {
+        recipient_email: `${SENTINEL}-top@member.test`,
+        event: {
+          eventType: 'invoice_issued',
+          recipient_email: `${SENTINEL}-nested1@member.test`,
+          payload: {
+            // R3 depth-2 coverage — the audit-emit shape puts
+            // `recipient_email` inside `.event.payload.*`. Pino's `*`
+            // wildcard matches one intermediate key only; this only
+            // passes if REDACT_PATHS includes `*.*.recipient_email`.
+            recipient_email: `${SENTINEL}-nested2@member.test`,
+          },
+        },
+      },
+      'audit payload',
+    );
+
+    const line = output.join('');
+    expect(line).not.toContain(`${SENTINEL}-top@member.test`);
+    expect(line).not.toContain(`${SENTINEL}-nested1@member.test`);
+    expect(line).not.toContain(`${SENTINEL}-nested2@member.test`);
+    expect(line).toContain('[REDACTED]');
   });
 });

@@ -1,0 +1,77 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=mobile-chrome" "tests/e2e/invoice-settings.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 9 tests using 1 worker
+
+  ✓  1 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:43:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (8.4s)
+  ✓  2 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:58:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan (7.0s)
+  ✓  3 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:68:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (24.4s)
+  ✓  4 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (12.0s)
+  ✘  5 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:154:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (5.3s)
+  ✓  6 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:154:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (retry #1) (12.4s)
+  ✓  7 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:204:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (5.6s)
+  ✓  8 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:236:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (5.5s)
+  ✘  9 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:267:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (51.9s)
+  ✓  10 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:267:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (retry #1) (10.9s)
+  ✓  11 [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:322:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (6.4s)
+
+
+  1) [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:154:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists 
+
+    Error: locator.setInputFiles: Error: strict mode violation: locator('input#logo_file') resolved to 2 elements:
+        1) <input type="file" id="logo_file" data-slot="input" accept="image/png,image/jpeg" aria-describedby="logo_hint logo_status" class="h-[var(--input-height)] w-full min-w-0 rounded-lg border border-input bg-transparent px-[var(--input-padding-x)] py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/…/> aka getByRole('button', { name: 'Upload logo Upload logo' })
+        2) <input type="file" id="logo_file" data-slot="input" accept="image/png,image/jpeg" aria-describedby="logo_hint logo_status" class="h-[var(--input-height)] w-full min-w-0 rounded-lg border border-input bg-transparent px-[var(--input-padding-x)] py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/…/> aka locator('#logo_file').nth(1)
+
+    Call log:
+    [2m  - waiting for locator('input#logo_file')[22m
+
+
+      163 |
+      164 |         const validPng = await makePng(400, 200);
+    > 165 |         await page.locator('input#logo_file').setInputFiles({
+          |         ^
+      166 |           name: 'logo.png',
+      167 |           mimeType: 'image/png',
+      168 |           buffer: validPng,
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:165:9
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-chrome\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-chrome\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-8942e-ob-key-stored-save-persists-mobile-chrome\error-context.md
+
+  2) [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:267:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+
+    TimeoutError: page.waitForResponse: Timeout 45000ms exceeded while waiting for event "response"
+
+      277 |         // 100 < MIN_WIDTH=200 AND 50 < MIN_HEIGHT=100 → both fail.
+      278 |         const tinyPng = await makePng(100, 50);
+    > 279 |         const responsePromise = page.waitForResponse(
+          |                                      ^
+      280 |           (r) =>
+      281 |             r.url().includes('/api/tenant-invoice-settings/logo') &&
+      282 |             r.request().method() === 'POST',
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:279:38
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-chrome\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-chrome\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--mobile-chrome\error-context.md
+
+  2 flaky
+    [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:154:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists 
+    [mobile-chrome] › tests\e2e\invoice-settings.spec.ts:267:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+  7 passed (2.7m)

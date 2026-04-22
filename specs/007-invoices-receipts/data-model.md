@@ -458,6 +458,7 @@ Emission uses `INSERT ... ON CONFLICT DO NOTHING`. Concurrent reads that both de
 | FR-019 (pro-rate 3 options) | `pro_rate_policy_snapshot` column + enum + Domain policies |
 | FR-020-023 (credit notes) | `credit_notes` table + `credited_total_satang` running sum + partial-accumulation invariant |
 | FR-024/025/026 (auto-email + resend + failure handling) | `email_outbox` (F3-existing) + dispatcher |
+| FR-036 (VOID cancellation email attachment integrity) | `notifications_outbox.context_data.expected_pdf_sha256` — optional 64-char lowercase-hex sha256 enqueued by `voidInvoice` Phase 1 (= sha of the VOID-stamped bytes that Phase 2 will upload). Dispatcher re-hashes prefetched Blob bytes and permanently-fails the row with `lastError='attachment_sha_mismatch'` + dual-emit (`email_dispatch_failed` + `auto_email_delivery_failed`) if mismatch — prevents shipping original un-stamped bytes as a "cancellation" attachment when Phase 2 upload fails. Other F4 event types (`invoice_issued`, `invoice_paid`, `credit_note_issued`, `*_pdf_resent`) omit the field (link-only emails don't need the guard). See `src/modules/invoicing/application/ports/email-outbox-port.ts` JSDoc for the full field contract. |
 | FR-027/028 (due date + overdue) | `due_date` + derived query predicate |
 | FR-029/030/031 (retention + legal obligation) | `ON DELETE RESTRICT` from `members` + audit retention extension to 10 yrs + F9 GDPR export category |
 | FR-032 (member page invoices section) | `listInvoicesByMember` use case exposed via barrel |

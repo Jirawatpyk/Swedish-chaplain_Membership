@@ -217,7 +217,9 @@ function makeIssueDeps(
       uploadPdf: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       uploadLogo: vi.fn(async ({ key }) => ({ key, url: `https://blob.test/${key}` })),
       signDownloadUrl: vi.fn(async () => 'https://blob.test/signed'),
+      downloadBytes: vi.fn(async () => new Uint8Array([0x25, 0x50, 0x44, 0x46])),
       delete: vi.fn(async () => {}),
+      list: vi.fn(async () => []),
     },
     audit: { emit: vi.fn(async () => {}) },
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
@@ -434,7 +436,9 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
           uploadPdf: failingBlob,
           uploadLogo: vi.fn(async () => ({ key: '', url: '' })),
           signDownloadUrl: vi.fn(async () => ''),
+      downloadBytes: vi.fn(async () => new Uint8Array([0x25, 0x50, 0x44, 0x46])),
           delete: vi.fn(async () => {}),
+          list: vi.fn(async () => []),
         },
       });
       const r = await issueInvoice(deps, {

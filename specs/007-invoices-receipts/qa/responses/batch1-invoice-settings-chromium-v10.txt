@@ -1,0 +1,56 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=chromium" "tests/e2e/invoice-settings.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 9 tests using 1 worker
+
+  ✓  1 [chromium] › tests\e2e\invoice-settings.spec.ts:43:7 › @us4 tenant-invoice-settings › admin can reach /admin/settings/invoicing and sees the form (9.0s)
+  ✓  2 [chromium] › tests\e2e\invoice-settings.spec.ts:58:7 › @us4 tenant-invoice-settings › settings page passes WCAG 2.1 AA axe-core scan (7.9s)
+  ✓  3 [chromium] › tests\e2e\invoice-settings.spec.ts:68:7 › @us4 tenant-invoice-settings › member cannot reach /admin/settings/invoicing (5.3s)
+  ✓  4 [chromium] › tests\e2e\invoice-settings.spec.ts:91:9 › @us4 tenant-invoice-settings › AS1 VAT change via throwaway tenant › AS1 — admin changes VAT 7→10 on settings form (9.6s)
+  ✓  5 [chromium] › tests\e2e\invoice-settings.spec.ts:154:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists (9.7s)
+  ✓  6 [chromium] › tests\e2e\invoice-settings.spec.ts:204:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — SVG rejected with mime_rejected error (6.2s)
+  ✓  7 [chromium] › tests\e2e\invoice-settings.spec.ts:236:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 2400×600 PNG rejected with dimensions_out_of_range error (6.7s)
+  ✘  8 [chromium] › tests\e2e\invoice-settings.spec.ts:267:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (27.3s)
+  ✓  9 [chromium] › tests\e2e\invoice-settings.spec.ts:267:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) (retry #1) (11.3s)
+  ✓  10 [chromium] › tests\e2e\invoice-settings.spec.ts:306:9 › @us4 tenant-invoice-settings › AS5 bootstrap via throwaway tenant › AS5 — first-time bootstrap: empty-state → fill + save → row created (11.2s)
+
+
+  1) [chromium] › tests\e2e\invoice-settings.spec.ts:267:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('fieldset').filter({ hasText: /Logo/i }).locator('p[role="alert"]').first()
+    Expected: visible
+    Timeout: 20000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 20000ms[22m
+    [2m  - waiting for locator('fieldset').filter({ hasText: /Logo/i }).locator('p[role="alert"]').first()[22m
+
+
+      287 |           page.locator('fieldset').filter({ hasText: /Logo/i })
+      288 |             .locator('p[role="alert"]').first(),
+    > 289 |         ).toBeVisible({ timeout: 20_000 });
+          |           ^
+      290 |       } finally {
+      291 |         await tenant.cleanup().catch(() => {});
+      292 |       }
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\invoice-settings.spec.ts:289:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\invoice-settings--us4-tena-174e7-ected-below-MIN-dimensions--chromium\error-context.md
+
+  1 flaky
+    [chromium] › tests\e2e\invoice-settings.spec.ts:267:9 › @us4 tenant-invoice-settings › AS2 + AS4 logo upload via throwaway tenant › AS4 — 100×50 PNG rejected (below MIN dimensions) 
+  8 passed (2.0m)

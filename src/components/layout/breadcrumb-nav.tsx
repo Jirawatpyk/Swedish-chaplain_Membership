@@ -51,10 +51,17 @@ export function BreadcrumbNav() {
       className="px-[var(--page-padding-x)] [padding-block-start:var(--page-padding-y)]"
     >
       {/* Desktop: full trail */}
+      {/* Key composes `href` + `idx` because non-route segments
+        * (NON_ROUTE_SEGMENTS in breadcrumb-path.ts) rewrite their
+        * href to the parent path — e.g. `/admin/credit-notes/<id>`
+        * has a `credit-notes` segment whose fallback href is
+        * `/admin`, which duplicates the `admin` segment's href.
+        * React key uniqueness requires disambiguation via position.
+        */}
       <BreadcrumbList className="hidden sm:flex">
         {segments.map((seg, idx) => (
           <BreadcrumbFragment
-            key={seg.href}
+            key={`${idx}:${seg.href}`}
             segment={seg}
             isLast={idx === segments.length - 1}
           />
@@ -73,7 +80,7 @@ export function BreadcrumbNav() {
         ) : null}
         {mobile.visible.map((seg, idx) => (
           <BreadcrumbFragment
-            key={seg.href}
+            key={`${idx}:${seg.href}`}
             segment={seg}
             isLast={idx === mobile.visible.length - 1}
           />
@@ -118,6 +125,10 @@ const STATIC_LABEL_KEYS = {
   settings: 'settings',
   fees: 'fees',
   account: 'account',
+  invoices: 'invoices',
+  'credit-notes': 'credit-notes',
+  void: 'void',
+  pay: 'pay',
 } as const;
 
 // Verb segments resolve by parent resource. The outer key is the parent
@@ -126,6 +137,8 @@ const STATIC_LABEL_KEYS = {
 const CONTEXTUAL_VERBS: Record<string, Record<string, string>> = {
   plans: { new: 'newPlan', edit: 'editPlan', clone: 'clonePlan' },
   members: { new: 'newMember' },
+  invoices: { new: 'newInvoice' },
+  'credit-notes': { new: 'newCreditNote' },
 };
 
 // Match a UUID v4 (32 hex with dashes). When we hit a UUID segment
@@ -137,6 +150,7 @@ const UUID_RE =
 
 const DETAIL_LABEL_KEYS_BY_PARENT: Record<string, string> = {
   members: 'memberDetail',
+  invoices: 'invoiceDetail',
 };
 
 function buildStaticLabels(

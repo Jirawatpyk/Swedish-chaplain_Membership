@@ -18,6 +18,11 @@ const F4_PATHS = [
   '/api/credit-notes',
   '/api/tenant-invoice-settings',
   '/api/portal/invoices',
+  // US7 — `/api/members/<uuid>/invoices` is an F4 read surface
+  // embedded under the F3 members namespace; locks in that the proxy
+  // regex correctly gates both with-UUID and trailing-slash variants.
+  '/api/members/11111111-2222-3333-4444-555555555555/invoices',
+  '/api/members/11111111-2222-3333-4444-555555555555/invoices/',
 ];
 
 // R7-B4 — the outbox dispatcher is a shared cron route that serves
@@ -32,6 +37,10 @@ const NON_F4_PATHS = [
   '/api/auth/sign-in',
   '/admin',
   '/api/cron/outbox-dispatch',
+  // US7 regex must NOT match sibling F3 paths under the same
+  // `/api/members/<uuid>/...` namespace.
+  '/api/members/11111111-2222-3333-4444-555555555555/timeline',
+  '/api/members/11111111-2222-3333-4444-555555555555/invite-portal',
 ];
 
 describe('F4 feature-flag kill-switch (T020)', () => {

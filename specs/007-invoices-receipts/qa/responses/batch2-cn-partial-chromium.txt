@@ -1,0 +1,300 @@
+
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test "--workers=1" "--project=chromium" "tests/e2e/credit-note-partial.spec.ts"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+
+Running 3 tests using 1 worker
+
+  ✘  1 [chromium] › tests\e2e\credit-note-partial.spec.ts:62:7 › @us6 credit-note partial-credit flow › remainder display is visible on the form (30.9s)
+  ✘  2 [chromium] › tests\e2e\credit-note-partial.spec.ts:62:7 › @us6 credit-note partial-credit flow › remainder display is visible on the form (retry #1) (30.8s)
+  ✘  3 [chromium] › tests\e2e\credit-note-partial.spec.ts:62:7 › @us6 credit-note partial-credit flow › remainder display is visible on the form (retry #2) (30.9s)
+  ✘  4 [chromium] › tests\e2e\credit-note-partial.spec.ts:74:7 › @us6 credit-note partial-credit flow › AS2 — over-remainder amount shows inline alert + keeps Submit disabled (30.8s)
+  ✘  5 [chromium] › tests\e2e\credit-note-partial.spec.ts:74:7 › @us6 credit-note partial-credit flow › AS2 — over-remainder amount shows inline alert + keeps Submit disabled (retry #1) (30.8s)
+  ✘  6 [chromium] › tests\e2e\credit-note-partial.spec.ts:74:7 › @us6 credit-note partial-credit flow › AS2 — over-remainder amount shows inline alert + keeps Submit disabled (retry #2) (30.7s)
+  ✘  7 [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited (18.5s)
+  ✘  8 [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited (retry #1) (18.4s)
+  ✘  9 [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited (retry #2) (18.5s)
+
+
+  1) [chromium] › tests\e2e\credit-note-partial.spec.ts:62:7 › @us6 credit-note partial-credit flow › remainder display is visible on the form 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('link', { name: /SC-2026-900002/ }).first()[22m
+
+
+      41 |   // target different rows — minimises state cross-talk if both specs
+      42 |   // run in the same suite.
+    > 43 |   await page.getByRole('link', { name: /SC-2026-900002/ }).first().click();
+         |                                                                    ^
+      44 |   await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+      45 |   await page
+      46 |     .getByRole('link', { name: /issue credit note|ออกใบลดหนี้|utfärda kreditnota/i })
+        at openCreditNoteFormForSeededPaidInvoice (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:43:68)
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:64:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('link', { name: /SC-2026-900002/ }).first()[22m
+
+
+      41 |   // target different rows — minimises state cross-talk if both specs
+      42 |   // run in the same suite.
+    > 43 |   await page.getByRole('link', { name: /SC-2026-900002/ }).first().click();
+         |                                                                    ^
+      44 |   await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+      45 |   await page
+      46 |     .getByRole('link', { name: /issue credit note|ออกใบลดหนี้|utfärda kreditnota/i })
+        at openCreditNoteFormForSeededPaidInvoice (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:43:68)
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:64:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('link', { name: /SC-2026-900002/ }).first()[22m
+
+
+      41 |   // target different rows — minimises state cross-talk if both specs
+      42 |   // run in the same suite.
+    > 43 |   await page.getByRole('link', { name: /SC-2026-900002/ }).first().click();
+         |                                                                    ^
+      44 |   await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+      45 |   await page
+      46 |     .getByRole('link', { name: /issue credit note|ออกใบลดหนี้|utfärda kreditnota/i })
+        at openCreditNoteFormForSeededPaidInvoice (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:43:68)
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:64:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-ad9ab-play-is-visible-on-the-form-chromium-retry2\error-context.md
+
+  2) [chromium] › tests\e2e\credit-note-partial.spec.ts:74:7 › @us6 credit-note partial-credit flow › AS2 — over-remainder amount shows inline alert + keeps Submit disabled 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('link', { name: /SC-2026-900002/ }).first()[22m
+
+
+      41 |   // target different rows — minimises state cross-talk if both specs
+      42 |   // run in the same suite.
+    > 43 |   await page.getByRole('link', { name: /SC-2026-900002/ }).first().click();
+         |                                                                    ^
+      44 |   await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+      45 |   await page
+      46 |     .getByRole('link', { name: /issue credit note|ออกใบลดหนี้|utfärda kreditnota/i })
+        at openCreditNoteFormForSeededPaidInvoice (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:43:68)
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:78:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('link', { name: /SC-2026-900002/ }).first()[22m
+
+
+      41 |   // target different rows — minimises state cross-talk if both specs
+      42 |   // run in the same suite.
+    > 43 |   await page.getByRole('link', { name: /SC-2026-900002/ }).first().click();
+         |                                                                    ^
+      44 |   await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+      45 |   await page
+      46 |     .getByRole('link', { name: /issue credit note|ออกใบลดหนี้|utfärda kreditnota/i })
+        at openCreditNoteFormForSeededPaidInvoice (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:43:68)
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:78:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('link', { name: /SC-2026-900002/ }).first()[22m
+
+
+      41 |   // target different rows — minimises state cross-talk if both specs
+      42 |   // run in the same suite.
+    > 43 |   await page.getByRole('link', { name: /SC-2026-900002/ }).first().click();
+         |                                                                    ^
+      44 |   await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+      45 |   await page
+      46 |     .getByRole('link', { name: /issue credit note|ออกใบลดหนี้|utfärda kreditnota/i })
+        at openCreditNoteFormForSeededPaidInvoice (C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:43:68)
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:78:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-5d350-alert-keeps-Submit-disabled-chromium-retry2\error-context.md
+
+  3) [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited 
+
+    TimeoutError: locator.waitFor: Timeout 10000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('row').filter({ hasText: 'E2E Mutation Co' }).first() to be visible[22m
+
+
+      136 |         .getByRole('row')
+      137 |         .filter({ hasText: 'E2E Mutation Co' });
+    > 138 |       await mutationRow.first().waitFor({ state: 'visible', timeout: 10_000 });
+          |                                 ^
+      139 |       await mutationRow.first().getByRole('link').first().click();
+      140 |       await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+      141 |       await page
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:138:33
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TimeoutError: locator.waitFor: Timeout 10000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('row').filter({ hasText: 'E2E Mutation Co' }).first() to be visible[22m
+
+
+      136 |         .getByRole('row')
+      137 |         .filter({ hasText: 'E2E Mutation Co' });
+    > 138 |       await mutationRow.first().waitFor({ state: 'visible', timeout: 10_000 });
+          |                                 ^
+      139 |       await mutationRow.first().getByRole('link').first().click();
+      140 |       await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+      141 |       await page
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:138:33
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TimeoutError: locator.waitFor: Timeout 10000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('row').filter({ hasText: 'E2E Mutation Co' }).first() to be visible[22m
+
+
+      136 |         .getByRole('row')
+      137 |         .filter({ hasText: 'E2E Mutation Co' });
+    > 138 |       await mutationRow.first().waitFor({ state: 'visible', timeout: 10_000 });
+          |                                 ^
+      139 |       await mutationRow.first().getByRole('link').first().click();
+      140 |       await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]+$/);
+      141 |       await page
+        at C:\Users\Jirawat.p\Documents\Swedish chaplain_membership\tests\e2e\credit-note-partial.spec.ts:138:33
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry2\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\credit-note-partial--us6-c-aae15-badge-to-Partially-credited-chromium-retry2\error-context.md
+
+  3 failed
+    [chromium] › tests\e2e\credit-note-partial.spec.ts:62:7 › @us6 credit-note partial-credit flow › remainder display is visible on the form 
+    [chromium] › tests\e2e\credit-note-partial.spec.ts:74:7 › @us6 credit-note partial-credit flow › AS2 — over-remainder amount shows inline alert + keeps Submit disabled 
+    [chromium] › tests\e2e\credit-note-partial.spec.ts:125:9 › @us6 credit-note partial-credit flow › AS2 mutating happy-path (seeded admin fixture) › AS2 — 60% partial flips invoice badge to Partially credited 
+ ELIFECYCLE  Command failed with exit code 1.

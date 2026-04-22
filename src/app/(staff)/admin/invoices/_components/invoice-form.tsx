@@ -24,6 +24,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition, useMemo } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
@@ -53,9 +54,17 @@ function formatSatang(satang: number): string {
 export function CreateDraftForm({
   members,
   plans,
+  initialMemberId,
 }: {
   readonly members: readonly MemberOption[];
   readonly plans: readonly PlanOption[];
+  /**
+   * Pre-fill the member picker from a `?memberId=` deep-link (e.g.
+   * "New invoice" CTA on the F3 member detail page). Falls back to
+   * empty when missing / not in the active-members list (archived
+   * members won't appear here — FR-037 rejects issue on archived).
+   */
+  readonly initialMemberId?: string | undefined;
 }) {
   const t = useTranslations('admin.invoices.form');
   const tPicker = useTranslations('admin.invoices.form.memberPicker');
@@ -63,7 +72,12 @@ export function CreateDraftForm({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  const [memberId, setMemberId] = useState('');
+  const [memberId, setMemberId] = useState(() => {
+    if (!initialMemberId) return '';
+    return members.some((m) => m.memberId === initialMemberId)
+      ? initialMemberId
+      : '';
+  });
   const selectedMember = members.find((m) => m.memberId === memberId);
 
   const memberOptions: ComboboxOption[] = useMemo(
@@ -159,7 +173,14 @@ export function CreateDraftForm({
       )}
 
       <div className="flex justify-end gap-3">
-        <Button type="submit" disabled={pending || noMembers || !memberId || !selectedPlan}>
+        <Button
+          type="submit"
+          disabled={pending || noMembers || !memberId || !selectedPlan}
+          aria-busy={pending}
+        >
+          {pending && (
+            <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+          )}
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>

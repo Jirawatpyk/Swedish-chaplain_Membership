@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { MoreHorizontal, SearchIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { FilterBar } from '@/components/ui/filter-bar';
 import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
@@ -224,12 +225,8 @@ export function PlansTable({
   return (
     <div className="space-y-4" data-plans-table>
       {/* Filter bar — flat, matches members/directory-filters.tsx style */}
-      <div
-        className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4"
-        role="region"
-        aria-label={t('filters.search.label')}
-      >
-        <div className="relative flex-1 min-w-0">
+      <FilterBar aria-label={t('filters.search.label')}>
+        <div className="relative sm:flex-1 min-w-0">
           <SearchIcon
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
             aria-hidden
@@ -249,39 +246,41 @@ export function PlansTable({
           />
         </div>
 
-        <div>
-          <Label htmlFor="plans-category" className="sr-only">
-            {t('filters.category.label')}
-          </Label>
-          <Select
-            value={category ?? 'all'}
-            onValueChange={(v) => {
-              const next = v === 'all' ? null : (v as 'corporate' | 'partnership');
-              setCategory(next);
-              updateFilter({ category: next });
-            }}
-          >
-            <SelectTrigger id="plans-category" className="w-[180px]">
-              <TranslatedSelectValue
-                placeholder={t('filters.category.label')}
-                translate={(v) => {
-                  const keys: Record<string, string> = {
-                    all: 'filters.all',
-                    corporate: 'filters.category.corporate',
-                    partnership: 'filters.category.partnership',
-                  };
-                  const key = keys[v || 'all'];
-                  return key ? t(key) : v;
-                }}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t('filters.all')}</SelectItem>
-              <SelectItem value="corporate">{t('filters.category.corporate')}</SelectItem>
-              <SelectItem value="partnership">{t('filters.category.partnership')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {/* Label is `sr-only` (screen-reader only) and sits as a direct
+            sibling — no wrapping `<div>` — so the SelectTrigger stays a
+            direct child of FilterBar, letting the global mobile
+            100%-width rule apply to the trigger itself. */}
+        <Label htmlFor="plans-category" className="sr-only">
+          {t('filters.category.label')}
+        </Label>
+        <Select
+          value={category ?? 'all'}
+          onValueChange={(v) => {
+            const next = v === 'all' ? null : (v as 'corporate' | 'partnership');
+            setCategory(next);
+            updateFilter({ category: next });
+          }}
+        >
+          <SelectTrigger id="plans-category" className="sm:w-[180px]">
+            <TranslatedSelectValue
+              placeholder={t('filters.category.label')}
+              translate={(v) => {
+                const keys: Record<string, string> = {
+                  all: 'filters.all',
+                  corporate: 'filters.category.corporate',
+                  partnership: 'filters.category.partnership',
+                };
+                const key = keys[v || 'all'];
+                return key ? t(key) : v;
+              }}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('filters.all')}</SelectItem>
+            <SelectItem value="corporate">{t('filters.category.corporate')}</SelectItem>
+            <SelectItem value="partnership">{t('filters.category.partnership')}</SelectItem>
+          </SelectContent>
+        </Select>
 
         <div className="flex items-center gap-2">
           <Switch
@@ -314,7 +313,7 @@ export function PlansTable({
             </Label>
           </div>
         ) : null}
-      </div>
+      </FilterBar>
 
       {/* Table — matches /admin/members style (uppercase muted header
           + hover row). No outer border: parent <Card> is the container. */}
@@ -414,7 +413,7 @@ export function PlansTable({
                               aria-label={t('columns.actions')}
                               data-row-actions-trigger
                             >
-                              <MoreHorizontal className="h-4 w-4" />
+                              <MoreHorizontal className="size-4" aria-hidden="true" />
                             </Button>
                           )}
                         />
@@ -446,7 +445,7 @@ export function PlansTable({
                               )}
                               <DropdownMenuItem
                                 onClick={() => openDialog('delete', plan)}
-                                data-destructive
+                                variant="destructive"
                               >
                                 {tActions('delete')}
                               </DropdownMenuItem>

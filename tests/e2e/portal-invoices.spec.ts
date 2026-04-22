@@ -25,6 +25,31 @@ import { signInViaForm, waitForLayoutContainer } from './helpers/layout';
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 
+// Fixture-presence env flags (set in the seeded staging env by
+// `scripts/seed-e2e-portal-invoices.ts`). Tests that need
+// deterministic row counts gate on these so the spec stays green on
+// un-seeded local dev boxes while still asserting the full US3 AS
+// contracts on CI / staging where fixtures are present.
+//
+// AS3 (zero-invoice member) requires a DIFFERENT sign-in than AS1 /
+// AS4 because the same member cannot simultaneously have 3 invoices
+// and 0 invoices — so we gate AS3 on a separate credential pair.
+const EXPECTS_ROWS =
+  process.env.E2E_MEMBER_HAS_INVOICES === '1' ||
+  process.env.E2E_MEMBER_HAS_INVOICES === 'true';
+const EXPECTS_EMPTY =
+  process.env.E2E_MEMBER_EMPTY === '1' ||
+  process.env.E2E_MEMBER_EMPTY === 'true';
+
+// AS3-only credentials (zero-invoice member seeded by
+// `seed-e2e-portal-invoices.ts`). Falls back to the main member
+// creds if unset so the gate degrades gracefully — but AS3 will then
+// skip because the main member has 3 invoices, not 0.
+const MEMBER_EMAIL_EMPTY =
+  process.env.E2E_MEMBER_EMAIL_EMPTY ?? MEMBER_EMAIL;
+const MEMBER_PASSWORD_EMPTY =
+  process.env.E2E_MEMBER_PASSWORD_EMPTY ?? MEMBER_PASSWORD;
+
 test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
   test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
 
@@ -69,5 +94,164 @@ test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
       h1Visible || notLinkedVisible || emptyVisible,
       '/portal/invoices must render either an <h1>, an empty-state message, or the "not linked" copy',
     ).toBe(true);
+  });
+
+  // US3 AS2 — cross-tenant / foreign-invoice probe.
+  // A signed-in member crafting a URL for a tenant B / sibling-member
+  // invoice via the PDF download route must NOT receive the PDF. The
+  // bytes-streamed route is guarded by RLS + the `getInvoicePdfSignedUrl`
+  // ownership check, so the response is a 4xx (404 preferred) — never
+  // 200 with foreign PDF content, never 5xx.
+  test('member hitting a foreign invoice PDF id gets 4xx, not 200/5xx (AS2)', async ({
+    page,
+  }) => {
+    await signInViaForm(
+      page,
+      '/portal/sign-in',
+      MEMBER_EMAIL!,
+      MEMBER_PASSWORD!,
+      /^\/portal(\/|$)/,
+    );
+
+    // A syntactically valid but non-existent / foreign UUID. RLS sees
+    // zero rows for the signed-in member → route returns 404 and emits
+    // an `invoice_cross_tenant_probe` audit (asserted by integration
+    // suite `audit-coverage.test.ts`).
+    const foreignUuid = '00000000-0000-4000-8000-000000000000';
+    const response = await page.request.get(
+      `/api/portal/invoices/${foreignUuid}/pdf`,
+    );
+    const status = response.status();
+    expect(status, 'foreign-invoice PDF route must not return 200').not.toBe(
+      200,
+    );
+    expect(status, 'foreign-invoice PDF route must not 5xx').toBeLessThan(500);
+    expect(status, 'expected 4xx (typically 404)').toBeGreaterThanOrEqual(400);
+  });
+
+  // US3 AS1/AS3 — portal landing page hosts the invoices summary card
+  // (latest 3 + view-all) per US7 AS4. The card must render without
+  // error for any member-linking state; the "view all" link is only
+  // shown when at least one invoice exists.
+  test('portal landing renders invoices summary card (US7 AS4)', async ({
+    page,
+  }) => {
+    await signInViaForm(
+      page,
+      '/portal/sign-in',
+      MEMBER_EMAIL!,
+      MEMBER_PASSWORD!,
+      /^\/portal(\/|$)/,
+    );
+
+    const response = await page.goto('/portal');
+    expect(response?.status() ?? 0).toBeLessThan(500);
+
+    await waitForLayoutContainer(page);
+
+    // The summary-card heading, empty-state, or not-linked copy must
+    // be present (one of three legitimate states).
+    const summaryHeadingVisible = await page
+      .getByText(/recent invoices|ใบแจ้งหนี้ล่าสุด|senaste fakturor/i)
+      .first()
+      .isVisible()
+      .catch(() => false);
+
+    expect(
+      summaryHeadingVisible,
+      'portal landing must render the invoices summary card heading',
+    ).toBe(true);
+  });
+
+  // US3 AS1 — dedicated row-count assertion. Gated on
+  // `E2E_MEMBER_HAS_INVOICES=1` so un-seeded envs skip cleanly
+  // rather than flaking. On seeded envs (CI / staging fixtures) the
+  // table MUST render ≥1 body row with a per-row download link.
+  test('AS1 — seeded member sees invoice rows with download links', async ({
+    page,
+  }) => {
+    test.skip(
+      !EXPECTS_ROWS,
+      'E2E_MEMBER_HAS_INVOICES not set — seeded-row assertion skipped',
+    );
+    await signInViaForm(
+      page,
+      '/portal/sign-in',
+      MEMBER_EMAIL!,
+      MEMBER_PASSWORD!,
+      /^\/portal(\/|$)/,
+    );
+    await page.goto('/portal/invoices');
+    await waitForLayoutContainer(page);
+
+    // Header row + at least one body row.
+    const rowCount = await page.getByRole('row').count();
+    expect(rowCount, 'expected header + ≥1 body row').toBeGreaterThanOrEqual(2);
+
+    // At least one PDF download link wired per the AS1 "download
+    // buttons" requirement.
+    const downloadLinks = page.locator('a[download][href*="/api/portal/invoices/"]');
+    expect(await downloadLinks.count()).toBeGreaterThan(0);
+  });
+
+  // US3 AS3 — dedicated empty-state copy assertion. Gated on
+  // `E2E_MEMBER_EMPTY=1` with a SEPARATE sign-in
+  // (`E2E_MEMBER_EMAIL_EMPTY` / `E2E_MEMBER_PASSWORD_EMPTY`) because
+  // the same member cannot simultaneously have 3 invoices (AS1 +
+  // AS4) and 0 invoices (AS3). Asserts the specific empty-state
+  // string, not a broad OR over "empty | not-linked | h1".
+  test('AS3 — empty-state copy shown for member with zero invoices', async ({
+    page,
+  }) => {
+    test.skip(
+      !EXPECTS_EMPTY,
+      'E2E_MEMBER_EMPTY not set — empty-state assertion skipped',
+    );
+    test.skip(
+      !MEMBER_EMAIL_EMPTY || !MEMBER_PASSWORD_EMPTY,
+      'E2E_MEMBER_EMAIL_EMPTY/PASSWORD_EMPTY not set',
+    );
+    await signInViaForm(
+      page,
+      '/portal/sign-in',
+      MEMBER_EMAIL_EMPTY!,
+      MEMBER_PASSWORD_EMPTY!,
+      /^\/portal(\/|$)/,
+    );
+    await page.goto('/portal/invoices');
+    await waitForLayoutContainer(page);
+
+    const empty = page.getByText(
+      /no invoices yet|ยังไม่มีใบแจ้งหนี้|inga fakturor ännu/i,
+    );
+    await expect(empty).toBeVisible();
+    // Must NOT render the data table when empty.
+    expect(await page.getByRole('row').count()).toBe(0);
+  });
+
+  // US7 AS4 — summary card "view all" link asserted when rows
+  // present. Gated on fixture flag so un-seeded envs skip.
+  test('US7 AS4 — summary card "view all" link present when rows exist', async ({
+    page,
+  }) => {
+    test.skip(
+      !EXPECTS_ROWS,
+      'E2E_MEMBER_HAS_INVOICES not set — view-all link assertion skipped',
+    );
+    await signInViaForm(
+      page,
+      '/portal/sign-in',
+      MEMBER_EMAIL!,
+      MEMBER_PASSWORD!,
+      /^\/portal(\/|$)/,
+    );
+    await page.goto('/portal');
+    await waitForLayoutContainer(page);
+
+    const viewAll = page.getByRole('link', {
+      name: /view all|ดูทั้งหมด|visa alla/i,
+    });
+    await expect(viewAll).toBeVisible();
+    await expect(viewAll).toHaveAttribute('href', '/portal/invoices');
   });
 });

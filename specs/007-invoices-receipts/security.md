@@ -185,15 +185,16 @@ Summary from `research.md § 13`; full mitigations + tests listed here.
 
 ## 4. PII catalogue (F4-introduced)
 
-| Field | Column(s) | Lawful basis | Redacted in logs? |
-|---|---|---|---|
-| Tax ID (tenant) | tenant_invoice_settings.tax_id, invoices.tenant_identity_snapshot.tax_id | Legal obligation | Yes |
-| Tax ID (member) | invoices.member_identity_snapshot.tax_id | Legal obligation | Yes |
-| Legal name (member) | invoices.member_identity_snapshot.legal_name | Legal obligation | Yes |
-| Address (member) | invoices.member_identity_snapshot.address | Legal obligation | Yes |
-| Primary contact name/email | invoices.member_identity_snapshot.primary_contact_* | Legal obligation | F3 redact list already covers |
-| Signed URL tokens | transient in logs only | N/A | Yes |
-| PDF bytes | N/A (Blob) | Legal obligation | Yes |
+| Field | Column(s) | Lawful basis | Classification | Redacted in logs? |
+|---|---|---|---|---|
+| Tax ID (tenant) | tenant_invoice_settings.tax_id, invoices.tenant_identity_snapshot.tax_id | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | Yes |
+| Tax ID (member) | invoices.member_identity_snapshot.tax_id | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | Yes |
+| Legal name (member) | invoices.member_identity_snapshot.legal_name | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | Yes |
+| Address (member) | invoices.member_identity_snapshot.address | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | Yes |
+| Primary contact name/email | invoices.member_identity_snapshot.primary_contact_* | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | F3 redact list already covers |
+| **Recipient email (audit)** | `audit_log.payload.recipient_email` on `invoice_issued`, `invoice_paid`, `invoice_voided`, `credit_note_issued`, `invoice_pdf_resent`, `receipt_pdf_resent`, `credit_note_pdf_resent` | Legal obligation + legitimate interest (forensic / delivery proof) | PDPA §24 / GDPR Art. 6(1)(c)+(f) — **Category B PII** | **Deliberately retained as plaintext in audit_log** — access-controlled via RLS + append-only grants. Column-level access policy required before F10 MTA roll-out (T-F4-04). Audit log is never exported raw; CSV/BI exports MUST redact this column. |
+| Signed URL tokens | transient in logs only | N/A | Secret (not PII) | Yes |
+| PDF bytes | N/A (Blob) | Legal obligation | PDPA §24 / GDPR Art. 6(1)(c) — Category B | Yes |
 
 ## 5. Security Review Checklist (co-signature required before CP-4 ship gate)
 
@@ -211,6 +212,24 @@ Summary from `research.md § 13`; full mitigations + tests listed here.
 - [ ] Append-only audit events emit for every mutation: `invoice_draft_*`, `invoice_issued`, `invoice_paid`, `invoice_voided`, `credit_note_issued`, `invoice_*_cross_tenant_probe`, `pdf_render_failed`, `auto_email_delivery_failed` (16 events — verified by `audit-coverage.test.ts`, T113a)
 - [ ] 10-yr retention doc updated in `docs/phases-plan.md` + `docs/observability.md` (Phase 10 T115c)
 - [ ] Resend DPA copy attached to `specs/007-invoices-receipts/releases/v1.0.0.md` (T115a)
+- [ ] **T-F4-01** — `src/app/api/cron/outbox-dispatch/route.ts` CRON_SECRET comparison uses `crypto.timingSafeEqual` after length-check (NOT plain `!==`). Guards against timing side-channel enumeration. (Fixed in Phase 10 staff-review remediation.)
+- [ ] **T-F4-09** — `getInvoicePdfSignedUrl` + `getCreditNotePdfSignedUrl` use-cases scope repo queries by `tenantId`; cross-tenant probe integration test exists at `tests/integration/invoicing/pdf-routes-cross-tenant-probe.test.ts` (Principle I Review-Gate blocker, Phase 10 remediation).
+- [ ] **T-F4-10** — GET handler of `/api/tenant-invoice-settings` carries the same slug-mismatch probe + `tenant_invoice_settings_cross_tenant_probe` emit as PATCH (symmetric pre-MTA). Audit emit is wrapped in try/catch on both verbs so an audit-adapter outage cannot rewrite the 403 into a 500.
+- [ ] **T-F4-04** — `recipient_email` in audit payloads classified as Category-B PII (see § 4 catalogue). Column-level access policy on `audit_log.payload` planned before F10 MTA; CSV/BI exports redact this field today.
+- [ ] **LINDDUN T-F4-03** — Portal resend response echoes the snapshot `recipientEmail` back to the caller (member sees their own PII). Acceptable for MVP; consider email masking (`j***@domain.com`) in a future hardening pass. Document in DPA.
+
+### 5a. Accepted debt (documented by QA Phase-10 close, 2026-04-22)
+
+The items below surfaced during the R15–R18 + QA specialist-agent rounds, have **been reviewed and knowingly deferred**, and MUST be resolved before the conditions named on each line. Each is tracked as a follow-up task; none block Phase-10 single-tenant SweCham ship.
+
+- [ ] **AD-01 (was T-03)** — `Idempotency-Key` header accepted by `recordPaymentSchema` but not persisted. Status-based replay (`status === 'paid'` short-circuit + `applyPayment WHERE status='issued'` guard) prevents double-apply on the same invoice, which is the only concurrency failure mode at current single-tenant scale. Must be implemented before MTA roll-out (F10) where a member could have multiple concurrent payment terminals or a bulk-volume tenant issues hundreds of invoices per hour.
+- [ ] **AD-02 (was T-15)** — The security model at T-15 claimed a 10/h per-member Upstash token-bucket on auto-email bounces. In the shipped code the only bounce protection is `MAX_ATTEMPTS=5` + `invalid-recipient` → permanent-fail in `src/app/api/cron/outbox-dispatch/route.ts`. Adequate for SweCham's ~200-member single-tenant footprint. Must be implemented before F7 (Email Broadcast) or MTA roll-out where a mis-configured tenant could storm Resend and degrade everyone's bounce rate.
+- [ ] **AD-03 (was QA TC-01 high)** — `tenant_invoice_settings` has no `receipt_number_prefix` column; `record-payment.ts` falls through to hardcoded `'RE'` when `receipt_numbering_mode='separate'`. Zero live impact at SweCham (combined-mode). Must ship an ADD COLUMN migration + schema field before any second tenant onboards under separate-mode filing.
+- [ ] **AD-04 (was QA TC-03 M-1 / M-2)** — F9 (GDPR export) dependencies: `email_delivery_events` table needs a retention policy (recommend 90 d + scheduled deletion job); audit event schema needs a `retention_basis` discriminator so the F9 erasure workflow can tell legal-obligation rows (10-yr retention) apart from contractual-necessity rows. Not required for F4 Phase-10 ship; MUST land before F9 erasure endpoints go live.
+- [ ] **AD-05 (was QA TC-04 target size)** — Admin row-action links in `src/app/(staff)/admin/members/[memberId]/_components/member-invoices-section.tsx` render at 28 px touch target height (`size="sm"`). Below WCAG 2.5.5 AAA 44 px recommendation; meets WCAG 2.1 AA AA floor. Admin-only, desktop-primary surface. Batch with F3/F5 table row-action standardisation in the next UX polish pass.
+- [ ] **AD-06 (was QA TC-03 H-1, NOW FIXED)** — `recipient_email` in audit payloads switched to sha256 (`recipient_email_sha256`) on the resend path (R19 / QA closure). Operator-facing confirmation still carries plaintext via `ResendPdfOutput.recipientEmail`. **Mark as ✅ resolved.**
+- [ ] **AD-07 (was QA TC-01 🔴 BLOCKER, NOW FIXED)** — `sharp` direct import in Application layer replaced with `ImageReEncodePort` (Constitution III compliance). `sharp` now lives ONLY in `infrastructure/adapters/sharp-image-reencode-adapter.ts`. **Mark as ✅ resolved.**
+- [ ] **AD-08 (was QA TC-05, NOW FIXED)** — `payment_reference` + `paymentReference` added to `src/lib/logger.ts REDACT_PATHS` as defence-in-depth. **Mark as ✅ resolved.**
 
 ## 6. Logo upload detailed threat model (T-17 expansion)
 

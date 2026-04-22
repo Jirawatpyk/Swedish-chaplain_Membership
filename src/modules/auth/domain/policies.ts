@@ -60,6 +60,11 @@ export type Action = 'read' | 'write' | 'delete' | 'admin' | 'clone';
  *                             on whitelisted fields per FR-014a)
  *   - 'contacts'            — contact CRUD on any member (admin RW, manager R)
  *   - 'contacts:own'        — member self-service contact edit (whitelisted fields)
+ *
+ * F4 resource ids (added by 007-invoices-receipts):
+ *   - 'invoice'             — invoice CRUD (admin RW, manager R, member R own)
+ *   - 'credit_note'         — credit note CRUD (admin RW, manager R)
+ *   - 'tenant_invoice_settings' — tenant tax/numbering/logo config (admin RW)
  */
 export type Resource =
   | 'auth:self'
@@ -74,6 +79,9 @@ export type Resource =
   | 'members:own'
   | 'contacts'
   | 'contacts:own'
+  | 'invoice'
+  | 'credit_note'
+  | 'tenant_invoice_settings'
   | (string & {});
 
 /** Self-service resource id — actions on the actor's OWN account. */

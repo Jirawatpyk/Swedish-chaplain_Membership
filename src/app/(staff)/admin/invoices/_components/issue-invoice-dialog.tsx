@@ -29,6 +29,7 @@ import { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { Loader2Icon } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -195,7 +196,11 @@ export function IssueInvoiceDialog({ invoiceId, summary }: Props) {
               confirm();
             }}
             disabled={!matches || pending}
+            aria-busy={pending}
           >
+            {pending && (
+              <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+            )}
             {pending ? t('issuing') : t('issueButton')}
           </AlertDialogAction>
         </AlertDialogFooter>

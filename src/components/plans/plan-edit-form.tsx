@@ -265,14 +265,12 @@ export function PlanEditForm({
 
       <Separator />
 
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-end gap-2">
         {onCancel ? (
           <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
             {tButtons('cancel')}
           </Button>
-        ) : (
-          <span />
-        )}
+        ) : null}
         <Button type="submit" disabled={submitting}>
           {submitting ? tEdit('saving') : tEdit('save')}
         </Button>

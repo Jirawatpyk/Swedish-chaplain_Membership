@@ -45,14 +45,37 @@ pnpm drizzle-kit migrate
 BOOTSTRAP_ADMIN_EMAIL=admin@swecham.example pnpm tsx scripts/seed-bootstrap-admin.ts
 pnpm tsx scripts/seed-f3-demo-members.ts  # F3 helper, if present; else create via admin UI
 
-# 7. Seed initial tenant_invoice_settings for SweCham
-pnpm tsx scripts/seed-f4-invoice-settings.ts   # NEW — authored as task T014 in tasks.md
+# 7. Seed initial tenant_invoice_settings for SweCham (T014)
+node --env-file=.env.local --import tsx scripts/seed-f4-invoice-settings.ts
 
 # 8. Seed E2E test users (ALREADY EXISTS from F1 — DO NOT duplicate)
 node --env-file=.env.local --import tsx scripts/seed-e2e-user.ts
 # Creates e2e-admin@swecham.test / e2e-manager@swecham.test / e2e-member@swecham.test / e2e-lockout@swecham.test
 # Idempotent — re-runs reset passwords + unlock. Use these for all F4 E2E specs (DO NOT create new e2e users).
+
+# 9. Seed F4 member-portal E2E fixtures (unlocks tests/e2e/portal-invoices.spec.ts)
+node --env-file=.env.local --import tsx scripts/seed-e2e-portal-invoices.ts
+# Creates "E2E Alpha Co" (3 invoices: 2 paid + 1 open) + "E2E Echo Co" (0 invoices / empty-state).
+# 900000-series sequence reserved; idempotent.
+
+# 10. Seed F4 admin-mutation E2E fixtures (T115s — unlocks invoice-pay + credit-note fixmes)
+node --env-file=.env.local --import tsx scripts/seed-f4-e2e-admin-fixtures.ts
+# Creates "E2E Mutation Co" with 1 issued-unpaid invoice (pay target, 990000-series)
+# + 1 paid invoice (credit-note target, 995000-series). Re-run after tests mutate
+# to re-provision fresh targets — idempotent per (member, series, status).
 ```
+
+### Seeder summary (run in order)
+
+| # | Script | Purpose | Sequence block |
+|---|---|---|---|
+| 6 | `seed-bootstrap-admin.ts` | First admin user | n/a |
+| 7 | `seed-f4-invoice-settings.ts` | SweCham `tenant_invoice_settings` row | n/a |
+| 8 | `seed-e2e-user.ts` | 4 E2E accounts (admin/manager/member/lockout) | n/a |
+| 9 | `seed-e2e-portal-invoices.ts` | Member-portal fixtures (2 members + 3 invoices) | 900000–900999 |
+| 10 | `seed-f4-e2e-admin-fixtures.ts` | Admin-mutation fixtures (1 pay target + 1 credit target) | 990000–999999 |
+
+The real sequential allocator starts at `000001` and monotonically climbs — E2E fixtures use the 900000/990000 high blocks so production-shaped numbers never collide with test data.
 
 ## 3a. E2E test execution — operational notes
 
@@ -92,6 +115,32 @@ F4 specs MUST NOT create additional seeded users — reuse the 4 above. If a sce
 Do NOT attempt to implement issuance without the red test file in place.
 
 ## 5. Local smoke test flow
+
+### 5.0 Live smoke-test transcript (2026-04-21, branch `007-invoices-receipts`)
+
+```text
+$ pnpm typecheck && pnpm lint
+# green — 0 errors
+
+$ pnpm test:integration tests/integration/invoicing/settings-form.test.ts \
+                       tests/integration/invoicing/logo-upload-security.test.ts
+✓ tests/integration/invoicing/settings-form.test.ts (5 tests)
+✓ tests/integration/invoicing/logo-upload-security.test.ts (8 tests)
+  Tests  13 passed
+
+$ pnpm test tests/unit/invoicing/
+  Test Files  20 passed (20)
+  Tests      210 passed (210)
+
+$ node --env-file=.env.local --import tsx scripts/seed-f4-e2e-admin-fixtures.ts
+seeding F4 E2E admin-mutation fixtures…
+  created member E2E Mutation Co (…)
+  seeded pay-target invoice SC-2026-990000 + PDF tenants/swecham/invoices/…/v1.pdf
+  seeded credit-target invoice SC-2026-995000 + PDF tenants/swecham/invoices/…/v1.pdf
+  PAY_TARGET_DOCUMENT_NUMBER=SC-2026-990000
+  CREDIT_TARGET_DOCUMENT_NUMBER=SC-2026-995000
+```
+
 
 Once a draft + issue path is wired:
 

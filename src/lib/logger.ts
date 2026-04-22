@@ -31,7 +31,18 @@ import { env } from './env';
  * dot-separated paths to redact nested fields.
  */
 
-const REDACT_PATHS = [
+/**
+ * Paths that pino MUST redact before writing any log line. Exported so
+ * `tests/unit/lib/logger-redaction.test.ts` can import the canonical
+ * list (instead of maintaining a stale copy-paste) — R3 review found
+ * the previous local copy had drifted to omit 22 paths.
+ *
+ * Pino's `*` wildcard matches exactly ONE intermediate key. Use
+ * `*.field` for depth-1 and `*.*.field` for depth-2 when a field
+ * classified as sensitive can legitimately appear in a nested payload
+ * (e.g. audit events carrying `recipient_email` two levels deep).
+ */
+export const REDACT_PATHS = [
   'password',
   '*.password',
   'newPassword',
@@ -107,6 +118,27 @@ const REDACT_PATHS = [
   '*.pdfBinary',
   'BLOB_READ_WRITE_TOKEN',
   'CRON_SECRET',
+  // R2-I1 (2026-04-22) — F4 audit payloads carry `recipient_email` in
+  // both top-level and nested contexts (see security.md § 4 PDPA/GDPR
+  // Cat-B classification). Never leak this to logs even if a caller
+  // accidentally passes the full audit event object to `logger.info`.
+  // `*.*.recipient_email` (R3 hardening) covers depth-2 in case a
+  // future caller logs `{ event: { payload: { recipient_email } } }`
+  // — pino's `*` matches exactly ONE intermediate key.
+  'recipient_email',
+  '*.recipient_email',
+  '*.*.recipient_email',
+  // R19 / QA TC-05 — free-text admin-entered payment reference on
+  // F4 `record-payment`. Stored raw on the invoices row (short-term
+  // operational lookup under tenant scope); the audit payload already
+  // stores a sha256 hash rather than plaintext. This redaction is
+  // defence-in-depth so a future caller that accidentally logs the
+  // request body or the raw Invoice row doesn't leak partial bank-
+  // account numbers / cheque numbers that can appear as free text.
+  'payment_reference',
+  '*.payment_reference',
+  'paymentReference',
+  '*.paymentReference',
 ];
 
 const baseOptions: LoggerOptions = {

@@ -78,8 +78,10 @@ import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/f
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
 import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
+import { renderAndUploadPdf } from '../lib/render-and-upload';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -139,6 +141,14 @@ export async function issueInvoice(
 ): Promise<Result<Invoice, IssueInvoiceError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   const now = deps.clock.nowIso();
+
+  // T113 — issuance-latency histogram (`invoicing_issue_duration_ms`,
+  // p95 target 1.5s per plan § VII). Start the clock at the use-case
+  // entry; the `.record()` call on success lives at the end of the
+  // happy-path branch so rolled-back attempts aren't logged (would
+  // pollute the SLO signal with timings that never produced a §87
+  // sequence number).
+  const issueStartedAt = performance.now();
 
   try {
   return await deps.invoiceRepo.withTx(async (tx) => {
@@ -246,49 +256,31 @@ export async function issueInvoice(
     const issueDate = bangkokLocalDate(now);
     const dueDate = addDays(issueDate, settings.defaultNetDays);
 
-    // H. Render PDF — typed error on failure. Returning `err(...)` here
-    // inside `withTx` still resolves the callback, which WILL commit the
-    // sequence allocation — so we throw to force rollback, then catch
-    // below and map to a typed Result.
-    let rendered;
-    try {
-      rendered = await deps.pdfRender.render({
-        kind: 'invoice',
-        templateVersion: deps.currentTemplateVersion,
-        documentNumber: docNum.value,
-        issueDate,
-        dueDate,
-        tenant: tenantSnap,
-        member: memberSnap,
-        lines: draft.lines,
-        subtotal,
-        vatRate: settings.vatRate,
-        vat,
-        total,
-      });
-    } catch (e) {
-      throw new IssueInvoiceInternalError({
-        code: 'pdf_render_failed',
-        reason: String(e),
-      });
-    }
-
-    // I. Blob upload — content-addressed key. Wrap in try/catch so blob
-    // failures also propagate as typed errors AND roll back the sequence
-    // allocation (throw → withTx rollback).
+    // H+I. Render PDF + upload to Blob (T126 shared helper).
+    // Throws via `IssueInvoiceInternalError` on either failure so
+    // `withTx` rolls back — sequence allocation is NOT consumed.
     const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
-    try {
-      await deps.blob.uploadPdf({
-        key: blobKey,
-        body: rendered.bytes,
-        contentType: 'application/pdf',
-      });
-    } catch (e) {
-      throw new IssueInvoiceInternalError({
-        code: 'blob_upload_failed',
-        reason: String(e),
-      });
-    }
+    const rendered = await renderAndUploadPdf(
+      { pdfRender: deps.pdfRender, blob: deps.blob },
+      {
+        renderInput: {
+          kind: 'invoice',
+          templateVersion: deps.currentTemplateVersion,
+          documentNumber: docNum.value,
+          issueDate,
+          dueDate,
+          tenant: tenantSnap,
+          member: memberSnap,
+          lines: draft.lines,
+          subtotal,
+          vatRate: settings.vatRate,
+          vat,
+          total,
+        },
+        blobKey,
+      },
+      (code, reason) => new IssueInvoiceInternalError({ code, reason }),
+    );
 
     // J. UPDATE invoices row. The repo throws if the status guard
     // (WHERE status='draft') doesn't match — treat that as a
@@ -363,6 +355,11 @@ export async function issueInvoice(
       });
     }
 
+    // T113 — happy-path emit. Count + duration fire together so
+    // rate(issue_total) × avg(issue_duration_ms) = total issuance
+    // wall-time on the dashboard.
+    invoicingMetrics.issueCount();
+    invoicingMetrics.issueDurationMs(performance.now() - issueStartedAt);
     return ok(issued);
   });
   } catch (e) {
@@ -375,6 +372,31 @@ export async function issueInvoice(
         },
         'issueInvoice: internal error, rolling back',
       );
+      // T122 — emit `pdf_render_failed` audit AFTER the tx rolled
+      // back so forensic evidence survives (the original in-tx audit
+      // would have rolled back with the mutation). Fire-and-forget:
+      // never mask the original error with an audit-write failure.
+      if (e.error.code === 'pdf_render_failed') {
+        try {
+          await deps.audit.emit(null, {
+            tenantId: input.tenantId,
+            requestId: input.requestId ?? null,
+            eventType: 'pdf_render_failed',
+            actorUserId: input.actorUserId,
+            summary: `PDF render failed for invoice ${input.invoiceId}`,
+            payload: {
+              invoice_id: input.invoiceId,
+              render_kind: 'invoice',
+              reason: e.error.reason,
+            },
+          });
+        } catch (auditErr) {
+          logger.warn(
+            { err: auditErr, invoiceId: input.invoiceId },
+            'issueInvoice: pdf_render_failed audit emit also failed',
+          );
+        }
+      }
       return err(e.error);
     }
     throw e;

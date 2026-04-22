@@ -42,6 +42,7 @@ import { logger } from '@/lib/logger';
 import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
+import { renderAndUploadPdf } from '../lib/render-and-upload';
 
 export const recordPaymentSchema = z.object({
   tenantId: z.string().min(1),
@@ -111,6 +112,23 @@ export async function recordPayment(
 ): Promise<Result<Invoice, RecordPaymentError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
 
+  // R17-03 — Load settings BEFORE the withTx. The settings repo opens its
+  // own `runInTenant` transaction under the hood; nesting that inside the
+  // outer withTx can deadlock the pool when concurrent payments on
+  // different invoices race for the two connection pool slots (outer tx
+  // holds conn1, inner settings-read waits for conn2 which is held by the
+  // other concurrent caller, and vice versa). Settings are effectively
+  // immutable during a payment record (the immutability trigger on
+  // tenant_invoice_settings makes mid-race mutation a no-op), so reading
+  // outside the tx is safe. Mirrors the identical fix + rationale in
+  // issue-credit-note.ts:126-135 and void-invoice.ts:130-132.
+  const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
+  // R18-03 — early-exit on missing settings BEFORE opening withTx +
+  // acquiring lockForUpdate. Matches the "pre-sequence early exits"
+  // pattern in issue-invoice.ts:155-163 and saves a useless round-trip
+  // + probe audit emit when the tenant has no settings row yet.
+  if (!settings) return err({ code: 'settings_missing' });
+
   try {
   return await deps.invoiceRepo.withTx(async (tx) => {
     // Row-lock first — guards against concurrent pay/void/credit-note
@@ -163,9 +181,6 @@ export async function recordPayment(
       return err({ code: 'no_snapshot_on_invoice' });
     }
 
-    const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
-    if (!settings) return err({ code: 'settings_missing' });
-
     // Receipt PDF — reuses invoice snapshot (FR-038 immutability). The
     // kind differs based on tenant setting; combined mode renders a
     // single "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; separate mode
@@ -199,48 +214,36 @@ export async function recordPayment(
       receiptDocNumRaw = receiptDoc.value.raw;
     }
 
-    // H. Render PDF — throw (not return err) on failure so withTx rolls
-    // back and the sequence increment is NOT consumed.
-    let rendered: Awaited<ReturnType<typeof deps.pdfRender.render>>;
-    try {
-      rendered = await deps.pdfRender.render({
-        kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
-        templateVersion: deps.currentTemplateVersion,
-        // Separate-mode receipt MUST use its own document number (the
-        // one just allocated); combined-mode reuses the invoice
-        // number because the document IS the same physical page
-        // (one combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
-        documentNumber: combinedMode ? loaded.documentNumber : receiptDocNum,
-        issueDate: loaded.issueDate,
-        dueDate: loaded.dueDate,
-        tenant: loaded.tenantIdentitySnapshot,
-        member: loaded.memberIdentitySnapshot,
-        lines: loaded.lines,
-        subtotal: loaded.subtotal,
-        vatRate: loaded.vatRate,
-        vat: loaded.vat,
-        total: loaded.total,
-      });
-    } catch (e) {
-      throw new RecordPaymentInternalError({
-        code: 'pdf_render_failed',
-        reason: String(e),
-      });
-    }
-
+    // H+I. Render receipt PDF + upload to Blob (T126 shared helper).
+    // Throws via `RecordPaymentInternalError` on either failure so
+    // `withTx` rolls back — the receipt sequence increment is NOT
+    // consumed (separate-mode) and the invoice stays `issued`.
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
-    try {
-      await deps.blob.uploadPdf({
-        key: receiptBlobKey,
-        body: rendered.bytes,
-        contentType: 'application/pdf',
-      });
-    } catch (e) {
-      throw new RecordPaymentInternalError({
-        code: 'blob_upload_failed',
-        reason: String(e),
-      });
-    }
+    const rendered = await renderAndUploadPdf(
+      { pdfRender: deps.pdfRender, blob: deps.blob },
+      {
+        renderInput: {
+          kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
+          templateVersion: deps.currentTemplateVersion,
+          // Separate-mode receipt MUST use its own document number (the
+          // one just allocated); combined-mode reuses the invoice
+          // number because the document IS the same physical page
+          // (one combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
+          documentNumber: combinedMode ? loaded.documentNumber : receiptDocNum,
+          issueDate: loaded.issueDate,
+          dueDate: loaded.dueDate,
+          tenant: loaded.tenantIdentitySnapshot,
+          member: loaded.memberIdentitySnapshot,
+          lines: loaded.lines,
+          subtotal: loaded.subtotal,
+          vatRate: loaded.vatRate,
+          vat: loaded.vat,
+          total: loaded.total,
+        },
+        blobKey: receiptBlobKey,
+      },
+      (code, reason) => new RecordPaymentInternalError({ code, reason }),
+    );
 
     // Atomic issued→paid UPDATE with payment fields + receipt PDF
     // metadata. The repo throws `applyPayment: no row updated` when
@@ -292,6 +295,10 @@ export async function recordPayment(
       summary: `Invoice ${loaded.documentNumber?.raw} marked paid`,
       payload: {
         invoice_id: invoiceId,
+        // US7 — surfaces this event in the F3 member timeline, which
+        // queries `payload->>'member_id'`. Required for the timeline
+        // contract even though invoices.member_id is derivable.
+        member_id: loaded.memberId,
         payment_method: input.paymentMethod,
         payment_reference_sha256: paymentReferenceSha256,
         payment_date: input.paymentDate,
@@ -344,6 +351,31 @@ export async function recordPayment(
         },
         'recordPayment: internal error, rolling back',
       );
+      // T122 — emit `pdf_render_failed` audit AFTER the tx rolled
+      // back so forensic evidence survives (parity with
+      // issue-invoice.ts:375–399). Fire-and-forget: never mask the
+      // original error with an audit-write failure.
+      if (e.error.code === 'pdf_render_failed') {
+        try {
+          await deps.audit.emit(null, {
+            tenantId: input.tenantId,
+            requestId: input.requestId ?? null,
+            eventType: 'pdf_render_failed',
+            actorUserId: input.actorUserId,
+            summary: `PDF render failed for receipt on invoice ${input.invoiceId}`,
+            payload: {
+              invoice_id: input.invoiceId,
+              render_kind: 'receipt',
+              reason: e.error.reason,
+            },
+          });
+        } catch (auditErr) {
+          logger.warn(
+            { err: auditErr, invoiceId: input.invoiceId },
+            'recordPayment: pdf_render_failed audit emit also failed',
+          );
+        }
+      }
       return err(e.error);
     }
     throw e;

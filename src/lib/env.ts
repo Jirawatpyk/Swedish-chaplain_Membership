@@ -122,6 +122,17 @@ const schema = z.object({
   // production to avoid leaking stack traces in hot paths.
   DEBUG_RLS_STATE: booleanFromString.default(false),
 
+  // T115t — test-only flag enabling `X-Tenant` header override in
+  // `resolveTenantFromRequest`. When TRUE, a request's `X-Tenant`
+  // header value is used as the tenant slug instead of
+  // `env.tenant.slug`. Required by Playwright throwaway-tenant
+  // fixtures that provision per-test tenants.
+  //
+  // REFUSED in production: the validator below throws at boot if
+  // NODE_ENV='production' AND this flag is TRUE. In prod this
+  // header is silently ignored regardless of header presence.
+  E2E_X_TENANT_HEADER_ENABLED: booleanFromString.default(false),
+
   // --- F3 Feature flag ------------------------------------------------------
   // Kill-switch for the Members & Contacts feature. When FALSE every
   // `/api/members/**` and `/api/portal/**` route returns 503 `read_only_mode`
@@ -153,6 +164,19 @@ const schema = z.object({
   // disable without a code deploy — useful for emergency write-freeze
   // of financial mutations.
   FEATURE_F4_INVOICING: booleanFromString.default(true),
+
+  // PG-2 DPA gate — FR-036 cancellation emails CAN include the VOID-
+  // stamped invoice PDF as an email attachment. Shipping the PDF
+  // bytes (which contain member tax ID + legal name + address) to
+  // Resend (EU processor) expands the PDPA §28 / GDPR Art. 28 cross-
+  // border transfer scope beyond what the existing F1 Resend DPA
+  // explicitly covers. Default FALSE until DPO/legal confirms the
+  // DPA extension covers binary attachments containing tax-document
+  // PII. When FALSE the cancellation email still references the
+  // voided document number and declares "no longer payable" (FR-036
+  // partial), but ships a download LINK instead of an attachment.
+  // Flip to TRUE in Vercel env once the DPA amendment is signed.
+  FEATURE_F4_VOID_ATTACHMENT: booleanFromString.default(false),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -203,6 +227,19 @@ if (raw.NODE_ENV === 'production' && raw.DEBUG_RLS_STATE) {
     'Environment validation failed (src/lib/env.ts):\n' +
       '  - DEBUG_RLS_STATE must be false (or unset) when NODE_ENV=production. ' +
       'This flag is a development-time RLS safety net, not a production feature.',
+  );
+}
+
+// T115t — E2E_X_TENANT_HEADER_ENABLED must NEVER be set in production.
+// It lets an incoming request override the deployed tenant slug via
+// the `X-Tenant` header, which is test-harness-only and would be a
+// trivial tenant-enumeration vector if enabled in prod.
+if (raw.NODE_ENV === 'production' && raw.E2E_X_TENANT_HEADER_ENABLED) {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - E2E_X_TENANT_HEADER_ENABLED must be false (or unset) when NODE_ENV=production. ' +
+      'This flag is a Playwright throwaway-tenant test harness, not a production feature. ' +
+      'Enabling it in prod would allow any client to override the deployed tenant slug via the X-Tenant header.',
   );
 }
 
@@ -257,12 +294,18 @@ export const env = {
   tenant: {
     slug: raw.TENANT_SLUG,
     debugRlsState: raw.DEBUG_RLS_STATE,
+    // T115t — Playwright throwaway-tenant harness. Guarded at boot
+    // (refused in production, see validator above) + runtime-checked
+    // by `resolveTenantFromRequest` before honouring the X-Tenant
+    // header.
+    xHeaderEnabled: raw.E2E_X_TENANT_HEADER_ENABLED,
   },
 
   // F3 + F4 feature flags
   features: {
     f3Members: raw.FEATURE_F3_MEMBERS,
     f4Invoicing: raw.FEATURE_F4_INVOICING,
+    f4VoidAttachment: raw.FEATURE_F4_VOID_ATTACHMENT,
   },
 
   // F4 Invoicing

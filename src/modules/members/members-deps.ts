@@ -98,3 +98,25 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     idFactory: systemIdFactory,
   };
 }
+
+/**
+ * Minimal subset of `MembersDeps` that `getMember` actually consumes —
+ * used by routes that only need a tenant-scoped member probe (e.g.
+ * `/api/members/[memberId]/invoices` cross-tenant verification) so we
+ * don't allocate the full deps bag (resend, argon2 hashing, session
+ * revocation, invitation cascade, timeline repo) on every request.
+ * Keeps Vercel function cold-start lean.
+ */
+export type MemberProbeDeps = Pick<
+  MembersDeps,
+  'tenant' | 'memberRepo' | 'contactRepo' | 'audit'
+>;
+
+export function buildMemberProbeDeps(tenant: TenantContext): MemberProbeDeps {
+  return {
+    tenant,
+    memberRepo: drizzleMemberRepo,
+    contactRepo: drizzleContactRepo,
+    audit: drizzleAuditAdapter,
+  };
+}
