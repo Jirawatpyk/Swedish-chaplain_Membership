@@ -1,1 +1,0 @@
-- [F4 Invoicing Security Audit 2026-04-22](project_f4_security_audit.md) — Phase 10 sign-off findings: tenant isolation patterns, REDACT_PATHS depth-2 wildcard, CRON_SECRET timingSafeEqual, T-03/T-15 accepted debts

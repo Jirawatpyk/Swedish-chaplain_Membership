@@ -1,1 +1,0 @@
-- [008 Invite-Link-Member UX Patterns](project_008_invite_link_member.md) — MemberPicker aria wiring, i18n copy patterns, disabled-state SR double-announce, follow-up backlog
