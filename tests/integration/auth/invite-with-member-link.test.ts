@@ -38,7 +38,6 @@ import {
   notificationsOutbox,
   users,
 } from '@/modules/auth/infrastructure/db/schema';
-import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
