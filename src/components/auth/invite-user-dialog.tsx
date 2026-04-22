@@ -215,6 +215,7 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
               <MemberPicker
                 id="invite-link-member"
                 aria-labelledby="invite-link-member-label"
+                aria-describedby="invite-link-member-help"
                 value={memberId}
                 onChange={setMemberId}
                 disabled={submitting || role !== 'member'}

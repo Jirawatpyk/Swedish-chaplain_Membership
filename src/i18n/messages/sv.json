@@ -258,12 +258,12 @@
           "forbidden": "Du har inte behörighet att bjuda in användare."
         },
         "linkMember": {
-          "label": "Länka till medlem",
+          "label": "Länka till medlemsföretag",
           "placeholder": "Sök medlemmar…",
-          "helpText": "Valfritt: länka den nya användaren till en befintlig medlemspost. Gäller endast när rollen är Medlem.",
+          "helpText": "Länka användaren till ett befintligt medlemsföretag. Gäller endast för rollen Medlem.",
           "clear": "Rensa val",
           "loading": "Laddar medlemmar…",
-          "noMembersFound": "Inga medlemmar hittades",
+          "noMembersFound": "Inga medlemmar hittades. Försök med ett annat sökord.",
           "disabledHint": "Välj rollen Medlem för att länka"
         }
       }

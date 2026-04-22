@@ -258,12 +258,12 @@
           "forbidden": "You don't have permission to invite users."
         },
         "linkMember": {
-          "label": "Link to member",
+          "label": "Link to member company",
           "placeholder": "Search members…",
-          "helpText": "Optional: link this user to an existing member record. Only applies when role is Member.",
+          "helpText": "Link this user to a member company. Only available for the Member role.",
           "clear": "Clear selection",
           "loading": "Loading members…",
-          "noMembersFound": "No members found",
+          "noMembersFound": "No members found. Try a different search term.",
           "disabledHint": "Select role Member to link"
         }
       }

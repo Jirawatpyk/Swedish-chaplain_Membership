@@ -73,6 +73,10 @@ export interface MemberPickerProps {
   readonly disabled?: boolean;
   readonly id?: string;
   readonly 'aria-labelledby'?: string;
+  /** ID of an external help-text element. Passed through to aria-describedby
+   *  on the trigger button so screen readers announce the hint when focus lands
+   *  on the picker (only when not disabled — disabled state uses its own hint). */
+  readonly 'aria-describedby'?: string;
 }
 
 const DEBOUNCE_MS = 200;
@@ -84,6 +88,7 @@ export function MemberPicker({
   disabled = false,
   id,
   'aria-labelledby': ariaLabelledBy,
+  'aria-describedby': ariaDescribedBy,
 }: MemberPickerProps) {
   const t = useTranslations('admin.users.invite.linkMember');
   const reactId = useId();
@@ -191,7 +196,7 @@ export function MemberPicker({
             aria-haspopup="listbox"
             aria-controls={listboxRegionId}
             aria-labelledby={ariaLabelledBy}
-            aria-describedby={disabled ? disabledHintId : undefined}
+            aria-describedby={disabled ? disabledHintId : ariaDescribedBy}
             disabled={disabled}
             className={cn(
               'w-full justify-between font-normal',
@@ -201,11 +206,9 @@ export function MemberPicker({
         }
       >
         <span className="truncate">
-          {disabled
-            ? t('disabledHint')
-            : effectiveSelected
-              ? effectiveSelected.company_name
-              : t('placeholder')}
+          {effectiveSelected && !disabled
+            ? effectiveSelected.company_name
+            : t('placeholder')}
         </span>
         <span className="ms-2 flex shrink-0 items-center gap-1">
           {effectiveSelected && !disabled ? (
