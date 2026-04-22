@@ -82,6 +82,12 @@ export interface MemberPickerProps {
 const DEBOUNCE_MS = 200;
 const FETCH_LIMIT = 20;
 
+type MemberStatus = 'active' | 'inactive' | 'archived';
+
+function isKnownStatus(s: string): s is MemberStatus {
+  return s === 'active' || s === 'inactive' || s === 'archived';
+}
+
 export function MemberPicker({
   value,
   onChange,
@@ -91,6 +97,9 @@ export function MemberPicker({
   'aria-describedby': ariaDescribedBy,
 }: MemberPickerProps) {
   const t = useTranslations('admin.users.invite.linkMember');
+  // Reuse the directory filter status keys so we have one source of truth
+  // for status copy across EN/TH/SV (keys: active / inactive / archived).
+  const tStatus = useTranslations('admin.members.directory.filters.status');
   const reactId = useId();
   const listboxId = id ?? `member-picker-${reactId}`;
 
@@ -100,6 +109,7 @@ export function MemberPicker({
   const [items, setItems] = useState<readonly MemberPickerOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<MemberPickerOption | null>(null);
+  const commandInputRef = useRef<HTMLInputElement>(null);
 
   // Derived: if external value clears, drop the cached chip. Calculated
   // during render — no effect needed (React docs: "You Might Not Need
@@ -124,6 +134,11 @@ export function MemberPicker({
     const run = async () => {
       setLoading(true);
       const params = new URLSearchParams({ limit: String(FETCH_LIMIT) });
+      // Only surface active members in the picker — archived/inactive
+      // rows are rarely the right target for admin "link to member" flows.
+      // The members directory page can still opt-in to archived rows via
+      // its own `show_archived` toggle, so we keep the API default unchanged.
+      params.set('status', 'active');
       if (query.length > 0) params.set('q', query);
       try {
         const r = await fetch(`/api/members?${params.toString()}`, {
