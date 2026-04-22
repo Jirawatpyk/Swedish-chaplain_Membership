@@ -9,8 +9,8 @@
  *   - Dialog opens from the "Invite user" button at the bottom of
  *     the users table.
  *   - Fields: email (auto-focus), role (admin / manager / member),
- *     optional display name placeholder (not yet wired — the invite
- *     route derives it from the email on submit).
+ *     optional "link to member" picker — enabled only when role=member
+ *     (F1 spec:672-678).
  *   - Submits to `POST /api/auth/invite` with the Origin header set
  *     by the browser (the proxy.ts CSRF guard passes same-origin).
  *   - On success: shows a toast, closes the dialog, refreshes the
@@ -44,6 +44,7 @@ import {
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
+import { MemberPicker } from '@/components/members/member-picker';
 // Client component — same rationale as `idle-warning-dialog.tsx`:
 // the `@/modules/auth` barrel transitively loads Node-only
 // Infrastructure modules and cannot be used from client code.
@@ -62,6 +63,7 @@ const KNOWN_INVITE_ERROR_KEYS = [
   'network',
   'invalid-input',
   'email-taken',
+  'member-not-found',
   'forbidden',
 ] as const;
 
@@ -79,12 +81,14 @@ export interface InviteUserDialogProps {
 
 export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
   const t = useTranslations('admin.users.invite');
+  const tLink = useTranslations('admin.users.invite.linkMember');
   const tActions = useTranslations('admin.users.actions');
   const router = useRouter();
 
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('member');
+  const [memberId, setMemberId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
@@ -95,6 +99,7 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
     if (!open) {
       setEmail('');
       setRole('member');
+      setMemberId(null);
       setErrorCode(null);
       return;
     }
@@ -102,25 +107,38 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
     return () => clearTimeout(t);
   }, [open]);
 
+  // Clear memberId when role switches away from 'member' — the
+  // backend rejects the combination and showing a stale selection
+  // under a disabled picker would be confusing.
+  useEffect(() => {
+    if (role !== 'member' && memberId !== null) {
+      setMemberId(null);
+    }
+  }, [role, memberId]);
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!email.trim()) return;
     setSubmitting(true);
     setErrorCode(null);
     try {
+      const body: Record<string, unknown> = {
+        email: email.trim().toLowerCase(),
+        role,
+      };
+      if (role === 'member' && memberId) {
+        body.memberId = memberId;
+      }
       const response = await fetch('/api/auth/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          role,
-        }),
+        body: JSON.stringify(body),
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as {
+        const errBody = (await response.json().catch(() => ({}))) as {
           error?: string;
         };
-        setErrorCode(body.error ?? 'generic');
+        setErrorCode(errBody.error ?? 'generic');
         return;
       }
       toast.success(t('toast.success', { email: email.trim() }));
@@ -186,6 +204,24 @@ export function InviteUserDialog({ disabled = false }: InviteUserDialogProps) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label
+                id="invite-link-member-label"
+                htmlFor="invite-link-member"
+              >
+                {tLink('label')}
+              </Label>
+              <MemberPicker
+                id="invite-link-member"
+                aria-labelledby="invite-link-member-label"
+                value={memberId}
+                onChange={setMemberId}
+                disabled={submitting || role !== 'member'}
+              />
+              <p className="text-xs text-muted-foreground">
+                {tLink('helpText')}
+              </p>
             </div>
             {errorCode ? (
               <div
