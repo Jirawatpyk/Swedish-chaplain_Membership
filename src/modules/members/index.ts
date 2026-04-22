@@ -231,6 +231,16 @@ export {
   type InviteColleagueDeps,
 } from './application/use-cases/invite-colleague';
 
+// --- F1 spec:672-678 — admin invite with optional member link --------------
+
+export {
+  inviteUserForMember,
+  type InviteUserForMemberInput,
+  type InviteUserForMemberError,
+  type InviteUserForMemberDeps,
+  type InviteUserForMemberOutput,
+} from './application/use-cases/invite-user-for-member';
+
 // --- US4 use cases ----------------------------------------------------------
 
 export {
