@@ -122,6 +122,18 @@ export function MemberPicker({
     return () => clearTimeout(handle);
   }, [rawInput]);
 
+  // Auto-focus the search input when the Popover opens. We defer the
+  // .focus() call until after Base UI's Portal has mounted and its own
+  // initial focus pass has completed — a 0ms timeout is enough to land
+  // on the next tick. Without this, the user has to click the input
+  // before they can start typing. Mirrors the dialog-auto-focus pattern
+  // in `invite-user-dialog.tsx`.
+  useEffect(() => {
+    if (!open) return;
+    const handle = setTimeout(() => commandInputRef.current?.focus(), 0);
+    return () => clearTimeout(handle);
+  }, [open]);
+
   // Fetch members when popover opens OR the debounced query changes.
   // The `setLoading(true)` lives inside the async IIFE (not synchronously
   // in the effect body) to avoid the set-state-in-effect lint — React
@@ -268,6 +280,7 @@ export function MemberPicker({
       >
         <Command shouldFilter={false}>
           <CommandInput
+            ref={commandInputRef}
             id={listboxId}
             placeholder={t('placeholder')}
             value={rawInput}
