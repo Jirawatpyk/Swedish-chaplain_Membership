@@ -45,7 +45,8 @@ export type F3AuditEventType =
   | 'email_dispatch_failed'
   | 'invitation_bounced'
   | 'bulk_action_rate_limit_exceeded'
-  | 'member_portal_invite_queued';
+  | 'member_portal_invite_queued'
+  | 'contact_linked_to_user';
 
 /**
  * Exhaustiveness guard for switch statements over `F3AuditEventType`.

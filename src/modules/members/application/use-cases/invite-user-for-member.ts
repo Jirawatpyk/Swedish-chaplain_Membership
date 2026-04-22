@@ -57,6 +57,8 @@ export type InviteUserForMemberError =
   | { readonly type: 'invalid_email' }
   | { readonly type: 'email_taken' }
   | { readonly type: 'member_not_found' }
+  | { readonly type: 'contact_already_linked' }
+  | { readonly type: 'email_belongs_to_other_member' }
   | { readonly type: 'server_error'; readonly message: string };
 
 export type InviteUserForMemberDeps = {
@@ -140,8 +142,47 @@ export async function inviteUserForMember(
     return err({ type: 'invalid_email' });
   }
 
-  // 3. F1 createUser — its own tx. Creates pending user + invitation +
-  //    outbox + account_created audit atomically.
+  // 3. Hybrid A+B duplicate-email pre-check. Same-tenant `contacts`
+  //    rows carry a unique email partial-index; if we blindly INSERT
+  //    on duplicate, the DB conflict rolls back the contact tx AND
+  //    orphans the already-created F1 user. Branch on the lookup
+  //    result BEFORE createUser so no orphan is ever created for the
+  //    deterministic duplicate cases.
+  const existing = await deps.contactRepo.findByEmail(
+    deps.tenant,
+    emailResult.value,
+  );
+
+  // Decision table:
+  //   not_found                              -> path A: create new contact
+  //   found, member_id DIFFERENT             -> reject email_belongs_to_other_member
+  //   found, member_id matches, linked_user  -> reject contact_already_linked
+  //   found, member_id matches, unlinked     -> path B: link existing contact
+  let mode: 'create_new' | 'link_existing';
+  let existingContactId: ContactId | null = null;
+
+  if (existing.ok) {
+    if (existing.value.memberId !== input.memberId) {
+      return err({ type: 'email_belongs_to_other_member' });
+    }
+    if (existing.value.linkedUserId !== null) {
+      return err({ type: 'contact_already_linked' });
+    }
+    mode = 'link_existing';
+    existingContactId = existing.value.contactId;
+  } else {
+    if (existing.error.code !== 'repo.not_found') {
+      return err({
+        type: 'server_error',
+        message: `findByEmail: ${existing.error.code}`,
+      });
+    }
+    mode = 'create_new';
+  }
+
+  // 4. F1 createUser — its own tx. Creates pending user + invitation +
+  //    outbox + account_created audit atomically. Run for BOTH paths
+  //    (the link-existing branch still needs an F1 user row for auth).
   const { firstName, lastName } = deriveContactName(
     emailResult.value,
     input.displayName,
@@ -168,28 +209,38 @@ export async function inviteUserForMember(
     });
   }
 
-  // 4. Add secondary contact + link user + audit — atomic tx.
-  const newContactId = deps.idFactory.contactId();
-  const contactDraft = {
-    tenantId: asTenantId(deps.tenant.slug),
-    contactId: newContactId,
-    memberId: input.memberId,
-    firstName,
-    lastName,
-    email: emailResult.value,
-    phone: null,
-    roleTitle: null,
-    preferredLanguage: (input.locale ?? 'en') as PreferredLanguage,
-    isPrimary: false,
-    dateOfBirth: null,
-    linkedUserId: null,
-    removedAt: null,
-  };
+  // 5. Persist in atomic tx.
+  //    Path A (create_new): add secondary contact + link user + emit
+  //      `contact_created`.
+  //    Path B (link_existing): skip addInTx, call linkUserInTx on the
+  //      pre-existing contact, emit `contact_linked_to_user`. Existing
+  //      contact's firstName/lastName/phone/roleTitle are preserved —
+  //      a real person typed them, admin's quick-invite form shouldn't
+  //      overwrite with less-accurate data.
+  const newContactId =
+    mode === 'link_existing' ? existingContactId! : deps.idFactory.contactId();
 
   try {
     const contact = await runInTenant(deps.tenant, async (tx) => {
-      const added = await deps.contactRepo.addInTx(tx, contactDraft);
-      if (!added.ok) throw new UseCaseAbort<RepoError>(added.error);
+      if (mode === 'create_new') {
+        const contactDraft = {
+          tenantId: asTenantId(deps.tenant.slug),
+          contactId: newContactId,
+          memberId: input.memberId,
+          firstName,
+          lastName,
+          email: emailResult.value,
+          phone: null,
+          roleTitle: null,
+          preferredLanguage: (input.locale ?? 'en') as PreferredLanguage,
+          isPrimary: false,
+          dateOfBirth: null,
+          linkedUserId: null,
+          removedAt: null,
+        };
+        const added = await deps.contactRepo.addInTx(tx, contactDraft);
+        if (!added.ok) throw new UseCaseAbort<RepoError>(added.error);
+      }
 
       const linked = await deps.contactRepo.linkUserInTx(
         tx,
@@ -199,17 +250,24 @@ export async function inviteUserForMember(
       if (!linked.ok) throw new UseCaseAbort<RepoError>(linked.error);
 
       const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
-        type: 'contact_created',
+        type:
+          mode === 'create_new' ? 'contact_created' : 'contact_linked_to_user',
         actorUserId: input.actorUserId,
         targetUserId: created.value.user.id,
         requestId: input.requestId,
-        summary: `admin linked new user to member ${input.memberId}`,
+        summary:
+          mode === 'create_new'
+            ? `admin linked new user to member ${input.memberId}`
+            : `admin linked existing contact to new user on member ${input.memberId}`,
         payload: {
           contact_id: newContactId,
           member_id: input.memberId,
           user_id: created.value.user.id,
           is_primary: false,
-          source: 'admin_invite_with_member_link',
+          source:
+            mode === 'create_new'
+              ? 'admin_invite_with_member_link'
+              : 'admin_invite_link_existing',
         },
       });
       if (!auditResult.ok) throw new UseCaseAbort<RepoError>(auditResult.error);
@@ -230,6 +288,7 @@ export async function inviteUserForMember(
         userId: created.value.user.id,
         cause,
         requestId: input.requestId,
+        mode,
       },
       'invite-user-for-member.tx_failed: orphan F1 user left for operational reconciliation',
     );
