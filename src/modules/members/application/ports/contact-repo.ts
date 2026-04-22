@@ -36,6 +36,25 @@ export interface ContactRepo {
   ): Promise<Result<Contact, RepoError>>;
 
   /**
+   * Look up a non-removed contact by email within the caller's tenant.
+   * Used by admin invite flow (`invite-user-for-member`) to decide
+   * between creating a new contact vs. linking an existing unlinked
+   * contact vs. rejecting an already-linked / cross-member duplicate.
+   *
+   * Scoped to the tenant via RLS (`runInTenant`) + defensive
+   * `tenantId = ctx.slug` WHERE clause. Ignores soft-deleted rows
+   * (`removed_at IS NULL`) — a soft-deleted contact with the same
+   * email should not block a new invite.
+   *
+   * Returns `repo.not_found` when no live contact with that email
+   * exists in the tenant.
+   */
+  findByEmail(
+    ctx: TenantContext,
+    email: Email,
+  ): Promise<Result<Contact, RepoError>>;
+
+  /**
    * Insert a contact row inside the caller's transaction. Does NOT emit
    * audit events — the caller is responsible for writing the matching
    * `contact_created` audit via `AuditPort.recordInTx` so Application-

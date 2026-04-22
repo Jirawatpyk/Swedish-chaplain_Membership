@@ -225,6 +225,13 @@
       "when": 1776988800000,
       "tag": "0031_audit_tenant_invoice_settings_cross_tenant_probe",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1777248000000,
+      "tag": "0032_audit_contact_linked_to_user",
+      "breakpoints": true
     }
   ]
 }

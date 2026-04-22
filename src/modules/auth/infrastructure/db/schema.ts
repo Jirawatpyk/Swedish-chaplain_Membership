@@ -118,6 +118,8 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'tenant_invoice_settings_cross_tenant_probe',
   'pdf_render_failed',
   'auto_email_delivery_failed',
+  // --- Hybrid A+B duplicate-email handling — added by migration 0032 ---
+  'contact_linked_to_user',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

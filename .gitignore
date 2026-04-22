@@ -118,6 +118,7 @@ $RECYCLE.BIN/
 .claude/settings.local.json
 .claude/.credentials.json
 .claude/scheduled_tasks.lock
+.claude/agent-memory/
 CLAUDE.local.md
 
 # ============================================

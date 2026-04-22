@@ -1,1 +1,0 @@
-- [F4 Invoicing UI Patterns & Known Gaps](project_f4_invoicing_patterns.md) — US4 settings + US3 portal not yet built; download links missing aria-label; detail skeleton not mobile-first

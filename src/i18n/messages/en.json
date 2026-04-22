@@ -254,7 +254,22 @@
           "network": "Network error. Check your connection and try again.",
           "invalid-input": "Please enter a valid email and role.",
           "email-taken": "That email is already on the system.",
+          "member-not-found": "That member record could not be found. It may belong to another tenant or have been archived.",
+          "contact-already-linked": "This email already has portal access for this member. Ask them to use Forgot Password if they can't sign in.",
+          "email-belongs-to-other-member": "This email is already a contact on another member. Each email can only be linked to one member at a time.",
           "forbidden": "You don't have permission to invite users."
+        },
+        "linkMember": {
+          "label": "Link to member company",
+          "placeholder": "Search members…",
+          "helpText": "Link this user to a member company. Only available for the Member role.",
+          "clear": "Clear selection",
+          "loading": "Loading members…",
+          "noMembersFound": "No members found. Try a different search term.",
+          "fetchError": "Failed to load members. Please try again.",
+          "disabledHint": "Select role Member to link",
+          "lockedFallback": "Selected member",
+          "lockedHelpText": "This invite is pre-linked to the current member company."
         }
       }
     },
@@ -599,7 +614,11 @@
         "portal": {
           "linked": "Portal linked"
         },
-        "editCta": "Edit"
+        "editCta": "Edit",
+        "actions": {
+          "inviteUser": "Invite user",
+          "inviteUserDescription": "Send a portal invitation for this member company."
+        }
       },
       "timeline": {
         "pageTitle": "Timeline · {companyName} · SweCham",
@@ -636,8 +655,12 @@
           "yearAria": "Filter invoices by fiscal year",
           "search": "Search document number…",
           "fiscalYear": "Year",
-          "status": { "all": "All statuses" },
-          "year": { "all": "All years" },
+          "status": {
+            "all": "All statuses"
+          },
+          "year": {
+            "all": "All years"
+          },
           "apply": "Apply",
           "clear": "Clear filters"
         },
@@ -959,7 +982,9 @@
         }
       },
       "list": {
-        "meta": { "title": "Credit Notes" },
+        "meta": {
+          "title": "Credit Notes"
+        },
         "title": "Credit notes",
         "description": "All credit notes issued against tax invoices. Read-only audit trail.",
         "empty": "Credit notes appear here after an admin issues one against a paid invoice.",
@@ -988,9 +1013,13 @@
         }
       },
       "detail": {
-        "meta": { "title": "Credit Note" },
+        "meta": {
+          "title": "Credit Note"
+        },
         "subtitle": "Read-only credit-note record against the original invoice.",
-        "status": { "issued": "Issued" },
+        "status": {
+          "issued": "Issued"
+        },
         "actions": {
           "backToInvoice": "Back to invoice",
           "download": "Download PDF",
@@ -1012,7 +1041,9 @@
           "vat": "VAT",
           "total": "Total credit (incl. VAT)"
         },
-        "reason": { "heading": "Reason" },
+        "reason": {
+          "heading": "Reason"
+        },
         "parties": {
           "issuer": "Issuer",
           "customer": "Customer",
@@ -1429,9 +1460,13 @@
     },
     "creditNotes": {
       "detail": {
-        "meta": { "title": "Credit Note" },
+        "meta": {
+          "title": "Credit Note"
+        },
         "subtitle": "A credit has been issued against your invoice.",
-        "status": { "issued": "Issued" },
+        "status": {
+          "issued": "Issued"
+        },
         "actions": {
           "backToInvoice": "Back to invoice",
           "download": "Download PDF",
@@ -1445,7 +1480,9 @@
           "vat": "VAT",
           "total": "Total credit (incl. VAT)"
         },
-        "reason": { "heading": "Reason" }
+        "reason": {
+          "heading": "Reason"
+        }
       }
     },
     "profile": {

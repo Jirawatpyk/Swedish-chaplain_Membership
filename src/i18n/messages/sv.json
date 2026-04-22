@@ -254,7 +254,22 @@
           "network": "Nätverksfel. Kontrollera anslutningen och försök igen.",
           "invalid-input": "Ange en giltig e-postadress och roll.",
           "email-taken": "Den e-postadressen finns redan i systemet.",
+          "member-not-found": "Medlemsposten kunde inte hittas. Den kan tillhöra en annan tenant eller vara arkiverad.",
+          "contact-already-linked": "E-postadressen har redan portalåtkomst för detta medlemsföretag. Be dem använda Glömt lösenord om de inte kan logga in.",
+          "email-belongs-to-other-member": "E-postadressen är redan kopplad till en annan medlem. Varje e-postadress kan bara kopplas till ett medlemsföretag åt gången.",
           "forbidden": "Du har inte behörighet att bjuda in användare."
+        },
+        "linkMember": {
+          "label": "Länka till medlemsföretag",
+          "placeholder": "Sök medlemmar…",
+          "helpText": "Länka användaren till ett befintligt medlemsföretag. Gäller endast för rollen Medlem.",
+          "clear": "Rensa val",
+          "loading": "Laddar medlemmar…",
+          "noMembersFound": "Inga medlemmar hittades. Försök med ett annat sökord.",
+          "fetchError": "Det gick inte att ladda medlemmar. Försök igen.",
+          "disabledHint": "Välj rollen Medlem för att länka",
+          "lockedFallback": "Vald medlem",
+          "lockedHelpText": "Denna inbjudan är förkopplad till det aktuella medlemsbolaget."
         }
       }
     },
@@ -599,7 +614,11 @@
         "portal": {
           "linked": "Portalanslutning"
         },
-        "editCta": "Redigera"
+        "editCta": "Redigera",
+        "actions": {
+          "inviteUser": "Bjud in användare",
+          "inviteUserDescription": "Skicka en portalinbjudan för detta medlemsbolag."
+        }
       },
       "timeline": {
         "pageTitle": "Tidslinje · {companyName} · SweCham",
@@ -636,8 +655,12 @@
           "yearAria": "Filtrera fakturor efter räkenskapsår",
           "search": "Sök dokumentnummer…",
           "fiscalYear": "År",
-          "status": { "all": "Alla statusar" },
-          "year": { "all": "Alla år" },
+          "status": {
+            "all": "Alla statusar"
+          },
+          "year": {
+            "all": "Alla år"
+          },
           "apply": "Tillämpa",
           "clear": "Rensa filter"
         },
@@ -959,7 +982,9 @@
         }
       },
       "list": {
-        "meta": { "title": "Kreditnotor" },
+        "meta": {
+          "title": "Kreditnotor"
+        },
         "title": "Kreditnotor",
         "description": "Alla kreditnotor utfärdade mot skattefakturor. Skrivskyddad granskningslogg.",
         "empty": "Kreditnotor visas här efter att en administratör utfärdat en mot en betald faktura.",
@@ -988,9 +1013,13 @@
         }
       },
       "detail": {
-        "meta": { "title": "Kreditnota" },
+        "meta": {
+          "title": "Kreditnota"
+        },
         "subtitle": "Skrivskyddad kreditnotaregistrering mot den ursprungliga fakturan.",
-        "status": { "issued": "Utfärdad" },
+        "status": {
+          "issued": "Utfärdad"
+        },
         "actions": {
           "backToInvoice": "Tillbaka till faktura",
           "download": "Ladda ner PDF",
@@ -1012,7 +1041,9 @@
           "vat": "Moms",
           "total": "Totalt krediterat (inkl. moms)"
         },
-        "reason": { "heading": "Anledning" },
+        "reason": {
+          "heading": "Anledning"
+        },
         "parties": {
           "issuer": "Utfärdare",
           "customer": "Kund",
@@ -1429,9 +1460,13 @@
     },
     "creditNotes": {
       "detail": {
-        "meta": { "title": "Kreditnota" },
+        "meta": {
+          "title": "Kreditnota"
+        },
         "subtitle": "En kreditnota har utfärdats mot din faktura.",
-        "status": { "issued": "Utfärdad" },
+        "status": {
+          "issued": "Utfärdad"
+        },
         "actions": {
           "backToInvoice": "Tillbaka till faktura",
           "download": "Ladda ner PDF",
@@ -1445,7 +1480,9 @@
           "vat": "Moms",
           "total": "Totalt kredit (inkl. moms)"
         },
-        "reason": { "heading": "Anledning" }
+        "reason": {
+          "heading": "Anledning"
+        }
       }
     },
     "profile": {

@@ -1,3 +1,0 @@
-- [invite-portal contract test pattern](project_f5_invite_portal_contract_pattern.md) — F1 createUser adapter must be mocked; route params are Promise; RBAC gate short-circuit assertion
-- [Contract test patterns](feedback_contract_test_patterns.md) — dynamic import per it(), rate-limit header assertion idiom, switch-branch coverage rule, buildPublicEmailChangeLookup mock shape
-- [F3 Members & Contacts Test Coverage Patterns](project_f3_test_coverage_patterns.md) — Coverage gaps, chaos-test pattern, flakiness risks, and reusable helpers found in Review Pass 5
