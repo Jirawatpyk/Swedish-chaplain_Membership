@@ -239,7 +239,7 @@ export function MemberPicker({
     [onChange],
   );
 
-  const clearRef = useRef<HTMLButtonElement>(null);
+  const clearRef = useRef<HTMLSpanElement>(null);
   // Separate stable IDs for the listbox region and the disabled-hint
   // paragraph so both `aria-controls` and `aria-describedby` point to
   // unique, never-colliding elements.
@@ -274,25 +274,34 @@ export function MemberPicker({
         </span>
         <span className="ms-2 flex shrink-0 items-center gap-1">
           {effectiveSelected && !disabled ? (
-            // Use a real <button> so it receives native keyboard events
-            // and participates in the tab order with the correct ARIA
-            // role. Touch target: `min-h-11 min-w-11` = 2.75rem = 44px
-            // (Tailwind's `11` = 11 × 0.25rem), which satisfies WCAG 2.2
-            // SC 2.5.8 (AA, 24×24) with headroom toward SC 2.5.5 (AAA,
-            // 44×44). Visible chrome stays compact via the smaller icon.
-            <button
+            // Use span with role="button" — NOT <button> — because
+            // PopoverTrigger already renders a <button>, and nesting
+            // <button> inside <button> is invalid HTML and causes a
+            // React hydration error. Span keeps inline layout flush
+            // with the chevron while Enter/Space keyboard handlers
+            // preserve full keyboard a11y.
+            <span
               ref={clearRef}
-              type="button"
+              role="button"
+              tabIndex={0}
               aria-label={t('clear')}
               onClick={handleClear}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setSelected(null);
+                  onChange(null);
+                }
+              }}
               className={cn(
-                'inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm',
+                'inline-flex size-5 items-center justify-center rounded-sm',
                 'hover:bg-muted',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               )}
             >
               <XIcon className="size-3.5" aria-hidden />
-            </button>
+            </span>
           ) : null}
           <ChevronsUpDownIcon className="size-4 opacity-50" aria-hidden />
         </span>
