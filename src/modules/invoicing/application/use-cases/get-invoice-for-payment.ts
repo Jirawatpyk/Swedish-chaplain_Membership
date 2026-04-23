@@ -67,7 +67,8 @@ export interface InvoiceForPayment {
 
 export type GetInvoiceForPaymentError =
   | { code: 'not_found' }
-  | { code: 'forbidden' };
+  | { code: 'forbidden' }
+  | { code: 'not_payable'; status: InvoiceStatus };
 
 /** Deps: same as the underlying F4 use-case. */
 export type GetInvoiceForPaymentDeps = GetInvoiceDeps;
@@ -84,21 +85,13 @@ export async function getInvoiceForPayment(
   if (!result.ok) return err(result.error);
 
   const invoice = result.value;
-  // Project to the minimal F5-facing DTO. Money VO exposes satang via
-  // `.satang` (see domain/value-objects/money.ts). If total is null —
-  // which can only happen on drafts before issue — the F5 caller
-  // should have short-circuited on status first; we guard here too.
+  // A null `total` means the invoice is still a draft with no snapshot —
+  // F5 cannot compute a charge amount. Surface as a typed error so the
+  // caller (webhook reconciliation / portal payment-init) must explicitly
+  // handle it through the Result channel rather than receiving a
+  // `totalSatang: 0n` success that looks payable.
   if (!invoice.total) {
-    // Surface as forbidden rather than not_found: the invoice exists
-    // and the caller is authorised, it's just not in a payable state
-    // (F5 caller branches on `status` next).
-    return ok({
-      id: invoice.invoiceId,
-      status: invoice.status,
-      totalSatang: 0n,
-      memberId: invoice.memberId,
-      tenantId: input.tenantId,
-    });
+    return err({ code: 'not_payable', status: invoice.status });
   }
 
   return ok({

@@ -64,17 +64,15 @@ let _instance: Stripe | null = null;
 export function getStripeClient(): StripeClient {
   if (_instance === null) {
     _instance = new Stripe(env.stripe.secretKey, {
-      // `apiVersion` is narrowly typed to the SDK's built-in literal;
-      // double cast `unknown → literal type` to accept the runtime-
-      // pinned version while keeping the rest of the config type-checked.
       apiVersion: env.stripe.apiVersion as unknown as '2026-03-25.dahlia',
-      // Explicit typescript=true locks inferred response types to
-      // Stripe's shipped .d.ts (defaults to true on SDK v22 but
-      // worth documenting). No effect at runtime.
       typescript: true,
-      // App identifier surfaces in Stripe Dashboard → Logs as the
-      // "Integration" column — makes production-side debugging
-      // easier when multiple tenants share the same Stripe account.
+      // Bounded SDK resilience — prevents an unbounded Stripe API hang
+      // (observed during SG→US latency spikes) from blocking webhook
+      // handlers past the Vercel function timeout. `maxNetworkRetries`
+      // covers idempotent transient failures; `timeout` (ms) is a hard
+      // ceiling per request per Stripe Node-SDK recommendation.
+      maxNetworkRetries: 3,
+      timeout: 10_000,
       appInfo: {
         name: 'Chamber-OS',
         version: '0.1.0',

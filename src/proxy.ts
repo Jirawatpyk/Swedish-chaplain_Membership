@@ -206,6 +206,32 @@ export function proxy(request: NextRequest): NextResponse {
     return applySecurityHeaders(response, nextUrl.pathname);
   }
 
+  // 1d. FEATURE_F5_ONLINE_PAYMENT kill-switch — when false, every payment
+  //     surface returns 503 `feature_disabled`. Covers the server-side
+  //     webhook + API routes AND the member-facing /pay page so a tenant
+  //     toggled OFF cannot initiate or confirm online payments without a
+  //     code deploy. Default is OFF (dark ship per spec Q-F2.2); flip ON
+  //     in Vercel env after Rolling Release gate.
+  const isF5Path =
+    nextUrl.pathname.startsWith('/api/payments') ||
+    nextUrl.pathname.startsWith('/api/refunds') ||
+    nextUrl.pathname.startsWith('/api/webhooks/stripe') ||
+    nextUrl.pathname.startsWith('/api/tenant-payment-settings') ||
+    /^\/portal\/invoices\/[^/]+\/pay(?:\/|$)/.test(nextUrl.pathname) ||
+    /^\/admin\/invoices\/[^/]+\/refund(?:\/|$)/.test(nextUrl.pathname);
+  if (!env.features.f5OnlinePayment && isF5Path) {
+    const response = NextResponse.json(
+      {
+        error: 'feature_disabled',
+        message: 'Online payment is temporarily unavailable.',
+      },
+      { status: 503 },
+    );
+    response.headers.set(REQUEST_ID_HEADER, requestId);
+    response.headers.set('Retry-After', '300');
+    return applySecurityHeaders(response, nextUrl.pathname);
+  }
+
   // 2. CSRF Origin allow-list for /api/* state-changing requests
   const csrfDecision = checkCsrf(method, nextUrl.pathname, request.headers.get('origin'));
   if (csrfDecision.action === 'reject') {
@@ -240,11 +266,18 @@ export function proxy(request: NextRequest): NextResponse {
   try {
     const tenant = resolveTenantFromRequest(request);
     forwardedHeaders.set(TENANT_SLUG_HEADER, tenant.slug);
-  } catch {
-    // Intentionally silent — resolver would have already failed at boot
-    // if env.TENANT_SLUG was malformed; this catch guards against a
-    // future F10 resolver that throws for unauthenticated requests on
-    // tenant-unknown routes (landing page, public docs, etc.).
+  } catch (error) {
+    // Resolver would have already failed at boot if env.TENANT_SLUG was
+    // malformed; this catch guards against a future F10 resolver that
+    // throws for unauthenticated requests on tenant-unknown routes
+    // (landing page, public docs, etc.). Observability fix (F5 review):
+    // log the failure so route handlers downstream don't swallow a
+    // misconfigured tenant silently.
+    console.warn('[proxy] tenant resolver failed; header omitted', {
+      pathname: nextUrl.pathname,
+      requestId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   const response = NextResponse.next({

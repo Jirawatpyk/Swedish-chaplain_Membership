@@ -21,4 +21,4 @@
  * anything leaves the module.
  */
 
-export {};
+export { SYSTEM_ACTOR_STRIPE_WEBHOOK } from './domain/system-actors';

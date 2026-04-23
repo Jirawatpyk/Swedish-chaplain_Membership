@@ -70,6 +70,10 @@ describe('F5 RBAC policy (T034)', () => {
     it('admin can read-list (admin detail view)', () => {
       expect(isAllowed('admin', 'payment-settings', 'read-list')).toBe(true);
     });
+    it('manager + member denied on read-list', () => {
+      expect(isAllowed('manager', 'payment-settings', 'read-list')).toBe(false);
+      expect(isAllowed('member', 'payment-settings', 'read-list')).toBe(false);
+    });
   });
 
   describe('online-payment-toggle', () => {

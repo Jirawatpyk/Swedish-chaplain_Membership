@@ -20,12 +20,15 @@
  *      verbatim. F5 callers match on the same discriminated union;
  *      no new error codes are introduced at the bridge.
  *
- * Actor identity: webhook-side calls do not have a human actor. We
- * persist `actorUserId = 'system:stripe-webhook'` so audit logs +
- * payment_recorded_by on the invoice carry a stable, greppable
- * identifier. For F5-admin-initiated manual reconciliation paths
- * (rare — primarily `payment_auto_refunded_*` remediation), callers
- * supply the real admin user id.
+ * Actor identity: webhook-side calls do not have a human actor. The
+ * caller MUST pass `SYSTEM_ACTOR_STRIPE_WEBHOOK` (from the payments
+ * barrel) — a reserved UUID seeded into the `users` table by migration
+ * 0041. This keeps every `uuid REFERENCES users(id)` FK intact
+ * (payments.actor_user_id, invoices.payment_recorded_by_user_id,
+ * audit_log.actor_user_id) without requiring schema-wide changes.
+ * For F5-admin-initiated manual reconciliation paths (rare — primarily
+ * `payment_auto_refunded_*` remediation), callers supply the real
+ * admin user id.
  *
  * Composition: the wrapper calls `makeRecordPaymentDeps(tenantId)` at
  * call time — per Main-agent Gate Decision #6 wrappers MUST compose
@@ -96,12 +99,15 @@ function describeProcessorMethod(
   paymentIntentId: string,
   chargeId: string | null,
 ): string {
-  const rail =
-    method === 'stripe_card'
-      ? 'Stripe card'
-      : method === 'stripe_promptpay'
-      ? 'Stripe PromptPay'
-      : 'Stripe';
+  let rail: string;
+  switch (method) {
+    case 'stripe_card':
+      rail = 'Stripe card';
+      break;
+    case 'stripe_promptpay':
+      rail = 'Stripe PromptPay';
+      break;
+  }
   const ids = chargeId
     ? `intent=${paymentIntentId} charge=${chargeId}`
     : `intent=${paymentIntentId}`;
@@ -115,7 +121,7 @@ export async function markPaidFromProcessor(
   return recordPayment(deps, {
     tenantId: input.tenantId,
     actorUserId: input.actorUserId,
-    ...(input.requestId !== undefined ? { requestId: input.requestId } : {}),
+    ...(input.requestId != null ? { requestId: input.requestId } : {}),
     invoiceId: input.invoiceId,
     // F4 enum does not include Stripe rails; persist `'other'` + carry
     // the rail hint in notes. F5 `payments` row is the source of truth

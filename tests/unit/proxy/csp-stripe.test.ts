@@ -24,8 +24,10 @@ describe('F5 CSP Stripe allowlist (T033)', () => {
       expect(csp).toContain('https://hooks.stripe.com');
       // script-src specifically — not just any directive
       expect(csp).toMatch(/script-src[^;]*https:\/\/js\.stripe\.com/);
-      // frame-src — for the Stripe Elements iframe
+      // frame-src — for the Stripe Elements iframe + hooks.stripe.com
+      // (3DS / bank auth redirect iframe)
       expect(csp).toMatch(/frame-src[^;]*https:\/\/js\.stripe\.com/);
+      expect(csp).toMatch(/frame-src[^;]*https:\/\/hooks\.stripe\.com/);
       // connect-src — for api.stripe.com XHR
       expect(csp).toMatch(/connect-src[^;]*https:\/\/api\.stripe\.com/);
     });

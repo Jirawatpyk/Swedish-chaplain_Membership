@@ -38,6 +38,14 @@ const applicationForbiddenImports = [
   "drizzle-orm/*",
   "postgres",
   "@react-email/components",
+  // F5 — PCI/Principle III guard. Application use-cases MUST talk to
+  // Stripe through an Infrastructure port (`StripeClient` in
+  // `src/modules/payments/infrastructure/stripe/stripe-client.ts`), never
+  // by importing the SDK directly. Preserves mockability + keeps SAQ-A
+  // scope enforcement at Infrastructure.
+  "stripe",
+  "@stripe/stripe-js",
+  "@stripe/react-stripe-js",
 ];
 
 /**
@@ -71,7 +79,7 @@ const eslintConfig = defineConfig([
           })),
           patterns: [
             {
-              group: ["next/*", "drizzle-orm/*"],
+              group: ["next/*", "drizzle-orm/*", "stripe/*", "@stripe/*"],
               message: "Domain layer must not import framework subpaths.",
             },
           ],

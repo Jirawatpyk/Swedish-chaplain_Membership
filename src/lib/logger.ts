@@ -243,11 +243,11 @@ export const PAN_REGEX =
  * digits+spaces+hyphens only) so we don't strip delimiters from
  * unrelated strings.
  */
-const PAN_PRETTY_SHAPE = /^[0-9][\s\-0-9]{11,22}[0-9]$/;
+const PAN_PRETTY_SHAPE = /^\d[\d\s-]{11,22}\d$/;
 
 function normaliseForPanTest(input: string): string {
   if (!PAN_PRETTY_SHAPE.test(input)) return input;
-  return input.replace(/[\s\-]/g, '');
+  return input.replace(/[\s-]/g, '');
 }
 
 /**
