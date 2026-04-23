@@ -139,7 +139,143 @@ export const REDACT_PATHS = [
   '*.payment_reference',
   'paymentReference',
   '*.paymentReference',
+  // --- F5 payment PCI / Stripe secrets (T032, security.md § 6) ---
+  // Under PCI DSS SAQ-A, cardholder data (PAN, CVV, track) MUST NEVER
+  // touch the Chamber-OS server. If Stripe.js ever leaks these into a
+  // payload + a caller logs the payload, redaction here is the final
+  // line of defence. The `card` wildcard covers the shape returned by
+  // Stripe.js (`{card: {number, cvc, exp_month, exp_year}}`) where the
+  // whole sub-object is redacted en bloc — safer than trying to
+  // enumerate every field variant.
+  'card_number',
+  '*.card_number',
+  'cardNumber',
+  '*.cardNumber',
+  'card_cvc',
+  '*.card_cvc',
+  'cardCvc',
+  '*.cardCvc',
+  // PCI guardian Finding 2 — CVV variants emitted by browsers / older
+  // Stripe.js / issuer-facing APIs / Stripe webhook bodies. Logging
+  // these is a PCI Req 3.2.1 violation.
+  'cvv',
+  '*.cvv',
+  'cvv2',
+  '*.cvv2',
+  'csc',
+  '*.csc',
+  'cid',
+  '*.cid',
+  'security_code',
+  '*.security_code',
+  'card_security_code',
+  '*.card_security_code',
+  'cvc_check',
+  '*.cvc_check',
+  '*.*.cvc_check',
+  'card',
+  '*.card',
+  'card.*',
+  '*.card.*',
+  // Stripe secrets — these live in env vars per Constitution Principle
+  // IV; if they ever appear in a log object it's a bug worth redacting.
+  'stripe_secret_key',
+  '*.stripe_secret_key',
+  'stripeSecretKey',
+  '*.stripeSecretKey',
+  'STRIPE_SECRET_KEY',
+  'stripe_webhook_secret',
+  '*.stripe_webhook_secret',
+  'stripeWebhookSecret',
+  '*.stripeWebhookSecret',
+  'STRIPE_WEBHOOK_SECRET',
+  // Stripe-Signature header — carries an HMAC proving the webhook was
+  // Stripe-issued. Logging it would let an attacker replay events with
+  // a valid signature. Redact both the hyphenated HTTP casing and the
+  // camelCase object-property variant.
+  'Stripe-Signature',
+  '*.Stripe-Signature',
+  'stripe-signature',
+  '*.stripe-signature',
+  'stripeSignature',
+  '*.stripeSignature',
+  // PCI guardian R3 — HTTP header casing variants. Node normalises
+  // incoming headers to lowercase but a caller who logs a custom
+  // Headers object or upper-cases a key during manipulation could
+  // hit either of these shapes.
+  'STRIPE-SIGNATURE',
+  '*.STRIPE-SIGNATURE',
+  'StripeSignature',
+  '*.StripeSignature',
 ];
+
+/**
+ * F5 / T032 — defence-in-depth PAN (Primary Account Number) value-
+ * pattern redaction. Path-based `REDACT_PATHS` only fires when the
+ * caller uses the expected field name; a caller that logs an entire
+ * Stripe event body or a free-form note CAN still surface a bare PAN.
+ *
+ * Pattern covers (ranges + length gates — pci-saqa-guardian Finding 1
+ * + R1 remediation):
+ *   - `3[47]\d{13}`      — Amex (15 digits)
+ *   - `4\d{12,18}`       — Visa (13 / 16 / 19 digits)
+ *   - `5[1-5]\d{14}`     — MasterCard legacy (16 digits)
+ *   - `2[2-7]\d{14}`     — MasterCard 2-series (16 digits)
+ *   - `6011\d{12,15}`    — Discover (16 / 19 digits)
+ *   - `65\d{14}`         — Discover prefix-65 (16 digits)
+ *   - `62\d{14,17}`      — UnionPay (16 / 19 digits) — Thai market relevance
+ *   - `35\d{14,17}`      — JCB (16 / 19 digits)
+ *   - `36\d{12}`         — Diners (14 digits)
+ *
+ * Anchored ^/$ so English prose ("error: 4242… declined") is NOT
+ * redacted based on substring matches. Callers that log prose with
+ * an embedded PAN are responsible for their own field hygiene.
+ */
+export const PAN_REGEX =
+  /^(?:3[47]\d{13}|4\d{12}(?:\d{3}|\d{6})?|5[1-5]\d{14}|2[2-7]\d{14}|6011\d{12}(?:\d{3})?|65\d{14}|62\d{14}(?:\d{3})?|35\d{14}(?:\d{3})?|36\d{12})$/;
+
+/**
+ * Pattern for normalising pretty-printed PANs before testing. A PAN
+ * with spaces or hyphens (`"4242 4242 4242 4242"`, `"4242-4242-..."`)
+ * would evade the anchored digit-only regex without this step. We
+ * normalise ONLY if the raw value matches a conservative
+ * "digits-and-separators-of-PAN-shape" gate (short, 12-23 chars,
+ * digits+spaces+hyphens only) so we don't strip delimiters from
+ * unrelated strings.
+ */
+const PAN_PRETTY_SHAPE = /^[0-9][\s\-0-9]{11,22}[0-9]$/;
+
+function normaliseForPanTest(input: string): string {
+  if (!PAN_PRETTY_SHAPE.test(input)) return input;
+  return input.replace(/[\s\-]/g, '');
+}
+
+/**
+ * Recursively replaces any string value matching `PAN_REGEX` (after
+ * space/hyphen normalisation) with `[REDACTED]`. Object-valued inputs
+ * are cloned depth-first so the caller's original log object is NEVER
+ * mutated (pino's `formatters.log` hook docs require callers avoid
+ * mutating input). Depth-bounded at 9 levels (audit payloads nest at
+ * most 4; 9 is generous + cycle-safe).
+ */
+export function redactPanValues(input: unknown, depth = 0): unknown {
+  if (depth > 9) return input;
+  if (typeof input === 'string') {
+    const normalised = normaliseForPanTest(input);
+    return PAN_REGEX.test(normalised) ? '[REDACTED]' : input;
+  }
+  if (Array.isArray(input)) {
+    return input.map((v) => redactPanValues(v, depth + 1));
+  }
+  if (input !== null && typeof input === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(input)) {
+      out[k] = redactPanValues(v, depth + 1);
+    }
+    return out;
+  }
+  return input;
+}
 
 const baseOptions: LoggerOptions = {
   level: env.log.level,
@@ -157,6 +293,14 @@ const baseOptions: LoggerOptions = {
   formatters: {
     level(label) {
       return { level: label };
+    },
+    // T032 — final pass to redact bare PAN values that the path-based
+    // `REDACT_PATHS` above cannot catch (e.g. a PAN appearing inside a
+    // free-form `message` string or an unexpected field name). Runs
+    // after pino's own redaction step, so `[REDACTED]` bindings are
+    // already in place; this only reaches real string values.
+    log(object) {
+      return redactPanValues(object) as Record<string, unknown>;
     },
   },
 };

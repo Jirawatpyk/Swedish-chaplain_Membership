@@ -120,6 +120,23 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'auto_email_delivery_failed',
   // --- Hybrid A+B duplicate-email handling — added by migration 0032 ---
   'contact_linked_to_user',
+  // --- F5 online-payment events (16) — added by migration 0040 ---
+  'payment_initiated',
+  'payment_succeeded',
+  'payment_failed',
+  'payment_canceled',
+  'payment_auto_refunded_stale_invoice',
+  'payment_auto_refunded_concurrent_manual_mark',
+  'payment_environment_mismatch',
+  'payment_cross_tenant_probe',
+  'refund_initiated',
+  'refund_succeeded',
+  'refund_failed',
+  'out_of_band_refund_detected',
+  'webhook_signature_rejected',
+  'webhook_api_version_mismatch',
+  'tenant_payment_settings_updated',
+  'online_payment_toggled',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

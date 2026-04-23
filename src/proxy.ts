@@ -59,33 +59,69 @@ const HSTS_VALUE = 'max-age=63072000; includeSubDomains; preload';
 // A future hardening pass (tracked as an F1 ship-gate follow-up)
 // should switch the prod policy to nonce-based script-src and drop
 // unsafe-inline too.
-function buildCsp(isDevelopment: boolean): string {
-  const scriptSrc = isDevelopment
-    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-    : "script-src 'self' 'unsafe-inline'";
-  // Dev needs ws:// for HMR socket; prod only allows https:.
-  const connectSrc = isDevelopment
-    ? "connect-src 'self' https: ws: wss:"
-    : "connect-src 'self' https:";
+/**
+ * F5 (T033) — routes that embed Stripe Elements or otherwise talk to
+ * Stripe from the browser. CSP is tightened per-route so the rest of
+ * the app doesn't silently gain `https://js.stripe.com` script-src
+ * privileges. Webhook route (`/api/webhooks/stripe`) is a server-only
+ * endpoint — it does NOT need these allowances and is deliberately
+ * excluded.
+ */
+function isStripeClientRoute(pathname: string): boolean {
+  return (
+    pathname.startsWith('/portal/invoices/') ||
+    pathname.startsWith('/admin/invoices/')
+  );
+}
+
+export function buildCsp(isDevelopment: boolean, pathname: string): string {
+  const stripe = isStripeClientRoute(pathname);
+  // F5 — script-src allowlist for Stripe.js on F5 surfaces. Scoped
+  // ONLY to invoice detail routes so the rest of the app's CSP stays
+  // unchanged (spec security.md § 4 + § 6 "CSP allowlist for
+  // js.stripe.com + api.stripe.com is scoped to F5-relevant routes only").
+  const scriptSrcParts = [
+    "'self'",
+    "'unsafe-inline'",
+    ...(isDevelopment ? ["'unsafe-eval'"] : []),
+    ...(stripe ? ['https://js.stripe.com'] : []),
+  ];
+  const frameSrcParts = [
+    "'self'",
+    ...(stripe ? ['https://js.stripe.com', 'https://hooks.stripe.com'] : []),
+  ];
+  // Dev needs ws:// for HMR socket; prod only allows https:. Stripe
+  // API endpoint added on F5 routes so fetch()/XHR from the Stripe.js
+  // iframe/client can reach api.stripe.com.
+  const connectSrcParts = [
+    "'self'",
+    ...(isDevelopment ? ['https:', 'ws:', 'wss:'] : ['https:']),
+    ...(stripe ? ['https://api.stripe.com'] : []),
+  ];
 
   return [
     "default-src 'self'",
-    scriptSrc,
+    `script-src ${scriptSrcParts.join(' ')}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "font-src 'self' data:",
-    connectSrc,
+    `connect-src ${connectSrcParts.join(' ')}`,
+    `frame-src ${frameSrcParts.join(' ')}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
   ].join('; ');
 }
 
-const CSP_VALUE = buildCsp(env.isDevelopment);
-
-function applySecurityHeaders(response: NextResponse): NextResponse {
+function applySecurityHeaders(
+  response: NextResponse,
+  pathname: string,
+): NextResponse {
   response.headers.set('Strict-Transport-Security', HSTS_VALUE);
-  response.headers.set('Content-Security-Policy', CSP_VALUE);
+  response.headers.set(
+    'Content-Security-Policy',
+    buildCsp(env.isDevelopment, pathname),
+  );
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -110,7 +146,7 @@ export function proxy(request: NextRequest): NextResponse {
     );
     response.headers.set(REQUEST_ID_HEADER, requestId);
     response.headers.set('Retry-After', '300');
-    return applySecurityHeaders(response);
+    return applySecurityHeaders(response, nextUrl.pathname);
   }
 
   // 1b. FEATURE_F3_MEMBERS kill-switch (T036) — when false, every member /
@@ -130,7 +166,7 @@ export function proxy(request: NextRequest): NextResponse {
     );
     response.headers.set(REQUEST_ID_HEADER, requestId);
     response.headers.set('Retry-After', '300');
-    return applySecurityHeaders(response);
+    return applySecurityHeaders(response, nextUrl.pathname);
   }
 
   // 1c. FEATURE_F4_INVOICING kill-switch (T020) — when false, every
@@ -167,7 +203,7 @@ export function proxy(request: NextRequest): NextResponse {
     );
     response.headers.set(REQUEST_ID_HEADER, requestId);
     response.headers.set('Retry-After', '300');
-    return applySecurityHeaders(response);
+    return applySecurityHeaders(response, nextUrl.pathname);
   }
 
   // 2. CSRF Origin allow-list for /api/* state-changing requests
@@ -181,7 +217,7 @@ export function proxy(request: NextRequest): NextResponse {
       { status: 403 },
     );
     response.headers.set(REQUEST_ID_HEADER, requestId);
-    return applySecurityHeaders(response);
+    return applySecurityHeaders(response, nextUrl.pathname);
   }
 
   // 3. Pass-through with security headers + request ID + x-pathname
@@ -217,7 +253,7 @@ export function proxy(request: NextRequest): NextResponse {
     },
   });
   response.headers.set(REQUEST_ID_HEADER, requestId);
-  return applySecurityHeaders(response);
+  return applySecurityHeaders(response, nextUrl.pathname);
 }
 
 /**
