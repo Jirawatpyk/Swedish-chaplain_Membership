@@ -41,6 +41,12 @@ import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoi
 import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
+import {
+  payments,
+  refunds,
+  tenantPaymentSettings,
+  processorEvents,
+} from '@/modules/payments/infrastructure/schema';
 
 export interface TestTenant {
   readonly ctx: TenantContext;
@@ -84,6 +90,17 @@ export async function createTestTenant(
     // from invoices) → invoices → settings + sequences. invoice_lines are
     // CASCADE-deleted by `invoices_invoice_fk ON DELETE CASCADE` so an
     // explicit `delete(invoiceLines)` is redundant but kept for clarity.
+    // F5 cleanup — delete in FK order: refunds → payments (FK to payments.id
+    // + composite to invoices.tenant_id/invoice_id) → credit_notes (see F4
+    // block below for CN cleanup — payments.refunds.creditNoteId back-ref
+    // must be cleared before F4 deletes the CN row). processorEvents has
+    // no outbound FK; tenantPaymentSettings is keyed by tenant_id only.
+    await db.delete(refunds).where(eq(refunds.tenantId, slug));
+    await db.delete(payments).where(eq(payments.tenantId, slug));
+    await db.delete(processorEvents).where(eq(processorEvents.tenantId, slug));
+    await db
+      .delete(tenantPaymentSettings)
+      .where(eq(tenantPaymentSettings.tenantId, slug));
     await db.delete(creditNotes).where(eq(creditNotes.tenantId, slug));
     await db.delete(invoiceLines).where(eq(invoiceLines.tenantId, slug));
     await db.delete(invoices).where(eq(invoices.tenantId, slug));

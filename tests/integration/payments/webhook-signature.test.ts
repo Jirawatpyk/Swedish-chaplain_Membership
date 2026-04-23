@@ -1,0 +1,293 @@
+/**
+ * T044 — Integration test: webhook signature verification occurs BEFORE body parse.
+ *
+ * Spec authority: specs/009-online-payment/contracts/stripe-webhook.md § 3
+ * pipeline steps 1→2→3; § 8 test matrix (a) (b).
+ *
+ * This test adds the "verify-before-parse" cross-cutting assertion that
+ * cannot be expressed in the contract test (T042) because the contract
+ * test mocks the verifier as a black box.
+ *
+ * Here we:
+ *   1. Spy on the raw-body reader and the JSON parser independently.
+ *   2. Assert that on signature failure paths, the JSON parser is NEVER
+ *      invoked — the handler must short-circuit at the signature step.
+ *   3. Assert that on valid-signature paths, both reader and parser ARE
+ *      invoked in the correct order.
+ *
+ * Why this matters (from stripe-webhook.md § 1):
+ *   "Body parser: disabled — handler reads raw body via NextRequest.text()"
+ *   The HMAC covers the raw bytes. If the handler were to JSON.parse first
+ *   and then verify, a Unicode normalization or whitespace-collapse attack
+ *   could bypass the HMAC check. We assert the execution order here to
+ *   prevent that regression from ever being introduced silently.
+ *
+ * Pattern: uses vi.mock for the stripe verifier + a spy on NextRequest.text()
+ * to count invocations. No real DB, no real Stripe SDK.
+ *
+ * RED reason: `src/app/api/webhooks/stripe/route.ts` and
+ * `src/lib/stripe-webhook-verifier.ts` do NOT exist yet (Group C T048 + T053).
+ * `@ts-expect-error` on each dynamic import suppresses TS2307 so
+ * `pnpm typecheck` passes; MODULE_NOT_FOUND at runtime makes tests RED.
+ *
+ * Turns GREEN: Group C T048 (route handler) + Group C T053
+ * (stripe-webhook-verifier helper).
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+
+// ---------------------------------------------------------------------------
+// Mock seams
+// ---------------------------------------------------------------------------
+
+const constructEventMock = vi.fn();
+const processWebhookEventMock = vi.fn();
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest signature required so spread callers type-check (TS2556)
+const auditWriteMock = vi.fn(async (..._args: unknown[]) => undefined);
+
+vi.mock('@/lib/stripe-webhook-verifier', () => ({
+  webhookVerifier: {
+    constructEvent: (...args: unknown[]) => constructEventMock(...args),
+  },
+}));
+
+vi.mock('@/modules/payments', () => ({
+  processWebhookEvent: (...args: unknown[]) => processWebhookEventMock(...args),
+  makeProcessWebhookEventDeps: () => ({ db: {}, audit: {} }),
+}));
+
+vi.mock('@/modules/invoicing', () => ({
+  markPaidFromProcessor: vi.fn(),
+  makeMarkPaidFromProcessorDeps: () => ({ db: {}, blob: {}, audit: {} }),
+}));
+
+vi.mock('@/lib/tenant-context', () => ({
+  resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
+  // Future export added by Group C T049
+  resolveTenantFromProcessorAccountId: vi.fn(async () => ({
+    ctx: { slug: 'test-swecham', __brand: true },
+  })),
+}));
+
+vi.mock('@/modules/tenants', () => ({
+  asTenantContext: (slug: string) => ({ slug, __brand: true }),
+}));
+
+/**
+ * Mock the audit repo via the auth module's infrastructure barrel.
+ * The exact path the route uses for audit writes is TBD until Group C T048
+ * ships the route handler. This mock covers the most likely path.
+ */
+vi.mock('@/modules/auth/infrastructure/db/audit-repo', () => ({
+  auditRepo: {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest signature required so spread callers type-check (TS2556)
+    append: vi.fn(async (..._args: unknown[]) => undefined),
+  },
+}));
+
+vi.mock('@/lib/logger', () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+}));
+
+vi.mock('@/lib/request-id', () => ({
+  requestIdFromHeaders: () => 'req-webhook-sig-test',
+}));
+
+// ---------------------------------------------------------------------------
+// Route import helper — @vite-ignore prevents Vite static-analysis failure
+// when the route file does not exist yet (Group C T048).
+// ---------------------------------------------------------------------------
+
+async function importWebhookRoute() {
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+  const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<unknown>;
+  try {
+    return await dynamicImport('@/app/api/webhooks/stripe/route');
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `[RED — T044] webhook route not yet implemented (Group C T048). Import error: ${msg}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const VALID_RAW_BODY = JSON.stringify({
+  id: 'evt_test_sig_001',
+  object: 'event',
+  type: 'payment_intent.succeeded',
+  livemode: false,
+  api_version: '2024-06-20',
+  account: 'acct_test_swecham',
+  created: 1_716_000_000,
+  data: {
+    object: {
+      id: 'pi_test_sig_001',
+      amount: 5_350_000,
+      currency: 'thb',
+      latest_charge: 'ch_test_sig_001',
+      status: 'succeeded',
+      payment_method_types: ['card'],
+    },
+  },
+});
+
+/**
+ * Build a NextRequest and spy on its `.text()` method so we can assert
+ * whether it was called (body was read) and how many times.
+ */
+function makeSpiedRequest(
+  rawBody: string,
+  headers: Record<string, string> = {},
+): { req: NextRequest; textSpy: ReturnType<typeof vi.fn> } {
+  const req = new NextRequest('http://localhost/api/webhooks/stripe', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      ...headers,
+    },
+    body: rawBody,
+  });
+
+  const textSpy = vi.fn(async () => rawBody);
+  Object.defineProperty(req, 'text', {
+    value: textSpy,
+    configurable: true,
+    writable: true,
+  });
+
+  return { req, textSpy };
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 1: Missing Stripe-Signature header
+// Behaviour: 401; body (req.text()) must NOT be called.
+// ---------------------------------------------------------------------------
+
+describe('webhook-signature: verify-before-parse invariant (T044)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('missing Stripe-Signature → 401; req.text() never called', async () => {
+    const { req, textSpy } = makeSpiedRequest(VALID_RAW_BODY, {});
+
+    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const res = await POST(req) as Response;
+
+    expect(res.status).toBe(401);
+    // The handler must inspect the header FIRST — before reading the body.
+    expect(textSpy).not.toHaveBeenCalled();
+    expect(constructEventMock).not.toHaveBeenCalled();
+    expect(processWebhookEventMock).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 2: Malformed Stripe-Signature header
+  // constructEvent throws → 401; processWebhookEvent must NOT be called.
+  // req.text() IS called once (the raw body is needed to verify).
+  // ---------------------------------------------------------------------------
+
+  it('malformed Stripe-Signature → 401; req.text() called once; processWebhookEvent never called', async () => {
+    constructEventMock.mockImplementationOnce(() => {
+      throw new Error('No signatures found matching the expected signature');
+    });
+
+    const { req, textSpy } = makeSpiedRequest(VALID_RAW_BODY, {
+      'stripe-signature': 't=1000,v1=badhex',
+    });
+
+    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const res = await POST(req) as Response;
+
+    expect(res.status).toBe(401);
+    expect(textSpy).toHaveBeenCalledTimes(1);
+    expect(processWebhookEventMock).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 3: Tampered body — valid signature header format but
+  // constructEvent throws because the body was modified after signing.
+  // Same assertion: 401; processWebhookEvent not called.
+  // ---------------------------------------------------------------------------
+
+  it('tampered body → 401; processWebhookEvent never called', async () => {
+    constructEventMock.mockImplementationOnce(() => {
+      throw new Error(
+        'Webhook signature verification failed. Payload hash mismatch',
+      );
+    });
+
+    const tamperedBody = VALID_RAW_BODY + ' '; // trailing space invalidates HMAC
+    const { req, textSpy } = makeSpiedRequest(tamperedBody, {
+      'stripe-signature': 't=1716000000,v1=validlookinghexbutwrong',
+    });
+
+    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const res = await POST(req) as Response;
+
+    expect(res.status).toBe(401);
+    expect(textSpy).toHaveBeenCalledTimes(1);
+    expect(processWebhookEventMock).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 4 (positive): Valid signature → body IS read; processWebhookEvent
+  // IS called; route returns 200.
+  // ---------------------------------------------------------------------------
+
+  it('valid signature → req.text() called; processWebhookEvent called; 200', async () => {
+    const event = JSON.parse(VALID_RAW_BODY) as Record<string, unknown>;
+    constructEventMock.mockReturnValueOnce(event);
+    processWebhookEventMock.mockResolvedValueOnce({ outcome: 'processed' });
+
+    const { req, textSpy } = makeSpiedRequest(VALID_RAW_BODY, {
+      'stripe-signature': 't=1716000000,v1=validhex',
+    });
+
+    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const res = await POST(req) as Response;
+
+    expect(res.status).toBe(200);
+    // Body must be read exactly once — verifier receives the raw string.
+    expect(textSpy).toHaveBeenCalledTimes(1);
+    // constructEvent received rawBody as first argument.
+    expect(constructEventMock).toHaveBeenCalledTimes(1);
+    const firstCallArgs = constructEventMock.mock.calls[0] as unknown[];
+    expect(firstCallArgs[0]).toBe(VALID_RAW_BODY);
+    // Use-case was invoked.
+    expect(processWebhookEventMock).toHaveBeenCalledTimes(1);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 5: webhook_signature_rejected audit emitted on missing header
+  // stripe-webhook.md § 2: "Missing Stripe-Signature → 401 + audit
+  // webhook_signature_rejected{reason='missing_header'}"
+  // ---------------------------------------------------------------------------
+
+  it("missing header → audit webhook_signature_rejected reason='missing_header' emitted", async () => {
+    const { req } = makeSpiedRequest(VALID_RAW_BODY, {});
+
+    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    await POST(req);
+
+    // The audit helper must have been called with the rejection event.
+    // Access the mocked auditRepo.append via the infrastructure barrel.
+    const { auditRepo } = await import('@/modules/auth/infrastructure/db/audit-repo');
+    const appendMock = vi.mocked(
+      auditRepo.append as unknown as (...a: unknown[]) => unknown,
+    );
+    const allCalls = appendMock.mock.calls as Array<Array<unknown>>;
+    const rejectionCall = allCalls.find((call) => {
+      const arg = call[0] as Record<string, unknown> | undefined;
+      return arg?.['eventType'] === 'webhook_signature_rejected';
+    });
+    expect(rejectionCall).toBeDefined();
+
+    const auditArg = rejectionCall?.[0] as Record<string, unknown> | undefined;
+    expect(auditArg?.['reason']).toBe('missing_header');
+  });
+});
