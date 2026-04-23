@@ -47,9 +47,9 @@ This populates the F5 env vars added to the `chamber-os` Vercel project:
 | Var | Source | Notes |
 |-----|--------|-------|
 | `STRIPE_SECRET_KEY` | Vercel | `sk_test_…` for dev/staging; `sk_live_…` for prod |
-| `STRIPE_PUBLISHABLE_KEY` | Vercel | `pk_test_…` / `pk_live_…` (client-safe) |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Vercel | `pk_test_…` / `pk_live_…` (client-safe; `NEXT_PUBLIC_` prefix required for browser bundle) |
 | `STRIPE_WEBHOOK_SECRET` | Vercel | The webhook endpoint secret — **per environment** |
-| `STRIPE_API_VERSION` | Vercel | e.g. `2025-09-30.basil` (pinned in `/speckit.plan`) |
+| `STRIPE_API_VERSION` | Vercel | `2025-09-30.clover` (pinned — see `research.md` § 2) |
 | `STRIPE_ACCOUNT_ID_SWECHAM` | Vercel | SweCham's Stripe account id (`acct_…`) — public, used for tenant resolution |
 | `STRIPE_LIVE_MODE` | Vercel | `false` for dev/staging; `true` for prod — used to enforce environment segregation per FR-010 |
 | `FEATURE_F5_ONLINE_PAYMENT` | Vercel | `true` to enable; `false` global kill switch |
@@ -69,7 +69,7 @@ stripe listen --forward-to localhost:3100/api/webhooks/stripe
 Output looks like:
 
 ```
-> Ready! You are using Stripe API Version [2025-09-30.basil]. Your webhook signing secret is whsec_abc123… (^C to quit)
+> Ready! You are using Stripe API Version [2025-09-30.clover]. Your webhook signing secret is whsec_abc123… (^C to quit)
 ```
 
 **Copy the `whsec_…` value into `.env.local`** as `STRIPE_WEBHOOK_SECRET` (overrides the Vercel-pulled one for this local session). Restart `pnpm dev` so the new secret is loaded.

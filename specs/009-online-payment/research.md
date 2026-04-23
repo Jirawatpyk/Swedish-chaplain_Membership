@@ -46,7 +46,7 @@ All "NEEDS CLARIFICATION" from the plan template were pre-resolved either in the
 - **Pin in SDK, allow any webhook version**: inconsistent — client calls pinned but handler accepts anything; contract tests lose determinism.
 - **Pin + weekly Stripe changelog diff CI job**: appealing but YAGNI for MVP; quarterly review is sufficient for SweCham's volume.
 
-**Concrete version to pin**: to be set during `/speckit.tasks` as the latest stable Stripe API version (e.g. `2025-09-30.basil`). The `plan.md` leaves the exact value open so it reflects the current `latest` at the time implementation begins.
+**Concrete version pinned**: `2025-09-30.clover` (selected during F5 `/speckit.implement` Phase 1 on 2026-04-23 — this was the Stripe account's current default version and the value surfaced by `stripe listen`, so local-forwarded webhook events have identical shape to server SDK expectations). Revisit annually or when Stripe deprecates this version.
 
 ---
 

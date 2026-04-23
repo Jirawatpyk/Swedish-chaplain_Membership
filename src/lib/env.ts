@@ -165,6 +165,56 @@ const schema = z.object({
   // of financial mutations.
   FEATURE_F4_INVOICING: booleanFromString.default(true),
 
+  // --- F5 Online Payment (Stripe + PromptPay) -------------------------------
+  // Stripe secret key — server-only. MUST never be logged (pino redact
+  // list extended in T032). Test keys start `sk_test_`, live keys `sk_live_`.
+  STRIPE_SECRET_KEY: z
+    .string()
+    .min(10)
+    .refine((v) => v.startsWith('sk_test_') || v.startsWith('sk_live_'),
+      'expected "sk_test_" or "sk_live_" prefix')
+    .describe('SECRET — do not log'),
+
+  // Stripe publishable key — safe to ship to the browser via Stripe Elements.
+  // MUST use `NEXT_PUBLIC_` prefix so Next.js inlines it into the client
+  // bundle (server-only env vars are stripped from the client chunk).
+  // Consumed by `loadStripe()` in `src/modules/payments/infrastructure/stripe/stripe-browser.ts`.
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z
+    .string()
+    .min(10)
+    .refine((v) => v.startsWith('pk_test_') || v.startsWith('pk_live_'),
+      'expected "pk_test_" or "pk_live_" prefix'),
+
+  // Webhook signing secret used by `stripe.webhooks.constructEvent` to
+  // verify `Stripe-Signature` header. SECRET — redacted in logs.
+  STRIPE_WEBHOOK_SECRET: z
+    .string()
+    .min(10)
+    .refine((v) => v.startsWith('whsec_'), 'expected "whsec_" prefix')
+    .describe('SECRET — do not log'),
+
+  // Pinned Stripe API version (e.g. `2025-09-30.basil`). Passed to
+  // `new Stripe(..., { apiVersion })` and surfaced as `Stripe-Version`
+  // response header by the webhook route. Pinning prevents silent
+  // behaviour drift when Stripe releases a new default version.
+  STRIPE_API_VERSION: z.string().min(8),
+
+  // Stripe connected-account ID for SweCham tenant (stable across
+  // test + live modes, one account per tenant). Used as
+  // `stripeAccount` option on SDK calls.
+  STRIPE_ACCOUNT_ID_SWECHAM: z.string().min(10),
+
+  // Environment assertion — MUST match `STRIPE_SECRET_KEY` prefix.
+  // TRUE in production only; FALSE in dev/staging. Cross-checked at
+  // boot below to refuse `sk_live_` in non-production deploys.
+  STRIPE_LIVE_MODE: booleanFromString.default(false),
+
+  // Kill-switch for F5 Online Payment. When FALSE the
+  // `online_payment_enabled` column is ignored and every payment
+  // route returns 503 `feature_disabled`. Default FALSE so F5 ships
+  // dark; flip to TRUE in Vercel env after Rolling Release gate.
+  FEATURE_F5_ONLINE_PAYMENT: booleanFromString.default(false),
+
   // PG-2 DPA gate — FR-036 cancellation emails CAN include the VOID-
   // stamped invoice PDF as an email attachment. Shipping the PDF
   // bytes (which contain member tax ID + legal name + address) to
@@ -228,6 +278,29 @@ if (raw.NODE_ENV === 'production' && raw.DEBUG_RLS_STATE) {
       '  - DEBUG_RLS_STATE must be false (or unset) when NODE_ENV=production. ' +
       'This flag is a development-time RLS safety net, not a production feature.',
   );
+}
+
+// F5: Stripe live/test environment assertion — the secret-key prefix
+// MUST agree with STRIPE_LIVE_MODE so a misconfigured deploy cannot
+// accidentally run live-mode transactions with a test key (or vice
+// versa). Cross-checked at boot; fails loud before any request lands.
+{
+  const isLiveKey = raw.STRIPE_SECRET_KEY.startsWith('sk_live_');
+  if (raw.STRIPE_LIVE_MODE !== isLiveKey) {
+    throw new Error(
+      'Environment validation failed (src/lib/env.ts):\n' +
+        `  - STRIPE_LIVE_MODE=${raw.STRIPE_LIVE_MODE} disagrees with STRIPE_SECRET_KEY ` +
+        `prefix (${isLiveKey ? 'sk_live_' : 'sk_test_'}). Both must agree: ` +
+        'live-mode secret key ↔ STRIPE_LIVE_MODE=true, test-mode key ↔ false.',
+    );
+  }
+  if (raw.NODE_ENV !== 'production' && raw.STRIPE_LIVE_MODE) {
+    throw new Error(
+      'Environment validation failed (src/lib/env.ts):\n' +
+        '  - STRIPE_LIVE_MODE=true is only allowed when NODE_ENV=production. ' +
+        'Dev/staging deployments must use sk_test_ keys to prevent accidental live charges.',
+    );
+  }
 }
 
 // T115t — E2E_X_TENANT_HEADER_ENABLED must NEVER be set in production.
@@ -301,11 +374,12 @@ export const env = {
     xHeaderEnabled: raw.E2E_X_TENANT_HEADER_ENABLED,
   },
 
-  // F3 + F4 feature flags
+  // F3 + F4 + F5 feature flags
   features: {
     f3Members: raw.FEATURE_F3_MEMBERS,
     f4Invoicing: raw.FEATURE_F4_INVOICING,
     f4VoidAttachment: raw.FEATURE_F4_VOID_ATTACHMENT,
+    f5OnlinePayment: raw.FEATURE_F5_ONLINE_PAYMENT,
   },
 
   // F4 Invoicing
@@ -314,6 +388,16 @@ export const env = {
   },
   cron: {
     secret: raw.CRON_SECRET,
+  },
+
+  // F5 Online Payment (Stripe)
+  stripe: {
+    secretKey: raw.STRIPE_SECRET_KEY,
+    publishableKey: raw.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+    webhookSecret: raw.STRIPE_WEBHOOK_SECRET,
+    apiVersion: raw.STRIPE_API_VERSION,
+    accountIdSwecham: raw.STRIPE_ACCOUNT_ID_SWECHAM,
+    liveMode: raw.STRIPE_LIVE_MODE,
   },
 } as const;
 
