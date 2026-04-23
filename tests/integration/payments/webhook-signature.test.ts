@@ -22,6 +22,13 @@
  *   could bypass the HMAC check. We assert the execution order here to
  *   prevent that regression from ever being introduced silently.
  *
+ * Senior-tester F9 (Group B deferred, 2026-04-24): "Integration test"
+ * naming here means route-handler → use-case composition exercised
+ * end-to-end with mocked ports — NOT a live-DB integration test (which
+ * is T043's scope). This file mocks `@/modules/payments` barrel +
+ * verifier + auditRepo so the signature-verify ordering invariant can
+ * be asserted deterministically without Neon round-trips.
+ *
  * Pattern: uses vi.mock for the stripe verifier + a spy on NextRequest.text()
  * to count invocations. No real DB, no real Stripe SDK.
  *
@@ -289,5 +296,17 @@ describe('webhook-signature: verify-before-parse invariant (T044)', () => {
 
     const auditArg = rejectionCall?.[0] as Record<string, unknown> | undefined;
     expect(auditArg?.['reason']).toBe('missing_header');
+
+    // PCI F5 (Group B deferred, 2026-04-24): the webhook_signature_rejected
+    // audit row MUST NOT carry the raw body or the (possibly-HMAC-valid)
+    // signature header — those are sensitive attacker inputs that have
+    // no legitimate forensic value in the audit surface beyond the
+    // reason code. Negative-asserts pin this so Group D T056 cannot
+    // add "useful debugging context" that silently expands SAQ-A scope.
+    expect(auditArg?.['rawBody']).toBeUndefined();
+    expect(auditArg?.['raw_body']).toBeUndefined();
+    expect(auditArg?.['signature']).toBeUndefined();
+    expect(auditArg?.['stripe-signature']).toBeUndefined();
+    expect(auditArg?.['stripeSignature']).toBeUndefined();
   });
 });

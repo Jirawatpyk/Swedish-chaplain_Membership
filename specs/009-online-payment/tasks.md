@@ -155,13 +155,13 @@ Quality gates summary: pnpm typecheck/lint GREEN · 466 unit/contract tests GREE
 
 ### Domain layer (Clean Architecture — zero framework imports)
 
-- [ ] T047 [P] [US1] Create `src/modules/payments/domain/payment.ts` — `Payment` aggregate root with state machine (`pending → succeeded|failed|canceled`; `succeeded → partially_refunded → refunded`); pure types only.
-- [ ] T048 [P] [US1] Create `src/modules/payments/domain/value-objects/payment-method.ts` — `PaymentMethod` sum type (`'card' | 'promptpay'`).
-- [ ] T049 [P] [US1] Create `src/modules/payments/domain/processor-event.ts` — `ProcessorEvent` read model.
-- [ ] T050 [P] [US1] Create `src/modules/payments/domain/tenant-payment-settings.ts` — value object holding processor + env + publishable key + enabled methods + flags (incl. `allow_anonymous_paylink` forward-compat per FR-016a).
-- [ ] T051 [P] [US1] Create `src/modules/payments/domain/policies/payment-status-transitions.ts` — pure transition function with full unit-test coverage in `tests/unit/payments/domain/payment-state-machine.test.ts`.
-- [ ] T052 [P] [US1] Create `src/modules/payments/domain/invariants/one-succeeded-payment-per-invoice.ts` — invariant function + unit test.
-- [ ] T053 [US1] **100% line coverage** assertion in `vitest.config.ts` for `src/modules/payments/domain/**` per Constitution Principle II.
+- [X] T047 [P] [US1] Create `src/modules/payments/domain/payment.ts` — `Payment` aggregate root with state machine (`pending → succeeded|failed|canceled`; `succeeded → partially_refunded → refunded`); pure types only.
+- [X] T048 [P] [US1] Create `src/modules/payments/domain/value-objects/payment-method.ts` — `PaymentMethod` sum type (`'card' | 'promptpay'`).
+- [X] T049 [P] [US1] Create `src/modules/payments/domain/processor-event.ts` — `ProcessorEvent` read model.
+- [X] T050 [P] [US1] Create `src/modules/payments/domain/tenant-payment-settings.ts` — value object holding processor + env + publishable key + enabled methods + flags (incl. `allow_anonymous_paylink` forward-compat per FR-016a).
+- [X] T051 [P] [US1] Create `src/modules/payments/domain/policies/payment-status-transitions.ts` — pure transition function with full unit-test coverage in `tests/unit/payments/domain/payment-state-machine.test.ts`.
+- [X] T052 [P] [US1] Create `src/modules/payments/domain/invariants/one-succeeded-payment-per-invoice.ts` — invariant function + unit test.
+- [X] T053 [US1] **100% line coverage** assertion in `vitest.config.ts` for `src/modules/payments/domain/**` per Constitution Principle II.
 
 ### Application layer ports + use cases
 

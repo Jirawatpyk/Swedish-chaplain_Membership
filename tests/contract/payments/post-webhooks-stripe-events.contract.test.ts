@@ -218,6 +218,17 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     const body = await res.json() as Record<string, unknown>;
     expect(body['received']).toBe(true);
     expect(processWebhookEventMock).not.toHaveBeenCalled();
+
+    // Senior-tester F5 (Group B deferred, 2026-04-24): spec § 3 step 4
+    // requires `payment_environment_mismatch` audit + a processor_event
+    // row with outcome='rejected_environment_mismatch'. Assert audit
+    // was invoked so Group D T056 can't silently drop the audit when
+    // it implements processWebhookEvent.
+    const { auditRepo } = await import('@/modules/auth/infrastructure/db/audit-repo');
+    expect(auditRepo.append).toHaveBeenCalled();
+    const auditCalls = (auditRepo.append as ReturnType<typeof vi.fn>).mock.calls;
+    const emitted = auditCalls.map((c) => JSON.stringify(c));
+    expect(emitted.some((s) => s.includes('payment_environment_mismatch'))).toBe(true);
   });
 
   // (d) Valid sig + api_version mismatch → 200 + webhook_api_version_mismatch audit
@@ -232,6 +243,13 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     ) as Response;
     expect(res.status).toBe(200);
     expect(processWebhookEventMock).not.toHaveBeenCalled();
+
+    // Senior-tester F5: spec § 3 step 5 requires webhook_api_version_mismatch
+    // audit when event.api_version drifts from STRIPE_API_VERSION.
+    const { auditRepo } = await import('@/modules/auth/infrastructure/db/audit-repo');
+    const auditCalls = (auditRepo.append as ReturnType<typeof vi.fn>).mock.calls;
+    const emitted = auditCalls.map((c) => JSON.stringify(c));
+    expect(emitted.some((s) => s.includes('webhook_api_version_mismatch'))).toBe(true);
   });
 
   // (e) Duplicate event id → 200 + no side-effect (idempotency)
@@ -357,13 +375,16 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     const event = makeStripeEvent({ account: 'acct_unknown_xyz' });
     constructEventMock.mockReturnValueOnce(event);
 
-    // Override the mocked resolveTenantFromProcessorAccountId for this test
+    // Override the mocked resolveTenantFromProcessorAccountId for this test.
+    // Senior-tester F6 (Group B deferred, 2026-04-24): if Group C/D renames
+    // the export, silent optional-chaining (`resolveFunc?.mock…(…)`) would
+    // let this test pass without exercising anything. Assert defined first.
     const tenantContextModule = await import('@/lib/tenant-context');
-    // The mock factory returns an object with the function — cast via vi.mocked
     const resolveFunc = (
       tenantContextModule as Record<string, unknown>
     )['resolveTenantFromProcessorAccountId'] as ReturnType<typeof vi.fn> | undefined;
-    resolveFunc?.mockResolvedValueOnce(null);
+    expect(resolveFunc).toBeDefined();
+    (resolveFunc as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
 
     const rawBody = JSON.stringify(event);
     const { POST } = await importWebhookRoute() as { POST: (req: NextRequest) => Promise<Response> };

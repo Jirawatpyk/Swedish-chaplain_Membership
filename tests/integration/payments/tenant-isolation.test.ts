@@ -321,8 +321,16 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
   }, 60_000);
 
   afterAll(async () => {
-    await tenantA.cleanup().catch(() => {});
-    await tenantB.cleanup().catch(() => {});
+    // Senior-tester F8 (Group B deferred, 2026-04-24): surface cleanup
+    // failures instead of swallowing them silently — orphaned rows
+    // across the 4 F5 tables would quietly pollute the live Neon schema
+    // and poison later test runs.
+    await tenantA.cleanup().catch((e) => {
+      console.error('[T043] tenantA cleanup failed:', e);
+    });
+    await tenantB.cleanup().catch((e) => {
+      console.error('[T043] tenantB cleanup failed:', e);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -474,10 +482,17 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
   // ---------------------------------------------------------------------------
 
   it('A sees only A processor_events (post-resolution)', async () => {
+    // Senior-tester F7 (Group B deferred, 2026-04-24): the previous
+    // `.filter(r => r.tenantId === A.slug)` style silently accepts a
+    // leak — if RLS actually returned B rows, the filter would hide
+    // them and the length assertion would still pass at 1. Assert the
+    // raw row count directly: A + B each seeded exactly 1 event, so
+    // a tenant-scoped SELECT must return exactly 1 row AND every row
+    // it returns must carry A's tenantId.
     const rows = await runInTenant(tenantA.ctx, (tx) => tx.select().from(processorEvents));
-    const aRows = rows.filter((r) => r.tenantId === tenantA.ctx.slug);
-    expect(aRows).toHaveLength(1);
-    expect(aRows[0]!.id).toBe(aEventId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.tenantId).toBe(tenantA.ctx.slug);
+    expect(rows[0]!.id).toBe(aEventId);
   });
 
   it('A cannot SELECT B processor_events by id (RLS hides row)', async () => {

@@ -158,6 +158,15 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F5: Payments Domain layer — 100% line coverage per Constitution
+        // Principle II. Pure aggregates, VOs, state-machine policy, and
+        // one-succeeded-per-invoice invariant. No framework imports.
+        'src/modules/payments/domain/**/*.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // F3: Members Application layer — security-critical use cases
         // require 100% branch coverage per plan.md § Constitution Check II.
         'src/modules/members/application/enforce-tenant-context-on-member.ts': {

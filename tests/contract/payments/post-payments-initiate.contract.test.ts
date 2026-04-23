@@ -197,6 +197,23 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
     expect(stripe).toHaveProperty('clientSecret');
     expect(stripe).toHaveProperty('paymentIntentId');
     expect(stripe['promptpayQrSvgUrl']).toBeNull();
+
+    // PCI SAQ-A F6 (Group B deferred, 2026-04-24): `clientSecret` is a
+    // short-lived Stripe confirmation token — not cardholder data, but
+    // long-lived logging of it weakens SAQ-A because the secret grants
+    // capture authority for the PaymentIntent's TTL. Verify no logger
+    // call ingested the field in any capacity.
+    const loggerMock = await import('@/lib/logger');
+    const allLoggerCalls = [
+      ...((loggerMock.logger.info as ReturnType<typeof vi.fn>).mock?.calls ?? []),
+      ...((loggerMock.logger.warn as ReturnType<typeof vi.fn>).mock?.calls ?? []),
+      ...((loggerMock.logger.error as ReturnType<typeof vi.fn>).mock?.calls ?? []),
+      ...((loggerMock.logger.debug as ReturnType<typeof vi.fn>).mock?.calls ?? []),
+    ];
+    for (const call of allLoggerCalls) {
+      const serialised = JSON.stringify(call);
+      expect(serialised).not.toContain('pi_test_xxx_secret_yyy');
+    }
   });
 
   it('201 — happy path promptpay: promptpayQrSvgUrl populated', async () => {
@@ -360,6 +377,29 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
     const body = await res.json() as Record<string, unknown>;
     const error = body['error'] as Record<string, unknown>;
     expect(error['code']).toBe('processor_unavailable');
+    // Senior-tester F2 (Group B deferred, 2026-04-24): 502 is transient
+    // per contracts/payments-api.md § 4 (Common headers) — Retry-After
+    // MUST accompany transient-failure codes so the client can back off.
+    expect(res.headers.get('Retry-After')).not.toBeNull();
+  });
+
+  // Senior-tester F4 (Group B deferred, 2026-04-24): the standard error
+  // envelope defined in contracts/payments-api.md MUST include a
+  // `messageThai` field on every error response so Thai members receive
+  // a localised message without the portal round-tripping. Pin this on
+  // at least one representative 4xx so regressions can't silently drop
+  // the field from the envelope.
+  it('error responses carry a messageThai field (i18n contract)', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    initiatePaymentMock.mockResolvedValueOnce(err({ code: 'invoice_not_payable' }));
+
+    const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    expect(res.status).toBe(409);
+    const body = await res.json() as Record<string, unknown>;
+    const error = body['error'] as Record<string, unknown>;
+    expect(error['messageThai']).toBeDefined();
+    expect(typeof error['messageThai']).toBe('string');
   });
 
   it('every response carries Cache-Control: no-store, private', async () => {
