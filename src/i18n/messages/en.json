@@ -1598,5 +1598,10 @@
   },
   "shared": {
     "loaded": "Loaded"
+  },
+  "email": {
+    "invoiceIssued": {
+      "payOnlineCta": "Pay online now"
+    }
   }
 }

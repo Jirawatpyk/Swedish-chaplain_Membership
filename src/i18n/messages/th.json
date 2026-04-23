@@ -1598,5 +1598,10 @@
   },
   "shared": {
     "loaded": "โหลดเสร็จแล้ว"
+  },
+  "email": {
+    "invoiceIssued": {
+      "payOnlineCta": "ชำระเงินออนไลน์"
+    }
   }
 }

@@ -1598,5 +1598,10 @@
   },
   "shared": {
     "loaded": "Laddat"
+  },
+  "email": {
+    "invoiceIssued": {
+      "payOnlineCta": "Betala online"
+    }
   }
 }

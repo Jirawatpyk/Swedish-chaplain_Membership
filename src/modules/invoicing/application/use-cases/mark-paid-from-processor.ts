@@ -1,0 +1,132 @@
+/**
+ * T012 — markPaidFromProcessor (F5 → F4 bridge).
+ *
+ * Wraps F4's `recordPayment` use-case so the F5 webhook handler can
+ * transition an `issued → paid` invoice when Stripe reports success.
+ * The F4 use-case already owns: row-lock, idempotent replay, receipt
+ * sequence allocation (separate-mode), PDF render + upload, audit,
+ * outbox enqueue, registration-fee flip. The wrapper adds only:
+ *
+ *   1. Processor-semantic input shape (`method`, `paymentIntentId`,
+ *      `chargeId`, `settlementDate`) — the F5 webhook supplies these
+ *      directly from the Stripe event payload.
+ *   2. F4 enum mapping — F4's `invoices.payment_method` enum does NOT
+ *      include Stripe methods; the wrapper persists `'other'` and
+ *      encodes the processor hint in `paymentNotes`. The canonical
+ *      processor ids + method live in the `payments` table (F5 schema,
+ *      migration 0032); F4 invoice only carries the summary hint so
+ *      the admin detail page can label "Paid online (Stripe card)".
+ *   3. Error-shape passthrough — F4's `RecordPaymentError` is returned
+ *      verbatim. F5 callers match on the same discriminated union;
+ *      no new error codes are introduced at the bridge.
+ *
+ * Actor identity: webhook-side calls do not have a human actor. We
+ * persist `actorUserId = 'system:stripe-webhook'` so audit logs +
+ * payment_recorded_by on the invoice carry a stable, greppable
+ * identifier. For F5-admin-initiated manual reconciliation paths
+ * (rare — primarily `payment_auto_refunded_*` remediation), callers
+ * supply the real admin user id.
+ *
+ * Composition: the wrapper calls `makeRecordPaymentDeps(tenantId)` at
+ * call time — per Main-agent Gate Decision #6 wrappers MUST compose
+ * real F4 deps and never mock/bypass (Constitution Principle III +
+ * Principle VIII reliability).
+ *
+ * Tenant context: input accepts the plain `tenantId` string (not a
+ * branded `TenantContext`) to match F4's existing pattern + spare
+ * F5 callers from threading two separate representations. The caller
+ * (webhook handler) has already run the request through `runInTenant`
+ * by the time this wrapper fires.
+ */
+import { type Result } from '@/lib/result';
+import {
+  recordPayment,
+  type RecordPaymentError,
+} from './record-payment';
+import { makeRecordPaymentDeps } from '../invoicing-deps';
+import type { Invoice } from '@/modules/invoicing/domain/invoice';
+
+/** F5-surface payment-method discriminator. Widen as new rails land. */
+export type ProcessorPaymentMethod = 'stripe_card' | 'stripe_promptpay';
+
+export interface MarkPaidFromProcessorInput {
+  readonly tenantId: string;
+  readonly invoiceId: string;
+  /**
+   * Stable correlation id for the webhook delivery — carried into
+   * audit payloads + logger context so we can trace the full chain
+   * from Stripe event → F4 markPaid → outbox enqueue.
+   */
+  readonly requestId?: string | null;
+  /**
+   * Actor identifier. Webhook-side invocations use the sentinel
+   * `'system:stripe-webhook'`; admin remediation paths pass the real
+   * user id. F4 `recordPayment` expects a non-empty string.
+   */
+  readonly actorUserId: string;
+  readonly method: ProcessorPaymentMethod;
+  /** Stripe Payment Intent id (`pi_*`). Not sensitive per Stripe docs. */
+  readonly paymentIntentId: string;
+  /**
+   * Stripe Charge id (`ch_*`) of the succeeded charge. Nullable
+   * because PromptPay async confirmation can land before a charge
+   * is finalised under some edge flows; the F5 reconciliation layer
+   * backfills once the charge id is known.
+   */
+  readonly chargeId: string | null;
+  /**
+   * Settlement / charge date as YYYY-MM-DD in Asia/Bangkok local
+   * calendar — F4's `paymentDate` column stores the admin-facing
+   * bookkeeping date and expects this shape. Webhook handler
+   * converts the Stripe event's UTC ts before calling.
+   */
+  readonly settlementDate: string;
+}
+
+export type MarkPaidFromProcessorError = RecordPaymentError;
+
+/**
+ * Map F5 `ProcessorPaymentMethod` into a human-readable F4
+ * `paymentNotes` hint. Kept as a pure function so the wrapper is
+ * easily unit-testable; localisation is NOT applied here — notes
+ * are admin-facing English only (F4 convention).
+ */
+function describeProcessorMethod(
+  method: ProcessorPaymentMethod,
+  paymentIntentId: string,
+  chargeId: string | null,
+): string {
+  const rail =
+    method === 'stripe_card'
+      ? 'Stripe card'
+      : method === 'stripe_promptpay'
+      ? 'Stripe PromptPay'
+      : 'Stripe';
+  const ids = chargeId
+    ? `intent=${paymentIntentId} charge=${chargeId}`
+    : `intent=${paymentIntentId}`;
+  return `Paid online via ${rail} (${ids})`;
+}
+
+export async function markPaidFromProcessor(
+  input: MarkPaidFromProcessorInput,
+): Promise<Result<Invoice, MarkPaidFromProcessorError>> {
+  const deps = makeRecordPaymentDeps(input.tenantId);
+  return recordPayment(deps, {
+    tenantId: input.tenantId,
+    actorUserId: input.actorUserId,
+    ...(input.requestId !== undefined ? { requestId: input.requestId } : {}),
+    invoiceId: input.invoiceId,
+    // F4 enum does not include Stripe rails; persist `'other'` + carry
+    // the rail hint in notes. F5 `payments` row is the source of truth
+    // for the exact processor method + ids.
+    paymentMethod: 'other',
+    paymentNotes: describeProcessorMethod(
+      input.method,
+      input.paymentIntentId,
+      input.chargeId,
+    ),
+    paymentReference: input.paymentIntentId,
+    paymentDate: input.settlementDate,
+  });
+}

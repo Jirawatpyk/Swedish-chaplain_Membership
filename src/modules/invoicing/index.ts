@@ -30,6 +30,13 @@ export {
   type ProRatePolicy,
 } from './domain/value-objects/pro-rate-policy';
 export { Money } from './domain/value-objects/money';
+// F5 bridge alias: `AmountSatang` is the same class as `Money`, re-
+// exported under a satang-centric name so F5 code (which deals with
+// processor satang amounts directly and never needs THB display
+// formatting) reads idiomatically. Both names resolve to the same
+// constructor — `AmountSatang === Money` is an invariant guarded by
+// `tests/unit/invoicing/barrel-exports.test.ts`.
+export { Money as AmountSatang } from './domain/value-objects/money';
 export { VatRate } from './domain/value-objects/vat-rate';
 export { calculateVat } from './domain/policies/calculate-vat';
 export {
@@ -238,6 +245,33 @@ export {
   maybeEmitOverdueDetected,
   type InvoiceWithOverdue,
 } from './application/use-cases/derive-overdue';
+
+// --- F5 bridge use-cases (post-critique R2-E16 explicit gate) --------------
+// The 3 wrappers below give F5 (online payment, webhook reconciliation,
+// refund flow) a stable F4 surface to bind against. Each wrapper
+// composes its F4 deps internally via `make*Deps(tenantId)` — see
+// `specs/009-online-payment/tasks.md` § "Implementation Decisions" #6.
+export {
+  markPaidFromProcessor,
+  type MarkPaidFromProcessorInput,
+  type MarkPaidFromProcessorError,
+  type ProcessorPaymentMethod,
+} from './application/use-cases/mark-paid-from-processor';
+
+export {
+  issueCreditNoteFromRefund,
+  type IssueCreditNoteFromRefundInput,
+  type IssueCreditNoteFromRefundOutput,
+  type IssueCreditNoteFromRefundError,
+} from './application/use-cases/issue-credit-note-from-refund';
+
+export {
+  getInvoiceForPayment,
+  type GetInvoiceForPaymentInput,
+  type InvoiceForPayment,
+  type GetInvoiceForPaymentError,
+  type GetInvoiceForPaymentDeps,
+} from './application/use-cases/get-invoice-for-payment';
 export type {
   OverdueAuditPort,
   OverdueDetectedEvent,

@@ -190,6 +190,25 @@ export const REASON_PREFIX: Record<InvoiceAutoEmailLocale, string> = {
 };
 
 /**
+ * F5 FR-027 — "Pay online" CTA copy per locale for the `invoice_issued`
+ * (and `invoice_pdf_resent`) email. Rendered only when the sending tenant
+ * has `tenant_payment_settings.online_payment_enabled = true`; otherwise
+ * the F4 email keeps its single "Download invoice" CTA and this copy is
+ * unused.
+ *
+ * Keys are also mirrored under `email.invoiceIssued.payOnlineCta` in
+ * `src/i18n/messages/{en,th,sv}.json` so the trilingual CI coverage check
+ * (`pnpm check:i18n`) enforces parity — the template consumes the values
+ * from this matrix at render time (the F4 email pipeline does NOT thread
+ * `next-intl` into @react-email templates).
+ */
+export const PAY_ONLINE_CTA: Record<InvoiceAutoEmailLocale, string> = {
+  en: 'Pay online now',
+  th: 'ชำระเงินออนไลน์',
+  sv: 'Betala online',
+};
+
+/**
  * Resolve the interpolated subject + body + CTA once per build. The
  * React template + plain-text fallback share this single string so
  * the two rendering paths stay bit-consistent — a divergence between
