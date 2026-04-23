@@ -614,11 +614,7 @@
         "portal": {
           "linked": "เชื่อมบัญชีพอร์ทัล"
         },
-        "editCta": "แก้ไข",
-        "actions": {
-          "inviteUser": "เชิญผู้ใช้",
-          "inviteUserDescription": "ส่งคำเชิญเข้าพอร์ทัลให้กับบริษัทสมาชิกนี้"
-        }
+        "editCta": "แก้ไข"
       },
       "timeline": {
         "pageTitle": "ไทม์ไลน์ · {companyName} · SweCham",

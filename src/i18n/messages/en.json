@@ -614,11 +614,7 @@
         "portal": {
           "linked": "Portal linked"
         },
-        "editCta": "Edit",
-        "actions": {
-          "inviteUser": "Invite user",
-          "inviteUserDescription": "Send a portal invitation for this member company."
-        }
+        "editCta": "Edit"
       },
       "timeline": {
         "pageTitle": "Timeline · {companyName} · SweCham",

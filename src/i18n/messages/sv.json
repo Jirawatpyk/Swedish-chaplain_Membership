@@ -614,11 +614,7 @@
         "portal": {
           "linked": "Portalanslutning"
         },
-        "editCta": "Redigera",
-        "actions": {
-          "inviteUser": "Bjud in användare",
-          "inviteUserDescription": "Skicka en portalinbjudan för detta medlemsbolag."
-        }
+        "editCta": "Redigera"
       },
       "timeline": {
         "pageTitle": "Tidslinje · {companyName} · SweCham",
