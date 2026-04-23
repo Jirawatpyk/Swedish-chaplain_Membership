@@ -232,6 +232,62 @@
       "when": 1777248000000,
       "tag": "0032_audit_contact_linked_to_user",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1777334400000,
+      "tag": "0033_create_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1777334401000,
+      "tag": "0034_create_refunds",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1777334402000,
+      "tag": "0035_create_tenant_payment_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1777334403000,
+      "tag": "0036_create_processor_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1777334404000,
+      "tag": "0037_seed_swecham_payment_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1777334405000,
+      "tag": "0038_credit_notes_add_source_refund_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1777334406000,
+      "tag": "0039_audit_log_add_retention_years",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1777334407000,
+      "tag": "0040_audit_log_f5_extension",
+      "breakpoints": true
     }
   ]
 }
