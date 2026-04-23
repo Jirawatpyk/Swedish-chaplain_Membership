@@ -85,12 +85,14 @@ export async function getInvoiceForPayment(
   if (!result.ok) return err(result.error);
 
   const invoice = result.value;
-  // A null `total` means the invoice is still a draft with no snapshot —
-  // F5 cannot compute a charge amount. Surface as a typed error so the
-  // caller (webhook reconciliation / portal payment-init) must explicitly
-  // handle it through the Result channel rather than receiving a
-  // `totalSatang: 0n` success that looks payable.
-  if (!invoice.total) {
+  // Null `total` = draft with no snapshot. Zero `total.satang` = 100%-
+  // discounted invoice or a backfill data-quality edge — Stripe rejects
+  // any amount below its minimum (50 satang / 0.50 THB), so both cases
+  // are non-payable. Surface as a typed error so the caller (webhook
+  // reconciliation / portal payment-init) must explicitly handle it
+  // through the Result channel rather than silently sending amount=0
+  // to the processor.
+  if (!invoice.total || invoice.total.satang <= 0n) {
     return err({ code: 'not_payable', status: invoice.status });
   }
 

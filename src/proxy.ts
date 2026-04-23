@@ -3,6 +3,7 @@ import { env } from '@/lib/env';
 import { checkCsrf } from '@/lib/csrf';
 import { REQUEST_ID_HEADER, requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger';
 
 /**
  * F2 tenant header — forwarded to route handlers + server components so
@@ -129,6 +130,45 @@ function applySecurityHeaders(
   return response;
 }
 
+/**
+ * Retry window for all kill-switch 503s. Mirrored as `Retry-After` header
+ * AND `retryAfterSeconds` body field so route handlers + member-portal
+ * error boundaries can render a countdown without parsing headers (some
+ * fetch wrappers strip them).
+ */
+const KILL_SWITCH_RETRY_AFTER_SECONDS = 300;
+
+/**
+ * Canonical machine-readable body schema for every 503 kill-switch /
+ * read-only block. Phase 3+ route handlers and portal error boundaries
+ * branch on `error` (code) to pick the right toast + i18n key, and use
+ * `retryAfterSeconds` / `supportUrl` to shape the CTA.
+ *
+ * `message` is EN-only and is a safety fallback — the caller SHOULD
+ * translate `error` via an i18n key instead of rendering `message`
+ * verbatim (proxy runs before locale detection; no translation
+ * available here).
+ */
+function build503(
+  errorCode: string,
+  message: string,
+  pathname: string,
+  requestId: string,
+): NextResponse {
+  const response = NextResponse.json(
+    {
+      error: errorCode,
+      message,
+      retryAfterSeconds: KILL_SWITCH_RETRY_AFTER_SECONDS,
+      supportUrl: '/admin/support',
+    },
+    { status: 503 },
+  );
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  response.headers.set('Retry-After', String(KILL_SWITCH_RETRY_AFTER_SECONDS));
+  return applySecurityHeaders(response, pathname);
+}
+
 export function proxy(request: NextRequest): NextResponse {
   const { method, nextUrl } = request;
   const requestId = requestIdFromHeaders(request.headers);
@@ -137,53 +177,37 @@ export function proxy(request: NextRequest): NextResponse {
   // 1. READ_ONLY_MODE — block all writes with 503 (used for rollback /
   //    scheduled maintenance per .env.local README).
   if (env.flags.readOnlyMode && isStateChanging) {
-    const response = NextResponse.json(
-      {
-        error: 'read-only-mode',
-        message: 'The system is currently in read-only mode for maintenance.',
-      },
-      { status: 503 },
+    return build503(
+      'read-only-mode',
+      'The system is currently in read-only mode for maintenance.',
+      nextUrl.pathname,
+      requestId,
     );
-    response.headers.set(REQUEST_ID_HEADER, requestId);
-    response.headers.set('Retry-After', '300');
-    return applySecurityHeaders(response, nextUrl.pathname);
   }
 
-  // 1b. FEATURE_F3_MEMBERS kill-switch (T036) — when false, every member /
-  //     portal route returns 503 read_only_mode without a code deploy.
-  //     Applies to BOTH reads and writes on the F3 surfaces because the
-  //     whole feature is disabled, not just mutations.
+  // 1b. FEATURE_F3_MEMBERS kill-switch (T036). Applies to BOTH reads and
+  //     writes on the F3 surfaces because the whole feature is disabled.
   const isF3Path =
     nextUrl.pathname.startsWith('/api/members') ||
     nextUrl.pathname.startsWith('/api/portal');
   if (!env.features.f3Members && isF3Path) {
-    const response = NextResponse.json(
-      {
-        error: 'read_only_mode',
-        message: 'Member directory is temporarily unavailable.',
-      },
-      { status: 503 },
+    return build503(
+      'read_only_mode',
+      'Member directory is temporarily unavailable.',
+      nextUrl.pathname,
+      requestId,
     );
-    response.headers.set(REQUEST_ID_HEADER, requestId);
-    response.headers.set('Retry-After', '300');
-    return applySecurityHeaders(response, nextUrl.pathname);
   }
 
-  // 1c. FEATURE_F4_INVOICING kill-switch (T020) — when false, every
-  //     invoicing route returns 503 read_only_mode. Applies to BOTH
-  //     reads and writes on F4 surfaces. Member-portal /api/portal/invoices
-  //     is a dedicated sub-path (added in US3) and is gated here too; the
-  //     F3 /api/portal guard above only triggers when F3 itself is off.
+  // 1c. FEATURE_F4_INVOICING kill-switch (T020). Applies to BOTH reads
+  //     and writes on F4 surfaces.
   //
-  //     R7-B4 fix — the cron dispatcher is a SHARED route
+  //     R7-B4 — the cron dispatcher is a SHARED route
   //     (`/api/cron/outbox-dispatch`) serving F1 + F4 rows. Blanket-
-  //     blocking it here would stop F1 emails too. The kill-switch for
-  //     F4 outbox rows lives INSIDE the dispatcher query which filters
-  //     `notification_type != 'invoice_auto_email'` when f4Invoicing is
-  //     false (see src/app/api/cron/outbox-dispatch/route.ts). The
-  //     previous `/api/cron/auto-email-dispatch` reference was a
-  //     path-mismatch that gave the kill-switch no actual containment
-  //     power over in-flight invoice email dispatch.
+  //     blocking it here would stop F1 emails too. The F4-row filter
+  //     lives INSIDE the dispatcher query which drops
+  //     `notification_type == 'invoice_auto_email'` when f4Invoicing is
+  //     false (see src/app/api/cron/outbox-dispatch/route.ts).
   const isF4Path =
     nextUrl.pathname.startsWith('/api/invoices') ||
     nextUrl.pathname.startsWith('/api/credit-notes') ||
@@ -194,24 +218,20 @@ export function proxy(request: NextRequest): NextResponse {
     // so "invoicing disabled" is uniform across every F4-bearing route.
     /^\/api\/members\/[^/]+\/invoices(?:\/|$)/.test(nextUrl.pathname);
   if (!env.features.f4Invoicing && isF4Path) {
-    const response = NextResponse.json(
-      {
-        error: 'read_only_mode',
-        message: 'Invoicing is temporarily unavailable.',
-      },
-      { status: 503 },
+    return build503(
+      'read_only_mode',
+      'Invoicing is temporarily unavailable.',
+      nextUrl.pathname,
+      requestId,
     );
-    response.headers.set(REQUEST_ID_HEADER, requestId);
-    response.headers.set('Retry-After', '300');
-    return applySecurityHeaders(response, nextUrl.pathname);
   }
 
-  // 1d. FEATURE_F5_ONLINE_PAYMENT kill-switch — when false, every payment
-  //     surface returns 503 `feature_disabled`. Covers the server-side
-  //     webhook + API routes AND the member-facing /pay page so a tenant
-  //     toggled OFF cannot initiate or confirm online payments without a
-  //     code deploy. Default is OFF (dark ship per spec Q-F2.2); flip ON
-  //     in Vercel env after Rolling Release gate.
+  // 1d. FEATURE_F5_ONLINE_PAYMENT kill-switch. Covers webhook + API
+  //     routes AND the member-facing /pay page + admin refund page.
+  //     Default OFF (dark ship); flip ON in Vercel env after Rolling
+  //     Release gate. Distinct error code `feature_disabled` separates
+  //     "not yet activated" from F3/F4's `read_only_mode` maintenance
+  //     semantics so Phase 3 UI can pick the right microcopy.
   const isF5Path =
     nextUrl.pathname.startsWith('/api/payments') ||
     nextUrl.pathname.startsWith('/api/refunds') ||
@@ -220,16 +240,12 @@ export function proxy(request: NextRequest): NextResponse {
     /^\/portal\/invoices\/[^/]+\/pay(?:\/|$)/.test(nextUrl.pathname) ||
     /^\/admin\/invoices\/[^/]+\/refund(?:\/|$)/.test(nextUrl.pathname);
   if (!env.features.f5OnlinePayment && isF5Path) {
-    const response = NextResponse.json(
-      {
-        error: 'feature_disabled',
-        message: 'Online payment is temporarily unavailable.',
-      },
-      { status: 503 },
+    return build503(
+      'feature_disabled',
+      'Online payment is temporarily unavailable.',
+      nextUrl.pathname,
+      requestId,
     );
-    response.headers.set(REQUEST_ID_HEADER, requestId);
-    response.headers.set('Retry-After', '300');
-    return applySecurityHeaders(response, nextUrl.pathname);
   }
 
   // 2. CSRF Origin allow-list for /api/* state-changing requests
@@ -270,14 +286,17 @@ export function proxy(request: NextRequest): NextResponse {
     // Resolver would have already failed at boot if env.TENANT_SLUG was
     // malformed; this catch guards against a future F10 resolver that
     // throws for unauthenticated requests on tenant-unknown routes
-    // (landing page, public docs, etc.). Observability fix (F5 review):
-    // log the failure so route handlers downstream don't swallow a
-    // misconfigured tenant silently.
-    console.warn('[proxy] tenant resolver failed; header omitted', {
-      pathname: nextUrl.pathname,
-      requestId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    // (landing page, public docs, etc.). Structured pino log — runs
+    // through REDACT_PATHS so any error message containing session /
+    // token data stays out of the log stream.
+    logger.warn(
+      {
+        pathname: nextUrl.pathname,
+        requestId,
+        err: error instanceof Error ? error.message : String(error),
+      },
+      '[proxy] tenant resolver failed; header omitted',
+    );
   }
 
   const response = NextResponse.next({

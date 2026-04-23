@@ -6,11 +6,12 @@
  * Stripe's replay-tools observe the same version the server used when
  * reading the event payload.
  *
- * Kept as a LAZY getter (not a module-level const) so importing this
- * module at build time — e.g. Next.js pre-rendering, or unit tests that
- * import route handlers without setting `STRIPE_*` env vars — does NOT
- * trigger `env.ts`'s zod parse. The getter reads env only on first call
- * at request time, matching the deferral pattern in `stripe-client.ts`.
+ * Exported as a getter (not a const) so tests that mock `@/lib/env` can
+ * shape the return value per-case. The env parse itself still runs at
+ * the first import of `@/lib/env` transitively — true build-time
+ * deferral would require a dynamic `await import()`, which would force
+ * the getter to be async and propagate awaits into every call site.
+ * Not worth the ergonomic cost.
  *
  * Pinning rationale: spec Q5 / FR-026. Quarterly engineering review
  * bumps the pin via an explicit PR with golden-fixture regeneration.

@@ -104,6 +104,17 @@ const eslintConfig = defineConfig([
           })),
           patterns: [
             {
+              // F5 subpath guard — `stripe/types`, `stripe/resources/*`, and
+              // `@stripe/*/internal` deep imports slip past the bare-name
+              // `paths:` list. Application MUST mock/inject via Infrastructure
+              // port; ANY Stripe subpath coupling breaks that boundary.
+              group: ["stripe/*", "@stripe/*"],
+              message:
+                "Application layer must not import Stripe SDK subpaths. " +
+                "Go through the Infrastructure port (StripeClient) — " +
+                "Constitution Principle III + PCI DSS Principle IV.",
+            },
+            {
               // Path C hardening — B1-class regression guard.
               // Round 3 staff review found 4 Application files importing
               // Drizzle schema VALUES directly from

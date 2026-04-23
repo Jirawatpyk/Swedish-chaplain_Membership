@@ -68,9 +68,12 @@ export function getStripeClient(): StripeClient {
       typescript: true,
       // Bounded SDK resilience — prevents an unbounded Stripe API hang
       // (observed during SG→US latency spikes) from blocking webhook
-      // handlers past the Vercel function timeout. `maxNetworkRetries`
-      // covers idempotent transient failures; `timeout` (ms) is a hard
-      // ceiling per request per Stripe Node-SDK recommendation.
+      // handlers past the Vercel function timeout. These apply PER
+      // REQUEST: worst case ~30s (1 × timeout + 3 retries × ~7s backoff)
+      // for a single SDK call. A webhook that chains N SDK calls
+      // (retrieve + refund + reconcile) gets ~30s × N, so keep chained
+      // calls to ≤3 inside one function invocation (Vercel default
+      // 300s) or split across a queue.
       maxNetworkRetries: 3,
       timeout: 10_000,
       appInfo: {

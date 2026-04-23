@@ -22,9 +22,12 @@ import { NextRequest } from 'next/server';
 vi.mock('@/lib/env', () => ({
   env: {
     isDevelopment: true,
+    isProduction: false,
+    isTest: true,
     flags: { readOnlyMode: true },
-    features: { f3Members: true },
+    features: { f3Members: true, f4Invoicing: true, f5OnlinePayment: true },
     app: { allowedOrigins: ['http://localhost:3100'] },
+    log: { level: 'silent' },
   },
 }));
 

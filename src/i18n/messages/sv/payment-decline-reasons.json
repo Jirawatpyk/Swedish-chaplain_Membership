@@ -14,7 +14,7 @@
   "transaction_not_allowed": "Kortet tillåter inte denna transaktion. Kontakta din bank eller använd ett annat kort.",
   "try_again_later": "Betalningstjänsten är tillfälligt otillgänglig. Försök igen om en stund.",
   "withdrawal_count_limit_exceeded": "Daglig kortgräns uppnådd. Prova ett annat kort eller försök igen imorgon.",
-  "currency_not_supported": "Kortet stöder inte THB. Använd ett annat kort.",
+  "currency_not_supported": "Kortet stöder inte thailändska baht (THB). Använd ett annat kort.",
   "do_not_honor": "Kortet nekades av banken. Kontakta din bank.",
   "fraudulent": "Betalningen blockerades. Kontakta din bank om du tror att detta är ett fel.",
   "generic_decline": "Kortet nekades. Prova ett annat kort eller kontakta din bank.",

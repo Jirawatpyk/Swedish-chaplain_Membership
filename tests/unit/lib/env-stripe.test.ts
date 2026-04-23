@@ -4,12 +4,14 @@
  * PCI SAQ-A regression (live key rollout into staging) MUST fail loud.
  *
  * `src/lib/env.ts` runs zod + cross-field assertions at module load,
- * so each case mutates `process.env`, deletes the module cache via
- * `vi.resetModules()`, then re-imports to trigger a fresh parse.
+ * so each case uses `vi.stubEnv()` (auto-restored on `vi.unstubAllEnvs`
+ * after each test — avoids the parallel-runner flake you get from
+ * manual `process.env` mutation + savedEnv-at-describe-scope) then
+ * `vi.resetModules()` to force a fresh parse.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const BASE_ENV = {
+const BASE_ENV: Record<string, string> = {
   NODE_ENV: 'test',
   DATABASE_URL: 'postgresql://u:p@h:5432/d',
   KV_REST_API_URL: 'https://kv.example.com',
@@ -29,49 +31,45 @@ const BASE_ENV = {
   STRIPE_ACCOUNT_ID_SWECHAM: 'acct_TEST0000',
   STRIPE_LIVE_MODE: 'false',
   FEATURE_F5_ONLINE_PAYMENT: 'false',
-} as const;
+};
 
-function setEnv(overrides: Record<string, string | undefined>): void {
-  for (const [k, v] of Object.entries(BASE_ENV)) process.env[k] = v;
+function stubEnv(overrides: Record<string, string | undefined>): void {
+  for (const [k, v] of Object.entries(BASE_ENV)) vi.stubEnv(k, v);
   for (const [k, v] of Object.entries(overrides)) {
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
+    vi.stubEnv(k, v ?? '');
   }
 }
 
 describe('env.ts — F5 cross-field assertions', () => {
-  const savedEnv = { ...process.env };
-
   beforeEach(() => {
     vi.resetModules();
   });
   afterEach(() => {
-    for (const k of Object.keys(process.env)) delete process.env[k];
-    Object.assign(process.env, savedEnv);
+    vi.unstubAllEnvs();
   });
 
   it('happy path — sk_test_ + STRIPE_LIVE_MODE=false in dev does not throw', async () => {
-    setEnv({ NODE_ENV: 'development', STRIPE_SECRET_KEY: 'sk_test_0000000000', STRIPE_LIVE_MODE: 'false' });
+    stubEnv({ NODE_ENV: 'development', STRIPE_SECRET_KEY: 'sk_test_0000000000', STRIPE_LIVE_MODE: 'false' });
     await expect(import('@/lib/env')).resolves.toBeDefined();
   });
 
   it('throws when sk_test_ disagrees with STRIPE_LIVE_MODE=true', async () => {
-    setEnv({ NODE_ENV: 'production', STRIPE_SECRET_KEY: 'sk_test_0000000000', STRIPE_LIVE_MODE: 'true' });
+    stubEnv({ NODE_ENV: 'production', STRIPE_SECRET_KEY: 'sk_test_0000000000', STRIPE_LIVE_MODE: 'true' });
     await expect(import('@/lib/env')).rejects.toThrow(/STRIPE_LIVE_MODE.*disagrees/i);
   });
 
   it('throws when sk_live_ disagrees with STRIPE_LIVE_MODE=false', async () => {
-    setEnv({ NODE_ENV: 'production', STRIPE_SECRET_KEY: 'sk_live_0000000000', STRIPE_LIVE_MODE: 'false' });
+    stubEnv({ NODE_ENV: 'production', STRIPE_SECRET_KEY: 'sk_live_0000000000', STRIPE_LIVE_MODE: 'false' });
     await expect(import('@/lib/env')).rejects.toThrow(/STRIPE_LIVE_MODE.*disagrees/i);
   });
 
   it('throws when sk_live_ used in non-production', async () => {
-    setEnv({ NODE_ENV: 'development', STRIPE_SECRET_KEY: 'sk_live_0000000000', STRIPE_LIVE_MODE: 'true' });
+    stubEnv({ NODE_ENV: 'development', STRIPE_SECRET_KEY: 'sk_live_0000000000', STRIPE_LIVE_MODE: 'true' });
     await expect(import('@/lib/env')).rejects.toThrow(/STRIPE_LIVE_MODE=true.*only allowed when NODE_ENV=production/i);
   });
 
   it('throws when E2E_X_TENANT_HEADER_ENABLED=true in production', async () => {
-    setEnv({ NODE_ENV: 'production', STRIPE_SECRET_KEY: 'sk_live_0000000000', STRIPE_LIVE_MODE: 'true', E2E_X_TENANT_HEADER_ENABLED: 'true' });
+    stubEnv({ NODE_ENV: 'production', STRIPE_SECRET_KEY: 'sk_live_0000000000', STRIPE_LIVE_MODE: 'true', E2E_X_TENANT_HEADER_ENABLED: 'true' });
     await expect(import('@/lib/env')).rejects.toThrow(/E2E_X_TENANT_HEADER_ENABLED.*false.*when NODE_ENV=production/i);
   });
 });

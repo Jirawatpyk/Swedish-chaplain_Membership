@@ -29,9 +29,17 @@
 --   - `display_name` surfaces as-is in admin UIs so operators recognise
 --     these rows as system accounts on sight.
 --
--- Rollback: DELETE WHERE id IN (...) — rows are append-only-queried only
--- from the payments/refunds/invoices write paths that started referring
--- to them in this same migration window.
+-- Rollback notes (review-fix):
+--   - SAFE pre-Phase-3: `DELETE FROM users WHERE id='00000000-0000-0000-0000-0000000f5001'`
+--     succeeds because no rows reference it yet.
+--   - UNSAFE post-Phase-3: once the webhook handler writes any
+--     `payments.actor_user_id = '…f5001'` or `audit_log.target_user_id
+--     = '…f5001'` row, the FK RESTRICT on payments + the append-only
+--     invariant on audit_log block DELETE. Rolling back then requires
+--     either (a) a targeted backfill that rewrites existing refs to a
+--     replacement sentinel, or (b) accepting the row as permanent
+--     system state (the audit trail it anchors is forensically useful
+--     either way).
 -- ---------------------------------------------------------------------------
 
 INSERT INTO "users" (
@@ -48,3 +56,25 @@ INSERT INTO "users" (
   0
 )
 ON CONFLICT ("id") DO NOTHING;--> statement-breakpoint
+
+-- Audit trail — every auth-surface state transition emits one event
+-- per Constitution Principle I audit discipline. Self-attested actor
+-- (the same id is both source and target) is the canonical pattern for
+-- bootstrap / migration-origin provisioning — no human operator was
+-- involved, and using any other id would incorrectly attribute the
+-- seed to a real admin. request_id/source_ip reflect the migration
+-- runner origin.
+INSERT INTO "audit_log" (
+  "event_type", "actor_user_id", "target_user_id", "source_ip",
+  "summary", "request_id"
+)
+SELECT
+  'account_created', '00000000-0000-0000-0000-0000000f5001',
+  '00000000-0000-0000-0000-0000000f5001', NULL,
+  'System actor provisioned via migration 0041 (F5 Stripe-webhook sentinel; status=disabled, password_hash=NULL; sign-in impossible)',
+  'migration-0041'
+WHERE NOT EXISTS (
+  SELECT 1 FROM "audit_log"
+  WHERE "event_type" = 'account_created'
+    AND "target_user_id" = '00000000-0000-0000-0000-0000000f5001'
+);--> statement-breakpoint
