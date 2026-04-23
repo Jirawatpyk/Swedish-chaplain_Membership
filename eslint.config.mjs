@@ -153,6 +153,7 @@ const eslintConfig = defineConfig([
       "src/modules/tenants/**",
       "src/modules/members/**",
       "src/modules/invoicing/**",
+      "src/modules/payments/**",
       // `src/lib/**` is the shared composition adapter layer.
       // Files here provide the glue between module internals and
       // Next.js route handlers (cookies, session lookup, db client,
@@ -241,6 +242,23 @@ const eslintConfig = defineConfig([
               ],
               message:
                 "Cross-module import must go through the invoicing public barrel (`@/modules/invoicing`). " +
+                "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
+            {
+              // F5 — payments module public-barrel boundary (T030).
+              group: [
+                "@/modules/payments/domain/**",
+                "@/modules/payments/application/**",
+                "@/modules/payments/infrastructure/**",
+                "./modules/payments/domain/**",
+                "./modules/payments/application/**",
+                "./modules/payments/infrastructure/**",
+                "../modules/payments/domain/**",
+                "../modules/payments/application/**",
+                "../modules/payments/infrastructure/**",
+              ],
+              message:
+                "Cross-module import must go through the payments public barrel (`@/modules/payments`). " +
                 "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
             },
           ],

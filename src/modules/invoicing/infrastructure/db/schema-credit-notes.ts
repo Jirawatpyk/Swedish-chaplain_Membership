@@ -46,6 +46,11 @@ export const creditNotes = pgTable(
     pdfSha256: char('pdf_sha256', { length: 64 }).notNull(),
     pdfTemplateVersion: smallint('pdf_template_version').notNull(),
 
+    // F5 extension (migration 0038) — nullable FK → refunds(id). NULL for
+    // F4-manual credit notes; non-NULL for F5-origin (refund-triggered)
+    // credit notes. Projects through row-to-domain mapping.
+    sourceRefundId: text('source_refund_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

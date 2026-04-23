@@ -34,7 +34,6 @@ import {
   timestamp,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 
 // ---------------------------------------------------------------------------
 // 1. payments
@@ -197,25 +196,20 @@ export const paymentsRelations = relations(payments, ({ many }) => ({
 }));
 
 /**
- * refunds → payments (many-to-one), refunds → credit_notes (many-to-one
- * via nullable credit_note_id FK). The credit-note side composes with
- * F4's own schema via a composite-key-join which drizzle-orm relations()
- * does not natively express with composite keys; repositories perform
- * the join manually when needed. The single-column relation is declared
- * here for type inference on future query-builder use.
+ * refunds → payments (many-to-one).
+ *
+ * refunds → credit_notes is intentionally NOT declared here: F4's
+ * `creditNotes` pgTable is F4 Infrastructure-private (barrel doesn't
+ * expose it; importing cross-module into F4 infra would violate
+ * Constitution Principle III per the ESLint barrel-guard). The refund
+ * → CN join lives at the Application/Repository layer where it can
+ * compose F4's public surface (getCreditNote use-case) without reaching
+ * into F4 internals. See `refunds.creditNoteId` column comment.
  */
 export const refundsRelations = relations(refunds, ({ one }) => ({
   payment: one(payments, {
     fields: [refunds.paymentId],
     references: [payments.id],
-  }),
-  // Composite-key relation: refunds(tenant_id, credit_note_id) →
-  // credit_notes(tenant_id, credit_note_id). Drizzle relations() does
-  // not currently support composite FKs; repositories (Application
-  // consumers) perform this join explicitly when required.
-  creditNote: one(creditNotes, {
-    fields: [refunds.creditNoteId],
-    references: [creditNotes.creditNoteId],
   }),
 }));
 

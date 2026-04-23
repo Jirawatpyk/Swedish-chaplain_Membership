@@ -77,6 +77,13 @@ export const issueCreditNoteSchema = z.object({
   creditTotalSatang: z.bigint().positive(),
   /** Free-text reason (required, max 500 char). Persisted + rendered on PDF. */
   reason: z.string().trim().min(1).max(500),
+  /**
+   * F5 extension — when set, `credit_notes.source_refund_id` is populated
+   * so admin UIs + timelines can distinguish F5-origin CNs from
+   * F4-manual issues. Supplied by the `issueCreditNoteFromRefund`
+   * bridge wrapper; F4-manual flows omit it.
+   */
+  sourceRefundId: z.string().min(1).optional(),
 });
 
 export type IssueCreditNoteInput = z.infer<typeof issueCreditNoteSchema>;
@@ -351,6 +358,9 @@ export async function issueCreditNote(
             sha256: rendered.sha256,
             templateVersion: deps.currentTemplateVersion,
           },
+          ...(input.sourceRefundId !== undefined
+            ? { sourceRefundId: input.sourceRefundId }
+            : {}),
         });
       } catch (e) {
         // Unique-constraint on (tenant, fiscal_year, sequence_number) is

@@ -140,6 +140,7 @@ function creditNoteFixture(): CreditNote {
     tenantIdentitySnapshot: tenantSnap(),
     memberIdentitySnapshot: memberSnap(),
     pdf: { blobKey: 'blob:cn-key', sha256: sha(), templateVersion: 1 },
+    sourceRefundId: null,
     createdAt: '2026-04-21T00:00:00Z',
     updatedAt: '2026-04-21T00:00:00Z',
   };

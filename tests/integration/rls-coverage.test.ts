@@ -105,12 +105,12 @@ describe('RLS coverage — every tenant-scoped table', () => {
   // has its own policy — not a single FOR ALL shortcut that would
   // accidentally allow DELETE via tenant match (append-only guard).
   it('processor_events has 4 distinct per-command RLS policies', async () => {
-    const rows = await db.execute(sql`
+    const rows = (await db.execute(sql`
       SELECT cmd, policyname FROM pg_policies
       WHERE schemaname = 'public' AND tablename = 'processor_events'
       ORDER BY cmd
-    `);
-    const cmds = (rows as Array<{ cmd: string }>).map((r) => r.cmd).sort();
+    `)) as unknown as Array<{ cmd: string; policyname: string }>;
+    const cmds = rows.map((r) => r.cmd).sort();
     expect(cmds, 'processor_events must have exactly SELECT/INSERT/UPDATE/DELETE policies').toEqual([
       'DELETE',
       'INSERT',

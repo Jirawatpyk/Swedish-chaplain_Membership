@@ -264,6 +264,10 @@ export {
   type IssueCreditNoteFromRefundOutput,
   type IssueCreditNoteFromRefundError,
 } from './application/use-cases/issue-credit-note-from-refund';
+// Alias note: `IssueCreditNoteFromRefundOutput` = F4's `CreditNote`
+// (sub-batch B rewire 2026-04-23). Earlier stub used a lightweight
+// DTO; the real impl returns the full F4 aggregate so F5 callers can
+// surface the new document number without a second DB roundtrip.
 
 export {
   getInvoiceForPayment,

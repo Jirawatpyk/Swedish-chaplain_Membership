@@ -39,6 +39,12 @@ export interface CreditNoteRepo {
         readonly sha256: Sha256Hex;
         readonly templateVersion: number;
       };
+      /**
+       * F5 extension — populates `credit_notes.source_refund_id` when
+       * the CN is created by the refund flow (T013 bridge wrapper).
+       * Omitted / undefined for F4-manual issues.
+       */
+      readonly sourceRefundId?: string;
     },
   ): Promise<CreditNote>;
 
