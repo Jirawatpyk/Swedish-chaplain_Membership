@@ -140,6 +140,10 @@ Quality gates summary: pnpm typecheck/lint GREEN · 466 unit/contract tests GREE
 
 **Independent Test**: Per spec US1: seed one member + one issued invoice for THB 53,500 → sign in as member → click Pay-now → enter test card `4242 4242 4242 4242` → assert Sheet shows confirmation panel → assert `payments.status='succeeded'` + `payment_method='stripe_card'` → assert receipt PDF lands in test mailbox within 1 minute → assert audit log records `payment_initiated`, `payment_succeeded`, `invoice_paid`.
 
+### UX contracts (lock before first route-handler code lands)
+
+- [ ] T041a [US1] **Stripe Elements shimmer + PromptPay QR aria-live contract** — before any `/portal/invoices/[id]/pay` route handler or component lands, document + implement: (a) `<Skeleton>` (from `@/components/ui/skeleton` shimmer variant per `docs/ux-standards.md` § 2.1) wrapping the `<PaymentElement>` mount point until Stripe's `ready` event fires; (b) PromptPay QR shows a countdown (default 15 min) inside an `aria-live="polite"` region so SR announces remaining time without interrupting; at T-2 min, surface a non-blocking toast with a "Refresh QR" CTA; (c) Success toast + payment-failed retry CTA micro-copy added to i18n keys `portal.payment.{success,retry,qrExpiring}` across EN/TH/SV. Review-gate blocker for Phase 3 staff-review per staff review R003 (2026-04-23). No code; the task is a contract doc under `specs/009-online-payment/ux-phase3-contract.md` that subsequent T041+ tasks MUST reference.
+
 ### Tests for US1 (TDD — author RED first)
 
 - [ ] T041 [P] [US1] Contract test `tests/contract/payments/post-payments-initiate.contract.test.ts` — POST body zod validation, response shape with `payment.status='pending'` + `stripe.clientSecret`, error envelopes per `contracts/payments-api.md` § 1.
