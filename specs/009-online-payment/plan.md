@@ -25,8 +25,8 @@ F5 is the first F-stream feature carrying **🔒 PCI (Constitution Principle IV 
 
 - **from F1+F2+F3+F4** (unchanged versions): `next@^16`, `react@^19`, `drizzle-orm` + `drizzle-kit`, `next-intl`, `zod`, `react-hook-form` + `@hookform/resolvers/zod`, `shadcn/ui` + `tailwindcss@^4` + `lucide-react`, `next-themes`, `sonner`, `cmdk` (F5 extends palette with Pay-invoice + Refund commands), `@tanstack/react-table@^8` (F5 reuses the F4 invoice-list admin column for payment method / processor charge id), `@vercel/otel` + `@opentelemetry/api`, `pino`, `vitest`, `playwright`, `@axe-core/playwright`, `resend` (F5 uses the F4 outbox wrapper for refund-confirmation emails via the F4 credit-note auto-email path — no new Resend integration).
 - **new in F5**:
-  - **`stripe@^19`** (server SDK; exact-minor pin from `/speckit.plan` date) — the official Node.js SDK. Used in Infrastructure for `paymentIntents.create`, `refunds.create`, `webhooks.constructEvent`. SDK initialisation passes the pinned API version from `STRIPE_API_VERSION` env var so upgrades are explicit (FR-026 / Q5). Chosen over raw `fetch` to the Stripe REST API because (a) the SDK encapsulates automatic retries with `Idempotency-Key` handling, (b) the `webhooks.constructEvent` helper does signature verification correctly on first principles (easy to get wrong if self-implemented; timing-attack-resistant), (c) TypeScript types per API version pin, (d) future F11 Connect expansion will need the SDK anyway.
-  - **`@stripe/stripe-js@^6`** + **`@stripe/react-stripe-js@^4`** (client SDK + React bindings) — Stripe Elements (hosted card form), `PaymentElement`, `useStripe`, `useElements`, `Elements` provider. Used exclusively in Presentation (`src/app/(member)/portal/invoices/[id]/_components/pay-sheet/**`). Constitution Principle IV: this is the **only acceptable way** to capture cardholder data and preserve SAQ-A scope.
+  - **`stripe@^22`** (server SDK; exact-minor pin to latest stable as of 2026-04-23) — the official Node.js SDK. Used in Infrastructure for `paymentIntents.create`, `refunds.create`, `webhooks.constructEvent`. SDK initialisation passes the pinned API version from `STRIPE_API_VERSION` env var so upgrades are explicit (FR-026 / Q5). Chosen over raw `fetch` to the Stripe REST API because (a) the SDK encapsulates automatic retries with `Idempotency-Key` handling, (b) the `webhooks.constructEvent` helper does signature verification correctly on first principles (easy to get wrong if self-implemented; timing-attack-resistant), (c) TypeScript types per API version pin, (d) future F11 Connect expansion will need the SDK anyway.
+  - **`@stripe/stripe-js@^9`** + **`@stripe/react-stripe-js@^6`** (client SDK + React bindings; both at latest stable as of 2026-04-23) — Stripe Elements (hosted card form), `PaymentElement`, `useStripe`, `useElements`, `Elements` provider. Used exclusively in Presentation (`src/app/(member)/portal/invoices/[id]/_components/pay-sheet/**`). Constitution Principle IV: this is the **only acceptable way** to capture cardholder data and preserve SAQ-A scope.
   - **`@stripe/react-stripe-js`** already pulls `@stripe/stripe-js` peer; versions are kept aligned.
   - **No new i18n lib** — reuse `next-intl`.
   - **No new QR-rendering lib** — Stripe's PromptPay PaymentIntent returns a `next_action.promptpay_display_qr_code.image_url_svg` payload that we render as an `<img>` element. PromptPay amount is locked server-side on intent creation; no client-side amount editing possible.
@@ -68,7 +68,7 @@ F5 is the first F-stream feature carrying **🔒 PCI (Constitution Principle IV 
   - `process-webhook-event.ts` (signature verify + event-id dedupe + tenant resolution + environment mismatch + API version mismatch + unknown-type pass-through)
   - `confirm-payment.ts` (stale-invoice detection + auto-refund on invalid target + F4 `markPaidFromProcessor` invocation atomicity)
   - `issue-refund.ts` (remaining-refundable guard + row-lock serialisation + Stripe call + F4 `issueCreditNoteFromRefund` atomicity)
-  - `detect-out-of-band-refund.ts` (no-matching-in-app-row detection + `out_of_band_refund_detected` audit emission)
+  - `process-charge-refunded.ts` (webhook `charge.refunded` dispatcher covering BOTH branches: (a) in-app refund finalisation — idempotent update of `refunds.status` + `completed_at` when row exists; (b) out-of-band refund detection + `out_of_band_refund_detected` audit emission when no matching in-app row exists — FR-011a. Renamed from original `detect-out-of-band-refund.ts` per post-tasks-audit G1 because the handler's scope is both branches, not just detection.)
   - `enforce-tenant-context-on-payment.ts` / `enforce-tenant-context-on-refund.ts` (cross-tenant probe refusal + audit)
 - `playwright` — E2E with existing F1+F2+F3+F4 setup. New specs:
   - `tests/e2e/payment-card-happy-path.spec.ts` (US1 AS1 + AS2 — valid card + 3D Secure)
@@ -340,7 +340,7 @@ src/
 │   │   ├── fail-payment.ts                             # failed branch
 │   │   ├── handle-cancel-event.ts                      # canceled branch
 │   │   ├── issue-refund.ts                             # US4 in-app refund
-│   │   ├── detect-out-of-band-refund.ts                # FR-011a
+│   │   ├── process-charge-refunded.ts                  # FR-011a + in-app-refund webhook finalisation (both charge.refunded branches)
 │   │   ├── handle-dispute.ts                           # FR-009 alert-only
 │   │   └── upsert-tenant-payment-settings.ts
 │   ├── infrastructure/

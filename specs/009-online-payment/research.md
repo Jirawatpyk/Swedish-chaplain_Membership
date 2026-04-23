@@ -34,7 +34,7 @@ All "NEEDS CLARIFICATION" from the plan template were pre-resolved either in the
 
 ## 2. Stripe SDK version + API version pinning (Q5 / FR-026)
 
-**Decision**: Pin Stripe server SDK to `stripe@^19` (exact-minor pin, to be finalised in `/speckit.tasks` to the latest stable as of the task date). Pin Stripe API version via `STRIPE_API_VERSION` env var (zod-validated at boot per `src/lib/env.ts`). The value is passed to both (a) the server SDK's `apiVersion` option and (b) the webhook handler's `Stripe-Version` header on the response. Client SDK: `@stripe/stripe-js@^6` + `@stripe/react-stripe-js@^4`.
+**Decision**: Pin Stripe server SDK to `stripe@^22` (finalised at latest stable as of 2026-04-23 during dep installation; see `package.json`). Pin Stripe API version via `STRIPE_API_VERSION` env var (zod-validated at boot per `src/lib/env.ts`). The value is passed to both (a) the server SDK's `apiVersion` option and (b) the webhook handler's `Stripe-Version` header on the response. Client SDK: `@stripe/stripe-js@^9` + `@stripe/react-stripe-js@^6` (both latest stable as of 2026-04-23).
 
 **Rationale**:
 - Webhook payload schemas evolve between Stripe versions. A silent account-default upgrade can break production without a test failure; pinning surfaces drift as test failures.
@@ -64,7 +64,7 @@ All "NEEDS CLARIFICATION" from the plan template were pre-resolved either in the
 - `payment_intent.succeeded` → `confirm-payment.ts`
 - `payment_intent.payment_failed` → `fail-payment.ts`
 - `payment_intent.canceled` → `handle-cancel-event.ts`
-- `charge.refunded` → `detect-out-of-band-refund.ts` (reconciliation branch) + in-app-refund finalisation branch
+- `charge.refunded` → `process-charge-refunded.ts` (handler covers BOTH branches: in-app-refund finalisation (idempotent status update when row exists) AND out-of-band reconciliation detection + `out_of_band_refund_detected` audit when no matching in-app row exists per FR-011a)
 - `charge.dispute.created` → `handle-dispute.ts` (alert-only, FR-009)
 
 **Other events acknowledged + logged but no-op**: `charge.created`, `charge.succeeded`, `charge.updated`, `payment_intent.created`, `payment_intent.processing`, `payment_intent.requires_action`. Recorded in `processor_events` with `outcome = 'acknowledged_only'`.
