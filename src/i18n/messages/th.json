@@ -1296,6 +1296,15 @@
           "codeFallback": "รหัสข้อผิดพลาด: {code}"
         }
       }
+    },
+    "refund": {
+      "title": "คืนเงิน"
+    },
+    "paymentReconciliation": {
+      "title": "กระทบยอดการชำระเงิน"
+    },
+    "paymentSettings": {
+      "title": "ตั้งค่าการชำระเงิน"
     }
   },
   "palette": {
@@ -1560,6 +1569,9 @@
         "th": "ไทย",
         "sv": "Svenska (สวีเดน)"
       }
+    },
+    "payment": {
+      "payNow": "ชำระเงิน"
     }
   },
   "audit": {
@@ -1602,6 +1614,9 @@
   "email": {
     "invoiceIssued": {
       "payOnlineCta": "ชำระเงินออนไลน์"
+    },
+    "refundConfirmation": {
+      "subject": "ยืนยันการคืนเงิน"
     }
   }
 }

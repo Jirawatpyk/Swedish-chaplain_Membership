@@ -108,13 +108,29 @@ Five ambiguities surfaced during pre-flight. Canonical answers below are the aut
 
 ### Stripe SDK + i18n bootstrap
 
-- [ ] T036 [P] Create Stripe SDK singleton in `src/modules/payments/infrastructure/stripe/stripe-client.ts` — `new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: env.STRIPE_API_VERSION })`. Module-level singleton; export typed `StripeClient` interface.
-- [ ] T037 [P] Create Stripe API version constant module `src/modules/payments/infrastructure/stripe/stripe-api-version.ts` — re-exports `env.STRIPE_API_VERSION` as a typed const for use in webhook handler `Stripe-Version` response header.
-- [ ] T038 [P] Create i18n stub keys in `src/i18n/messages/{en,th,sv}.json` for `portal.payment.*`, `admin.refund.*`, `admin.paymentReconciliation.*`, `admin.paymentSettings.*`, `email.refundConfirmation.*` namespaces (placeholder text; refined per task as UI implements).
-- [ ] T039 Create top-20 decline-code catalogue file `src/i18n/messages/{en,th,sv}/payment-decline-reasons.json` with explicit translations per spec § Edge Cases / Top-20 catalogue (R2-P3 enumeration). EN copy from spec; TH + SV translated.
-- [ ] T040 Add `pnpm check:i18n` rule extension to validate `payment-decline-reasons.json` exists in all 3 locales with same key set.
+- [X] T036 [P] ✅ `src/modules/payments/infrastructure/stripe/stripe-client.ts` — module-level memoised Stripe singleton via lazy `getStripeClient()` factory. Deferred instantiation (import-safe for `next build` pre-render). Uses `env.stripe.secretKey` + `env.stripe.apiVersion` (cast to SDK's `'2026-03-25.dahlia'` literal with documented rationale — Q5 pinning policy). Exports narrow `StripeClient` interface for Application ports + `__resetStripeClientForTesting()` test-only helper. Infrastructure-only per Principle III.
+- [X] T037 [P] ✅ `src/modules/payments/infrastructure/stripe/stripe-api-version.ts` — thin re-export of `env.stripe.apiVersion` as `STRIPE_API_VERSION` const. Kept separate from stripe-client so webhook route can read the pinned version without triggering SDK instantiation.
+- [X] T038 [P] ✅ i18n stubs added to existing `src/i18n/messages/{en,th,sv}.json` — 5 namespaces under existing top-level keys: `portal.payment.payNow`, `admin.refund.title`, `admin.paymentReconciliation.title`, `admin.paymentSettings.title`, `email.refundConfirmation.subject`. All 3 locales populated with faithful translations (EN canonical + TH + SV). `pnpm check:i18n` reports 1142 keys in all 3 locales.
+- [X] T039 ✅ Top-20 decline-code catalogue in sub-folder JSON per spec: `src/i18n/messages/{en,th,sv}/payment-decline-reasons.json`. 21 keys (20 Stripe codes + `_fallback` for the long tail). EN canonical from spec § Edge Cases; TH translated with Thai phrasing conventions (e.g., "บัตรถูกปฏิเสธ" for card_declined, "ยอดเงินในบัตรไม่เพียงพอ" for insufficient_funds); SV translated idiomatically ("Kortet nekades", "Otillräckligt saldo"). The `fraudulent` message deliberately avoids exposing "fraud" wording to the user per spec note — it says "blocked" + "contact your bank if you believe this is an error".
+- [X] T040 ✅ Extended `scripts/check-i18n-coverage.ts` with `checkSubCatalogueKeyParity()` — asserts `payment-decline-reasons.json` has identical key sets across en/th/sv. Missing keys in th/sv added to issues list (release-branch fail, dev warn); extra keys warn silently. Integrated into the main `check:i18n` run: "F5 decline-reasons parity verified".
 
-**Checkpoint Phase 2**: F4 bridge ready, 7 migrations applied with retention backfill, RLS+FORCE on 4 new tables, RBAC + CSP + redact extended, Stripe singleton + decline catalogue ready. **All US phases can now start in parallel.**
+**Checkpoint Phase 2 — COMPLETE** ✅ (2026-04-23)
+
+All 31 Phase 2 tasks + 1 Main-agent-Gate addition (T025b migration 0040) shipped across 5 sub-batches:
+- **Sub-batch A + A.2** (T010-T018): F4 barrel extension + 3 F5 bridge wrappers (mark-paid-from-processor, issue-credit-note-from-refund full rewire, get-invoice-for-payment) + F4 email "Pay online" CTA with UTM params + 6-test integration suite on live Neon. F4 regression: 0/272.
+- **Sub-batch B** (T019-T028): 8 migrations (0033-0040, renumbered from spec's 0032-0038 due to prior F3 hotfix using 0032) applied to live Neon Singapore. 4 new tables (payments, refunds, tenant_payment_settings, processor_events) with RLS+FORCE+policies. R2-E4 compliance blocker LANDED — 476 F4 tax-document audit rows backfilled to retention_years=10. 25/25 RLS-coverage tests GREEN (Principle I Review-Gate).
+- **Sub-batch C** (T029-T031): Module skeleton + barrel + ESLint barrel-guard extending F4 pattern to F5.
+- **Sub-batch D** (T032-T035): Logger PAN+CVV+secret redaction (pci-saqa-guardian specialist review → 2 CRITICAL fixes + R1 expansion + R3 header casings) + CSP Stripe allowlist scoped per-route + F5 RBAC policy matrix + auditEventTypeEnum extension. 86 unit tests across 3 files.
+- **Sub-batch E** (T036-T040): Stripe SDK singleton + API version const + i18n stubs + top-20 decline-code catalogue in 3 locales + check-i18n extension.
+
+**All US phases (Phase 3+) can now start in parallel.** Foundational surface includes: F4 bridge ready (mark paid + issue CN with source_refund_id + invoice DTO), 4 F5 tables with strict tenant isolation, 16 F5 audit event types enum-ed + migrated, RBAC policy + CSP Stripe allowlist + PAN redaction already wired, Stripe client singleton ready, decline-code i18n catalogue in 3 locales, payments module barrel + Drizzle schema + infrastructure scaffold in place.
+
+**Carried to Phase 3+**:
+- PCI Guardian R2 (webhook logging allow-list) → documented in T056 Implement process-webhook-event dispatcher.
+- T007 Vercel env sync to prod → pre-ship checklist (Phase 9+).
+- Stripe CLI webhook setup → prerequisite for Phase 3 US1 integration tests (see quickstart.md).
+
+Quality gates summary: pnpm typecheck/lint GREEN · 466 unit/contract tests GREEN for F4+F5 scope · 25/25 RLS-coverage GREEN · 6/6 processor-bridge integration GREEN · 1142 i18n keys × 3 locales + decline-reasons parity GREEN. 9 branch commits.
 
 ---
 

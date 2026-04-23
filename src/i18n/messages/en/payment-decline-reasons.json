@@ -1,0 +1,23 @@
+{
+  "card_declined": "Card was declined. Please try another card or contact your bank.",
+  "insufficient_funds": "Insufficient funds. Please use a different card.",
+  "expired_card": "Card has expired. Please use a different card.",
+  "incorrect_cvc": "CVC is incorrect. Please re-enter the CVC code.",
+  "processing_error": "Payment could not be processed. Please try again in a moment.",
+  "incorrect_number": "Card number is incorrect. Please re-enter your card details.",
+  "lost_card": "This card has been reported lost. Please use a different card.",
+  "stolen_card": "This card has been reported stolen. Please use a different card.",
+  "pickup_card": "Card cannot be used for this transaction. Please contact your bank.",
+  "restricted_card": "Card cannot be used for this transaction. Please use a different card.",
+  "security_violation": "Payment was blocked for security reasons. Please contact your bank.",
+  "service_not_allowed": "Card does not support this type of transaction. Please use a different card.",
+  "transaction_not_allowed": "Card does not allow this transaction. Please contact your bank or use a different card.",
+  "try_again_later": "Payment temporarily unavailable. Please try again in a moment.",
+  "withdrawal_count_limit_exceeded": "Daily card limit reached. Please try a different card or try again tomorrow.",
+  "currency_not_supported": "Card does not support THB. Please use a different card.",
+  "do_not_honor": "Card was declined by the bank. Please contact your bank.",
+  "fraudulent": "Payment was blocked. Please contact your bank if you believe this is an error.",
+  "generic_decline": "Card was declined. Please try another card or contact your bank.",
+  "invalid_account": "Card account is invalid. Please use a different card.",
+  "_fallback": "Payment could not be completed. Please try another card or contact your bank."
+}

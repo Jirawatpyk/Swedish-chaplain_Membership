@@ -1296,6 +1296,15 @@
           "codeFallback": "Error code: {code}"
         }
       }
+    },
+    "refund": {
+      "title": "Issue refund"
+    },
+    "paymentReconciliation": {
+      "title": "Payment reconciliation"
+    },
+    "paymentSettings": {
+      "title": "Payment settings"
     }
   },
   "palette": {
@@ -1560,6 +1569,9 @@
         "th": "ไทย (Thai)",
         "sv": "Svenska (Swedish)"
       }
+    },
+    "payment": {
+      "payNow": "Pay now"
     }
   },
   "audit": {
@@ -1602,6 +1614,9 @@
   "email": {
     "invoiceIssued": {
       "payOnlineCta": "Pay online now"
+    },
+    "refundConfirmation": {
+      "subject": "Refund confirmation"
     }
   }
 }

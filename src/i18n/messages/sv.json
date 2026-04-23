@@ -1296,6 +1296,15 @@
           "codeFallback": "Felkod: {code}"
         }
       }
+    },
+    "refund": {
+      "title": "Utfärda återbetalning"
+    },
+    "paymentReconciliation": {
+      "title": "Betalningsavstämning"
+    },
+    "paymentSettings": {
+      "title": "Betalningsinställningar"
     }
   },
   "palette": {
@@ -1560,6 +1569,9 @@
         "th": "ไทย (thailändska)",
         "sv": "Svenska"
       }
+    },
+    "payment": {
+      "payNow": "Betala nu"
     }
   },
   "audit": {
@@ -1602,6 +1614,9 @@
   "email": {
     "invoiceIssued": {
       "payOnlineCta": "Betala online"
+    },
+    "refundConfirmation": {
+      "subject": "Bekräftelse av återbetalning"
     }
   }
 }
