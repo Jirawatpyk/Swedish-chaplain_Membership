@@ -47,6 +47,7 @@ export {
   type ProcessWebhookEventDeps,
   type WebhookDispatchEnvelope,
 } from './application/use-cases/process-webhook-event';
+export type { VerifiedStripeEvent } from './application/ports/webhook-verifier-port';
 export {
   confirmPayment,
   type ConfirmPaymentInput,

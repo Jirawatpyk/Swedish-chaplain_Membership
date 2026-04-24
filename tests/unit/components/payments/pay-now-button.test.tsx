@@ -18,22 +18,33 @@ vi.mock('next/navigation', () => ({
 // covered by pay-sheet.test.tsx.
 vi.mock('next/dynamic', async () => {
   const React = await import('react');
+  // T082 2026-04-24: PayNowButton now auto-mounts PaySheet and
+  // controls visibility via the `open` prop — it never unmounts on
+  // close (preserves ephemeral payment state). The stub mirrors that
+  // contract by branching on `open` instead of toggling mount state.
   function PaySheetStub(props: {
-    onClose?: () => void;
+    onOpenChange?: (next: boolean) => void;
+    open?: boolean;
     invoice: { invoiceNumber: string };
   }) {
     return React.createElement(
       'div',
-      { 'data-testid': 'pay-sheet-stub' },
-      React.createElement(
-        'button',
-        {
-          type: 'button',
-          'data-testid': 'pay-sheet-stub-close',
-          onClick: () => props.onClose?.(),
-        },
-        `close-${props.invoice.invoiceNumber}`,
-      ),
+      { 'data-testid': 'pay-sheet-stub-root' },
+      props.open
+        ? React.createElement(
+            'div',
+            { 'data-testid': 'pay-sheet-stub' },
+            React.createElement(
+              'button',
+              {
+                type: 'button',
+                'data-testid': 'pay-sheet-stub-close',
+                onClick: () => props.onOpenChange?.(false),
+              },
+              `close-${props.invoice.invoiceNumber}`,
+            ),
+          )
+        : null,
     );
   }
   return {
@@ -79,30 +90,44 @@ describe('<PayNowButton>', () => {
     cleanup();
   });
 
-  it('renders a button labelled with portal.payment.payNow', () => {
+  it('renders a button labelled with portal.payment.payNow; drawer is present (auto-mounted) but closed', () => {
+    // T082 2026-04-24: PayNowButton auto-mounts PaySheet on render so
+    // the chunk + Stripe SDK is parsed before the user clicks. The
+    // drawer body is only visible once `open` flips true.
     renderButton();
     const btn = screen.getByTestId('pay-now-button');
     expect(btn.textContent).toBe('Pay now');
+    expect(screen.getByTestId('pay-sheet-stub-root')).toBeTruthy();
+    // Body not visible until open.
     expect(screen.queryByTestId('pay-sheet-stub')).toBeNull();
   });
 
-  it('mounts the drawer on click', () => {
+  it('opens the drawer on click', () => {
     renderButton();
     fireEvent.click(screen.getByTestId('pay-now-button'));
     expect(screen.getByTestId('pay-sheet-stub')).toBeTruthy();
   });
 
-  it('auto-mounts the drawer when ?pay=1 is in the URL (FR-025c)', () => {
+  it('auto-opens the drawer when ?pay=1 is in the URL (FR-025c)', () => {
     searchParamsMock.current = new URLSearchParams('pay=1');
     renderButton();
     expect(screen.getByTestId('pay-sheet-stub')).toBeTruthy();
   });
 
-  it('onClose callback unmounts the drawer', () => {
+  it('close signal hides the drawer body but keeps PaySheet mounted (preserves ephemeral state — T082)', () => {
+    // Architectural invariant: onOpenChange(false) flips `open` but
+    // does NOT unmount PaySheet. Keeping the tree mounted lets the
+    // Stripe clientSecret + PaymentIntent survive close→reopen cycles
+    // without refetching /api/payments/initiate (and burning through
+    // the rate-limit budget). State lives in React memory only — PCI
+    // SAQ-A still satisfied.
     renderButton();
     fireEvent.click(screen.getByTestId('pay-now-button'));
     expect(screen.getByTestId('pay-sheet-stub')).toBeTruthy();
     fireEvent.click(screen.getByTestId('pay-sheet-stub-close'));
+    // Body hidden…
     expect(screen.queryByTestId('pay-sheet-stub')).toBeNull();
+    // …but the PaySheet tree is still mounted.
+    expect(screen.getByTestId('pay-sheet-stub-root')).toBeTruthy();
   });
 });

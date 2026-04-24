@@ -1572,21 +1572,38 @@
     },
     "payment": {
       "payNow": "Betala nu",
+      "payAmount": "Betala {amount}",
       "drawer": {
-        "title": "Betala {invoiceNumber}",
+        "title": "Betala faktura",
+        "subtitle": "{invoiceNumber}",
         "close": "Stäng betalningsfönstret"
+      },
+      "summary": {
+        "heading": "Betalningssammanfattning",
+        "invoiceLabel": "Faktura",
+        "amountLabel": "Belopp att betala",
+        "itemsLabel": "Poster",
+        "itemSingle": "1 post",
+        "itemPlural": "{count} poster"
+      },
+      "security": {
+        "stripeBadge": "Säkrat av Stripe",
+        "encrypted": "Krypterat · PCI-DSS-kompatibelt",
+        "cards": "Vi accepterar Visa, Mastercard, American Express, JCB",
+        "terms": "Genom att betala godkänner du våra {termsLink}",
+        "termsLinkLabel": "användarvillkor"
       },
       "methods": {
         "card": "Kort",
         "promptpay": "PromptPay",
         "cardAriaLabel": "Byt till kortbetalning",
         "promptpayAriaLabel": "Byt till PromptPay-betalning",
-        "cardPlaceholder": "Kortformulär kommer i G3",
-        "promptpayPlaceholder": "PromptPay kommer i fas 4"
+        "cardPlaceholder": "Förbereder säkert betalningsformulär…",
+        "promptpayPlaceholder": "PromptPay kommer snart."
       },
       "success": {
         "title": "Betalningen mottagen",
-        "summaryCard": "Betalt {amount} med kort som slutar på ****{last4} den {dateTime}",
+        "summaryCard": "Betalt {amount} med kort som slutar på {last4} den {dateTime}",
         "summaryPromptPay": "Betalt {amount} via PromptPay den {dateTime}",
         "downloadReceipt": "Ladda ner kvitto",
         "close": "Stäng",
@@ -1609,7 +1626,17 @@
         "cta": "Försök igen",
         "alternativeMethod": "Använd en annan metod",
         "genericReason": "Betalningen kunde inte slutföras.",
-        "reason3dsTimeout": "Bankverifieringen tog för lång tid."
+        "reason3dsTimeout": "Bankverifieringen tog för lång tid.",
+        "reasonRateLimited": "För många försök. Vänta en stund och försök igen.",
+        "reasonRateLimitedWithSeconds": "För många försök. Vänta {seconds} sekunder och försök igen.",
+        "reasonAuth": "Din session har gått ut. Logga in igen.",
+        "reasonServer": "Vår betalningstjänst är tillfälligt otillgänglig.",
+        "reasonNetwork": "Nätverksfel. Kontrollera din anslutning och försök igen.",
+        "reasonCardDeclined": "Ditt kort avvisades.",
+        "reasonIncorrectCvc": "Kortets säkerhetskod är felaktig.",
+        "reasonExpiredCard": "Ditt kort har gått ut.",
+        "reasonInsufficientFunds": "Otillräckligt saldo på kortet.",
+        "reasonProcessingError": "Ett fel uppstod vid behandling av kortet. Försök igen."
       },
       "disabled": {
         "title": "Onlinebetalning är inte tillgänglig",
@@ -1621,6 +1648,12 @@
         "title": "QR-koden förfaller snart",
         "body": "Din PromptPay-QR förfaller om 2 minuter. Uppdatera för en ny kod om du behöver mer tid.",
         "action": "Uppdatera QR"
+      },
+      "hardCap": {
+        "title": "Är du fortfarande här?",
+        "body": "Betalningsfönstret har varit öppet i 30 minuter. Klicka på Fortsätt för att hålla betalningssessionen aktiv, annars avbryts försöket automatiskt.",
+        "continue": "Fortsätt betalning",
+        "autoCancelCountdown": "Avbryter om {seconds} s"
       },
       "qrExpired": "QR-koden har förfallit. Skapa en ny för att fortsätta.",
       "skeleton": {

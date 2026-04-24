@@ -308,15 +308,44 @@ export async function recordPayment(
       },
     });
 
-    if (settings.autoEmailEnabled) {
+    // Defensive guard (T082 empirical 2026-04-24): the Domain type
+    // `MemberIdentitySnapshot.primary_contact_email` is declared
+    // non-nullable, and `issue-invoice` always snapshots it from the
+    // validated primary contact — so in normal production flow this
+    // branch is always truthy. The `?? null` fallback only triggers
+    // on legacy invoice rows whose snapshot was seeded/migrated
+    // before the field was tightened. We skip-with-warn rather than
+    // throwing because: (a) the payment itself has already settled
+    // on Stripe, (b) the invoice row transitions to `paid` via the
+    // applyPayment above, (c) a failure here would cause Stripe to
+    // retry the webhook indefinitely and potentially double-enqueue
+    // on a future fix, and (d) admins can resend the receipt email
+    // manually from /admin/invoices once ops investigates.
+    const recipientEmail =
+      loaded.memberIdentitySnapshot.primary_contact_email ?? null;
+    if (settings.autoEmailEnabled && recipientEmail) {
       await deps.outbox.enqueue(tx, {
         tenantId: input.tenantId,
         eventType: 'invoice_paid',
-        recipientEmail: loaded.memberIdentitySnapshot.primary_contact_email,
+        recipientEmail,
         invoiceId,
         pdfBlobKey: receiptBlobKey,
         pdfTemplateVersion: deps.currentTemplateVersion,
       });
+    } else if (settings.autoEmailEnabled && !recipientEmail) {
+      // Skip-with-warn: snapshot is missing the required field. This
+      // is a Domain-invariant violation upstream (likely a legacy or
+      // manually-patched invoice row). Observability surface so ops
+      // can detect + backfill the bad row.
+      logger.warn(
+        {
+          tenantId: input.tenantId,
+          invoiceId,
+          memberId: loaded.memberId,
+          documentNumber: loaded.documentNumber?.raw,
+        },
+        'recordPayment: invoice snapshot missing primary_contact_email — auto-email receipt skipped',
+      );
     }
 
     // Spec § 398 — "registration fee once per member lifecycle". If

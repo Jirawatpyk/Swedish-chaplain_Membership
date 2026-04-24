@@ -1,0 +1,416 @@
+- generic [ref=e1]:
+  - link [ref=e108] [cursor=pointer]:
+    - /url: "#main-content"
+    - text: Skip to main content
+  - generic [ref=e4]:
+    - banner [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link [ref=e109] [cursor=pointer]:
+            - /url: /portal
+            - text: SweCham · Member
+          - navigation [ref=e110]:
+            - link [ref=e111] [cursor=pointer]:
+              - /url: /portal
+              - img [ref=e11]
+              - generic [ref=e16]: Dashboard
+            - link [ref=e112] [cursor=pointer]:
+              - /url: /portal/profile
+              - img [ref=e18]
+              - generic [ref=e21]: Profile
+            - link [ref=e113] [cursor=pointer]:
+              - /url: /portal/invoices
+              - img [ref=e23]
+              - generic [ref=e26]: Invoices
+            - link [ref=e114] [cursor=pointer]:
+              - /url: /portal/account
+              - img [ref=e28]
+              - generic [ref=e32]: Account
+        - generic [ref=e33]:
+          - button [ref=e115] [cursor=pointer]:
+            - img
+          - button [ref=e116] [cursor=pointer]:
+            - generic [ref=e37]: EM
+    - main [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - generic [ref=e42]:
+            - heading [level=1] [ref=e117]: Invoice SC-2026-900003
+            - generic [ref=e44]:
+              - img
+              - text: Issued
+          - generic [ref=e45]:
+            - button [ref=e118] [cursor=pointer]:
+              - img
+              - generic [ref=e47]: Email me a copy
+            - link [ref=e119] [cursor=pointer]:
+              - /url: /api/portal/invoices/b070ff99-e7f1-48c4-a87c-f04cada85036/pdf
+              - text: PDF
+        - generic [ref=e50]:
+          - generic [ref=e51]:
+            - paragraph [ref=e52]: Issued
+            - paragraph [ref=e53]: Apr 15, 2026
+          - generic [ref=e54]:
+            - paragraph [ref=e55]: Due
+            - paragraph [ref=e56]: May 15, 2026
+          - generic [ref=e57]:
+            - paragraph [ref=e58]: Paid
+            - paragraph [ref=e59]: —
+          - generic [ref=e60]:
+            - paragraph [ref=e61]: Plan year
+            - paragraph [ref=e62]: "2026"
+        - generic [ref=e64]:
+          - heading [level=2] [ref=e120]: Line items
+          - table [ref=e68]:
+            - rowgroup [ref=e69]:
+              - row [ref=e121]:
+                - columnheader [ref=e122]: Description
+                - columnheader [ref=e123]: Qty
+                - columnheader [ref=e124]: Unit price
+                - columnheader [ref=e125]: Total
+            - rowgroup [ref=e75]:
+              - row [ref=e126]:
+                - cell [ref=e127]:
+                  - generic [ref=e78]: Membership 2026 (E2E fixture)
+                  - generic [ref=e79]: ค่าสมาชิก ปี 2026 (E2E fixture)
+                - cell [ref=e128]: "1.0000"
+                - cell [ref=e129]: 5,000.00 THB
+                - cell [ref=e130]: 5,000.00 THB
+        - generic [ref=e85]:
+          - term [ref=e86]: Subtotal
+          - definition [ref=e87]: 5,000.00 THB
+          - term [ref=e88]: VAT
+          - definition [ref=e89]: 350.00 THB
+          - term [ref=e90]: Total
+          - definition [ref=e91]: 5,350.00 THB
+        - button [ref=e131] [cursor=pointer]: Pay now
+        - link [ref=e132] [cursor=pointer]:
+          - /url: /portal/invoices
+          - text: Back to invoices
+    - generic [ref=e95]:
+      - heading [level=2] [ref=e133]: Pay invoice
+      - paragraph [ref=e97]: Search an issued invoice to pay online
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e103] [cursor=pointer]:
+    - img [ref=e104]
+  - alert [ref=e107]
+  - dialog "Pay invoice" [active] [ref=e137]:
+    - generic [ref=e138]:
+      - generic [ref=e139]:
+        - heading "Pay invoice" [level=2] [ref=e140]
+        - paragraph [ref=e141]: SC-2026-900003
+      - button "Close payment drawer" [ref=e142] [cursor=pointer]:
+        - img
+    - generic [ref=e144]:
+      - region "Order summary" [ref=e145]:
+        - heading "Order summary" [level=3] [ref=e146]
+        - generic [ref=e147]:
+          - generic [ref=e148]:
+            - img [ref=e149]
+            - generic [ref=e152]:
+              - paragraph [ref=e153]: Invoice
+              - paragraph [ref=e154]: SC-2026-900003
+          - generic [ref=e155]:
+            - paragraph [ref=e156]: Amount due
+            - paragraph [ref=e157]: 5,350.00 THB
+      - generic [ref=e158]:
+        - tablist [ref=e159]:
+          - tab "Switch to card payment" [selected] [ref=e160] [cursor=pointer]:
+            - img
+            - text: Card
+          - tab "Switch to PromptPay payment" [ref=e161] [cursor=pointer]:
+            - img
+            - text: PromptPay
+        - tabpanel "Switch to card payment" [ref=e162]:
+          - generic [ref=e199]:
+            - iframe [ref=e202]:
+              - generic [ref=f28e9]:
+                - generic [ref=f28e17]: Card
+                - generic [ref=f28e21]:
+                  - generic [ref=f28e23]:
+                    - generic [ref=f28e24]:
+                      - generic [ref=f28e26]:
+                        - generic [ref=f28e27]: Card number
+                        - generic [ref=f28e29]:
+                          - textbox "Card number" [ref=f28e31]:
+                            - /placeholder: 1234 1234 1234 1234
+                          - generic:
+                            - option "Select card brand (optional)" [disabled] [selected]
+                          - generic:
+                            - generic:
+                              - generic:
+                                - paragraph: Supported cards include Visa and Mastercard.
+                                - generic:
+                                  - img
+                      - generic [ref=f28e33]:
+                        - generic [ref=f28e34]:
+                          - text: Expiration date
+                          - generic [ref=f28e35]: MM / YY
+                        - textbox "Expiration date MM / YY" [ref=f28e39]:
+                          - /placeholder: MM / YY
+                      - generic [ref=f28e41]:
+                        - generic [ref=f28e42]: Security code
+                        - generic [ref=f28e44]:
+                          - textbox "Security code" [ref=f28e46]:
+                            - /placeholder: CVC
+                          - generic:
+                            - generic: 3-digit code on back of card
+                            - generic:
+                              - img
+                    - generic [ref=f28e51]:
+                      - generic [ref=f28e52]: Country
+                      - combobox "Country" [ref=f28e55] [cursor=pointer]:
+                        - option "Select" [disabled]
+                        - option "Afghanistan"
+                        - option "Åland Islands"
+                        - option "Albania"
+                        - option "Algeria"
+                        - option "Andorra"
+                        - option "Angola"
+                        - option "Anguilla"
+                        - option "Antarctica"
+                        - option "Antigua & Barbuda"
+                        - option "Argentina"
+                        - option "Armenia"
+                        - option "Aruba"
+                        - option "Ascension Island"
+                        - option "Australia"
+                        - option "Austria"
+                        - option "Azerbaijan"
+                        - option "Bahamas"
+                        - option "Bahrain"
+                        - option "Bangladesh"
+                        - option "Barbados"
+                        - option "Belarus"
+                        - option "Belgium"
+                        - option "Belize"
+                        - option "Benin"
+                        - option "Bermuda"
+                        - option "Bhutan"
+                        - option "Bolivia"
+                        - option "Bosnia & Herzegovina"
+                        - option "Botswana"
+                        - option "Bouvet Island"
+                        - option "Brazil"
+                        - option "British Indian Ocean Territory"
+                        - option "British Virgin Islands"
+                        - option "Brunei"
+                        - option "Bulgaria"
+                        - option "Burkina Faso"
+                        - option "Burundi"
+                        - option "Cambodia"
+                        - option "Cameroon"
+                        - option "Canada"
+                        - option "Cape Verde"
+                        - option "Caribbean Netherlands"
+                        - option "Cayman Islands"
+                        - option "Central African Republic"
+                        - option "Chad"
+                        - option "Chile"
+                        - option "China"
+                        - option "Colombia"
+                        - option "Comoros"
+                        - option "Congo - Brazzaville"
+                        - option "Congo - Kinshasa"
+                        - option "Cook Islands"
+                        - option "Costa Rica"
+                        - option "Côte d’Ivoire"
+                        - option "Croatia"
+                        - option "Curaçao"
+                        - option "Cyprus"
+                        - option "Czechia"
+                        - option "Denmark"
+                        - option "Djibouti"
+                        - option "Dominica"
+                        - option "Dominican Republic"
+                        - option "Ecuador"
+                        - option "Egypt"
+                        - option "El Salvador"
+                        - option "Equatorial Guinea"
+                        - option "Eritrea"
+                        - option "Estonia"
+                        - option "Eswatini"
+                        - option "Ethiopia"
+                        - option "Falkland Islands"
+                        - option "Faroe Islands"
+                        - option "Fiji"
+                        - option "Finland"
+                        - option "France"
+                        - option "French Guiana"
+                        - option "French Polynesia"
+                        - option "French Southern Territories"
+                        - option "Gabon"
+                        - option "Gambia"
+                        - option "Georgia"
+                        - option "Germany"
+                        - option "Ghana"
+                        - option "Gibraltar"
+                        - option "Greece"
+                        - option "Greenland"
+                        - option "Grenada"
+                        - option "Guadeloupe"
+                        - option "Guam"
+                        - option "Guatemala"
+                        - option "Guernsey"
+                        - option "Guinea"
+                        - option "Guinea-Bissau"
+                        - option "Guyana"
+                        - option "Haiti"
+                        - option "Honduras"
+                        - option "Hong Kong SAR China"
+                        - option "Hungary"
+                        - option "Iceland"
+                        - option "India"
+                        - option "Indonesia"
+                        - option "Iraq"
+                        - option "Ireland"
+                        - option "Isle of Man"
+                        - option "Israel"
+                        - option "Italy"
+                        - option "Jamaica"
+                        - option "Japan"
+                        - option "Jersey"
+                        - option "Jordan"
+                        - option "Kazakhstan"
+                        - option "Kenya"
+                        - option "Kiribati"
+                        - option "Kosovo"
+                        - option "Kuwait"
+                        - option "Kyrgyzstan"
+                        - option "Laos"
+                        - option "Latvia"
+                        - option "Lebanon"
+                        - option "Lesotho"
+                        - option "Liberia"
+                        - option "Libya"
+                        - option "Liechtenstein"
+                        - option "Lithuania"
+                        - option "Luxembourg"
+                        - option "Macao SAR China"
+                        - option "Madagascar"
+                        - option "Malawi"
+                        - option "Malaysia"
+                        - option "Maldives"
+                        - option "Mali"
+                        - option "Malta"
+                        - option "Martinique"
+                        - option "Mauritania"
+                        - option "Mauritius"
+                        - option "Mayotte"
+                        - option "Mexico"
+                        - option "Moldova"
+                        - option "Monaco"
+                        - option "Mongolia"
+                        - option "Montenegro"
+                        - option "Montserrat"
+                        - option "Morocco"
+                        - option "Mozambique"
+                        - option "Myanmar (Burma)"
+                        - option "Namibia"
+                        - option "Nauru"
+                        - option "Nepal"
+                        - option "Netherlands"
+                        - option "New Caledonia"
+                        - option "New Zealand"
+                        - option "Nicaragua"
+                        - option "Niger"
+                        - option "Nigeria"
+                        - option "Niue"
+                        - option "North Macedonia"
+                        - option "Norway"
+                        - option "Oman"
+                        - option "Pakistan"
+                        - option "Palestinian Territories"
+                        - option "Panama"
+                        - option "Papua New Guinea"
+                        - option "Paraguay"
+                        - option "Peru"
+                        - option "Philippines"
+                        - option "Pitcairn Islands"
+                        - option "Poland"
+                        - option "Portugal"
+                        - option "Puerto Rico"
+                        - option "Qatar"
+                        - option "Réunion"
+                        - option "Romania"
+                        - option "Russia"
+                        - option "Rwanda"
+                        - option "Samoa"
+                        - option "San Marino"
+                        - option "São Tomé & Príncipe"
+                        - option "Saudi Arabia"
+                        - option "Senegal"
+                        - option "Serbia"
+                        - option "Seychelles"
+                        - option "Sierra Leone"
+                        - option "Singapore"
+                        - option "Sint Maarten"
+                        - option "Slovakia"
+                        - option "Slovenia"
+                        - option "Solomon Islands"
+                        - option "Somalia"
+                        - option "South Africa"
+                        - option "South Georgia & South Sandwich Islands"
+                        - option "South Korea"
+                        - option "South Sudan"
+                        - option "Spain"
+                        - option "Sri Lanka"
+                        - option "St. Barthélemy"
+                        - option "St. Helena"
+                        - option "St. Kitts & Nevis"
+                        - option "St. Lucia"
+                        - option "St. Martin"
+                        - option "St. Pierre & Miquelon"
+                        - option "St. Vincent & Grenadines"
+                        - option "Sudan"
+                        - option "Suriname"
+                        - option "Svalbard & Jan Mayen"
+                        - option "Sweden"
+                        - option "Switzerland"
+                        - option "Taiwan"
+                        - option "Tajikistan"
+                        - option "Tanzania"
+                        - option "Thailand" [selected]
+                        - option "Timor-Leste"
+                        - option "Togo"
+                        - option "Tokelau"
+                        - option "Tonga"
+                        - option "Trinidad & Tobago"
+                        - option "Tristan da Cunha"
+                        - option "Tunisia"
+                        - option "Türkiye"
+                        - option "Turkmenistan"
+                        - option "Turks & Caicos Islands"
+                        - option "Tuvalu"
+                        - option "Uganda"
+                        - option "Ukraine"
+                        - option "United Arab Emirates"
+                        - option "United Kingdom"
+                        - option "United States"
+                        - option "Uruguay"
+                        - option "Uzbekistan"
+                        - option "Vanuatu"
+                        - option "Vatican City"
+                        - option "Venezuela"
+                        - option "Vietnam"
+                        - option "Wallis & Futuna"
+                        - option "Western Sahara"
+                        - option "Yemen"
+                        - option "Zambia"
+                        - option "Zimbabwe"
+                  - generic: 0123456789０１２３４５６７８９
+                  - button
+            - button "Pay 5,350.00 THB" [ref=e203] [cursor=pointer]
+      - contentinfo [ref=e169]:
+        - generic [ref=e170]:
+          - img [ref=e171]
+          - generic [ref=e174]: Encrypted · PCI-DSS compliant
+        - generic [ref=e175]:
+          - img [ref=e176]
+          - generic [ref=e179]: Secured by Stripe
+        - paragraph [ref=e180]: We accept Visa, Mastercard, American Express, JCB
+  - iframe [ref=e204]:
+    - button "Open Stripe Developer Tools" [ref=f29e5] [cursor=pointer]:
+      - banner [ref=f29e8]:
+        - img [ref=f29e9]
+        - img [ref=f29e11]

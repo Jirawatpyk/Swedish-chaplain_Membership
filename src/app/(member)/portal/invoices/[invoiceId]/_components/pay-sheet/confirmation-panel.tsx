@@ -15,12 +15,12 @@
  *
  * PCI: zero persistence. `clientSecret` does not enter this component.
  */
-import { startTransition, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { CheckCircle2Icon, DownloadIcon } from 'lucide-react';
 
-import { Button, buttonVariants } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 const AUTO_CLOSE_SECONDS = 5;
@@ -69,8 +69,15 @@ export function ConfirmationPanel({
     toast.success(t('toast'));
   }, [t]);
 
-  // Auto-close countdown. Tick once per second; reaching 0 fires onClose
-  // unless the user already interrupted it via a click.
+  // Auto-close countdown. Tick once per second decrementing remaining.
+  // Close is dispatched in a SEPARATE effect that watches `remaining`
+  // (below) to avoid a setState-during-render React warning that
+  // fires when the parent's setState is invoked from inside a
+  // setState updater. The updater itself runs during React's render
+  // phase, so calling `onClose()` (which calls setPayState on the
+  // parent <PaySheetInternal>) — even wrapped in startTransition —
+  // surfaces as "Cannot update a component (PaySheetInternal) while
+  // rendering a different component (ConfirmationPanel)".
   useEffect(() => {
     const timer = setInterval(() => {
       setRemaining((prev) => {
@@ -80,32 +87,38 @@ export function ConfirmationPanel({
         }
         if (prev <= 1) {
           clearInterval(timer);
-          // Defer onClose out of the setter to avoid setting parent
-          // state during our own render. `startTransition` keeps the
-          // update inside React 19's scheduler (G-Review Finding #3 —
-          // the previous `queueMicrotask` call escaped batching).
-          startTransition(() => {
-            if (!interruptedRef.current) {
-              onClose();
-            }
-          });
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [onClose]);
+  }, []);
+
+  // Dispatch close once the countdown hits zero. Separate effect =
+  // runs after commit, safely outside any render pass.
+  useEffect(() => {
+    if (remaining !== 0) return;
+    if (interruptedRef.current) return;
+    onClose();
+  }, [remaining, onClose]);
 
   const interruptAutoClose = () => {
     interruptedRef.current = true;
   };
 
+  // `last4Display`: when the backend supplies the actual last 4
+  // digits we show them verbatim prefixed with the masked-pan prefix
+  // (Stripe SAQ-A convention: "****4242"). Without a real value we
+  // show just the mask so the copy stays truthful — never render
+  // `********` (8 asterisks) which implies 8-digit padding.
+  const last4Display =
+    last4 && /^\d{4}$/.test(last4) ? `****${last4}` : '****';
   const summary =
     method === 'card'
       ? t('summaryCard', {
           amount,
-          last4: last4 ?? '****',
+          last4: last4Display,
           dateTime,
         })
       : t('summaryPromptPay', { amount, dateTime });
@@ -122,38 +135,49 @@ export function ConfirmationPanel({
       />
       <h3 className="text-h3 font-semibold text-foreground">{t('title')}</h3>
       <p className="text-body text-muted-foreground">{summary}</p>
-      <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
-        <a
-          href={receiptUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn(
-            buttonVariants({ variant: 'default' }),
-            // WCAG 2.5.5 / SC 2.5.8 — mobile tap target ≥ 44×44 px
-            // (G-Review Finding #5).
-            'min-h-[44px] px-4',
-          )}
-          onClick={() => {
-            interruptAutoClose();
-            onDownload?.();
-          }}
-          data-testid="pay-sheet-download-receipt"
-        >
-          <DownloadIcon aria-hidden="true" className="size-4" />
-          {t('downloadReceipt')}
-        </a>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            interruptAutoClose();
-            onClose();
-          }}
-          data-testid="pay-sheet-confirmation-close"
-        >
-          {t('close')}
-        </Button>
-      </div>
+      {/*
+       * Option A layout (T082 UX feedback 2026-04-24): primary
+       * Download CTA takes the full drawer body width; the Close
+       * action is a subtle text-link underneath. Rationale: Close is
+       * an "early exit" from the 5s auto-close, not a primary user
+       * intent — it should visually recede so the eye lands on the
+       * Download receipt, and the hierarchy reads as Download (act)
+       * → Close (dismiss) → countdown (passive info).
+       */}
+      <a
+        href={receiptUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(
+          buttonVariants({ variant: 'default' }),
+          // WCAG 2.5.5 / SC 2.5.8 — mobile tap target ≥ 44×44 px
+          // (G-Review Finding #5).
+          'min-h-[44px] w-full px-4',
+        )}
+        onClick={() => {
+          interruptAutoClose();
+          onDownload?.();
+        }}
+        data-testid="pay-sheet-download-receipt"
+      >
+        <DownloadIcon aria-hidden="true" className="size-4" />
+        {t('downloadReceipt')}
+      </a>
+      <button
+        type="button"
+        onClick={() => {
+          interruptAutoClose();
+          onClose();
+        }}
+        // Text-link styling: underline on hover, same min tap target
+        // on mobile even though it looks like a link. Muted-foreground
+        // keeps it subtler than the primary CTA but still WCAG 2.1 AA
+        // contrast (4.5:1 on card background).
+        className="min-h-[44px] text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:rounded"
+        data-testid="pay-sheet-confirmation-close"
+      >
+        {t('close')}
+      </button>
       {/*
        * Countdown — dual-node pattern (G-Review Finding #6).
        * ----------------------------------------------------

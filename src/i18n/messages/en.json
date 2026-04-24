@@ -1572,21 +1572,38 @@
     },
     "payment": {
       "payNow": "Pay now",
+      "payAmount": "Pay {amount}",
       "drawer": {
-        "title": "Pay {invoiceNumber}",
+        "title": "Pay invoice",
+        "subtitle": "{invoiceNumber}",
         "close": "Close payment drawer"
+      },
+      "summary": {
+        "heading": "Order summary",
+        "invoiceLabel": "Invoice",
+        "amountLabel": "Amount due",
+        "itemsLabel": "Items",
+        "itemSingle": "1 item",
+        "itemPlural": "{count} items"
+      },
+      "security": {
+        "stripeBadge": "Secured by Stripe",
+        "encrypted": "Encrypted · PCI-DSS compliant",
+        "cards": "We accept Visa, Mastercard, American Express, JCB",
+        "terms": "By paying you agree to our {termsLink}",
+        "termsLinkLabel": "terms of service"
       },
       "methods": {
         "card": "Card",
         "promptpay": "PromptPay",
         "cardAriaLabel": "Switch to card payment",
         "promptpayAriaLabel": "Switch to PromptPay payment",
-        "cardPlaceholder": "Card form coming in G3",
-        "promptpayPlaceholder": "PromptPay coming in Phase 4"
+        "cardPlaceholder": "Preparing secure payment form…",
+        "promptpayPlaceholder": "PromptPay is coming soon."
       },
       "success": {
         "title": "Payment received",
-        "summaryCard": "Paid {amount} via card ending ****{last4} on {dateTime}",
+        "summaryCard": "Paid {amount} via card ending {last4} on {dateTime}",
         "summaryPromptPay": "Paid {amount} via PromptPay on {dateTime}",
         "downloadReceipt": "Download receipt",
         "close": "Close",
@@ -1609,7 +1626,17 @@
         "cta": "Try again",
         "alternativeMethod": "Use another method",
         "genericReason": "Payment could not be completed.",
-        "reason3dsTimeout": "Bank verification timed out."
+        "reason3dsTimeout": "Bank verification timed out.",
+        "reasonRateLimited": "Too many attempts. Please wait a moment and try again.",
+        "reasonRateLimitedWithSeconds": "Too many attempts. Please wait {seconds} seconds and try again.",
+        "reasonAuth": "Your session expired. Please sign in again.",
+        "reasonServer": "Our payment service is temporarily unavailable.",
+        "reasonNetwork": "Network error. Check your connection and try again.",
+        "reasonCardDeclined": "Your card was declined.",
+        "reasonIncorrectCvc": "Your card's security code is incorrect.",
+        "reasonExpiredCard": "Your card has expired.",
+        "reasonInsufficientFunds": "Your card has insufficient funds.",
+        "reasonProcessingError": "An error occurred while processing your card. Please try again."
       },
       "disabled": {
         "title": "Online payment unavailable",
@@ -1621,6 +1648,12 @@
         "title": "QR expiring soon",
         "body": "Your PromptPay QR will expire in 2 minutes. Refresh to get a fresh code if you need more time.",
         "action": "Refresh QR"
+      },
+      "hardCap": {
+        "title": "Are you still here?",
+        "body": "The payment drawer has been open for 30 minutes. Click Continue to keep your payment session active, otherwise this attempt will be canceled automatically.",
+        "continue": "Continue payment",
+        "autoCancelCountdown": "Cancelling in {seconds} s"
       },
       "qrExpired": "QR code expired. Generate a new one to continue.",
       "skeleton": {

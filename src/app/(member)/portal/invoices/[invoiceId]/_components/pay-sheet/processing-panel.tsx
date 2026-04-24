@@ -18,7 +18,7 @@
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export interface ProcessingPanelProps {
   readonly onCancel: () => void;
@@ -35,9 +35,8 @@ export function ProcessingPanel({ onCancel }: ProcessingPanelProps) {
     >
       <h3 className="text-body font-medium text-foreground">{t('title')}</h3>
       <p className="text-caption text-muted-foreground">{t('body')}</p>
-      {/* Indeterminate progress — announces via parent aria-live region;
-        * Progress primitive degrades shimmer → pulse under reduced-motion. */}
-      <Progress aria-label={t('title')} />
+      {/* Visual progress shimmer — not interactive. */}
+      <Skeleton className="h-2 w-full" />
       <Button
         type="button"
         variant="ghost"

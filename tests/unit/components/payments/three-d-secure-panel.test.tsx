@@ -54,16 +54,13 @@ describe('<ThreeDSecurePanel>', () => {
     expect(btn.className).toMatch(/min-h-\[44px\]/);
   });
 
-  it('renders indeterminate <Progress> (role=progressbar, no aria-valuenow)', () => {
+  it('uses the shared <Skeleton> primitive (motion-safe shimmer via .skeleton-shimmer)', () => {
     renderWithIntl(() => {});
     const panel = screen.getByTestId('pay-sheet-3ds-panel');
-    const bar = panel.querySelector('[data-slot="progress"]') as HTMLElement;
-    expect(bar).not.toBeNull();
-    expect(bar.getAttribute('role')).toBe('progressbar');
-    expect(bar.getAttribute('data-state')).toBe('indeterminate');
-    expect(bar.getAttribute('aria-valuenow')).toBeNull();
-    // Indeterminate fill still carries motion-safe skeleton-shimmer class
-    const fill = bar.querySelector('[data-slot="progress-fill"]') as HTMLElement;
-    expect(fill.className).toMatch(/skeleton-shimmer/);
+    const skeletons = panel.querySelectorAll('[data-slot="skeleton"]');
+    expect(skeletons.length).toBeGreaterThan(0);
+    skeletons.forEach((el) => {
+      expect(el.className).toMatch(/skeleton-shimmer/);
+    });
   });
 });

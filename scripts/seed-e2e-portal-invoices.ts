@@ -369,6 +369,11 @@ async function seedInvoicesIfMissing(
     company_name: 'E2E Alpha Co',
     tax_id: null,
     address: null,
+    // FR-038 — snapshot MUST carry the primary contact email so F4's
+    // `recordPayment` can enqueue the auto-email receipt without
+    // reaching back into the mutable members/contacts tables.
+    primary_contact_email: 'e2e-member@swecham.test',
+    primary_contact_name: 'E2E Alpha',
   };
 
   await runInTenant(ctx, async (tx) => {

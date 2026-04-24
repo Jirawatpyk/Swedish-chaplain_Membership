@@ -264,7 +264,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       '',
   );
   const evLivemode = Boolean(rawEvent['livemode']);
-  const evAccount = String(rawEvent['account'] ?? '');
+  let evAccount = String(rawEvent['account'] ?? '');
+
+  // Direct-event fallback (T082 empirical webhook test 2026-04-24):
+  // when SweCham (or any tenant whose processor_account_id matches
+  // `env.stripe.accountIdSwecham`) creates a PaymentIntent, the
+  // Stripe gateway skips the `Stripe-Account` header (see
+  // `connectOptions()` in stripe-gateway.ts) so the event fires on
+  // the platform account itself with `event.account === ''`. Default
+  // to the platform owner tenant's account id so tenant resolution
+  // succeeds for single-tenant / platform-owner deployments. Multi-
+  // tenant Connect events carry their own `account` field and bypass
+  // this fallback entirely.
+  if (!evAccount && env.stripe.accountIdSwecham) {
+    evAccount = env.stripe.accountIdSwecham;
+  }
 
   // Step 4 — livemode segregation.
   if (evLivemode !== env.stripe.liveMode) {
@@ -348,37 +362,88 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // Step 7 — dispatch to the Application use-case.
-  // PCI SAQ-A structural guard (T042 (f) / T045): hand the use-case a
-  // narrow allow-list envelope ONLY — NOT the raw event object.
-  const envelope = {
+  // Project explicitly to the `VerifiedStripeEvent` allow-list shape.
+  // The verifier (`stripe-webhook-verifier.project()`) already
+  // narrows `event.data.object` to `dataObject` + strips card
+  // metadata, but we STILL project here belt-and-braces so:
+  //   1. A future adapter drift (e.g. a test / stub mock that
+  //      forgets to project) cannot leak raw `data` into the
+  //      use-case via the route (PCI SAQ-A structural guard —
+  //      T042 contract test pins this shape).
+  //   2. The `account` override from Step 6 (direct-event fallback)
+  //      takes precedence over whatever the verifier computed.
+  const rawAny = rawEvent as Record<string, unknown>;
+  const rawDataObject =
+    (rawAny['dataObject'] as Record<string, unknown> | undefined) ??
+    ((rawAny['data'] as Record<string, unknown> | undefined)?.['object'] as
+      | Record<string, unknown>
+      | undefined);
+  const latestCharge = rawDataObject?.['latest_charge'];
+  const refundsNode = rawDataObject?.['refunds'] as
+    | { data?: Array<Record<string, unknown>> }
+    | undefined;
+  const lastPaymentError = rawDataObject?.['last_payment_error'] as
+    | Record<string, unknown>
+    | undefined;
+  const amountVal = rawDataObject?.['amount'];
+
+  const verifiedEvent: import('@/modules/payments').VerifiedStripeEvent = {
     id: evId,
     type: evType,
-    api_version: evApiVersion,
+    apiVersion: evApiVersion,
     livemode: evLivemode,
+    account: evAccount,
+    createdAtUnixSeconds:
+      typeof rawAny['createdAtUnixSeconds'] === 'number'
+        ? (rawAny['createdAtUnixSeconds'] as number)
+        : Number(rawAny['created'] ?? 0),
+    dataObject: {
+      id: String(rawDataObject?.['id'] ?? ''),
+      type: String(
+        rawDataObject?.['type'] ?? rawDataObject?.['object'] ?? '',
+      ),
+      ...(typeof latestCharge === 'string' && {
+        latestChargeId: latestCharge,
+      }),
+      ...(Array.isArray(refundsNode?.data) && {
+        refundIds: refundsNode!.data!
+          .map((r) => String((r as Record<string, unknown>)['id'] ?? ''))
+          .filter(Boolean),
+      }),
+      ...(typeof lastPaymentError?.['code'] === 'string' && {
+        lastPaymentErrorCode: String(lastPaymentError['code']),
+      }),
+      ...(typeof amountVal === 'number' && {
+        amountSatang: BigInt(amountVal),
+      }),
+    },
   };
 
   try {
     const deps = makeProcessWebhookEventDeps(tenantId);
-    // Pass the structured envelope, NOT rawEvent (PCI SAQ-A boundary).
-    // The allow-list shape `{id, type, api_version, livemode}` is asserted
-    // at top-level on `input` by T042 (f) / T045 contract tests (NOT under
-    // `.event`), so the route flattens the envelope into the input object.
     const useCaseInput = {
       tenantId,
-      ...envelope,
+      event: verifiedEvent,
       payloadSha256,
       correlationId,
       requestId,
     };
-    const result = await processWebhookEvent(
-      deps,
-      useCaseInput as unknown as Parameters<typeof processWebhookEvent>[1],
-    );
+    const result = await processWebhookEvent(deps, useCaseInput);
 
     // Log the dispatch shape (allow-list only — envelope carries NO card
     // data, NO client secret, NO raw event object).
     logger.info(
-      { envelope, tenantId, correlationId, requestId },
+      {
+        envelope: {
+          id: verifiedEvent.id,
+          type: verifiedEvent.type,
+          api_version: verifiedEvent.apiVersion,
+          livemode: verifiedEvent.livemode,
+        },
+        tenantId,
+        correlationId,
+        requestId,
+      },
       'stripe-webhook.dispatched',
     );
 
@@ -394,6 +459,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     logger.error(
       {
         err: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
         eventId: evId,
         tenantId,
         correlationId,

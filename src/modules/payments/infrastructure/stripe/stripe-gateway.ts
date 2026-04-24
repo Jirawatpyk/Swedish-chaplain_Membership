@@ -21,6 +21,7 @@
 import type Stripe from 'stripe';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
 import type {
   ProcessorGatewayPort,
   ProcessorGatewayError,
@@ -29,6 +30,36 @@ import type {
   CreatedRefund,
 } from '../../application/ports/processor-gateway-port';
 import { getStripeClient } from './stripe-client';
+
+/**
+ * Build Stripe SDK request options, omitting `stripeAccount` when the
+ * target account IS the platform's own account.
+ *
+ * Rationale (F5 MVP, 2026-04-24): F5 ships as single-tenant SweCham.
+ * When the `processor_account_id` stored on `tenant_payment_settings`
+ * equals the platform's own account id (i.e. the secret key's owning
+ * account), passing `stripeAccount: <same-account>` triggers a Connect
+ * "act on behalf of" call — which requires the platform to have Connect
+ * enabled AND the target to be a Connected account. SweCham is the
+ * platform itself; there is no Connect relationship, so the call 403s
+ * with `platform_account_required`.
+ *
+ * F11 SaaS Billing re-introduces Connect for per-tenant merchant
+ * accounts — at that point `processor_account_id` will differ from the
+ * platform account for every non-SweCham tenant, and this helper
+ * naturally emits `stripeAccount` for them.
+ *
+ * Tradeoff: we emit `stripeAccount` only when strictly necessary. PCI
+ * log context preserves the original `stripeAccount` value regardless
+ * so observability stays unambiguous.
+ */
+function shouldActOnBehalfOf(stripeAccount: string): boolean {
+  return stripeAccount !== env.stripe.accountIdSwecham;
+}
+
+function connectOptions(stripeAccount: string): { stripeAccount?: string } {
+  return shouldActOnBehalfOf(stripeAccount) ? { stripeAccount } : {};
+}
 
 /**
  * Map a Stripe SDK error to the port's `ProcessorGatewayError` union.
@@ -134,7 +165,7 @@ export const stripeGateway: ProcessorGatewayPort = {
         },
         {
           idempotencyKey: input.idempotencyKey,
-          stripeAccount: input.stripeAccount,
+          ...connectOptions(input.stripeAccount),
         },
       );
 
@@ -177,7 +208,7 @@ export const stripeGateway: ProcessorGatewayPort = {
       const pi = await client.paymentIntents.retrieve(
         paymentIntentId,
         { expand: ['latest_charge.payment_method_details.card'] },
-        { stripeAccount },
+        connectOptions(stripeAccount),
       );
 
       logger.info(
@@ -214,9 +245,11 @@ export const stripeGateway: ProcessorGatewayPort = {
   ): Promise<Result<void, ProcessorGatewayError>> {
     const client = getStripeClient();
     try {
-      const pi = await client.paymentIntents.cancel(paymentIntentId, {
-        stripeAccount,
-      } as unknown as Stripe.PaymentIntentCancelParams);
+      const pi = await client.paymentIntents.cancel(
+        paymentIntentId,
+        undefined,
+        connectOptions(stripeAccount),
+      );
       logger.info(
         {
           stripeAccount,
@@ -247,7 +280,7 @@ export const stripeGateway: ProcessorGatewayPort = {
 
       const refund = await client.refunds.create(params, {
         idempotencyKey: input.idempotencyKey,
-        stripeAccount: input.stripeAccount,
+        ...connectOptions(input.stripeAccount),
       });
 
       logger.info(

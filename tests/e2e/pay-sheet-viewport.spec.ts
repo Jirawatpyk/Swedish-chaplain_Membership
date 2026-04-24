@@ -33,6 +33,10 @@ import { devices, type Page } from '@playwright/test';
 // T082: swap `test` for `memberTest` so the E2E member is auto-signed-in
 // before each spec body. `expect` re-exported from the same module.
 import { memberTest as test, expect } from './helpers/member-session';
+// T082b: stub `window.Stripe` so card-submit drives the state machine
+// into `success` without a real js.stripe.com iframe or Stripe test
+// account. See helpers/stripe-mock.ts for the interception contract.
+import { stubStripeConfirmSuccess } from './helpers/stripe-mock';
 
 // ---------------------------------------------------------------------------
 // Environment & fixtures
@@ -345,26 +349,78 @@ test.describe('PaySheet viewport + mobile layout — @payment @a11y @f5', () => 
   }
 
   // -------------------------------------------------------------------------
-  // Confirmation-panel tap target — exercised separately so it survives
-  // without the full Stripe card-submit flow. The confirmation state is
-  // reached by the parent <PaySheetInternal> once card-form fires
-  // onSuccess. Until the happy-path spec (T046) lands the member fixture
-  // + mock Stripe response, this assertion stays fixme'd.
+  // Confirmation-panel tap target (T082b).
+  //
+  // Strategy: `stubStripeConfirmSuccess` installs a fake `window.Stripe`
+  // factory via page.addInitScript BEFORE navigation. loadStripe()
+  // detects the pre-existing global + short-circuits the real bundle
+  // fetch. On submit, the fake `confirmPayment` resolves to a succeeded
+  // PaymentIntent, which drives PaySheetInternal: card-form → success,
+  // rendering <ConfirmationPanel> and the 44×44 Download-receipt CTA.
+  //
+  // Must be called BEFORE `openPaySheet` so the init script is in
+  // place before the page navigates.
   // -------------------------------------------------------------------------
   test.describe('confirmation panel (post-settlement)', () => {
-    test.fixme(
-      true,
-      'TODO: wire via mock Stripe `confirmCardPayment` response once T082 member fixture lands. Until then, the 44×44 px contract is covered by the unit test in tests/unit/payments/confirmation-panel.test.tsx.',
-    );
-
     for (const preset of VIEWPORTS) {
-      test(`download-receipt CTA ≥ 44×44 px at ${preset.label}`, async ({
-        page,
-      }) => {
-        await openPaySheet(page);
-        // Reach the confirmation state by stubbing Stripe's
-        // confirmCardPayment resolver (not wired yet).
-        await expectMinTapTarget(page, 'pay-sheet-download-receipt');
+      test.describe(preset.label, () => {
+        test.use({
+          viewport: { width: preset.width, height: preset.height },
+          ...(preset.device
+            ? {
+                userAgent: preset.device.userAgent,
+                deviceScaleFactor: preset.device.deviceScaleFactor,
+                hasTouch: preset.device.hasTouch,
+                isMobile: preset.device.isMobile,
+              }
+            : {}),
+        });
+
+        test('download-receipt CTA ≥ 44×44 px after successful settlement', async ({
+          page,
+        }) => {
+          // Install Stripe SDK stub BEFORE navigation (addInitScript
+          // runs on every page load for the lifetime of the test).
+          await stubStripeConfirmSuccess(page);
+          // Debug instrumentation: capture browser console + failed
+          // requests so we can see if /initiate is being stubbed.
+          page.on('console', (msg) => {
+            // eslint-disable-next-line no-console
+            console.log(`[browser:${msg.type()}]`, msg.text());
+          });
+          page.on('requestfailed', (req) => {
+            // eslint-disable-next-line no-console
+            console.log(
+              '[requestfailed]',
+              req.url(),
+              req.failure()?.errorText,
+            );
+          });
+          page.on('response', (res) => {
+            if (res.url().includes('/api/payments/initiate')) {
+              // eslint-disable-next-line no-console
+              console.log('[initiate-response]', res.status(), res.url());
+            }
+          });
+          await openPaySheet(page);
+
+          // Wait for the card-form submit button to render. <CardForm>
+          // gates its visible submit behind a 300 ms min-delay + the
+          // Stripe element `ready` event — our stubbed element fires
+          // `ready` on a microtask, so the real gate is the
+          // useMinDelay floor.
+          const submit = page.getByTestId('pay-sheet-card-submit');
+          await expect(submit).toBeVisible({ timeout: 5_000 });
+          await submit.click();
+
+          // Assert the confirmation panel renders + the download CTA
+          // meets the ≥ 44×44 tap-target contract (WCAG 2.5.5 /
+          // SC 2.5.8).
+          await expect(
+            page.getByTestId('pay-sheet-confirmation-panel'),
+          ).toBeVisible({ timeout: 5_000 });
+          await expectMinTapTarget(page, 'pay-sheet-download-receipt');
+        });
       });
     }
   });

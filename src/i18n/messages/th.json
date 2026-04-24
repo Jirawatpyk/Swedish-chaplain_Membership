@@ -1572,21 +1572,38 @@
     },
     "payment": {
       "payNow": "ชำระเงิน",
+      "payAmount": "ชำระ {amount}",
       "drawer": {
-        "title": "ชำระใบแจ้งหนี้ {invoiceNumber}",
+        "title": "ชำระใบแจ้งหนี้",
+        "subtitle": "{invoiceNumber}",
         "close": "ปิดหน้าต่างชำระเงิน"
+      },
+      "summary": {
+        "heading": "สรุปการชำระเงิน",
+        "invoiceLabel": "เลขที่ใบแจ้งหนี้",
+        "amountLabel": "ยอดที่ต้องชำระ",
+        "itemsLabel": "รายการ",
+        "itemSingle": "1 รายการ",
+        "itemPlural": "{count} รายการ"
+      },
+      "security": {
+        "stripeBadge": "ปลอดภัยด้วย Stripe",
+        "encrypted": "เข้ารหัส · รองรับ PCI-DSS",
+        "cards": "รองรับ Visa, Mastercard, American Express, JCB",
+        "terms": "การชำระเงินถือว่ายอมรับ {termsLink}",
+        "termsLinkLabel": "เงื่อนไขการใช้บริการ"
       },
       "methods": {
         "card": "บัตรเครดิต",
         "promptpay": "PromptPay",
         "cardAriaLabel": "เปลี่ยนเป็นชำระด้วยบัตรเครดิต",
         "promptpayAriaLabel": "เปลี่ยนเป็นชำระด้วย PromptPay",
-        "cardPlaceholder": "แบบฟอร์มบัตรจะพร้อมใน G3",
-        "promptpayPlaceholder": "PromptPay จะพร้อมในเฟส 4"
+        "cardPlaceholder": "กำลังเตรียมแบบฟอร์มชำระเงิน…",
+        "promptpayPlaceholder": "PromptPay กำลังจะมาเร็ว ๆ นี้"
       },
       "success": {
         "title": "ชำระเงินสำเร็จ",
-        "summaryCard": "ชำระ {amount} ด้วยบัตรลงท้าย ****{last4} เมื่อ {dateTime}",
+        "summaryCard": "ชำระ {amount} ด้วยบัตรลงท้าย {last4} เมื่อ {dateTime}",
         "summaryPromptPay": "ชำระ {amount} ด้วย PromptPay เมื่อ {dateTime}",
         "downloadReceipt": "ดาวน์โหลดใบเสร็จ",
         "close": "ปิด",
@@ -1609,7 +1626,17 @@
         "cta": "ลองอีกครั้ง",
         "alternativeMethod": "ใช้วิธีชำระเงินอื่น",
         "genericReason": "ไม่สามารถดำเนินการชำระเงินได้",
-        "reason3dsTimeout": "การยืนยันกับธนาคารหมดเวลา"
+        "reason3dsTimeout": "การยืนยันกับธนาคารหมดเวลา",
+        "reasonRateLimited": "ทำรายการบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่",
+        "reasonRateLimitedWithSeconds": "ทำรายการบ่อยเกินไป กรุณารอ {seconds} วินาทีแล้วลองใหม่",
+        "reasonAuth": "เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง",
+        "reasonServer": "ระบบชำระเงินไม่พร้อมใช้งานชั่วคราว",
+        "reasonNetwork": "เครือข่ายขัดข้อง กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่",
+        "reasonCardDeclined": "บัตรของคุณถูกปฏิเสธ",
+        "reasonIncorrectCvc": "รหัสหลังบัตรไม่ถูกต้อง",
+        "reasonExpiredCard": "บัตรของคุณหมดอายุแล้ว",
+        "reasonInsufficientFunds": "วงเงินในบัตรไม่เพียงพอ",
+        "reasonProcessingError": "เกิดข้อผิดพลาดระหว่างประมวลผลบัตร กรุณาลองใหม่"
       },
       "disabled": {
         "title": "ไม่สามารถชำระเงินออนไลน์ได้",
@@ -1621,6 +1648,12 @@
         "title": "QR ใกล้หมดอายุ",
         "body": "QR PromptPay จะหมดอายุในอีก 2 นาที กด ‘สร้าง QR ใหม่’ หากต้องการเวลาเพิ่ม",
         "action": "สร้าง QR ใหม่"
+      },
+      "hardCap": {
+        "title": "คุณยังอยู่ไหม?",
+        "body": "หน้าต่างชำระเงินเปิดมาแล้ว 30 นาที กดดำเนินการต่อเพื่อทำรายการ มิฉะนั้นระบบจะยกเลิกการชำระเงินโดยอัตโนมัติ",
+        "continue": "ดำเนินการต่อ",
+        "autoCancelCountdown": "จะยกเลิกใน {seconds} วินาที"
       },
       "qrExpired": "QR หมดอายุแล้ว กรุณาสร้างรหัสใหม่เพื่อดำเนินการต่อ",
       "skeleton": {

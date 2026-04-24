@@ -30,6 +30,16 @@ export function PaySheetSkeleton() {
       data-testid="pay-sheet-card-skeleton"
       className="space-y-4"
     >
+      {/* Visible loading hint — reassures the member that the
+          drawer is actively preparing the Stripe Elements form
+          (can take 1-3 s on first open). The shimmer rows alone
+          are mute; a short label reduces perceived wait time. */}
+      <p
+        className="text-caption text-muted-foreground"
+        data-testid="pay-sheet-card-skeleton-label"
+      >
+        {t('loading')}
+      </p>
       {/* Card number row */}
       <Skeleton className="h-12 w-full" />
       {/* Expiry + CVC (half-width pair) */}

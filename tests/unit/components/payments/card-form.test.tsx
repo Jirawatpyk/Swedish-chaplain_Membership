@@ -82,6 +82,8 @@ const messages = {
   portal: {
     payment: {
       payNow: 'Pay now',
+      payAmount: 'Pay {amount}',
+      processing: { title: 'Processing…' },
       skeleton: {
         loading: 'Loading secure payment form',
       },
@@ -91,6 +93,17 @@ const messages = {
         cta: 'Try again',
         alternativeMethod: 'Use another method',
         genericReason: 'Payment could not be completed.',
+        reason3dsTimeout: 'Bank verification timed out.',
+        reasonRateLimited: 'Too many attempts.',
+        reasonRateLimitedWithSeconds: 'Too many attempts. Wait {seconds} s.',
+        reasonAuth: 'Your session expired.',
+        reasonServer: 'Payment service unavailable.',
+        reasonNetwork: 'Network error.',
+        reasonCardDeclined: 'Your card was declined.',
+        reasonIncorrectCvc: 'Your card’s security code is incorrect.',
+        reasonExpiredCard: 'Your card has expired.',
+        reasonInsufficientFunds: 'Your card has insufficient funds.',
+        reasonProcessingError: 'Processing error.',
       },
       error: {
         elementLoadFailed: 'We couldn’t load the payment form.',
@@ -143,25 +156,27 @@ describe('<CardForm>', () => {
     localStorageSetSpy.mockRestore();
   });
 
-  it('mounts with skeleton visible initially; skeleton is the SOLE live loading region (G-Review #1)', () => {
+  it('mounts with form hidden (opacity-0 + aria-hidden) while Stripe paints; skeleton is OWNED by <PaySheetInternal>, not CardForm (T082 2026-04-24)', () => {
+    // T082 UX feedback 2026-04-24: previous architecture rendered
+    // skeleton in BOTH CardForm AND PaySheetInternal → stacked
+    // loading indicators. Fix: parent owns the single skeleton;
+    // CardForm starts hidden (opacity-0 + aria-hidden) so Stripe
+    // paints its iframe off-screen without flashing underneath.
     renderCardForm();
-    const skeleton = screen.getByTestId('pay-sheet-card-skeleton');
-    expect(skeleton).toBeTruthy();
-    // Contract: aria-busy lives on the skeleton only — not on any
-    // sibling wrapper around the hidden PaymentElement.
-    expect(skeleton.getAttribute('aria-busy')).toBe('true');
+    // PaymentElement stub IS mounted so Stripe can fire onReady…
+    expect(screen.getByTestId('payment-element-stub')).toBeTruthy();
+    // …but the form wrapper div must start hidden.
     const form = screen.getByTestId('pay-sheet-card-form');
-    const ariaBusyNodes = form.querySelectorAll('[aria-busy="true"]');
-    // Exactly one — the skeleton itself.
-    expect(ariaBusyNodes.length).toBe(1);
-    // The PaymentElement stub is mounted (so Stripe can fire onReady)
-    // but hidden with sr-only + aria-hidden and MUST NOT carry
-    // aria-busy semantics (duplicate live-region flooding fix).
-    const hidden = form.querySelector(
-      '[aria-hidden="true"][class*="sr-only"]',
-    );
-    expect(hidden).not.toBeNull();
-    expect(hidden?.getAttribute('aria-busy')).toBeNull();
+    const hiddenWrapper = form.querySelector('[aria-hidden="true"]');
+    expect(hiddenWrapper).not.toBeNull();
+    expect(hiddenWrapper!.className).toMatch(/opacity-0/);
+    expect(hiddenWrapper!.className).toMatch(/pointer-events-none/);
+    // Contract: NO aria-busy anywhere inside CardForm — that role
+    // lives on <PaySheetSkeleton> which is a sibling in PaySheetInternal,
+    // never a descendant of the form. Prevents duplicate live-region flooding.
+    expect(form.querySelector('[aria-busy="true"]')).toBeNull();
+    // And the skeleton testid explicitly MUST NOT appear inside CardForm.
+    expect(screen.queryByTestId('pay-sheet-card-skeleton')).toBeNull();
   });
 
   it('after onReady + 300 ms min delay, PaymentElement becomes visible and skeleton disappears', async () => {
@@ -239,7 +254,7 @@ describe('<CardForm>', () => {
     });
   });
 
-  it('submit with error result calls onFailure', async () => {
+  it('submit with error result calls onFailure (localized from code)', async () => {
     const onFailure = vi.fn();
     confirmPaymentMock.mockResolvedValue({
       error: { message: 'Card was declined', code: 'card_declined' },
@@ -257,9 +272,143 @@ describe('<CardForm>', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    // `code === 'card_declined'` (no decline_code) → our i18n key
+    // `reasonCardDeclined`, NOT Stripe's raw English message.
     expect(onFailure).toHaveBeenCalledWith({
-      message: 'Card was declined',
+      message: 'Your card was declined.',
       code: 'card_declined',
+    });
+  });
+
+  // -- decline_code branch (T082 empirical 2026-04-24) ---------------------
+  // Stripe returns `code: 'card_declined'` with a specific
+  // `decline_code` sub-discriminator (insufficient_funds, expired_card,
+  // incorrect_cvc, processing_error, …). The earlier switch only
+  // branched on `code` so EVERY decline localized to
+  // "Your card was declined." We added a `decline_code` branch FIRST
+  // that maps specific reasons before falling through to the generic
+  // `card_declined`. This test suite pins that matrix.
+  describe('decline_code branch (T082 2026-04-24)', () => {
+    type Case = {
+      decline_code: string;
+      expected: string;
+    };
+    const cases: readonly Case[] = [
+      { decline_code: 'insufficient_funds', expected: 'Your card has insufficient funds.' },
+      { decline_code: 'expired_card', expected: 'Your card has expired.' },
+      { decline_code: 'incorrect_cvc', expected: 'Your card’s security code is incorrect.' },
+      { decline_code: 'processing_error', expected: 'Processing error.' },
+    ];
+
+    it.each(cases)(
+      'maps decline_code=%o to its specific localized reason',
+      async ({ decline_code, expected }) => {
+        const onFailure = vi.fn();
+        confirmPaymentMock.mockResolvedValue({
+          error: {
+            message: 'Card was declined',
+            code: 'card_declined',
+            decline_code,
+          },
+        });
+        renderCardForm({ onFailure });
+        act(() => {
+          for (const fn of readyHandles) fn();
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(350);
+        });
+        const form = screen.getByTestId('pay-sheet-card-form') as HTMLFormElement;
+        await act(async () => {
+          fireEvent.submit(form);
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        expect(onFailure).toHaveBeenCalledWith(
+          expect.objectContaining({ message: expected, code: 'card_declined' }),
+        );
+      },
+    );
+
+    it('falls back to Stripe English message when code is unknown', async () => {
+      const onFailure = vi.fn();
+      confirmPaymentMock.mockResolvedValue({
+        error: {
+          message: 'Some novel Stripe error',
+          code: 'totally_unknown_code',
+        },
+      });
+      renderCardForm({ onFailure });
+      act(() => {
+        for (const fn of readyHandles) fn();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350);
+      });
+      const form = screen.getByTestId('pay-sheet-card-form') as HTMLFormElement;
+      await act(async () => {
+        fireEvent.submit(form);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(onFailure).toHaveBeenCalledWith({
+        message: 'Some novel Stripe error',
+        code: 'totally_unknown_code',
+      });
+    });
+
+    it('falls back to generic i18n when Stripe message is absent + code unknown', async () => {
+      const onFailure = vi.fn();
+      confirmPaymentMock.mockResolvedValue({
+        error: { code: 'totally_unknown_code' },
+      });
+      renderCardForm({ onFailure });
+      act(() => {
+        for (const fn of readyHandles) fn();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350);
+      });
+      const form = screen.getByTestId('pay-sheet-card-form') as HTMLFormElement;
+      await act(async () => {
+        fireEvent.submit(form);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(onFailure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Payment could not be completed.',
+        }),
+      );
+    });
+
+    it('maps code=authentication_required to reason3dsTimeout (non-decline branch)', async () => {
+      const onFailure = vi.fn();
+      confirmPaymentMock.mockResolvedValue({
+        error: {
+          message: 'Authentication required',
+          code: 'authentication_required',
+        },
+      });
+      renderCardForm({ onFailure });
+      act(() => {
+        for (const fn of readyHandles) fn();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350);
+      });
+      const form = screen.getByTestId('pay-sheet-card-form') as HTMLFormElement;
+      await act(async () => {
+        fireEvent.submit(form);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(onFailure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Bank verification timed out.',
+          code: 'authentication_required',
+        }),
+      );
     });
   });
 

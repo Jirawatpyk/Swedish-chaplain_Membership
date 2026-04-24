@@ -322,27 +322,36 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     const firstArg = processWebhookEventMock.mock.calls[0]?.[1] as
       | Record<string, unknown>
       | undefined;
-    expect(firstArg?.['id']).toBe('evt_test_001');
+    // The route passes `input.event` (a VerifiedStripeEvent) as the
+    // nested envelope — the PCI allow-list projection is already
+    // performed by the verifier before the route sees it. T082
+    // webhook-flow repair 2026-04-24: dispatching with a flat envelope
+    // at top-level broke the use-case which destructures `input.event`.
+    const verifiedEvent = firstArg?.['event'] as Record<string, unknown> | undefined;
+    expect(verifiedEvent?.['id']).toBe('evt_test_001');
 
     // PCI SAQ-A structural guard (guardian F1 — Review-Gate blocker).
     // The route MUST hand the use-case a *structured allow-list* of
-    // webhook metadata — NEVER the raw `event.data.object` (which carries
-    // card metadata last4/brand/exp/fingerprint at deep paths NOT covered
-    // by REDACT_PATHS). Asserting shape here pins the contract before
-    // Group D/T056 implements processWebhookEvent so a future drift into
-    // "just pass the whole event object" cannot sneak through review.
-    expect(firstArg).toEqual(
+    // webhook metadata — NEVER the raw `event.data.object` (which
+    // carries card metadata last4/brand/exp/fingerprint at deep paths
+    // NOT covered by REDACT_PATHS). Shape here pins the
+    // `VerifiedStripeEvent` contract (webhook-verifier-port.ts): the
+    // verifier's `project()` is the only PCI-SAQ-A crossing, and the
+    // projected shape carries ONLY id-like fields — never
+    // payment_method_details, card, or raw data.
+    expect(verifiedEvent).toEqual(
       expect.objectContaining({
         id: expect.any(String),
         type: expect.any(String),
-        api_version: expect.any(String),
+        apiVersion: expect.any(String),
         livemode: expect.any(Boolean),
+        dataObject: expect.any(Object),
       }),
     );
     // Explicit exclusion: the data envelope carries payment_method_details —
-    // it MUST be handled by the use-case internally (with an allow-listed
-    // logger payload) not passed through at the route/composition boundary.
-    expect(Object.keys(firstArg ?? {})).not.toContain('data');
+    // it MUST NOT be passed through at the route/composition boundary.
+    // `dataObject` is the narrow projection; raw `data` MUST be absent.
+    expect(Object.keys(verifiedEvent ?? {})).not.toContain('data');
   });
 
   // (g) charge.refunded for unknown refund → 200, out_of_band_refund_detected

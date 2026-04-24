@@ -28,7 +28,7 @@ const messages = {
     payment: {
       success: {
         title: 'Payment received',
-        summaryCard: 'Paid {amount} via card ending ****{last4} on {dateTime}',
+        summaryCard: 'Paid {amount} via card ending {last4} on {dateTime}',
         summaryPromptPay: 'Paid {amount} via PromptPay on {dateTime}',
         downloadReceipt: 'Download receipt',
         close: 'Close',
@@ -190,5 +190,91 @@ describe('<ConfirmationPanel>', () => {
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
     expect(link.getAttribute('href')).toBe('https://example.com/receipt.pdf');
+  });
+
+  // -- last4 mask polish (commit 675abe7) -----------------------------------
+  describe('last4 mask (commit 675abe7)', () => {
+    it('renders `****1234` when a real 4-digit last4 is supplied', () => {
+      renderPanel({ method: 'card', last4: '1234' });
+      expect(
+        screen.getByText(
+          'Paid THB 12,000.00 via card ending ****1234 on 2026-04-23 14:30',
+        ),
+      ).toBeTruthy();
+    });
+
+    it('renders a plain `****` when last4 is missing (no 8-asterisk bug)', () => {
+      renderPanel({ method: 'card', last4: undefined });
+      // MUST NOT render "********" (8 stars) — that was the pre-675abe7
+      // bug where the i18n template + prop default double-masked.
+      const text = screen.getByText(/via card ending/).textContent ?? '';
+      expect(text).toMatch(/via card ending \*\*\*\* on/);
+      expect(text).not.toMatch(/\*{5,}/);
+    });
+
+    it('falls back to `****` when last4 is not exactly 4 digits (defensive)', () => {
+      renderPanel({ method: 'card', last4: '12' });
+      const text = screen.getByText(/via card ending/).textContent ?? '';
+      expect(text).toMatch(/via card ending \*\*\*\* on/);
+    });
+
+    it('falls back to `****` when last4 is non-digit (defensive)', () => {
+      renderPanel({ method: 'card', last4: 'abcd' });
+      const text = screen.getByText(/via card ending/).textContent ?? '';
+      expect(text).toMatch(/via card ending \*\*\*\* on/);
+    });
+  });
+
+  // -- Option A layout (commit 675abe7) -------------------------------------
+  describe('button layout (Option A — full-width primary + text-link close)', () => {
+    it('Download receipt takes full drawer width (primary CTA)', () => {
+      renderPanel();
+      const link = screen.getByTestId('pay-sheet-download-receipt');
+      expect(link.className).toMatch(/w-full/);
+    });
+
+    it('Close is a subdued text-link (muted-foreground + hover underline)', () => {
+      renderPanel();
+      const close = screen.getByTestId('pay-sheet-confirmation-close');
+      // Not a shadcn Button with `bg-*` — it's a <button> styled as
+      // a link. Verify the muted-foreground + hover underline utilities
+      // (visual hierarchy: Close recedes behind the primary Download).
+      expect(close.tagName.toLowerCase()).toBe('button');
+      expect(close.className).toMatch(/text-muted-foreground/);
+      expect(close.className).toMatch(/hover:underline/);
+    });
+
+    it('Close keeps ≥44px tap target for mobile (WCAG SC 2.5.5)', () => {
+      renderPanel();
+      const close = screen.getByTestId('pay-sheet-confirmation-close');
+      expect(close.className).toMatch(/min-h-\[44px\]/);
+    });
+  });
+
+  // -- Auto-close dispatch out of setState updater (commit 952740d) ---------
+  it('React 19 setState-during-render guard: no error when countdown hits 0', async () => {
+    // The earlier auto-close pattern called `onClose()` from INSIDE
+    // `setRemaining((prev) => { ... })`. React flagged "Cannot update a
+    // component while rendering a different component". The fix split
+    // the ticker + dispatch into two effects. This test verifies the
+    // dispatch path runs cleanly without any console.error.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onClose = vi.fn();
+    renderPanel({ onClose });
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+    }
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(onClose).toHaveBeenCalledOnce();
+    // No "setState during render" warning.
+    const noise = errorSpy.mock.calls.some((call) =>
+      String(call[0] ?? '').includes('setState'),
+    );
+    expect(noise).toBe(false);
+    errorSpy.mockRestore();
   });
 });

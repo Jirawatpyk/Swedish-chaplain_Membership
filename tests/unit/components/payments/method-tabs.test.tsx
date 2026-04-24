@@ -105,6 +105,25 @@ describe('<MethodTabs>', () => {
     );
   });
 
+  // -- keepMounted polish (commit 018b9cf) --------------------------------
+  it('keeps BOTH panels mounted so Stripe iframe survives tab swap (commit 018b9cf)', () => {
+    // T082 empirical finding: before `keepMounted`, toggling
+    // Card → PromptPay → Card unmounted the card panel, tore down the
+    // Stripe <Elements> tree, and forced a fresh iframe load on every
+    // return — visible as a 300ms skeleton floor + button fade-in
+    // "flash". The fix mounts both panels; inactive one is hidden.
+    renderWithIntl({
+      enabledMethods: ['card', 'promptpay'],
+      activeMethod: 'card',
+      onMethodChange: vi.fn(),
+      cardPanel: <div data-testid="card-stub">card-panel</div>,
+      promptPayPanel: <div data-testid="promptpay-stub">promptpay-panel</div>,
+    });
+    // Both slots ARE in the DOM even though only card is selected.
+    expect(screen.getByTestId('card-stub')).toBeTruthy();
+    expect(screen.getByTestId('promptpay-stub')).toBeTruthy();
+  });
+
   it('tabs are wired for keyboard navigation via the Base-UI Tabs primitive', () => {
     // Base-UI Tabs owns arrow-key nav. We assert the integration surface:
     // - both tabs render with role="tab"

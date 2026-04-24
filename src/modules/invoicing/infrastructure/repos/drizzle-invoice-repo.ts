@@ -30,6 +30,8 @@ import {
 } from '../../domain/value-objects/tenant-identity-snapshot';
 import {
   makeMemberIdentitySnapshot,
+  memberIdentitySnapshotSchema,
+  MalformedSnapshotError,
   type MemberIdentitySnapshot,
 } from '../../domain/value-objects/member-identity-snapshot';
 import { invoices, invoiceLines, type InvoiceRow, type InvoiceLineRow } from '../db';
@@ -93,6 +95,25 @@ function buildPdfOrNull(
   return { blobKey, sha256: parsed.value, templateVersion };
 }
 
+/**
+ * Runtime boundary validation for `member_identity_snapshot`.
+ * Architect review 2026-04-24: jsonb columns are `unknown` at the
+ * row→Domain boundary — TS types are aspirational until we parse.
+ * A corrupt row anywhere in the pipeline (legacy seed, manual DB
+ * patch, future Domain extension forgetting to update a seed)
+ * throws MalformedSnapshotError with the exact zod issues so the
+ * caller can log / audit / raise a 500 as appropriate for its path.
+ */
+function parseMemberIdentitySnapshot(row: InvoiceRow): MemberIdentitySnapshot {
+  const result = memberIdentitySnapshotSchema.safeParse(
+    row.memberIdentitySnapshot,
+  );
+  if (!result.success) {
+    throw new MalformedSnapshotError(row.invoiceId, result.error.issues);
+  }
+  return result.data;
+}
+
 function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice {
   let docNum: DocumentNumber | null = null;
   if (row.documentNumber !== null) {
@@ -152,9 +173,7 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     memberIdentitySnapshot:
       row.memberIdentitySnapshot === null
         ? null
-        : makeMemberIdentitySnapshot(
-            row.memberIdentitySnapshot as MemberIdentitySnapshot,
-          ),
+        : makeMemberIdentitySnapshot(parseMemberIdentitySnapshot(row)),
 
     paymentMethod: row.paymentMethod ?? null,
     paymentReference: row.paymentReference ?? null,

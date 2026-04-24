@@ -39,9 +39,11 @@
  * variables (--primary, --background, --foreground, --radius) are
  * propagated so the PaymentElement matches the host drawer chrome.
  */
-import { useCallback, useMemo, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
+
+import { formatSatangThb } from '@/app/(member)/portal/invoices/_utils/format';
 import {
   loadStripe,
   type Stripe,
@@ -101,11 +103,20 @@ export interface CardFormProps {
   readonly onSuccess: (payload: CardFormSuccessPayload) => void;
   readonly onFailure: (payload: CardFormFailurePayload) => void;
   readonly onRequiresAction: (payload: CardFormRequiresActionPayload) => void;
+  /**
+   * Fires when the visible PaymentElement is fully rendered (Stripe
+   * `onReady` + the 300ms skeleton floor). PaySheetInternal uses it
+   * to gate rendering of the trust-signal footer so it does not
+   * appear below the skeleton on first load — T082 UX feedback
+   * 2026-04-24: "skeleton ค้างนาน, เห็น footer ข้างหลัง".
+   */
+  readonly onVisible?: () => void;
 }
 
 // -- Inner form (must live inside <Elements>) -------------------------------
 interface CardFormInnerProps {
   readonly invoiceId: string;
+  readonly amountLabel: string;
   readonly onReady: () => void;
   readonly onLoadError: (message: string) => void;
   readonly onSuccess: CardFormProps['onSuccess'];
@@ -116,6 +127,7 @@ interface CardFormInnerProps {
 
 function CardFormInner({
   invoiceId,
+  amountLabel,
   onReady,
   onLoadError,
   onSuccess,
@@ -145,9 +157,50 @@ function CardFormInner({
       setSubmitting(false);
 
       if (result.error) {
+        // Map well-known Stripe error codes → localized reasons.
+        // Stripe's error shape for a declined card is:
+        //   code         = 'card_declined' (always, for any decline)
+        //   decline_code = 'insufficient_funds' | 'expired_card'
+        //                | 'incorrect_cvc' | 'processing_error' | ...
+        // So we branch on `decline_code` FIRST for the specific reason,
+        // then fall through to `code` for non-decline errors
+        // (validation_error, authentication_required, rate_limited etc).
+        const code = result.error.code;
+        const declineCode = (result.error as { decline_code?: string })
+          .decline_code;
+        const localized = ((): string | null => {
+          switch (declineCode) {
+            case 'insufficient_funds':
+              return t('retry.reasonInsufficientFunds');
+            case 'expired_card':
+              return t('retry.reasonExpiredCard');
+            case 'incorrect_cvc':
+              return t('retry.reasonIncorrectCvc');
+            case 'processing_error':
+              return t('retry.reasonProcessingError');
+          }
+          switch (code) {
+            case 'card_declined':
+              return t('retry.reasonCardDeclined');
+            case 'incorrect_cvc':
+            case 'invalid_cvc':
+              return t('retry.reasonIncorrectCvc');
+            case 'expired_card':
+              return t('retry.reasonExpiredCard');
+            case 'insufficient_funds':
+              return t('retry.reasonInsufficientFunds');
+            case 'processing_error':
+              return t('retry.reasonProcessingError');
+            case 'authentication_required':
+              return t('retry.reason3dsTimeout');
+            default:
+              return null;
+          }
+        })();
         onFailure({
-          message: result.error.message ?? t('retry.genericReason'),
-          ...(result.error.code !== undefined && { code: result.error.code }),
+          message:
+            localized ?? result.error.message ?? t('retry.genericReason'),
+          ...(code !== undefined && { code }),
         });
         return;
       }
@@ -173,58 +226,40 @@ function CardFormInner({
   return (
     <form onSubmit={handleSubmit} data-testid="pay-sheet-card-form">
       {/*
-       * Rendering contract (G-Review Finding #1)
-       * ----------------------------------------
-       * Only ONE loading region is live at any moment:
-       *   - show === false → <PaySheetSkeleton> alone (already carries
-       *     role="status" + aria-busy="true"); <PaymentElement> is
-       *     off-DOM so its wrapper cannot also announce "busy".
-       *   - show === true  → <PaymentElement> mounts cleanly without
-       *     any aria-busy semantics; skeleton is unmounted.
-       * The Stripe iframe mounts on first reveal — the ≥ 300 ms
-       * skeleton floor (useMinDelay) + CLS-matched skeleton height keep
-       * CLS at 0 without requiring the element be pre-mounted sr-only.
-       * The hidden <PaymentElement> is always mounted once `show` is
-       * true; a remountKey bump forces a fresh iframe on retry.
+       * Skeleton is OWNED BY THE PARENT (<PaySheetInternal>), not here.
+       * CardForm renders only the visible form once Stripe is ready;
+       * while `show=false` the form sits at opacity 0 + aria-hidden
+       * so Stripe can paint its iframe off-screen. The parent layers
+       * its own <PaySheetSkeleton> on top during loading (T082 UX
+       * feedback 2026-04-24: previously had skeleton rendered in BOTH
+       * places which produced stacked loading indicators).
+       *
+       * FR-028g — motion-reduce:duration-0 collapses fade to instant.
        */}
-      {show ? (
-        <>
-          <PaymentElement
-            onReady={onReady}
-            onLoadError={(event) => {
-              onLoadError(event?.error?.message ?? t('error.elementLoadFailed'));
-            }}
-          />
-          <Button
-            type="submit"
-            variant="default"
-            disabled={!stripe || !elements || submitting}
-            className="mt-4 w-full min-h-[44px]"
-            data-testid="pay-sheet-card-submit"
-          >
-            {t('payNow')}
-          </Button>
-        </>
-      ) : (
-        <>
-          {/*
-           * PaymentElement must be mounted for Stripe to fire `onReady`,
-           * but we keep it visually hidden and aria-hidden from SR. The
-           * sole live loading region for SR is the skeleton below.
-           */}
-          <div className="sr-only" aria-hidden="true">
-            <PaymentElement
-              onReady={onReady}
-              onLoadError={(event) => {
-                onLoadError(
-                  event?.error?.message ?? t('error.elementLoadFailed'),
-                );
-              }}
-            />
-          </div>
-          <PaySheetSkeleton />
-        </>
-      )}
+      <div
+        className={`transition-opacity duration-200 motion-reduce:duration-0 ${
+          show ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        aria-hidden={!show}
+      >
+        <PaymentElement
+          onReady={onReady}
+          onLoadError={(event) => {
+            onLoadError(event?.error?.message ?? t('error.elementLoadFailed'));
+          }}
+        />
+        <Button
+          type="submit"
+          variant="default"
+          disabled={!stripe || !elements || submitting || !show}
+          className="mt-4 w-full min-h-[44px]"
+          data-testid="pay-sheet-card-submit"
+        >
+          {submitting
+            ? t('processing.title')
+            : t('payAmount', { amount: amountLabel })}
+        </Button>
+      </div>
     </form>
   );
 }
@@ -233,13 +268,21 @@ function CardFormInner({
 export function CardForm({
   clientSecret,
   publishableKey,
+  amountDue,
+  currency,
   invoiceId,
   onSuccess,
   onFailure,
   onRequiresAction,
+  onVisible,
 }: CardFormProps) {
   const t = useTranslations('portal.payment');
+  const locale = useLocale();
   const { resolvedTheme } = useTheme();
+  // `amountDue` is carried as number-of-satang; `formatSatangThb`
+  // divides by 100 + emits "3,530.00 THB" — matches OrderSummary.
+  void currency;
+  const amountLabel = formatSatangThb(BigInt(Math.round(amountDue)), locale);
 
   const [elementReady, setElementReady] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -251,6 +294,18 @@ export function CardForm({
   // and a 300 ms minimum skeleton duration.
   const show = useMinDelay(300, elementReady);
 
+  // Notify the parent (PaySheetInternal) once the form is visible so
+  // the trust-signal footer can be shown at the same moment the form
+  // becomes interactive — not while the skeleton is still painting.
+  // Fires exactly once per card-form mount.
+  const notifiedRef = useRef(false);
+  useEffect(() => {
+    if (show && !notifiedRef.current) {
+      notifiedRef.current = true;
+      onVisible?.();
+    }
+  }, [show, onVisible]);
+
   // Memoize the Stripe promise AND the appearance options. Passing a
   // fresh object to <Elements> on every render forces a remount of the
   // internal iframe — expensive and visually jarring.
@@ -259,21 +314,87 @@ export function CardForm({
     [publishableKey],
   );
 
-  const options = useMemo<StripeElementsOptions>(
-    () => ({
+  // Stripe Elements runs in a cross-origin iframe and cannot read our
+  // CSS custom properties. Its appearance API also does NOT accept
+  // `oklch()` (Tailwind v4's default color space) — only HEX / rgb() /
+  // hsl(). To keep the theme synchronised with our design tokens
+  // WITHOUT hard-coding hex values (which would drift as the theme
+  // evolves), we resolve tokens at render time via:
+  //   1. `getComputedStyle(document.documentElement)` to read the
+  //      concrete value applied to `:root` (handles light↔dark via
+  //      next-themes class toggling on <html>).
+  //   2. Canvas 2D `fillStyle` which normalises any valid CSS color
+  //      (including `oklch()`) to a canonical `#rrggbb` / `#rrggbbaa`
+  //      string. This works because the browser's own color-parsing
+  //      pipeline is invoked.
+  // Fallbacks to Stripe's built-in theme palette when running without
+  // a DOM (SSR paths — defensive; this component is client-only).
+  const options = useMemo<StripeElementsOptions>(() => {
+    /**
+     * Resolve any CSS color (including `oklch()` / `lab()` / `hsl()`
+     * / `color(display-p3 ...)`) to `#rrggbb`. Canvas `fillStyle`
+     * reflectively returns the input color space verbatim in modern
+     * browsers (Chrome normalises `oklch` → `lab()`), so we instead
+     * RENDER one pixel into an in-memory bitmap and read the actual
+     * rgba bytes via `getImageData`. The browser's color pipeline
+     * handles every space; we get back guaranteed sRGB bytes.
+     */
+    const toHex = (cssColor: string): string | null => {
+      if (!cssColor || typeof document === 'undefined') return null;
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      // `willReadFrequently: true` silences the Chrome perf warning
+      // for repeated getImageData reads (one per CSS var resolved).
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return null;
+      try {
+        // Validate by setting + probing — invalid colors leave fillStyle
+        // at its previous value. Seed with a sentinel to detect that.
+        ctx.fillStyle = '#010203';
+        ctx.fillStyle = cssColor;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((ctx.fillStyle as any) === '#010203' && cssColor !== '#010203') {
+          return null;
+        }
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        const toHexByte = (v: number) =>
+          v.toString(16).padStart(2, '0');
+        return `#${toHexByte(r!)}${toHexByte(g!)}${toHexByte(b!)}`;
+      } catch {
+        return null;
+      }
+    };
+
+    const resolved: Record<string, string> = {
+      borderRadius: '8px',
+      fontFamily:
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+    };
+    if (typeof window !== 'undefined') {
+      const styles = getComputedStyle(document.documentElement);
+      const pairs: Array<[keyof typeof resolved | string, string]> = [
+        ['colorPrimary', styles.getPropertyValue('--primary').trim()],
+        ['colorBackground', styles.getPropertyValue('--background').trim()],
+        ['colorText', styles.getPropertyValue('--foreground').trim()],
+        ['colorDanger', styles.getPropertyValue('--destructive').trim()],
+      ];
+      for (const [key, raw] of pairs) {
+        if (!raw) continue;
+        const hex = toHex(raw);
+        if (hex) resolved[key] = hex;
+      }
+    }
+
+    return {
       clientSecret,
       appearance: {
         theme: resolvedTheme === 'dark' ? 'night' : 'stripe',
-        variables: {
-          colorPrimary: 'var(--primary)',
-          colorBackground: 'var(--background)',
-          colorText: 'var(--foreground)',
-          borderRadius: 'var(--radius)',
-        },
+        variables: resolved,
       },
-    }),
-    [clientSecret, resolvedTheme],
-  );
+    };
+  }, [clientSecret, resolvedTheme]);
 
   // G-Review Finding #10 — the previous dev-only "guard" effect was a
   // no-op (`void clientSecret`) that produced misleading signal. We do
@@ -316,6 +437,7 @@ export function CardForm({
     <Elements key={remountKey} stripe={stripePromise} options={options}>
       <CardFormInner
         invoiceId={invoiceId}
+        amountLabel={amountLabel}
         onReady={() => setElementReady(true)}
         onLoadError={(message) => setLoadError(message)}
         onSuccess={onSuccess}

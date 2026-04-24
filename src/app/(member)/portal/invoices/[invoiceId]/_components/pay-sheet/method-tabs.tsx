@@ -21,6 +21,7 @@
  */
 
 import { useTranslations } from 'next-intl';
+import { CreditCardIcon, QrCodeIcon } from 'lucide-react';
 
 import {
   Tabs,
@@ -77,6 +78,13 @@ export function MethodTabs({
     );
   }
 
+  const tabCount =
+    (enabledMethods.includes('card') ? 1 : 0) +
+    (enabledMethods.includes('promptpay') ? 1 : 0);
+  // Full-width TabsList with equal-width columns. Tailwind JIT cannot
+  // compose `grid-cols-${n}` at runtime so map to known literals.
+  const gridCols = tabCount === 2 ? 'grid-cols-2' : 'grid-cols-1';
+
   return (
     <Tabs
       value={activeMethod}
@@ -87,13 +95,15 @@ export function MethodTabs({
       }}
       data-testid="pay-sheet-method-tabs"
     >
-      <TabsList>
+      <TabsList className={`grid w-full ${gridCols} h-11 p-1`}>
         {enabledMethods.includes('card') && (
           <TabsTrigger
             value="card"
             aria-label={t('cardAriaLabel')}
             data-testid="pay-sheet-tab-card"
+            className="h-full gap-1.5"
           >
+            <CreditCardIcon aria-hidden="true" className="size-4" />
             {t('card')}
           </TabsTrigger>
         )}
@@ -102,18 +112,30 @@ export function MethodTabs({
             value="promptpay"
             aria-label={t('promptpayAriaLabel')}
             data-testid="pay-sheet-tab-promptpay"
+            className="h-full gap-1.5"
           >
+            <QrCodeIcon aria-hidden="true" className="size-4" />
             {t('promptpay')}
           </TabsTrigger>
         )}
       </TabsList>
+      {/*
+       * `keepMounted` — critical for the card panel so the Stripe
+       * <Elements> tree + PaymentElement iframe are NOT torn down
+       * when the user toggles to PromptPay and back. Without this,
+       * every tab swap re-fires the Stripe iframe load + 300ms
+       * skeleton floor + button fade-in, which reads as a visible
+       * "flash" (T082 UX feedback 2026-04-24). Base UI Tabs.Panel
+       * supports keepMounted natively — panels stay in the DOM and
+       * are hidden via `hidden` attribute when inactive.
+       */}
       {enabledMethods.includes('card') && (
-        <TabsContent value="card">
+        <TabsContent value="card" keepMounted>
           {cardPanel ?? <p>{t('cardPlaceholder')}</p>}
         </TabsContent>
       )}
       {enabledMethods.includes('promptpay') && (
-        <TabsContent value="promptpay">
+        <TabsContent value="promptpay" keepMounted>
           {promptPayPanel ?? <p>{t('promptpayPlaceholder')}</p>}
         </TabsContent>
       )}
