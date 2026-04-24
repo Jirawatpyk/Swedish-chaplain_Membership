@@ -48,6 +48,11 @@ import { useLocale, useTranslations } from 'next-intl';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 
 import { Button } from '@/components/ui/button';
+import {
+  InlineAlert,
+  InlineAlertDescription,
+  InlineAlertTitle,
+} from '@/components/ui/inline-alert';
 import { useThreeDSecurePoll } from '@/hooks/use-three-d-secure-poll';
 import {
   formatPaymentAmount,
@@ -347,17 +352,15 @@ export function PaySheetInternal({
         );
       case 'failure':
         return (
-          <div
-            role="alert"
+          <InlineAlert
+            tone="destructive"
             data-testid="pay-sheet-retry-panel"
             className="space-y-4"
           >
-            <h3 className="text-body font-medium text-foreground">
-              {t('retry.title')}
-            </h3>
-            <p className="text-caption text-muted-foreground">
+            <InlineAlertTitle>{t('retry.title')}</InlineAlertTitle>
+            <InlineAlertDescription>
               {t('retry.body', { reason: payState.reason })}
-            </p>
+            </InlineAlertDescription>
             <Button
               type="button"
               variant="default"
@@ -369,7 +372,7 @@ export function PaySheetInternal({
             >
               {t('retry.cta')}
             </Button>
-          </div>
+          </InlineAlert>
         );
     }
   })();

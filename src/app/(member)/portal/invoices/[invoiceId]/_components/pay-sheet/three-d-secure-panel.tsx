@@ -25,7 +25,7 @@
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
 
 export interface ThreeDSecurePanelProps {
   readonly onCancel: () => void;
@@ -42,7 +42,8 @@ export function ThreeDSecurePanel({ onCancel }: ThreeDSecurePanelProps) {
     >
       <h3 className="text-body font-medium text-foreground">{t('title')}</h3>
       <p className="text-caption text-muted-foreground">{t('body')}</p>
-      <Skeleton className="h-2 w-full" />
+      {/* Indeterminate progress while 3DS challenge is in flight. */}
+      <Progress tone="info" aria-label={t('title')} />
       <Button
         type="button"
         variant="ghost"

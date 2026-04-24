@@ -19,7 +19,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import {
+  InlineAlert,
+  InlineAlertDescription,
+  InlineAlertTitle,
+} from '@/components/ui/inline-alert';
 
 type Props = {
   readonly invoiceId: string;
@@ -79,14 +83,14 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
         * the visual weight it deserves (AlertTriangle + destructive
         * palette). Previous muted-card treatment under-signalled the
         * irreversibility of void vs the rest of the form copy. */}
-      <Alert variant="destructive">
+      <InlineAlert tone="destructive">
         <AlertTriangleIcon aria-hidden="true" />
-        <AlertTitle>
+        <InlineAlertTitle>
           {t('voiding')}{' '}
           <span className="font-mono">{documentNumber}</span>
-        </AlertTitle>
-        <AlertDescription>{t('terminalNotice')}</AlertDescription>
-      </Alert>
+        </InlineAlertTitle>
+        <InlineAlertDescription>{t('terminalNotice')}</InlineAlertDescription>
+      </InlineAlert>
 
       <div className="grid gap-2">
         <Label htmlFor="void-reason">{t('reasonLabel')}</Label>

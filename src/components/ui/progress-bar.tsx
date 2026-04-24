@@ -61,7 +61,11 @@ function ProgressBar({
         {readout !== null && <span aria-hidden="true">{readout}</span>}
       </div>
       <Progress
-        value={value}
+        // Under `exactOptionalPropertyTypes: true` we must omit `value`
+        // entirely when it is undefined (indeterminate mode) instead of
+        // passing `value: undefined` — the ProgressProps type rejects the
+        // latter.
+        {...(value === undefined ? {} : { value })}
         max={max}
         aria-labelledby={labelId}
         {...props}

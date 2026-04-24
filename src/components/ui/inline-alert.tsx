@@ -17,20 +17,22 @@ import { cn } from "@/lib/utils"
  *   - Callers may pass `role="status"` for non-urgent info that should use
  *     the polite live region (e.g. "Autosave enabled").
  */
+// Layout mirrors `<Alert>` (src/components/ui/alert.tsx) so call sites
+// that embed an icon + title + description render identically: svg goes
+// into col 1 / row-span-2, title into col 2 row 1, description into col
+// 2 row 2. Deviating from this pattern caused a visual regression on
+// the admin void-invoice page (icon ended up on top of the description).
 const inlineAlertVariants = cva(
-  "grid w-full items-start gap-2 rounded-md border px-3 py-2 text-sm has-[>svg]:grid-cols-[auto_1fr] [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:translate-y-0.5",
+  "relative grid w-full gap-0.5 rounded-md border px-3 py-2 text-left text-sm has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
   {
     variants: {
       tone: {
         neutral: "border-border bg-muted/50 text-foreground",
-        success:
-          "border-success/30 bg-success-surface text-success [&>svg]:text-success",
-        warning:
-          "border-warning/30 bg-warning-surface text-warning [&>svg]:text-warning",
-        info:
-          "border-info/30 bg-info-surface text-info [&>svg]:text-info",
+        success: "border-success/30 bg-success-surface text-success",
+        warning: "border-warning/30 bg-warning-surface text-warning",
+        info: "border-info/30 bg-info-surface text-info",
         destructive:
-          "border-destructive/30 bg-destructive-surface text-destructive [&>svg]:text-destructive",
+          "border-destructive/30 bg-destructive-surface text-destructive",
       },
     },
     defaultVariants: {
@@ -68,8 +70,8 @@ function InlineAlertTitle({
     <div
       data-slot="inline-alert-title"
       className={cn(
-        "col-start-auto font-medium group-has-[>svg]/alert:col-start-2",
-        className
+        "col-start-2 font-medium",
+        className,
       )}
       {...props}
     />
@@ -83,7 +85,10 @@ function InlineAlertDescription({
   return (
     <div
       data-slot="inline-alert-description"
-      className={cn("text-sm opacity-90", className)}
+      className={cn(
+        "col-start-2 text-sm opacity-90 [&_p:not(:last-child)]:mb-2",
+        className,
+      )}
       {...props}
     />
   )

@@ -20,28 +20,28 @@ describe('<Stepper>', () => {
   it('marks the current step with aria-current=step', () => {
     render(<Stepper steps={steps} aria-label="Flow" />);
     const items = screen.getAllByRole('listitem');
-    expect(items[0].getAttribute('aria-current')).toBeNull();
-    expect(items[1].getAttribute('aria-current')).toBe('step');
-    expect(items[2].getAttribute('aria-current')).toBeNull();
+    expect(items[0]!.getAttribute('aria-current')).toBeNull();
+    expect(items[1]!.getAttribute('aria-current')).toBe('step');
+    expect(items[2]!.getAttribute('aria-current')).toBeNull();
   });
 
   it('exposes data-status per step for styling and tests', () => {
     render(<Stepper steps={steps} aria-label="Flow" />);
     const items = screen.getAllByRole('listitem');
-    expect(items[0].getAttribute('data-status')).toBe('complete');
-    expect(items[1].getAttribute('data-status')).toBe('current');
-    expect(items[2].getAttribute('data-status')).toBe('upcoming');
+    expect(items[0]!.getAttribute('data-status')).toBe('complete');
+    expect(items[1]!.getAttribute('data-status')).toBe('current');
+    expect(items[2]!.getAttribute('data-status')).toBe('upcoming');
   });
 
   it('renders a check icon for completed steps and index number otherwise', () => {
     render(<Stepper steps={steps} aria-label="Flow" />);
     const items = screen.getAllByRole('listitem');
     // Completed — has an svg (lucide Check)
-    expect(items[0].querySelector('svg')).not.toBeNull();
+    expect(items[0]!.querySelector('svg')).not.toBeNull();
     // Current — shows "2"
-    expect(within(items[1]).getByText('2')).toBeDefined();
+    expect(within(items[1]!).getByText('2')).toBeDefined();
     // Upcoming — shows "3"
-    expect(within(items[2]).getByText('3')).toBeDefined();
+    expect(within(items[2]!).getByText('3')).toBeDefined();
   });
 
   it('renders the step description when provided', () => {
