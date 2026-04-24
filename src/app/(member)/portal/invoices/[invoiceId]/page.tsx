@@ -47,7 +47,15 @@ import {
 // eslint-disable-next-line no-restricted-imports
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
 import { asInvoiceId } from '@/modules/invoicing';
+// F5 G4 — presentation-only settings read (FR-016/FR-030 render-gate).
+// Same escape-hatch pattern as the CN repo above; the Application-
+// layer read-only loader is a Phase-9 consolidation candidate once
+// the admin-settings use-case lands. The repo does its own RLS-
+// scoped read under `runInTenant`, so this is safe tenant-wise.
+// eslint-disable-next-line no-restricted-imports
+import { makeDrizzleTenantPaymentSettingsRepo } from '@/modules/payments/infrastructure/repos/drizzle-tenant-payment-settings-repo';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -78,6 +86,8 @@ import {
   type InvoiceStatusIconName,
 } from '../_utils/format';
 import { ResendInvoiceButton } from '../_components/resend-invoice-button';
+import { PayNowButton } from './_components/pay-sheet/pay-now-button';
+import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 
 const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
   CheckCircle2,
@@ -160,6 +170,27 @@ export default async function PortalInvoiceDetailPage({
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;
+
+  // F5 G4 T081 — load tenant payment settings to drive the Pay-now
+  // render-gate (FR-016 / FR-030). The repo is read-only + RLS-scoped;
+  // a null/error branch collapses to the disabled-card empty state
+  // rather than erroring the page. Feature-flag gating
+  // (`FEATURE_F5_ONLINE_PAYMENT`) is defense-in-depth with the
+  // middleware-layer 503 behavior.
+  const paymentSettings = env.features.f5OnlinePayment
+    ? await makeDrizzleTenantPaymentSettingsRepo()
+        .getByTenantId(tenantCtx.slug)
+        .catch(() => null)
+    : null;
+
+  const canPayOnline =
+    env.features.f5OnlinePayment &&
+    invoice.status === 'issued' &&
+    paymentSettings !== null &&
+    paymentSettings.onlinePaymentEnabled &&
+    paymentSettings.enabledMethods.length > 0 &&
+    paymentSettings.processorAccountId.length > 0 &&
+    paymentSettings.processorPublishableKey.length > 0;
 
   // G-1 — load any credit notes attached to this invoice so the
   // member sees + can download them. Best-effort: a repo failure
@@ -394,6 +425,31 @@ export default async function PortalInvoiceDetailPage({
           </dl>
         </CardContent>
       </Card>
+
+      {/* F5 G4 T081 — online payment entry point. Only surfaced for
+        * 'issued' invoices; other states (paid / void / credited)
+        * render nothing here since there is nothing for the member
+        * to pay. */}
+      {invoice.status === 'issued' ? (
+        canPayOnline && paymentSettings ? (
+          <PayNowButton
+            invoice={{
+              id: invoice.invoiceId,
+              invoiceNumber: documentNumber,
+              amountDue: total !== null ? Number(total) : 0,
+              currency: 'THB',
+              status: invoice.status,
+            }}
+            enabledMethods={paymentSettings.enabledMethods}
+            tenantPublishableKey={paymentSettings.processorPublishableKey}
+          />
+        ) : (
+          <OnlinePaymentDisabledCard
+            invoiceNumber={documentNumber}
+            tenantContactEmail={null}
+          />
+        )
+      ) : null}
 
       {portalCreditNotes.length > 0 && (
         <Card>

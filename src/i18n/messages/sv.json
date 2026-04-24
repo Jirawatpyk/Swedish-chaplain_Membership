@@ -1571,7 +1571,64 @@
       }
     },
     "payment": {
-      "payNow": "Betala nu"
+      "payNow": "Betala nu",
+      "drawer": {
+        "title": "Betala {invoiceNumber}",
+        "close": "Stäng betalningsfönstret"
+      },
+      "methods": {
+        "card": "Kort",
+        "promptpay": "PromptPay",
+        "cardAriaLabel": "Byt till kortbetalning",
+        "promptpayAriaLabel": "Byt till PromptPay-betalning",
+        "cardPlaceholder": "Kortformulär kommer i G3",
+        "promptpayPlaceholder": "PromptPay kommer i fas 4"
+      },
+      "success": {
+        "title": "Betalningen mottagen",
+        "summaryCard": "Betalt {amount} med kort som slutar på ****{last4} den {dateTime}",
+        "summaryPromptPay": "Betalt {amount} via PromptPay den {dateTime}",
+        "downloadReceipt": "Ladda ner kvitto",
+        "close": "Stäng",
+        "autoCloseCountdown": "Stänger om {seconds} s",
+        "toast": "Betalningen mottagen. Kvittot har skickats till din e-post."
+      },
+      "processing": {
+        "title": "Behandlar betalning…",
+        "body": "Stäng inte det här fönstret — vi bekräftar din betalning med banken.",
+        "cancel": "Avbryt betalning"
+      },
+      "threeDSecure": {
+        "title": "Verifierar med din bank…",
+        "body": "Följ instruktionerna från din bank i fönstret ovan. Det kan ta upp till en minut.",
+        "cancel": "Avbryt betalning"
+      },
+      "retry": {
+        "title": "Betalningen misslyckades",
+        "body": "{reason} Försök igen eller välj en annan betalningsmetod.",
+        "cta": "Försök igen",
+        "alternativeMethod": "Använd en annan metod",
+        "genericReason": "Betalningen kunde inte slutföras.",
+        "reason3dsTimeout": "Bankverifieringen tog för lång tid."
+      },
+      "disabled": {
+        "title": "Onlinebetalning är inte tillgänglig",
+        "body": "Onlinebetalning med kort eller PromptPay är inte tillgänglig för denna faktura. Kontakta kammarens administratör för instruktioner om bankoverföring.",
+        "contactAdminCta": "Kontakta administratören",
+        "noContactEmail": "Ingen administratörs-e-post är konfigurerad ännu. Kontakta kammarkontoret direkt."
+      },
+      "qrExpiring": {
+        "title": "QR-koden förfaller snart",
+        "body": "Din PromptPay-QR förfaller om 2 minuter. Uppdatera för en ny kod om du behöver mer tid.",
+        "action": "Uppdatera QR"
+      },
+      "qrExpired": "QR-koden har förfallit. Skapa en ny för att fortsätta.",
+      "skeleton": {
+        "loading": "Läser in det säkra betalningsformuläret"
+      },
+      "error": {
+        "elementLoadFailed": "Vi kunde inte läsa in betalningsformuläret. Uppdatera och försök igen."
+      }
     }
   },
   "audit": {

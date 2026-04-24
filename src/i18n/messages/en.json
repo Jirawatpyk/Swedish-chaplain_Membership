@@ -1571,7 +1571,64 @@
       }
     },
     "payment": {
-      "payNow": "Pay now"
+      "payNow": "Pay now",
+      "drawer": {
+        "title": "Pay {invoiceNumber}",
+        "close": "Close payment drawer"
+      },
+      "methods": {
+        "card": "Card",
+        "promptpay": "PromptPay",
+        "cardAriaLabel": "Switch to card payment",
+        "promptpayAriaLabel": "Switch to PromptPay payment",
+        "cardPlaceholder": "Card form coming in G3",
+        "promptpayPlaceholder": "PromptPay coming in Phase 4"
+      },
+      "success": {
+        "title": "Payment received",
+        "summaryCard": "Paid {amount} via card ending ****{last4} on {dateTime}",
+        "summaryPromptPay": "Paid {amount} via PromptPay on {dateTime}",
+        "downloadReceipt": "Download receipt",
+        "close": "Close",
+        "autoCloseCountdown": "Closing in {seconds} s",
+        "toast": "Payment received. Receipt emailed to you."
+      },
+      "processing": {
+        "title": "Processing payment…",
+        "body": "Don't close this window — we're confirming your payment with the bank.",
+        "cancel": "Cancel payment"
+      },
+      "threeDSecure": {
+        "title": "Verifying with your bank…",
+        "body": "Follow the prompts from your bank in the window above. This can take up to a minute.",
+        "cancel": "Cancel payment"
+      },
+      "retry": {
+        "title": "Payment failed",
+        "body": "{reason} Please try again or choose a different payment method.",
+        "cta": "Try again",
+        "alternativeMethod": "Use another method",
+        "genericReason": "Payment could not be completed.",
+        "reason3dsTimeout": "Bank verification timed out."
+      },
+      "disabled": {
+        "title": "Online payment unavailable",
+        "body": "Online card and PromptPay payments are not available for this invoice. Please contact the chamber administrator for bank-transfer instructions.",
+        "contactAdminCta": "Contact administrator",
+        "noContactEmail": "No administrator email is configured yet. Please contact the chamber office directly."
+      },
+      "qrExpiring": {
+        "title": "QR expiring soon",
+        "body": "Your PromptPay QR will expire in 2 minutes. Refresh to get a fresh code if you need more time.",
+        "action": "Refresh QR"
+      },
+      "qrExpired": "QR code expired. Generate a new one to continue.",
+      "skeleton": {
+        "loading": "Loading secure payment form"
+      },
+      "error": {
+        "elementLoadFailed": "We couldn't load the payment form. Refresh and try again."
+      }
     }
   },
   "audit": {
