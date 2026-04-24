@@ -89,7 +89,11 @@ export function MethodTabs({
     >
       <TabsList>
         {enabledMethods.includes('card') && (
-          <TabsTrigger value="card" aria-label={t('cardAriaLabel')}>
+          <TabsTrigger
+            value="card"
+            aria-label={t('cardAriaLabel')}
+            data-testid="pay-sheet-tab-card"
+          >
             {t('card')}
           </TabsTrigger>
         )}
@@ -97,6 +101,7 @@ export function MethodTabs({
           <TabsTrigger
             value="promptpay"
             aria-label={t('promptpayAriaLabel')}
+            data-testid="pay-sheet-tab-promptpay"
           >
             {t('promptpay')}
           </TabsTrigger>

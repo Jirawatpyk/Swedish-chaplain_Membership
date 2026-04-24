@@ -41,7 +41,7 @@
  * + confirmation panel + the hard-cap prompt.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -108,6 +108,32 @@ export function PaySheet({
   // FR-028c — pause the F1 idle-watcher while the drawer is open.
   useIdleWarningSuppression(open);
 
+  // FR-028h — mobile full-screen vs desktop auto-height via matchMedia
+  // (see SheetContent style prop below for why Tailwind class overrides
+  // were unreliable against the shadcn primitive's `data-[side=right]:h-full`
+  // cascade even with matching variant prefix + trailing `!`).
+  //
+  // T082 empirical E2E discovery #3 (2026-04-24): initialising the
+  // state lazily from `window.matchMedia` (synchronous on client, and
+  // PaySheet ships via `next/dynamic({ssr: false})` so SSR is never
+  // entered) avoids the first-render flash where mobile viewports
+  // render with desktop styles (`height: auto`) before `useEffect`
+  // swaps them. Playwright's `networkidle` wait + `.boundingBox()`
+  // was catching the flash frame + reporting 1087 px (content height)
+  // instead of 568 px.
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 639.98px)').matches,
+  );
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(max-width: 639.98px)');
+    const handler = (e: MediaQueryListEvent) => setIsMobileViewport(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (!next) {
@@ -122,7 +148,47 @@ export function PaySheet({
         <SheetContent
           side="right"
           showCloseButton={false}
-          className="sm:max-w-[480px] w-full h-full sm:h-auto"
+          // T082 empirical E2E discovery (2026-04-24): shadcn
+          // `<SheetContent side="right">` ships with default variants
+          // `data-[side=right]:w-3/4` (75 %) + `data-[side=right]:sm:max-w-[var(--modal-max-width-md)]`
+          // (= 32 rem = 512 px). Both Tailwind class overrides AND
+          // matching `data-[side=right]:` prefix overrides failed to
+          // defeat the primitive cascade reliably — the drawer
+          // rendered at 612 px on a 320 px iPhone viewport, which
+          // violates FR-028h. Override via a scoped CSS variable:
+          // `--modal-max-width-md` pins the sm-and-up max-width, and
+          // a compound `data-[side=right]:` utility pins the mobile
+          // width to 100 %. Inline style is a belt-and-braces
+          // guarantee against future primitive changes.
+          style={{
+            // `--modal-max-width-md: 30rem` (= 480 px) pins the sm-and-up
+            // max-width via the CSS var the primitive reads.
+            ['--modal-max-width-md' as string]: '30rem',
+            // `width` + `height` via runtime matchMedia (see
+            // `isMobileViewport` below). Inline-style beats any CSS
+            // rule from the shadcn primitive regardless of specificity
+            // or !important, guaranteeing FR-028h literal compliance:
+            //   < 640 px  → 100% × 100% (full-screen)
+            //   ≥ 640 px  → width from CSS var (≤ 480 px), auto height
+            width: '100%',
+            // Use `100vh` (viewport-relative) on mobile instead of `100%`
+            // (parent-relative). Inside Radix Dialog's Portal the
+            // containing-block can resolve to the body element when
+            // `isMobile: true` emulation is active — body scrollHeight
+            // (e.g. 1087 px on portal detail page) would then be the
+            // reference instead of viewport (568 px on iPhone SE).
+            // `100vh` ties height to the viewport unconditionally.
+            // T082 empirical E2E discovery #4 (2026-04-24).
+            height: isMobileViewport ? '100vh' : 'auto',
+            // T082 empirical E2E discovery #2 (2026-04-24): the primitive
+            // applies `data-[side=right]:inset-y-0` (= top: 0 + bottom: 0)
+            // which together with `position: fixed` STRETCHES the element
+            // to full viewport height regardless of declared `height:
+            // auto`. Clear `bottom` on desktop so the right-drawer sits
+            // top-aligned at its content height. On mobile keep the
+            // primitive behaviour (full-viewport stretch is intentional).
+            bottom: isMobileViewport ? undefined : 'auto',
+          }}
           data-testid="pay-sheet-content"
         >
           <SheetHeader className="sticky top-0 z-10 flex flex-row items-center justify-between bg-popover border-b">
@@ -151,7 +217,15 @@ export function PaySheet({
            * visible above the chrome.
            */}
           <div
-            className="overflow-y-auto p-4"
+            // T082 empirical E2E discovery (2026-04-24): SC 2.4.11
+            // Focus-Not-Obscured requires focused element top >
+            // stickyHeader.bottom + 24 px. The previous `p-4` gave
+            // only 16 px of padding-top, so the first interactive
+            // element (method tabs) landed 16 px below the sticky
+            // header — 8 px short of the buffer. `pt-10` (= 40 px)
+            // provides 24 px + 16 px breathing room for the focus
+            // ring to sit comfortably below the header chrome.
+            className="overflow-y-auto px-4 pt-10 pb-4"
             style={{ scrollPaddingTop: 'var(--pay-sheet-header-height, 64px)' }}
           >
             {open ? (

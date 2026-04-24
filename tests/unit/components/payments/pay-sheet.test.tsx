@@ -221,14 +221,30 @@ describe('<PaySheet>', () => {
     expect(closeBtn.getAttribute('aria-label')).toBe('Close payment drawer');
   });
 
-  it('drawer content uses mobile-full-screen + desktop-480px classes (FR-028h)', () => {
+  it('drawer content uses FR-028h-compliant inline style + CSS var override', () => {
+    // T082 empirical E2E discovery (2026-04-24): the Tailwind classes
+    // previously asserted here (`sm:max-w-[480px]`, `w-full`, `h-full`,
+    // `sm:h-auto`) lost the specificity battle against the shadcn
+    // `<SheetContent side="right">` primitive's data-attribute variant
+    // classes (`data-[side=right]:w-3/4`, `data-[side=right]:h-full`,
+    // `data-[side=right]:sm:max-w-[var(--modal-max-width-md)]`) even
+    // after switching to `data-[side=right]:…!` prefix + trailing
+    // important modifier. The reliable override is:
+    //   - inline `--modal-max-width-md: 30rem` (pins 480 px max-width
+    //     via the CSS var the primitive reads)
+    //   - inline `width: 100%` (always)
+    //   - inline `height: '100vh' | 'auto'` (via matchMedia state)
+    //   - inline `bottom: 'auto'` on desktop (clears inset-y-0
+    //     full-height stretch)
+    // Unit-test verification: assert the inline style carries the
+    // FR-028h contract. E2E regression verified at all 3 viewports via
+    // `tests/e2e/pay-sheet-viewport.spec.ts`.
     searchParamsMock.current = new URLSearchParams('pay=1');
     renderPaySheet();
     const content = screen.getByTestId('pay-sheet-content');
-    expect(content.className).toMatch(/sm:max-w-\[480px\]/);
-    expect(content.className).toMatch(/w-full/);
-    expect(content.className).toMatch(/h-full/);
-    expect(content.className).toMatch(/sm:h-auto/);
+    const inlineStyle = content.getAttribute('style') ?? '';
+    expect(inlineStyle).toMatch(/--modal-max-width-md:\s*30rem/);
+    expect(inlineStyle).toMatch(/width:\s*100%/);
   });
 
   it('PCI: never writes to localStorage or sessionStorage during drawer lifecycle', () => {

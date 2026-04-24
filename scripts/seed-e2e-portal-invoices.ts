@@ -59,6 +59,18 @@ const E2E_PASSWORD = 'E2E-Testing-Password-2026!xZ'; // mirrors seed-e2e-user.ts
 const E2E_MEMBER_EMAIL = 'e2e-member@swecham.test';
 const E2E_MEMBER_EMAIL_EMPTY = 'e2e-member-empty@swecham.test';
 
+/**
+ * T082 — Deterministic invoice id for the ISSUED (pay-sheet-ready)
+ * fixture. Pinned so E2E specs can consume `E2E_ISSUED_INVOICE_ID`
+ * from `.env.local` without needing to re-scrape the seed output on
+ * every re-run. Matches `SC-2026-900003` below.
+ *
+ * Format: a valid UUIDv4 in the `e2e-fixture` prefix namespace. The
+ * `invoices.invoice_id` column is `uuid NOT NULL`; this value is
+ * parseable by Postgres and reserved for fixture use.
+ */
+const E2E_ISSUED_INVOICE_ID = '00000000-e2e0-4fff-9ffe-000000900003';
+
 // --- Guards -------------------------------------------------------------------
 
 function requireSwechamTenant(): TenantContext {
@@ -372,13 +384,31 @@ async function seedInvoicesIfMissing(
         )
         .limit(1);
       if (existing.length > 0) {
-        console.log(`  invoice ${s.docNumber} already present — skip`);
+        const existingId = existing[0]!.invoiceId;
+        if (s.status === 'issued' && s.sequenceNumber === 900003) {
+          // T082: surface the existing UUID so the operator can copy
+          // the correct E2E_ISSUED_INVOICE_ID into .env.local even if
+          // the row was inserted before deterministic-UUID pinning
+          // landed (pre-T082 seeds used randomUUID() for every row).
+          console.log(
+            `  invoice ${s.docNumber} already present — invoice_id=${existingId}`,
+          );
+        } else {
+          console.log(`  invoice ${s.docNumber} already present — skip`);
+        }
         continue;
       }
 
       const subtotal = (s.totalSatang * 100n) / 107n;
       const vat = s.totalSatang - subtotal;
-      const invoiceId = randomUUID();
+      // T082: pin the ISSUED fixture to a deterministic UUID so the
+      // `E2E_ISSUED_INVOICE_ID` env var in .env.local stays stable
+      // across re-seeds. Paid fixtures stay on random UUIDs (they
+      // are not URL-referenced by E2E specs).
+      const invoiceId =
+        s.status === 'issued' && s.sequenceNumber === 900003
+          ? E2E_ISSUED_INVOICE_ID
+          : randomUUID();
       // Render + upload the real PDF BEFORE inserting the row so the
       // blob key we persist always points at a retrievable object.
       // If upload fails, the transaction rolls back and the row is
@@ -490,12 +520,29 @@ async function main(): Promise<void> {
   );
   // No invoices for Echo — AS3 empty-state surface.
 
+  // T082 — surface the actual ISSUED invoice_id in the DB (may be the
+  // deterministic pinned UUID for fresh seeds, or a pre-T082 random
+  // UUID if the row already existed). Prefer reading back from DB to
+  // tolerate both cases cleanly.
+  const [issuedRow] = await db
+    .select({ invoiceId: invoices.invoiceId })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.tenantId, ctx.slug),
+        eq(invoices.documentNumber, 'SC-2026-900003'),
+      ),
+    )
+    .limit(1);
+  const issuedId = issuedRow?.invoiceId ?? E2E_ISSUED_INVOICE_ID;
+
   console.log('\n----------------------------------------');
   console.log('Add to .env.local:');
   console.log(`  E2E_MEMBER_HAS_INVOICES=1`);
   console.log(`  E2E_MEMBER_EMAIL_EMPTY='${E2E_MEMBER_EMAIL_EMPTY}'`);
   console.log(`  E2E_MEMBER_PASSWORD_EMPTY='${E2E_PASSWORD}'`);
   console.log(`  E2E_MEMBER_EMPTY=1`);
+  console.log(`  E2E_ISSUED_INVOICE_ID='${issuedId}'`);
   console.log('----------------------------------------');
 }
 

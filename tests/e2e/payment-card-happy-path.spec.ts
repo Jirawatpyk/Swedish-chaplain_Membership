@@ -33,14 +33,18 @@
  * Enforce via playwright.config.ts `projects[].use.workers` or the
  * `--workers=1` flag when running this suite in isolation.
  */
-import { test, expect } from './fixtures';
+// T082: swap `test` for `memberTest` so the E2E member is auto-signed-in
+// before each spec body. Removes the inline sign-in boilerplate that
+// every test used to repeat.
+import { memberTest as test, expect } from './helpers/member-session';
 
 // ---------------------------------------------------------------------------
 // Environment: sign-in credentials + a pre-seeded issued invoice ID
 // ---------------------------------------------------------------------------
 
-const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
-const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+// Sign-in credentials are consumed by the `memberTest` fixture (see
+// `./helpers/member-session.ts`). We only need the issued-invoice id
+// here — specs navigate directly to the detail page.
 const ISSUED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 
 // ---------------------------------------------------------------------------
@@ -55,9 +59,12 @@ const ISSUED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 // ---------------------------------------------------------------------------
 
 test.describe('payment card happy path — @payment @e2e (T046)', () => {
-  test.fixme(
-    !MEMBER_EMAIL || !MEMBER_PASSWORD || !ISSUED_INVOICE_ID,
-    'TODO: unskip in T076/T079/T081/T082/T083 — member fixture + PaySheet + Stripe Elements not yet implemented',
+  // T082 unskipped: sign-in handled by `memberTest` fixture; ISSUED
+  // invoice seeded deterministically. Skip cleanly when the fixture
+  // env var is absent instead of failing ambiguously.
+  test.skip(
+    !ISSUED_INVOICE_ID,
+    'E2E_ISSUED_INVOICE_ID missing from .env.local — run `pnpm tsx scripts/seed-e2e-portal-invoices.ts` and `pnpm seed:f5-e2e`.',
   );
 
   test('pay-sheet opens and skeleton is visible within 300 ms of sheet open (C-A shimmer contract)', async ({
@@ -67,14 +74,8 @@ test.describe('payment card happy path — @payment @e2e (T046)', () => {
     // The assertions below are written now so the implementer has a clear
     // spec to satisfy (TDD: failing spec authored before implementation).
 
-    // Step 1: Sign in as member
-    await page.goto('/portal/sign-in');
-    await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL('**/portal', { timeout: 30_000 });
-
-    // Step 2: Navigate to issued invoice
+    // T082: sign-in handled by `memberTest` fixture. Navigate straight
+    // to the issued invoice.
     await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID!}`);
     await page.waitForLoadState('networkidle');
 
@@ -109,12 +110,7 @@ test.describe('payment card happy path — @payment @e2e (T046)', () => {
   test('Stripe Elements iframe origin is js.stripe.com (FR-025 CSP)', async ({
     page,
   }) => {
-    await page.goto('/portal/sign-in');
-    await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL('**/portal', { timeout: 30_000 });
-
+    // T082: sign-in handled by `memberTest` fixture.
     await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID!}`);
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: /pay|pay now|pay invoice/i }).click();
@@ -139,11 +135,7 @@ test.describe('payment card happy path — @payment @e2e (T046)', () => {
   test('full card payment: 4242 4242 4242 4242 → confirmation panel + downloadReceipt CTA', async ({
     page,
   }) => {
-    await page.goto('/portal/sign-in');
-    await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL('**/portal', { timeout: 30_000 });
+    // T082: sign-in handled by `memberTest` fixture.
 
     await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID!}`);
     await page.waitForLoadState('networkidle');
