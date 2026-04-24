@@ -8,8 +8,13 @@
 -- migration, only promptpay inserts pass; after, both card+pending
 -- (NULL metadata) and card+succeeded (NOT NULL metadata) pass.
 
+-- Drizzle-reviewer follow-up #3 (2026-04-24): use IF EXISTS on the DROP so
+-- a branch reset that re-runs this migration does not fail with
+-- "constraint does not exist". Drizzle's _journal.json normally prevents
+-- re-apply but this guard is cheap belt-and-braces for local dev + CI
+-- environments that wipe + replay migrations.
 ALTER TABLE "payments"
-  DROP CONSTRAINT "payments_card_metadata_iff_card";
+  DROP CONSTRAINT IF EXISTS "payments_card_metadata_iff_card";
 
 ALTER TABLE "payments"
   ADD CONSTRAINT "payments_card_metadata_iff_card"

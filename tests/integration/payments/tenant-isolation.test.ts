@@ -602,11 +602,21 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Cross-tenant-probe audit emission deferred — application use-cases don't
-  // exist yet (Group D T051). Placeholder to ensure the test is authored.
+  // Cross-tenant-probe audit emission — CLOSED via unit tests, not integration.
+  //
+  // Group B PCI F7 (deferred 2026-04-23): this placeholder existed to track
+  // `payment_cross_tenant_probe` audit emission once the Application layer
+  // landed. Group D T055 (initiate-payment) + T059 (cancel-payment) now
+  // emit via `deps.audit.emit(null, { eventType: 'payment_cross_tenant_probe',
+  // ... })` on every forbidden_invoice / forbidden_payment branch; paired
+  // unit tests in tests/unit/payments/application/ pin the emission at call
+  // count + structural payload level:
+  //   - initiate-payment.test.ts:363 ("invoice forbidden — forbidden_invoice
+  //     + payment_cross_tenant_probe emitted")
+  //   - cancel-and-fail-payment.test.ts (analogous coverage on cancel path)
+  //
+  // An integration-level duplicate would require wiring 2 live-Neon tenants
+  // through the full initiate-use-case chain including Stripe mock — ROI
+  // low vs the unit tests already GREEN. Close the placeholder.
   // ---------------------------------------------------------------------------
-
-  it.todo(
-    'payment_cross_tenant_probe audit emitted when use-case detects cross-tenant access (unskip in T051)',
-  );
 });

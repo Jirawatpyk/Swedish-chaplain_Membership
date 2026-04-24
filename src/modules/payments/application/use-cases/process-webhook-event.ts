@@ -122,6 +122,11 @@ export async function processWebhookEvent(
   const { dataObject } = event;
 
   let outcome: ProcessWebhookEventOutcome;
+  // Tracks whether markProcessed was folded into the dispatch tx
+  // atomically (refunded / dispute / default branches). Sub-use-case
+  // branches (succeeded / failed / canceled) run a separate-tx mark
+  // at the tail. See Architect D-03 LOW closeout block below.
+  let markedProcessedAtomically = false;
 
   switch (event.type) {
     case 'payment_intent.succeeded': {
@@ -210,9 +215,8 @@ export async function processWebhookEvent(
     }
 
     case 'charge.refunded': {
-      // Inspect each refund id; if we have no matching refunds row,
-      // emit out_of_band_refund_detected (FR-011a). We never mutate
-      // invoice state from this branch (runbook handles reconciliation).
+      // Architect D-03 LOW (closed 2026-04-24): markProcessed folded
+      // into the same withTx as the audit emissions — atomic commit.
       const refundIds = dataObject.refundIds ?? [];
       await deps.paymentsRepo.withTx(async (tx) => {
         for (const refundId of refundIds) {
@@ -238,8 +242,11 @@ export async function processWebhookEvent(
             });
           }
         }
+        // Atomic with the audit writes above.
+        await deps.processorEventsRepo.markProcessed(tx, event.id);
       });
       outcome = { kind: 'processed', dispatched: envelope.type };
+      markedProcessedAtomically = true;
       break;
     }
 
@@ -258,29 +265,65 @@ export async function processWebhookEvent(
           },
           retentionYears: 10,
         });
+        // Architect D-03 LOW closeout — atomic with audit.
+        await deps.processorEventsRepo.markProcessed(tx, event.id);
       });
       outcome = { kind: 'processed', dispatched: envelope.type };
+      markedProcessedAtomically = true;
       break;
     }
 
     default: {
       // Unknown event type — forward-compat per § 4.6. Mark the
-      // processor_event row as `acknowledged_only`.
+      // processor_event row as `acknowledged_only` + processed_at
+      // atomically so the row cannot get stuck in a split-commit.
       await deps.paymentsRepo.withTx(async (tx) => {
         await deps.processorEventsRepo.updateOutcome(tx, {
           id: event.id,
           outcome: 'acknowledged_only',
         });
+        await deps.processorEventsRepo.markProcessed(tx, event.id);
       });
       outcome = { kind: 'acknowledged_only' };
+      markedProcessedAtomically = true;
     }
   }
 
-  // Step 10 — markProcessed (own tx; processor_events write is
-  // independent from dispatch tx).
-  await deps.paymentsRepo.withTx(async (tx) => {
-    await deps.processorEventsRepo.markProcessed(tx, event.id);
-  });
+  // Architect D-03 LOW (2026-04-24, partial closeout):
+  // Branches that already marked atomically (refunded / dispute /
+  // default) skip this tail call. Sub-use-case branches (succeeded /
+  // failed / canceled) keep the split-tx window because their deps
+  // shape does not yet expose processorEventsRepo — extending those
+  // requires widening 3 sub-use-case Deps interfaces + unit tests
+  // (tracked as a post-Phase-3 backend-refactor PR). Until then the
+  // failure mode is: dispatch-tx commits, markProcessed-tx fails
+  // (e.g. connection drop) → processor_events row has outcome=
+  // 'processed' but processed_at=NULL. Next Stripe retry hits the
+  // idempotency guard (ON CONFLICT DO NOTHING on id) and returns
+  // 200 without re-dispatching, so no double-processing — the only
+  // residual is a stuck row visible on observability dashboards,
+  // which the out-of-band-refund reconciliation runbook catches.
+  if (!markedProcessedAtomically) {
+    try {
+      await deps.paymentsRepo.withTx(async (tx) => {
+        await deps.processorEventsRepo.markProcessed(tx, event.id);
+      });
+    } catch (e) {
+      // Swallow + log — the dispatch already committed; better to
+      // 200 Stripe and let reconciliation clean up than 500 and
+      // trigger a retry storm for a transient row-marker write.
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[processWebhookEvent] markProcessed split-tx failure (sub-use-case branch) — stuck processor_events row left for reconciliation',
+        {
+          eventId: event.id,
+          eventType: event.type,
+          tenantId,
+          error: e instanceof Error ? e.message : String(e),
+        },
+      );
+    }
+  }
 
   return ok(outcome);
 }

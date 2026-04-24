@@ -309,6 +309,13 @@
       "when": 1777334410000,
       "tag": "0043_audit_log_rate_limit_events",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1777420800000,
+      "tag": "0044_fix_card_metadata_check_canceled_failed",
+      "breakpoints": true
     }
   ]
 }

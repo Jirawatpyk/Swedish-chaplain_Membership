@@ -365,6 +365,59 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     expect(inserted.card).toBeNull();
   });
 
+  it('migration 0042: card transitions pending → canceled with NULL card metadata (Drizzle-reviewer #1)', async () => {
+    // Drizzle-reviewer follow-up #1 (2026-04-24): verify the relaxed
+    // CHECK allows a card-rail payment that NEVER reached succeeded
+    // (user cancelled before webhook confirmed) to terminate with
+    // NULL card metadata. Without this, migration 0042's
+    // `status <> 'pending' AND card_* NOT NULL` branch would reject
+    // the UPDATE because card metadata was never populated.
+    const invoiceId = nextInvoice();
+    const repo = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const paymentId = makeUlid();
+    const pi = `pi_test_${randomUUID().slice(0, 8)}`;
+    const now = new Date();
+
+    // Insert card + pending with NULL metadata (0042 path).
+    await repo.withTx(async (tx) =>
+      repo.insert(tx, {
+        id: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'card',
+        amountSatang: 3_200_000n,
+        processorPaymentIntentId: pi,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: now,
+        actorUserId: user.userId,
+        correlationId: 'corr-r-drizzle-1-pending',
+      }),
+    );
+
+    // Transition directly to canceled WITHOUT painting card metadata.
+    // Must succeed under the relaxed CHECK — the 'card_metadata NOT
+    // NULL on non-pending' branch only applies when card metadata was
+    // populated during the succeeded lineage; a pre-succeeded cancel
+    // leaves all card_* as NULL and the CHECK must accept that state.
+    await repo.withTx(async (tx) =>
+      repo.updateStatus(tx, {
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentId as PaymentId,
+        nextStatus: 'canceled',
+        completedAt: new Date(now.getTime() + 1_000),
+      }),
+    );
+
+    // Confirm persistence + NULL card metadata survives.
+    const reloaded = await repo.withTx((tx) =>
+      repo.lockForUpdateByPaymentIntentId(tx, pi),
+    );
+    expect(reloaded?.status).toBe('canceled');
+    expect(reloaded?.card).toBeNull();
+  });
+
   it('RLS cross-tenant isolation: tenantB repo sees none of tenantA rows', async () => {
     const repoB = makeDrizzlePaymentsRepo(tenantB.ctx.slug);
     // Query tenant B's repo with tenant A's invoice (any prior-allocated id) + actor.

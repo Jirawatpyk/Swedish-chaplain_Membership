@@ -251,8 +251,13 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
           FROM payments
          WHERE tenant_id = ${tenantIdArg}
            AND invoice_id = ${invoiceId}
-      `)) as unknown as Array<{ max_seq: number }>;
-      const current = rows[0]?.max_seq ?? 0;
+      `)) as unknown as Array<{ max_seq: number | string }>;
+      // Drizzle + postgres.js normally returns `int` columns as JS numbers,
+      // but defensive `Number()` cast guards against the bigint/string
+      // fallback path some driver versions emit (Drizzle-reviewer
+      // follow-up #4, 2026-04-24) — without this, a string "0" would
+      // silently concatenate with `+ 1` to become "01" (JS string semantics).
+      const current = Number(rows[0]?.max_seq ?? 0);
       return current + 1;
     },
   };
