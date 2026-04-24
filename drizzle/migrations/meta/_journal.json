@@ -295,6 +295,13 @@
       "when": 1777334408000,
       "tag": "0041_seed_system_actors",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1777334409000,
+      "tag": "0042_relax_payment_card_metadata_check",
+      "breakpoints": true
     }
   ]
 }

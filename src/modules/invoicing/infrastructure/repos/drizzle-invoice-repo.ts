@@ -182,11 +182,60 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
   };
 }
 
-export function makeDrizzleInvoiceRepo(tenantId: string): InvoiceRepo {
+/**
+ * Build an InvoiceRepo bound to `tenantId`.
+ *
+ * When `externalTx` is supplied, the repo's `withTx` short-circuits to
+ * invoke the callback directly against that transaction INSTEAD of
+ * opening a new `runInTenant` tx. This is the tx-sharing path used by
+ * the F5 → F4 invoicing-bridge (Reliability D-03, Group E2b): F5 owns
+ * the outer tx, and threads it into F4's `markPaidFromProcessor` so the
+ * payment-row update and the invoice flip to `paid` commit atomically.
+ *
+ * Preconditions when `externalTx` is supplied:
+ *   - Caller has already entered `runInTenant` (so `app.current_tenant`
+ *     is SET LOCAL on the same session) — the F5 confirm-payment
+ *     use-case guarantees this by wrapping the bridge call in its own
+ *     `paymentsRepo.withTx`, which IS `runInTenant`-based.
+ *
+ * When `externalTx` is absent, behaviour is unchanged: F4 opens its
+ * own tenant-bound tx exactly as it did before.
+ */
+export function makeDrizzleInvoiceRepo(
+  tenantId: string,
+  externalTx?: unknown,
+): InvoiceRepo {
   const ctx = asTenantContext(tenantId);
 
   return {
     async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      if (externalTx !== undefined) {
+        // D-03 tx-reuse path: run inline against the caller's tx.
+        // Do NOT open a nested `runInTenant` — Postgres does not
+        // support true nested transactions and `SET LOCAL
+        // app.current_tenant` has already been established on this
+        // connection by the outer `runInTenant`.
+        //
+        // Backend-dev review F-01 (Group E, 2026-04-24): runtime
+        // tenant-mismatch guard. If a future composer mistakenly
+        // hands us tenantA's tx while requesting tenantB writes, the
+        // outer `SET LOCAL app.current_tenant=A` would still be in
+        // effect → F4 writes against tenantA's RLS namespace silently.
+        // Re-read `current_setting('app.current_tenant')` and refuse
+        // if it disagrees with this repo's bound tenantId. Constitution
+        // Principle I clause 3 — make the precondition explicit.
+        const externalTxTyped = externalTx as TenantTx;
+        const probe = (await externalTxTyped.execute(
+          sql`SELECT current_setting('app.current_tenant', TRUE) AS current_tenant`,
+        )) as unknown as Array<{ current_tenant: string | null }>;
+        const current_tenant = probe[0]?.current_tenant ?? null;
+        if (current_tenant !== ctx.slug) {
+          throw new Error(
+            `makeDrizzleInvoiceRepo: externalTx tenant mismatch — repo bound to "${ctx.slug}" but tx carries "${current_tenant ?? '(unset)'}". Refusing to write to a different tenant's namespace.`,
+          );
+        }
+        return fn(externalTx);
+      }
       return runInTenant(ctx, async (tx) => fn(tx));
     },
 

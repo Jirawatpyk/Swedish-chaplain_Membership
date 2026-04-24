@@ -1,0 +1,385 @@
+/**
+ * T061 integration — DrizzlePaymentsRepo against live Neon.
+ *
+ * Exercises the minimum-viable contract surface:
+ *   - insert + lockForUpdate round-trip (card row + promptpay row)
+ *   - updateStatus promotes pending → succeeded and paints card metadata
+ *   - findPendingByInvoiceAndActor returns null when already terminal
+ *   - findPendingByInvoiceAndActor works BOTH with caller-supplied tx
+ *     AND with the repo's own runInTenant read tx (D-01 resume path)
+ *   - listSiblingStatusesForInvariant excludes self
+ *   - RLS cross-tenant isolation: tenant B's repo sees ZERO of tenant A's
+ *     pending rows even when given tenant A's invoiceId / actorUserId
+ *
+ * Mocking policy: this file hits live Postgres. No SUT mocks.
+ */
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { runInTenant } from '@/lib/db';
+import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
+import {
+  payments,
+  tenantPaymentSettings,
+  type NewTenantPaymentSettingsRow,
+} from '@/modules/payments/infrastructure/schema';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+import type { PaymentId } from '@/modules/payments/domain/payment';
+import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+
+const MATRIX: BenefitMatrix = {
+  eblast_per_year: 1,
+  website_page_type: 'member_news_update',
+  homepage_logo_category: 'regular',
+  directory_listing_size: 'half_page',
+  event_discount_scope: 'all_employees',
+  events_cobranded_access: false,
+  cultural_tickets_per_year: 0,
+  m2m_benefits_access: true,
+  business_referrals: true,
+  tailor_made_services: false,
+  partnership: null,
+};
+
+function makeUlid(): string {
+  return `pmt_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+}
+
+describe('DrizzlePaymentsRepo — live Neon', () => {
+  let tenantA: TestTenant;
+  let tenantB: TestTenant;
+  let user: TestUser;
+  let aInvoiceIds: string[] = [];
+  let aMemberId: string;
+  let bInvoiceId: string;
+  let bMemberId: string;
+
+  // Unique-constraint `payments_one_active_per_invoice` — one pending
+  // per invoice. Use a fresh invoice per test by allocating 3 up
+  // front and consuming sequentially.
+  let invoiceIndex = 0;
+  const nextInvoice = (): string => {
+    const id = aInvoiceIds[invoiceIndex];
+    invoiceIndex += 1;
+    if (!id) throw new Error('drizzle-payments-repo.test: ran out of seeded invoices');
+    return id;
+  };
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    const pair = await createTwoTestTenants();
+    tenantA = pair.a;
+    tenantB = pair.b;
+
+    aMemberId = randomUUID();
+    bMemberId = randomUUID();
+    aInvoiceIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    bInvoiceId = randomUUID();
+
+    // Seed payment-settings + F4 parent chain for both tenants.
+    // tenant A gets multiple invoices (one per test); tenant B gets one.
+    for (const [t, prefix, memberId, invoiceIds] of [
+      [tenantA, 'alpha', aMemberId, aInvoiceIds],
+      [tenantB, 'beta', bMemberId, [bInvoiceId]],
+    ] as const) {
+      const settings: NewTenantPaymentSettingsRow = {
+        tenantId: t.ctx.slug,
+        processor: 'stripe',
+        processorEnvironment: 'test',
+        processorAccountId: `acct_test_${t.ctx.slug.slice(-8)}`,
+        processorPublishableKey: `pk_test_${t.ctx.slug.slice(-8)}`,
+        enabledMethods: ['card', 'promptpay'],
+        onlinePaymentEnabled: true,
+        autoEmailOnPayment: true,
+        promptpayQrExpirySeconds: 900,
+        allowAnonymousPaylink: false,
+      };
+      await runInTenant(t.ctx, async (tx) => {
+        await tx.insert(tenantPaymentSettings).values(settings);
+        await tx.insert(membershipPlans).values({
+          tenantId: t.ctx.slug,
+          planId: `${prefix}-plan`,
+          planYear: 2026,
+          planName: { en: `${prefix} Plan` },
+          description: { en: '' },
+          sortOrder: 10,
+          planCategory: 'corporate',
+          memberTypeScope: 'company',
+          annualFeeMinorUnits: 1_000_000,
+          includesCorporatePlanId: null,
+          minTurnoverMinorUnits: null,
+          maxTurnoverMinorUnits: null,
+          maxDurationYears: null,
+          maxMemberAge: null,
+          benefitMatrix: MATRIX,
+          isActive: true,
+          createdBy: user.userId,
+          updatedBy: user.userId,
+        });
+        await tx.insert(members).values({
+          tenantId: t.ctx.slug,
+          memberId,
+          companyName: `${prefix} Co`,
+          country: 'TH',
+          planId: `${prefix}-plan`,
+          planYear: 2026,
+        });
+        await tx.insert(tenantInvoiceSettings).values({
+          tenantId: t.ctx.slug,
+          currencyCode: 'THB',
+          vatRate: '0.0700',
+          registrationFeeSatang: 500000n,
+          legalNameTh: 'ทดสอบ',
+          legalNameEn: 'Test',
+          taxId: '0000000000000',
+          registeredAddressTh: 'Bangkok',
+          registeredAddressEn: 'Bangkok',
+          invoiceNumberPrefix: 'T',
+          creditNoteNumberPrefix: 'TC',
+        });
+        await tx.insert(tenantDocumentSequences).values({
+          tenantId: t.ctx.slug,
+          documentType: 'invoice',
+          fiscalYear: 2026,
+        });
+        for (const iid of invoiceIds) {
+          await tx.insert(invoices).values({
+            tenantId: t.ctx.slug,
+            invoiceId: iid,
+            memberId,
+            planYear: 2026,
+            planId: `${prefix}-plan`,
+            draftByUserId: user.userId,
+          });
+        }
+      });
+    }
+  }, 90_000);
+
+  afterAll(async () => {
+    await tenantA.cleanup().catch((e) => console.error('tenantA cleanup:', e));
+    await tenantB.cleanup().catch((e) => console.error('tenantB cleanup:', e));
+  });
+
+  // NOTE: The original DB CHECK `payments_card_metadata_iff_card`
+  // (migration 0033) required card_* non-null on every card row,
+  // including pending rows where card metadata is not yet known.
+  // Migration 0042 (Group E2b) relaxed the constraint so
+  // method='card' + status='pending' + NULL card metadata inserts
+  // pass — aligning the DB with the Domain invariant
+  // `assertCardMetadataComplete` (Group C T047). The insert contract
+  // path is exercised below; the updateStatus card-painting branch
+  // remains covered in unit tests against the port.
+
+  it('insert + lockForUpdateByPaymentIntentId round-trips a promptpay payment', async () => {
+    const invoiceId = nextInvoice();
+    const repo = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const paymentId = makeUlid();
+    const pi = `pi_test_${randomUUID().slice(0, 8)}`;
+    const now = new Date();
+
+    const inserted = await repo.withTx(async (tx) =>
+      repo.insert(tx, {
+        id: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'promptpay',
+        amountSatang: 5_350_000n,
+        processorPaymentIntentId: pi,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: now,
+        actorUserId: user.userId,
+        correlationId: 'corr-r-001',
+      }),
+    );
+    expect(inserted.status).toBe('pending');
+    expect(inserted.card).toBeNull();
+
+    const locked = await repo.withTx(async (tx) =>
+      repo.lockForUpdateByPaymentIntentId(tx, pi),
+    );
+    expect(locked?.id).toBe(paymentId);
+    expect(locked?.method).toBe('promptpay');
+  });
+
+  it('updateStatus promotes promptpay pending → succeeded; sibling list excludes self', async () => {
+    // DB UNIQUE INDEX `payments_one_active_per_invoice` is partial on
+    // `(tenant_id, invoice_id, status)` WHERE status IN (pending,
+    // succeeded, partially_refunded). So to have a sibling co-exist
+    // with a succeeded row we need its FINAL status to be in the
+    // terminal-and-excluded set (failed / canceled / refunded) OR
+    // to share the invoice but differ in status bucket. Here we park
+    // the sibling at `failed` (excluded from the index) so the
+    // subject can transition to `succeeded` without collision.
+    const invoiceId = nextInvoice();
+    const repo = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const paymentId = makeUlid();
+    const siblingPaymentId = makeUlid();
+    const now = new Date();
+
+    await repo.withTx(async (tx) => {
+      await repo.insert(tx, {
+        id: siblingPaymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'promptpay',
+        amountSatang: 999_000n,
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: now,
+        actorUserId: user.userId,
+        correlationId: 'corr-r-002-sib',
+      });
+      await repo.updateStatus(tx, {
+        paymentId: siblingPaymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        nextStatus: 'failed',
+        card: null,
+        failureReasonCode: 'test_failure',
+        completedAt: now,
+      });
+
+      await repo.insert(tx, {
+        id: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'promptpay',
+        amountSatang: 1_000_000n,
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 2,
+        initiatedAt: now,
+        actorUserId: user.userId,
+        correlationId: 'corr-r-002',
+      });
+      const updated = await repo.updateStatus(tx, {
+        paymentId: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        nextStatus: 'succeeded',
+        processorChargeId: 'ch_test_1',
+        card: null,
+        completedAt: now,
+      });
+      expect(updated.status).toBe('succeeded');
+      expect(updated.card).toBeNull();
+      expect(updated.processorChargeId).toBe('ch_test_1');
+    });
+
+    await repo.withTx(async (tx) => {
+      const siblings = await repo.listSiblingStatusesForInvariant(
+        tx,
+        tenantA.ctx.slug,
+        invoiceId,
+        paymentId as PaymentId,
+      );
+      expect(siblings).toHaveLength(1);
+      expect(siblings[0]).toBe('failed');
+    });
+  });
+
+  it('findPendingByInvoiceAndActor: works WITH caller tx AND WITHOUT (D-01 resume)', async () => {
+    const invoiceId = nextInvoice();
+    const repo = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const paymentId = makeUlid();
+
+    // Seed a pending row in a committed tx, then query from outside (no tx).
+    await repo.withTx(async (tx) => {
+      await repo.insert(tx, {
+        id: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'promptpay',
+        amountSatang: 250_000n,
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: new Date(),
+        actorUserId: user.userId,
+        correlationId: 'corr-r-003',
+      });
+    });
+
+    // No-tx path (repo opens its own runInTenant)
+    const noTx = await repo.findPendingByInvoiceAndActor(
+      tenantA.ctx.slug,
+      invoiceId,
+      user.userId,
+    );
+    expect(noTx?.id).toBe(paymentId);
+    expect(noTx?.method).toBe('promptpay');
+    expect(noTx?.card).toBeNull();
+
+    // With-tx path
+    const withTx = await repo.withTx(async (tx) =>
+      repo.findPendingByInvoiceAndActor(
+        tenantA.ctx.slug,
+        invoiceId,
+        user.userId,
+        tx,
+      ),
+    );
+    expect(withTx?.id).toBe(paymentId);
+  });
+
+  it('migration 0042: card + status=pending insert with NULL card metadata SUCCEEDS', async () => {
+    // Before migration 0042, the DB CHECK `payments_card_metadata_iff_card`
+    // rejected this insert (required card_* non-null on every card row).
+    // After 0042, a card rail in `pending` may carry NULL card metadata;
+    // metadata is painted by the webhook on promotion to `succeeded`.
+    const invoiceId = nextInvoice();
+    const repo = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const paymentId = makeUlid();
+    const pi = `pi_test_${randomUUID().slice(0, 8)}`;
+    const now = new Date();
+
+    const inserted = await repo.withTx(async (tx) =>
+      repo.insert(tx, {
+        id: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'card',
+        amountSatang: 3_200_000n,
+        processorPaymentIntentId: pi,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: now,
+        actorUserId: user.userId,
+        correlationId: 'corr-r-e2b-card-pending',
+      }),
+    );
+    expect(inserted.status).toBe('pending');
+    expect(inserted.method).toBe('card');
+    expect(inserted.card).toBeNull();
+  });
+
+  it('RLS cross-tenant isolation: tenantB repo sees none of tenantA rows', async () => {
+    const repoB = makeDrizzlePaymentsRepo(tenantB.ctx.slug);
+    // Query tenant B's repo with tenant A's invoice (any prior-allocated id) + actor.
+    const probeInvoice = aInvoiceIds[0]!;
+    const leaked = await repoB.findPendingByInvoiceAndActor(
+      tenantA.ctx.slug,
+      probeInvoice,
+      user.userId,
+    );
+    expect(leaked).toBeNull();
+
+    // Verify direct DB read under tenant B's context yields zero A rows.
+    const rowsUnderB = await runInTenant(tenantB.ctx, async (tx) =>
+      tx.select().from(payments).where(eq(payments.tenantId, tenantA.ctx.slug)),
+    );
+    expect(rowsUnderB).toHaveLength(0);
+  });
+});

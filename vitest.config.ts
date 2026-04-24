@@ -167,6 +167,25 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F5: Payments Application — security-critical use cases require
+        // 100% branch coverage per Constitution Principle II. The three
+        // paths below are the PCI-adjacent entry points whose branches
+        // directly gate money movement or tenant isolation.
+        'src/modules/payments/application/use-cases/initiate-payment.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/process-webhook-event.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/confirm-payment.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
         // F3: Members Application layer — security-critical use cases
         // require 100% branch coverage per plan.md § Constitution Check II.
         'src/modules/members/application/enforce-tenant-context-on-member.ts': {

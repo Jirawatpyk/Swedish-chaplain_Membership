@@ -256,9 +256,20 @@ export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
   };
 }
 
-export function makeRecordPaymentDeps(tenantId: string): RecordPaymentDeps {
+/**
+ * @param tenantId - tenant slug the deps are bound to.
+ * @param externalTx - optional caller-owned Drizzle tx handle. When
+ *   supplied, the invoice repo's `withTx` executes inline against this
+ *   tx instead of opening its own. Used by the F5 → F4 invoicing-bridge
+ *   to keep the payment-row update and the invoice `issued → paid` flip
+ *   in a SINGLE transaction (Reliability D-03, Group E2b).
+ */
+export function makeRecordPaymentDeps(
+  tenantId: string,
+  externalTx?: unknown,
+): RecordPaymentDeps {
   return {
-    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId, externalTx),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: reactPdfRenderAdapter,

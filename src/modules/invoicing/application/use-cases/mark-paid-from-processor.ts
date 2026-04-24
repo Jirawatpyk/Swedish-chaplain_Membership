@@ -30,10 +30,13 @@
  * `payment_auto_refunded_*` remediation), callers supply the real
  * admin user id.
  *
- * Composition: the wrapper calls `makeRecordPaymentDeps(tenantId)` at
- * call time — per Main-agent Gate Decision #6 wrappers MUST compose
+ * Composition: the wrapper calls `makeRecordPaymentDeps(tenantId, tx?)`
+ * at call time — per Main-agent Gate Decision #6 wrappers MUST compose
  * real F4 deps and never mock/bypass (Constitution Principle III +
- * Principle VIII reliability).
+ * Principle VIII reliability). When the caller supplies `tx`, the
+ * underlying invoice-repo short-circuits its own `withTx` to reuse that
+ * tx so the F5 payment-row update and the F4 invoice flip to `paid`
+ * commit in a SINGLE transaction (Reliability D-03, Group E2b).
  *
  * Tenant context: input accepts the plain `tenantId` string (not a
  * branded `TenantContext`) to match F4's existing pattern + spare
@@ -84,6 +87,15 @@ export interface MarkPaidFromProcessorInput {
    * converts the Stripe event's UTC ts before calling.
    */
   readonly settlementDate: string;
+  /**
+   * Optional caller-owned Drizzle tx handle. When supplied, F4's
+   * invoice-repo reuses this tx (no nested `withTx`) so the F5 payment
+   * row update and the F4 invoice `issued → paid` flip commit together.
+   * Closes Reliability D-03 (Group E2b). Callers that supply `tx` MUST
+   * already be inside a `runInTenant` session for the same tenant so
+   * `SET LOCAL app.current_tenant` is in effect.
+   */
+  readonly tx?: unknown;
 }
 
 export type MarkPaidFromProcessorError = RecordPaymentError;
@@ -117,7 +129,7 @@ function describeProcessorMethod(
 export async function markPaidFromProcessor(
   input: MarkPaidFromProcessorInput,
 ): Promise<Result<Invoice, MarkPaidFromProcessorError>> {
-  const deps = makeRecordPaymentDeps(input.tenantId);
+  const deps = makeRecordPaymentDeps(input.tenantId, input.tx);
   return recordPayment(deps, {
     tenantId: input.tenantId,
     actorUserId: input.actorUserId,

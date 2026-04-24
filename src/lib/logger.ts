@@ -177,6 +177,43 @@ export const REDACT_PATHS = [
   '*.card',
   'card.*',
   '*.card.*',
+  // Group E1 (2026-04-24) — `client_secret` is the single most
+  // dangerous PCI-adjacent value Stripe returns: it authorises a
+  // browser to confirm a PaymentIntent. Redact both camelCase
+  // (port-shape) and snake_case (raw Stripe SDK response shape).
+  'clientSecret',
+  '*.clientSecret',
+  'client_secret',
+  '*.client_secret',
+  // Card-network metadata that can enable fingerprint-linking of
+  // cardholders across tenants (PCI DSS Req 3.2). `card.*` already
+  // catches nested values, but Stripe sometimes returns these as
+  // top-level keys on charge / payment_method_details shapes.
+  'fingerprint',
+  '*.fingerprint',
+  'iin',
+  '*.iin',
+  // Stripe's `payment_method_details.card.*` shape from Charge
+  // objects. Covers `brand`, `last4`, `exp_month`, `exp_year`,
+  // `fingerprint`, `network` — any nested field under this sub-
+  // object is redacted en bloc.
+  'payment_method_details',
+  '*.payment_method_details',
+  'payment_method_details.card',
+  '*.payment_method_details.card',
+  'payment_method_details.card.*',
+  '*.payment_method_details.card.*',
+  'paymentMethodDetails',
+  '*.paymentMethodDetails',
+  // Raw webhook request body — contains the entire Stripe event
+  // payload (card metadata, clientSecret on some event types, PII).
+  // Callers needing to forensically inspect a webhook body should
+  // use the `processor_events.payload_sha256` column + Stripe
+  // Dashboard, not a log dump.
+  'rawBody',
+  '*.rawBody',
+  'raw_body',
+  '*.raw_body',
   // Stripe secrets — these live in env vars per Constitution Principle
   // IV; if they ever appear in a log object it's a bug worth redacting.
   'stripe_secret_key',

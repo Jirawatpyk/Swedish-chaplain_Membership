@@ -211,12 +211,16 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
       processorPaymentIntentId: `pi_test_a_${randomUUID().slice(0, 8)}`,
       processorEnvironment: 'test',
       attemptSeq: 1,
-      // CHECK `payments_card_metadata_iff_card` (migration 0033:95) requires
-      // card_* fields non-null on every card row, even pending ones.
-      cardBrand: 'visa',
-      cardLast4: '4242',
-      cardExpMonth: 12,
-      cardExpYear: 2030,
+      // Migration 0042 (Group E2b, 2026-04-24) relaxed the original
+      // `payments_card_metadata_iff_card` CHECK to match the Domain
+      // invariant `assertCardMetadataComplete`: method='card' + status='pending'
+      // rows MUST carry NULL card_* fields (Stripe hasn't returned card
+      // details at initiate time). Succeeded card rows carry the full
+      // card metadata — tested under a separate fixture.
+      cardBrand: null,
+      cardLast4: null,
+      cardExpMonth: null,
+      cardExpYear: null,
       initiatedAt: now,
       actorUserId: user.userId,
       correlationId: 'corr-a-001',
@@ -234,10 +238,11 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
       processorPaymentIntentId: `pi_test_b_${randomUUID().slice(0, 8)}`,
       processorEnvironment: 'test',
       attemptSeq: 1,
-      cardBrand: 'mastercard',
-      cardLast4: '4444',
-      cardExpMonth: 6,
-      cardExpYear: 2029,
+      // Migration 0042 — pending card rows carry NULL card metadata.
+      cardBrand: null,
+      cardLast4: null,
+      cardExpMonth: null,
+      cardExpYear: null,
       initiatedAt: now,
       actorUserId: user.userId,
       correlationId: 'corr-b-001',
