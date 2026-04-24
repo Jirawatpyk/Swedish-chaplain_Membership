@@ -207,8 +207,8 @@ Quality gates summary: pnpm typecheck/lint GREEN · 466 unit/contract tests GREE
 
 ### Mobile responsiveness (FR-028h)
 
-- [ ] T084 [US1] Verify Sheet drawer renders full-screen on viewport `< sm` (640px) via `<Sheet side="right" className="sm:max-w-[480px] w-full h-full sm:h-auto">` or equivalent shadcn Sheet variant; sticky header (Pay {invoice number} + close ≥ 44 × 44 px) + sticky footer (method tabs + amount-due summary).
-- [ ] T085 [US1] Add Playwright viewport tests for 320×568 (iPhone SE 1st gen) + 768×1024 (iPad) + 1920×1080 (FHD) per plan.md § UX Mobile responsiveness matrix.
+- [X] T084 [US1] Verify Sheet drawer renders full-screen on viewport `< sm` (640px) via `<Sheet side="right" className="sm:max-w-[480px] w-full h-full sm:h-auto">` or equivalent shadcn Sheet variant; sticky header (Pay {invoice number} + close ≥ 44 × 44 px) + sticky footer (method tabs + amount-due summary).
+- [X] T085 [US1] Add Playwright viewport tests for 320×568 (iPhone SE 1st gen) + 768×1024 (iPad) + 1920×1080 (FHD) per plan.md § UX Mobile responsiveness matrix.
 
 ### Smart-feature: Cmdk integration
 
