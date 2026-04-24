@@ -1628,6 +1628,15 @@
       },
       "error": {
         "elementLoadFailed": "We couldn't load the payment form. Refresh and try again."
+      },
+      "cmdkPay": {
+        "group": "Payments",
+        "title": "Pay invoice",
+        "description": "Search an issued invoice to pay online",
+        "placeholder": "Search your invoices…",
+        "label": "Pay invoice {invoiceNumber} · {amount}",
+        "emptyHint": "No issued invoices to pay",
+        "allPaidHint": "No pending invoices — you're all paid up ✨"
       }
     }
   },

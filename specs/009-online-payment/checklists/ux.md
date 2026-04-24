@@ -33,7 +33,7 @@
 ## Empty States (FR-030)
 
 - [x] CHK016 Does the online-payment-disabled fallback specify the full empty-state anatomy (icon + title + 1-2-line explanatory + CTA) per `docs/ux-standards.md` § 3.1? [Completeness, Spec §FR-030]
-- [x] CHK017 Is the icon (`<CreditCardOff />`) + size (48×48) + colour token (muted-foreground) specified explicitly? [Clarity, Spec §FR-030]
+- [x] CHK017 Is the icon (composite `CreditCard + Slash` overlay — `CreditCardOff` does not exist in lucide-react) + size (48×48) + colour token (muted-foreground) specified explicitly? [Clarity, Spec §FR-030]
 - [x] CHK018 Is the "Contact admin" CTA mailto: behavior specified including the pre-filled subject line format? [Completeness, Spec §FR-030]
 - [x] CHK019 Are empty states for the payment-timeline panel + refund history specified in the plan.md empty-state catalog? [Completeness, plan.md § UX Empty-state catalog]
 

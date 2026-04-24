@@ -202,7 +202,7 @@ Quality gates summary: pnpm typecheck/lint GREEN · 466 unit/contract tests GREE
 - [X] T079 [US1] Create `src/app/(member)/portal/invoices/[id]/_components/pay-sheet/confirmation-panel.tsx` — success state per FR-028(e): `<CheckCircle />` scale-in (motion-reduce instant), bilingual title, summary line, **primary "Download receipt" CTA** (links to F4 receipt PDF via 60s signed URL), secondary Close, 5s auto-close countdown.
 - [X] T080 [US1] Wire idle-warning-suppression interaction (FR-028c): pay-sheet mount sends `pauseIdleTimer()` to F1 idle-watcher; pay-sheet close sends `resumeIdleTimer()`. If drawer open > 30 min, in-drawer prompt asks "Are you still here?" with 60s cancel countdown.
 - [X] T081 [US1] Add Pay-now button placement on existing F4 invoice detail page `src/app/(member)/portal/invoices/[id]/page.tsx` — only render `<PayNowButton>` when invoice `status IN ('issued', 'overdue')` AND tenant `online_payment_enabled = true`; otherwise render FR-030 empty-state fallback (T082).
-- [X] T082 [US1] Create `src/app/(member)/portal/invoices/[id]/_components/online-payment-disabled-card.tsx` — empty-state per FR-030: `<CreditCardOff />` 48×48 muted-foreground + bilingual title + 1-2 line explanation + "Contact admin" mailto: CTA with pre-filled subject.
+- [X] T082 [US1] Create `src/app/(member)/portal/invoices/[id]/_components/online-payment-disabled-card.tsx` — empty-state per FR-030: composite `CreditCard + Slash` overlay icon (note: `CreditCardOff` does not exist in lucide-react at any version — use the composite pattern) sized 48×48 muted-foreground + bilingual title + 1-2 line explanation + "Contact admin" mailto: CTA with pre-filled subject.
 - [X] T083 [US1] Add bilingual i18n keys for all pay-sheet copy in `src/i18n/messages/{en,th,sv}.json` under `portal.payment.*` namespace (verified via `pnpm check:i18n`).
 
 ### Mobile responsiveness (FR-028h)
@@ -212,7 +212,7 @@ Quality gates summary: pnpm typecheck/lint GREEN · 466 unit/contract tests GREE
 
 ### Smart-feature: Cmdk integration
 
-- [ ] T086 [US1] Extend the existing F2+ command palette (`cmdk`) with "Pay invoice" command per plan.md § UX Smart-feature: registration in `src/modules/payments/index.ts` cmdk-commands export; member-role-only; fuzzy-search member's invoices; selection navigates to `/portal/invoices/[id]?pay=1`.
+- [X] T086 [US1] Extend the existing F2+ command palette (`cmdk`) with "Pay invoice" command per plan.md § UX Smart-feature: registration in `src/modules/payments/index.ts` cmdk-commands export; member-role-only; fuzzy-search member's invoices; selection navigates to `/portal/invoices/[id]?pay=1`.
 
 **Checkpoint US1**: Member can pay any issued invoice via card; webhook → F4 markPaid → receipt email arrives; confirmation panel shows receipt-download CTA; mobile + dark-mode + reduced-motion + a11y verified. **MVP-half complete.**
 

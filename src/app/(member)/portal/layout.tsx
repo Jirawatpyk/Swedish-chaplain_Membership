@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { MemberNav } from '@/components/layout/member-nav';
+import { MemberCommandPaletteRoot } from '@/components/shell/member-command-palette-root';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
 import { requireSession } from '@/lib/auth-session';
@@ -51,6 +52,8 @@ export default async function MemberLayout({ children }: { children: ReactNode }
       </main>
       {/* T165 — Idle warning modal fires at 29 min of inactivity. */}
       <IdleWarningDialog portal="member" />
+      {/* T086 — ⌘K member command palette (Pay-invoice shortcut). */}
+      <MemberCommandPaletteRoot />
     </div>
   );
 }

@@ -1628,6 +1628,15 @@
       },
       "error": {
         "elementLoadFailed": "Vi kunde inte läsa in betalningsformuläret. Uppdatera och försök igen."
+      },
+      "cmdkPay": {
+        "group": "Betalningar",
+        "title": "Betala faktura",
+        "description": "Sök en utfärdad faktura att betala online",
+        "placeholder": "Sök dina fakturor…",
+        "label": "Betala faktura {invoiceNumber} · {amount}",
+        "emptyHint": "Inga fakturor att betala",
+        "allPaidHint": "Inga väntande fakturor — du är i kapp ✨"
       }
     }
   },

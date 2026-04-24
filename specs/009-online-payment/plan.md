@@ -641,7 +641,7 @@ F5 surfaces opportunistically adopt WCAG 2.2 success criteria where they cost li
 
 | Empty surface | Icon | Title | Description | CTA |
 |---------------|------|-------|-------------|-----|
-| Online payment disabled (member, FR-030) | `<CreditCardOff />` | "Online payment unavailable" | "Please contact admin for bank-transfer instructions; you'll get a tax receipt by email after payment is reconciled." | "Contact admin" → mailto: |
+| Online payment disabled (member, FR-030) | composite `CreditCard + Slash` overlay (CreditCardOff does not exist in lucide-react) | "Online payment unavailable" | "Please contact admin for bank-transfer instructions; you'll get a tax receipt by email after payment is reconciled." | "Contact admin" → mailto: |
 | No payment activity (admin payment timeline panel) | `<Banknote />` | "No payment activity yet" | "Payments will appear here once recorded — manual reconciliation, online card, or PromptPay." | (no CTA — informational) |
 | No refunds in history (admin) | `<Undo2 />` | "No refunds issued" | "Refunds for this invoice will appear here once processed." | (no CTA) |
 
