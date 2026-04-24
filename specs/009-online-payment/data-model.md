@@ -351,6 +351,7 @@ The F5 audit emitter (`src/modules/payments/infrastructure/audit/payments-audit.
 | `webhook_signature_rejected`, `webhook_api_version_mismatch` | 5 | Operational/security audit |
 | `tenant_payment_settings_updated`, `online_payment_toggled` | 5 | Configuration audit |
 | `refund_initiated`, `refund_failed` | 5 | Operational audit; the corresponding `refund_succeeded` row carries the 10-year retention |
+| `payment_initiate_rate_limited`, `payment_cancel_rate_limited` | 5 | Operational/security audit — forensic trail for 429 responses on payment routes (Threat F-09, migration 0043) |
 
 F9 (GDPR export + retention enforcement, future feature) reads this column to apply the lifecycle policy. F5 just sets the flag; F9 enforces the purge job. Migration `0038_audit_log_add_retention_years.sql` adds the column with `DEFAULT 5` so existing rows are valid; F5's audit emissions explicitly set the column for every new row.
 

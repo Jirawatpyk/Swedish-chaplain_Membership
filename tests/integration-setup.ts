@@ -7,6 +7,12 @@
  */
 import { beforeAll } from 'vitest';
 
+// Pin STRIPE_API_VERSION for F5 webhook integration tests so the
+// fixture `api_version: '2024-06-20'` in tests/integration/payments/*
+// matches what the webhook route compares against. Must run BEFORE
+// src/lib/env.ts is imported transitively (top-level executes first).
+process.env['STRIPE_API_VERSION'] = '2024-06-20';
+
 beforeAll(() => {
   const dbUrl =
     process.env.DATABASE_URL_UNPOOLED ??

@@ -33,6 +33,20 @@ export const AUDIT_EVENT_TYPES = [
   'concurrent_sessions_revoked',
   'manager_denied_write',
   'invitation_redemption_failed',
+  // --- F5 webhook + rate-limit event types consumed by auditRepo directly
+  // via route handlers (`src/app/api/webhooks/stripe/route.ts` +
+  // `src/app/api/payments/{initiate,[id]/cancel}/route.ts`). Tenant-
+  // scoped payment lifecycle events (payment_initiated / payment_succeeded
+  // etc.) do NOT go through this repo — they use the F5 AuditPort
+  // (`@/modules/payments/application/ports/audit-port`) with `retention_years`
+  // per data-model.md § 7.1. These 5 routes-level events are registered
+  // here so the route can append without an `unknown` cast, fulfilling
+  // Backend F-02 + PCI F-03 + Threat F-09 review findings.
+  'webhook_signature_rejected',
+  'payment_environment_mismatch',
+  'webhook_api_version_mismatch',
+  'payment_initiate_rate_limited',
+  'payment_cancel_rate_limited',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

@@ -96,8 +96,7 @@ If a `pending` Payment already exists for the invoice + actor, the response IS t
 | 400 | `invalid_input` | zod validation failed |
 | 401 | `unauthorized` | no session OR CSRF mismatch |
 | 403 | `forbidden_role` | role ≠ `member` |
-| 403 | `forbidden_invoice` | invoice exists but does not belong to actor's company; **logs `payment_cross_tenant_probe` if cross-tenant** |
-| 404 | `invoice_not_found` | invoice does not exist OR belongs to a different tenant (cross-tenant returns 404, not 403, per Constitution Principle I) |
+| 403 | `invoice_not_accessible` | invoice does not exist, OR exists in a different tenant, OR exists but is not owned by the actor's company. **Both non-existence and cross-tenant existence return the SAME opaque 403 + `invoice_not_accessible` payload** so the client cannot distinguish the two (enumeration defence — PCI F-02 / Threat OQ-1 / Constitution Principle I). The use-case still emits the distinct `payment_cross_tenant_probe` audit row on the cross-tenant branch. |
 | 409 | `invoice_not_payable` | invoice status NOT in `{issued, overdue}` (e.g. paid, voided, credited) |
 | 409 | `online_payment_disabled` | `tenant_payment_settings.online_payment_enabled = false` OR `FEATURE_F5_ONLINE_PAYMENT=false` |
 | 409 | `method_not_enabled` | requested method NOT in `tenant_payment_settings.enabled_methods` |
@@ -148,8 +147,7 @@ Cookie: __Host-session-id=…
 | HTTP | `error.code` | When |
 |------|--------------|------|
 | 401 | `unauthorized` | no session |
-| 403 | `forbidden_payment` | payment not owned by actor; logs `payment_cross_tenant_probe` if cross-tenant |
-| 404 | `payment_not_found` | id does not exist OR cross-tenant |
+| 403 | `payment_not_accessible` | payment does not exist, OR exists under a different tenant, OR exists but is not owned by the actor. **Collapsed opaque 403 for enumeration defence** (PCI F-02 / Threat OQ-1 / Constitution Principle I). The use-case still emits `payment_cross_tenant_probe` on the cross-tenant branch. |
 | 409 | `payment_not_cancelable` | status ≠ `pending` (already terminal) |
 | 502 | `processor_unavailable` | Stripe cancel failed; row NOT mutated |
 

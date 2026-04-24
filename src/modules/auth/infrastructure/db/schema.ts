@@ -137,6 +137,9 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'webhook_api_version_mismatch',
   'tenant_payment_settings_updated',
   'online_payment_toggled',
+  // --- F5 rate-limit event types added by migration 0043 ---
+  'payment_initiate_rate_limited',
+  'payment_cancel_rate_limited',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

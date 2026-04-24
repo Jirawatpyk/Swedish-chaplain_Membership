@@ -302,6 +302,13 @@
       "when": 1777334409000,
       "tag": "0042_relax_payment_card_metadata_check",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1777334410000,
+      "tag": "0043_audit_log_rate_limit_events",
+      "breakpoints": true
     }
   ]
 }

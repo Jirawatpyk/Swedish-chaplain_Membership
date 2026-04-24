@@ -57,6 +57,17 @@ vi.mock('@/lib/stripe-webhook-verifier', () => ({
   },
 }));
 
+vi.mock('@/lib/stripe-webhook-deps', async () => {
+  const auth = await import('@/modules/auth/infrastructure/db/audit-repo');
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    resolveTenantByProcessorAccountId: vi.fn(async (_account: string) => 'test-swecham'),
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    insertRejectedProcessorEvent: vi.fn(async (_input: unknown) => undefined),
+    auditRepo: auth.auditRepo,
+  };
+});
+
 vi.mock('@/modules/payments', () => ({
   processWebhookEvent: (...args: unknown[]) => processWebhookEventMock(...args),
   makeProcessWebhookEventDeps: () => ({
@@ -104,10 +115,8 @@ vi.mock('@/lib/request-id', () => ({
 // ---------------------------------------------------------------------------
 
 async function importWebhookRoute() {
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-  const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<unknown>;
   try {
-    return await dynamicImport('@/app/api/webhooks/stripe/route');
+    return await import('@/app/api/webhooks/stripe/route');
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(
@@ -187,7 +196,7 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
       invoiceId: 'inv_test_001',
     });
 
-    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
     const res = await POST(makeRequest(1)) as Response;
 
     expect(res.status).toBe(200);
@@ -206,7 +215,7 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
       paymentStatus: 'succeeded',
     });
 
-    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
 
     const res1 = await POST(makeRequest(1)) as Response;
     expect(res1.status).toBe(200);
@@ -231,7 +240,7 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
       .mockResolvedValueOnce({ outcome: 'processed' })
       .mockResolvedValueOnce({ outcome: 'duplicate' });
 
-    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
 
     const res1 = await POST(makeRequest(1)) as Response;
     const res2 = await POST(makeRequest(2)) as Response;
@@ -251,7 +260,7 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
       .mockResolvedValueOnce({ outcome: 'processed' })
       .mockResolvedValueOnce({ outcome: 'duplicate' });
 
-    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
     await POST(makeRequest(1));
     await POST(makeRequest(2));
 
@@ -282,7 +291,7 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
       .mockResolvedValueOnce({ outcome: 'processed' })
       .mockResolvedValueOnce({ outcome: 'duplicate' });
 
-    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
     await POST(makeRequest(1));
     await POST(makeRequest(2));
 

@@ -38,6 +38,28 @@ vi.mock('@/lib/stripe-webhook-verifier', () => ({
 }));
 
 /**
+ * `@/lib/stripe-webhook-deps` is the route-level composition adapter
+ * that wraps the Drizzle processor-events + tenant-settings repos
+ * (shipped alongside Group F T071). Mock both helpers so the
+ * signature-reject / livemode-mismatch / api-version-mismatch
+ * branches don't reach live infrastructure.
+ */
+vi.mock('@/lib/stripe-webhook-deps', async () => {
+  // The route now imports auditRepo via this lib shim. Share the
+  // SAME `append` spy as the `@/modules/auth/infrastructure/db/audit-repo`
+  // mock below so the test assertions hit the same call list regardless
+  // of which import path they read.
+  const auth = await import('@/modules/auth/infrastructure/db/audit-repo');
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    resolveTenantByProcessorAccountId: vi.fn(async (_account: string) => 'test-swecham'),
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    insertRejectedProcessorEvent: vi.fn(async (_input: unknown) => undefined),
+    auditRepo: auth.auditRepo,
+  };
+});
+
+/**
  * @/modules/payments barrel does NOT export `processWebhookEvent` yet —
  * Group D T052. The mock is valid TS; the route import will fail first.
  */
@@ -158,10 +180,10 @@ function makeWebhookRequest(
 // ---------------------------------------------------------------------------
 
 async function importWebhookRoute() {
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-  const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<unknown>;
+  // Route file now exists (Group F T071); vitest resolves the @/ alias
+  // at transform time and honours every vi.mock() above.
   try {
-    return await dynamicImport('@/app/api/webhooks/stripe/route');
+    return await import('@/app/api/webhooks/stripe/route');
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(
@@ -375,14 +397,16 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     const event = makeStripeEvent({ account: 'acct_unknown_xyz' });
     constructEventMock.mockReturnValueOnce(event);
 
-    // Override the mocked resolveTenantFromProcessorAccountId for this test.
-    // Senior-tester F6 (Group B deferred, 2026-04-24): if Group C/D renames
-    // the export, silent optional-chaining (`resolveFunc?.mock…(…)`) would
-    // let this test pass without exercising anything. Assert defined first.
-    const tenantContextModule = await import('@/lib/tenant-context');
+    // Group F Review-Gate (Backend F-01 / PCI F-03): the webhook route no
+    // longer uses the `@/lib/tenant-context` dynamic-import test-lane —
+    // production path is always `resolveTenantByProcessorAccountId` from
+    // `@/lib/stripe-webhook-deps`. Override THAT mock to simulate an
+    // unknown processor account. Assert defined first so a future rename
+    // cannot silently drop this scenario (Senior-tester F6).
+    const depsModule = await import('@/lib/stripe-webhook-deps');
     const resolveFunc = (
-      tenantContextModule as Record<string, unknown>
-    )['resolveTenantFromProcessorAccountId'] as ReturnType<typeof vi.fn> | undefined;
+      depsModule as Record<string, unknown>
+    )['resolveTenantByProcessorAccountId'] as ReturnType<typeof vi.fn> | undefined;
     expect(resolveFunc).toBeDefined();
     (resolveFunc as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
 

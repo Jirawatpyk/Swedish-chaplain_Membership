@@ -58,6 +58,17 @@ vi.mock('@/lib/stripe-webhook-verifier', () => ({
   },
 }));
 
+vi.mock('@/lib/stripe-webhook-deps', async () => {
+  const auth = await import('@/modules/auth/infrastructure/db/audit-repo');
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    resolveTenantByProcessorAccountId: vi.fn(async (_account: string) => 'test-swecham'),
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    insertRejectedProcessorEvent: vi.fn(async (_input: unknown) => undefined),
+    auditRepo: auth.auditRepo,
+  };
+});
+
 vi.mock('@/modules/payments', () => ({
   processWebhookEvent: (...args: unknown[]) => processWebhookEventMock(...args),
   makeProcessWebhookEventDeps: () => ({ db: {}, audit: {} }),
@@ -106,10 +117,8 @@ vi.mock('@/lib/request-id', () => ({
 // ---------------------------------------------------------------------------
 
 async function importWebhookRoute() {
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-  const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<unknown>;
   try {
-    return await dynamicImport('@/app/api/webhooks/stripe/route');
+    return await import('@/app/api/webhooks/stripe/route');
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(
@@ -182,7 +191,7 @@ describe('webhook-signature: verify-before-parse invariant (T044)', () => {
   it('missing Stripe-Signature → 401; req.text() never called', async () => {
     const { req, textSpy } = makeSpiedRequest(VALID_RAW_BODY, {});
 
-    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
     const res = await POST(req) as Response;
 
     expect(res.status).toBe(401);
@@ -207,7 +216,7 @@ describe('webhook-signature: verify-before-parse invariant (T044)', () => {
       'stripe-signature': 't=1000,v1=badhex',
     });
 
-    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
     const res = await POST(req) as Response;
 
     expect(res.status).toBe(401);
@@ -233,7 +242,7 @@ describe('webhook-signature: verify-before-parse invariant (T044)', () => {
       'stripe-signature': 't=1716000000,v1=validlookinghexbutwrong',
     });
 
-    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
     const res = await POST(req) as Response;
 
     expect(res.status).toBe(401);
@@ -255,7 +264,7 @@ describe('webhook-signature: verify-before-parse invariant (T044)', () => {
       'stripe-signature': 't=1716000000,v1=validhex',
     });
 
-    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
     const res = await POST(req) as Response;
 
     expect(res.status).toBe(200);
@@ -278,7 +287,7 @@ describe('webhook-signature: verify-before-parse invariant (T044)', () => {
   it("missing header → audit webhook_signature_rejected reason='missing_header' emitted", async () => {
     const { req } = makeSpiedRequest(VALID_RAW_BODY, {});
 
-    const { POST } = await importWebhookRoute() as { POST: (req: Request) => Promise<Response> };
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
     await POST(req);
 
     // The audit helper must have been called with the rejection event.
@@ -308,5 +317,43 @@ describe('webhook-signature: verify-before-parse invariant (T044)', () => {
     expect(auditArg?.['signature']).toBeUndefined();
     expect(auditArg?.['stripe-signature']).toBeUndefined();
     expect(auditArg?.['stripeSignature']).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Scenario 6 (Threat F-16 — Group F Review-Gate fix): oversized payload.
+  //
+  // Adversary sends a 200 KB body with a valid-looking Stripe-Signature
+  // header. The route MUST reject BEFORE HMAC verification so the
+  // verifier never does HMAC work on an attacker-sized buffer. The
+  // reject reason is audited as `body_too_large`.
+  // ---------------------------------------------------------------------------
+
+  it('Content-Length > 64 KiB → 401; verifier never called; audit body_too_large', async () => {
+    const { req, textSpy } = makeSpiedRequest(VALID_RAW_BODY, {
+      'stripe-signature': 't=1716000000,v1=validlookinghex',
+      'content-length': '200000',
+    });
+
+    const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
+    const res = await POST(req) as Response;
+
+    expect(res.status).toBe(401);
+    // Body was NOT read (guard fires before request.text()).
+    expect(textSpy).not.toHaveBeenCalled();
+    expect(constructEventMock).not.toHaveBeenCalled();
+    expect(processWebhookEventMock).not.toHaveBeenCalled();
+
+    // Audit row emitted with reason='body_too_large'.
+    const { auditRepo } = await import('@/modules/auth/infrastructure/db/audit-repo');
+    const appendMock = vi.mocked(
+      auditRepo.append as unknown as (...a: unknown[]) => unknown,
+    );
+    const allCalls = appendMock.mock.calls as Array<Array<unknown>>;
+    const rejectionCall = allCalls.find((call) => {
+      const arg = call[0] as Record<string, unknown> | undefined;
+      return arg?.['eventType'] === 'webhook_signature_rejected'
+        && arg?.['reason'] === 'body_too_large';
+    });
+    expect(rejectionCall).toBeDefined();
   });
 });

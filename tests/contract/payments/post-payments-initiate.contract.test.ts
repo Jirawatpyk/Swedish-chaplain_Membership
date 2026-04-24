@@ -59,6 +59,19 @@ vi.mock('@/modules/tenants', () => ({
 }));
 
 /**
+ * Route now imports `auditRepo` via the composition adapter at
+ * `@/lib/stripe-webhook-deps` for the Threat F-09 rate-limit audit
+ * emission (Group F Review-Gate). Mock the composition layer so the
+ * 429 branch doesn't reach live Postgres.
+ */
+vi.mock('@/lib/stripe-webhook-deps', () => ({
+  auditRepo: {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest signature required so spread callers type-check (TS2556)
+    append: vi.fn(async (..._args: unknown[]) => undefined),
+  },
+}));
+
+/**
  * @/modules/payments barrel does NOT export `initiatePayment` yet — Group D T051.
  * The mock declaration is valid TypeScript; the route import will fail before
  * any mock is invoked, making tests RED at runtime.
@@ -96,10 +109,12 @@ async function getMockedAuthDeps() {
  * Turns GREEN: Group C T047 creates the file; the import succeeds.
  */
 async function importRoute() {
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-  const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<unknown>;
+  // Route file now exists (Group F T069). Vitest's transformer resolves
+  // the @/ alias at transform time; the direct dynamic import below
+  // goes through vitest's module graph and picks up every vi.mock()
+  // declared above.
   try {
-    return await dynamicImport('@/app/api/payments/initiate/route');
+    return await import('@/app/api/payments/initiate/route');
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(
@@ -282,16 +297,23 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
     expect(error['code']).toBe('invalid_input');
   });
 
-  it('404 invoice_not_found — use-case returns invoice_not_found error', async () => {
+  // PCI F-02 / Threat OQ-1 / Constitution Principle I (Group F Review-
+  // Gate fix): the HTTP boundary MUST collapse "invoice does not exist"
+  // and "invoice in a different tenant" into a single opaque 403 +
+  // `invoice_not_accessible` so the client cannot enumerate cross-
+  // tenant existence. The use-case still emits the distinct
+  // `payment_cross_tenant_probe` audit row on the cross-tenant branch —
+  // only the HTTP surface is collapsed.
+  it('403 invoice_not_accessible — use-case returns invoice_not_found (collapsed)', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberContext);
     initiatePaymentMock.mockResolvedValueOnce(err({ code: 'invoice_not_found' }));
 
     const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(makeJsonRequest(VALID_BODY));
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
     const body = await res.json() as Record<string, unknown>;
     const error = body['error'] as Record<string, unknown>;
-    expect(error['code']).toBe('invoice_not_found');
+    expect(error['code']).toBe('invoice_not_accessible');
   });
 
   it('409 invoice_not_payable — invoice already paid', async () => {
@@ -435,10 +457,13 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
     expect(error['code']).toBe('forbidden_role');
   });
 
-  // Senior-tester F1 (MEDIUM) — forbidden_invoice is a distinct 403 per
-  // contracts/payments-api.md § 1: invoice exists but does not belong to
-  // actor's company; route MUST emit `payment_cross_tenant_probe` audit.
-  it('403 forbidden_invoice — invoice exists but not owned by actor', async () => {
+  // PCI F-02 / Threat OQ-1 (Group F Review-Gate fix): cross-tenant
+  // `forbidden_invoice` returns the SAME opaque 403 +
+  // `invoice_not_accessible` as `invoice_not_found` so a client cannot
+  // distinguish cross-tenant existence from absolute absence. The use-
+  // case retains the distinct cross-tenant audit emission.
+  it('403 invoice_not_accessible — use-case returns forbidden_invoice (collapsed)', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
     initiatePaymentMock.mockResolvedValueOnce({
       ok: false,
       error: { code: 'forbidden_invoice' },
@@ -449,7 +474,7 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
     expect(res.status).toBe(403);
     const body = await res.json() as Record<string, unknown>;
     const error = body['error'] as Record<string, unknown>;
-    expect(error['code']).toBe('forbidden_invoice');
+    expect(error['code']).toBe('invoice_not_accessible');
   });
 
   // Senior-tester F3 (MEDIUM) — unknown exception MUST map to 500

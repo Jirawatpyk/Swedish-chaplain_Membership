@@ -26,6 +26,19 @@ export interface AppendAuditEvent {
   readonly sourceIp?: string | null;
   readonly summary: string;
   readonly requestId: string;
+  /**
+   * F5 webhook + rate-limit reject paths (Backend F-02 / PCI F-03 /
+   * Threat F-09) carry a short discriminator string describing the
+   * reject reason (e.g. `missing_header`, `body_too_large`,
+   * `livemode_mismatch`, `api_version_drift`). The reason is encoded
+   * into `summary` by the caller; accepting it on the input shape
+   * removes the `as unknown as` cast previously needed at route
+   * handlers without widening the persisted row.
+   *
+   * PCI (T044): MUST NOT include raw body, Stripe-Signature header,
+   * or any card metadata. A short reason-code string only.
+   */
+  readonly reason?: string;
 }
 
 export interface AuditRepo {
