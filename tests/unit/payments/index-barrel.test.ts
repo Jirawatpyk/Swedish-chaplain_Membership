@@ -15,7 +15,12 @@
 import { describe, it, expect } from 'vitest';
 
 describe('payments barrel — public API contract', () => {
-  it('exposes every expected Domain + Application + composition-root export', async () => {
+  // Barrel smoke-tests resolve 30+ transitive `@/` aliases at runtime.
+  // Under full-parallel run (~150 files) isolated-run ~2s scales to
+  // 10-15s; bump per-test timeout to 30s so CPU contention on dev
+  // laptops does not flake the suite. Isolated barrel-only runs
+  // complete at ~1.8s — this timeout is a ceiling, not a target.
+  it('exposes every expected Domain + Application + composition-root export', { timeout: 30_000 }, async () => {
     const mod = await import('@/modules/payments');
 
     // --- Domain ---------------------------------------------------------

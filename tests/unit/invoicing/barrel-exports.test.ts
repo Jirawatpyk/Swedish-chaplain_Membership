@@ -15,7 +15,10 @@
 import { describe, expect, it } from 'vitest';
 
 describe('F4 barrel — F5 bridge export surface (T010–T014)', () => {
-  it('re-exports the 3 F5 bridge use-cases + Money aliased as AmountSatang', async () => {
+  // See tests/unit/payments/index-barrel.test.ts for the rationale —
+  // same dynamic-import alias-resolution pattern, same parallel-load
+  // flake profile. 30s ceiling under CPU contention; isolated run ~1.8s.
+  it('re-exports the 3 F5 bridge use-cases + Money aliased as AmountSatang', { timeout: 30_000 }, async () => {
     const mod = await import('@/modules/invoicing');
 
     // F5 bridge use-cases (T012, T013, T014)

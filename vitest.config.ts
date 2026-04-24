@@ -34,9 +34,16 @@ export default defineConfig({
     // dev laptop), the serialized native-addon loader + HTTP client
     // construction can push a single `await import(...)` past the 5s
     // budget even though the test body itself is fully mocked and
-    // finishes in <50 ms once imports resolve. 10s is comfortable
-    // headroom without hiding genuinely slow tests. See QA
-    // investigation notes in specs/002-membership-plans/qa/.
+    // finishes in <50 ms once imports resolve. See QA investigation
+    // notes in specs/002-membership-plans/qa/.
+    //
+    // 2026-04-24: the 2 dynamic-import barrel tests (tests/unit/invoicing/
+    // barrel-exports + tests/unit/payments/index-barrel) carry explicit
+    // per-test `{ timeout: 30_000 }` ceilings instead of raising the
+    // global default — isolated run ~2s but full-parallel run (~150
+    // files) scales to 10-15s from cold alias resolution + vi.mock wiring
+    // across the F4+F5 public surfaces. Keeping the global at 10s
+    // preserves fail-fast signal for non-barrel tests.
     testTimeout: 10_000,
     coverage: {
       provider: 'v8',
