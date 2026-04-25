@@ -44,11 +44,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 
 import { formatSatangThb } from '@/app/(member)/portal/invoices/_utils/format';
-import {
-  loadStripe,
-  type Stripe,
-  type StripeElementsOptions,
-} from '@stripe/stripe-js';
+import { type StripeElementsOptions } from '@stripe/stripe-js';
 import {
   Elements,
   PaymentElement,
@@ -59,23 +55,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { PaySheetSkeleton } from '@/components/payments/pay-sheet-skeleton';
 import { useMinDelay } from '@/hooks/use-min-delay';
-
-// -- Stripe singleton cache -------------------------------------------------
-// Module-level Map keyed by publishableKey so toggling tabs (or re-
-// opening the drawer for a different invoice under the same tenant)
-// reuses the already-loaded Stripe instance. This is the UX contract
-// T074 calls out + the officially-recommended pattern in the Stripe
-// Elements docs.
-const stripePromiseCache = new Map<string, Promise<Stripe | null>>();
-
-function getStripe(publishableKey: string): Promise<Stripe | null> {
-  let cached = stripePromiseCache.get(publishableKey);
-  if (!cached) {
-    cached = loadStripe(publishableKey);
-    stripePromiseCache.set(publishableKey, cached);
-  }
-  return cached;
-}
+// Simplify S1: shared Stripe.js cache (used by `<PaySheetInternal>`'s
+// 3DS poll too). See `stripe-cache.ts` header for rationale.
+import { getStripeInstance as getStripe } from './stripe-cache';
 
 // -- Props ------------------------------------------------------------------
 export interface CardFormSuccessPayload {

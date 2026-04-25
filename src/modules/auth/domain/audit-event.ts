@@ -51,6 +51,9 @@ export const AUDIT_EVENT_TYPES = [
   //     (audit 2026-04-25 findings #10 + #13).
   'webhook_unknown_intent',
   'webhook_payment_already_canceled',
+  // --- Migration 0047 (Review I-14) — confirmPayment retrievePaymentIntent
+  //     failure trail. Operational only.
+  'payment_processor_retrieve_failed',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

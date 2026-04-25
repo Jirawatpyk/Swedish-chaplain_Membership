@@ -17,6 +17,12 @@
  */
 
 const DATETIME_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+// Review I-16: cache `Intl.NumberFormat` per locale to mirror the
+// `DATETIME_FORMATTERS` pattern. `formatPaymentAmount` is called on
+// every render of the confirmation panel + 3DS poll tick — repeated
+// `new Intl.NumberFormat()` allocation is ~10–50× slower than
+// `.format()` on a cached instance.
+const NUMBER_FORMATTERS = new Map<string, Intl.NumberFormat>();
 
 /**
  * Format an amount (whole currency units, NOT satang) + currency code
@@ -34,7 +40,11 @@ export function formatPaymentAmount(
   currency: string,
   locale: string = 'en-US',
 ): string {
-  const numberFmt = new Intl.NumberFormat(locale, { useGrouping: true });
+  let numberFmt = NUMBER_FORMATTERS.get(locale);
+  if (!numberFmt) {
+    numberFmt = new Intl.NumberFormat(locale, { useGrouping: true });
+    NUMBER_FORMATTERS.set(locale, numberFmt);
+  }
   return `${currency} ${numberFmt.format(amount)}`;
 }
 

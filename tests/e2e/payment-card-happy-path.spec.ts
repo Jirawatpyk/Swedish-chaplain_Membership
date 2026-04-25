@@ -225,7 +225,21 @@ test.describe('payment card happy path — @payment @e2e (T046)', () => {
     const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
     const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 
-    test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'Admin credentials required for audit chain check');
+    // Review CR-6: AS-1 audit chain is a P1 acceptance scenario — must
+    // fail loudly when CI env is misconfigured rather than silently skip.
+    // Local-dev contributors without admin creds can opt out via
+    // E2E_ALLOW_SKIP_ADMIN_AUDIT=1 (CI must NOT set this flag).
+    const allowSkip = process.env.E2E_ALLOW_SKIP_ADMIN_AUDIT === '1';
+    if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+      if (allowSkip) {
+        test.skip(true, 'Admin credentials missing — skip explicitly opted in via E2E_ALLOW_SKIP_ADMIN_AUDIT=1');
+      } else {
+        throw new Error(
+          'AS-1 audit chain test requires E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD. ' +
+            'Set them in CI or pass E2E_ALLOW_SKIP_ADMIN_AUDIT=1 for local opt-out.',
+        );
+      }
+    }
 
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);

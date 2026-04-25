@@ -188,8 +188,8 @@ export async function updateTenantPaymentSettings(
     .set(patch)
     .where(eq(tenantPaymentSettings.tenantId, input.tenantId));
 
-  // Bust both cache tags. Next.js 16 `revalidateTag` requires a
-  // cacheLife profile arg — `'default'` is the standard baseline.
+  // Bust both cache tags. Next.js 16 `revalidateTag(tag, profile)` —
+  // `'default'` is the standard cacheLife baseline.
   revalidateTag(`tenant_payment_settings:${input.tenantId}`, 'default');
   if (input.previousProcessorAccountId !== undefined) {
     revalidateTag(

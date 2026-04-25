@@ -75,18 +75,11 @@ function connectOptions(stripeAccount: string): { stripeAccount?: string } {
  * already retries 3x under the hood (see stripe-client.ts config) —
  * if it still bubbles up, the caller should surface it to the user
  * rather than loop again.
- */
-/**
- * Map a thrown Stripe SDK error to the port's `ProcessorGatewayError`.
  *
- * Audit 2026-04-26 round-2 self-review #R2-A5 follow-up: exported so a
- * direct unit test can throw synthetic `Stripe.errors.*` instances at
- * the mapper without going through the SDK + HTTP transport. The MSW-
- * mocked integration path doesn't always wrap 4xx responses in the
- * matching JS class, so the mapping logic needs its own targeted test.
- *
- * Production callers MUST go through the gateway methods — this export
- * exists for the unit test surface only (no other module imports it).
+ * Exported (vs. module-private) so a unit test can throw synthetic
+ * Stripe error instances directly at the mapper without going through
+ * the SDK + HTTP transport. Production callers MUST go through the
+ * gateway methods — no other module imports this symbol.
  */
 export function mapStripeError(
   e: unknown,
@@ -323,6 +316,27 @@ export const stripeGateway: ProcessorGatewayPort = {
       );
       return ok(undefined);
     } catch (e) {
+      // Review CR-2: idempotency on already-canceled. Stripe returns
+      // `payment_intent_unexpected_state` (HTTP 400) when the PI is
+      // already in a terminal state (canceled / succeeded). For a cancel
+      // call the only safe interpretation is "the desired post-state is
+      // already true" — we return ok(void) so the caller can proceed
+      // with the local DB write. This closes the partial-failure trap
+      // where Stripe cancel succeeded on attempt N, the DB write failed,
+      // and attempt N+1 would otherwise hit a hard permanent error and
+      // leave the row stuck `pending`.
+      const err_ = e as { code?: string };
+      if (err_.code === 'payment_intent_unexpected_state') {
+        logger.info(
+          {
+            stripeAccount,
+            paymentIntentId,
+            stripeErrorCode: err_.code,
+          },
+          'stripe-gateway: cancelPaymentIntent idempotent (already terminal)',
+        );
+        return ok(undefined);
+      }
       return err(mapStripeError(e, { stripeAccount, paymentIntentId }));
     }
   },

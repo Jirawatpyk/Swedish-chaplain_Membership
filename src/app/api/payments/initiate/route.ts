@@ -313,6 +313,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const errCode = result.error.code;
     const { status, routeCode } = httpStatusForUseCaseError(errCode);
     const retryAfterSeconds = routeCode === 'processor_unavailable' ? 30 : undefined;
+    // Review I-12: structured log on every use-case error so processor
+    // outages, idempotency conflicts, and rate-limit drops are visible
+    // in pino without relying on the unexpected-throw catch below.
+    logger.warn(
+      {
+        requestId,
+        correlationId,
+        tenantId: tenantCtx.slug,
+        userId: actorUserId,
+        useCaseErrorCode: errCode,
+        httpStatus: status,
+        routeCode,
+      },
+      'payments.initiate.use_case_error',
+    );
     return errorResponse(
       status,
       routeCode,

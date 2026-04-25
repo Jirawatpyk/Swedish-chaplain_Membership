@@ -1,9 +1,11 @@
 /**
- * Shared translator type for pay-sheet hooks/components — narrow shape
- * for the next-intl `useTranslations(...)` return type. Avoids importing
- * `next-intl` types in hook modules that don't otherwise need them.
+ * Shared translator type for pay-sheet hooks/components.
+ *
+ * Sourced from `next-intl`'s `useTranslations` return type so consumers
+ * inherit any project-wide typed-messages augmentation (compile-time
+ * key checking + ICU value typing). Type-only import — zero runtime
+ * cost in modules that consume this.
  */
-export type TranslateFn = (
-  key: string,
-  values?: Record<string, string | number>,
-) => string;
+import type { useTranslations } from 'next-intl';
+
+export type TranslateFn = ReturnType<typeof useTranslations>;

@@ -146,15 +146,18 @@ describe('confirmPayment (T057)', () => {
     expect(result.value.kind).toBe('unknown_intent');
   });
 
-  it('invoice not found — invoice_not_found error', async () => {
+  it('invoice not found — invoice_not_found outcome (atomic markProcessed)', async () => {
+    // Review CR-4: invoice_not_found now folds markProcessed into the
+    // same withTx and returns ok({ kind: 'invoice_not_found' }) so the
+    // processor_events row does not get stuck across Stripe retries.
     const deps = makeDeps();
     (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       err({ code: 'not_found' }),
     );
     const result = await confirmPayment(deps, INPUT);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe('invoice_not_found');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('invoice_not_found');
   });
 
   it('stale invoice (paid) — auto_refunded_stale_invoice + audit', async () => {

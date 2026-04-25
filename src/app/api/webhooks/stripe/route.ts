@@ -142,7 +142,6 @@ async function insertRejectedProcessorEvent(input: {
   receivedAt: Date;
 }): Promise<void> {
   try {
-    if (typeof insertRejectedProcessorEventImpl !== 'function') return;
     await insertRejectedProcessorEventImpl(input);
   } catch (e) {
     logger.error(
@@ -174,7 +173,7 @@ function jsonUnauthorized(
 }
 
 function jsonInternalError(
-  code: 'tenant_resolve_failed' | 'dispatch_failed',
+  code: 'tenant_resolve_failed' | 'dispatch_failed' | 'webhook_processing_failed',
   correlationId: string,
 ): NextResponse {
   return NextResponse.json(
@@ -366,22 +365,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Step 7 — dispatch to the Application use-case.
   //
-  // Audit 2026-04-25 finding #23: prefer the verifier's projected
-  // `dataObject` envelope (production path). Fall back to inline
-  // projection of `data.object` ONLY for callers that pass a raw
-  // Stripe SDK event shape (contract-test mocks). Either way we
-  // produce the same `VerifiedStripeEvent.dataObject` allow-list at
-  // the route→use-case boundary — single SHAPE, two source paths.
-  // This collapses the prior "two parallel projections" code (route
-  // re-doing the verifier's work line-for-line) into a single
-  // canonical destination shape with one branch on input form.
+  // PCI Principle IV: the verifier MUST always emit a pre-projected
+  // `dataObject` envelope (allow-listed cross-ref ids only). The raw
+  // `event.data.object` shape is reachable ONLY via contract-test
+  // mocks. In production we hard-fail if a Stripe-SDK shape leaks past
+  // the verifier — this prevents future SDK envelope drift from
+  // silently widening the allow-list (review CR-1).
   const rawAny = rawEvent as Record<string, unknown>;
   const verifierDataObject = rawAny['dataObject'] as
     | Record<string, unknown>
     | undefined;
-  // Test-fallback path: raw Stripe `data.object` (mocks). Production
-  // verifier ALWAYS sets `dataObject` so this branch never fires for
-  // real traffic.
+  if (verifierDataObject === undefined && process.env.NODE_ENV === 'production') {
+    logger.error(
+      {
+        correlationId,
+        eventId: evId,
+        eventType: evType,
+      },
+      'webhook.verifier_envelope_missing_dataObject',
+    );
+    return jsonInternalError('webhook_processing_failed', correlationId);
+  }
   const rawDataObject =
     verifierDataObject ??
     ((rawAny['data'] as Record<string, unknown> | undefined)?.['object'] as

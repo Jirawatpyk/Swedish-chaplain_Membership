@@ -51,10 +51,9 @@ export interface ConfirmPaymentInput {
   /**
    * The Stripe `event.id` (`evt_...`) being dispatched. Used to mark
    * the corresponding `processor_events` row as `processed_at = now()`
-   * inside the same dispatch tx — eliminates the split-tx window
-   * documented in `processWebhookEvent` (audit 2026-04-25 finding #4).
-   * Optional for backward compat: when omitted, the parent
-   * `processWebhookEvent` runs the markProcessed call in a separate tx.
+   * inside the same dispatch tx — eliminates the split-tx window.
+   * Required from production dispatch path; optional only for unit
+   * tests that exercise the use-case in isolation.
    */
   readonly processorEventId?: string;
 }
@@ -63,7 +62,8 @@ export type ConfirmPaymentOutcome =
   | { readonly kind: 'processed' }
   | { readonly kind: 'already_succeeded' }
   | { readonly kind: 'unknown_intent' }
-  | { readonly kind: 'auto_refunded_stale_invoice' };
+  | { readonly kind: 'auto_refunded_stale_invoice' }
+  | { readonly kind: 'invoice_not_found' };
 
 export type ConfirmPaymentError =
   | { readonly code: 'invoice_not_found' }
@@ -119,7 +119,15 @@ export async function confirmPayment(
     });
     if (!invoiceResult.ok) {
       if (invoiceResult.error.code === 'not_found') {
-        return err<ConfirmPaymentError>({ code: 'invoice_not_found' });
+        // Review CR-4: atomic markProcessed so the processor_events row
+        // does not get stuck pending across Stripe retries. Mirrors the
+        // `unknown_intent` short-circuit at line 109. Returning ok(...)
+        // (not err) prevents the route from 5xx-ing and triggering a
+        // retry storm on a permanently-unrecoverable mismatch.
+        if (deps.processorEventsRepo && input.processorEventId) {
+          await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
+        }
+        return ok<ConfirmPaymentOutcome>({ kind: 'invoice_not_found' });
       }
       // forbidden won't happen webhook-side (no actor); not_payable →
       // handled by stale-invoice branch below (we re-derive via status).
@@ -276,6 +284,25 @@ export async function confirmPayment(
       settings.processorAccountId,
     );
     if (!retrieved.ok) {
+      // Review I-14 (R3 closeout, migration 0047): emit audit row for
+      // mid-webhook Stripe outages on retrievePaymentIntent. The
+      // gateway adapter also pino-warns at the boundary via
+      // mapStripeError, but the audit row gives ops a forensic trail
+      // tied to the tenant + payment. Tx rolls back so payment row
+      // stays `pending` and Stripe retries.
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_processor_retrieve_failed',
+        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+        summary: `retrievePaymentIntent failed during confirm of ${input.paymentIntentId}`,
+        payload: {
+          payment_intent_id: input.paymentIntentId,
+          payment_id: payment.id,
+          processor_error_kind: retrieved.error.kind,
+        },
+        retentionYears: 5,
+      });
       return err<ConfirmPaymentError>({
         code: 'processor_unavailable',
         reason: retrieved.error.kind,

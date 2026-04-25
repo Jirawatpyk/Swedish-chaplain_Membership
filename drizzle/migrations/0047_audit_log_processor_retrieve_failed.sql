@@ -1,0 +1,32 @@
+-- ---------------------------------------------------------------------------
+-- F5 audit_event_type enum extension (Review I-14 — F5 Phase 3 R3 closeout)
+--
+-- Adds 1 ops-visibility audit event type so a Stripe
+-- `paymentIntents.retrieve` failure inside `confirmPayment` (mid-webhook
+-- card-metadata fetch) leaves a forensic trail in the append-only
+-- `audit_log` table.
+--
+-- The gateway adapter already emits a structured pino warn at the Stripe
+-- boundary via `mapStripeError` (stripe-gateway.ts), but a Stripe outage
+-- mid-webhook leaves no audit row — making post-incident reconciliation
+-- difficult. This event closes that gap.
+--
+--   - `payment_processor_retrieve_failed`: emitted from
+--     `confirmPayment` step 6 when `processorGateway.retrievePaymentIntent`
+--     returns `Result.err`. Carries `{payment_intent_id, payment_id,
+--     processor_error_kind}` payload. Tx rolls back so payment row stays
+--     `pending`; Stripe retries the webhook on its own schedule.
+--
+-- Pattern: idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` (matches 0046).
+-- Forward-only: enum values cannot be removed.
+--
+-- Retention: 5 years (ops event, not tax document) per data-model.md § 7.1.
+--
+-- Keep synced with `auditEventTypeEnum` in
+-- `src/modules/auth/infrastructure/db/schema.ts`, `F5AuditEventType` in
+-- `src/modules/payments/application/ports/audit-port.ts`, and
+-- `F5_AUDIT_RETENTION_YEARS` in
+-- `src/modules/payments/infrastructure/audit/drizzle-payments-audit.ts`.
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'payment_processor_retrieve_failed'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

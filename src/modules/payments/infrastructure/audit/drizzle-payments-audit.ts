@@ -76,6 +76,9 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // (migration 0046). Operational signals only, no tax-document touch.
   webhook_unknown_intent: 5,
   webhook_payment_already_canceled: 5,
+  // Review I-14 (migration 0047) — confirmPayment retrievePaymentIntent
+  // failure trail. Operational only.
+  payment_processor_retrieve_failed: 5,
 };
 
 async function insertAuditRow(

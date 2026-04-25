@@ -15,13 +15,14 @@
  *
  * PCI: zero persistence. `clientSecret` does not enter this component.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { CheckCircle2Icon, DownloadIcon } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
 
 const AUTO_CLOSE_SECONDS = 5;
 
@@ -57,8 +58,6 @@ export function ConfirmationPanel({
 }: ConfirmationPanelProps) {
   const t = useTranslations('portal.payment.success');
 
-  const [remaining, setRemaining] = useState<number>(AUTO_CLOSE_SECONDS);
-  const interruptedRef = useRef<boolean>(false);
   // WCAG 2.4.3 Focus Order: on payment success the previously-focused
   // element (card submit button) unmounts → focus reverts to <body>
   // which is disorienting for keyboard + SR users. Land focus on the
@@ -78,43 +77,16 @@ export function ConfirmationPanel({
     toast.success(t('toast'));
   }, [t]);
 
-  // Auto-close countdown. Tick once per second decrementing remaining.
-  // Close is dispatched in a SEPARATE effect that watches `remaining`
-  // (below) to avoid a setState-during-render React warning that
-  // fires when the parent's setState is invoked from inside a
-  // setState updater. The updater itself runs during React's render
-  // phase, so calling `onClose()` (which calls setPayState on the
-  // parent <PaySheetInternal>) — even wrapped in startTransition —
-  // surfaces as "Cannot update a component (PaySheetInternal) while
-  // rendering a different component (ConfirmationPanel)".
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setRemaining((prev) => {
-        if (interruptedRef.current) {
-          clearInterval(timer);
-          return prev;
-        }
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Dispatch close once the countdown hits zero. Separate effect =
-  // runs after commit, safely outside any render pass.
-  useEffect(() => {
-    if (remaining !== 0) return;
-    if (interruptedRef.current) return;
-    onClose();
-  }, [remaining, onClose]);
-
-  const interruptAutoClose = () => {
-    interruptedRef.current = true;
-  };
+  // Simplify S3: shared `useCountdownAutoDismiss` hook (was previously
+  // an inline ticker + separate-effect dispatcher; same pattern lives
+  // in `<HardCapPrompt>` and is now deduplicated). The two-effect
+  // split inside the hook avoids "Cannot update a component while
+  // rendering a different component" by dispatching onExpire from a
+  // post-commit effect instead of from the setState updater.
+  const { remaining, interrupt: interruptAutoClose } = useCountdownAutoDismiss(
+    AUTO_CLOSE_SECONDS,
+    onClose,
+  );
 
   // `last4Display`: when the backend supplies the actual last 4
   // digits we show them verbatim prefixed with the masked-pan prefix

@@ -71,9 +71,47 @@ export async function stubStripeConfirmSuccess(
   page: Page,
   options: { paymentIntentId?: string } = {},
 ): Promise<void> {
-  const paymentIntentId = options.paymentIntentId ?? 'pi_test_layout';
+  return installStubStripe(page, {
+    paymentIntentId: options.paymentIntentId ?? 'pi_test_layout',
+    scenario: 'success',
+  });
+}
 
-  await page.addInitScript((pi: string) => {
+/**
+ * Decline-card variant of {@link stubStripeConfirmSuccess} for AS-3
+ * (Review I-8). `confirmPayment()` rejects with a Stripe-shaped error
+ * carrying `code: 'card_declined'` + `decline_code: 'generic_decline'`.
+ * Drives PaySheetInternal: card-form → failed → bilingual decline
+ * message via `payments-errors-i18n.ts`.
+ *
+ * Use the test card 4000 0000 0000 0002 contract — Stripe maps that
+ * card to this exact decline shape. The stub avoids a real `js.stripe.com`
+ * round-trip while preserving the contract the UI consumes.
+ */
+export async function stubStripeConfirmDecline(
+  page: Page,
+  options: { paymentIntentId?: string; declineCode?: string } = {},
+): Promise<void> {
+  return installStubStripe(page, {
+    paymentIntentId: options.paymentIntentId ?? 'pi_test_decline',
+    scenario: 'decline',
+    declineCode: options.declineCode ?? 'generic_decline',
+  });
+}
+
+type StubScenario =
+  | { scenario: 'success'; paymentIntentId: string }
+  | { scenario: 'decline'; paymentIntentId: string; declineCode: string };
+
+async function installStubStripe(
+  page: Page,
+  config: StubScenario,
+): Promise<void> {
+  const paymentIntentId = config.paymentIntentId;
+  const scenario = config.scenario;
+  const declineCode = config.scenario === 'decline' ? config.declineCode : '';
+
+  await page.addInitScript(([pi, scen, dc]: [string, string, string]) => {
     // -----------------------------------------------------------------
     // Fetch override for `/api/payments/initiate`
     // -----------------------------------------------------------------
@@ -222,29 +260,48 @@ export async function stubStripeConfirmSuccess(
     }
 
     function FakeStripe() {
+      const declineResponse = () => ({
+        // Stripe SDK shape on a card decline — `code: 'card_declined'`
+        // + `decline_code: 'generic_decline'` matches the production
+        // contract that `payments-errors-i18n.ts` keys against.
+        error: {
+          type: 'card_error',
+          code: 'card_declined',
+          decline_code: dc,
+          message: 'Your card was declined.',
+          payment_intent: { id: pi, status: 'requires_payment_method' },
+        },
+      });
+      const successResponse = () => ({
+        paymentIntent: {
+          id: pi,
+          status: 'succeeded',
+          latest_charge: 'ch_test_layout',
+        },
+      });
       return {
         elements() {
           return makeElements();
         },
         confirmPayment() {
-          return Promise.resolve({
-            paymentIntent: {
-              id: pi,
-              status: 'succeeded',
-              // Intentionally omitted: payment_method_details, charges,
-              // etc. ConfirmationPanel renders fine with the minimum.
-              latest_charge: 'ch_test_layout',
-            },
-          });
+          return Promise.resolve(
+            scen === 'decline' ? declineResponse() : successResponse(),
+          );
         },
         confirmCardPayment() {
-          return Promise.resolve({
-            paymentIntent: { id: pi, status: 'succeeded' },
-          });
+          return Promise.resolve(
+            scen === 'decline'
+              ? declineResponse()
+              : { paymentIntent: { id: pi, status: 'succeeded' } },
+          );
         },
         retrievePaymentIntent() {
           return Promise.resolve({
-            paymentIntent: { id: pi, status: 'succeeded' },
+            paymentIntent: {
+              id: pi,
+              status:
+                scen === 'decline' ? 'requires_payment_method' : 'succeeded',
+            },
           });
         },
         createPaymentMethod() {
@@ -259,5 +316,5 @@ export async function stubStripeConfirmSuccess(
     // <script src="https://js.stripe.com/v3/">. If we set it here, the
     // real bundle is never fetched.
     (window as unknown as { Stripe: typeof FakeStripe }).Stripe = FakeStripe;
-  }, paymentIntentId);
+  }, [paymentIntentId, scenario, declineCode] as [string, string, string]);
 }

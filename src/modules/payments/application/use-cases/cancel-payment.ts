@@ -53,12 +53,19 @@ export async function cancelPayment(
     return err({ code: 'forbidden_role' });
   }
 
-  const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
-  if (!settings) {
-    return err({ code: 'processor_unavailable', reason: 'tenant_settings_missing' });
-  }
-
   return await deps.paymentsRepo.withTx(async (tx) => {
+    // Review I-1: settings load inside the same tx as the row lock so
+    // both reads share one snapshot — eliminates the stale-settings
+    // race where an admin rotates `processor_account_id` between the
+    // settings read and the PI cancel call.
+    const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
+    if (!settings) {
+      return err<CancelPaymentError>({
+        code: 'processor_unavailable',
+        reason: 'tenant_settings_missing',
+      });
+    }
+
     const payment = await deps.paymentsRepo.lockForUpdate(
       tx,
       input.paymentId,

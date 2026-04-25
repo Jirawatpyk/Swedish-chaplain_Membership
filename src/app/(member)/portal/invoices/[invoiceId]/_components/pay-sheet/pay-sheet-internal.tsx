@@ -45,7 +45,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { loadStripe, type Stripe } from '@stripe/stripe-js';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -69,19 +68,9 @@ import { useInitiatePayment } from './use-initiate-payment';
 import type { TranslateFn } from './pay-sheet-translation-types';
 import { CardPaymentRegion } from './card-payment-region';
 
-// Share the Stripe singleton cache with <CardForm> via a small local
-// cache — importing it directly from card-form risks a circular
-// module dep, and `loadStripe()` is a no-op on the already-cached
-// publishable key anyway (Stripe.js memoises internally).
-const stripePromiseCache = new Map<string, Promise<Stripe | null>>();
-function getStripeInstance(publishableKey: string): Promise<Stripe | null> {
-  let cached = stripePromiseCache.get(publishableKey);
-  if (!cached) {
-    cached = loadStripe(publishableKey);
-    stripePromiseCache.set(publishableKey, cached);
-  }
-  return cached;
-}
+// Simplify S1: shared Stripe.js cache (deduplicated with `<CardForm>`).
+// See `stripe-cache.ts` header for rationale + bounded LRU details.
+import { getStripeInstance } from './stripe-cache';
 
 // -- State machine ---------------------------------------------------------
 type PayState =

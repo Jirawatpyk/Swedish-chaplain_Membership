@@ -183,6 +183,9 @@ export async function processWebhookEvent(
         'auto_refunded_stale_invoice',
         'already_succeeded',
         'unknown_intent',
+        // Review CR-4: invoice_not_found short-circuit also folds
+        // markProcessed into the same withTx as the row lock.
+        'invoice_not_found',
       ]);
       markedProcessedAtomically = knownAtomicConfirmKinds.has(
         result.value.kind,
@@ -263,57 +266,78 @@ export async function processWebhookEvent(
     case 'charge.refunded': {
       // Architect D-03 LOW (closed 2026-04-24): markProcessed folded
       // into the same withTx as the audit emissions — atomic commit.
+      // Review CR-3: wrap in try/catch so a tx rejection produces an
+      // explicit dispatch_failed err (route → 500 → Stripe retries),
+      // not a fall-through to `return ok(outcome)` with `outcome`
+      // undefined.
       const refundIds = dataObject.refundIds ?? [];
-      await deps.paymentsRepo.withTx(async (tx) => {
-        for (const refundId of refundIds) {
-          const existing = await deps.refundsRepo.findByProcessorRefundId(
-            tx,
-            tenantId,
-            refundId,
-          );
-          if (!existing) {
-            await deps.audit.emit(tx, {
+      try {
+        await deps.paymentsRepo.withTx(async (tx) => {
+          for (const refundId of refundIds) {
+            const existing = await deps.refundsRepo.findByProcessorRefundId(
+              tx,
               tenantId,
-              requestId: input.requestId,
-              eventType: 'out_of_band_refund_detected',
-              actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-              summary: `Out-of-band refund detected on charge ${dataObject.id}`,
-              payload: {
-                processor_refund_id: refundId,
-                processor_charge_id: dataObject.id,
-                amount_satang: (dataObject.amountSatang ?? 0n).toString(),
-                runbook_url: 'docs/runbooks/out-of-band-refund.md',
-              },
-              retentionYears: 10,
-            });
+              refundId,
+            );
+            if (!existing) {
+              await deps.audit.emit(tx, {
+                tenantId,
+                requestId: input.requestId,
+                eventType: 'out_of_band_refund_detected',
+                actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+                summary: `Out-of-band refund detected on charge ${dataObject.id}`,
+                payload: {
+                  processor_refund_id: refundId,
+                  processor_charge_id: dataObject.id,
+                  amount_satang: (dataObject.amountSatang ?? 0n).toString(),
+                  runbook_url: 'docs/runbooks/out-of-band-refund.md',
+                },
+                retentionYears: 10,
+              });
+            }
           }
-        }
-        // Atomic with the audit writes above.
-        await deps.processorEventsRepo.markProcessed(tx, event.id);
-      });
+          // Atomic with the audit writes above.
+          await deps.processorEventsRepo.markProcessed(tx, event.id);
+        });
+      } catch (e) {
+        return err<ProcessWebhookEventError>({
+          code: 'dispatch_failed',
+          eventType: event.type,
+          detail: e instanceof Error ? e.message : String(e),
+        });
+      }
       outcome = { kind: 'processed', dispatched: envelope.type };
       markedProcessedAtomically = true;
       break;
     }
 
     case 'charge.dispute.created': {
-      await deps.paymentsRepo.withTx(async (tx) => {
-        await deps.audit.emit(tx, {
-          tenantId,
-          requestId: input.requestId,
-          eventType: 'dispute_created',
-          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-          summary: `Dispute created on charge ${dataObject.id}`,
-          payload: {
-            dispute_id: dataObject.disputeId ?? null,
-            charge_id: dataObject.id,
-            amount_satang: (dataObject.amountSatang ?? 0n).toString(),
-          },
-          retentionYears: 10,
+      // Review CR-3: same try/catch wrap as charge.refunded above.
+      try {
+        await deps.paymentsRepo.withTx(async (tx) => {
+          await deps.audit.emit(tx, {
+            tenantId,
+            requestId: input.requestId,
+            eventType: 'dispute_created',
+            actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+            summary: `Dispute created on charge ${dataObject.id}`,
+            payload: {
+              dispute_id: dataObject.disputeId ?? null,
+              charge_id: dataObject.id,
+              amount_satang: (dataObject.amountSatang ?? 0n).toString(),
+            },
+            retentionYears: 10,
+          });
+          // Architect D-03 LOW closeout — atomic with audit.
+          await deps.processorEventsRepo.markProcessed(tx, event.id);
         });
-        // Architect D-03 LOW closeout — atomic with audit.
-        await deps.processorEventsRepo.markProcessed(tx, event.id);
-      });
+      } catch (e) {
+        return err<ProcessWebhookEventError>({
+          code: 'dispatch_failed',
+          eventType: event.type,
+          detail: e instanceof Error ? e.message : String(e),
+        });
+      }
       outcome = { kind: 'processed', dispatched: envelope.type };
       markedProcessedAtomically = true;
       break;

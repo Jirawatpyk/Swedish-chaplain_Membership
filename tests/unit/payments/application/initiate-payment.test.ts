@@ -168,6 +168,36 @@ describe('initiatePayment (T055)', () => {
     expect(auditCall?.[1].eventType).toBe('payment_initiated');
   });
 
+  // Review CR-7: PCI SAQ-A invariant (FR-016) — the inserted payment
+  // row MUST never carry any field that resembles a Primary Account
+  // Number (13–19 contiguous digits). The payment domain shape only
+  // accepts brand/last4/expMonth/expYear; this test is the regression
+  // guard that fails LOUDLY if a future contributor widens the schema
+  // or use-case input to accept a raw PAN through the back door.
+  it('PCI SAQ-A: never persists a PAN-shaped value on the payment row', async () => {
+    const deps = makeDeps();
+    const result = await initiatePayment(deps, makeInput());
+    expect(result.ok).toBe(true);
+
+    const insertCall = (deps.paymentsRepo.insert as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(insertCall).toBeDefined();
+    const inserted = insertCall![0] as Record<string, unknown>;
+
+    // No field should match a 13–19-digit PAN.
+    const PAN_REGEX = /\b\d{13,19}\b/;
+    for (const [key, value] of Object.entries(inserted)) {
+      if (typeof value !== 'string') continue;
+      // last4 is allow-listed (4 digits) — never matches PAN_REGEX.
+      expect(PAN_REGEX.test(value), `Field ${key} contained PAN-shaped value`).toBe(false);
+    }
+
+    // Forbidden field names — never present on the insert payload.
+    const FORBIDDEN_FIELDS = ['pan', 'card_number', 'cardNumber', 'cvv', 'cvc', 'card_cvc', 'card_cvv'];
+    for (const field of FORBIDDEN_FIELDS) {
+      expect(inserted).not.toHaveProperty(field);
+    }
+  });
+
   it('resume path — returns existing pending WITHOUT re-auditing', async () => {
     const existing: Payment = {
       id: asPaymentId('pmt_existing'),

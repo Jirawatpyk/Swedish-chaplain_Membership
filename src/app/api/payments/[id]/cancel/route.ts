@@ -195,6 +195,20 @@ export async function POST(
     const errCode = result.error.code;
     const { status, routeCode } = httpStatusForUseCaseError(errCode);
     const retryAfterSeconds = routeCode === 'processor_unavailable' ? 30 : undefined;
+    // Review I-13: structured log on every use-case error.
+    logger.warn(
+      {
+        requestId,
+        correlationId,
+        tenantId: tenantCtx.slug,
+        userId: actorUserId,
+        paymentId,
+        useCaseErrorCode: errCode,
+        httpStatus: status,
+        routeCode,
+      },
+      'payments.cancel.use_case_error',
+    );
     return errorResponse(
       status,
       routeCode,

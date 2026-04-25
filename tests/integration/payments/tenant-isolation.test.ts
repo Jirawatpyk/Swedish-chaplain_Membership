@@ -94,6 +94,10 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
   let aEventId: string;
   let bEventId: string;
 
+  // FK targets surfaced for INSERT-probe tests (Review CR-5).
+  let bInvoiceIdShared: string;
+  let bMemberIdShared: string;
+
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
     const pair = await createTwoTestTenants();
@@ -131,6 +135,8 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
     const bMemberId = randomUUID();
     const aInvoiceId = randomUUID();
     const bInvoiceId = randomUUID();
+    bInvoiceIdShared = bInvoiceId;
+    bMemberIdShared = bMemberId;
 
     for (const [t, prefix, memberId, invoiceId] of [
       [tenantA, 'alpha', aMemberId, aInvoiceId],
@@ -435,6 +441,42 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
     expect(check).toHaveLength(1);
   });
 
+  // Review CR-5: Constitution v1.4.0 Principle I clause 3 mandates
+  // INSERT probes alongside SELECT/UPDATE/DELETE. RLS WITH CHECK on
+  // payments rejects any INSERT carrying a tenant_id ≠ session tenant.
+  it('A.insert(payment with tenant_id=B) is rejected by RLS WITH CHECK', async () => {
+    const rogueId = makeUlid();
+    const rogue: NewPaymentRow = {
+      id: rogueId,
+      tenantId: tenantB.ctx.slug, // cross-tenant payload — must be rejected
+      invoiceId: bInvoiceIdShared,
+      memberId: bMemberIdShared,
+      method: 'card',
+      status: 'pending',
+      amountSatang: 1000n,
+      currency: 'THB',
+      processorPaymentIntentId: `pi_rogue_${rogueId}`,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      cardBrand: null,
+      cardLast4: null,
+      cardExpMonth: null,
+      cardExpYear: null,
+      initiatedAt: new Date(),
+      actorUserId: user.userId,
+      correlationId: `corr-rogue-${rogueId}`,
+    };
+    await expect(
+      runInTenant(tenantA.ctx, (tx) => tx.insert(payments).values(rogue)),
+    ).rejects.toThrow();
+
+    // Confirm the rogue row never landed.
+    const check = await runInTenant(tenantB.ctx, (tx) =>
+      tx.select().from(payments).where(eq(payments.id, rogueId)),
+    );
+    expect(check).toHaveLength(0);
+  });
+
   // ---------------------------------------------------------------------------
   // refunds
   // ---------------------------------------------------------------------------
@@ -480,6 +522,56 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
       tx.select().from(refunds).where(eq(refunds.id, bRefundId)),
     );
     expect(check).toHaveLength(1);
+  });
+
+  // Review CR-5: INSERT probe for refunds.
+  it('A.insert(refund with tenant_id=B) is rejected by RLS WITH CHECK', async () => {
+    const rogueId = makeUlid();
+    const rogue: NewRefundRow = {
+      id: rogueId,
+      tenantId: tenantB.ctx.slug, // cross-tenant payload
+      paymentId: bPaymentId,
+      invoiceId: bInvoiceIdShared,
+      amountSatang: 1n,
+      reason: 'rogue-cross-tenant',
+      status: 'pending',
+      initiatedAt: new Date(),
+      initiatorUserId: user.userId,
+      correlationId: `corr-rogue-${rogueId}`,
+    };
+    await expect(
+      runInTenant(tenantA.ctx, (tx) => tx.insert(refunds).values(rogue)),
+    ).rejects.toThrow();
+
+    const check = await runInTenant(tenantB.ctx, (tx) =>
+      tx.select().from(refunds).where(eq(refunds.id, rogueId)),
+    );
+    expect(check).toHaveLength(0);
+  });
+
+  // Review CR-5: INSERT probe for tenant_payment_settings.
+  // RLS WITH CHECK rejects any INSERT carrying a tenant_id ≠ the
+  // session's `app.current_tenant`. The pre-seeded UNIQUE-on-tenant_id
+  // would also block a same-tenant collision, but RLS fires first when
+  // the session tenant differs.
+  it('A.insert(tenant_payment_settings with tenant_id=B) is rejected by RLS WITH CHECK', async () => {
+    const rogue: NewTenantPaymentSettingsRow = {
+      tenantId: tenantB.ctx.slug,
+      processor: 'stripe',
+      processorEnvironment: 'test',
+      processorAccountId: `acct_rogue_${randomUUID().slice(0, 8)}`,
+      processorPublishableKey: 'pk_test_rogue',
+      enabledMethods: ['card'],
+      onlinePaymentEnabled: true,
+      autoEmailOnPayment: true,
+      promptpayQrExpirySeconds: 900,
+      allowAnonymousPaylink: false,
+    };
+    await expect(
+      runInTenant(tenantA.ctx, (tx) =>
+        tx.insert(tenantPaymentSettings).values(rogue),
+      ),
+    ).rejects.toThrow();
   });
 
   // ---------------------------------------------------------------------------

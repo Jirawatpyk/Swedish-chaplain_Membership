@@ -49,7 +49,12 @@ export type F5AuditEventType =
   // dispatch on no-op outcomes so ops can see Stripe-side mis-routing
   // / replay patterns instead of silent `ok({ kind: '...' })` returns.
   | 'webhook_unknown_intent'
-  | 'webhook_payment_already_canceled';
+  | 'webhook_payment_already_canceled'
+  // Migration 0047 (Review I-14) — emitted from confirmPayment step 6
+  // when retrievePaymentIntent fails. Tx rolls back so payment row
+  // stays pending; Stripe retries on its own schedule. Audit row gives
+  // ops a forensic trail for mid-webhook Stripe outages.
+  | 'payment_processor_retrieve_failed';
 
 export interface F5AuditEvent {
   readonly tenantId: string | null;        // NULL for pre-resolution webhook rejects

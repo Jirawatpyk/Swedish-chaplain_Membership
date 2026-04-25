@@ -144,6 +144,9 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   // (audit 2026-04-25 findings #10 + #13)
   'webhook_unknown_intent',
   'webhook_payment_already_canceled',
+  // --- F5 confirm-step retrieve-failure trail added by migration 0047 ---
+  //     (Review I-14 — F5 Phase 3 R3 closeout)
+  'payment_processor_retrieve_failed',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

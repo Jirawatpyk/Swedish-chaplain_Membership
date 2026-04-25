@@ -21,11 +21,12 @@
  * this is a decision-required surface, not ambient state.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { ClockIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
 
 const COUNTDOWN_SECONDS = 60;
 
@@ -36,8 +37,6 @@ export interface HardCapPromptProps {
 
 export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
   const t = useTranslations('portal.payment.hardCap');
-  const [remaining, setRemaining] = useState<number>(COUNTDOWN_SECONDS);
-  const interruptedRef = useRef<boolean>(false);
   // WCAG 2.4.3 Focus Order: alertdialog must receive focus on mount so
   // keyboard + SR users land on the decision target without a stray
   // Tab press (audit 2026-04-25 finding #14).
@@ -46,31 +45,14 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
     continueButtonRef.current?.focus();
   }, []);
 
-  // Ticker: decrement once per second.
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setRemaining((prev) => {
-        if (interruptedRef.current) {
-          clearInterval(timer);
-          return prev;
-        }
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Dispatch onCancel when countdown hits zero (separate effect so
-  // parent setState is NOT invoked from inside a setState updater —
-  // same pattern the ConfirmationPanel uses).
-  useEffect(() => {
-    if (remaining !== 0 || interruptedRef.current) return;
-    onCancel();
-  }, [remaining, onCancel]);
+  // Simplify S3: shared `useCountdownAutoDismiss` (deduplicated with
+  // `<ConfirmationPanel>`). The hook's two-effect split also avoids
+  // "Cannot update a component while rendering" when the cancel
+  // dispatcher reaches into the parent <PaySheetInternal>'s setState.
+  const { remaining, interrupt: interruptCountdown } = useCountdownAutoDismiss(
+    COUNTDOWN_SECONDS,
+    onCancel,
+  );
 
   return (
     <section
@@ -104,7 +86,7 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
         type="button"
         variant="default"
         onClick={() => {
-          interruptedRef.current = true;
+          interruptCountdown();
           onContinue();
         }}
         // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px tap target.
