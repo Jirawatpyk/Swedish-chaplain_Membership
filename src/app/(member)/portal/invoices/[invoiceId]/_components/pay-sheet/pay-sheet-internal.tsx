@@ -66,6 +66,7 @@ import { SecurityFooter } from './security-footer';
 import { useInitiatePayment } from './use-initiate-payment';
 import type { TranslateFn } from './pay-sheet-translation-types';
 import { CardPaymentRegion } from './card-payment-region';
+import { PromptPayPanel } from './promptpay-panel';
 
 // shared Stripe.js cache (deduplicated with `<CardForm>`).
 // See `stripe-cache.ts` header for rationale + bounded LRU details.
@@ -210,6 +211,26 @@ export function PaySheetInternal({
   // `handleRetry`; consumed by the initiate useEffect dep array.
   const [retryCount, setRetryCount] = useState(0);
 
+  // Phase 4 / T091 — independent retry counter for the PromptPay tab.
+  // Bumped by the PromptPayPanel's "Refresh QR" CTA so the parent's
+  // card-tab initiate cycle is not perturbed when the user is on
+  // PromptPay. The PromptPay initiate is gated on `activeMethod ===
+  // 'promptpay'` — switching tabs doesn't fire two parallel fetches.
+  const [promptpayRetryCount, setPromptpayRetryCount] = useState(0);
+  // PromptPay payState is held in a parallel state slot. This avoids
+  // collapsing card + promptpay into one machine and lets the user
+  // toggle between tabs without losing the QR. We do NOT persist this
+  // across drawer reopens — fresh QR per drawer-open is acceptable for
+  // PromptPay (no rate-limit pressure equivalent to the card flow,
+  // because PromptPay PIs are server-confirmed and can resume).
+  const [promptpayState, setPromptpayState] = useState<
+    | { readonly kind: 'idle' }
+    | { readonly kind: 'initiating' }
+    | { readonly kind: 'qr'; readonly clientSecret: string; readonly qrSvgUrl: string }
+    | { readonly kind: 'expired' }
+    | { readonly kind: 'failure'; readonly reason: string }
+  >({ kind: 'idle' });
+
   // Keep latest callback/translator refs so the initiate effect does
   // not re-fire on parent re-render (inline arrow props). Avoids the
   // `onInitiateResolved in deps → effect re-runs → fetch abort loop`
@@ -272,6 +293,84 @@ export function PaySheetInternal({
       });
     },
     onFailure: (reason) => setPayState({ kind: 'failure', reason }),
+  });
+
+  // -- PromptPay initiate cycle (Phase 4 / T091) --------------------------
+  // Independent of the card-tab `useInitiatePayment` above. Fires only
+  // when the user is on the PromptPay tab AND we don't already have a
+  // QR payload in `promptpayState`. The Refresh CTA bumps
+  // `promptpayRetryCount` to force a re-initiate.
+  useInitiatePayment({
+    enabled:
+      activeMethod === 'promptpay' &&
+      enabledMethods.includes('promptpay') &&
+      promptpayState.kind !== 'qr',
+    invoiceId: invoice.id,
+    method: 'promptpay',
+    initialInitiate: null,
+    retryCount: promptpayRetryCount,
+    translateRef: tRef,
+    onInitiating: () => setPromptpayState({ kind: 'initiating' }),
+    onSuccess: (payload) => {
+      const qrSvgUrl = payload.stripe.promptpayQrSvgUrl ?? null;
+      if (qrSvgUrl === null) {
+        // Either Stripe did not return a QR (server-confirm path failed
+        // silently) or the use-case resumed an existing pending card PI
+        // for the same actor+invoice. Surface a recoverable failure —
+        // the user can click Refresh to bump retry + try again.
+        setPromptpayState({
+          kind: 'failure',
+          reason: tRef.current('promptpay.loadFailed'),
+        });
+        return;
+      }
+      setPromptpayState({
+        kind: 'qr',
+        clientSecret: payload.stripe.clientSecret,
+        qrSvgUrl,
+      });
+    },
+    onFailure: (reason) => setPromptpayState({ kind: 'failure', reason }),
+  });
+
+  // PromptPay PI status polling. Same `stripe.retrievePaymentIntent`
+  // mechanism used for 3DS — when the PI flips to `succeeded` we
+  // transition the outer payState to success. Inert unless we have a
+  // QR clientSecret in hand.
+  const promptpayClientSecret =
+    promptpayState.kind === 'qr' ? promptpayState.clientSecret : null;
+  const getStripeForPromptPayPoll = useMemo(
+    () => () => getStripeInstance(publishableKey),
+    [publishableKey],
+  );
+  const handlePromptPaySucceeded = useCallback(
+    (paymentIntentId: string) => {
+      setPayState({
+        kind: 'success',
+        paymentIntentId,
+        method: 'promptpay',
+        receiptUrl: `/portal/invoices/${invoice.id}/receipt`,
+      });
+    },
+    [invoice.id],
+  );
+  const handlePromptPayFailed = useCallback(
+    (reason: '3ds_timeout' | 'canceled' | 'card_declined') => {
+      // For PromptPay the only reachable terminal failure modes from the
+      // poll are `canceled` (user / system cancel) + `3ds_timeout` (we
+      // hit the 5-min cap). Map both onto the panel's expired state so
+      // the user can refresh.
+      void reason;
+      setPromptpayState({ kind: 'expired' });
+    },
+    [],
+  );
+  useThreeDSecurePoll({
+    enabled: promptpayState.kind === 'qr',
+    clientSecret: promptpayClientSecret,
+    getStripe: getStripeForPromptPayPoll,
+    onSucceeded: handlePromptPaySucceeded,
+    onFailed: handlePromptPayFailed,
   });
 
   // -- 3DS polling loop (G4 gap closeout) ---------------------------------
@@ -371,6 +470,68 @@ export function PaySheetInternal({
       onRequestClose?.();
     }
   }, [onExplicitCancel, onRequestClose]);
+
+  const handlePromptPayRefresh = useCallback(() => {
+    // Force a fresh PromptPay PI: clear the local QR state and bump
+    // the retry counter. The initiate effect's cleanup aborts any
+    // in-flight fetch from the previous attempt.
+    setPromptpayState({ kind: 'idle' });
+    setPromptpayRetryCount((n) => n + 1);
+  }, []);
+
+  // -- PromptPay panel content per state ---------------------------------
+  const promptPayPanel = (() => {
+    switch (promptpayState.kind) {
+      case 'idle':
+      case 'initiating':
+        return <PaySheetSkeleton />;
+      case 'qr':
+        return (
+          <PromptPayPanel
+            qrSvgUrl={promptpayState.qrSvgUrl}
+            amountSatang={invoice.amountDue}
+            currency={invoice.currency}
+            onRefresh={handlePromptPayRefresh}
+            status="pending"
+          />
+        );
+      case 'expired':
+        return (
+          <PromptPayPanel
+            qrSvgUrl=""
+            amountSatang={invoice.amountDue}
+            currency={invoice.currency}
+            onRefresh={handlePromptPayRefresh}
+            status="expired"
+          />
+        );
+      case 'failure':
+        return (
+          <InlineAlert
+            tone="destructive"
+            data-testid="pay-sheet-promptpay-failure"
+            className="space-y-4"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+          >
+            <InlineAlertTitle>{t('retry.title')}</InlineAlertTitle>
+            <InlineAlertDescription>
+              {t('retry.body', { reason: promptpayState.reason })}
+            </InlineAlertDescription>
+            <Button
+              type="button"
+              variant="default"
+              onClick={handlePromptPayRefresh}
+              className="min-h-[44px] w-full"
+              data-testid="pay-sheet-promptpay-retry"
+            >
+              {t('promptpay.refresh')}
+            </Button>
+          </InlineAlert>
+        );
+    }
+  })();
 
   const handleRetry = useCallback(() => {
     // Reset the terminal-state guard so the NEXT settlement
@@ -510,8 +671,7 @@ export function PaySheetInternal({
           activeMethod={activeMethod}
           onMethodChange={setActiveMethod}
           cardPanel={cardPanel}
-          // PromptPay slot remains the MethodTabs G2 localized placeholder
-          // until Phase 4 wires the QR renderer.
+          promptPayPanel={promptPayPanel}
         />
       ) : (
         cardPanel

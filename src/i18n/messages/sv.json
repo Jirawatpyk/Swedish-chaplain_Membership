@@ -1653,6 +1653,18 @@
         "body": "Din PromptPay-QR förfaller om 2 minuter. Uppdatera för en ny kod om du behöver mer tid.",
         "action": "Uppdatera QR"
       },
+      "promptpay": {
+        "qrAlt": "PromptPay QR-kod",
+        "instructions": "Skanna med valfri thailändsk bankapp",
+        "amount": "Belopp: {amount}",
+        "warning": "Skanna endast QR-koden som visas ovan; överför INTE manuellt till något annat konto.",
+        "countdown": "Förfaller om {minutes}:{seconds}",
+        "refresh": "Uppdatera QR",
+        "expired": "QR-koden har förfallit",
+        "expiredBody": "Den här QR-koden är inte längre giltig. Skapa en ny för att fortsätta.",
+        "waiting": "Väntar på betalningsbekräftelse…",
+        "loadFailed": "Vi kunde inte skapa en PromptPay-QR. Uppdatera och försök igen."
+      },
       "hardCap": {
         "title": "Är du fortfarande här?",
         "body": "Betalningsfönstret har varit öppet i 30 minuter. Klicka på Fortsätt för att hålla betalningssessionen aktiv, annars avbryts försöket automatiskt.",

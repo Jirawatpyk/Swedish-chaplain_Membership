@@ -44,8 +44,11 @@ test.describe('PaySheet declined card — @payment @f5', () => {
     await expect(sheet).toBeVisible({ timeout: 10_000 });
 
     // Submit the (stubbed) card form — the fake `confirmPayment`
-    // resolves with the Stripe-shaped decline error.
-    const submitButton = sheet.getByRole('button', { name: /pay now|ชำระเงิน|betala/i });
+    // resolves with the Stripe-shaped decline error. R5 fix (2026-04-25):
+    // use the stable `pay-sheet-card-submit` testid; the previous
+    // aria-name regex tripped strict-mode violation against the
+    // "Close payment drawer" button (substring "payment" matches /pay/i).
+    const submitButton = sheet.getByTestId('pay-sheet-card-submit');
     await expect(submitButton).toBeEnabled();
     await submitButton.click();
 
@@ -64,7 +67,10 @@ test.describe('PaySheet declined card — @payment @f5', () => {
     // Retry CTA must be visible + actionable. Either re-enabled
     // submit button OR a dedicated "Try again" CTA — both meet AS-3.
     const retryAffordance = sheet.getByRole('button', {
-      name: /try again|ลองอีกครั้ง|försök igen|pay now|ชำระเงิน|betala/i,
+      // R5 fix (2026-04-25): match retune "Pay {amount}" / "ชำระ {amount}" /
+      // "Betala {amount}" by prefix; keep "Try again" alternates for the
+      // explicit-retry CTA path.
+      name: /try again|ลองอีกครั้ง|försök igen|^(pay|ชำระ|betala)/i,
     });
     await expect(retryAffordance).toBeEnabled({ timeout: 3_000 });
 

@@ -225,18 +225,28 @@ export const stripeGateway: ProcessorGatewayPort = {
   > {
     const client = getStripeClient();
     try {
-      const pi = await client.paymentIntents.create(
-        {
-          amount: Number(input.amountSatang),
-          currency: input.currency,
-          payment_method_types: [...input.paymentMethodTypes],
-          metadata: { ...input.metadata },
-        },
-        {
-          idempotencyKey: input.idempotencyKey,
-          ...connectOptions(input.stripeAccount),
-        },
-      );
+      // T090 (Phase 4 / US2 PromptPay): when the only enabled method is
+      // PromptPay, request server-side confirmation in the same call so
+      // Stripe returns `next_action.promptpay_display_qr_code.image_url_svg`
+      // in the createPaymentIntent response. Card flows still use
+      // client-side confirmation via Stripe Elements.
+      const isPromptPayOnly =
+        input.paymentMethodTypes.length === 1 &&
+        input.paymentMethodTypes[0] === 'promptpay';
+      const createParams: Stripe.PaymentIntentCreateParams = {
+        amount: Number(input.amountSatang),
+        currency: input.currency,
+        payment_method_types: [...input.paymentMethodTypes],
+        metadata: { ...input.metadata },
+      };
+      if (isPromptPayOnly) {
+        createParams.confirm = true;
+        createParams.payment_method_data = { type: 'promptpay' };
+      }
+      const pi = await client.paymentIntents.create(createParams, {
+        idempotencyKey: input.idempotencyKey,
+        ...connectOptions(input.stripeAccount),
+      });
 
       logger.info(
         {

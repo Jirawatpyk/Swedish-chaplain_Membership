@@ -25,12 +25,24 @@
  * Playwright config in the repo root.
  */
 import { expect, test } from './fixtures';
+import { signInAsMember } from './helpers/member-session';
 import {
   buildInvoiceAutoEmail,
   buildPayOnlineUrl,
 } from '@/modules/invoicing/infrastructure/email/invoice-auto-email';
 
 const INVOICE_ID = 'inv_01HQTESTT018E2ED33PL1NK';
+/**
+ * R5 (2026-04-25): real seeded invoice id used by the click-through
+ * specs (formerly fixme'd pending T115 throwaway-tenant infra). The
+ * pre-existing `E2E_ISSUED_INVOICE_ID` fixture (seeded by
+ * `pnpm tsx scripts/seed-e2e-portal-invoices.ts`) already provides
+ * exactly the row shape the tests need (issued, member-owned, tenant
+ * with online_payment_enabled=true), so a throwaway-tenant pipeline
+ * is not strictly required to assert the deep-link returnUrl
+ * round-trip.
+ */
+const SEEDED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 const DOWNLOAD_URL = 'https://blob.test/invoice-issued.pdf';
 
 /**
@@ -124,32 +136,94 @@ test.describe('@us-f5 @fr-027 pay-online email deep-link — render', () => {
 });
 
 test.describe('@us-f5 @fr-027 pay-online email deep-link — click-through', () => {
-  test.fixme(
-    'signed-out: click CTA → sign-in page retains returnUrl=/portal/invoices/{id}?pay=1&utm_* → after sign-in lands on invoice detail with ?pay=1 intact (needs F4 e2e seeder — T115)',
-    async ({ page }) => {
-      // TODO(T115): This flow requires a seeded `issued` invoice owned
-      // by an F3 member on a throwaway tenant with
-      // `tenant_payment_settings.online_payment_enabled=true`. Sketch:
-      //   1. Seed tenant + member + issued invoice (inv_id known).
-      //   2. Compose CTA href = buildPayOnlineUrl(baseURL, inv_id).
-      //   3. Navigate page to CTA href while signed out.
-      //   4. Assert URL matches /portal/sign-in?returnUrl=%2Fportal%2Finvoices%2F{inv_id}%3Fpay%3D1%26utm_source%3Dinvoice_email%26utm_medium%3Demail%26utm_campaign%3Df5_pay_online
-      //   5. Sign in as the invoice's owner.
-      //   6. Assert page settles on /portal/invoices/{inv_id} with
-      //      `?pay=1` + utm_* query params intact (assert via URL().searchParams).
-      void page;
-    },
+  // R5 fix (2026-04-25): both specs use the existing seeded invoice
+  // (`E2E_ISSUED_INVOICE_ID`) — no throwaway-tenant infra required.
+  // Skip cleanly if the env var is missing so a dev running the suite
+  // without `pnpm tsx scripts/seed-e2e-portal-invoices.ts` doesn't see
+  // a hard failure.
+  test.skip(
+    !SEEDED_INVOICE_ID,
+    'E2E_ISSUED_INVOICE_ID missing — run `pnpm tsx scripts/seed-e2e-portal-invoices.ts`',
   );
 
-  test.fixme(
-    'signed-in: click CTA → lands directly on /portal/invoices/{id}?pay=1 (no sign-in redirect) (needs F4 e2e seeder — T115)',
-    async ({ page }) => {
-      // TODO(T115): Sign in as the invoice's owner first, then
-      // navigate to the CTA href and assert:
-      //   - URL matches /portal/invoices/{inv_id}?pay=1&utm_*
-      //   - h1 / invoice-detail landmark is visible
-      //   - (Sheet drawer open assertion is US1 territory — not here.)
-      void page;
-    },
-  );
+  test('signed-out: click CTA → sign-in page retains returnUrl → after sign-in lands on invoice detail with ?pay=1 + utm_* intact', async ({
+    page,
+  }) => {
+    // 1. Compose CTA href the same way the email build does — use
+    //    page.context()'s baseURL so the returnUrl exactly matches
+    //    middleware-side normalization.
+    await page.goto('/');
+    const origin = new URL(page.url()).origin;
+    const ctaHref = buildPayOnlineUrl(origin, SEEDED_INVOICE_ID!);
+
+    // 2. Navigate to CTA while signed out — middleware should redirect
+    //    to /sign-in with returnUrl preserving the entire query string
+    //    (?pay=1 + utm_*).
+    await page.goto(ctaHref);
+    await page.waitForURL(/\/sign-in\?/, { timeout: 10_000 });
+
+    // 3. Assert the returnUrl param round-trips the original path +
+    //    query verbatim (decoded: `/portal/invoices/{id}?pay=1&utm_*`).
+    const signInUrl = new URL(page.url());
+    const returnUrl = signInUrl.searchParams.get('returnTo');
+    expect(returnUrl).not.toBeNull();
+    expect(returnUrl).toContain(`/portal/invoices/${SEEDED_INVOICE_ID}`);
+    expect(returnUrl).toContain('pay=1');
+    expect(returnUrl).toContain('utm_source=invoice_email');
+    expect(returnUrl).toContain('utm_medium=email');
+    expect(returnUrl).toContain('utm_campaign=f5_pay_online');
+
+    // 4. Sign in WITHOUT navigating away — we are already on the
+    //    sign-in page with `returnTo` in the URL. Calling
+    //    `signInAsMember(page)` here would `page.goto('/portal/sign-in')`
+    //    bare and DROP the query string. Fill the form in place so the
+    //    server reads `returnTo` from the form action.
+    const email = process.env.E2E_MEMBER_EMAIL!;
+    const password = process.env.E2E_MEMBER_PASSWORD!;
+    await page.getByLabel(/email/i).fill(email);
+    await page.getByLabel(/password/i).fill(password);
+    await page.getByRole('button', { name: /sign in/i }).click();
+
+    // 5. After sign-in, URL must settle on the invoice detail page
+    //    with ?pay=1 + utm_* preserved.
+    await page.waitForURL(
+      new RegExp(`/portal/invoices/${SEEDED_INVOICE_ID}\\?pay=1`),
+      { timeout: 15_000 },
+    );
+    const finalUrl = new URL(page.url());
+    expect(finalUrl.pathname).toBe(`/portal/invoices/${SEEDED_INVOICE_ID}`);
+    expect(finalUrl.searchParams.get('pay')).toBe('1');
+    expect(finalUrl.searchParams.get('utm_source')).toBe('invoice_email');
+    expect(finalUrl.searchParams.get('utm_medium')).toBe('email');
+    expect(finalUrl.searchParams.get('utm_campaign')).toBe('f5_pay_online');
+  });
+
+  test('signed-in: click CTA → lands directly on /portal/invoices/{id}?pay=1 (no sign-in redirect)', async ({
+    page,
+  }) => {
+    // Sign in BEFORE composing the CTA so the click-through skips
+    // middleware redirect.
+    await page.goto('/');
+    await signInAsMember(page);
+
+    const origin = new URL(page.url()).origin;
+    const ctaHref = buildPayOnlineUrl(origin, SEEDED_INVOICE_ID!);
+
+    // Navigate to CTA while signed in — should land on invoice detail
+    // directly with no /sign-in detour.
+    await page.goto(ctaHref);
+    await page.waitForURL(
+      new RegExp(`/portal/invoices/${SEEDED_INVOICE_ID}\\?pay=1`),
+      { timeout: 10_000 },
+    );
+
+    const finalUrl = new URL(page.url());
+    expect(finalUrl.pathname).toBe(`/portal/invoices/${SEEDED_INVOICE_ID}`);
+    expect(finalUrl.searchParams.get('pay')).toBe('1');
+
+    // h1 invoice-detail landmark visible (sanity — page actually
+    // rendered, not just URL match). The Sheet drawer open assertion
+    // belongs to US1 (payment-card-happy-path.spec.ts), not here.
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  });
 });

@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 /**
  * T108 — `invoice_voided` template (FR-036 cancellation notice).
  *

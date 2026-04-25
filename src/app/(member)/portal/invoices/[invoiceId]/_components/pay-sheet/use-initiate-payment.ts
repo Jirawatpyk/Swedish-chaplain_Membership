@@ -50,6 +50,13 @@ export interface InitiateResponse {
 export interface UseInitiatePaymentOptions {
   readonly enabled: boolean;
   readonly invoiceId: string;
+  /**
+   * Payment method to initiate. Defaults to `'card'` for the historical
+   * card-only call sites. Phase 4 (T091) passes `'promptpay'` so the
+   * PromptPay panel can request a server-confirmed PaymentIntent that
+   * Stripe returns with `next_action.promptpay_display_qr_code` populated.
+   */
+  readonly method?: 'card' | 'promptpay';
   readonly initialInitiate: CachedInitiate | null;
   readonly retryCount: number;
   /** Stable translator ref so locale changes don't re-fire the effect. */
@@ -70,6 +77,7 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
     invoiceId,
     initialInitiate,
     retryCount,
+    method = 'card',
   } = opts;
 
   useEffect(() => {
@@ -86,7 +94,7 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ invoiceId, method: 'card' }),
+          body: JSON.stringify({ invoiceId, method }),
           signal: abortController.signal,
         });
         if (cancelled) return;
@@ -128,5 +136,5 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
       cancelled = true;
       abortController.abort();
     };
-  }, [enabled, invoiceId, initialInitiate, retryCount]);
+  }, [enabled, invoiceId, initialInitiate, retryCount, method]);
 }

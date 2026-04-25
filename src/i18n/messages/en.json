@@ -1653,6 +1653,18 @@
         "body": "Your PromptPay QR will expire in 2 minutes. Refresh to get a fresh code if you need more time.",
         "action": "Refresh QR"
       },
+      "promptpay": {
+        "qrAlt": "PromptPay QR code",
+        "instructions": "Scan with any Thai bank app",
+        "amount": "Amount: {amount}",
+        "warning": "Only scan the QR code shown above; do NOT transfer manually to any other account.",
+        "countdown": "Expires in {minutes}:{seconds}",
+        "refresh": "Refresh QR",
+        "expired": "QR code expired",
+        "expiredBody": "This QR is no longer valid. Generate a new one to continue.",
+        "waiting": "Waiting for payment confirmation…",
+        "loadFailed": "We couldn't generate a PromptPay QR. Refresh and try again."
+      },
       "hardCap": {
         "title": "Are you still here?",
         "body": "The payment drawer has been open for 30 minutes. Click Continue to keep your payment session active, otherwise this attempt will be canceled automatically.",

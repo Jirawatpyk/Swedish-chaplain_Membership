@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 /**
  * T108 — `invoice_paid` + `receipt_pdf_resent` template.
  *

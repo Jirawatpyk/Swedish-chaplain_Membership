@@ -111,6 +111,25 @@ async function installStubStripe(
   const scenario = config.scenario;
   const declineCode = config.scenario === 'decline' ? config.declineCode : '';
 
+  // R5 fix (2026-04-25): @stripe/stripe-js v6+ injects the script tag
+  // UNCONDITIONALLY (it no longer short-circuits on existing
+  // `window.Stripe`). If real Stripe loads, it overwrites our stub
+  // factory and validates clientSecret/publishableKey strictly →
+  // IntegrationError → ErrorBoundary. Block ALL js.stripe.com requests
+  // at the network layer so the script never reaches the page; our
+  // addInitScript-defined `window.Stripe` is then the only factory.
+  await page.route(
+    (url) => url.hostname === 'js.stripe.com',
+    (route) => {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        // Empty body — `window.Stripe` already injected by addInitScript.
+        body: '/* stub-stripe: js.stripe.com blocked by E2E fixture */',
+      });
+    },
+  );
+
   await page.addInitScript(([pi, scen, dc]: [string, string, string]) => {
     // -----------------------------------------------------------------
     // Fetch override for `/api/payments/initiate`
@@ -308,6 +327,14 @@ async function installStubStripe(
           return Promise.resolve({
             paymentMethod: { id: 'pm_test_layout' },
           });
+        },
+        // R5 fix (2026-04-25): @stripe/react-stripe-js validateStripe()
+        // requires `createToken` to be a function — without this method
+        // <Elements> rejects the prop with "Invalid prop `stripe`
+        // supplied to `Elements`". Returning a benign empty token shape
+        // is enough; the test path never exercises legacy token flows.
+        createToken() {
+          return Promise.resolve({ token: { id: 'tok_test_layout' } });
         },
       };
     }

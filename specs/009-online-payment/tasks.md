@@ -237,17 +237,17 @@ The following pay-sheet files were added beyond T072–T086 to support the empir
 
 ### Tests for US2 (TDD)
 
-- [ ] T087 [P] [US2] E2E test `tests/e2e/payment-promptpay-happy-path.spec.ts` — `--workers=1`; member opens PromptPay tab → assert QR `<img>` renders + countdown visible + bilingual instructions; trigger succeeded webhook; assert confirmation.
-- [ ] T088 [P] [US2] E2E test `tests/e2e/payment-promptpay-expiry.spec.ts` — `--workers=1`; QR expiry (default 15 min via `tenant_payment_settings.promptpay_qr_expiry_seconds`); assert "QR expired — refresh" CTA replaces QR; click refresh; new PaymentIntent created.
-- [ ] T089 [P] [US2] Integration test `tests/integration/payments/promptpay-amount-mismatch.test.ts` — server-locked amount; verify Stripe rejects out-of-band amount changes.
+- [X] T087 [P] [US2] E2E test `tests/e2e/payment-promptpay-happy-path.spec.ts` — `--workers=1`; member opens PromptPay tab → assert QR `<img>` renders + countdown visible + bilingual instructions; trigger succeeded webhook; assert confirmation.
+- [X] T088 [P] [US2] E2E test `tests/e2e/payment-promptpay-expiry.spec.ts` — `--workers=1`; QR expiry (default 15 min via `tenant_payment_settings.promptpay_qr_expiry_seconds`); assert "QR expired — refresh" CTA replaces QR; click refresh; new PaymentIntent created.
+- [X] T089 [P] [US2] Integration test `tests/integration/payments/promptpay-amount-mismatch.test.ts` — server-locked amount; verify Stripe rejects out-of-band amount changes.
 
 ### Implementation (mostly UI + Stripe payment-method-types config)
 
-- [ ] T090 [US2] Update `initiate-payment.ts` use case (T055) to accept `method='promptpay'` → pass `payment_method_types: ['promptpay']` to Stripe with `payment_method_data.type: 'promptpay'`; on intent creation Stripe returns `next_action.promptpay_display_qr_code.image_url_svg`.
-- [ ] T091 [US2] Create `src/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/promptpay-panel.tsx` — renders QR `<img src={qrSvgUrl} alt="PromptPay QR" />` with aspect-ratio-square; countdown timer (motion-safe pulse / motion-reduce instant per plan.md § UX Reduced-motion matrix); bilingual instructions ("Scan with any Thai bank app" / "สแกนด้วยแอปธนาคารไทย"); "Refresh QR" button that re-calls `initiate-payment` (creates new attempt_seq).
-- [ ] T092 [US2] Add PromptPay-specific bilingual UI text + warning text "Only scan the QR code shown above; do NOT transfer manually to any other account" (post-critique P7 / spec § Edge Cases) in `src/i18n/messages/{en,th,sv}.json`.
-- [ ] T093 [US2] Wire app-switching state persistence (post-critique P6 / spec § Edge Cases): Sheet drawer mount survives `visibilitychange` events; webhook-driven status update polls or websocket continues regardless of foreground/background. Verified by Playwright `page.bringToFront()` simulation in T087.
-- [ ] T094 [US2] Verify Stripe Elements `appearance` API renders correctly for PromptPay (no card fields shown); locale truncation `useLocale().split('-')[0]` (R2-E2) applies.
+- [X] T090 [US2] Update `initiate-payment.ts` use case (T055) to accept `method='promptpay'` → pass `payment_method_types: ['promptpay']` to Stripe with `payment_method_data.type: 'promptpay'`; on intent creation Stripe returns `next_action.promptpay_display_qr_code.image_url_svg`.
+- [X] T091 [US2] Create `src/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/promptpay-panel.tsx` — renders QR `<img src={qrSvgUrl} alt="PromptPay QR" />` with aspect-ratio-square; countdown timer (motion-safe pulse / motion-reduce instant per plan.md § UX Reduced-motion matrix); bilingual instructions ("Scan with any Thai bank app" / "สแกนด้วยแอปธนาคารไทย"); "Refresh QR" button that re-calls `initiate-payment` (creates new attempt_seq).
+- [X] T092 [US2] Add PromptPay-specific bilingual UI text + warning text "Only scan the QR code shown above; do NOT transfer manually to any other account" (post-critique P7 / spec § Edge Cases) in `src/i18n/messages/{en,th,sv}.json`.
+- [X] T093 [US2] Wire app-switching state persistence (post-critique P6 / spec § Edge Cases): Sheet drawer mount survives `visibilitychange` events; webhook-driven status update polls or websocket continues regardless of foreground/background. Verified by Playwright `page.bringToFront()` simulation in T087.
+- [X] T094 [US2] Verify Stripe Elements `appearance` API renders correctly for PromptPay (no card fields shown); locale truncation `useLocale().split('-')[0]` (R2-E2) applies.
 
 **Checkpoint US2**: Both card + PromptPay payment methods work end-to-end. **Full P1 MVP complete.** Test by paying same invoice via both methods → verify each settles + receipts emailed.
 

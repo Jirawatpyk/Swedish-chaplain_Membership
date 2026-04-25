@@ -1,5 +1,13 @@
+/** @jsxImportSource react */
 /**
  * T108 — F4 auto-email builder (React Email migration).
+ *
+ * Note on the pragma above: the JSX-runtime override is REQUIRED for
+ * Playwright E2E tests that import this module. Playwright 1.59's babel
+ * transform hardcodes its own stub jsx-runtime (returns {__pw_type, type,
+ * props, key} non-React shells); without the override, render(element)
+ * fails with "Objects are not valid as a React child". Vitest/Next.js/
+ * tsc are unaffected — they already default to React's jsx-runtime.
  *
  * Rendered by the shared outbox dispatcher (`/api/cron/outbox-dispatch`)
  * when a `notifications_outbox` row with
@@ -27,6 +35,7 @@
  * gain an `await`. The React Email pipeline inlines styles via
  * `juice` for cross-client compat + emits a Gmail-safe preview line.
  */
+import * as React from 'react';
 import { render } from '@react-email/components';
 import { InvoiceIssuedEmail } from './templates/invoice-issued';
 import { InvoicePaidEmail } from './templates/invoice-paid';

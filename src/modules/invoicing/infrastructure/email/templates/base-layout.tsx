@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 /**
  * T108 — shared F4 auto-email layout (@react-email/components).
  *
