@@ -104,6 +104,11 @@ export async function confirmPayment(
       input.paymentIntentId,
     );
     if (!payment) {
+      // Audit 2026-04-26 round-2 #5b: atomic markProcessed even for
+      // unknown_intent so the dispatch tail short-circuits.
+      if (deps.processorEventsRepo && input.processorEventId) {
+        await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
+      }
       return ok<ConfirmPaymentOutcome>({ kind: 'unknown_intent' });
     }
 
@@ -218,6 +223,10 @@ export async function confirmPayment(
         },
         retentionYears: 10,
       });
+      // Audit 2026-04-26 round-2 #5b: atomic markProcessed.
+      if (deps.processorEventsRepo && input.processorEventId) {
+        await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
+      }
       return ok<ConfirmPaymentOutcome>({ kind: 'auto_refunded_stale_invoice' });
     }
 
@@ -228,6 +237,13 @@ export async function confirmPayment(
       // no-op ok (reliability F-01 — DO NOT return err or route 5xx-s
       // back at Stripe triggering a retry storm).
       if (transition.error.kind === 'terminal_state') {
+        // Atomic markProcessed (audit 2026-04-26 round-2 #5b).
+        if (deps.processorEventsRepo && input.processorEventId) {
+          await deps.processorEventsRepo.markProcessed(
+            tx,
+            input.processorEventId,
+          );
+        }
         return ok<ConfirmPaymentOutcome>({ kind: 'already_succeeded' });
       }
       // illegal_transition (e.g. pending → succeeded mismatch is

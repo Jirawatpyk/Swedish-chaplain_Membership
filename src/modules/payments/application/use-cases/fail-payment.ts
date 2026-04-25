@@ -73,13 +73,13 @@ export async function failPayment(
       input.paymentIntentId,
     );
     if (!payment) {
-      // Ops-visibility audit (audit 2026-04-25 finding #10): the
-      // `payment_intent.payment_failed` webhook arrived for an intent
-      // we have no row for. Indicates Stripe-side mis-routing,
-      // multi-account collisions, or replay from old test fixtures.
-      // Best-effort emit (tx=null): the dispatch tx is read-only at
-      // this point, and we want this audit to commit even if the
-      // outer dispatch path swallows the result.
+      // Ops-visibility audit (audit 2026-04-25 finding #10).
+      // Audit 2026-04-26 round-2 self-review #R2-A1: keep audit.emit
+      // BEST-EFFORT (tx=null) per audit-port contract — an audit-table
+      // outage MUST NOT roll back the markProcessed (which would re-
+      // introduce the stuck-row class on probe paths). markProcessed
+      // stays inside `tx` so it commits atomically with the empty
+      // dispatch tx.
       await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId,
@@ -93,12 +93,25 @@ export async function failPayment(
         },
         retentionYears: 5,
       });
+      if (deps.processorEventsRepo && input.processorEventId) {
+        await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
+      }
       return ok<FailPaymentOutcome>({ kind: 'unknown_intent' });
     }
 
     const transition = canTransition(payment.status, 'failed');
     if (!transition.ok) {
       if (transition.error.kind === 'terminal_state') {
+        // Atomic markProcessed (audit 2026-04-26 round-2 #5b) — no
+        // state mutation but still mark processor_events.processed_at
+        // so the dispatch tail short-circuits and ops dashboards see
+        // the terminal-retry as "handled" rather than "stuck".
+        if (deps.processorEventsRepo && input.processorEventId) {
+          await deps.processorEventsRepo.markProcessed(
+            tx,
+            input.processorEventId,
+          );
+        }
         return ok<FailPaymentOutcome>({ kind: 'already_terminal' });
       }
       return err<FailPaymentError>({

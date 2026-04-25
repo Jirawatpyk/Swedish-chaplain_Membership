@@ -60,12 +60,14 @@ import { formatSatangThb } from '@/app/(member)/portal/invoices/_utils/format';
 import { PaySheetSkeleton } from '@/components/payments/pay-sheet-skeleton';
 
 import { MethodTabs, type PaymentMethod } from './method-tabs';
-import { CardForm } from './card-form';
 import { ProcessingPanel } from './processing-panel';
 import { ThreeDSecurePanel } from './three-d-secure-panel';
 import { ConfirmationPanel } from './confirmation-panel';
 import { OrderSummary } from './order-summary';
 import { SecurityFooter } from './security-footer';
+import { useInitiatePayment } from './use-initiate-payment';
+import type { TranslateFn } from './pay-sheet-translation-types';
+import { CardPaymentRegion } from './card-payment-region';
 
 // Share the Stripe singleton cache with <CardForm> via a small local
 // cache — importing it directly from card-form risks a circular
@@ -96,16 +98,8 @@ type PayState =
     }
   | { readonly kind: 'failure'; readonly reason: string };
 
-interface InitiateResponse {
-  readonly payment: { readonly id: string };
-  readonly stripe: {
-    readonly clientSecret: string;
-    readonly publishableKey: string;
-    readonly paymentIntentId: string;
-    readonly promptpayQrSvgUrl?: string | null;
-  };
-  readonly correlationId: string;
-}
+// `InitiateResponse` moved to `./use-initiate-payment.ts` (audit
+// 2026-04-26 round-2 #1 refactor — extracted with the fetch hook).
 
 /**
  * Cached initiate response, lifted to the PaySheet parent so that
@@ -234,7 +228,7 @@ export function PaySheetInternal({
   // class of bug (audit 2026-04-25 finding #4).
   const onInitiateResolvedRef = useRef(onInitiateResolved);
   const onPaymentSettledRef = useRef(onPaymentSettled);
-  const tRef = useRef(t);
+  const tRef = useRef<TranslateFn>(t);
   useEffect(() => {
     onInitiateResolvedRef.current = onInitiateResolved;
     onPaymentSettledRef.current = onPaymentSettled;
@@ -261,102 +255,36 @@ export function PaySheetInternal({
     initialInitiate?.publishableKey ?? tenantPublishableKey,
   );
 
-  // -- Kick off payment-intent creation on first mount of the card tab --
-  // Guard key is derived so changing active method (back to card after a
-  // retry) re-fires the effect exactly once. We avoid the
-  // react-hooks/set-state-in-effect pattern by transitioning to
-  // `initiating` via a ref-gated setter INSIDE the async closure — the
-  // eslint rule flags the synchronous setState that appeared on the
-  // first line before the `await`.
-  useEffect(() => {
-    if (activeMethod !== 'card') return;
-    // Skip the fetch when the parent provided a cached initiate
-    // response AND we are still on the first attempt (no retry yet).
-    // On retry (`retryCount > 0`) we always re-fetch because the
-    // previous PaymentIntent may have been consumed / canceled.
-    if (initialInitiate !== null && retryCount === 0) return;
-
-    // Proper AbortController pattern (audit 2026-04-25 fixes #3 + #4).
-    //
-    // - StrictMode double-invoke safety: cleanup aborts the in-flight
-    //   fetch. Invocation-2 starts a fresh fetch; backend
-    //   Idempotency-Key (inv-{invoiceId}-attempt-{seq}) de-dupes at the
-    //   Stripe layer so no duplicate PaymentIntent is created.
-    // - Retry safety: bumping `retryCount` triggers the cleanup which
-    //   aborts the prior fetch. No in-flight-flag deadlock.
-    // - Unmount safety: on drawer destroy, cleanup aborts the fetch
-    //   AND flips `cancelled` so late-arriving resolved promises no
-    //   longer mutate parent state (prevents stale-cache planting).
-    const abortController = new AbortController();
-    let cancelled = false;
-    setPayState({ kind: 'initiating' });
-
-    (async () => {
-      try {
-        const response = await fetch('/api/payments/initiate', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ invoiceId: invoice.id, method: 'card' }),
-          signal: abortController.signal,
-        });
-        if (cancelled) return;
-        if (!response.ok) {
-          let reason: string;
-          if (response.status === 429) {
-            const retryAfter = response.headers.get('Retry-After');
-            const seconds = retryAfter
-              ? Number.parseInt(retryAfter, 10)
-              : NaN;
-            reason =
-              Number.isFinite(seconds) && seconds > 0
-                ? tRef.current('retry.reasonRateLimitedWithSeconds', {
-                    seconds,
-                  })
-                : tRef.current('retry.reasonRateLimited');
-          } else if (response.status === 401 || response.status === 403) {
-            reason = tRef.current('retry.reasonAuth');
-          } else if (response.status >= 500) {
-            reason = tRef.current('retry.reasonServer');
-          } else {
-            reason = tRef.current('retry.genericReason');
-          }
-          setPayState({ kind: 'failure', reason });
-          return;
-        }
-        const payload = (await response.json()) as InitiateResponse;
-        if (cancelled) return;
-        // Reset terminal-state guard for the fresh PaymentIntent
-        // (audit 2026-04-25 finding #1). Without this reset, a
-        // failure→retry→success sequence silently skips the parent
-        // `onPaymentSettled` callback for the successful retry.
-        settledRef.current = false;
-        setPublishableKey(payload.stripe.publishableKey);
-        setPayState({
-          kind: 'card-form',
-          clientSecret: payload.stripe.clientSecret,
-        });
-        onInitiateResolvedRef.current?.({
-          clientSecret: payload.stripe.clientSecret,
-          publishableKey: payload.stripe.publishableKey,
-          paymentIntentId: payload.stripe.paymentIntentId,
-          paymentDbId: payload.payment.id,
-        });
-      } catch (err) {
-        if (cancelled) return;
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        setPayState({
-          kind: 'failure',
-          reason: tRef.current('retry.reasonNetwork'),
-        });
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      abortController.abort();
-    };
-  }, [activeMethod, invoice.id, retryCount, initialInitiate]);
+  // -- Initiate fetch lifecycle delegated to `useInitiatePayment` -----
+  // Audit 2026-04-26 round-2 #1 refactor: 110-line in-place effect
+  // extracted to `./use-initiate-payment.ts`. The hook owns
+  // AbortController + StrictMode safety + Idempotency-Key dedupe; this
+  // file owns the UI state machine + outcome dispatch.
+  useInitiatePayment({
+    enabled: activeMethod === 'card',
+    invoiceId: invoice.id,
+    initialInitiate,
+    retryCount,
+    translateRef: tRef,
+    onInitiating: () => setPayState({ kind: 'initiating' }),
+    onSuccess: (payload) => {
+      // Reset terminal-state guard for the fresh PaymentIntent (audit
+      // 2026-04-25 finding #1).
+      settledRef.current = false;
+      setPublishableKey(payload.stripe.publishableKey);
+      setPayState({
+        kind: 'card-form',
+        clientSecret: payload.stripe.clientSecret,
+      });
+      onInitiateResolvedRef.current?.({
+        clientSecret: payload.stripe.clientSecret,
+        publishableKey: payload.stripe.publishableKey,
+        paymentIntentId: payload.stripe.paymentIntentId,
+        paymentDbId: payload.payment.id,
+      });
+    },
+    onFailure: (reason) => setPayState({ kind: 'failure', reason }),
+  });
 
   // -- 3DS polling loop (G4 gap closeout) ---------------------------------
   // Delegated to `useThreeDSecurePoll` so the loop can be tested in
@@ -486,65 +414,25 @@ export function PaySheetInternal({
         // No clientSecret yet — skeleton only. CardForm can't mount
         // until the initiate fetch returns a secret.
         return <PaySheetSkeleton />;
-      case 'card-form': {
-        // SINGLE-MOUNT pattern (audit 2026-04-25 finding #5, revised
-        // after empirical check 2026-04-25).
-        //
-        // Previous attempts:
-        //   v1 — dual-mount sr-only/visible: tore down Stripe iframe
-        //        on every cardFormVisible flip.
-        //   v2 — CardForm in flow + absolute overlay on top: overlay
-        //        pinned to `.relative` container whose intrinsic
-        //        height was driven by CardForm's not-yet-painted
-        //        iframe (≈ 0 px) → skeleton clipped, only 3 of 4
-        //        skeleton rows rendered (docs/Bug/image (4).png).
-        //
-        // Current v3 — INVERT the positioning: skeleton renders in
-        // normal flow so it drives the .relative container's intrinsic
-        // height (~190 px). CardForm sits absolutely behind the
-        // skeleton (opacity-0 + aria-hidden + pointer-events-none) so
-        // Stripe can paint the iframe off-view. When CardForm.onVisible
-        // fires, the skeleton unmounts and the SAME CardForm React
-        // node reverts to normal flow — no remount, iframe preserved.
+      case 'card-form':
+        // Audit 2026-04-26 round-2 #1 refactor — extracted to
+        // `<CardPaymentRegion>`. See that component for the single-
+        // mount + skeleton-overlay invariant.
         return (
-          <div className="relative">
-            <div
-              className={
-                cardFormVisible
-                  ? undefined
-                  : // `overflow-hidden` is critical: the absolute
-                    // wrapper sizes to skeleton height (~190 px) but
-                    // Stripe's PaymentElement iframe paints ~300 px
-                    // tall. Without clipping, overflow:visible (the
-                    // default) bleeds into the ancestor
-                    // `.overflow-y-auto` → scrollbar appears even
-                    // though the user sees nothing past the skeleton
-                    // (empirical 2026-04-25). Stripe's iframe still
-                    // mounts + measures correctly; only its off-
-                    // screen paint is clipped, which is fine because
-                    // the wrapper is opacity-0 anyway.
-                    'absolute inset-0 opacity-0 pointer-events-none overflow-hidden'
-              }
-              aria-hidden={!cardFormVisible}
-              data-testid="pay-sheet-card-form-wrapper"
-            >
-              <CardForm
-                clientSecret={payState.clientSecret}
-                publishableKey={publishableKey}
-                amountDue={invoice.amountDue}
-                currency={invoice.currency}
-                invoiceId={invoice.id}
-                memberId={memberId}
-                onSuccess={handleCardSuccess}
-                onFailure={handleCardFailure}
-                onRequiresAction={handleRequiresAction}
-                onVisible={() => setCardFormVisible(true)}
-              />
-            </div>
-            {!cardFormVisible ? <PaySheetSkeleton /> : null}
-          </div>
+          <CardPaymentRegion
+            clientSecret={payState.clientSecret}
+            publishableKey={publishableKey}
+            amountDue={invoice.amountDue}
+            currency={invoice.currency}
+            invoiceId={invoice.id}
+            memberId={memberId}
+            cardFormVisible={cardFormVisible}
+            onSuccess={handleCardSuccess}
+            onFailure={handleCardFailure}
+            onRequiresAction={handleRequiresAction}
+            onVisible={() => setCardFormVisible(true)}
+          />
         );
-      }
       case 'processing':
         return <ProcessingPanel onCancel={handleCancel} />;
       case 'requires-action':

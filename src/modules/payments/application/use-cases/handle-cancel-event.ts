@@ -58,9 +58,8 @@ export async function handleCancelEvent(
       input.paymentIntentId,
     );
     if (!payment) {
-      // Ops-visibility audit (audit 2026-04-25 finding #10 mirror):
-      // `payment_intent.canceled` webhook for an unknown intent. Same
-      // mis-routing / replay diagnostic as fail-payment.ts.
+      // Audit 2026-04-26 round-2 self-review #R2-A1: best-effort emit
+      // (tx=null) so audit failure cannot roll back markProcessed.
       await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId,
@@ -74,14 +73,14 @@ export async function handleCancelEvent(
         },
         retentionYears: 5,
       });
+      if (deps.processorEventsRepo && input.processorEventId) {
+        await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
+      }
       return ok<HandleCancelEventOutcome>({ kind: 'unknown_intent' });
     }
 
     if (payment.status === 'canceled') {
-      // Already canceled via T059 member-initiated path OR earlier
-      // webhook delivery — idempotent no-op. Audit 2026-04-25 finding
-      // #13: emit ops-visibility audit so duplicate Stripe deliveries
-      // are visible on dashboards (helps debug retry storms).
+      // Audit 2026-04-26 round-2 self-review #R2-A1: best-effort emit.
       await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId,
@@ -95,6 +94,9 @@ export async function handleCancelEvent(
         },
         retentionYears: 5,
       });
+      if (deps.processorEventsRepo && input.processorEventId) {
+        await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
+      }
       return ok<HandleCancelEventOutcome>({ kind: 'already_canceled' });
     }
 
@@ -102,7 +104,14 @@ export async function handleCancelEvent(
     if (!transition.ok) {
       if (transition.error.kind === 'terminal_state') {
         // Reached a terminal NON-canceled state (succeeded/failed/
-        // refunded). Cannot cancel. Return no-op to avoid retry-storm.
+        // refunded). Cannot cancel. Return no-op + atomic markProcessed
+        // to avoid retry-storm + stuck-row class.
+        if (deps.processorEventsRepo && input.processorEventId) {
+          await deps.processorEventsRepo.markProcessed(
+            tx,
+            input.processorEventId,
+          );
+        }
         return ok<HandleCancelEventOutcome>({ kind: 'already_canceled' });
       }
       return err<HandleCancelEventError>({

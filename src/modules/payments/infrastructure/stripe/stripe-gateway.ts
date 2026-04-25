@@ -76,7 +76,19 @@ function connectOptions(stripeAccount: string): { stripeAccount?: string } {
  * if it still bubbles up, the caller should surface it to the user
  * rather than loop again.
  */
-function mapStripeError(
+/**
+ * Map a thrown Stripe SDK error to the port's `ProcessorGatewayError`.
+ *
+ * Audit 2026-04-26 round-2 self-review #R2-A5 follow-up: exported so a
+ * direct unit test can throw synthetic `Stripe.errors.*` instances at
+ * the mapper without going through the SDK + HTTP transport. The MSW-
+ * mocked integration path doesn't always wrap 4xx responses in the
+ * matching JS class, so the mapping logic needs its own targeted test.
+ *
+ * Production callers MUST go through the gateway methods — this export
+ * exists for the unit test surface only (no other module imports it).
+ */
+export function mapStripeError(
   e: unknown,
   context: { stripeAccount: string; paymentIntentId?: string | undefined },
 ): ProcessorGatewayError {

@@ -18,10 +18,15 @@
  * reads cannot survive a processor-account-id rotation.
  */
 import { eq, sql } from 'drizzle-orm';
-// TODO(audit 2026-04-25 finding #9): `unstable_cache` is being
-// deprecated in Next.js 16 — track migration to the new `cache()`
-// primitive once the public API stabilises. Until then, the existing
-// API works and we pin the import path explicitly.
+// Audit 2026-04-26 round-2 #4 REVERTED via self-review #R2-A3:
+// kept on deprecated `unstable_cache()` because the `'use cache'`
+// directive migration would (a) require enabling `cacheComponents:
+// true` which forces Partial Prerendering across F1–F4 (out-of-
+// scope audit), and (b) break vitest unit testability (directive
+// throws outside Next.js runtime). Re-evaluate at F11 SaaS Billing
+// when caching strategy is reconsidered holistically. See
+// next.config.ts comment + `tests/integration/payments/tenant-payment-
+// settings-cache.test.ts` for the empirical investigation.
 import { revalidateTag, unstable_cache } from 'next/cache';
 import type { TenantPaymentSettingsRepo } from '../../application/ports/tenant-payment-settings-repo';
 import type {

@@ -171,18 +171,22 @@ export async function processWebhookEvent(
       }
       if (result.value.kind === 'auto_refunded_stale_invoice') {
         outcome = { kind: 'auto_refunded_stale_invoice' };
-        // auto-refund branch did NOT call markProcessed (early return
-        // before the bridge call). Parent tail handles it.
-      } else if (result.value.kind === 'processed') {
-        outcome = { kind: 'processed', dispatched: envelope.type };
-        // confirmPayment folded markProcessed into its dispatch tx
-        // (audit 2026-04-25 #4).
-        markedProcessedAtomically = true;
       } else {
-        // already_succeeded / unknown_intent — sub-use-case took an
-        // early-return path before markProcessed. Parent tail handles.
         outcome = { kind: 'processed', dispatched: envelope.type };
       }
+      // Audit 2026-04-26 round-2 self-review #R2-A2: whitelist outcome
+      // kinds confirmPayment is KNOWN to mark atomically. New outcome
+      // kinds added later default to false → fall through to the tail
+      // canary log → regression caught early instead of silent stuck row.
+      const knownAtomicConfirmKinds = new Set([
+        'processed',
+        'auto_refunded_stale_invoice',
+        'already_succeeded',
+        'unknown_intent',
+      ]);
+      markedProcessedAtomically = knownAtomicConfirmKinds.has(
+        result.value.kind,
+      );
       break;
     }
 
@@ -212,12 +216,13 @@ export async function processWebhookEvent(
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
-      // Only the `processed` kind ran the atomic markProcessed inside
-      // failPayment's withTx; unknown_intent / already_terminal paths
-      // took early returns and need the parent tail to fire.
-      if (result.value.kind === 'processed') {
-        markedProcessedAtomically = true;
-      }
+      // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
+      const knownAtomicFailKinds = new Set([
+        'processed',
+        'unknown_intent',
+        'already_terminal',
+      ]);
+      markedProcessedAtomically = knownAtomicFailKinds.has(result.value.kind);
       break;
     }
 
@@ -245,11 +250,13 @@ export async function processWebhookEvent(
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
-      // Same gating as the failed branch — unknown_intent /
-      // already_canceled fall through to the parent tail.
-      if (result.value.kind === 'processed') {
-        markedProcessedAtomically = true;
-      }
+      // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
+      const knownAtomicCancelKinds = new Set([
+        'processed',
+        'unknown_intent',
+        'already_canceled',
+      ]);
+      markedProcessedAtomically = knownAtomicCancelKinds.has(result.value.kind);
       break;
     }
 
@@ -328,40 +335,41 @@ export async function processWebhookEvent(
     }
   }
 
-  // Tail markProcessed — runs only on early-return paths from sub-
-  // use-cases that did NOT fold markProcessed into their own withTx
-  // (kind in {already_succeeded, already_terminal, already_canceled,
-  // unknown_intent, auto_refunded_stale_invoice}).
-  //
-  // Architect D-03 closure (audit 2026-04-25 finding #4): the previous
-  // split-tx window for the regular `processed` outcomes is now closed
-  // — sub-use-cases accept `processorEventsRepo + processorEventId`
-  // optional deps and call markProcessed inside their own withTx.
-  // Early-return paths still hit this tail call; if it fails, the
-  // residual is a `processed` row with `processed_at=NULL` (visible
-  // on observability dashboards, no double-processing because
-  // ON CONFLICT DO NOTHING blocks re-dispatch).
+  // Audit 2026-04-26 round-2 #5b: split-tx tail ELIMINATED. Every
+  // sub-use-case branch (succeeded / failed / canceled, including their
+  // unknown_intent + already_* + auto_refunded_stale_invoice early-
+  // return paths) now folds markProcessed into its own withTx + the
+  // refunded / dispute / default branches mark inline. The flag is
+  // kept for now as a documentation marker + safety guard: if a future
+  // branch forgets to mark, we still log + try the tail commit rather
+  // than silently leave a stuck row. Production should NEVER reach the
+  // `if (!markedProcessedAtomically)` body — the warn line is the
+  // canary that flags any regression.
   if (!markedProcessedAtomically) {
     const log: LoggerPort = deps.logger ?? noopLogger;
+    log.error(
+      'processWebhookEvent.markedProcessedAtomically_invariant_violated',
+      {
+        eventId: event.id,
+        eventType: event.type,
+        tenantId,
+        // If this fires, a new dispatch branch was added without
+        // setting `markedProcessedAtomically = true` AND without
+        // folding markProcessed into the sub-use-case's withTx. Fix
+        // the new branch — do NOT silently rely on this tail.
+      },
+    );
     try {
       await deps.paymentsRepo.withTx(async (tx) => {
         await deps.processorEventsRepo.markProcessed(tx, event.id);
       });
     } catch (e) {
-      // Swallow + log — the dispatch already committed; better to
-      // 200 Stripe and let reconciliation clean up than 500 and
-      // trigger a retry storm for a transient row-marker write.
-      // Audit 2026-04-25 finding #5: routed through LoggerPort
-      // (was `console.warn` — Application can't import pino directly).
-      log.warn(
-        'processWebhookEvent.markProcessed_tail_failure',
-        {
-          eventId: event.id,
-          eventType: event.type,
-          tenantId,
-          error: e instanceof Error ? e.message : String(e),
-        },
-      );
+      log.warn('processWebhookEvent.markProcessed_tail_failure', {
+        eventId: event.id,
+        eventType: event.type,
+        tenantId,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
