@@ -54,7 +54,13 @@ export type F5AuditEventType =
   // when retrievePaymentIntent fails. Tx rolls back so payment row
   // stays pending; Stripe retries on its own schedule. Audit row gives
   // ops a forensic trail for mid-webhook Stripe outages.
-  | 'payment_processor_retrieve_failed';
+  | 'payment_processor_retrieve_failed'
+  // Migration 0048 (Review S5) — emitted from confirmPayment step 2
+  // when the invoice referenced by the PaymentIntent does not exist
+  // (cross-tenant mis-route, data-migration gap, or Stripe test-mode
+  // replay against a clean DB). markProcessed folds atomically; ops
+  // get the forensic trail without 5xx-ing Stripe.
+  | 'payment_invoice_not_found';
 
 export interface F5AuditEvent {
   readonly tenantId: string | null;        // NULL for pre-resolution webhook rejects

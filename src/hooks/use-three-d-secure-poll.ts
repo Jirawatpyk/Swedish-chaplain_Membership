@@ -86,12 +86,12 @@ export function useThreeDSecurePoll({
         // `processing` / `requires_action` → keep polling on the
         // next interval tick.
       } catch (e) {
-        // Review I-11: log transient errors so a Stripe outage during
+        // log transient errors so a Stripe outage during
         // 3DS doesn't leave the user staring at the skeleton for the
         // full 5-min cap with no forensic trail. Dev-only console.warn
         // (no PII) — the next tick retries automatically.
         if (process.env.NODE_ENV !== 'production') {
-          // eslint-disable-next-line no-console
+           
           console.warn('[3ds-poll] transient retrievePaymentIntent error', {
             message: e instanceof Error ? e.message : String(e),
           });

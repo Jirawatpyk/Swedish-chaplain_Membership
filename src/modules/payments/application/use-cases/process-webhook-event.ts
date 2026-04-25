@@ -41,9 +41,9 @@ import {
   type VerifiedStripeEvent,
 } from '../ports';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
-import { confirmPayment } from './confirm-payment';
-import { failPayment } from './fail-payment';
-import { handleCancelEvent } from './handle-cancel-event';
+import { confirmPayment, type ConfirmPaymentOutcome } from './confirm-payment';
+import { failPayment, type FailPaymentOutcome } from './fail-payment';
+import { handleCancelEvent, type HandleCancelEventOutcome } from './handle-cancel-event';
 
 export interface ProcessWebhookEventInput {
   readonly tenantId: string;
@@ -118,8 +118,22 @@ export async function processWebhookEvent(
   });
 
   if (!inserted.inserted) {
-    // Duplicate delivery — short-circuit.
-    return ok<ProcessWebhookEventOutcome>({ kind: 'duplicate' });
+    // duplicate delivery — but ONLY short-circuit if the prior
+    // attempt actually completed (processed_at set). If the previous
+    // dispatch tx threw mid-flight, the step-6 row committed to its
+    // own tx (outcome='processed') but `processed_at` is still NULL
+    // because markProcessed only fires inside the dispatch tx. Without
+    // this guard, every Stripe retry hits ON CONFLICT and silently
+    // declares duplicate → the event never recovers. Treat
+    // `processed_at IS NULL` as "in-flight, retry the dispatch" so the
+    // recovery path proceeds normally.
+    if (inserted.event.processedAt !== null) {
+      return ok<ProcessWebhookEventOutcome>({ kind: 'duplicate' });
+    }
+    // Fall through into the dispatch block — the row already exists,
+    // markProcessed at the tail will set processed_at. The dispatch
+    // sub-use-cases are idempotent (lockForUpdate + canTransition
+    // guards), so re-running them on the same payment row is safe.
   }
 
   // Step 9 — dispatch. Structured allow-list ONLY (PCI guardian).
@@ -178,13 +192,16 @@ export async function processWebhookEvent(
       // kinds confirmPayment is KNOWN to mark atomically. New outcome
       // kinds added later default to false → fall through to the tail
       // canary log → regression caught early instead of silent stuck row.
-      const knownAtomicConfirmKinds = new Set([
+      // typed against the outcome union so adding a new kind in
+      // ConfirmPaymentOutcome forces a build error here if the dev
+      // forgets to whitelist it (vs runtime canary log only).
+      const knownAtomicConfirmKinds = new Set<ConfirmPaymentOutcome['kind']>([
         'processed',
         'auto_refunded_stale_invoice',
         'already_succeeded',
         'unknown_intent',
-        // Review CR-4: invoice_not_found short-circuit also folds
-        // markProcessed into the same withTx as the row lock.
+        // invoice_not_found short-circuit folds markProcessed into the
+        // same withTx as the row lock.
         'invoice_not_found',
       ]);
       markedProcessedAtomically = knownAtomicConfirmKinds.has(
@@ -220,7 +237,8 @@ export async function processWebhookEvent(
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
       // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
-      const knownAtomicFailKinds = new Set([
+      // typed against FailPaymentOutcome.
+      const knownAtomicFailKinds = new Set<FailPaymentOutcome['kind']>([
         'processed',
         'unknown_intent',
         'already_terminal',
@@ -254,7 +272,8 @@ export async function processWebhookEvent(
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
       // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
-      const knownAtomicCancelKinds = new Set([
+      // typed against HandleCancelEventOutcome.
+      const knownAtomicCancelKinds = new Set<HandleCancelEventOutcome['kind']>([
         'processed',
         'unknown_intent',
         'already_canceled',
@@ -266,7 +285,7 @@ export async function processWebhookEvent(
     case 'charge.refunded': {
       // Architect D-03 LOW (closed 2026-04-24): markProcessed folded
       // into the same withTx as the audit emissions — atomic commit.
-      // Review CR-3: wrap in try/catch so a tx rejection produces an
+      // wrap in try/catch so a tx rejection produces an
       // explicit dispatch_failed err (route → 500 → Stripe retries),
       // not a fall-through to `return ok(outcome)` with `outcome`
       // undefined.
@@ -303,7 +322,10 @@ export async function processWebhookEvent(
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
           eventType: event.type,
-          detail: e instanceof Error ? e.message : String(e),
+          // Stripe error messages can carry partial API key
+          // fragments / internal ids. Use the class name only — caller
+          // logs it into pino + audit downstream where leak risk is real.
+          detail: e instanceof Error ? e.constructor.name : 'unknown',
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
@@ -312,7 +334,7 @@ export async function processWebhookEvent(
     }
 
     case 'charge.dispute.created': {
-      // Review CR-3: same try/catch wrap as charge.refunded above.
+      // same try/catch wrap as charge.refunded above.
       try {
         await deps.paymentsRepo.withTx(async (tx) => {
           await deps.audit.emit(tx, {
@@ -335,7 +357,10 @@ export async function processWebhookEvent(
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
           eventType: event.type,
-          detail: e instanceof Error ? e.message : String(e),
+          // Stripe error messages can carry partial API key
+          // fragments / internal ids. Use the class name only — caller
+          // logs it into pino + audit downstream where leak risk is real.
+          detail: e instanceof Error ? e.constructor.name : 'unknown',
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };

@@ -441,7 +441,7 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
     expect(check).toHaveLength(1);
   });
 
-  // Review CR-5: Constitution v1.4.0 Principle I clause 3 mandates
+  // Constitution v1.4.0 Principle I clause 3 mandates
   // INSERT probes alongside SELECT/UPDATE/DELETE. RLS WITH CHECK on
   // payments rejects any INSERT carrying a tenant_id ≠ session tenant.
   it('A.insert(payment with tenant_id=B) is rejected by RLS WITH CHECK', async () => {
@@ -524,7 +524,7 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
     expect(check).toHaveLength(1);
   });
 
-  // Review CR-5: INSERT probe for refunds.
+  // INSERT probe for refunds.
   it('A.insert(refund with tenant_id=B) is rejected by RLS WITH CHECK', async () => {
     const rogueId = makeUlid();
     const rogue: NewRefundRow = {
@@ -549,7 +549,7 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
     expect(check).toHaveLength(0);
   });
 
-  // Review CR-5: INSERT probe for tenant_payment_settings.
+  // INSERT probe for tenant_payment_settings.
   // RLS WITH CHECK rejects any INSERT carrying a tenant_id ≠ the
   // session's `app.current_tenant`. The pre-seeded UNIQUE-on-tenant_id
   // would also block a same-tenant collision, but RLS fires first when
@@ -614,6 +614,37 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
     );
     expect(check).toHaveLength(1);
     expect(check[0]!.outcome).toBe('processed');
+  });
+
+  // INSERT probe completes Constitution v1.4.0 Principle I clause 3
+  // matrix coverage for processor_events post-resolution path. Pre-resolution
+  // path (tenantId NULL) is INSERT-allowed by design (covered by line ~575
+  // SELECT-policy verification of NULL-tenant rejection rows).
+  it('A.insert(processor_event with tenant_id=B) is rejected by RLS WITH CHECK', async () => {
+    const rogueId = `evt_rogue_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+    const rogue: NewProcessorEventRow = {
+      id: rogueId,
+      tenantId: tenantB.ctx.slug, // cross-tenant payload — must be rejected
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_rogue',
+      outcome: 'processed',
+      payloadSha256: 'a'.repeat(64),
+      correlationId: `corr-rogue-${rogueId}`,
+      receivedAt: new Date(),
+    };
+    await expect(
+      runInTenant(tenantA.ctx, (tx) =>
+        tx.insert(processorEvents).values(rogue),
+      ),
+    ).rejects.toThrow();
+
+    // Confirm no row landed under B's view either.
+    const check = await runInTenant(tenantB.ctx, (tx) =>
+      tx.select().from(processorEvents).where(eq(processorEvents.id, rogueId)),
+    );
+    expect(check).toHaveLength(0);
   });
 
   // processor_events DELETE is forbidden by RLS FOR ALL tenants (append-only)

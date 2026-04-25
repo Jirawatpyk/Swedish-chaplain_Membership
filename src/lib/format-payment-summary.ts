@@ -17,7 +17,7 @@
  */
 
 const DATETIME_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
-// Review I-16: cache `Intl.NumberFormat` per locale to mirror the
+// cache `Intl.NumberFormat` per locale to mirror the
 // `DATETIME_FORMATTERS` pattern. `formatPaymentAmount` is called on
 // every render of the confirmation panel + 3DS poll tick — repeated
 // `new Intl.NumberFormat()` allocation is ~10–50× slower than

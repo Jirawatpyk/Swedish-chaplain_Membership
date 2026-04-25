@@ -45,7 +45,7 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
     continueButtonRef.current?.focus();
   }, []);
 
-  // Simplify S3: shared `useCountdownAutoDismiss` (deduplicated with
+  // shared `useCountdownAutoDismiss` (deduplicated with
   // `<ConfirmationPanel>`). The hook's two-effect split also avoids
   // "Cannot update a component while rendering" when the cancel
   // dispatcher reaches into the parent <PaySheetInternal>'s setState.

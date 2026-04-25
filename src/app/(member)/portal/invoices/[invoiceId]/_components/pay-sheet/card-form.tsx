@@ -53,9 +53,8 @@ import {
 } from '@stripe/react-stripe-js';
 
 import { Button } from '@/components/ui/button';
-import { PaySheetSkeleton } from '@/components/payments/pay-sheet-skeleton';
 import { useMinDelay } from '@/hooks/use-min-delay';
-// Simplify S1: shared Stripe.js cache (used by `<PaySheetInternal>`'s
+// shared Stripe.js cache (used by `<PaySheetInternal>`'s
 // 3DS poll too). See `stripe-cache.ts` header for rationale.
 import { getStripeInstance as getStripe } from './stripe-cache';
 
@@ -379,7 +378,7 @@ export function CardForm({
           // broken tenant theme is caught before QA instead of
           // silently falling back to Stripe's default palette
           // (audit 2026-04-25 finding #16).
-          // eslint-disable-next-line no-console
+           
           console.warn(
             `[pay-sheet/card-form] Unable to resolve CSS color for Stripe theme var "${key}" (raw="${raw}"). Stripe default will be used.`,
           );

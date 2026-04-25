@@ -54,6 +54,8 @@ export const AUDIT_EVENT_TYPES = [
   // --- Migration 0047 (Review I-14) — confirmPayment retrievePaymentIntent
   //     failure trail. Operational only.
   'payment_processor_retrieve_failed',
+  // --- Migration 0048 (Review S5) — confirmPayment invoice_not_found trail.
+  'payment_invoice_not_found',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

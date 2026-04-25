@@ -59,8 +59,7 @@ import { formatSatangThb } from '@/app/(member)/portal/invoices/_utils/format';
 import { PaySheetSkeleton } from '@/components/payments/pay-sheet-skeleton';
 
 import { MethodTabs, type PaymentMethod } from './method-tabs';
-import { ProcessingPanel } from './processing-panel';
-import { ThreeDSecurePanel } from './three-d-secure-panel';
+import { StatusPanel } from './status-panel';
 import { ConfirmationPanel } from './confirmation-panel';
 import { OrderSummary } from './order-summary';
 import { SecurityFooter } from './security-footer';
@@ -68,7 +67,7 @@ import { useInitiatePayment } from './use-initiate-payment';
 import type { TranslateFn } from './pay-sheet-translation-types';
 import { CardPaymentRegion } from './card-payment-region';
 
-// Simplify S1: shared Stripe.js cache (deduplicated with `<CardForm>`).
+// shared Stripe.js cache (deduplicated with `<CardForm>`).
 // See `stripe-cache.ts` header for rationale + bounded LRU details.
 import { getStripeInstance } from './stripe-cache';
 
@@ -423,9 +422,9 @@ export function PaySheetInternal({
           />
         );
       case 'processing':
-        return <ProcessingPanel onCancel={handleCancel} />;
+        return <StatusPanel kind="processing" onCancel={handleCancel} />;
       case 'requires-action':
-        return <ThreeDSecurePanel onCancel={handleCancel} />;
+        return <StatusPanel kind="three-d-secure" onCancel={handleCancel} />;
       case 'success':
         // G-Review Finding #2 — pass locale-aware amount + datetime
         // into the summary template instead of `toLocaleString()` (no

@@ -316,26 +316,48 @@ export const stripeGateway: ProcessorGatewayPort = {
       );
       return ok(undefined);
     } catch (e) {
-      // Review CR-2: idempotency on already-canceled. Stripe returns
+      // Idempotency on already-terminal PI. Stripe returns
       // `payment_intent_unexpected_state` (HTTP 400) when the PI is
-      // already in a terminal state (canceled / succeeded). For a cancel
-      // call the only safe interpretation is "the desired post-state is
-      // already true" — we return ok(void) so the caller can proceed
-      // with the local DB write. This closes the partial-failure trap
-      // where Stripe cancel succeeded on attempt N, the DB write failed,
-      // and attempt N+1 would otherwise hit a hard permanent error and
-      // leave the row stuck `pending`.
+      // already in a terminal state — but that includes both `canceled`
+      // (the safe-to-treat-as-success case) AND `succeeded` (where
+      // returning ok would leave our DB drifted: status='canceled' while
+      // Stripe says the customer was charged).
+      //
+      // distinguish via retrieve. Only swallow when the actual
+      // Stripe status is canceled. If `succeeded`, surface a permanent
+      // error so the caller (use-case) does NOT write `canceled` over a
+      // valid succeeded payment.
       const err_ = e as { code?: string };
       if (err_.code === 'payment_intent_unexpected_state') {
-        logger.info(
-          {
-            stripeAccount,
+        try {
+          const client2 = getStripeClient();
+          const pi = await client2.paymentIntents.retrieve(
             paymentIntentId,
-            stripeErrorCode: err_.code,
-          },
-          'stripe-gateway: cancelPaymentIntent idempotent (already terminal)',
-        );
-        return ok(undefined);
+            undefined,
+            connectOptions(stripeAccount),
+          );
+          if (pi.status === 'canceled') {
+            logger.info(
+              { stripeAccount, paymentIntentId, stripeStatus: pi.status },
+              'stripe-gateway: cancelPaymentIntent idempotent (already canceled)',
+            );
+            return ok(undefined);
+          }
+          if (pi.status === 'succeeded') {
+            logger.warn(
+              { stripeAccount, paymentIntentId, stripeStatus: pi.status },
+              'stripe-gateway: cancelPaymentIntent rejected — PI already succeeded',
+            );
+            return err({
+              kind: 'permanent',
+              code: 'payment_intent_already_succeeded',
+              reason: 'PI is succeeded; cannot be canceled',
+            });
+          }
+          // Other terminal states (requires_capture, etc.) — fall through.
+        } catch {
+          // retrieve failed — fall through to mapStripeError.
+        }
       }
       return err(mapStripeError(e, { stripeAccount, paymentIntentId }));
     }

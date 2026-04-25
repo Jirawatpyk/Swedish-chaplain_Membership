@@ -79,6 +79,8 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // Review I-14 (migration 0047) — confirmPayment retrievePaymentIntent
   // failure trail. Operational only.
   payment_processor_retrieve_failed: 5,
+  // Review S5 (migration 0048) — confirmPayment invoice_not_found trail.
+  payment_invoice_not_found: 5,
 };
 
 async function insertAuditRow(

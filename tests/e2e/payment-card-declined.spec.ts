@@ -54,9 +54,11 @@ test.describe('PaySheet declined card — @payment @f5', () => {
     // it without a focus-shift (FR-028 a11y).
     const declineAlert = sheet.getByRole('alert');
     await expect(declineAlert).toBeVisible({ timeout: 5_000 });
-    // Match against EN/TH/SV variants of the decline copy.
+    // Match against EN/TH/SV variants of the decline copy. SV uses
+    // "Ditt kort avvisades" + "Betalningen misslyckades" — neither
+    // contains "nekades" / "nekad" (R2-C4 regex correction).
     await expect(declineAlert).toContainText(
-      /(declined|ปฏิเสธ|nekades|nekad)/i,
+      /(declined|ปฏิเสธ|avvisades|misslyckades)/i,
     );
 
     // Retry CTA must be visible + actionable. Either re-enabled

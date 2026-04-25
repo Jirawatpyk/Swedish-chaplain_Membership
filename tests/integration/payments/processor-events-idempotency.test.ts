@@ -21,8 +21,8 @@
  * Mocking policy: NONE. Real Neon round-trip per
  * `tests/integration/payments/drizzle-payments-repo.test.ts` precedent.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { afterAll, describe, expect, it } from 'vitest';
+import { eq, sql } from 'drizzle-orm';
 import { randomUUID, createHash } from 'node:crypto';
 import { db } from '@/lib/db';
 import { makeDrizzleProcessorEventsRepo } from '@/modules/payments/infrastructure/repos/drizzle-processor-events-repo';
@@ -41,14 +41,18 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
   const insertedIds: string[] = [];
 
   afterAll(async () => {
-    if (insertedIds.length > 0) {
-      // Cleanup: delete all rows seeded by this suite. processor_events
-      // has no FK dependents in the pre-resolution path (tenantId NULL)
-      // so a direct delete is safe.
-      for (const id of insertedIds) {
-        await db.delete(processorEvents).where(eq(processorEvents.id, id));
-      }
+    if (insertedIds.length === 0) return;
+    // processor_events has RLS `FOR DELETE USING (false)` on the
+    // chamber_app role (append-only invariant). A direct
+    // `db.delete(...)` would silently match 0 rows under that role,
+    // leaving test rows accumulating in Neon. Use the elevated role
+    // (matching migration's policy bypass clause) for a single
+    // SET LOCAL window scoped to the cleanup statement only.
+    await db.execute(sql`SET LOCAL ROLE neondb_owner`);
+    for (const id of insertedIds) {
+      await db.delete(processorEvents).where(eq(processorEvents.id, id));
     }
+    await db.execute(sql`RESET ROLE`);
   });
 
   it('first insert → inserted:true; same event id again → inserted:false (no duplicate row)', async () => {

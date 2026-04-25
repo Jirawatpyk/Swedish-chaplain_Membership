@@ -20,7 +20,7 @@ import { sql } from 'drizzle-orm';
 async function main() {
   const paymentIntentId = process.argv[2];
   if (!paymentIntentId || !paymentIntentId.startsWith('pi_')) {
-    // eslint-disable-next-line no-console
+     
     console.error(
       'Usage: pnpm tsx scripts/dev-mark-payment-succeeded.ts <pi_...>',
     );
@@ -29,7 +29,7 @@ async function main() {
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    // eslint-disable-next-line no-console
+     
     console.error('DATABASE_URL missing from env');
     process.exit(1);
   }
@@ -51,11 +51,11 @@ async function main() {
   `);
   const payment = rows[0];
   if (!payment) {
-    // eslint-disable-next-line no-console
+     
     console.error(`No payment row for ${paymentIntentId}`);
     process.exit(1);
   }
-  // eslint-disable-next-line no-console
+   
   console.log(`Found payment ${payment.id} (status=${payment.status}) for invoice ${payment.invoice_id}`);
 
   // Mark payment succeeded — card-method rows also need card metadata
@@ -71,7 +71,7 @@ async function main() {
         processor_charge_id = COALESCE(processor_charge_id, 'ch_dev_seeded')
     WHERE id = ${payment.id}
   `);
-  // eslint-disable-next-line no-console
+   
   console.log('✓ payments.status = succeeded');
 
   // Mark invoice paid. CHECK `invoices_paid_has_payment` requires
@@ -83,10 +83,10 @@ async function main() {
         payment_method = 'card'
     WHERE invoice_id = ${payment.invoice_id}
   `);
-  // eslint-disable-next-line no-console
+   
   console.log('✓ invoices.status = paid');
 
-  // eslint-disable-next-line no-console
+   
   console.log(
     `\nDONE. Refresh /portal/invoices/${payment.invoice_id} to see the paid state.`,
   );
@@ -95,7 +95,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exit(1);
 });

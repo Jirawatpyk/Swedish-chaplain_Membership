@@ -195,7 +195,7 @@ export async function POST(
     const errCode = result.error.code;
     const { status, routeCode } = httpStatusForUseCaseError(errCode);
     const retryAfterSeconds = routeCode === 'processor_unavailable' ? 30 : undefined;
-    // Review I-13: structured log on every use-case error.
+    // structured log on every use-case error.
     logger.warn(
       {
         requestId,

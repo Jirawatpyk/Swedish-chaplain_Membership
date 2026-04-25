@@ -385,11 +385,11 @@ test.describe('PaySheet viewport + mobile layout — @payment @a11y @f5', () => 
           // Debug instrumentation: capture browser console + failed
           // requests so we can see if /initiate is being stubbed.
           page.on('console', (msg) => {
-            // eslint-disable-next-line no-console
+             
             console.log(`[browser:${msg.type()}]`, msg.text());
           });
           page.on('requestfailed', (req) => {
-            // eslint-disable-next-line no-console
+             
             console.log(
               '[requestfailed]',
               req.url(),
@@ -398,7 +398,7 @@ test.describe('PaySheet viewport + mobile layout — @payment @a11y @f5', () => 
           });
           page.on('response', (res) => {
             if (res.url().includes('/api/payments/initiate')) {
-              // eslint-disable-next-line no-console
+               
               console.log('[initiate-response]', res.status(), res.url());
             }
           });

@@ -137,7 +137,7 @@ describe('<ConfirmationPanel>', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('dual-node aria-live: visible tick is aria-hidden; SR announces only at 3/2/1s (G-Review #6)', async () => {
+  it('dual-node aria-live: visible tick is aria-hidden; SR announces ONCE at remaining===3 (R2 S3)', async () => {
     renderPanel();
     const visible = screen.getByTestId('pay-sheet-confirmation-countdown');
     const sr = screen.getByTestId('pay-sheet-confirmation-countdown-sr');
@@ -145,23 +145,25 @@ describe('<ConfirmationPanel>', () => {
     expect(visible.getAttribute('aria-hidden')).toBe('true');
     expect(sr.getAttribute('aria-live')).toBe('polite');
     expect(sr.getAttribute('aria-atomic')).toBe('true');
-    // At t=0 (remaining=5) the SR node is empty.
+    // single-threshold announcement. Pre-3s window the SR node
+    // is empty; at remaining===3 it fires once; at 2/1 it goes silent
+    // again so SR users hear ONE warning (matches HardCapPrompt).
     expect(sr.textContent).toBe('');
-    // Tick 2s → remaining=3 → SR starts announcing.
+    // Tick 2s → remaining=3 → SR fires.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
     expect(sr.textContent).toContain('3');
-    // Tick to remaining=2.
+    // Tick to remaining=2 → SR goes silent.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(sr.textContent).toContain('2');
-    // Tick to remaining=1.
+    expect(sr.textContent).toBe('');
+    // Tick to remaining=1 → still silent.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(sr.textContent).toContain('1');
+    expect(sr.textContent).toBe('');
   });
 
   it('download receipt anchor has ≥44px tap target (G-Review #5)', () => {

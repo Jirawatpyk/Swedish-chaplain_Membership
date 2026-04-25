@@ -134,7 +134,7 @@ async function installStubStripe(
     // behaviour is unchanged (the real network path still has the
     // same latency characteristics that made the bug invisible until
     // now — a Phase 9 follow-up candidate).
-    // eslint-disable-next-line no-console
+     
     console.log('[stripe-mock] init script installed');
     const originalFetch = window.fetch.bind(window);
     window.fetch = function stubbedFetch(
@@ -148,7 +148,7 @@ async function installStubStripe(
             ? input.href
             : input.url;
       if (url.includes('/api/payments/initiate')) {
-        // eslint-disable-next-line no-console
+         
         console.log('[stripe-mock] intercepted initiate', url);
         const body = JSON.stringify({
           payment: { id: 'pay_test_layout' },

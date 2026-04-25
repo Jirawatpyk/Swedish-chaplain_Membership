@@ -60,12 +60,14 @@ export function ConfirmationPanel({
 
   // WCAG 2.4.3 Focus Order: on payment success the previously-focused
   // element (card submit button) unmounts → focus reverts to <body>
-  // which is disorienting for keyboard + SR users. Land focus on the
-  // primary Download CTA so the next Enter press downloads the
-  // receipt (audit 2026-04-25 finding #15).
+  // which is disorienting for keyboard + SR users. focus the
+  // section (with tabIndex=-1 + aria-labelledby on the success heading)
+  // so SR users hear the success heading + summary BEFORE focus lands
+  // on the Download CTA. Pressing Tab takes them to Download next.
+  const sectionRef = useRef<HTMLElement>(null);
   const downloadLinkRef = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
-    downloadLinkRef.current?.focus();
+    sectionRef.current?.focus();
   }, []);
 
   // One-shot toast on mount — guarded so StrictMode's double-invoke in
@@ -77,7 +79,7 @@ export function ConfirmationPanel({
     toast.success(t('toast'));
   }, [t]);
 
-  // Simplify S3: shared `useCountdownAutoDismiss` hook (was previously
+  // shared `useCountdownAutoDismiss` hook (was previously
   // an inline ticker + separate-effect dispatcher; same pattern lives
   // in `<HardCapPrompt>` and is now deduplicated). The two-effect
   // split inside the hook avoids "Cannot update a component while
@@ -106,15 +108,23 @@ export function ConfirmationPanel({
 
   return (
     <section
+      ref={sectionRef}
+      tabIndex={-1}
+      aria-labelledby="pay-sheet-confirmation-title"
       data-testid="pay-sheet-confirmation-panel"
-      className="flex flex-col items-center gap-4 text-center"
+      className="flex flex-col items-center gap-4 text-center focus:outline-none"
     >
       <CheckCircle2Icon
         aria-hidden="true"
         className="size-12 text-primary motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-200"
         data-testid="pay-sheet-confirmation-icon"
       />
-      <h3 className="text-h3 font-semibold text-foreground">{t('title')}</h3>
+      <h3
+        id="pay-sheet-confirmation-title"
+        className="text-h3 font-semibold text-foreground"
+      >
+        {t('title')}
+      </h3>
       <p className="text-body text-muted-foreground">{summary}</p>
       {/*
        * Option A layout (T082 UX feedback 2026-04-24): primary
@@ -165,10 +175,10 @@ export function ConfirmationPanel({
        * ----------------------------------------------------
        * The visible <p> ticks every second but is `aria-hidden` so
        * screen readers don't flood. A sibling `aria-live="polite"`
-       * node is throttled to announce only at the 3 / 2 / 1 s
-       * thresholds (UX contract § 3.1: at most one SR update per
-       * meaningful threshold). The visible-vs-announced split matches
-       * the PromptPay countdown elsewhere in the payment flow.
+       * node fires ONCE at remaining===3 — matches HardCapPrompt's
+       * "one update per meaningful threshold" pattern (R2 S3) instead
+       * of the prior 3/2/1 back-to-back announcements that surfaced as
+       * verbose chatter for SR users on a 5s window.
        */}
       <p
         className="text-caption text-muted-foreground"
@@ -183,9 +193,7 @@ export function ConfirmationPanel({
         aria-atomic="true"
         data-testid="pay-sheet-confirmation-countdown-sr"
       >
-        {remaining <= 3 && remaining > 0
-          ? t('autoCloseCountdown', { seconds: remaining })
-          : ''}
+        {remaining === 3 ? t('autoCloseCountdown', { seconds: 3 }) : ''}
       </p>
     </section>
   );

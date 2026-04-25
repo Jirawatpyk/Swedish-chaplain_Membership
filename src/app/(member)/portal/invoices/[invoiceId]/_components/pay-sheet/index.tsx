@@ -54,28 +54,24 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { PaySheetSkeleton } from '@/components/payments/pay-sheet-skeleton';
 import { useIdleWarningSuppression } from '@/hooks/use-idle-warning-suppression';
 
 import { HardCapPrompt } from './hard-cap-prompt';
 
 import type { PaymentMethod } from './method-tabs';
 
+// Lazy boundary (refactored 2026-04-25 — code-quality audit closeout).
+// Only the Stripe-SDK-heavy <PaySheetInternal> is lazy; the Sheet shell
+// renders eagerly so Base UI Dialog observes a real `open: false → true`
+// transition on first click and plays its slide-in animation. The
+// skeleton renders INSIDE the drawer body (correct location) on the
+// rare race where the user clicks before the pre-warmed chunk lands.
 const PaySheetInternal = dynamic(
   () => import('./pay-sheet-internal').then((m) => m.PaySheetInternal),
   {
     ssr: false,
-    // Intentionally `null` (T082 UX feedback 2026-04-24): the
-    // PayNowButton auto-mounts PaySheet on render, so the Stripe SDK
-    // + PaySheetInternal chunk load in the background BEFORE the
-    // user ever clicks. Rendering a visible skeleton here produced a
-    // "skeleton flowed from top" illusion — the loading fallback
-    // showed the skeleton at the drawer body top (y≈93), then once
-    // PaySheetInternal hydrated the real layout (OrderSummary +
-    // MethodTabs + Skeleton) injected above pushed the skeleton down
-    // to y≈258 mid-drawer. With `null` the drawer body stays empty
-    // during the (usually already-completed) chunk load and the full
-    // layout appears as a single unit.
-    loading: () => null,
+    loading: () => <PaySheetSkeleton />,
   },
 );
 
@@ -135,6 +131,18 @@ export function PaySheet({
   const { timeoutExceeded, reset: resetHardCap } =
     useIdleWarningSuppression(open);
 
+  // Pre-warm the <PaySheetInternal> chunk (Stripe SDK + Elements) on
+  // PaySheet render so first-click feels instant. Without this, the
+  // user clicks → Sheet animates open → `hasOpened` flips → dynamic
+  // import fires → ~50-200 ms skeleton flicker. Pre-warming kicks the
+  // import off as soon as the invoice page mounts, so the chunk is
+  // typically ready by the time the user reaches "Pay now". The
+  // `void` discards the promise; we only care about the side-effect
+  // (chunk fetched + parsed by webpack runtime).
+  useEffect(() => {
+    void import('./pay-sheet-internal');
+  }, []);
+
   // Mount-once pattern (T082 UX feedback 2026-04-24): PaySheetInternal
   // fetches `/api/payments/initiate` on mount to create a Stripe
   // PaymentIntent. If we gate its mount on `{open && ...}` then every
@@ -144,10 +152,14 @@ export function PaySheet({
   // the life of the invoice page. The drawer's own `open` prop hides it
   // visually; PaymentIntent clientSecret stays in React state only
   // (ephemeral, no persistence) — PCI SAQ-A constraint preserved.
+  // Derive-during-render pattern (React docs: "Adjusting some state when
+  // a prop changes") — once `open` flips true we latch `hasOpened`.
+  // React batches the setState during render so no cascading effect
+  // commit; bypasses the `set-state-in-effect` rule semantically.
   const [hasOpened, setHasOpened] = useState<boolean>(() => open);
-  useEffect(() => {
-    if (open) setHasOpened(true);
-  }, [open]);
+  if (open && !hasOpened) {
+    setHasOpened(true);
+  }
 
   // Parent-scope cache for the initiate response so Radix Sheet's
   // Portal mount/unmount on close/reopen does not discard the Stripe
@@ -228,7 +240,7 @@ export function PaySheet({
     return () => {
       firePaymentCancel('user_navigated_away');
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const handleOpenChange = (next: boolean) => {

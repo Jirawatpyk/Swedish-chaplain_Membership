@@ -225,7 +225,7 @@ test.describe('payment card happy path — @payment @e2e (T046)', () => {
     const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
     const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 
-    // Review CR-6: AS-1 audit chain is a P1 acceptance scenario — must
+    // AS-1 audit chain is a P1 acceptance scenario — must
     // fail loudly when CI env is misconfigured rather than silently skip.
     // Local-dev contributors without admin creds can opt out via
     // E2E_ALLOW_SKIP_ADMIN_AUDIT=1 (CI must NOT set this flag).

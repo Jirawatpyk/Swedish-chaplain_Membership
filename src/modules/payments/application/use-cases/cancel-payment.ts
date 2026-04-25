@@ -53,19 +53,18 @@ export async function cancelPayment(
     return err({ code: 'forbidden_role' });
   }
 
-  return await deps.paymentsRepo.withTx(async (tx) => {
-    // Review I-1: settings load inside the same tx as the row lock so
-    // both reads share one snapshot — eliminates the stale-settings
-    // race where an admin rotates `processor_account_id` between the
-    // settings read and the PI cancel call.
-    const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
-    if (!settings) {
-      return err<CancelPaymentError>({
-        code: 'processor_unavailable',
-        reason: 'tenant_settings_missing',
-      });
-    }
+  // Settings load runs OUTSIDE withTx because `getByTenantId` does not
+  // accept a `tx` parameter (its Drizzle adapter wraps an `unstable_cache`
+  // fetcher on its own connection). Pulling it into withTx would NOT
+  // share the row-lock's snapshot. The stale-settings window is bounded
+  // by the cache lifetime (1h) and admin processor-account rotation is
+  // rare — accept it. R2-C1 revert.
+  const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
+  if (!settings) {
+    return err({ code: 'processor_unavailable', reason: 'tenant_settings_missing' });
+  }
 
+  return await deps.paymentsRepo.withTx(async (tx) => {
     const payment = await deps.paymentsRepo.lockForUpdate(
       tx,
       input.paymentId,

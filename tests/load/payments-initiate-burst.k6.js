@@ -46,6 +46,7 @@ export const options = {
   },
 };
 
+// eslint-disable-next-line import/no-anonymous-default-export -- k6 entrypoint contract requires anonymous default function
 export default function () {
   const res = http.post(
     `${TARGET}/api/payments/initiate`,

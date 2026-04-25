@@ -65,7 +65,7 @@ export async function insertRejectedProcessorEvent(input: {
   receivedAt: Date;
 }): Promise<void> {
   const repo = makeDrizzleProcessorEventsRepo();
-  // Review I-2: `tx: unknown` in the port signature already accepts
+  // `tx: unknown` in the port signature already accepts
   // `null` directly — no double-cast needed. The Drizzle adapter
   // ignores the tx arg in this pre-resolution path (see file-level
   // docstring in drizzle-processor-events-repo.ts).

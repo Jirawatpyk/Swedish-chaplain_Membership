@@ -119,14 +119,31 @@ export async function confirmPayment(
     });
     if (!invoiceResult.ok) {
       if (invoiceResult.error.code === 'not_found') {
-        // Review CR-4: atomic markProcessed so the processor_events row
-        // does not get stuck pending across Stripe retries. Mirrors the
+        // Atomic markProcessed so the processor_events row does not get
+        // stuck pending across Stripe retries. Mirrors the
         // `unknown_intent` short-circuit at line 109. Returning ok(...)
         // (not err) prevents the route from 5xx-ing and triggering a
         // retry storm on a permanently-unrecoverable mismatch.
         if (deps.processorEventsRepo && input.processorEventId) {
           await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
         }
+        // S5 (migration 0048): forensic audit row so ops see Stripe
+        // webhooks arriving for invoices the local DB does not have.
+        // Atomic with markProcessed inside this withTx — if the audit
+        // emit throws, both roll back together and Stripe retries.
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'payment_invoice_not_found',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Webhook arrived for unknown invoice ${payment.invoiceId} (PI ${input.paymentIntentId})`,
+          payload: {
+            payment_intent_id: input.paymentIntentId,
+            payment_id: payment.id,
+            invoice_id: payment.invoiceId,
+          },
+          retentionYears: 5,
+        });
         return ok<ConfirmPaymentOutcome>({ kind: 'invoice_not_found' });
       }
       // forbidden won't happen webhook-side (no actor); not_payable →
@@ -284,13 +301,14 @@ export async function confirmPayment(
       settings.processorAccountId,
     );
     if (!retrieved.ok) {
-      // Review I-14 (R3 closeout, migration 0047): emit audit row for
-      // mid-webhook Stripe outages on retrievePaymentIntent. The
-      // gateway adapter also pino-warns at the boundary via
-      // mapStripeError, but the audit row gives ops a forensic trail
-      // tied to the tenant + payment. Tx rolls back so payment row
-      // stays `pending` and Stripe retries.
-      await deps.audit.emit(tx, {
+      // Audit row for mid-webhook Stripe outages on retrievePaymentIntent
+      // (migration 0047). Emitted on `null` (best-effort, separate tx)
+      // because the function is about to `return err(...)` and the outer
+      // `withTx` will roll back — emitting through `tx` would discard the
+      // forensic row we want ops to see. Stripe retries the webhook on
+      // its own schedule; the gateway adapter also pino-warns via
+      // `mapStripeError` at the boundary.
+      await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId,
         eventType: 'payment_processor_retrieve_failed',

@@ -50,8 +50,8 @@ vi.mock('@/components/ui/sheet', async () => {
       ? React.createElement('div', { 'data-testid': 'sheet-root' }, children)
       : null;
   };
-  const passthrough = (tag: keyof HTMLElementTagNameMap) =>
-    (props: Record<string, unknown>) => {
+  const passthrough = (tag: keyof HTMLElementTagNameMap) => {
+    const Passthrough = (props: Record<string, unknown>) => {
       const { side: _s, showCloseButton: _c, ...rest } = props as Record<
         string,
         unknown
@@ -60,6 +60,9 @@ vi.mock('@/components/ui/sheet', async () => {
       void _c;
       return React.createElement(tag, rest as Record<string, unknown>);
     };
+    Passthrough.displayName = `MockPassthrough(${tag})`;
+    return Passthrough;
+  };
   return {
     Sheet,
     SheetContent: passthrough('div'),

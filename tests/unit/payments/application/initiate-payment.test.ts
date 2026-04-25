@@ -168,7 +168,7 @@ describe('initiatePayment (T055)', () => {
     expect(auditCall?.[1].eventType).toBe('payment_initiated');
   });
 
-  // Review CR-7: PCI SAQ-A invariant (FR-016) — the inserted payment
+  // PCI SAQ-A invariant (FR-016) — the inserted payment
   // row MUST never carry any field that resembles a Primary Account
   // Number (13–19 contiguous digits). The payment domain shape only
   // accepts brand/last4/expMonth/expYear; this test is the regression

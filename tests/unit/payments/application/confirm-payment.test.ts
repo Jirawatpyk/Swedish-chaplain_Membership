@@ -147,7 +147,7 @@ describe('confirmPayment (T057)', () => {
   });
 
   it('invoice not found — invoice_not_found outcome (atomic markProcessed)', async () => {
-    // Review CR-4: invoice_not_found now folds markProcessed into the
+    // invoice_not_found now folds markProcessed into the
     // same withTx and returns ok({ kind: 'invoice_not_found' }) so the
     // processor_events row does not get stuck across Stripe retries.
     const deps = makeDeps();
