@@ -122,17 +122,33 @@ export function mapStripeError(
     'stripe-gateway: SDK error',
   );
 
-  // Audit 2026-04-25 finding #12: classify network errors as retryable
-  // even when they don't carry a Stripe `type` (e.g. raw fetch/undici
-  // errors that escape the SDK's own catch). The Stripe SDK already
-  // wraps most network failures as `StripeConnectionError`, but
-  // mid-flight aborts + DNS-level failures sometimes surface as bare
-  // Node errors (`AbortError`, `FetchError`, `ECONNRESET`).
+  // Audit 2026-04-25 finding #12 + R1 self-review M (2026-04-26):
+  // classify network errors as retryable even when they don't carry a
+  // Stripe `type` (e.g. raw fetch/undici errors that escape the SDK's
+  // own catch). The Stripe SDK normally wraps these as
+  // `StripeConnectionError`, but mid-flight aborts + DNS-level
+  // failures can surface as bare Node errors. Check both `.name`
+  // (fetch/undici class names) AND `.code` (Node net errno strings)
+  // so we catch both the fetch-based httpClient path AND the legacy
+  // Node `https` path.
   const errName = (e as { name?: string })?.name;
+  const errCode = (e as { code?: string })?.code;
+  const NETWORK_ERROR_NAMES = new Set([
+    'AbortError',
+    'FetchError',
+    'TypeError', // fetch failed (undici v6+)
+  ]);
+  const NETWORK_ERROR_CODES = new Set([
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'ENOTFOUND',
+    'ETIMEDOUT',
+    'EAI_AGAIN', // transient DNS failure
+    'EPIPE',
+  ]);
   if (
-    errName === 'AbortError' ||
-    errName === 'FetchError' ||
-    errName === 'TypeError' /* fetch failed */
+    (errName !== undefined && NETWORK_ERROR_NAMES.has(errName)) ||
+    (errCode !== undefined && NETWORK_ERROR_CODES.has(errCode))
   ) {
     return { kind: 'retryable', reason };
   }

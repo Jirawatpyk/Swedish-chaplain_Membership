@@ -108,6 +108,38 @@ describe('mapStripeError — direct unit', () => {
     expect(result.kind).toBe('retryable');
   });
 
+  // R1 self-review M (2026-04-26): bare Node net errors (legacy https
+  // path or undici-wrapped) should classify retryable via `.code`.
+  describe('Node-level net errors (R1 self-review M)', () => {
+    const cases = [
+      'ECONNRESET',
+      'ECONNREFUSED',
+      'ENOTFOUND',
+      'ETIMEDOUT',
+      'EAI_AGAIN',
+      'EPIPE',
+    ] as const;
+    for (const code of cases) {
+      it(`Error with .code='${code}' → retryable`, () => {
+        const e = Object.assign(new Error('net error'), { code });
+        const result = mapStripeError(e, ctx);
+        expect(result.kind).toBe('retryable');
+      });
+    }
+
+    it('Unknown .code falls through to permanent (no false-retry on app errors)', () => {
+      const e = Object.assign(new Error('app error'), {
+        code: 'SOME_APP_CODE',
+      });
+      const result = mapStripeError(e, ctx);
+      // No matching SDK type → no matching network code → permanent.
+      expect(result.kind).toBe('permanent');
+      if (result.kind !== 'permanent') throw new Error('unreachable');
+      // The Error.code is preserved (audit #1: code = API code, not type).
+      expect(result.code).toBe('SOME_APP_CODE');
+    });
+  });
+
   it('Plain Error of unknown shape → permanent + unknown_stripe_error code', () => {
     const e = new Error('mystery failure');
     const result = mapStripeError(e, ctx);
