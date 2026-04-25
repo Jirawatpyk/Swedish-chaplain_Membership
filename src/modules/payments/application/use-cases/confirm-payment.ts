@@ -60,12 +60,23 @@ export interface ConfirmPaymentInput {
   readonly processorEventId?: string;
 }
 
+/**
+ * R5 canonical fix (2026-04-25): expose `invoiceId` on outcome kinds
+ * derived from a known payment row so the webhook route can fire
+ * surgical `revalidatePath('/portal/invoices/<id>')` instead of the
+ * broad `[invoiceId]` pattern. `unknown_intent` does not carry the id
+ * (no payment row found for this PI), so it stays out of the union
+ * variant.
+ */
 export type ConfirmPaymentOutcome =
-  | { readonly kind: 'processed' }
-  | { readonly kind: 'already_succeeded' }
+  | { readonly kind: 'processed'; readonly invoiceId: string }
+  | { readonly kind: 'already_succeeded'; readonly invoiceId: string }
   | { readonly kind: 'unknown_intent' }
-  | { readonly kind: 'auto_refunded_stale_invoice' }
-  | { readonly kind: 'invoice_not_found' };
+  | {
+      readonly kind: 'auto_refunded_stale_invoice';
+      readonly invoiceId: string;
+    }
+  | { readonly kind: 'invoice_not_found'; readonly invoiceId: string };
 
 export type ConfirmPaymentError =
   | { readonly code: 'invoice_not_found' }
@@ -148,7 +159,10 @@ export async function confirmPayment(
           },
           retentionYears: retentionFor('payment_invoice_not_found'),
         });
-        return ok<ConfirmPaymentOutcome>({ kind: 'invoice_not_found' });
+        return ok<ConfirmPaymentOutcome>({
+          kind: 'invoice_not_found',
+          invoiceId: payment.invoiceId,
+        });
       }
       // forbidden won't happen webhook-side (no actor); not_payable →
       // handled by stale-invoice branch below (we re-derive via status).
@@ -277,7 +291,10 @@ export async function confirmPayment(
       });
       // Audit 2026-04-26 round-2 #5b: atomic markProcessed.
       await markProcessed();
-      return ok<ConfirmPaymentOutcome>({ kind: 'auto_refunded_stale_invoice' });
+      return ok<ConfirmPaymentOutcome>({
+        kind: 'auto_refunded_stale_invoice',
+        invoiceId: payment.invoiceId,
+      });
     }
 
     // Step 4 — transition check.
@@ -289,7 +306,10 @@ export async function confirmPayment(
       if (transition.error.kind === 'terminal_state') {
         // Atomic markProcessed (audit 2026-04-26 round-2 #5b).
         await markProcessed();
-        return ok<ConfirmPaymentOutcome>({ kind: 'already_succeeded' });
+        return ok<ConfirmPaymentOutcome>({
+          kind: 'already_succeeded',
+          invoiceId: payment.invoiceId,
+        });
       }
       // illegal_transition (e.g. partially_refunded → succeeded). R4 I-3:
       // webhook-side this is a PERMANENT mismatch — returning err would
@@ -317,7 +337,10 @@ export async function confirmPayment(
         },
         retentionYears: retentionFor('payment_processor_retrieve_failed'),
       });
-      return ok<ConfirmPaymentOutcome>({ kind: 'already_succeeded' });
+      return ok<ConfirmPaymentOutcome>({
+        kind: 'already_succeeded',
+        invoiceId: payment.invoiceId,
+      });
     }
 
     // Step 5 — 1-succeeded-per-invoice invariant.
@@ -446,6 +469,9 @@ export async function confirmPayment(
     // Event) supplied both deps + input.
     await markProcessed();
 
-    return ok<ConfirmPaymentOutcome>({ kind: 'processed' });
+    return ok<ConfirmPaymentOutcome>({
+      kind: 'processed',
+      invoiceId: payment.invoiceId,
+    });
   });
 }

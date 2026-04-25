@@ -420,6 +420,58 @@ describe('initiatePayment (T055)', () => {
     expect(result.error.currentStatus).toBe('paid');
   });
 
+  // W1 (audit 2026-04-25 follow-up): F4's `getInvoiceForPayment` returns
+  // `ok({status: 'paid'})` for already-settled invoices (it only hard-
+  // rejects on `null`/zero `total`). Without an explicit gate in the
+  // use-case, we'd happily createPaymentIntent for a paid invoice → user
+  // sees a card form they cannot use. This test pins the explicit reject.
+  it('invoice already paid (bridge returns ok status=paid) — invoice_not_payable', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'inv_paid',
+        status: 'paid' as const,
+        totalSatang: 535_000n,
+        memberId: 'mem_test',
+        tenantId: 'tnt_abc',
+      }),
+    );
+    const result = await initiatePayment(deps, makeInput());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invoice_not_payable');
+    if (result.error.code !== 'invoice_not_payable') return;
+    expect(result.error.currentStatus).toBe('paid');
+    // No PI should have been created.
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+  });
+
+  // W2 (audit 2026-04-25 follow-up): the `idempotencyKeyFactory` Strategy
+  // port replaces the prior `devSaltIdempotencyKey: boolean` flag (Clean
+  // Architecture polish — Application doesn't need to know dev-vs-prod).
+  // Default = identity; dev composition wires a timestamp salt to bypass
+  // Stripe's 24-hour idempotency-key cache during repeat manual testing.
+  it('idempotencyKeyFactory default (omitted) — uses canonical base key', async () => {
+    const deps = makeDeps();
+    await initiatePayment(deps, makeInput());
+    const createCall = (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>)
+      .mock.calls[0]?.[0];
+    expect(createCall?.idempotencyKey).toMatch(/^inv-[a-zA-Z0-9_-]+-attempt-\d+$/);
+    expect(createCall?.idempotencyKey).not.toMatch(/-d-\d+/);
+  });
+
+  it('idempotencyKeyFactory injected — wraps base key with dev salt', async () => {
+    const deps = makeDeps();
+    const wrapped = {
+      ...deps,
+      idempotencyKeyFactory: (base: string) => `${base}-d-1234567890`,
+    };
+    await initiatePayment(wrapped, makeInput());
+    const createCall = (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>)
+      .mock.calls[0]?.[0];
+    expect(createCall?.idempotencyKey).toMatch(/^inv-[a-zA-Z0-9_-]+-attempt-\d+-d-1234567890$/);
+  });
+
   it('createPaymentIntent failure — processor_unavailable (no row inserted)', async () => {
     const deps = makeDeps();
     (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(

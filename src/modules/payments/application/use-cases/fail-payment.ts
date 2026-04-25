@@ -38,10 +38,15 @@ export interface FailPaymentInput {
   readonly processorEventId?: string;
 }
 
+/**
+ * R5 canonical fix (2026-04-25): expose `invoiceId` on outcome kinds
+ * derived from a known payment row so the route handler can fire
+ * surgical `revalidatePath('/portal/invoices/<id>')`.
+ */
 export type FailPaymentOutcome =
-  | { readonly kind: 'processed' }
+  | { readonly kind: 'processed'; readonly invoiceId: string }
   | { readonly kind: 'unknown_intent' }
-  | { readonly kind: 'already_terminal' };
+  | { readonly kind: 'already_terminal'; readonly invoiceId: string };
 
 export type FailPaymentError =
   | { readonly code: 'illegal_transition'; readonly from: string }
@@ -97,7 +102,10 @@ export async function failPayment(
         // so the dispatch tail short-circuits and ops dashboards see
         // the terminal-retry as "handled" rather than "stuck".
         await markProcessedIfPresent(deps, input, tx);
-        return ok<FailPaymentOutcome>({ kind: 'already_terminal' });
+        return ok<FailPaymentOutcome>({
+          kind: 'already_terminal',
+          invoiceId: payment.invoiceId,
+        });
       }
       // R4 I-3: illegal_transition (e.g. succeeded → failed) is a
       // PERMANENT webhook-side mismatch. Returning err would bubble
@@ -119,7 +127,10 @@ export async function failPayment(
         },
         retentionYears: retentionFor('payment_processor_retrieve_failed'),
       });
-      return ok<FailPaymentOutcome>({ kind: 'already_terminal' });
+      return ok<FailPaymentOutcome>({
+        kind: 'already_terminal',
+        invoiceId: payment.invoiceId,
+      });
     }
 
     // Re-fetch to read last_payment_error.code (PCI SAQ-A: never from
@@ -185,6 +196,9 @@ export async function failPayment(
     // Atomic markProcessed (audit 2026-04-25 #4) — same tx as audit + status update.
     await markProcessedIfPresent(deps, input, tx);
 
-    return ok<FailPaymentOutcome>({ kind: 'processed' });
+    return ok<FailPaymentOutcome>({
+      kind: 'processed',
+      invoiceId: payment.invoiceId,
+    });
   });
 }

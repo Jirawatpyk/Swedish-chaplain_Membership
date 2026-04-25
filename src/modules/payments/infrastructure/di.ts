@@ -17,6 +17,7 @@
  * as module singletons.
  */
 import { randomUUID } from 'node:crypto';
+import { env } from '@/lib/env';
 
 // Ports (type-only) — canonical Deps shapes live on the use-case modules.
 import type { InitiatePaymentDeps } from '../application/use-cases/initiate-payment';
@@ -100,6 +101,15 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
     audit: f5AuditAdapter,
     clock: systemClock,
     generatePaymentId,
+    // Idempotency-Key strategy. Production: identity → seq-based key
+    // is the dedupe contract for true retries (two concurrent retries
+    // map to the same Stripe PI). Dev: `-d-<ms>` salt because Stripe
+    // caches keys 24h + rejects re-use with mismatched params
+    // (StripeIdempotencyError 400 → route 502 processor_unavailable),
+    // making manual repeat-testing impossible without the salt.
+    idempotencyKeyFactory: env.isDevelopment
+      ? (baseKey: string) => `${baseKey}-d-${Date.now()}`
+      : (baseKey: string) => baseKey,
   };
 }
 

@@ -61,43 +61,40 @@ const HSTS_VALUE = 'max-age=63072000; includeSubDomains; preload';
 // should switch the prod policy to nonce-based script-src and drop
 // unsafe-inline too.
 /**
- * F5 (T033) — routes that embed Stripe Elements or otherwise talk to
- * Stripe from the browser. CSP is tightened per-route so the rest of
- * the app doesn't silently gain `https://js.stripe.com` script-src
- * privileges. Webhook route (`/api/webhooks/stripe`) is a server-only
- * endpoint — it does NOT need these allowances and is deliberately
- * excluded.
+ * F5 — Stripe origins are allowed in CSP application-wide.
+ *
+ * History: route-scoped allowlist was tried first (only enabled on
+ * `/portal/invoices/...` + `/admin/invoices/...`) but **breaks under
+ * Next.js SPA navigation**. CSP is an HTTP header applied at the
+ * initial document load; client-side route changes via `<Link>` do
+ * NOT re-evaluate CSP, so a user landing first on `/portal/dashboard`
+ * (Stripe-disallowed CSP) and then SPA-navigating to an invoice
+ * detail keeps the dashboard's CSP — Stripe.js is blocked.
+ *
+ * The "scoping" benefit was minimal anyway: Stripe.js is not an XSS
+ * vector (it loads an iframe sandbox). Keeping it global matches
+ * Stripe's official documentation and how every other Stripe-using
+ * app is configured. Webhook route (`/api/webhooks/stripe`) is
+ * server-only and does not exercise these directives.
  */
-function isStripeClientRoute(pathname: string): boolean {
-  return (
-    pathname.startsWith('/portal/invoices/') ||
-    pathname.startsWith('/admin/invoices/')
-  );
-}
 
-export function buildCsp(isDevelopment: boolean, pathname: string): string {
-  const stripe = isStripeClientRoute(pathname);
-  // F5 — script-src allowlist for Stripe.js on F5 surfaces. Scoped
-  // ONLY to invoice detail routes so the rest of the app's CSP stays
-  // unchanged (spec security.md § 4 + § 6 "CSP allowlist for
-  // js.stripe.com + api.stripe.com is scoped to F5-relevant routes only").
+export function buildCsp(isDevelopment: boolean): string {
   const scriptSrcParts = [
     "'self'",
     "'unsafe-inline'",
     ...(isDevelopment ? ["'unsafe-eval'"] : []),
-    ...(stripe ? ['https://js.stripe.com'] : []),
+    'https://js.stripe.com',
   ];
   const frameSrcParts = [
     "'self'",
-    ...(stripe ? ['https://js.stripe.com', 'https://hooks.stripe.com'] : []),
+    'https://js.stripe.com',
+    'https://hooks.stripe.com',
   ];
-  // Dev needs ws:// for HMR socket; prod only allows https:. Stripe
-  // API endpoint added on F5 routes so fetch()/XHR from the Stripe.js
-  // iframe/client can reach api.stripe.com.
+  // Dev needs ws:// for HMR socket; prod only allows https:.
   const connectSrcParts = [
     "'self'",
     ...(isDevelopment ? ['https:', 'ws:', 'wss:'] : ['https:']),
-    ...(stripe ? ['https://api.stripe.com'] : []),
+    'https://api.stripe.com',
   ];
 
   return [
@@ -114,14 +111,11 @@ export function buildCsp(isDevelopment: boolean, pathname: string): string {
   ].join('; ');
 }
 
-function applySecurityHeaders(
-  response: NextResponse,
-  pathname: string,
-): NextResponse {
+function applySecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set('Strict-Transport-Security', HSTS_VALUE);
   response.headers.set(
     'Content-Security-Policy',
-    buildCsp(env.isDevelopment, pathname),
+    buildCsp(env.isDevelopment),
   );
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('X-Content-Type-Options', 'nosniff');
@@ -166,7 +160,7 @@ function build503(
   );
   response.headers.set(REQUEST_ID_HEADER, requestId);
   response.headers.set('Retry-After', String(KILL_SWITCH_RETRY_AFTER_SECONDS));
-  return applySecurityHeaders(response, pathname);
+  return applySecurityHeaders(response);
 }
 
 export function proxy(request: NextRequest): NextResponse {
@@ -259,7 +253,7 @@ export function proxy(request: NextRequest): NextResponse {
       { status: 403 },
     );
     response.headers.set(REQUEST_ID_HEADER, requestId);
-    return applySecurityHeaders(response, nextUrl.pathname);
+    return applySecurityHeaders(response);
   }
 
   // 3. Pass-through with security headers + request ID + x-pathname
@@ -305,7 +299,7 @@ export function proxy(request: NextRequest): NextResponse {
     },
   });
   response.headers.set(REQUEST_ID_HEADER, requestId);
-  return applySecurityHeaders(response, nextUrl.pathname);
+  return applySecurityHeaders(response);
 }
 
 /**

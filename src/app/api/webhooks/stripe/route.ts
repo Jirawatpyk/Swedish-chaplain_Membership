@@ -35,6 +35,7 @@
  * Runtime: Node.js (NOT Edge — HMAC needs raw body + full Node crypto).
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { env } from '@/lib/env';
@@ -522,6 +523,73 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // gracefully treats a stub-shape (where `.ok` is undefined) as
     // "not an error" → 200. Don't simplify to `!result.ok` without
     // also rewriting all stubs to the Result shape.
+    // R5 canonical fix (2026-04-25): server-side cache invalidation for
+    // events that mutate visible invoice/refund state. Without this,
+    // OTHER tabs (admin reconciliation view) + OTHER users (admin while
+    // member is paying) would not see the new "Paid"/"Refunded" status
+    // until they manually refreshed. The pattern-form uses Next.js
+    // path-pattern syntax to bust every dynamic-route variant in one
+    // call. Webhook frequency is low (≤ tens per minute under load),
+    // so the broad invalidation is acceptable. Limit to outcome-bearing
+    // events (success Result + relevant event types) so non-mutating
+    // events (api_version_mismatch, livemode_mismatch, duplicate
+    // delivery) don't churn caches.
+    const isOk = (result as { ok?: boolean }).ok !== false;
+    if (
+      isOk &&
+      (evType === 'payment_intent.succeeded' ||
+        evType === 'payment_intent.payment_failed' ||
+        evType === 'payment_intent.canceled' ||
+        evType === 'charge.refunded' ||
+        evType === 'charge.dispute.created')
+    ) {
+      // R5 canonical fix (2026-04-25): surgical revalidation. The
+      // sub-use-case (confirmPayment / failPayment / handleCancelEvent)
+      // forwards `invoiceId` on outcome kinds that pivot on a known
+      // payment row → we revalidate ONLY that invoice's detail path
+      // instead of busting every invoice's cache via `[invoiceId]`
+      // pattern. The list-page revalidation stays broad (the list
+      // genuinely depends on the changed row's surface — paid/refunded
+      // badge, totals, filters).
+      //
+      // revalidatePath is best-effort — wrap in try/catch so a
+      // transient Next.js cache error does NOT bubble out of the
+      // webhook handler. markProcessed has already committed at this
+      // point; a 500 here would force Stripe into a 24-hour retry
+      // loop chasing an already-processed event.
+      try {
+        const outcomeInvoiceId = (result as {
+          value?: { invoiceId?: string };
+        }).value?.invoiceId;
+        if (typeof outcomeInvoiceId === 'string' && outcomeInvoiceId.length > 0) {
+          // Surgical: bust ONLY the affected invoice's detail cache.
+          revalidatePath(`/portal/invoices/${outcomeInvoiceId}`);
+          revalidatePath(`/admin/invoices/${outcomeInvoiceId}`);
+        } else {
+          // Fallback: outcome did not carry an invoiceId (e.g.
+          // unknown_intent, or events that don't pivot on one
+          // invoice like charge.dispute.created). Bust the dynamic
+          // pattern so any open detail page re-fetches.
+          revalidatePath('/portal/invoices/[invoiceId]', 'page');
+          revalidatePath('/admin/invoices/[invoiceId]', 'page');
+        }
+        // List pages always revalidated — they aggregate across
+        // invoices and the changed row affects badges/totals.
+        revalidatePath('/portal/invoices', 'page');
+        revalidatePath('/admin/invoices', 'page');
+      } catch (e) {
+        logger.warn(
+          {
+            err: e instanceof Error ? e.message : String(e),
+            eventId: evId,
+            eventType: evType,
+            correlationId,
+          },
+          'stripe-webhook.revalidate_path_failed',
+        );
+      }
+    }
+
     if ((result as { ok?: boolean }).ok === false) {
       // R5 S006 — pipe `kind` discriminator into pino so ops dashboards
       // can filter dispatch failures by class (sub_use_case_error vs

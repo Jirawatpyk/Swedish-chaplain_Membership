@@ -54,6 +54,11 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   DATABASE_URL_UNPOOLED: z.string().url().optional(),
   POSTGRES_URL_NON_POOLING: z.string().url().optional(),
+  // Optional postgres-js pool size override. Falls back to per-env
+  // defaults in `src/lib/db.ts` (prod=10, dev=8). Set this on Vercel
+  // when scaling concurrent webhook bursts requires headroom beyond
+  // the defaults — no code change needed.
+  DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).optional(),
 
   // Rate-limit cache (Upstash via Vercel Marketplace)
   // Vercel KV exports KV_REST_API_*, plain Upstash exports UPSTASH_REDIS_REST_*.
@@ -327,6 +332,8 @@ export const env = {
   database: {
     url: raw.DATABASE_URL,
     unpooledUrl,
+    /** Optional pool-size override. `null` → use per-env default in db.ts. */
+    poolMax: raw.DATABASE_POOL_MAX ?? null,
   },
 
   upstash: {

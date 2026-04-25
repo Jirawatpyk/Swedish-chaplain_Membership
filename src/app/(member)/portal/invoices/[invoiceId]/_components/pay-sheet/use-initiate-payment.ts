@@ -75,14 +75,29 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
   const {
     enabled,
     invoiceId,
-    initialInitiate,
     retryCount,
     method = 'card',
   } = opts;
 
+  // R5 canonical fix (2026-04-25): `initialInitiate` is read via ref
+  // instead of being a useEffect dep. The previous shape included
+  // `initialInitiate` in the deps array, so when the parent set the
+  // cached initiate to `null` AFTER a successful payment (to invalidate
+  // its cache), this effect re-fired and overwrote `payState='success'`
+  // back to `card-form` with a fresh PaymentIntent — the user saw
+  // ConfirmationPanel flash then revert to the card form (with the now-
+  // terminal old clientSecret raising "PaymentIntent in terminal state"
+  // inside Stripe Elements). The fix: only the FIRST render reads
+  // `initialInitiate` to decide whether to skip the fetch; subsequent
+  // changes are inert. This is correct because the cache exists ONLY to
+  // skip the initial fetch on a re-opened drawer; once the effect has
+  // run, the cache is no longer relevant — payState owns the truth.
+  const initialInitiateRef = useRef<CachedInitiate | null>(opts.initialInitiate);
+
   useEffect(() => {
     if (!enabled) return;
-    if (initialInitiate !== null && retryCount === 0) return;
+    // Read once-frozen `initialInitiate` from ref — not the latest prop.
+    if (initialInitiateRef.current !== null && retryCount === 0) return;
 
     const abortController = new AbortController();
     let cancelled = false;
@@ -136,5 +151,9 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
       cancelled = true;
       abortController.abort();
     };
-  }, [enabled, invoiceId, initialInitiate, retryCount, method]);
+    // `initialInitiate` removed from deps — see ref-based pattern
+    // documented above; `method` retained because switching tabs is a
+    // legitimate cause for a re-fire with a new method body.
+
+  }, [enabled, invoiceId, retryCount, method]);
 }

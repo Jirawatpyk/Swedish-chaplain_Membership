@@ -94,6 +94,24 @@ export interface InitiatePaymentDeps {
   readonly clock: ClockPort;
   /** Returns a fresh payment id, e.g., `pmt_<ulid>`. Injected for deterministic tests. */
   readonly generatePaymentId: () => PaymentId;
+  /**
+   * Strategy for the Stripe `Idempotency-Key`. Receives the canonical
+   * base key (`inv-<id>-attempt-<seq>`) and returns the final key sent
+   * to Stripe.
+   *
+   * Production composition root wires the IDENTITY function so the
+   * seq-based key is the dedupe contract — two concurrent retries
+   * map to the same Stripe PI.
+   *
+   * Dev composition root wires a `(base) => `${base}-d-${Date.now()}`
+   * variant so repeat test runs never collide with Stripe's 24-hour
+   * idempotency-key cache (which would otherwise reject re-use of the
+   * same key with mismatched params via 400 `StripeIdempotencyError`
+   * → route 502 `processor_unavailable`).
+   *
+   * Defaults to identity when omitted (existing tests need no change).
+   */
+  readonly idempotencyKeyFactory?: (baseKey: string) => string;
 }
 
 export async function initiatePayment(
@@ -167,6 +185,19 @@ export async function initiatePayment(
   }
   const invoice = invoiceResult.value;
 
+  // Audit 2026-04-25 follow-up: F4's `getInvoiceForPayment` returns
+  // `ok({status: 'paid'})` for already-settled invoices (it only
+  // hard-rejects on `null`/zero `total`). If we don't gate here, the
+  // use-case happily creates a NEW Stripe PI for a paid invoice —
+  // CardForm then mounts with a clientSecret pointing at a PI that
+  // Stripe will refuse to confirm (or worse, double-charges if the
+  // member follows through). Reject explicitly so the route returns
+  // a typed error and the UI can route to "already paid" UX instead
+  // of trying to render a card form against a settled invoice.
+  if (invoice.status === 'paid') {
+    return err({ code: 'invoice_not_payable', currentStatus: invoice.status });
+  }
+
   // Step 5 + 6: withTx → resume or insert+createIntent+audit.
   return await deps.paymentsRepo.withTx(async (tx) => {
     // Resume check FIRST — if a pending attempt by this actor exists,
@@ -183,7 +214,15 @@ export async function initiatePayment(
       input.actorUserId,
       tx,
     );
-    if (pending) {
+    // Phase 4 fix (2026-04-25): only resume when the pending attempt
+    // matches the requested method. Otherwise (e.g. user opened the
+    // card tab, then switched to PromptPay) we'd hand back the existing
+    // card PI's clientSecret with a null `promptpayQrSvgUrl`, which the
+    // PromptPay UI renders as a load-failure. Fall through to the
+    // first-attempt branch and let nextAttemptSeq + Stripe SDK create
+    // a fresh PaymentIntent for the new method. The stale pending row
+    // gets reaped by the stale-pending sweep cron (Phase 9 T101).
+    if (pending && pending.method === input.method) {
       // Architect D-01 (Group E1, 2026-04-24): resume path reads the
       // live `clientSecret` from `retrievePaymentIntent` directly. The
       // previous workaround re-invoked `createPaymentIntent` with the
@@ -236,7 +275,14 @@ export async function initiatePayment(
       input.invoiceId,
     );
     const paymentId = deps.generatePaymentId();
-    const idempotencyKey = `inv-${input.invoiceId}-attempt-${attemptSeq}`;
+    // Idempotency-Key strategy is injected by the composition root —
+    // see `InitiatePaymentDeps.idempotencyKeyFactory` JSDoc. Default
+    // is identity, so omitting the dep yields the canonical base key
+    // (production semantics + existing test fixtures unchanged).
+    const baseKey = `inv-${input.invoiceId}-attempt-${attemptSeq}`;
+    const idempotencyKey = deps.idempotencyKeyFactory
+      ? deps.idempotencyKeyFactory(baseKey)
+      : baseKey;
 
     // Create intent BEFORE DB insert — failure here means no wasted
     // sequence + no orphan row (we haven't written anything yet).

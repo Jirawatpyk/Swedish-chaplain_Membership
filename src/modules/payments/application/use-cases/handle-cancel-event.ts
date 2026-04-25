@@ -29,9 +29,13 @@ export interface HandleCancelEventInput {
   readonly processorEventId?: string;
 }
 
+/**
+ * R5 canonical fix (2026-04-25): expose `invoiceId` so the route
+ * handler can fire surgical `revalidatePath('/portal/invoices/<id>')`.
+ */
 export type HandleCancelEventOutcome =
-  | { readonly kind: 'processed' }
-  | { readonly kind: 'already_canceled' }
+  | { readonly kind: 'processed'; readonly invoiceId: string }
+  | { readonly kind: 'already_canceled'; readonly invoiceId: string }
   | { readonly kind: 'unknown_intent' };
 
 export type HandleCancelEventError = {
@@ -87,7 +91,10 @@ export async function handleCancelEvent(
         retentionYears: retentionFor('webhook_payment_already_canceled'),
       });
       await markProcessedIfPresent(deps, input, tx);
-      return ok<HandleCancelEventOutcome>({ kind: 'already_canceled' });
+      return ok<HandleCancelEventOutcome>({
+        kind: 'already_canceled',
+        invoiceId: payment.invoiceId,
+      });
     }
 
     const transition = canTransition(payment.status, 'canceled');
@@ -97,7 +104,10 @@ export async function handleCancelEvent(
         // refunded). Cannot cancel. Return no-op + atomic markProcessed
         // to avoid retry-storm + stuck-row class.
         await markProcessedIfPresent(deps, input, tx);
-        return ok<HandleCancelEventOutcome>({ kind: 'already_canceled' });
+        return ok<HandleCancelEventOutcome>({
+        kind: 'already_canceled',
+        invoiceId: payment.invoiceId,
+      });
       }
       // R4 I-3: illegal_transition on webhook-side cancel is a PERMANENT
       // mismatch. Acknowledge atomically + forensic audit + no-op.
@@ -119,7 +129,10 @@ export async function handleCancelEvent(
         },
         retentionYears: retentionFor('payment_processor_retrieve_failed'),
       });
-      return ok<HandleCancelEventOutcome>({ kind: 'already_canceled' });
+      return ok<HandleCancelEventOutcome>({
+        kind: 'already_canceled',
+        invoiceId: payment.invoiceId,
+      });
     }
 
     const completedAt = new Date(input.eventCreatedAtUnixSeconds * 1000);
@@ -147,6 +160,9 @@ export async function handleCancelEvent(
     // Atomic markProcessed (audit 2026-04-25 #4) — same tx as audit + status update.
     await markProcessedIfPresent(deps, input, tx);
 
-    return ok<HandleCancelEventOutcome>({ kind: 'processed' });
+    return ok<HandleCancelEventOutcome>({
+      kind: 'processed',
+      invoiceId: payment.invoiceId,
+    });
   });
 }

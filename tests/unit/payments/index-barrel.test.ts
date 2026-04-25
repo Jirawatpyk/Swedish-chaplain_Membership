@@ -92,6 +92,7 @@ describe('payments barrel — public API contract', () => {
         'audit',
         'clock',
         'generatePaymentId',
+        'idempotencyKeyFactory',
         'invoicingBridge',
         'paymentsRepo',
         'processorGateway',

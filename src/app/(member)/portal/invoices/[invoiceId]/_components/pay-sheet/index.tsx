@@ -43,7 +43,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { XIcon } from 'lucide-react';
 
@@ -131,6 +131,7 @@ export function PaySheet({
 }: PaySheetProps) {
   const t = useTranslations('portal.payment.drawer');
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   // FR-025c — deep link from F8 reminder emails. Uncontrolled fallback
   // state used only when `controlledOpen` is undefined (legacy callers).
@@ -211,6 +212,21 @@ export function PaySheet({
     paymentSettledRef.current = paymentSettled;
   }, [paymentSettled]);
 
+  // R5 fix (2026-04-25): pre-fire `router.refresh()` the moment payment
+  // settles (i.e. ConfirmationPanel mounts) instead of waiting for the
+  // 5s auto-close. The RSC re-fetch + DB query overlap with the
+  // ConfirmationPanel display window, so by the time the drawer
+  // actually closes the invoice page already shows the new "Paid"
+  // status — no perceptible delay between drawer-close and
+  // status-update. Without this, the user observed a ~1–2 s gap where
+  // the page still rendered "Issued" after the drawer dismissed.
+  // We still keep the close-time refresh as a belt-and-braces safety.
+  useEffect(() => {
+    if (paymentSettled) {
+      router.refresh();
+    }
+  }, [paymentSettled, router]);
+
   // Explicit-cancel helper. Shared by:
   //   (a) unmount backstop — fires on page navigate-away
   //   (b) user-initiated cancel — ProcessingPanel / 3DS "Cancel payment"
@@ -268,6 +284,16 @@ export function PaySheet({
     }
     if (!next) {
       onClose?.();
+      // R5 fix (2026-04-25): when the drawer closes AFTER a settled
+      // payment, invalidate the Next.js router cache for the current
+      // route so the invoice detail page re-fetches its server-rendered
+      // status (issued → paid). Without this the user has to manually
+      // reload to see the new "Paid" badge + the Pay-now CTA disappear.
+      // Only fire when payment actually settled to avoid unnecessary
+      // refetches on cancel/abandon paths.
+      if (paymentSettledRef.current) {
+        router.refresh();
+      }
     }
   };
 

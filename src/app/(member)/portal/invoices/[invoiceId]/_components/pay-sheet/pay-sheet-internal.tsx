@@ -270,6 +270,8 @@ export function PaySheetInternal({
   // AbortController + StrictMode safety + Idempotency-Key dedupe; this
   // file owns the UI state machine + outcome dispatch.
   useInitiatePayment({
+    // R5 fix: `initialInitiate` is read via ref inside the hook (not in
+    // deps) — see `use-initiate-payment.ts` for full rationale.
     enabled: activeMethod === 'card',
     invoiceId: invoice.id,
     initialInitiate,

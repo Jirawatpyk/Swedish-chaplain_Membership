@@ -54,11 +54,28 @@ export interface ProcessWebhookEventInput {
   readonly requestId: string | null;
 }
 
+/**
+ * R5 canonical fix (2026-04-25): `processed` outcome carries the
+ * affected `invoiceId` when it can be derived (i.e. for
+ * `payment_intent.*` events whose use-case loaded the payment row).
+ * The route handler uses this to fire a SURGICAL
+ * `revalidatePath('/portal/invoices/<id>')` instead of a broad
+ * `[invoiceId]` pattern that busts every invoice's cache. For events
+ * that don't pivot on a single invoice (e.g. dispute), `invoiceId`
+ * stays undefined and the route falls back to the pattern form.
+ */
 export type ProcessWebhookEventOutcome =
-  | { readonly kind: 'processed'; readonly dispatched: string }
+  | {
+      readonly kind: 'processed';
+      readonly dispatched: string;
+      readonly invoiceId?: string;
+    }
   | { readonly kind: 'duplicate' }
   | { readonly kind: 'acknowledged_only' }
-  | { readonly kind: 'auto_refunded_stale_invoice' };
+  | {
+      readonly kind: 'auto_refunded_stale_invoice';
+      readonly invoiceId?: string;
+    };
 
 /**
  * R5 S006 — `kind` discriminator lets ops dashboards filter dispatch
@@ -211,10 +228,24 @@ export async function processWebhookEvent(
           detail: result.error.code,
         });
       }
+      // R5 canonical fix (2026-04-25): forward `invoiceId` from the
+      // sub-use-case outcome up to the route handler so it can fire a
+      // surgical `revalidatePath('/portal/invoices/<id>')`. Outcome
+      // kinds that DON'T carry invoiceId (e.g. `unknown_intent`)
+      // produce undefined here — route falls back to broader pattern.
+      const confirmInvoiceId =
+        'invoiceId' in result.value ? result.value.invoiceId : undefined;
       if (result.value.kind === 'auto_refunded_stale_invoice') {
-        outcome = { kind: 'auto_refunded_stale_invoice' };
+        outcome = {
+          kind: 'auto_refunded_stale_invoice',
+          ...(confirmInvoiceId !== undefined && { invoiceId: confirmInvoiceId }),
+        };
       } else {
-        outcome = { kind: 'processed', dispatched: envelope.type };
+        outcome = {
+          kind: 'processed',
+          dispatched: envelope.type,
+          ...(confirmInvoiceId !== undefined && { invoiceId: confirmInvoiceId }),
+        };
       }
       // Audit 2026-04-26 round-2 self-review #R2-A2: whitelist outcome
       // kinds confirmPayment is KNOWN to mark atomically. New outcome
@@ -264,7 +295,15 @@ export async function processWebhookEvent(
           detail: result.error.code,
         });
       }
-      outcome = { kind: 'processed', dispatched: envelope.type };
+      // R5 canonical fix (2026-04-25): forward `invoiceId` for
+      // surgical revalidation in the route handler.
+      const failInvoiceId =
+        'invoiceId' in result.value ? result.value.invoiceId : undefined;
+      outcome = {
+        kind: 'processed',
+        dispatched: envelope.type,
+        ...(failInvoiceId !== undefined && { invoiceId: failInvoiceId }),
+      };
       // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
       // typed against FailPaymentOutcome.
       const knownAtomicFailKinds = new Set<FailPaymentOutcome['kind']>([
@@ -302,7 +341,14 @@ export async function processWebhookEvent(
         });
       }
       /* v8 ignore stop */
-      outcome = { kind: 'processed', dispatched: envelope.type };
+      // R5 canonical fix (2026-04-25): forward `invoiceId`.
+      const cancelInvoiceId =
+        'invoiceId' in result.value ? result.value.invoiceId : undefined;
+      outcome = {
+        kind: 'processed',
+        dispatched: envelope.type,
+        ...(cancelInvoiceId !== undefined && { invoiceId: cancelInvoiceId }),
+      };
       // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
       // typed against HandleCancelEventOutcome.
       const knownAtomicCancelKinds = new Set<HandleCancelEventOutcome['kind']>([

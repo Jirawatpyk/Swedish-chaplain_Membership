@@ -316,6 +316,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // structured log on every use-case error so processor
     // outages, idempotency conflicts, and rate-limit drops are visible
     // in pino without relying on the unexpected-throw catch below.
+    // Phase 4 fix: also surface the underlying processor reason field on
+    // `processor_unavailable` so a dev tailing the logs can immediately
+    // see WHY Stripe rejected the call (PromptPay-not-enabled,
+    // country-mismatch, idempotency-collision, etc.) without grepping
+    // for the matching `stripe-gateway: SDK error` line.
+    const processorReason =
+      result.error.code === 'processor_unavailable'
+        ? result.error.reason
+        : undefined;
     logger.warn(
       {
         requestId,
@@ -325,6 +334,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         useCaseErrorCode: errCode,
         httpStatus: status,
         routeCode,
+        ...(processorReason ? { processorReason } : {}),
       },
       'payments.initiate.use_case_error',
     );
