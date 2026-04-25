@@ -88,6 +88,7 @@ import {
 import { ResendInvoiceButton } from '../_components/resend-invoice-button';
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
+import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
 
 const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
   CheckCircle2,
@@ -166,6 +167,24 @@ export default async function PortalInvoiceDetailPage({
     ? 'overdue'
     : invoice.status;
 
+  // R5 round-7: pre-render BOTH badge variants on the server so the
+  // <OptimisticPaidOverlay> client component can swap between them
+  // without having to re-derive the rendered output. Function children
+  // are not allowed across the server→client boundary, so we pass the
+  // pre-rendered JSX as `whenUnpaid` / `whenPaid` props.
+  const renderStatusBadge = (status: typeof displayStatus | 'paid') => {
+    const Icon = STATUS_ICON_MAP[statusIconName(status)];
+    return (
+      <Badge
+        variant={statusBadgeVariant(status)}
+        className="inline-flex items-center gap-1"
+      >
+        <Icon className="size-3.5" aria-hidden="true" />
+        {tStatus(status)}
+      </Badge>
+    );
+  };
+
   const documentNumber = invoice.documentNumber?.raw ?? '—';
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
@@ -205,18 +224,13 @@ export default async function PortalInvoiceDetailPage({
     <DetailContainer>
       <PageHeader
         title={`${t('title')} ${documentNumber}`}
-        badge={(() => {
-          const Icon = STATUS_ICON_MAP[statusIconName(displayStatus)];
-          return (
-            <Badge
-              variant={statusBadgeVariant(displayStatus)}
-              className="inline-flex items-center gap-1"
-            >
-              <Icon className="size-3.5" aria-hidden="true" />
-              {tStatus(displayStatus)}
-            </Badge>
-          );
-        })()}
+        badge={
+          <OptimisticPaidOverlay
+            invoiceId={invoice.invoiceId}
+            whenUnpaid={renderStatusBadge(displayStatus)}
+            whenPaid={renderStatusBadge('paid')}
+          />
+        }
         actions={
           invoice.pdf ? (
             <>
@@ -233,6 +247,7 @@ export default async function PortalInvoiceDetailPage({
                 />
               ) : null}
               <a
+                data-pay-focus-target="download-pdf"
                 href={`/api/portal/invoices/${invoice.invoiceId}/pdf`}
                 aria-label={`${
                   invoice.status === 'void'
@@ -429,26 +444,41 @@ export default async function PortalInvoiceDetailPage({
       {/* F5 G4 T081 — online payment entry point. Only surfaced for
         * 'issued' invoices; other states (paid / void / credited)
         * render nothing here since there is nothing for the member
-        * to pay. */}
+        * to pay.
+        *
+        * R5 round-7 (2026-04-26): wrapped in <OptimisticPaidOverlay>
+        * so the Pay-now button hides INSTANTLY once PaySheet
+        * dispatches the optimistic-paid event — without waiting for
+        * the server-side invoice.status flip. Prevents the
+        * "ConfirmationPanel up + Pay-now button STILL rendered"
+        * UX glitch.
+        */}
       {invoice.status === 'issued' ? (
-        canPayOnline && paymentSettings ? (
-          <PayNowButton
-            invoice={{
-              id: invoice.invoiceId,
-              invoiceNumber: documentNumber,
-              amountDue: total !== null ? Number(total) : 0,
-              currency: 'THB',
-              status: invoice.status,
-            }}
-            enabledMethods={paymentSettings.enabledMethods}
-            tenantPublishableKey={paymentSettings.processorPublishableKey}
-          />
-        ) : (
-          <OnlinePaymentDisabledCard
-            invoiceNumber={documentNumber}
-            tenantContactEmail={null}
-          />
-        )
+        <OptimisticPaidOverlay
+          invoiceId={invoice.invoiceId}
+          focusSelectorOnPaid='[data-pay-focus-target="download-pdf"]'
+          whenUnpaid={
+            canPayOnline && paymentSettings ? (
+              <PayNowButton
+                invoice={{
+                  id: invoice.invoiceId,
+                  invoiceNumber: documentNumber,
+                  amountDue: total !== null ? Number(total) : 0,
+                  currency: 'THB',
+                  status: invoice.status,
+                }}
+                enabledMethods={paymentSettings.enabledMethods}
+                tenantPublishableKey={paymentSettings.processorPublishableKey}
+              />
+            ) : (
+              <OnlinePaymentDisabledCard
+                invoiceNumber={documentNumber}
+                tenantContactEmail={null}
+              />
+            )
+          }
+          whenPaid={null}
+        />
       ) : null}
 
       {portalCreditNotes.length > 0 && (

@@ -44,7 +44,9 @@
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { dispatchInvoicePaid } from '../optimistic-paid-overlay';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import { XIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -130,6 +132,7 @@ export function PaySheet({
   children,
 }: PaySheetProps) {
   const t = useTranslations('portal.payment.drawer');
+  const tToast = useTranslations('portal.payment.toast');
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -232,29 +235,56 @@ export function PaySheet({
     if (!paymentSettled) return;
     if (refreshFiredRef.current) return;
     refreshFiredRef.current = true;
-    let attempts = 0;
-    const MAX_ATTEMPTS = 3;
-    const BACKOFF_MS = 800;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const poll = () => {
-      router.refresh();
-      attempts += 1;
-      if (attempts < MAX_ATTEMPTS) {
-        timer = setTimeout(poll, BACKOFF_MS);
-      } else {
-        // R5 review-round-3 polish (2026-04-25): explicitly null the
-        // ref after the final attempt so the cleanup branch's
-        // `clearTimeout(timer)` doesn't fire on a stale handle that
-        // already executed. Harmless either way (clearTimeout on a
-        // fired handle is a no-op) but keeps intent explicit.
-        timer = null;
-      }
-    };
-    poll();
-    return () => {
-      if (timer !== null) clearTimeout(timer);
-    };
-  }, [paymentSettled, router]);
+    // R5 round-7 (2026-04-26) — Optimistic UI pattern (chamber-os-
+    // architect recommendation):
+    //
+    //   1. `dispatchInvoicePaid()` — fires a window CustomEvent that
+    //      the page-level <OptimisticPaidOverlay> listens for. The
+    //      Paid badge flips + Pay-now button hides INSTANTLY at
+    //      T+0, decoupled from the server-side webhook → DB →
+    //      revalidatePath chain. Stripe SDK guarantees a `succeeded`
+    //      clientSecret = succeeded PaymentIntent; we trust the
+    //      client-side knowledge for UX purposes.
+    //
+    //   2. `router.refresh()` — a SINGLE belt-and-braces RSC
+    //      re-fetch so the server-rendered page eventually catches
+    //      up (within the typical 3-5s webhook+DB window). One
+    //      call only; the prior multi-fire polling chains (tried
+    //      1.2s × 6, 2-2.5s × 2, 2-5s × 3, 3-4s × 4, 3-7-11s × 4)
+    //      ALL dropped the auth session under concurrent RSC
+    //      re-fetches.
+    //
+    // Phase 9 polish (logged in plan.md § Phase 9 polish follow-ups):
+    //   - Move F4 receipt-PDF generation off webhook hot-path (5.2s
+    //     observed) so total commit-to-DB drops ≤ 1s.
+    //   - Once webhook p95 < 1s, retire this overlay — single
+    //     `router.refresh()` will be enough.
+    dispatchInvoicePaid(invoice.id);
+    router.refresh();
+
+    // 🟡 #6 — page-level success toast. The drawer's
+    // <ConfirmationPanel> already shows in-drawer success copy,
+    // but if the user closes the drawer immediately the page
+    // surface goes silent (the optimistic badge swap is a quiet
+    // visual change). A `sonner` toast keeps `docs/ux-standards.md`
+    // § 15 in compliance for state-changing actions.
+    toast.success(tToast('paymentSucceeded'));
+
+    // 🟡 M3 — fire-and-forget telemetry ping. Lets ops correlate
+    // optimistic flips with subsequent webhook arrivals; missing
+    // pairs surface a dropped/disputed webhook before the
+    // 15-second auto-revert kicks in client-side. No await — we
+    // do not block the user's success path on this signal.
+    fetch('/api/payments/log-optimistic-flip', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ invoiceId: invoice.id }),
+      keepalive: true,
+    }).catch(() => {
+      // Best-effort. A failed telemetry ping must NEVER bubble
+      // into the user-facing success flow.
+    });
+  }, [paymentSettled, router, invoice.id, tToast]);
 
   // Explicit-cancel helper. Shared by:
   //   (a) unmount backstop — fires on page navigate-away
@@ -313,18 +343,13 @@ export function PaySheet({
     }
     if (!next) {
       onClose?.();
-      // R5 H2 (2026-04-25): belt-and-braces refresh ONLY if the
-      // settled-effect's polling retry hasn't already fired. The
-      // refreshFiredRef latch dedupes against the
-      // `useEffect([paymentSettled])` polling cycle above so we don't
-      // burn extra RSC round-trips. This branch fires only in the
-      // unlikely case where the drawer closes BEFORE the settled
-      // effect ran (e.g. user clicked Close synchronously with
-      // payState→success).
-      if (paymentSettledRef.current && !refreshFiredRef.current) {
-        refreshFiredRef.current = true;
-        router.refresh();
-      }
+      // R5 round-7 (2026-04-26): the close-handler `router.refresh()`
+      // was removed. Optimistic UI overlay
+      // (`dispatchInvoicePaid()` + <OptimisticPaidOverlay>) handles
+      // the user-perceived UX flip at payment-success time, and the
+      // settled-effect's single `router.refresh()` is enough to
+      // catch up server-rendered surface. A second refresh here was
+      // redundant + a near-miss for the multi-fire session-drop bug.
     }
   };
 

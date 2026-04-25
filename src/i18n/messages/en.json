@@ -1573,6 +1573,9 @@
     "payment": {
       "payNow": "Pay now",
       "payAmount": "Pay {amount}",
+      "toast": {
+        "paymentSucceeded": "Payment successful"
+      },
       "drawer": {
         "title": "Pay invoice",
         "subtitle": "{invoiceNumber}",

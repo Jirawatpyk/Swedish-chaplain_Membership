@@ -226,7 +226,12 @@ export function PaySheetInternal({
   const [promptpayState, setPromptpayState] = useState<
     | { readonly kind: 'idle' }
     | { readonly kind: 'initiating' }
-    | { readonly kind: 'qr'; readonly clientSecret: string; readonly qrSvgUrl: string }
+    | {
+        readonly kind: 'qr';
+        readonly clientSecret: string;
+        readonly qrSvgUrl: string;
+        readonly expirySeconds: number;
+      }
     | { readonly kind: 'expired' }
     | { readonly kind: 'failure'; readonly reason: string }
   >({ kind: 'idle' });
@@ -330,6 +335,9 @@ export function PaySheetInternal({
         kind: 'qr',
         clientSecret: payload.stripe.clientSecret,
         qrSvgUrl,
+        // Verify-fix C1 (2026-04-26): pin tenant-configured QR expiry
+        // from server response; fallback 900s if older API still in flight.
+        expirySeconds: payload.stripe.promptpayQrExpirySeconds ?? 900,
       });
     },
     onFailure: (reason) => setPromptpayState({ kind: 'failure', reason }),
@@ -493,6 +501,7 @@ export function PaySheetInternal({
             qrSvgUrl={promptpayState.qrSvgUrl}
             amountSatang={invoice.amountDue}
             currency={invoice.currency}
+            expirySeconds={promptpayState.expirySeconds}
             onRefresh={handlePromptPayRefresh}
             status="pending"
           />

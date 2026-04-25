@@ -1573,6 +1573,9 @@
     "payment": {
       "payNow": "Betala nu",
       "payAmount": "Betala {amount}",
+      "toast": {
+        "paymentSucceeded": "Betalning lyckades"
+      },
       "drawer": {
         "title": "Betala faktura",
         "subtitle": "{invoiceNumber}",

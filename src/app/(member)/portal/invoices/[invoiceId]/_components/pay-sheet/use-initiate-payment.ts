@@ -43,6 +43,7 @@ export interface InitiateResponse {
     readonly publishableKey: string;
     readonly paymentIntentId: string;
     readonly promptpayQrSvgUrl?: string | null;
+    readonly promptpayQrExpirySeconds?: number;
   };
   readonly correlationId: string;
 }

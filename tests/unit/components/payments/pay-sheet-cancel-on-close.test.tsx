@@ -249,7 +249,15 @@ describe('<PaySheet> W2 stale-PI cleanup (FR-025c — audit 2026-04-25)', () => 
       fireEvent.click(screen.getByTestId('stub-fire-settled'));
     });
     unmount();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    // R5 round-7: settled-effect now fires a fire-and-forget POST to
+    // /api/payments/log-optimistic-flip for ops telemetry (M3). Filter
+    // it out — the W2 invariant under test is specifically that
+    // /cancel was NOT called.
+    const cancelCalls = fetchSpy.mock.calls.filter((args) => {
+      const url = String(args[0] ?? '');
+      return url.includes('/cancel');
+    });
+    expect(cancelCalls.length).toBe(0);
   });
 
   it('does NOT fire cancel on unmount when no PaymentIntent was ever created', async () => {

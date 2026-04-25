@@ -63,6 +63,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { RefreshCwIcon } from 'lucide-react';
 
@@ -201,12 +202,21 @@ export function PromptPayPanel({
          * viewport. Width capped to 220 px so the bilingual instructions
          * + countdown still fit on a 320 px iPhone viewport without the
          * sheet's vertical scroll.
+         *
+         * `next/image` with `unoptimized` — the QR is a Stripe-hosted
+         * public SVG that changes per-PaymentIntent and lives only for
+         * the duration of the drawer session, so the optimizer pipeline
+         * adds no value (no caching across PIs, fixed 220px size).
+         * `unoptimized` skips the loader while still satisfying the
+         * `@next/next/no-img-element` rule and giving us width/height
+         * intrinsic-sizing.
          */}
-        <img
+        <Image
           src={qrSvgUrl}
           alt={t('qrAlt')}
           width={220}
           height={220}
+          unoptimized
           className="aspect-square h-auto w-[220px] rounded-md border border-border bg-popover p-3"
           data-testid="pay-sheet-promptpay-qr"
         />

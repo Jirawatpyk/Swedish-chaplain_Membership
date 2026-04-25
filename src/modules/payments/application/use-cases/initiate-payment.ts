@@ -62,6 +62,15 @@ export interface InitiatePaymentSuccess {
   readonly publishableKey: string;
   readonly paymentIntentId: string;
   readonly promptpayQrSvgUrl: string | null;
+  /**
+   * Tenant-configured PromptPay QR expiry window in seconds (sourced
+   * from `tenant_payment_settings.promptpay_qr_expiry_seconds`). Always
+   * populated — defaults from the DB column (typically 900s = 15 min)
+   * apply at insert time. Frontend uses this to drive the countdown
+   * timer in <PromptPayPanel> rather than hardcoding a default.
+   * Verify-fix C1 (2026-04-26).
+   */
+  readonly promptpayQrExpirySeconds: number;
   /** True when this is a resume (pre-existing pending row) — caller skips audit. */
   readonly resumed: boolean;
 }
@@ -264,6 +273,7 @@ export async function initiatePayment(
         // browser re-fetches the QR via the PI's `next_action` on
         // its own using the clientSecret.
         promptpayQrSvgUrl: null,
+        promptpayQrExpirySeconds: settings.promptpayQrExpirySeconds,
         resumed: true,
       });
     }
@@ -346,6 +356,7 @@ export async function initiatePayment(
       publishableKey: settings.processorPublishableKey,
       paymentIntentId: created.value.id,
       promptpayQrSvgUrl: created.value.promptpayQrSvgUrl,
+      promptpayQrExpirySeconds: settings.promptpayQrExpirySeconds,
       resumed: false,
     });
   });

@@ -1573,6 +1573,9 @@
     "payment": {
       "payNow": "ชำระเงิน",
       "payAmount": "ชำระ {amount}",
+      "toast": {
+        "paymentSucceeded": "ชำระเงินสำเร็จ"
+      },
       "drawer": {
         "title": "ชำระใบแจ้งหนี้",
         "subtitle": "{invoiceNumber}",

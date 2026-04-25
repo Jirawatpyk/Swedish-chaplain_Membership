@@ -42,26 +42,57 @@ const useInitiateSource = readFileSync(USE_INITIATE_PATH, 'utf8');
 describe('PaySheet state-revalidation regression contracts', () => {
   // ---- H1: polling retry constants -----------------------------------------
 
-  it('H1: MAX_ATTEMPTS is exactly 3 (any change widens the polling window)', () => {
-    expect(indexSource).toMatch(/const\s+MAX_ATTEMPTS\s*=\s*3\b/);
+  it('H1 (R5 round-7 2026-04-26): EXACTLY ONE call-site `router.refresh()` — multi-fire dropped session, optimistic UI handles user flip', () => {
+    // R5 round-7: switched to optimistic UI overlay
+    // (dispatchInvoicePaid + <OptimisticPaidOverlay>). The
+    // page-perceived UX flip happens INSTANTLY without any RSC
+    // re-fetch. `router.refresh()` is now ONLY a single
+    // belt-and-braces RSC call to catch up the server-rendered
+    // surface. Multi-fire dropped session at every spacing tried
+    // (1.2s × 6, 2-2.5s × 2, 2-5s × 3, 3-4s × 4, 3-7-11s × 4).
+    const callSiteLines = indexSource.split('\n').filter((line) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('//') || trimmed.startsWith('* ') || trimmed.startsWith('*//')) return false;
+      return /router\.refresh\(\)\s*;/.test(line);
+    });
+    expect(callSiteLines.length).toBe(1);
   });
 
-  it('H1: BACKOFF_MS is exactly 800 (changes affect perceived staleness)', () => {
-    expect(indexSource).toMatch(/const\s+BACKOFF_MS\s*=\s*800\b/);
+  it('H1 (R5 round-7): settled effect contains NO setInterval AND NO setTimeout', () => {
+    // Polling caused session drops at every spacing tried. The
+    // settled effect must be a single synchronous fire — no
+    // deferred / repeating timers.
+    const settledEffectMatch = indexSource.match(
+      /useEffect\(\(\)\s*=>\s*\{[\s\S]{0,4000}?paymentSettled[\s\S]{0,4000}?\},\s*\[paymentSettled,\s*router,\s*invoice\.id,\s*tToast\]/,
+    );
+    expect(settledEffectMatch, 'expected settled effect block').toBeTruthy();
+    expect(settledEffectMatch![0]).not.toMatch(/setInterval\s*\(/);
+    expect(settledEffectMatch![0]).not.toMatch(/setTimeout\s*\(/);
+  });
+
+  it('H1 (R5 round-7): settled effect calls `dispatchInvoicePaid` to drive the optimistic UI overlay', () => {
+    const settledEffectMatch = indexSource.match(
+      /useEffect\(\(\)\s*=>\s*\{[\s\S]{0,4000}?paymentSettled[\s\S]{0,4000}?\},\s*\[paymentSettled,\s*router,\s*invoice\.id,\s*tToast\]/,
+    );
+    expect(settledEffectMatch).toBeTruthy();
+    expect(settledEffectMatch![0]).toMatch(/dispatchInvoicePaid\(/);
   });
 
   // ---- H2: refreshFiredRef latch -------------------------------------------
 
-  it('H2: refreshFiredRef is set true at BOTH the settled-effect AND close-handler call sites', () => {
-    const setTrueMatches = indexSource.match(
+  it('H2 (R5 round-7): single settled-effect latch (`refreshFiredRef`) — close-handler refresh removed in favour of optimistic UI', () => {
+    // R5 round-7: removed the close-handler refresh entirely
+    // (it was redundant with the optimistic UI overlay). The
+    // remaining latch (`refreshFiredRef`) prevents the settled
+    // effect from re-firing on React StrictMode double-mount.
+    const settledLatch = indexSource.match(
       /refreshFiredRef\.current\s*=\s*true/g,
     );
-    expect(setTrueMatches, 'expected refreshFiredRef.current = true at ≥ 2 sites').toBeTruthy();
-    expect(setTrueMatches!.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('H2: handleOpenChange close-branch checks `!refreshFiredRef.current` before refreshing', () => {
-    expect(indexSource).toMatch(/!\s*refreshFiredRef\.current/);
+    expect(settledLatch, 'expected settled-effect latch').toBeTruthy();
+    // closeRefreshFiredRef must NOT exist — its reintroduction
+    // would mean someone added back the redundant close-handler
+    // refresh that the optimistic UI made unnecessary.
+    expect(indexSource).not.toMatch(/closeRefreshFiredRef/);
   });
 
   // ---- B-NEW-2: refreshFiredRef reset for retry-success cycle --------------

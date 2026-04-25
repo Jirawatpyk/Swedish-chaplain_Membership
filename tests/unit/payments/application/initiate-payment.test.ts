@@ -331,6 +331,104 @@ describe('initiatePayment (T055)', () => {
     expect(result.error.reason).toBe('retrieved_client_secret_null');
   });
 
+  it('cross-method resume skip — pending card PI does NOT resume when promptpay requested (Verify-fix F1, 2026-04-26)', async () => {
+    // Phase 4 verify-fix F1 / spec § Edge Cases: when a member opens
+    // the card tab (creates a pending card PI), then switches to the
+    // PromptPay tab, the use-case must NOT hand back the card PI's
+    // clientSecret with `promptpayQrSvgUrl=null`. It must skip the
+    // resume branch and create a fresh promptpay PaymentIntent so the
+    // browser receives a real QR.
+    const existingCard: Payment = {
+      id: asPaymentId('pmt_existing_card'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'card', // <-- pending row is for card
+      status: 'pending',
+      amountSatang: 5_350_000n,
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_existing_card',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_prev',
+    };
+    const deps = makeDeps();
+    (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      existingCard,
+    );
+    (deps.paymentsRepo.nextAttemptSeq as ReturnType<typeof vi.fn>).mockResolvedValueOnce(2);
+    (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'pi_promptpay_new',
+        clientSecret: 'pi_promptpay_new_secret_xyz',
+        status: 'requires_action',
+        livemode: false,
+        promptpayQrSvgUrl: 'https://qr.stripe.com/v1/promptpay_new.svg',
+      }),
+    );
+
+    const result = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Asserts the cross-method-resume skip behaviour:
+    expect(result.value.resumed).toBe(false);
+    expect(result.value.paymentIntentId).toBe('pi_promptpay_new');
+    expect(result.value.promptpayQrSvgUrl).toBe(
+      'https://qr.stripe.com/v1/promptpay_new.svg',
+    );
+    expect(result.value.promptpayQrExpirySeconds).toBe(900);
+    // First-attempt-flow side effects DID happen (resume side effects DID NOT):
+    expect(deps.paymentsRepo.insert).toHaveBeenCalledTimes(1);
+    expect(deps.audit.emit).toHaveBeenCalled();
+    // retrievePaymentIntent (resume-only call) MUST NOT have been called
+    // — that's how we distinguish skip-resume vs took-resume.
+    expect(deps.processorGateway.retrievePaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it('same-method resume — pending promptpay PI resumes when promptpay requested', async () => {
+    // Counterpart to the cross-method-skip test: when methods match,
+    // the resume branch DOES fire (no INSERT, no audit re-emit).
+    const existingPromptpay: Payment = {
+      id: asPaymentId('pmt_existing_promptpay'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'promptpay',
+      status: 'pending',
+      amountSatang: 5_350_000n,
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_existing_promptpay',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_prev',
+    };
+    const deps = makeDeps();
+    (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      existingPromptpay,
+    );
+
+    const result = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.resumed).toBe(true);
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+    expect(deps.processorGateway.retrievePaymentIntent).toHaveBeenCalledTimes(1);
+  });
+
   it('tenant_settings missing — tenant_settings_incomplete', async () => {
     const deps = makeDeps();
     (deps.tenantSettingsRepo.getByTenantId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);

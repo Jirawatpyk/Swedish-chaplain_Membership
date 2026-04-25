@@ -302,6 +302,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             clientSecret: value.clientSecret,
             paymentIntentId: value.paymentIntentId,
             promptpayQrSvgUrl: value.promptpayQrSvgUrl ?? null,
+            // Verify-fix C1 (2026-04-26): expose tenant-configured QR
+            // expiry so the panel countdown matches the server-side PI
+            // expiry window instead of the client's hardcoded 900s.
+            promptpayQrExpirySeconds: value.promptpayQrExpirySeconds,
           },
           correlationId,
         },
