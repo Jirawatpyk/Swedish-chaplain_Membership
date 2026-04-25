@@ -15,10 +15,10 @@
  *
  * PCI: zero persistence. `clientSecret` does not enter this component.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { CheckCircle2Icon, DownloadIcon } from 'lucide-react';
+import { CheckCircle2Icon, DownloadIcon, PauseIcon } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -89,6 +89,17 @@ export function ConfirmationPanel({
     AUTO_CLOSE_SECONDS,
     onClose,
   );
+
+  // R3 WCAG 2.2.1 (Timing Adjustable): a 5s auto-close is below the 20s
+  // statutory threshold for "essential" timing. Provide an explicit
+  // user-controlled pause so keyboard / SR / cognitive-disability users
+  // can stop the timer without committing to Download / Close. Once
+  // paused the panel stays open until the user dismisses explicitly.
+  const [paused, setPaused] = useState<boolean>(false);
+  const handlePause = () => {
+    interruptAutoClose();
+    setPaused(true);
+  };
 
   // `last4Display`: when the backend supplies the actual last 4
   // digits we show them verbatim prefixed with the masked-pan prefix
@@ -171,29 +182,52 @@ export function ConfirmationPanel({
         {t('close')}
       </button>
       {/*
-       * Countdown — dual-node pattern (G-Review Finding #6).
-       * ----------------------------------------------------
-       * The visible <p> ticks every second but is `aria-hidden` so
-       * screen readers don't flood. A sibling `aria-live="polite"`
-       * node fires ONCE at remaining===3 — matches HardCapPrompt's
-       * "one update per meaningful threshold" pattern (R2 S3) instead
-       * of the prior 3/2/1 back-to-back announcements that surfaced as
-       * verbose chatter for SR users on a 5s window.
+       * Countdown + Pause control (R3: WCAG 2.2.1).
+       * --------------------------------------------
+       * Visible <p> ticks every second but is `aria-hidden` so screen
+       * readers don't flood. A sibling `aria-live="polite"` node fires
+       * at remaining ∈ [3, 1] — matches HardCapPrompt's multi-threshold
+       * pattern (30/10/5/1) so SR users always get at least one
+       * "closing soon" cue + a final "1 second" warning before
+       * dismissal. Once `paused` flips, both nodes show the paused
+       * state and the timer is frozen by `interruptAutoClose`.
        */}
-      <p
-        className="text-caption text-muted-foreground"
-        aria-hidden="true"
-        data-testid="pay-sheet-confirmation-countdown"
-      >
-        {t('autoCloseCountdown', { seconds: remaining })}
-      </p>
+      <div className="flex items-center gap-3">
+        <p
+          className="text-caption text-muted-foreground"
+          aria-hidden="true"
+          data-testid="pay-sheet-confirmation-countdown"
+        >
+          {paused
+            ? t('autoClosePaused')
+            : t('autoCloseCountdown', { seconds: remaining })}
+        </p>
+        {!paused && (
+          <button
+            type="button"
+            onClick={handlePause}
+            // 24×24 minimum target (WCAG 2.5.8) — kept compact since
+            // this is a "soft" affordance next to the countdown text;
+            // primary keyboard targets remain Download / Close.
+            className="inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            data-testid="pay-sheet-confirmation-pause"
+          >
+            <PauseIcon aria-hidden="true" className="size-3" />
+            {t('pauseAutoClose')}
+          </button>
+        )}
+      </div>
       <p
         className="sr-only"
         aria-live="polite"
         aria-atomic="true"
         data-testid="pay-sheet-confirmation-countdown-sr"
       >
-        {remaining === 3 ? t('autoCloseCountdown', { seconds: 3 }) : ''}
+        {paused
+          ? t('autoClosePaused')
+          : remaining === 3 || remaining === 1
+            ? t('autoCloseCountdown', { seconds: remaining })
+            : ''}
       </p>
     </section>
   );

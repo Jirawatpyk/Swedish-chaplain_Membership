@@ -9,9 +9,14 @@
  *     tab per enabled method.
  *   - Keyboard: arrow-key navigation is inherited from the shadcn
  *     <Tabs> primitive (Base-UI Tabs → Radix-equivalent).
- *   - a11y: each <TabsTrigger> carries a localized `aria-label` so
- *     screen readers announce the target method on focus (WCAG 2.1 AA
- *     Name-Role-Value, SC 4.1.2).
+ *   - a11y: each <TabsTrigger> carries a localized `aria-label` whose
+ *     text STARTS with the visible label (e.g. "Card — switch payment
+ *     method") so the accessible name CONTAINS the visible name —
+ *     WCAG 2.5.3 (Label in Name) requirement for voice-control users
+ *     who say "click Card" to trigger the tab. Earlier versions had
+ *     the aria-label fully replace the visible label which broke
+ *     speech-recognition input. Icons remain `aria-hidden` so they
+ *     don't double-announce.
  *   - i18n keys: portal.payment.methods.{card,promptpay,
  *     cardAriaLabel,promptpayAriaLabel,cardPlaceholder,promptpayPlaceholder}
  *

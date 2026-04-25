@@ -37,6 +37,7 @@ import type {
   ProcessorGatewayPort,
   TenantPaymentSettingsRepo,
 } from '../ports';
+import { retentionFor } from '../ports/audit-port';
 import type { Payment, PaymentId } from '../../domain/payment';
 import type { PaymentMethod } from '../../domain/value-objects/payment-method';
 import {
@@ -157,7 +158,7 @@ export async function initiatePayment(
           target_entity: 'invoice',
           target_id: input.invoiceId,
         },
-        retentionYears: 5,
+        retentionYears: retentionFor('payment_cross_tenant_probe'),
       });
       return err({ code: 'forbidden_invoice' });
     }
@@ -290,7 +291,7 @@ export async function initiatePayment(
         processor_payment_intent_id: created.value.id,
         attempt_seq: attemptSeq,
       },
-      retentionYears: 5,
+      retentionYears: retentionFor('payment_initiated'),
     });
 
     return ok<InitiatePaymentSuccess>({

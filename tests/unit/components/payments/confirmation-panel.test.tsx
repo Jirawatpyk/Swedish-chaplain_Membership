@@ -33,6 +33,8 @@ const messages = {
         downloadReceipt: 'Download receipt',
         close: 'Close',
         autoCloseCountdown: 'Closing in {seconds} s',
+        pauseAutoClose: 'Pause',
+        autoClosePaused: 'Auto-close paused',
         toast: 'Payment received. Receipt emailed to you.',
       },
     },
@@ -137,7 +139,7 @@ describe('<ConfirmationPanel>', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('dual-node aria-live: visible tick is aria-hidden; SR announces ONCE at remaining===3 (R2 S3)', async () => {
+  it('dual-node aria-live: visible tick is aria-hidden; SR announces at remaining ∈ [3, 1] (R3 — multi-threshold matches HardCapPrompt 30/10/5/1)', async () => {
     renderPanel();
     const visible = screen.getByTestId('pay-sheet-confirmation-countdown');
     const sr = screen.getByTestId('pay-sheet-confirmation-countdown-sr');
@@ -145,25 +147,26 @@ describe('<ConfirmationPanel>', () => {
     expect(visible.getAttribute('aria-hidden')).toBe('true');
     expect(sr.getAttribute('aria-live')).toBe('polite');
     expect(sr.getAttribute('aria-atomic')).toBe('true');
-    // single-threshold announcement. Pre-3s window the SR node
-    // is empty; at remaining===3 it fires once; at 2/1 it goes silent
-    // again so SR users hear ONE warning (matches HardCapPrompt).
+    // R3 cadence: silent pre-3s; fires at remaining=3; silent at 2;
+    // fires again at 1 (final warning before dismissal). Two threshold
+    // announcements total — still well below HardCapPrompt's 4 — but
+    // guarantees SR users hear at least one cue + a "1 second" warning.
     expect(sr.textContent).toBe('');
-    // Tick 2s → remaining=3 → SR fires.
+    // Tick 2s → remaining=3 → SR fires (first threshold).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
     expect(sr.textContent).toContain('3');
-    // Tick to remaining=2 → SR goes silent.
+    // Tick to remaining=2 → SR silent (between thresholds).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
     expect(sr.textContent).toBe('');
-    // Tick to remaining=1 → still silent.
+    // Tick to remaining=1 → SR fires final warning (R3 cadence change).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(sr.textContent).toBe('');
+    expect(sr.textContent).toContain('1');
   });
 
   it('download receipt anchor has ≥44px tap target (G-Review #5)', () => {
@@ -181,6 +184,35 @@ describe('<ConfirmationPanel>', () => {
     expect(onDownload).toHaveBeenCalledOnce();
     // Advance past the would-be auto-close deadline.
     for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+    }
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('Pause button (R3 WCAG 2.2.1) freezes countdown + onClose never fires; SR + visible nodes show "Auto-close paused"', async () => {
+    const onClose = vi.fn();
+    renderPanel({ onClose });
+    const pauseBtn = screen.getByTestId('pay-sheet-confirmation-pause');
+    fireEvent.click(pauseBtn);
+
+    // After pause: visible countdown swaps to the paused-state copy.
+    const visible = screen.getByTestId('pay-sheet-confirmation-countdown');
+    expect(visible.textContent).toBe('Auto-close paused');
+
+    // SR live region also reflects the pause (single update — aria-atomic).
+    const sr = screen.getByTestId('pay-sheet-confirmation-countdown-sr');
+    expect(sr.textContent).toBe('Auto-close paused');
+
+    // The Pause button itself disappears once paused (no double-pause).
+    expect(screen.queryByTestId('pay-sheet-confirmation-pause')).toBeNull();
+
+    // Advance past the would-be auto-close deadline. onClose MUST NOT fire.
+    for (let i = 0; i < 10; i++) {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000);
       });

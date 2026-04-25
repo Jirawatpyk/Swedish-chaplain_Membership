@@ -330,7 +330,7 @@ describe('<CardForm>', () => {
       },
     );
 
-    it('falls back to Stripe English message when code is unknown', async () => {
+    it('falls back to localized generic message when code is unknown (R3 — drops Stripe English to avoid TH/SV bleed-through)', async () => {
       const onFailure = vi.fn();
       confirmPaymentMock.mockResolvedValue({
         error: {
@@ -351,8 +351,10 @@ describe('<CardForm>', () => {
         await Promise.resolve();
         await Promise.resolve();
       });
+      // R3: Stripe English is dropped — caller sees the localized generic
+      // message. Code is preserved on the payload for telemetry.
       expect(onFailure).toHaveBeenCalledWith({
-        message: 'Some novel Stripe error',
+        message: 'Payment could not be completed.',
         code: 'totally_unknown_code',
       });
     });

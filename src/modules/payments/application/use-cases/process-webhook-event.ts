@@ -41,6 +41,7 @@ import {
   type VerifiedStripeEvent,
 } from '../ports';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
+import { retentionFor } from '../ports/audit-port';
 import { confirmPayment, type ConfirmPaymentOutcome } from './confirm-payment';
 import { failPayment, type FailPaymentOutcome } from './fail-payment';
 import { handleCancelEvent, type HandleCancelEventOutcome } from './handle-cancel-event';
@@ -311,7 +312,7 @@ export async function processWebhookEvent(
                   amount_satang: (dataObject.amountSatang ?? 0n).toString(),
                   runbook_url: 'docs/runbooks/out-of-band-refund.md',
                 },
-                retentionYears: 10,
+                retentionYears: retentionFor('out_of_band_refund_detected'),
               });
             }
           }
@@ -348,7 +349,7 @@ export async function processWebhookEvent(
               charge_id: dataObject.id,
               amount_satang: (dataObject.amountSatang ?? 0n).toString(),
             },
-            retentionYears: 10,
+            retentionYears: retentionFor('dispute_created'),
           });
           // Architect D-03 LOW closeout — atomic with audit.
           await deps.processorEventsRepo.markProcessed(tx, event.id);
@@ -372,13 +373,24 @@ export async function processWebhookEvent(
       // Unknown event type — forward-compat per § 4.6. Mark the
       // processor_event row as `acknowledged_only` + processed_at
       // atomically so the row cannot get stuck in a split-commit.
-      await deps.paymentsRepo.withTx(async (tx) => {
-        await deps.processorEventsRepo.updateOutcome(tx, {
-          id: event.id,
-          outcome: 'acknowledged_only',
+      // R3 I-8: wrap in try/catch to mirror charge.refunded /
+      // charge.dispute.created branches above. A bare throw here
+      // would bubble past the route's structured error path.
+      try {
+        await deps.paymentsRepo.withTx(async (tx) => {
+          await deps.processorEventsRepo.updateOutcome(tx, {
+            id: event.id,
+            outcome: 'acknowledged_only',
+          });
+          await deps.processorEventsRepo.markProcessed(tx, event.id);
         });
-        await deps.processorEventsRepo.markProcessed(tx, event.id);
-      });
+      } catch (e) {
+        return err<ProcessWebhookEventError>({
+          code: 'dispatch_failed',
+          eventType: event.type,
+          detail: e instanceof Error ? e.constructor.name : 'unknown',
+        });
+      }
       outcome = { kind: 'acknowledged_only' };
       markedProcessedAtomically = true;
     }

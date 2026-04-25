@@ -14,6 +14,8 @@ import type {
 } from '../ports';
 import { canTransition } from '../../domain/policies/payment-status-transitions';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
+import { retentionFor } from '../ports/audit-port';
+import { emitWebhookUnknownIntent, markProcessedIfPresent } from './_shared';
 
 export interface HandleCancelEventInput {
   readonly tenantId: string;
@@ -58,29 +60,19 @@ export async function handleCancelEvent(
       input.paymentIntentId,
     );
     if (!payment) {
-      // Audit 2026-04-26 round-2 self-review #R2-A1: best-effort emit
-      // (tx=null) so audit failure cannot roll back markProcessed.
-      await deps.audit.emit(null, {
-        tenantId: input.tenantId,
-        requestId: input.requestId,
-        eventType: 'webhook_unknown_intent',
-        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-        summary: `payment_intent.canceled for unknown intent ${input.paymentIntentId}`,
-        payload: {
-          processor_payment_intent_id: input.paymentIntentId,
-          event_type: 'payment_intent.canceled',
-          event_created_at_unix_seconds: input.eventCreatedAtUnixSeconds,
-        },
-        retentionYears: 5,
-      });
-      if (deps.processorEventsRepo && input.processorEventId) {
-        await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
-      }
+      // Best-effort audit emit (tx=null) so audit-table outage cannot
+      // roll back the markProcessed sitting inside `tx`.
+      await emitWebhookUnknownIntent(
+        deps.audit,
+        input,
+        'payment_intent.canceled',
+      );
+      await markProcessedIfPresent(deps, input, tx);
       return ok<HandleCancelEventOutcome>({ kind: 'unknown_intent' });
     }
 
     if (payment.status === 'canceled') {
-      // Audit 2026-04-26 round-2 self-review #R2-A1: best-effort emit.
+      // Best-effort audit emit so failure cannot roll back markProcessed.
       await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId,
@@ -92,11 +84,9 @@ export async function handleCancelEvent(
           invoice_id: payment.invoiceId,
           processor_payment_intent_id: input.paymentIntentId,
         },
-        retentionYears: 5,
+        retentionYears: retentionFor('webhook_payment_already_canceled'),
       });
-      if (deps.processorEventsRepo && input.processorEventId) {
-        await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
-      }
+      await markProcessedIfPresent(deps, input, tx);
       return ok<HandleCancelEventOutcome>({ kind: 'already_canceled' });
     }
 
@@ -106,12 +96,7 @@ export async function handleCancelEvent(
         // Reached a terminal NON-canceled state (succeeded/failed/
         // refunded). Cannot cancel. Return no-op + atomic markProcessed
         // to avoid retry-storm + stuck-row class.
-        if (deps.processorEventsRepo && input.processorEventId) {
-          await deps.processorEventsRepo.markProcessed(
-            tx,
-            input.processorEventId,
-          );
-        }
+        await markProcessedIfPresent(deps, input, tx);
         return ok<HandleCancelEventOutcome>({ kind: 'already_canceled' });
       }
       return err<HandleCancelEventError>({
@@ -139,13 +124,11 @@ export async function handleCancelEvent(
         invoice_id: payment.invoiceId,
         actor_type: 'webhook',
       },
-      retentionYears: 5,
+      retentionYears: retentionFor('payment_canceled'),
     });
 
     // Atomic markProcessed (audit 2026-04-25 #4) — same tx as audit + status update.
-    if (deps.processorEventsRepo && input.processorEventId) {
-      await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
-    }
+    await markProcessedIfPresent(deps, input, tx);
 
     return ok<HandleCancelEventOutcome>({ kind: 'processed' });
   });

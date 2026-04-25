@@ -395,7 +395,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // ids the dispatcher needs are passed downstream. The verifier
   // path's `dataObject` is already projected — re-projecting here is
   // a no-op for known keys + drops anything unexpected.
-  const latestCharge = rawDataObject?.['latest_charge'] ?? rawDataObject?.['latestChargeId'];
+  // R3 I-2: Stripe expands `latest_charge` into a Charge object when the
+  // event was emitted with `expand: ['latest_charge']`. The verifier
+  // typically sends the string id, but a misconfigured upstream OR a
+  // direct test payload can carry the expanded object form. Without
+  // this guard the previous `typeof latestCharge === 'string'` check
+  // silently dropped the field and we wrote NULL into
+  // `payments.processor_charge_id` — breaking downstream reconciliation
+  // (`payments_processor_charge_id_idx` partial index loses these rows).
+  const latestChargeRaw =
+    rawDataObject?.['latest_charge'] ?? rawDataObject?.['latestChargeId'];
+  const latestCharge: string | undefined =
+    typeof latestChargeRaw === 'string'
+      ? latestChargeRaw
+      : typeof latestChargeRaw === 'object' && latestChargeRaw !== null
+        ? (() => {
+            const id = (latestChargeRaw as Record<string, unknown>)['id'];
+            return typeof id === 'string' ? id : undefined;
+          })()
+        : undefined;
   const refundsNode = rawDataObject?.['refunds'] as
     | { data?: Array<Record<string, unknown>> }
     | undefined;
@@ -427,7 +445,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       type: String(
         rawDataObject?.['type'] ?? rawDataObject?.['object'] ?? '',
       ),
-      ...(typeof latestCharge === 'string' && {
+      ...(latestCharge !== undefined && {
         latestChargeId: latestCharge,
       }),
       ...(refundIdsFromVerifier !== undefined
@@ -485,6 +503,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // genuine internal error (so Stripe retries back-pressure our
     // pipeline). We treat explicit use-case errors as 500s so the
     // next delivery replays them.
+    // The use-case contractually returns `Result<T,E>` (`.ok` is always
+    // boolean), but contract tests stub it with a `{ outcome }` shape.
+    // Probing literal `=== false` matches the real `err()` path AND
+    // gracefully treats a stub-shape (where `.ok` is undefined) as
+    // "not an error" → 200. Don't simplify to `!result.ok` without
+    // also rewriting all stubs to the Result shape.
     if ((result as { ok?: boolean }).ok === false) {
       return jsonInternalError('dispatch_failed', correlationId);
     }

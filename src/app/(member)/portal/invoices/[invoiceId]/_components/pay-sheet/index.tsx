@@ -54,7 +54,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { PaySheetSkeleton } from '@/components/payments/pay-sheet-skeleton';
 import { useIdleWarningSuppression } from '@/hooks/use-idle-warning-suppression';
 
 import { HardCapPrompt } from './hard-cap-prompt';
@@ -64,14 +63,32 @@ import type { PaymentMethod } from './method-tabs';
 // Lazy boundary (refactored 2026-04-25 — code-quality audit closeout).
 // Only the Stripe-SDK-heavy <PaySheetInternal> is lazy; the Sheet shell
 // renders eagerly so Base UI Dialog observes a real `open: false → true`
-// transition on first click and plays its slide-in animation. The
-// skeleton renders INSIDE the drawer body (correct location) on the
-// rare race where the user clicks before the pre-warmed chunk lands.
+// transition on first click and plays its slide-in animation.
+//
+// Loading fallback: invisible spacer reserving the rough vertical
+// extent PaySheetInternal will occupy (T082 UX feedback 2026-04-24,
+// re-confirmed 2026-04-25). Two prior approaches we rejected:
+//
+//   (a) `loading: () => <PaySheetSkeleton />` — paints at drawer-body-
+//       top (y≈93) BEFORE PaySheetInternal hydrates the real layout
+//       (OrderSummary + MethodTabs above the real skeleton at y≈258).
+//       The user perceives "skeleton flowed from summary zone down to
+//       card zone" — confusing layout shift.
+//   (b) `loading: () => null` — works in the fast path (chunk pre-warmed
+//       below renders in <50 ms) but leaves the drawer body empty on
+//       slow networks, and the SheetTitle in the sticky header has no
+//       body to anchor against → minor CLS when content arrives.
+//
+// The spacer keeps body height stable from the first paint, prevents
+// layout shift when PaySheetInternal swaps in, AND avoids drawing any
+// fake skeleton geometry that would land in the wrong region. Height
+// (~400 px) is a rough match for OrderSummary + MethodTabs + a single-
+// row card area on a 480×100vh drawer; precision is not required.
 const PaySheetInternal = dynamic(
   () => import('./pay-sheet-internal').then((m) => m.PaySheetInternal),
   {
     ssr: false,
-    loading: () => <PaySheetSkeleton />,
+    loading: () => <div aria-hidden="true" className="min-h-[400px]" />,
   },
 );
 

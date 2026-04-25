@@ -1596,8 +1596,8 @@
       "methods": {
         "card": "Kort",
         "promptpay": "PromptPay",
-        "cardAriaLabel": "Byt till kortbetalning",
-        "promptpayAriaLabel": "Byt till PromptPay-betalning",
+        "cardAriaLabel": "Kort — byt betalningsmetod",
+        "promptpayAriaLabel": "PromptPay — byt betalningsmetod",
         "cardPlaceholder": "Förbereder säkert betalningsformulär…",
         "promptpayPlaceholder": "PromptPay kommer snart."
       },
@@ -1608,6 +1608,8 @@
         "downloadReceipt": "Ladda ner kvitto",
         "close": "Stäng",
         "autoCloseCountdown": "Stänger om {seconds} s",
+        "pauseAutoClose": "Pausa",
+        "autoClosePaused": "Automatisk stängning pausad",
         "toast": "Betalningen mottagen. Kvittot har skickats till din e-post."
       },
       "processing": {

@@ -27,61 +27,20 @@ import { sql } from 'drizzle-orm';
 import type {
   AuditPort,
   F5AuditEvent,
-  F5AuditEventType,
+} from '../../application/ports/audit-port';
+import {
+  F5_AUDIT_RETENTION_YEARS,
+  retentionFor,
 } from '../../application/ports/audit-port';
 import { db, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
-/**
- * Retention-year mapping for all 19 F5 audit event types — 17 from
- * the original migration 0040 + 2 webhook ops-visibility events from
- * migration 0046 (audit 2026-04-25 findings #10/#13).
- *
- * (data-model.md § 7.1). Used for assertion + documentation — the
- * `emit` caller passes `retentionYears` on the event object, but
- * the `F5AuditEvent.retentionYears` field is authoritative. This
- * table lets a unit/contract test verify the union is exhaustive
- * and helps future reviewers spot a mis-categorised event.
- *
- * Audit 2026-04-25 finding #17: Record<F5AuditEventType, ...> exhaustiveness
- * gives compile-time enforcement that every union member has a retention
- * mapping — adding a new event type to the union forces this map to
- * grow in lockstep.
- */
-export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
-  // 10-year: mutations on payment/refund state + stale-refund trail.
-  // Each of these either creates or modifies a tax-document-adjacent
-  // record (the invoice or CN the payment settles against).
-  payment_initiated: 10,
-  payment_succeeded: 10,
-  payment_failed: 10,
-  payment_canceled: 10,
-  payment_auto_refunded_stale_invoice: 10,
-  payment_auto_refunded_concurrent_manual_mark: 10,
-  refund_initiated: 10,
-  refund_succeeded: 10,
-  refund_failed: 10,
-  out_of_band_refund_detected: 10,
-  dispute_created: 10,
+// Re-export so existing callers/tests that import these from the
+// infrastructure adapter keep working. Authoritative source lives in
+// `application/ports/audit-port.ts` (Clean Architecture: pure data on
+// the port, no Drizzle/SQL imports needed to consume it).
+export { F5_AUDIT_RETENTION_YEARS, retentionFor };
 
-  // 5-year: operational + probe + environment + config surfaces
-  // (no direct tax-document touch).
-  payment_environment_mismatch: 5,
-  payment_cross_tenant_probe: 5,
-  webhook_signature_rejected: 5,
-  webhook_api_version_mismatch: 5,
-  tenant_payment_settings_updated: 5,
-  online_payment_toggled: 5,
-  // Audit 2026-04-25 findings #10 + #13 — webhook ops-visibility events
-  // (migration 0046). Operational signals only, no tax-document touch.
-  webhook_unknown_intent: 5,
-  webhook_payment_already_canceled: 5,
-  // Review I-14 (migration 0047) — confirmPayment retrievePaymentIntent
-  // failure trail. Operational only.
-  payment_processor_retrieve_failed: 5,
-  // Review S5 (migration 0048) — confirmPayment invoice_not_found trail.
-  payment_invoice_not_found: 5,
-};
 
 async function insertAuditRow(
   executor: TenantTx | typeof db,

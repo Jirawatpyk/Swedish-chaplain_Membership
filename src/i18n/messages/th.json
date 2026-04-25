@@ -1596,8 +1596,8 @@
       "methods": {
         "card": "บัตรเครดิต",
         "promptpay": "PromptPay",
-        "cardAriaLabel": "เปลี่ยนเป็นชำระด้วยบัตรเครดิต",
-        "promptpayAriaLabel": "เปลี่ยนเป็นชำระด้วย PromptPay",
+        "cardAriaLabel": "บัตรเครดิต — เปลี่ยนวิธีการชำระเงิน",
+        "promptpayAriaLabel": "PromptPay — เปลี่ยนวิธีการชำระเงิน",
         "cardPlaceholder": "กำลังเตรียมแบบฟอร์มชำระเงิน…",
         "promptpayPlaceholder": "PromptPay กำลังจะมาเร็ว ๆ นี้"
       },
@@ -1608,6 +1608,8 @@
         "downloadReceipt": "ดาวน์โหลดใบเสร็จ",
         "close": "ปิด",
         "autoCloseCountdown": "กำลังปิดใน {seconds} วินาที",
+        "pauseAutoClose": "หยุดชั่วคราว",
+        "autoClosePaused": "หยุดการปิดอัตโนมัติแล้ว",
         "toast": "รับชำระเงินแล้ว เราจะส่งใบเสร็จไปที่อีเมลของคุณ"
       },
       "processing": {

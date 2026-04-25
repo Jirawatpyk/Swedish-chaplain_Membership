@@ -76,3 +76,46 @@ export interface F5AuditEvent {
 export interface AuditPort {
   emit(tx: unknown, event: F5AuditEvent): Promise<void>;
 }
+
+/**
+ * Retention-year mapping for all F5 audit event types — single source of
+ * truth (data-model.md § 7.1, Thai RD §87/3 + §86/10). Adding a new event
+ * type to `F5AuditEventType` forces this map to grow in lockstep
+ * (Record<...> exhaustiveness).
+ *
+ *   10y — events that create or modify a tax-document-adjacent record.
+ *    5y — operational / probe / environment / config events.
+ */
+export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
+  payment_initiated: 10,
+  payment_succeeded: 10,
+  payment_failed: 10,
+  payment_canceled: 10,
+  payment_auto_refunded_stale_invoice: 10,
+  payment_auto_refunded_concurrent_manual_mark: 10,
+  refund_initiated: 10,
+  refund_succeeded: 10,
+  refund_failed: 10,
+  out_of_band_refund_detected: 10,
+  dispute_created: 10,
+
+  payment_environment_mismatch: 5,
+  payment_cross_tenant_probe: 5,
+  webhook_signature_rejected: 5,
+  webhook_api_version_mismatch: 5,
+  tenant_payment_settings_updated: 5,
+  online_payment_toggled: 5,
+  webhook_unknown_intent: 5,
+  webhook_payment_already_canceled: 5,
+  payment_processor_retrieve_failed: 5,
+  payment_invoice_not_found: 5,
+};
+
+/**
+ * R3 C-1 helper: returns the canonical retention from
+ * `F5_AUDIT_RETENTION_YEARS`. Use at every emit call site instead of
+ * hardcoding `5` or `10` so the map remains the single source of truth.
+ */
+export function retentionFor(eventType: F5AuditEventType): 5 | 10 {
+  return F5_AUDIT_RETENTION_YEARS[eventType];
+}

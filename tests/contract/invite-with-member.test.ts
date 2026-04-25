@@ -126,7 +126,14 @@ function makeRequest(body: unknown, headers?: Record<string, string>): NextReque
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () => {
+// 30 s describe-level timeout (default 10 s) — the FIRST `it()` here pays
+// the full route-module compile + import cost (`@/app/api/auth/invite/route`
+// drags the auth + tenant + members module trees). On a standalone run the
+// import takes ~2.5 s; under `pnpm test:coverage` (V8 istanbul transform)
+// + worker-pool contention this can climb past 10 s on cold caches and
+// flake the whole suite. Subsequent `it()` calls reuse the cached module
+// so the budget covers them comfortably.
+describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { timeout: 30_000 }, () => {
   afterEach(() => {
     vi.clearAllMocks();
   });

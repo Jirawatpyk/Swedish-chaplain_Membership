@@ -39,6 +39,8 @@ import type {
 import { canTransition } from '../../domain/policies/payment-status-transitions';
 import { enforceOneSucceededPerInvoice } from '../../domain/invariants/one-succeeded-payment-per-invoice';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
+import { retentionFor } from '../ports/audit-port';
+import { markProcessedIfPresent } from './_shared';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 
 export interface ConfirmPaymentInput {
@@ -106,9 +108,7 @@ export async function confirmPayment(
     if (!payment) {
       // Audit 2026-04-26 round-2 #5b: atomic markProcessed even for
       // unknown_intent so the dispatch tail short-circuits.
-      if (deps.processorEventsRepo && input.processorEventId) {
-        await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
-      }
+      await markProcessedIfPresent(deps, input, tx);
       return ok<ConfirmPaymentOutcome>({ kind: 'unknown_intent' });
     }
 
@@ -124,9 +124,7 @@ export async function confirmPayment(
         // `unknown_intent` short-circuit at line 109. Returning ok(...)
         // (not err) prevents the route from 5xx-ing and triggering a
         // retry storm on a permanently-unrecoverable mismatch.
-        if (deps.processorEventsRepo && input.processorEventId) {
-          await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
-        }
+        await markProcessedIfPresent(deps, input, tx);
         // S5 (migration 0048): forensic audit row so ops see Stripe
         // webhooks arriving for invoices the local DB does not have.
         // Atomic with markProcessed inside this withTx — if the audit
@@ -142,7 +140,7 @@ export async function confirmPayment(
             payment_id: payment.id,
             invoice_id: payment.invoiceId,
           },
-          retentionYears: 5,
+          retentionYears: retentionFor('payment_invoice_not_found'),
         });
         return ok<ConfirmPaymentOutcome>({ kind: 'invoice_not_found' });
       }
@@ -230,7 +228,16 @@ export async function confirmPayment(
         });
       }
 
-      await deps.audit.emit(tx, {
+      // R3 I-6: emit on `null` (best-effort separate-tx commit), NOT on
+      // `tx`. The Stripe `createRefund` above is already non-rollbackable
+      // — if the wrapping `withTx` later rolls back (e.g. invoicing-bridge
+      // failure, DB outage), an audit row written through `tx` would
+      // silently disappear, leaving the refund un-traced in the audit
+      // log. Stripe's idempotencyKey makes the refund itself replay-safe,
+      // but the audit gap is what ops investigators feel. Best-effort
+      // emit through `null` commits independently so the row survives
+      // even if the rest of the dispatch tx aborts.
+      await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId,
         eventType: 'payment_auto_refunded_stale_invoice',
@@ -246,12 +253,10 @@ export async function confirmPayment(
           // (audit 2026-04-25 finding #7).
           processor_refund_id: refund.value.id,
         },
-        retentionYears: 10,
+        retentionYears: retentionFor('payment_auto_refunded_stale_invoice'),
       });
       // Audit 2026-04-26 round-2 #5b: atomic markProcessed.
-      if (deps.processorEventsRepo && input.processorEventId) {
-        await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
-      }
+      await markProcessedIfPresent(deps, input, tx);
       return ok<ConfirmPaymentOutcome>({ kind: 'auto_refunded_stale_invoice' });
     }
 
@@ -263,12 +268,7 @@ export async function confirmPayment(
       // back at Stripe triggering a retry storm).
       if (transition.error.kind === 'terminal_state') {
         // Atomic markProcessed (audit 2026-04-26 round-2 #5b).
-        if (deps.processorEventsRepo && input.processorEventId) {
-          await deps.processorEventsRepo.markProcessed(
-            tx,
-            input.processorEventId,
-          );
-        }
+        await markProcessedIfPresent(deps, input, tx);
         return ok<ConfirmPaymentOutcome>({ kind: 'already_succeeded' });
       }
       // illegal_transition (e.g. pending → succeeded mismatch is
@@ -319,7 +319,7 @@ export async function confirmPayment(
           payment_id: payment.id,
           processor_error_kind: retrieved.error.kind,
         },
-        retentionYears: 5,
+        retentionYears: retentionFor('payment_processor_retrieve_failed'),
       });
       return err<ConfirmPaymentError>({
         code: 'processor_unavailable',
@@ -358,7 +358,7 @@ export async function confirmPayment(
           ? { card_brand: intent.card.brand, card_last4: intent.card.last4 }
           : {}),
       },
-      retentionYears: 5,
+      retentionYears: retentionFor('payment_succeeded'),
     });
 
     // Step 9 — F4 bridge: invoice → paid.
@@ -403,9 +403,7 @@ export async function confirmPayment(
     // separate tx and leave the row with `outcome='processed'` but
     // `processed_at=NULL`. Only runs when the parent (processWebhook
     // Event) supplied both deps + input.
-    if (deps.processorEventsRepo && input.processorEventId) {
-      await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
-    }
+    await markProcessedIfPresent(deps, input, tx);
 
     return ok<ConfirmPaymentOutcome>({ kind: 'processed' });
   });

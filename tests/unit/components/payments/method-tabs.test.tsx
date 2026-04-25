@@ -17,8 +17,8 @@ const messages = {
       methods: {
         card: 'Card',
         promptpay: 'PromptPay',
-        cardAriaLabel: 'Switch to card payment',
-        promptpayAriaLabel: 'Switch to PromptPay payment',
+        cardAriaLabel: 'Card — switch payment method',
+        promptpayAriaLabel: 'PromptPay — switch payment method',
         cardPlaceholder: 'Card form coming in G3',
         promptpayPlaceholder: 'PromptPay coming in Phase 4',
       },
@@ -43,10 +43,10 @@ describe('<MethodTabs>', () => {
     });
     expect(screen.getAllByRole('tab')).toHaveLength(2);
     expect(
-      screen.getByRole('tab', { name: 'Switch to card payment' }),
+      screen.getByRole('tab', { name: 'Card — switch payment method' }),
     ).toBeTruthy();
     expect(
-      screen.getByRole('tab', { name: 'Switch to PromptPay payment' }),
+      screen.getByRole('tab', { name: 'PromptPay — switch payment method' }),
     ).toBeTruthy();
   });
 
@@ -71,7 +71,7 @@ describe('<MethodTabs>', () => {
       onMethodChange,
     });
     fireEvent.click(
-      screen.getByRole('tab', { name: 'Switch to PromptPay payment' }),
+      screen.getByRole('tab', { name: 'PromptPay — switch payment method' }),
     );
     expect(onMethodChange).toHaveBeenCalledWith('promptpay');
   });
@@ -84,7 +84,7 @@ describe('<MethodTabs>', () => {
       onMethodChange,
     });
     fireEvent.click(
-      screen.getByRole('tab', { name: 'Switch to card payment' }),
+      screen.getByRole('tab', { name: 'Card — switch payment method' }),
     );
     expect(onMethodChange).toHaveBeenCalledWith('card');
   });
@@ -95,13 +95,13 @@ describe('<MethodTabs>', () => {
       activeMethod: 'card',
       onMethodChange: vi.fn(),
     });
-    const cardTab = screen.getByRole('tab', { name: 'Switch to card payment' });
+    const cardTab = screen.getByRole('tab', { name: 'Card — switch payment method' });
     const ppTab = screen.getByRole('tab', {
-      name: 'Switch to PromptPay payment',
+      name: 'PromptPay — switch payment method',
     });
-    expect(cardTab.getAttribute('aria-label')).toBe('Switch to card payment');
+    expect(cardTab.getAttribute('aria-label')).toBe('Card — switch payment method');
     expect(ppTab.getAttribute('aria-label')).toBe(
-      'Switch to PromptPay payment',
+      'PromptPay — switch payment method',
     );
   });
 
@@ -136,9 +136,9 @@ describe('<MethodTabs>', () => {
       activeMethod: 'card',
       onMethodChange: vi.fn(),
     });
-    const cardTab = screen.getByRole('tab', { name: 'Switch to card payment' });
+    const cardTab = screen.getByRole('tab', { name: 'Card — switch payment method' });
     const ppTab = screen.getByRole('tab', {
-      name: 'Switch to PromptPay payment',
+      name: 'PromptPay — switch payment method',
     });
     expect(cardTab.getAttribute('tabindex')).toBe('0');
     expect(ppTab.getAttribute('tabindex')).toBe('-1');

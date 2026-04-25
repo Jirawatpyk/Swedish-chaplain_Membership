@@ -14,6 +14,7 @@ import type {
 import { canTransition } from '../../domain/policies/payment-status-transitions';
 import { isAllowed, type F5Role } from '../../domain/rbac-policy';
 import type { PaymentId } from '../../domain/payment';
+import { retentionFor } from '../ports/audit-port';
 
 export interface CancelPaymentInput {
   readonly tenantId: string;
@@ -89,7 +90,7 @@ export async function cancelPayment(
           target_entity: 'payment',
           target_id: input.paymentId,
         },
-        retentionYears: 5,
+        retentionYears: retentionFor('payment_cross_tenant_probe'),
       });
       return err<CancelPaymentError>({ code: 'payment_not_found' });
     }
@@ -114,7 +115,7 @@ export async function cancelPayment(
           target_id: input.paymentId,
           target_owner_member_id: payment.memberId,
         },
-        retentionYears: 5,
+        retentionYears: retentionFor('payment_cross_tenant_probe'),
       });
       return err<CancelPaymentError>({ code: 'forbidden_payment' });
     }
@@ -157,7 +158,7 @@ export async function cancelPayment(
         invoice_id: payment.invoiceId,
         actor_type: 'member',
       },
-      retentionYears: 5,
+      retentionYears: retentionFor('payment_canceled'),
     });
 
     return ok<CancelPaymentSuccess>({

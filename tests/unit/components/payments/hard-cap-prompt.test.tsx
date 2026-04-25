@@ -113,10 +113,14 @@ describe('<HardCapPrompt> (B3 / FR-028c)', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
-  it('exposes role="alertdialog" with assertive aria-live for SR users', () => {
+  it('exposes role="alert" with assertive aria-live for SR users (R3 I-10 — demoted from alertdialog because Sheet provides dialog modality)', () => {
     renderWithIntl(<HardCapPrompt onContinue={vi.fn()} onCancel={vi.fn()} />);
     const prompt = screen.getByTestId('pay-sheet-hard-cap-prompt');
-    expect(prompt.getAttribute('role')).toBe('alertdialog');
+    // R3 I-10: was 'alertdialog' but the prompt renders inside Radix
+    // <Sheet> which already provides role="dialog" + aria-modal. Nesting
+    // produced a "dialog dialog" announcement on JAWS/NVDA. role="alert"
+    // still triggers SR re-announcement when the prompt body changes.
+    expect(prompt.getAttribute('role')).toBe('alert');
     expect(prompt.getAttribute('aria-live')).toBe('assertive');
     expect(prompt.getAttribute('aria-atomic')).toBe('true');
   });

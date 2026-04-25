@@ -1596,8 +1596,8 @@
       "methods": {
         "card": "Card",
         "promptpay": "PromptPay",
-        "cardAriaLabel": "Switch to card payment",
-        "promptpayAriaLabel": "Switch to PromptPay payment",
+        "cardAriaLabel": "Card — switch payment method",
+        "promptpayAriaLabel": "PromptPay — switch payment method",
         "cardPlaceholder": "Preparing secure payment form…",
         "promptpayPlaceholder": "PromptPay is coming soon."
       },
@@ -1608,6 +1608,8 @@
         "downloadReceipt": "Download receipt",
         "close": "Close",
         "autoCloseCountdown": "Closing in {seconds} s",
+        "pauseAutoClose": "Pause",
+        "autoClosePaused": "Auto-close paused",
         "toast": "Payment received. Receipt emailed to you."
       },
       "processing": {

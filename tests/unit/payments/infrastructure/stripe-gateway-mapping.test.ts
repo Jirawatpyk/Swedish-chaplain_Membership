@@ -69,14 +69,14 @@ describe('mapStripeError — direct unit', () => {
     expect(result.code).toBe('invalid_api_key');
   });
 
-  it('StripeRateLimitError → permanent (SDK already retried)', () => {
+  it('StripeRateLimitError → retryable (R3 I-7 — burst that escapes SDK retry window should re-deliver via webhook, not fail user)', () => {
     const e = new Stripe.errors.StripeRateLimitError({
       message: 'Too many requests',
       type: 'StripeRateLimitError' as never,
       code: 'rate_limit',
     });
     const result = mapStripeError(e, ctx);
-    expect(result.kind).toBe('permanent');
+    expect(result.kind).toBe('retryable');
   });
 
   it('StripeInvalidRequestError → permanent', () => {

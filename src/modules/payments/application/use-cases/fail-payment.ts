@@ -14,6 +14,8 @@ import type {
 } from '../ports';
 import { canTransition } from '../../domain/policies/payment-status-transitions';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
+import { retentionFor } from '../ports/audit-port';
+import { emitWebhookUnknownIntent, markProcessedIfPresent } from './_shared';
 
 /**
  * Sentinel reason code emitted on `payment_failed` audit when Stripe
@@ -74,28 +76,16 @@ export async function failPayment(
     );
     if (!payment) {
       // Ops-visibility audit (audit 2026-04-25 finding #10).
-      // Audit 2026-04-26 round-2 self-review #R2-A1: keep audit.emit
-      // BEST-EFFORT (tx=null) per audit-port contract — an audit-table
-      // outage MUST NOT roll back the markProcessed (which would re-
-      // introduce the stuck-row class on probe paths). markProcessed
-      // stays inside `tx` so it commits atomically with the empty
-      // dispatch tx.
-      await deps.audit.emit(null, {
-        tenantId: input.tenantId,
-        requestId: input.requestId,
-        eventType: 'webhook_unknown_intent',
-        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-        summary: `payment_intent.payment_failed for unknown intent ${input.paymentIntentId}`,
-        payload: {
-          processor_payment_intent_id: input.paymentIntentId,
-          event_type: 'payment_intent.payment_failed',
-          event_created_at_unix_seconds: input.eventCreatedAtUnixSeconds,
-        },
-        retentionYears: 5,
-      });
-      if (deps.processorEventsRepo && input.processorEventId) {
-        await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
-      }
+      // best-effort emit (tx=null) per audit-port contract — audit
+      // outage MUST NOT roll back markProcessed (avoids stuck-row
+      // class on probe paths). markProcessed stays inside `tx` so it
+      // commits atomically with the empty dispatch tx.
+      await emitWebhookUnknownIntent(
+        deps.audit,
+        input,
+        'payment_intent.payment_failed',
+      );
+      await markProcessedIfPresent(deps, input, tx);
       return ok<FailPaymentOutcome>({ kind: 'unknown_intent' });
     }
 
@@ -106,12 +96,7 @@ export async function failPayment(
         // state mutation but still mark processor_events.processed_at
         // so the dispatch tail short-circuits and ops dashboards see
         // the terminal-retry as "handled" rather than "stuck".
-        if (deps.processorEventsRepo && input.processorEventId) {
-          await deps.processorEventsRepo.markProcessed(
-            tx,
-            input.processorEventId,
-          );
-        }
+        await markProcessedIfPresent(deps, input, tx);
         return ok<FailPaymentOutcome>({ kind: 'already_terminal' });
       }
       return err<FailPaymentError>({
@@ -127,6 +112,23 @@ export async function failPayment(
       settings.processorAccountId,
     );
     if (!retrieved.ok) {
+      // R3 I-9: forensic audit so ops see Stripe outages during failPayment
+      // (mirrors confirmPayment retrieve-fail trail). Best-effort emit on
+      // null tx — outer withTx is about to roll back; emitting through
+      // `tx` would discard the row we want ops to see.
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_processor_retrieve_failed',
+        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+        summary: `retrievePaymentIntent failed during fail of ${input.paymentIntentId}`,
+        payload: {
+          payment_intent_id: input.paymentIntentId,
+          payment_id: payment.id,
+          processor_error_kind: retrieved.error.kind,
+        },
+        retentionYears: retentionFor('payment_processor_retrieve_failed'),
+      });
       return err<FailPaymentError>({
         code: 'processor_unavailable',
         reason: retrieved.error.kind,
@@ -155,20 +157,16 @@ export async function failPayment(
         payment_id: payment.id,
         invoice_id: payment.invoiceId,
         failure_reason_code: reasonCode,
-        ...(retrieved.value.card
-          ? {
-              card_brand: retrieved.value.card.brand,
-              card_last4: retrieved.value.card.last4,
-            }
-          : {}),
+        // R3 I-1: card metadata intentionally OMITTED. A failed payment
+        // never produces a tax document, so card_brand/card_last4 have
+        // no receipt-correlation purpose — keeping them only widens the
+        // PCI surface in the long-retention audit_log.
       },
-      retentionYears: 5,
+      retentionYears: retentionFor('payment_failed'),
     });
 
     // Atomic markProcessed (audit 2026-04-25 #4) — same tx as audit + status update.
-    if (deps.processorEventsRepo && input.processorEventId) {
-      await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
-    }
+    await markProcessedIfPresent(deps, input, tx);
 
     return ok<FailPaymentOutcome>({ kind: 'processed' });
   });

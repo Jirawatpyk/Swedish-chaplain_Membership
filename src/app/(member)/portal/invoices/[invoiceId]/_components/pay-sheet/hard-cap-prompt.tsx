@@ -56,8 +56,13 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
 
   return (
     <section
-      role="alertdialog"
-      aria-modal="true"
+      // R3 I-10: this <section> renders INSIDE Radix <Sheet> (which
+      // already provides role="dialog" + aria-modal). Nesting another
+      // alertdialog caused JAWS/NVDA to announce "dialog dialog" on
+      // mount. Demote to role="alert" — the Sheet is the modality
+      // anchor; the alert role still ensures the SR reads the body
+      // when this prompt replaces the pay-sheet body.
+      role="alert"
       aria-live="assertive"
       aria-atomic="true"
       aria-labelledby="pay-sheet-hard-cap-title"

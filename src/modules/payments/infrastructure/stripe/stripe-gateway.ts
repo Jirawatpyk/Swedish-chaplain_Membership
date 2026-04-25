@@ -31,6 +31,23 @@ import type {
 } from '../../application/ports/processor-gateway-port';
 import { getStripeClient } from './stripe-client';
 
+// R3 H3: hoisted to module scope so we don't allocate two `Set`s on every
+// `mapStripeError` call (this runs in the SDK error hot path during
+// retries).
+const NETWORK_ERROR_NAMES: ReadonlySet<string> = new Set([
+  'AbortError',
+  'FetchError',
+  'TypeError', // fetch failed (undici v6+)
+]);
+const NETWORK_ERROR_CODES: ReadonlySet<string> = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'ETIMEDOUT',
+  'EAI_AGAIN', // transient DNS failure
+  'EPIPE',
+]);
+
 /**
  * Build Stripe SDK request options, omitting `stripeAccount` when the
  * target account IS the platform's own account.
@@ -126,19 +143,6 @@ export function mapStripeError(
   // Node `https` path.
   const errName = (e as { name?: string })?.name;
   const errCode = (e as { code?: string })?.code;
-  const NETWORK_ERROR_NAMES = new Set([
-    'AbortError',
-    'FetchError',
-    'TypeError', // fetch failed (undici v6+)
-  ]);
-  const NETWORK_ERROR_CODES = new Set([
-    'ECONNRESET',
-    'ECONNREFUSED',
-    'ENOTFOUND',
-    'ETIMEDOUT',
-    'EAI_AGAIN', // transient DNS failure
-    'EPIPE',
-  ]);
   if (
     (errName !== undefined && NETWORK_ERROR_NAMES.has(errName)) ||
     (errCode !== undefined && NETWORK_ERROR_CODES.has(errCode))
@@ -149,6 +153,15 @@ export function mapStripeError(
   switch (type) {
     case 'StripeConnectionError':
     case 'StripeAPIError':
+    // R3 I-7: SDK v10+ surfaces rate limits as a distinct
+    // `StripeRateLimitError` type. The SDK already retries 3x under
+    // the hood (see stripe-client.ts), so if it bubbles up here, the
+    // burst is real — but classifying as `permanent` would force the
+    // caller to fail the user's payment instead of letting the next
+    // webhook delivery / next user retry succeed naturally. Treat as
+    // retryable; the dispatch tx rolls back, processor_events row stays
+    // pending, and Stripe re-delivers the webhook on its own schedule.
+    case 'StripeRateLimitError':
       return { kind: 'retryable', reason };
     case 'StripeIdempotencyError':
       return { kind: 'idempotency_conflict', reason };

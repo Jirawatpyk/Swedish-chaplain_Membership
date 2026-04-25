@@ -1,7 +1,7 @@
 /**
  * Review I-5/I-6 — Real-DB processor_events ON CONFLICT idempotency.
  *
- * The existing `webhook-idempotency.test.ts` verifies the route +
+ * The existing `webhook-idempotency.contract.test.ts` verifies the route +
  * use-case wiring against MOCKED ports — useful as a contract test
  * but does NOT round-trip the actual `ON CONFLICT (id) DO NOTHING`
  * that backs SC-005 / FR-008. If the migration ever loses the PK
@@ -45,14 +45,22 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
     // processor_events has RLS `FOR DELETE USING (false)` on the
     // chamber_app role (append-only invariant). A direct
     // `db.delete(...)` would silently match 0 rows under that role,
-    // leaving test rows accumulating in Neon. Use the elevated role
-    // (matching migration's policy bypass clause) for a single
-    // SET LOCAL window scoped to the cleanup statement only.
-    await db.execute(sql`SET LOCAL ROLE neondb_owner`);
-    for (const id of insertedIds) {
-      await db.delete(processorEvents).where(eq(processorEvents.id, id));
-    }
-    await db.execute(sql`RESET ROLE`);
+    // leaving test rows accumulating in Neon.
+    //
+    // R3 I-5 fix: `SET LOCAL ROLE` ONLY applies inside an explicit
+    // transaction. The previous code called it on the root `db`
+    // executor — outside any tx — which is a no-op in Postgres, so
+    // the subsequent DELETEs ran under the original `chamber_app`
+    // role and silently matched 0 rows. Wrap the whole cleanup in
+    // `db.transaction(...)` so `SET LOCAL ROLE neondb_owner` actually
+    // takes effect for the DELETEs and is automatically released on
+    // commit (no need for `RESET ROLE`).
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL ROLE neondb_owner`);
+      for (const id of insertedIds) {
+        await tx.delete(processorEvents).where(eq(processorEvents.id, id));
+      }
+    });
   });
 
   it('first insert → inserted:true; same event id again → inserted:false (no duplicate row)', async () => {

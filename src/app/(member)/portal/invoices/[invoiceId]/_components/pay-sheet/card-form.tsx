@@ -178,9 +178,14 @@ function CardFormInner({
               return null;
           }
         })();
+        // R3: Stripe `result.error.message` is English-only regardless
+        // of locale. When our localized switch above didn't match the
+        // decline code, prefer the localized generic message over the
+        // raw Stripe English string so TH/SV users don't see English
+        // bleed-through. The unmapped code is preserved on the
+        // `code` property for telemetry and future i18n coverage.
         onFailure({
-          message:
-            localized ?? result.error.message ?? t('retry.genericReason'),
+          message: localized ?? t('retry.genericReason'),
           ...(code !== undefined && { code }),
         });
         return;
