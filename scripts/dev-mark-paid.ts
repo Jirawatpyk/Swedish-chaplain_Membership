@@ -15,13 +15,38 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
 
+/** R5 I2 — see dev-purge-invoice-payments.ts for rationale. */
+function assertNotProduction(databaseUrl: string): void {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'REFUSED: NODE_ENV=production. This script is destructive and forbidden in production.',
+    );
+  }
+  const lower = databaseUrl.toLowerCase();
+  if (
+    lower.includes('vercel-storage') ||
+    lower.includes('-prod') ||
+    lower.includes('.prod.') ||
+    lower.includes('-live') ||
+    lower.includes('.live.')
+  ) {
+    throw new Error(
+      'REFUSED: DATABASE_URL looks like a production endpoint. ' +
+        'Override with DEV_SCRIPT_FORCE=1 if intentional.',
+    );
+  }
+}
+
 async function main() {
   const invoiceId = process.argv[2];
   if (!invoiceId) {
     console.error('Usage: pnpm tsx scripts/dev-mark-paid.ts <invoiceId>');
     process.exit(1);
   }
-  const client = postgres(process.env.DATABASE_URL!, { max: 1 });
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error('DATABASE_URL not set');
+  if (process.env.DEV_SCRIPT_FORCE !== '1') assertNotProduction(databaseUrl);
+  const client = postgres(databaseUrl, { max: 1 });
   const db = drizzle(client);
 
   // DB constraint `payments_card_metadata_iff_card` requires card_*

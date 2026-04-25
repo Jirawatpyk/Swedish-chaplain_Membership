@@ -92,7 +92,25 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
   // changes are inert. This is correct because the cache exists ONLY to
   // skip the initial fetch on a re-opened drawer; once the effect has
   // run, the cache is no longer relevant — payState owns the truth.
-  const initialInitiateRef = useRef<CachedInitiate | null>(opts.initialInitiate);
+  //
+  // R5 review B1 (2026-04-25): only freeze the cached value when the
+  // hook is enabled on first mount. Otherwise, a user who lands on the
+  // PromptPay tab first (card hook starts disabled) would freeze a
+  // potentially-stale `opts.initialInitiate` that the parent later
+  // populated; when the user switches to Card the effect would skip
+  // the fetch forever (`initialInitiateRef.current !== null`) and
+  // `payState` would stay at `idle` — card form never renders.
+  //
+  // Concurrent React caveat (R5 N2): in React 18+ Concurrent Mode the
+  // initializer runs in any candidate render — including ones React
+  // may discard (e.g. via <Offscreen>). The committed render's first
+  // run is the one whose value the ref keeps. Today's caller mounts
+  // <PaySheetInternal> via `{hasOpened && ...}`, gated on a state
+  // flip, so the first-rendered tree IS committed. If a future React
+  // version pre-renders this subtree, revisit this assumption.
+  const initialInitiateRef = useRef<CachedInitiate | null>(
+    opts.enabled ? opts.initialInitiate : null,
+  );
 
   useEffect(() => {
     if (!enabled) return;

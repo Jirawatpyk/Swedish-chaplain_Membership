@@ -105,9 +105,9 @@ export async function handleCancelEvent(
         // to avoid retry-storm + stuck-row class.
         await markProcessedIfPresent(deps, input, tx);
         return ok<HandleCancelEventOutcome>({
-        kind: 'already_canceled',
-        invoiceId: payment.invoiceId,
-      });
+          kind: 'already_canceled',
+          invoiceId: payment.invoiceId,
+        });
       }
       // R4 I-3: illegal_transition on webhook-side cancel is a PERMANENT
       // mismatch. Acknowledge atomically + forensic audit + no-op.

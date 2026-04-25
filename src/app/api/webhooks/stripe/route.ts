@@ -578,7 +578,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         revalidatePath('/portal/invoices', 'page');
         revalidatePath('/admin/invoices', 'page');
       } catch (e) {
-        logger.warn(
+        // R5 N3 (2026-04-25): upgrade `warn` → `error`. A persistent
+        // revalidate failure means multi-tab/multi-user sync is
+        // silently degraded — admins won't see new "Paid"/"Refunded"
+        // status without manual reload. Surface this on the on-call
+        // dashboard via the higher log level. Webhook still returns
+        // 200 (markProcessed already committed) so Stripe doesn't
+        // retry-storm a non-deliverable side-effect failure.
+        logger.error(
           {
             err: e instanceof Error ? e.message : String(e),
             eventId: evId,

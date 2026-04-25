@@ -56,13 +56,34 @@ export interface ProcessWebhookEventInput {
 
 /**
  * R5 canonical fix (2026-04-25): `processed` outcome carries the
- * affected `invoiceId` when it can be derived (i.e. for
- * `payment_intent.*` events whose use-case loaded the payment row).
- * The route handler uses this to fire a SURGICAL
+ * affected `invoiceId` when the dispatcher can derive it (the
+ * sub-use-case loaded a payment row that has a matching `invoice_id`
+ * column). The route handler uses this to fire a SURGICAL
  * `revalidatePath('/portal/invoices/<id>')` instead of a broad
- * `[invoiceId]` pattern that busts every invoice's cache. For events
- * that don't pivot on a single invoice (e.g. dispute), `invoiceId`
- * stays undefined and the route falls back to the pattern form.
+ * `[invoiceId]` pattern that busts every invoice's cache.
+ *
+ * Per-event-type guarantees for `invoiceId` presence on `processed`:
+ *
+ *   `payment_intent.succeeded`     — ALWAYS set (confirmPayment outcome)
+ *   `payment_intent.payment_failed`— ALWAYS set (failPayment outcome)
+ *   `payment_intent.canceled`      — ALWAYS set (handleCancelEvent outcome)
+ *   `charge.refunded`              — SET when the refund row is in DB
+ *                                    (out-of-band refund without DB
+ *                                    record falls back to undefined)
+ *   `charge.dispute.created`       — UNDEFINED (no payment lookup
+ *                                    yet — TODO when dispute UI lands)
+ *   default branch (unknown type)  — UNDEFINED
+ *
+ * `auto_refunded_stale_invoice` always sets `invoiceId` (only emitted
+ * by confirmPayment which loaded the payment row).
+ *
+ * The optional shape (`invoiceId?: string`) is intentional rather
+ * than splitting into two `processed` variants — caller logic only
+ * needs the boolean "do I have an id?" branch and a discriminated
+ * sub-union would force every consumer through an exhaustive switch
+ * for no behavioural gain. Route handler uses
+ * `typeof outcome.invoiceId === 'string'` to choose surgical vs
+ * fallback path.
  */
 export type ProcessWebhookEventOutcome =
   | {
@@ -74,7 +95,7 @@ export type ProcessWebhookEventOutcome =
   | { readonly kind: 'acknowledged_only' }
   | {
       readonly kind: 'auto_refunded_stale_invoice';
-      readonly invoiceId?: string;
+      readonly invoiceId: string;
     };
 
 /**
@@ -234,11 +255,23 @@ export async function processWebhookEvent(
       // kinds that DON'T carry invoiceId (e.g. `unknown_intent`)
       // produce undefined here — route falls back to broader pattern.
       const confirmInvoiceId =
-        'invoiceId' in result.value ? result.value.invoiceId : undefined;
+        result.value != null && 'invoiceId' in result.value
+          ? result.value.invoiceId
+          : undefined;
       if (result.value.kind === 'auto_refunded_stale_invoice') {
+        // R5 I4: `auto_refunded_stale_invoice` is only ever emitted by
+        // confirmPayment AFTER it loaded the payment row, so the
+        // outcome MUST carry invoiceId. If it doesn't, that's a
+        // `confirmPayment` contract violation — fail loud rather than
+        // silently produce a non-conforming envelope.
+        if (confirmInvoiceId === undefined) {
+          throw new Error(
+            'invariant: confirmPayment returned auto_refunded_stale_invoice without invoiceId',
+          );
+        }
         outcome = {
           kind: 'auto_refunded_stale_invoice',
-          ...(confirmInvoiceId !== undefined && { invoiceId: confirmInvoiceId }),
+          invoiceId: confirmInvoiceId,
         };
       } else {
         outcome = {
@@ -298,7 +331,9 @@ export async function processWebhookEvent(
       // R5 canonical fix (2026-04-25): forward `invoiceId` for
       // surgical revalidation in the route handler.
       const failInvoiceId =
-        'invoiceId' in result.value ? result.value.invoiceId : undefined;
+        result.value != null && 'invoiceId' in result.value
+          ? result.value.invoiceId
+          : undefined;
       outcome = {
         kind: 'processed',
         dispatched: envelope.type,
@@ -343,7 +378,9 @@ export async function processWebhookEvent(
       /* v8 ignore stop */
       // R5 canonical fix (2026-04-25): forward `invoiceId`.
       const cancelInvoiceId =
-        'invoiceId' in result.value ? result.value.invoiceId : undefined;
+        result.value != null && 'invoiceId' in result.value
+          ? result.value.invoiceId
+          : undefined;
       outcome = {
         kind: 'processed',
         dispatched: envelope.type,
@@ -368,6 +405,14 @@ export async function processWebhookEvent(
       // not a fall-through to `return ok(outcome)` with `outcome`
       // undefined.
       const refundIds = dataObject.refundIds ?? [];
+      // R5 I3 (2026-04-25): capture the affected invoice id from the
+      // first found refund so the route handler can fire surgical
+      // `revalidatePath('/portal/invoices/<id>')` instead of busting
+      // every invoice's cache via the broad `[invoiceId]` pattern. By
+      // Stripe semantics, all refunds in a single `charge.refunded`
+      // event belong to the SAME charge → same PaymentIntent → same
+      // invoice, so reading the first match is sufficient.
+      let refundedInvoiceId: string | undefined;
       try {
         await deps.paymentsRepo.withTx(async (tx) => {
           for (const refundId of refundIds) {
@@ -376,6 +421,9 @@ export async function processWebhookEvent(
               tenantId,
               refundId,
             );
+            if (existing && refundedInvoiceId === undefined) {
+              refundedInvoiceId = existing.invoiceId;
+            }
             if (!existing) {
               await deps.audit.emit(tx, {
                 tenantId,
@@ -407,7 +455,11 @@ export async function processWebhookEvent(
           detail: formatDispatchErrorDetail(e),
         });
       }
-      outcome = { kind: 'processed', dispatched: envelope.type };
+      outcome = {
+        kind: 'processed',
+        dispatched: envelope.type,
+        ...(refundedInvoiceId !== undefined && { invoiceId: refundedInvoiceId }),
+      };
       markedProcessedAtomically = true;
       break;
     }

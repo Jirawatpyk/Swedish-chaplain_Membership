@@ -553,7 +553,17 @@ export function PaySheetInternal({
     // `idle` state which immediately re-triggers the initiate useEffect
     // → skeleton → card form again (user sees "bounced back to payment
     // form"; T082 empirical submit test 2026-04-24).
+    //
+    // R5 I5 (2026-04-25): also reset PromptPay state + the settled
+    // guard. PaySheetInternal is mounted ONCE per invoice-page life
+    // (not per drawer cycle) — `hasOpened` latches it true. Without
+    // these resets, reopening the drawer after a settled payment
+    // would land on stale `payState='success'` / `promptpayState`
+    // and the post-mount `useEffect([payState.kind])` would re-fire
+    // `onPaymentSettled` → parent re-runs `router.refresh()`.
     setPayState({ kind: 'idle' });
+    setPromptpayState({ kind: 'idle' });
+    settledRef.current = false;
     onRequestClose?.();
   }, [onRequestClose]);
 

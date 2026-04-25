@@ -53,12 +53,15 @@ describe('useInitiatePayment regression contract', () => {
   it('hook captures `initialInitiate` via useRef so prop changes after mount are inert', () => {
     // The fix's mechanism: `useRef(opts.initialInitiate)` freezes the
     // value on first render. The effect reads `initialInitiateRef.current`
-    // instead of the prop directly.
+    // instead of the prop directly. R5 B1 (2026-04-25) added an
+    // `enabled` gate so cold-mount with enabled=false doesn't capture
+    // a stale value — the matcher accepts either form (with or without
+    // the gate) so the cold-mount fix doesn't trip the regression test.
     expect(
       source,
-      'expected `useRef<CachedInitiate | null>(opts.initialInitiate)` (or equivalent) — the canonical freeze pattern',
+      'expected `useRef<CachedInitiate | null>(...)` initializer reading `opts.initialInitiate` (with optional `enabled` gate) — the canonical freeze pattern',
     ).toMatch(
-      /useRef<CachedInitiate \| null>\(\s*opts\.initialInitiate\s*\)/,
+      /useRef<CachedInitiate \| null>\(\s*[\s\S]*?opts\.initialInitiate[\s\S]*?\)/,
     );
     expect(
       source,

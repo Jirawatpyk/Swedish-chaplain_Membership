@@ -212,19 +212,41 @@ export function PaySheet({
     paymentSettledRef.current = paymentSettled;
   }, [paymentSettled]);
 
-  // R5 fix (2026-04-25): pre-fire `router.refresh()` the moment payment
-  // settles (i.e. ConfirmationPanel mounts) instead of waiting for the
-  // 5s auto-close. The RSC re-fetch + DB query overlap with the
-  // ConfirmationPanel display window, so by the time the drawer
-  // actually closes the invoice page already shows the new "Paid"
-  // status — no perceptible delay between drawer-close and
-  // status-update. Without this, the user observed a ~1–2 s gap where
-  // the page still rendered "Issued" after the drawer dismissed.
-  // We still keep the close-time refresh as a belt-and-braces safety.
+  // R5 H1 (2026-04-25): polling retry for `router.refresh()`. The
+  // client-side `paymentSettled=true` flips IMMEDIATELY when Stripe's
+  // `confirmPayment()` resolves — BEFORE the `payment_intent.succeeded`
+  // webhook arrives at our server and commits `invoice.status='paid'`.
+  // If we fire `router.refresh()` once and the webhook is slow (~1-2s
+  // typical, longer in dev with Stripe CLI), the RSC re-fetch hits a
+  // DB still showing `status='issued'` and the user sees the wrong
+  // status. We retry up to 3 times with 800 ms backoff so the refresh
+  // eventually catches the post-webhook commit. Idempotent — RSC
+  // re-fetches are safe to repeat.
+  //
+  // R5 H2 (2026-04-25): `refreshFiredRef` debounces against the
+  // close-time `router.refresh()` in `handleOpenChange` so we don't
+  // burn extra round-trips when both the polling retries AND the
+  // close path want to refresh.
+  const refreshFiredRef = useRef<boolean>(false);
   useEffect(() => {
-    if (paymentSettled) {
+    if (!paymentSettled) return;
+    if (refreshFiredRef.current) return;
+    refreshFiredRef.current = true;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 3;
+    const BACKOFF_MS = 800;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const poll = () => {
       router.refresh();
-    }
+      attempts += 1;
+      if (attempts < MAX_ATTEMPTS) {
+        timer = setTimeout(poll, BACKOFF_MS);
+      }
+    };
+    poll();
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
   }, [paymentSettled, router]);
 
   // Explicit-cancel helper. Shared by:
@@ -284,14 +306,16 @@ export function PaySheet({
     }
     if (!next) {
       onClose?.();
-      // R5 fix (2026-04-25): when the drawer closes AFTER a settled
-      // payment, invalidate the Next.js router cache for the current
-      // route so the invoice detail page re-fetches its server-rendered
-      // status (issued → paid). Without this the user has to manually
-      // reload to see the new "Paid" badge + the Pay-now CTA disappear.
-      // Only fire when payment actually settled to avoid unnecessary
-      // refetches on cancel/abandon paths.
-      if (paymentSettledRef.current) {
+      // R5 H2 (2026-04-25): belt-and-braces refresh ONLY if the
+      // settled-effect's polling retry hasn't already fired. The
+      // refreshFiredRef latch dedupes against the
+      // `useEffect([paymentSettled])` polling cycle above so we don't
+      // burn extra RSC round-trips. This branch fires only in the
+      // unlikely case where the drawer closes BEFORE the settled
+      // effect ran (e.g. user clicked Close synchronously with
+      // payState→success).
+      if (paymentSettledRef.current && !refreshFiredRef.current) {
+        refreshFiredRef.current = true;
         router.refresh();
       }
     }
