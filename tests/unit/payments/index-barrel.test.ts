@@ -99,13 +99,14 @@ describe('payments barrel — public API contract', () => {
       ].sort(),
     );
 
-    // ProcessWebhookEventDeps shape
+    // ProcessWebhookEventDeps shape (audit 2026-04-25 finding #5: +logger)
     const webhookDeps = mod.makeProcessWebhookEventDeps('test-tenant');
     expect(Object.keys(webhookDeps).sort()).toEqual(
       [
         'audit',
         'clock',
         'invoicingBridge',
+        'logger',
         'paymentsRepo',
         'processorEventsRepo',
         'processorGateway',
@@ -114,7 +115,8 @@ describe('payments barrel — public API contract', () => {
       ].sort(),
     );
 
-    // ConfirmPaymentDeps shape
+    // ConfirmPaymentDeps shape (audit 2026-04-25 finding #4:
+    // +processorEventsRepo for atomic markProcessed)
     const confirmDeps = mod.makeConfirmPaymentDeps('test-tenant');
     expect(Object.keys(confirmDeps).sort()).toEqual(
       [
@@ -122,24 +124,27 @@ describe('payments barrel — public API contract', () => {
         'clock',
         'invoicingBridge',
         'paymentsRepo',
+        'processorEventsRepo',
         'processorGateway',
         'tenantSettingsRepo',
       ].sort(),
     );
 
-    // FailPaymentDeps shape
+    // FailPaymentDeps shape (audit 2026-04-25 finding #4)
     const failDeps = mod.makeFailPaymentDeps('test-tenant');
     expect(Object.keys(failDeps).sort()).toEqual(
       [
         'audit',
         'clock',
         'paymentsRepo',
+        'processorEventsRepo',
         'processorGateway',
         'tenantSettingsRepo',
       ].sort(),
     );
 
-    // CancelPaymentDeps shape
+    // CancelPaymentDeps shape (T059 — member-initiated; no webhook
+    // event id so no processorEventsRepo needed)
     const cancelDeps = mod.makeCancelPaymentDeps('test-tenant');
     expect(Object.keys(cancelDeps).sort()).toEqual(
       [
@@ -151,10 +156,10 @@ describe('payments barrel — public API contract', () => {
       ].sort(),
     );
 
-    // HandleCancelEventDeps shape
+    // HandleCancelEventDeps shape (audit 2026-04-25 finding #4)
     const hceDeps = mod.makeHandleCancelEventDeps('test-tenant');
     expect(Object.keys(hceDeps).sort()).toEqual(
-      ['audit', 'clock', 'paymentsRepo'].sort(),
+      ['audit', 'clock', 'paymentsRepo', 'processorEventsRepo'].sort(),
     );
   });
 

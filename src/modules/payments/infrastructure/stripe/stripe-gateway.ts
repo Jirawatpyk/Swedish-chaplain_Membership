@@ -88,7 +88,14 @@ function mapStripeError(
   };
 
   const type = err_.type ?? 'unknown';
-  const code = err_.code ?? type;
+  // Audit 2026-04-25 finding #1: do NOT fall back to `type` as `code`.
+  // SDK's `error.type` is the JS class name (e.g. 'StripeCardError');
+  // `error.code` is the API decline code (e.g. 'card_declined'). UI
+  // consumers (CardForm decline_code switch) match against the API code
+  // — falling back to the class name silently mis-routes every code-less
+  // error (genuinely rare for Stripe, but downstream consumers cannot
+  // distinguish "Stripe forgot to set a code" from "wrong code").
+  const code = err_.code ?? 'unknown_stripe_error';
   const reason = err_.message ?? `Stripe ${type}`;
 
   // Safe structured log — only allow-list fields.
@@ -102,6 +109,21 @@ function mapStripeError(
     },
     'stripe-gateway: SDK error',
   );
+
+  // Audit 2026-04-25 finding #12: classify network errors as retryable
+  // even when they don't carry a Stripe `type` (e.g. raw fetch/undici
+  // errors that escape the SDK's own catch). The Stripe SDK already
+  // wraps most network failures as `StripeConnectionError`, but
+  // mid-flight aborts + DNS-level failures sometimes surface as bare
+  // Node errors (`AbortError`, `FetchError`, `ECONNRESET`).
+  const errName = (e as { name?: string })?.name;
+  if (
+    errName === 'AbortError' ||
+    errName === 'FetchError' ||
+    errName === 'TypeError' /* fetch failed */
+  ) {
+    return { kind: 'retryable', reason };
+  }
 
   switch (type) {
     case 'StripeConnectionError':
@@ -134,11 +156,24 @@ function extractCardMetadata(
   if (charge === null) return null;
   const card = charge.payment_method_details?.card ?? null;
   if (card === null) return null;
+  // Audit 2026-04-25 finding #11: return `null` if any of the 4 allow-
+  // listed fields is missing. Previously defaulted to literal strings
+  // (`'unknown'`, `''`, `0`) which would render as "card ending ****"
+  // (4 stars only) in the UI confirmation panel + log "0/0" exp dates
+  // into audit. Treat partial card data as no card data.
+  if (
+    typeof card.brand !== 'string' ||
+    typeof card.last4 !== 'string' ||
+    typeof card.exp_month !== 'number' ||
+    typeof card.exp_year !== 'number'
+  ) {
+    return null;
+  }
   return {
-    brand: card.brand ?? 'unknown',
-    last4: card.last4 ?? '',
-    expMonth: card.exp_month ?? 0,
-    expYear: card.exp_year ?? 0,
+    brand: card.brand,
+    last4: card.last4,
+    expMonth: card.exp_month,
+    expYear: card.exp_year,
   };
 }
 

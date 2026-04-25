@@ -14,8 +14,11 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { randomUUID } from 'node:crypto';
 import { rateLimiter } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
-import { cancelPayment, makeCancelPaymentDeps } from '@/modules/payments';
-import type { PaymentId } from '@/modules/payments';
+import {
+  cancelPayment,
+  makeCancelPaymentDeps,
+  parsePaymentId,
+} from '@/modules/payments';
 import {
   messagesFor,
   type F5RouteErrorCode,
@@ -102,16 +105,19 @@ export async function POST(
   if (memberCtx && 'response' in memberCtx && memberCtx.response) {
     return memberCtx.response;
   }
+  // Audit 2026-04-25 finding #21: drop legacy casts; rely on
+  // MemberContext discriminated-union narrowing.
+  if (!memberCtx || 'response' in memberCtx) {
+    return errorResponse(500, 'internal_error', correlationId);
+  }
 
   const tenantCtx = resolveTenantFromRequest(request);
-  const actorUserId =
-    (memberCtx as { current?: { user?: { id?: string; role?: string } } } | undefined)
-      ?.current?.user?.id ?? 'unknown';
-  const actorRole =
-    ((memberCtx as { current?: { user?: { role?: string } } } | undefined)?.current?.user?.role ??
-      'member') as 'admin' | 'manager' | 'member';
-  const actorMemberId =
-    (memberCtx as { memberId?: string } | undefined)?.memberId ?? 'unknown';
+  const actorUserId = memberCtx.current.user.id;
+  const actorRole = memberCtx.current.user.role as
+    | 'admin'
+    | 'manager'
+    | 'member';
+  const actorMemberId = memberCtx.memberId;
 
   // 2 — Rate limit.
   const rl = await rateLimiter.check(
@@ -149,14 +155,16 @@ export async function POST(
   }
 
   // 3 — Parse [id] from URL.
+  // Audit 2026-04-25 finding #22: use Domain `parsePaymentId` so the
+  // route + Domain share a single source of truth for the ULID-like
+  // shape (payment.ts RE_ULID_LIKE). Previous duplicated regex had
+  // already drifted in spirit (no comment binding the two).
   const resolvedParams = await params;
-  const rawId = resolvedParams.id;
-  // Domain ULID-like regex for payment ids (payment.ts RE_ULID_LIKE).
-  const PAYMENT_ID_RE = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z_]{20,40}$/;
-  if (typeof rawId !== 'string' || !PAYMENT_ID_RE.test(rawId)) {
+  const parsed = parsePaymentId(resolvedParams.id ?? '');
+  if (!parsed.ok) {
     return errorResponse(400, 'invalid_input', correlationId);
   }
-  const paymentId = rawId as PaymentId;
+  const paymentId = parsed.value;
 
   // 4 — Use-case.
   try {

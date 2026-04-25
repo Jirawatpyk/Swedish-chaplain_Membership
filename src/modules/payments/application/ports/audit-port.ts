@@ -43,7 +43,13 @@ export type F5AuditEventType =
   | 'webhook_api_version_mismatch'
   | 'tenant_payment_settings_updated'
   | 'online_payment_toggled'
-  | 'dispute_created';
+  | 'dispute_created'
+  // Migration 0046 (audit 2026-04-25 findings #10 + #13) — webhook
+  // ops-visibility events. Both fire from `processWebhookEvent`
+  // dispatch on no-op outcomes so ops can see Stripe-side mis-routing
+  // / replay patterns instead of silent `ok({ kind: '...' })` returns.
+  | 'webhook_unknown_intent'
+  | 'webhook_payment_already_canceled';
 
 export interface F5AuditEvent {
   readonly tenantId: string | null;        // NULL for pre-resolution webhook rejects

@@ -32,12 +32,14 @@ import type {
   ClockPort,
   InvoicingBridgePort,
   PaymentsRepo,
+  ProcessorEventsRepo,
   ProcessorGatewayPort,
   TenantPaymentSettingsRepo,
 } from '../ports';
 import { canTransition } from '../../domain/policies/payment-status-transitions';
 import { enforceOneSucceededPerInvoice } from '../../domain/invariants/one-succeeded-payment-per-invoice';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 
 export interface ConfirmPaymentInput {
   readonly tenantId: string;
@@ -46,6 +48,15 @@ export interface ConfirmPaymentInput {
   readonly requestId: string | null;
   /** Event creation unix-seconds — used for completed_at ordering. */
   readonly eventCreatedAtUnixSeconds: number;
+  /**
+   * The Stripe `event.id` (`evt_...`) being dispatched. Used to mark
+   * the corresponding `processor_events` row as `processed_at = now()`
+   * inside the same dispatch tx — eliminates the split-tx window
+   * documented in `processWebhookEvent` (audit 2026-04-25 finding #4).
+   * Optional for backward compat: when omitted, the parent
+   * `processWebhookEvent` runs the markProcessed call in a separate tx.
+   */
+  readonly processorEventId?: string;
 }
 
 export type ConfirmPaymentOutcome =
@@ -68,6 +79,12 @@ export interface ConfirmPaymentDeps {
   readonly invoicingBridge: InvoicingBridgePort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  /**
+   * Optional — when supplied alongside `input.processorEventId`,
+   * `markProcessed` runs inside this use-case's withTx so the dispatch
+   * + markProcessed commit atomically (audit 2026-04-25 finding #4).
+   */
+  readonly processorEventsRepo?: ProcessorEventsRepo;
 }
 
 export async function confirmPayment(
@@ -125,16 +142,45 @@ export async function confirmPayment(
     const inPayableStatus = invoiceStatus === 'issued';
 
     if (!inPayableStatus) {
-      // Architect D-04 follow-up: the InvoiceStatus enum uses `'void'`
-      // (no `'voided'` — the old unsafe cast masked this typo). The
-      // `invoice_credited` bucket covers both 'credited' and
-      // 'partially_credited' since both terminate the payable window.
-      const cause =
-        invoiceStatus === 'paid'
-          ? 'invoice_already_paid'
-          : invoiceStatus === 'void'
-            ? 'invoice_voided'
-            : 'invoice_credited';
+      // Exhaustive switch with `never` arm so a future addition to
+      // InvoiceStatus (F4) fails the build here instead of silently
+      // routing through the `invoice_credited` catch-all bucket
+      // (audit 2026-04-25 finding #6). The InvoiceStatus enum uses
+      // `'void'` (not `'voided'`); the `invoice_credited` bucket
+      // covers both `'credited'` and `'partially_credited'` since
+      // both terminate the payable window.
+      const cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status' = (() => {
+        // `invoiceStatus === undefined` only when the bridge returned
+        // a forbidden/not_found path that already short-circuited
+        // step 2 — defensive only.
+        if (invoiceStatus === undefined) return 'invoice_unknown_status';
+        // `'issued'` is excluded by the `inPayableStatus` gate above
+        // → TS narrows `invoiceStatus` to the remaining InvoiceStatus
+        // values (`'draft' | 'paid' | 'void' | 'credited' | 'partially_credited'`).
+        switch (invoiceStatus) {
+          case 'paid':
+            return 'invoice_already_paid';
+          case 'void':
+            return 'invoice_voided';
+          case 'credited':
+          case 'partially_credited':
+            return 'invoice_credited';
+          case 'draft':
+            // `'draft'` should never reach here — drafts never carry an
+            // active PaymentIntent — but defensive in case the bridge
+            // shape evolves.
+            return 'invoice_unknown_status';
+          default: {
+            // Compile-time exhaustiveness trap. If F4 adds a new
+            // InvoiceStatus value, this arm fails to compile and forces
+            // the new branch to be added explicitly above (audit
+            // 2026-04-25 finding #6).
+            const _exhaustive: never = invoiceStatus;
+            void _exhaustive;
+            return 'invoice_unknown_status';
+          }
+        }
+      })();
 
       const refund = await deps.processorGateway.createRefund({
         paymentIntentId: input.paymentIntentId,
@@ -165,6 +211,10 @@ export async function confirmPayment(
           invoice_id: payment.invoiceId,
           refunded_amount_satang: payment.amountSatang.toString(),
           cause,
+          // Include processor refund id so ops can correlate this
+          // audit row with the Stripe dashboard refund record
+          // (audit 2026-04-25 finding #7).
+          processor_refund_id: refund.value.id,
         },
         retentionYears: 10,
       });
@@ -258,7 +308,13 @@ export async function confirmPayment(
     // the payments row rolls back with it — SC-013 invariant holds
     // (no succeeded-payment-without-paid-invoice). The E2 adapter
     // uses this tx to share the Drizzle connection with F4.
-    const settlementDate = completedAt.toISOString().slice(0, 10); // YYYY-MM-DD (UTC approx.)
+    // Settlement date in Asia/Bangkok wall-clock — NOT UTC. The previous
+    // UTC slice was off-by-one for payments confirmed 17:00–24:00 UTC
+    // (= 00:00–07:00 next-day Bangkok), which would group those rows
+    // into the wrong daily settlement bucket on tax-receipt reports
+    // (audit 2026-04-25 finding #8). InvoicingBridgePort.markPaidFrom
+    // Processor.settlementDate is contractually `YYYY-MM-DD Asia/Bangkok`.
+    const settlementDate = bangkokLocalDate(completedAt.toISOString());
     const bridgeResult = await deps.invoicingBridge.markPaidFromProcessor(
       {
         tenantId: input.tenantId,
@@ -277,6 +333,17 @@ export async function confirmPayment(
         code: 'bridge_error',
         detail: bridgeResult.error.code,
       });
+    }
+
+    // Audit 2026-04-25 finding #4: fold markProcessed into THIS dispatch
+    // tx so the processor_events row's `processed_at` flip commits
+    // atomically with the payment + invoice + audit writes. Eliminates
+    // the prior split-tx window where markProcessed could fail in a
+    // separate tx and leave the row with `outcome='processed'` but
+    // `processed_at=NULL`. Only runs when the parent (processWebhook
+    // Event) supplied both deps + input.
+    if (deps.processorEventsRepo && input.processorEventId) {
+      await deps.processorEventsRepo.markProcessed(tx, input.processorEventId);
     }
 
     return ok<ConfirmPaymentOutcome>({ kind: 'processed' });

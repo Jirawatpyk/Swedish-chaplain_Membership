@@ -10,9 +10,12 @@
  *
  * This use-case runs AFTER the route has verified + resolved tenant, and
  * handles:
- *   6.  Idempotency upsert into `processor_events` (ON CONFLICT DO NOTHING).
- *       Duplicate → return `duplicate` outcome; caller 200-s.
- *   8.  UPDATE processor_events.tenant_id = resolved tenant id.
+ *   6.  Idempotency upsert into `processor_events` (ON CONFLICT DO NOTHING)
+ *       with the resolved tenant_id from input. Duplicate → return
+ *       `duplicate` outcome; caller 200-s.
+ *       (No separate "step 8 UPDATE tenant_id" — that step from the
+ *       original design is unimplementable under the RLS SELECT policy
+ *       and was abandoned. Audit 2026-04-25 / data-model.md § 5.4.)
  *   9.  Dispatch by event.type to per-event sub-use-cases. PCI SAQ-A
  *       (guardian Group B F1/F2): we pass only the structured allow-list
  *       envelope `{ id, type, api_version, livemode }` PLUS the narrow
@@ -24,16 +27,18 @@
  * Security-critical → 100% branch coverage (Principle II).
  */
 import { err, ok, type Result } from '@/lib/result';
-import type {
-  AuditPort,
-  ClockPort,
-  InvoicingBridgePort,
-  PaymentsRepo,
-  ProcessorEventsRepo,
-  ProcessorGatewayPort,
-  RefundsRepo,
-  TenantPaymentSettingsRepo,
-  VerifiedStripeEvent,
+import {
+  noopLogger,
+  type AuditPort,
+  type ClockPort,
+  type InvoicingBridgePort,
+  type LoggerPort,
+  type PaymentsRepo,
+  type ProcessorEventsRepo,
+  type ProcessorGatewayPort,
+  type RefundsRepo,
+  type TenantPaymentSettingsRepo,
+  type VerifiedStripeEvent,
 } from '../ports';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { confirmPayment } from './confirm-payment';
@@ -69,6 +74,12 @@ export interface ProcessWebhookEventDeps {
   readonly invoicingBridge: InvoicingBridgePort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  /**
+   * Optional structured logger — defaults to `noopLogger` (silent) when
+   * absent so existing tests do not need to provide one. Composition
+   * root wires `paymentsLogger` (audit 2026-04-25 finding #5).
+   */
+  readonly logger?: LoggerPort;
 }
 
 /**
@@ -138,6 +149,9 @@ export async function processWebhookEvent(
           invoicingBridge: deps.invoicingBridge,
           audit: deps.audit,
           clock: deps.clock,
+          // Audit 2026-04-25 #4: pass processorEventsRepo so the
+          // sub-use-case can fold markProcessed into its own withTx.
+          processorEventsRepo: deps.processorEventsRepo,
         },
         {
           tenantId,
@@ -145,6 +159,7 @@ export async function processWebhookEvent(
           correlationId: input.correlationId,
           requestId: input.requestId,
           eventCreatedAtUnixSeconds: event.createdAtUnixSeconds,
+          processorEventId: event.id,
         },
       );
       if (!result.ok) {
@@ -156,7 +171,16 @@ export async function processWebhookEvent(
       }
       if (result.value.kind === 'auto_refunded_stale_invoice') {
         outcome = { kind: 'auto_refunded_stale_invoice' };
+        // auto-refund branch did NOT call markProcessed (early return
+        // before the bridge call). Parent tail handles it.
+      } else if (result.value.kind === 'processed') {
+        outcome = { kind: 'processed', dispatched: envelope.type };
+        // confirmPayment folded markProcessed into its dispatch tx
+        // (audit 2026-04-25 #4).
+        markedProcessedAtomically = true;
       } else {
+        // already_succeeded / unknown_intent — sub-use-case took an
+        // early-return path before markProcessed. Parent tail handles.
         outcome = { kind: 'processed', dispatched: envelope.type };
       }
       break;
@@ -170,12 +194,14 @@ export async function processWebhookEvent(
           processorGateway: deps.processorGateway,
           audit: deps.audit,
           clock: deps.clock,
+          processorEventsRepo: deps.processorEventsRepo,
         },
         {
           tenantId,
           paymentIntentId: dataObject.id,
           requestId: input.requestId,
           eventCreatedAtUnixSeconds: event.createdAtUnixSeconds,
+          processorEventId: event.id,
         },
       );
       if (!result.ok) {
@@ -186,6 +212,12 @@ export async function processWebhookEvent(
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
+      // Only the `processed` kind ran the atomic markProcessed inside
+      // failPayment's withTx; unknown_intent / already_terminal paths
+      // took early returns and need the parent tail to fire.
+      if (result.value.kind === 'processed') {
+        markedProcessedAtomically = true;
+      }
       break;
     }
 
@@ -195,12 +227,14 @@ export async function processWebhookEvent(
           paymentsRepo: deps.paymentsRepo,
           audit: deps.audit,
           clock: deps.clock,
+          processorEventsRepo: deps.processorEventsRepo,
         },
         {
           tenantId,
           paymentIntentId: dataObject.id,
           requestId: input.requestId,
           eventCreatedAtUnixSeconds: event.createdAtUnixSeconds,
+          processorEventId: event.id,
         },
       );
       if (!result.ok) {
@@ -211,6 +245,11 @@ export async function processWebhookEvent(
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
+      // Same gating as the failed branch — unknown_intent /
+      // already_canceled fall through to the parent tail.
+      if (result.value.kind === 'processed') {
+        markedProcessedAtomically = true;
+      }
       break;
     }
 
@@ -289,21 +328,21 @@ export async function processWebhookEvent(
     }
   }
 
-  // Architect D-03 LOW (2026-04-24, partial closeout):
-  // Branches that already marked atomically (refunded / dispute /
-  // default) skip this tail call. Sub-use-case branches (succeeded /
-  // failed / canceled) keep the split-tx window because their deps
-  // shape does not yet expose processorEventsRepo — extending those
-  // requires widening 3 sub-use-case Deps interfaces + unit tests
-  // (tracked as a post-Phase-3 backend-refactor PR). Until then the
-  // failure mode is: dispatch-tx commits, markProcessed-tx fails
-  // (e.g. connection drop) → processor_events row has outcome=
-  // 'processed' but processed_at=NULL. Next Stripe retry hits the
-  // idempotency guard (ON CONFLICT DO NOTHING on id) and returns
-  // 200 without re-dispatching, so no double-processing — the only
-  // residual is a stuck row visible on observability dashboards,
-  // which the out-of-band-refund reconciliation runbook catches.
+  // Tail markProcessed — runs only on early-return paths from sub-
+  // use-cases that did NOT fold markProcessed into their own withTx
+  // (kind in {already_succeeded, already_terminal, already_canceled,
+  // unknown_intent, auto_refunded_stale_invoice}).
+  //
+  // Architect D-03 closure (audit 2026-04-25 finding #4): the previous
+  // split-tx window for the regular `processed` outcomes is now closed
+  // — sub-use-cases accept `processorEventsRepo + processorEventId`
+  // optional deps and call markProcessed inside their own withTx.
+  // Early-return paths still hit this tail call; if it fails, the
+  // residual is a `processed` row with `processed_at=NULL` (visible
+  // on observability dashboards, no double-processing because
+  // ON CONFLICT DO NOTHING blocks re-dispatch).
   if (!markedProcessedAtomically) {
+    const log: LoggerPort = deps.logger ?? noopLogger;
     try {
       await deps.paymentsRepo.withTx(async (tx) => {
         await deps.processorEventsRepo.markProcessed(tx, event.id);
@@ -312,9 +351,10 @@ export async function processWebhookEvent(
       // Swallow + log — the dispatch already committed; better to
       // 200 Stripe and let reconciliation clean up than 500 and
       // trigger a retry storm for a transient row-marker write.
-      // eslint-disable-next-line no-console
-      console.warn(
-        '[processWebhookEvent] markProcessed split-tx failure (sub-use-case branch) — stuck processor_events row left for reconciliation',
+      // Audit 2026-04-25 finding #5: routed through LoggerPort
+      // (was `console.warn` — Application can't import pino directly).
+      log.warn(
+        'processWebhookEvent.markProcessed_tail_failure',
         {
           eventId: event.id,
           eventType: event.type,

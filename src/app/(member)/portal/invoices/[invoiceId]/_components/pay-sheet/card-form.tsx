@@ -351,10 +351,17 @@ export function CardForm({
       try {
         // Validate by setting + probing — invalid colors leave fillStyle
         // at its previous value. Seed with a sentinel to detect that.
+        // `fillStyle` types as `string | CanvasGradient | CanvasPattern`;
+        // after a color string assignment browsers normalize to string,
+        // so narrow via typeof instead of `as any` (audit finding #17).
         ctx.fillStyle = '#010203';
         ctx.fillStyle = cssColor;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if ((ctx.fillStyle as any) === '#010203' && cssColor !== '#010203') {
+        const normalized: unknown = ctx.fillStyle;
+        if (
+          typeof normalized === 'string' &&
+          normalized === '#010203' &&
+          cssColor !== '#010203'
+        ) {
           return null;
         }
         ctx.fillRect(0, 0, 1, 1);
@@ -383,7 +390,18 @@ export function CardForm({
       for (const [key, raw] of pairs) {
         if (!raw) continue;
         const hex = toHex(raw);
-        if (hex) resolved[key] = hex;
+        if (hex) {
+          resolved[key] = hex;
+        } else if (process.env.NODE_ENV !== 'production') {
+          // Surface unresolved brand colors during development so a
+          // broken tenant theme is caught before QA instead of
+          // silently falling back to Stripe's default palette
+          // (audit 2026-04-25 finding #16).
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[pay-sheet/card-form] Unable to resolve CSS color for Stripe theme var "${key}" (raw="${raw}"). Stripe default will be used.`,
+          );
+        }
       }
     }
 

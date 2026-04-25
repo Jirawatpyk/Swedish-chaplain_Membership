@@ -140,6 +140,10 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   // --- F5 rate-limit event types added by migration 0043 ---
   'payment_initiate_rate_limited',
   'payment_cancel_rate_limited',
+  // --- F5 webhook ops-visibility event types added by migration 0046 ---
+  // (audit 2026-04-25 findings #10 + #13)
+  'webhook_unknown_intent',
+  'webhook_payment_already_canceled',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

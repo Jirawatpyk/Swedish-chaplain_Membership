@@ -33,12 +33,20 @@ import { db, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
 /**
- * Retention-year mapping for all 17 F5 audit event types
+ * Retention-year mapping for all 19 F5 audit event types — 17 from
+ * the original migration 0040 + 2 webhook ops-visibility events from
+ * migration 0046 (audit 2026-04-25 findings #10/#13).
+ *
  * (data-model.md § 7.1). Used for assertion + documentation — the
  * `emit` caller passes `retentionYears` on the event object, but
  * the `F5AuditEvent.retentionYears` field is authoritative. This
  * table lets a unit/contract test verify the union is exhaustive
  * and helps future reviewers spot a mis-categorised event.
+ *
+ * Audit 2026-04-25 finding #17: Record<F5AuditEventType, ...> exhaustiveness
+ * gives compile-time enforcement that every union member has a retention
+ * mapping — adding a new event type to the union forces this map to
+ * grow in lockstep.
  */
 export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // 10-year: mutations on payment/refund state + stale-refund trail.
@@ -64,6 +72,10 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   webhook_api_version_mismatch: 5,
   tenant_payment_settings_updated: 5,
   online_payment_toggled: 5,
+  // Audit 2026-04-25 findings #10 + #13 — webhook ops-visibility events
+  // (migration 0046). Operational signals only, no tax-document touch.
+  webhook_unknown_intent: 5,
+  webhook_payment_already_canceled: 5,
 };
 
 async function insertAuditRow(

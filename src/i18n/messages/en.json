@@ -1642,7 +1642,8 @@
         "title": "Online payment unavailable",
         "body": "Online card and PromptPay payments are not available for this invoice. Please contact the chamber administrator for bank-transfer instructions.",
         "contactAdminCta": "Contact administrator",
-        "noContactEmail": "No administrator email is configured yet. Please contact the chamber office directly."
+        "noContactEmail": "No administrator email is configured yet. Please contact the chamber office directly.",
+        "mailSubject": "Bank-transfer instructions for invoice {invoiceNumber}"
       },
       "qrExpiring": {
         "title": "QR expiring soon",

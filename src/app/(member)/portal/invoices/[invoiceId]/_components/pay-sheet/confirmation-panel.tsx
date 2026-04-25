@@ -59,6 +59,15 @@ export function ConfirmationPanel({
 
   const [remaining, setRemaining] = useState<number>(AUTO_CLOSE_SECONDS);
   const interruptedRef = useRef<boolean>(false);
+  // WCAG 2.4.3 Focus Order: on payment success the previously-focused
+  // element (card submit button) unmounts → focus reverts to <body>
+  // which is disorienting for keyboard + SR users. Land focus on the
+  // primary Download CTA so the next Enter press downloads the
+  // receipt (audit 2026-04-25 finding #15).
+  const downloadLinkRef = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    downloadLinkRef.current?.focus();
+  }, []);
 
   // One-shot toast on mount — guarded so StrictMode's double-invoke in
   // development doesn't produce two toasts.
@@ -145,6 +154,7 @@ export function ConfirmationPanel({
        * → Close (dismiss) → countdown (passive info).
        */}
       <a
+        ref={downloadLinkRef}
         href={receiptUrl}
         target="_blank"
         rel="noopener noreferrer"

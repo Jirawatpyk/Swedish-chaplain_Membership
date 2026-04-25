@@ -60,12 +60,27 @@ const ISSUED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 
 test.describe('payment card happy path — @payment @e2e (T046)', () => {
   // T082 unskipped: sign-in handled by `memberTest` fixture; ISSUED
-  // invoice seeded deterministically. Skip cleanly when the fixture
-  // env var is absent instead of failing ambiguously.
-  test.skip(
-    !ISSUED_INVOICE_ID,
-    'E2E_ISSUED_INVOICE_ID missing from .env.local — run `pnpm tsx scripts/seed-e2e-portal-invoices.ts` and `pnpm seed:f5-e2e`.',
-  );
+  // invoice seeded deterministically.
+  //
+  // Env-var gating (audit 2026-04-25 finding #3): locally, skip cleanly
+  // when the fixture env var is absent so a dev running `pnpm test:e2e`
+  // without the seed doesn't see a hard failure. In CI, FAIL HARD if
+  // the seed script did not run — a silent skip there would mask a
+  // broken deploy pipeline. `process.env.CI` is set to `'1'`/`'true'`
+  // by GitHub Actions + Vercel by default.
+  const isCi =
+    process.env.CI === 'true' || process.env.CI === '1';
+  if (!ISSUED_INVOICE_ID) {
+    if (isCi) {
+      throw new Error(
+        '[T046 CI gate] E2E_ISSUED_INVOICE_ID must be set in CI — run `pnpm seed:f5-e2e` before Playwright. A silent skip here would mask a broken seed pipeline.',
+      );
+    }
+    test.skip(
+      true,
+      'E2E_ISSUED_INVOICE_ID missing from .env.local — run `pnpm tsx scripts/seed-e2e-portal-invoices.ts` and `pnpm seed:f5-e2e`.',
+    );
+  }
 
   test('pay-sheet opens and skeleton is visible within 300 ms of sheet open (C-A shimmer contract)', async ({
     page,

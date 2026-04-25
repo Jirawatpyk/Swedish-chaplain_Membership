@@ -66,7 +66,11 @@ export async function cancelPayment(
     );
     if (!payment) {
       // Cross-tenant probe audit (best-effort outside tx — the row is
-      // invisible under RLS so we don't know if it's missing or hidden).
+      // invisible under RLS so we cannot distinguish "row never existed"
+      // from "row exists in a different tenant the actor cannot see").
+      // `acting_tenant_id` = the tenant under whose RLS context the
+      // probe ran (NOT the unknown subject's tenant — naming clarified
+      // audit 2026-04-25 finding #12).
       await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId,
@@ -74,7 +78,7 @@ export async function cancelPayment(
         actorUserId: input.actorUserId,
         summary: `Probe on payment ${input.paymentId} (not found / not owned)`,
         payload: {
-          subject_tenant_id: input.tenantId,
+          acting_tenant_id: input.tenantId,
           probing_actor_id: input.actorUserId,
           target_entity: 'payment',
           target_id: input.paymentId,
@@ -85,18 +89,24 @@ export async function cancelPayment(
     }
 
     // Ownership check — payment must belong to actor's member record.
+    // RLS already filters cross-tenant rows out, so reaching this branch
+    // means SAME tenant + DIFFERENT member (e.g., member A trying to
+    // cancel member B's payment within the same chamber). Distinct from
+    // the `!payment` cross-tenant case above (audit 2026-04-25 finding
+    // #11).
     if (payment.memberId !== input.actorMemberId) {
       await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId,
         eventType: 'payment_cross_tenant_probe',
         actorUserId: input.actorUserId,
-        summary: `Ownership mismatch probe on payment ${input.paymentId}`,
+        summary: `Ownership mismatch probe on payment ${input.paymentId} (same-tenant cross-member)`,
         payload: {
-          subject_tenant_id: input.tenantId,
+          acting_tenant_id: input.tenantId,
           probing_actor_id: input.actorUserId,
           target_entity: 'payment',
           target_id: input.paymentId,
+          target_owner_member_id: payment.memberId,
         },
         retentionYears: 5,
       });

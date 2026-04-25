@@ -333,7 +333,9 @@ describe('initiatePayment (T055)', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('tenant_settings_incomplete');
     if (result.error.code !== 'tenant_settings_incomplete') return;
-    expect(result.error.missing).toContain('missing_publishable_key');
+    // Audit 2026-04-25 finding #2: shape changed from `missing: [reason]`
+    // (always single-element array) to scalar `reason`.
+    expect(result.error.reason).toBe('missing_publishable_key');
   });
 
   it('method not enabled — method_not_enabled', async () => {

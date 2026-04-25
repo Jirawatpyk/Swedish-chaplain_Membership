@@ -33,7 +33,7 @@
  * cleanup extension).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import {
@@ -539,64 +539,76 @@ describe('F5 Tenant isolation — REVIEW-GATE BLOCKER (T043)', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // processor_events — pre-resolution window: tenantId = NULL
+  // processor_events — NULL tenantId rejection-audit rows
+  // Constitution v1.4.0 Principle I clause 3 — Review-Gate blocker.
   //
-  // The INSERT policy permits NULL tenantId (data-model.md § 5.4).
-  // The SELECT policy returns NULL-tenantId rows to ALL tenant contexts
-  // until UPDATE resolves them. After UPDATE sets tenant_id, the row
-  // becomes tenant-scoped and is hidden from the wrong context.
+  // Background: data-model.md § 5.4 originally described a "pre-
+  // resolution → UPDATE" flow where the webhook INSERTs a NULL-tenant
+  // row and later UPDATEs `tenant_id` once resolved. Empirical audit
+  // 2026-04-25 proved this flow is UNIMPLEMENTABLE under the current
+  // RLS policies — PostgreSQL applies the SELECT policy's USING clause
+  // as a visibility filter BEFORE any UPDATE policy evaluation, and
+  // the strict SELECT policy (`tenant_id = current_setting`) hides
+  // NULL rows from every chamber_app context. UPDATE's more-permissive
+  // USING (`tenant_id IS NULL OR = current_setting`) never gets a
+  // chance to evaluate.
+  //
+  // Production follows the actually-safe pattern: the webhook route
+  // resolves `tenant_id` BEFORE calling `processWebhookEvent` under
+  // `runInTenant(resolvedCtx, ...)`. NULL-tenantId rows ONLY appear as
+  // REJECTION audit records (environment mismatch / api-version
+  // mismatch / acknowledged_only for unknown-account) via
+  // `insertRejectedProcessorEvent` (src/lib/stripe-webhook-deps.ts:68)
+  // — these rows are system-level rejection logs and never need to be
+  // promoted to a tenant.
+  //
+  // The invariant this test therefore pins is the ACTUAL production
+  // contract: NULL-tenant rejection rows are INVISIBLE to all chamber_app
+  // contexts (tenantA AND tenantB both see 0 rows). That is the security
+  // guarantee Principle I clause 3 needs — no tenant can enumerate the
+  // rejected-webhook audit trail of another tenant (or even their own).
+  // Reviewing rejection audits is an ops-role concern handled out-of-
+  // band via the `neondb_owner` role, which has BYPASSRLS.
   // ---------------------------------------------------------------------------
-
-  // FIXME: The pre-resolution NULL → UPDATE → SELECT flow requires
-  // coordinated RLS policies + transaction staging that is real in the
-  // actual webhook handler (Group D T056 process-webhook-event). In this
-  // isolated integration test, the UPDATE picks up the NULL row via
-  // USING (tenant_id IS NULL OR = current), passes WITH CHECK, but a
-  // subsequent same-slug SELECT in a fresh runInTenant tx returns 0 rows —
-  // likely an RLS-visibility interaction with connection pooling on Neon.
-  // The real flow in T056 runs the INSERT + UPDATE in ONE tx inside
-  // runInTenant(resolvedCtx, ...), which avoids the cross-tx visibility
-  // concern. Unskip + reshape in T045 (webhook idempotency integration)
-  // where the full handler chain is exercised.
-  it.skip('pre-resolution NULL tenantId event: visible to the resolving context post-UPDATE', async () => {
+  it('NULL-tenantId rejection row is invisible to every chamber_app tenant (Principle I clause 3 — audit 2026-04-25)', async () => {
     const nullEventId = `evt_null_${randomUUID().slice(0, 16)}`;
 
-    // INSERT with NULL tenantId (pre-resolution) — done via raw db (BYPASS RLS)
-    // because runInTenant sets app.current_tenant which satisfies the INSERT policy
-    // but we want to verify the actual NULL-tenant case as documented.
-    // Use runInTenant with any context — INSERT policy allows NULL during resolution.
-    await runInTenant(tenantA.ctx, (tx) =>
-      tx.insert(processorEvents).values({
-        id: nullEventId,
-        tenantId: null, // pre-resolution
-        eventType: 'payment_intent.succeeded',
-        apiVersion: '2024-06-20',
-        livemode: false,
-        processorAccountId: 'acct_unresolved',
-        receivedAt: new Date(),
-        outcome: 'processed',
-        payloadSha256: 'c'.repeat(64),
-        correlationId: 'corr-null-001',
-      }),
-    );
+    // INSERT a NULL-tenant rejection row under chamber_app. INSERT
+    // policy's WITH CHECK permits NULL, so the row persists. We do
+    // this under tenantA's context because the real rejected-path in
+    // production runs outside runInTenant (see `insertRejectedProcessor
+    // Event`) — but the RLS INSERT policy is role-keyed, not tenant-
+    // keyed, so the row that lands is semantically identical.
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO processor_events (
+          id, tenant_id, event_type, api_version, livemode,
+          processor_account_id, received_at, outcome,
+          payload_sha256, correlation_id
+        ) VALUES (
+          ${nullEventId}, NULL, 'payment_intent.succeeded',
+          '2024-06-20', false, 'acct_unknown',
+          NOW(), 'acknowledged_only',
+          ${'c'.repeat(64)}, 'corr-null-rejection-001'
+        )
+      `);
+    });
 
-    // Resolve: UPDATE tenant_id = tenantA
-    await runInTenant(tenantA.ctx, (tx) =>
+    // Neither tenantA nor tenantB can SELECT the row via chamber_app
+    // (SELECT policy `tenant_id = current_setting` never matches NULL).
+    const aRows = await runInTenant(tenantA.ctx, (tx) =>
       tx
-        .update(processorEvents)
-        .set({ tenantId: tenantA.ctx.slug })
+        .select()
+        .from(processorEvents)
         .where(eq(processorEvents.id, nullEventId)),
     );
-
-    // Now tenantA can see the resolved row; tenantB cannot
-    const aRows = await runInTenant(tenantA.ctx, (tx) =>
-      tx.select().from(processorEvents).where(eq(processorEvents.id, nullEventId)),
-    );
-    expect(aRows).toHaveLength(1);
-    expect(aRows[0]!.tenantId).toBe(tenantA.ctx.slug);
+    expect(aRows).toHaveLength(0);
 
     const bRows = await runInTenant(tenantB.ctx, (tx) =>
-      tx.select().from(processorEvents).where(eq(processorEvents.id, nullEventId)),
+      tx
+        .select()
+        .from(processorEvents)
+        .where(eq(processorEvents.id, nullEventId)),
     );
     expect(bRows).toHaveLength(0);
   });

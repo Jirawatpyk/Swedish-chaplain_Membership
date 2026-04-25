@@ -106,7 +106,10 @@ async function auditReject(
     await auditRepo.append({
       eventType,
       reason,
-      actorUserId: 'system:cron',
+      // Audit 2026-04-25 finding #2: webhook events are NOT cron jobs.
+      // `'system:webhook'` keeps audit-log filters sharp so Stripe
+      // signature rejections don't pollute scheduled-job dashboards.
+      actorUserId: 'system:webhook',
       summary: `stripe webhook rejected: ${eventType} / ${reason}`,
       requestId,
     });
@@ -362,36 +365,54 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // Step 7 — dispatch to the Application use-case.
-  // Project explicitly to the `VerifiedStripeEvent` allow-list shape.
-  // The verifier (`stripe-webhook-verifier.project()`) already
-  // narrows `event.data.object` to `dataObject` + strips card
-  // metadata, but we STILL project here belt-and-braces so:
-  //   1. A future adapter drift (e.g. a test / stub mock that
-  //      forgets to project) cannot leak raw `data` into the
-  //      use-case via the route (PCI SAQ-A structural guard —
-  //      T042 contract test pins this shape).
-  //   2. The `account` override from Step 6 (direct-event fallback)
-  //      takes precedence over whatever the verifier computed.
+  //
+  // Audit 2026-04-25 finding #23: prefer the verifier's projected
+  // `dataObject` envelope (production path). Fall back to inline
+  // projection of `data.object` ONLY for callers that pass a raw
+  // Stripe SDK event shape (contract-test mocks). Either way we
+  // produce the same `VerifiedStripeEvent.dataObject` allow-list at
+  // the route→use-case boundary — single SHAPE, two source paths.
+  // This collapses the prior "two parallel projections" code (route
+  // re-doing the verifier's work line-for-line) into a single
+  // canonical destination shape with one branch on input form.
   const rawAny = rawEvent as Record<string, unknown>;
+  const verifierDataObject = rawAny['dataObject'] as
+    | Record<string, unknown>
+    | undefined;
+  // Test-fallback path: raw Stripe `data.object` (mocks). Production
+  // verifier ALWAYS sets `dataObject` so this branch never fires for
+  // real traffic.
   const rawDataObject =
-    (rawAny['dataObject'] as Record<string, unknown> | undefined) ??
+    verifierDataObject ??
     ((rawAny['data'] as Record<string, unknown> | undefined)?.['object'] as
       | Record<string, unknown>
       | undefined);
-  const latestCharge = rawDataObject?.['latest_charge'];
+  // Project narrow allow-list fields. PCI SAQ-A: only the cross-ref
+  // ids the dispatcher needs are passed downstream. The verifier
+  // path's `dataObject` is already projected — re-projecting here is
+  // a no-op for known keys + drops anything unexpected.
+  const latestCharge = rawDataObject?.['latest_charge'] ?? rawDataObject?.['latestChargeId'];
   const refundsNode = rawDataObject?.['refunds'] as
     | { data?: Array<Record<string, unknown>> }
+    | undefined;
+  const refundIdsFromVerifier = rawDataObject?.['refundIds'] as
+    | readonly string[]
     | undefined;
   const lastPaymentError = rawDataObject?.['last_payment_error'] as
     | Record<string, unknown>
     | undefined;
-  const amountVal = rawDataObject?.['amount'];
+  const lastPaymentErrorCodeFromVerifier = rawDataObject?.[
+    'lastPaymentErrorCode'
+  ] as string | undefined;
+  const amountVal =
+    rawDataObject?.['amount'] ?? rawDataObject?.['amountSatang'];
 
   const verifiedEvent: import('@/modules/payments').VerifiedStripeEvent = {
     id: evId,
     type: evType,
     apiVersion: evApiVersion,
     livemode: evLivemode,
+    // Step 6 account override (direct-event fallback) ALWAYS wins.
     account: evAccount,
     createdAtUnixSeconds:
       typeof rawAny['createdAtUnixSeconds'] === 'number'
@@ -405,16 +426,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ...(typeof latestCharge === 'string' && {
         latestChargeId: latestCharge,
       }),
-      ...(Array.isArray(refundsNode?.data) && {
-        refundIds: refundsNode!.data!
-          .map((r) => String((r as Record<string, unknown>)['id'] ?? ''))
-          .filter(Boolean),
-      }),
-      ...(typeof lastPaymentError?.['code'] === 'string' && {
-        lastPaymentErrorCode: String(lastPaymentError['code']),
-      }),
+      ...(refundIdsFromVerifier !== undefined
+        ? { refundIds: refundIdsFromVerifier }
+        : Array.isArray(refundsNode?.data)
+          ? {
+              refundIds: refundsNode!.data!
+                .map((r) => String((r as Record<string, unknown>)['id'] ?? ''))
+                .filter(Boolean),
+            }
+          : {}),
+      ...(typeof lastPaymentErrorCodeFromVerifier === 'string'
+        ? { lastPaymentErrorCode: lastPaymentErrorCodeFromVerifier }
+        : typeof lastPaymentError?.['code'] === 'string'
+          ? { lastPaymentErrorCode: String(lastPaymentError['code']) }
+          : {}),
       ...(typeof amountVal === 'number' && {
         amountSatang: BigInt(amountVal),
+      }),
+      ...(typeof amountVal === 'bigint' && {
+        amountSatang: amountVal,
       }),
     },
   };

@@ -126,9 +126,15 @@ export function isAllowed(
   resource: F5Resource,
   action: F5Action,
 ): boolean {
+  // Use `Object.hasOwn` instead of a truthy check so the fail-closed
+  // branches can be covered by tests WITHOUT casting runtime-impossible
+  // values through `as unknown as F5Resource` (audit 2026-04-25
+  // finding #5). `hasOwn` returns false for any key not declared in
+  // F5_POLICIES at compile time, which is exactly what we want for the
+  // fails-closed guarantee.
+  if (!Object.hasOwn(F5_POLICIES, resource)) return false;
   const resourcePolicy = F5_POLICIES[resource];
-  if (!resourcePolicy) return false;
+  if (!Object.hasOwn(resourcePolicy, action)) return false;
   const allowedRoles = resourcePolicy[action];
-  if (!allowedRoles) return false;
   return allowedRoles.includes(role);
 }

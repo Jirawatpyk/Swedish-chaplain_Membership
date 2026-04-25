@@ -266,23 +266,32 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
 
     const calls = processWebhookEventMock.mock.calls as Array<Array<unknown>>;
     expect(calls.length).toBeGreaterThanOrEqual(1);
-    const firstEventArg = (calls[0] as Array<Record<string, unknown>>)[1];
-    expect(firstEventArg?.['id']).toBe(FIXED_EVENT_ID);
+    // Route signature (post-aa5ae89): processWebhookEvent(deps, useCaseInput)
+    // where useCaseInput = { tenantId, event: VerifiedStripeEvent, payloadSha256, ... }.
+    // The event envelope is nested at `useCaseInput.event` — not the top level.
+    const useCaseInput = (calls[0] as Array<Record<string, unknown>>)[1];
+    const eventEnvelope = useCaseInput?.['event'] as
+      | Record<string, unknown>
+      | undefined;
+    expect(eventEnvelope?.['id']).toBe(FIXED_EVENT_ID);
 
     // PCI SAQ-A structural guard (guardian F2 — Review-Gate blocker).
-    // Mirror of T042 guard: the route→use-case boundary must carry a
-    // structured allow-list (id/type/api_version/livemode), never the
+    // The VerifiedStripeEvent envelope at the route→use-case boundary
+    // must carry only the allow-list (id/type/apiVersion/livemode +
+    // optionally account + dataObject summary). It MUST NOT carry the
     // raw event.data.object which holds payment_method_details with
     // last4/brand/exp/fingerprint at paths not covered by REDACT_PATHS.
-    expect(firstEventArg).toEqual(
+    // Post-aa5ae89 the envelope uses camelCase `apiVersion`.
+    expect(eventEnvelope).toEqual(
       expect.objectContaining({
         id: expect.any(String),
         type: expect.any(String),
-        api_version: expect.any(String),
+        apiVersion: expect.any(String),
         livemode: expect.any(Boolean),
       }),
     );
-    expect(Object.keys(firstEventArg ?? {})).not.toContain('data');
+    // Envelope MUST NOT contain the raw `data` key (card metadata carrier).
+    expect(Object.keys(eventEnvelope ?? {})).not.toContain('data');
   });
 
   it('second delivery: processWebhookEvent called at most twice total (no extra side-effects)', async () => {

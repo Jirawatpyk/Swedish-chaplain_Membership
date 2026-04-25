@@ -37,11 +37,11 @@
 - [x] CHK018 Is the F9 (future GDPR purge job) ownership of retention enforcement explicit ("F5 sets the flag; F9 enforces") to prevent ambiguity about who deletes? [Clarity, data-model.md § 7.1]
 - [x] CHK019 Is the retention-enforcement integration test (R2-E4 backfill test) specified as a Review-Gate blocker? [Completeness, plan.md § Testing]
 
-## Audit Event Coverage (18 F5 + 17 F4)
+## Audit Event Coverage (20 F5 + 17 F4)
 
-- [x] CHK020 Are all 18 F5-introduced audit event types enumerated with complete payload schemas (required keys + optional keys + severity)? [Completeness, Spec §FR-020 + data-model.md § 7] (16 from migration 0040 + 2 rate-limit events from migration 0043 per Threat F-09)
+- [x] CHK020 Are all 20 F5-introduced audit event types enumerated with complete payload schemas (required keys + optional keys + severity)? [Completeness, Spec §FR-020 + data-model.md § 7] (16 from migration 0040 + 2 rate-limit events from migration 0043 per Threat F-09 + 2 webhook ops-visibility events from migration 0046 per audit 2026-04-25 findings #10/#13)
 - [x] CHK021 Is the immutability requirement on audit entries stated unambiguously ("MUST NOT be mutable or deletable")? [Clarity, Spec §FR-020]
-- [x] CHK022 Is the actor-correlation requirement (every audit entry includes acting user + tenant + correlation_id + timestamp UTC) specified consistently across all 18 event types? [Consistency, Spec §FR-020 + data-model.md § 7]
+- [x] CHK022 Is the actor-correlation requirement (every audit entry includes acting user + tenant + correlation_id + timestamp UTC) specified consistently across all 20 event types? [Consistency, Spec §FR-020 + data-model.md § 7]
 - [x] CHK023 Are the 6 F4 tax-document event types subject to the backfill (`invoice_issued`, `invoice_paid`, `invoice_voided`, `credit_note_issued`, `invoice_pdf_resent`, `invoice_pdf_regenerated`) verified against F4's actual event-type list (`specs/007-invoices-receipts/data-model.md`)? [Traceability, data-model.md § 7.2]
 
 ## Refund Email Delivery

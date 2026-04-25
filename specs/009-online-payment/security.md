@@ -220,7 +220,7 @@ By signing below, the security reviewer confirms ALL of the following are true:
 - [ ] Every webhook request is signature-verified BEFORE body-parse — verified by reading `process-webhook-event.ts` + `tests/integration/payments/webhook-signature.test.ts`.
 - [ ] Every payment-touching API route is RBAC-checked + tenant-scoped + RLS-enforced + cross-tenant-probe-audited.
 - [ ] Cross-tenant integration test (`tests/integration/payments/tenant-isolation.test.ts`) passes green.
-- [ ] All 18 audit event types in spec FR-020 (16 via migration 0040 + 2 rate-limit events via migration 0043 per Threat F-09) are emitted with the correct severity + payload schema (verified by `tests/integration/payments/audit-coverage.test.ts` to be added in `/speckit.implement` Phase 4).
+- [ ] All 20 audit event types in spec FR-020 (16 via migration 0040 + 2 rate-limit events via migration 0043 per Threat F-09 + 2 webhook ops-visibility events via migration 0046 per audit 2026-04-25 findings #10/#13) are emitted with the correct severity + payload schema (verified by `tests/integration/payments/audit-coverage.test.ts` to be added in `/speckit.implement` Phase 4).
 - [ ] Stripe API version is pinned via `STRIPE_API_VERSION` env var; webhook handler emits `webhook_api_version_mismatch` on drift (FR-026).
 - [ ] In-app refund flow is the ONLY path that creates F4 credit notes; out-of-band refunds detected + audited (FR-011a).
 - [ ] FR-011b refund-amount cap enforced server-side pre-flight + concurrent-refund row-lock test passes.

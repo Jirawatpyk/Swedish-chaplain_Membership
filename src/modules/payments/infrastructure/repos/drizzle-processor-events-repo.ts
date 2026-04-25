@@ -4,18 +4,32 @@
  * Implements `ProcessorEventsRepo` (Application port). Backs the
  * webhook idempotency log (natural PK = Stripe event id).
  *
- * Tenant bypass window (data-model.md § 5.4): the pre-resolution
- * INSERT happens BEFORE `runInTenant` binds a tenant — at that
- * moment we don't yet know which tenant owns the `event.account`.
- * The dedicated RLS policy `processor_events_insert_null_tenant`
- * permits INSERT with `tenant_id IS NULL`. Every subsequent read /
- * write runs inside `runInTenant(tenantCtx, ...)` once the tenant
- * is resolved.
+ * NULL tenant_id semantics (audit 2026-04-25 reality check —
+ * data-model.md § 5.4):
+ *   The original "pre-resolution NULL → UPDATE to resolve" design
+ *   is unimplementable under PostgreSQL RLS (SELECT-policy applied
+ *   as visibility filter blocks NULL rows from being UPDATE-able by
+ *   chamber_app). Production REVISED behaviour:
+ *     - successful events INSERT with the resolved tenant_id from the
+ *       start (route resolves via `resolveTenantByProcessorAccountId`
+ *       BEFORE entering the use-case);
+ *     - NULL-tenant rows ONLY appear via `insertRejectedProcessorEvent`
+ *       for rejection-audit (env mismatch / api-version mismatch /
+ *       unknown-account `acknowledged_only`);
+ *     - rejection rows are system-level audit and are never promoted —
+ *       they remain invisible to all chamber_app contexts and are
+ *       inspected out-of-band by the `neondb_owner` operator role.
  *
- * `insertIfNew` uses Drizzle's `.onConflictDoNothing` against the
- * PK (id). We detect the "new vs. duplicate" decision by checking
- * the returning-row count: 1 row returned ⇒ inserted, 0 rows ⇒
- * conflict (duplicate delivery of the same event id).
+ * `insertIfNew` runs OUTSIDE `runInTenant` because the rejection
+ * write must succeed even when no tenant context is available; the
+ * INSERT policy's `WITH CHECK (tenant_id IS NULL OR ...)` permits the
+ * NULL row. We detect the "new vs. duplicate" decision by checking the
+ * returning-row count: 1 row returned ⇒ inserted, 0 rows ⇒ conflict
+ * (duplicate delivery). Note: `.returning()` on a NULL-tenant INSERT
+ * triggers SELECT-policy evaluation which blocks the row → returning
+ * array is empty even on successful INSERT. The fallback `db.select()`
+ * (line 93) handles both real conflicts AND this NULL-tenant returning
+ * blank case (also bypass-RLS, so it sees the just-inserted row).
  *
  * Domain-type leak containment: Drizzle row types stay here; the
  * caller sees `ProcessorEvent` Domain shapes only.
@@ -47,24 +61,28 @@ function toDomain(row: ProcessorEventRow): ProcessorEvent {
 }
 
 /**
- * Factory — no tenant context bound here. The pre-resolution path
- * goes through `db` directly (bypass RLS via the NULL-tenant INSERT
- * policy); the post-resolution path opens a `runInTenant` per call.
+ * Factory — no tenant context bound here. INSERT path uses raw `db`
+ * to support both:
+ *   (a) the rejection-audit path with `tenantId: null` (which fails
+ *       SELECT policy under chamber_app — must run outside runInTenant);
+ *   (b) the resolved-tenant INSERT (route has already resolved tenantId
+ *       from `processor_account_id` before calling this — runs as the
+ *       owner role + ON CONFLICT DO NOTHING handles dedup).
  *
- * `findById` auto-detects which mode to use: if the caller provides
- * `resolvedTenantId`, we open `runInTenant`; otherwise we use the
- * bypass-RLS read path (only safe for the webhook pre-resolution
- * window, where the caller is the trusted webhook entry point).
+ * Read paths use `db` directly because processor_events is a system-
+ * wide idempotency log — per-tenant filtering happens upstream via the
+ * resolved tenantId in `processWebhookEvent` rather than at the repo
+ * boundary.
  */
 export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
   return {
     async insertIfNew(_txUnknown, input) {
-      // Pre-resolution INSERT runs OUTSIDE runInTenant per data-model
-      // § 5.4. The `_tx` argument is accepted for port-shape
-      // compatibility but intentionally ignored — reusing a tenant-
-      // scoped tx here would force SET LOCAL app.current_tenant
-      // BEFORE we know the tenant, which is exactly the race this
-      // bypass window is designed to avoid.
+      // Audit 2026-04-25 finding #5: `_txUnknown` is intentionally
+      // ignored — see file-level docstring for why insertIfNew runs
+      // outside runInTenant. The arg stays in the port shape for
+      // signature consistency with `markProcessed`/`updateOutcome`
+      // (which DO use a tx). Callers that pass a non-null tx will
+      // have the value silently dropped — documented contract.
       const inserted = await db
         .insert(processorEvents)
         .values({
@@ -106,14 +124,6 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
       };
     },
 
-    async updateTenantId(txUnknown, input): Promise<void> {
-      const tx = txUnknown as TenantTx;
-      await tx
-        .update(processorEvents)
-        .set({ tenantId: input.tenantId })
-        .where(eq(processorEvents.id, input.id));
-    },
-
     async markProcessed(txUnknown, id): Promise<void> {
       const tx = txUnknown as TenantTx;
       await tx
@@ -149,10 +159,15 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
 }
 
 /**
- * Helper for the post-resolution path: read the row inside a
- * tenant-scoped tx once the tenant id is known. Preserved as a
- * named export so the webhook dispatcher can grab it after tenant
- * resolution without constructing a full repo for one read.
+ * Helper for the post-resolution path: read the row inside a tenant-
+ * scoped tx once the tenant id is known. Useful for the webhook
+ * dispatcher's idempotency probe AFTER tenant resolution.
+ *
+ * Audit 2026-04-25 finding #7: kept as a named helper alongside
+ * `ProcessorEventsRepo.findById` (which uses bypass-RLS for the
+ * pre-resolution path). The two surfaces serve different RLS
+ * contexts — consolidating into one method would force callers to
+ * juggle a `tenantId | null` arg that the bypass-RLS path can't use.
  */
 export async function findProcessorEventInTenant(
   tenantId: string,

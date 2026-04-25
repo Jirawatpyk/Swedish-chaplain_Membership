@@ -48,9 +48,20 @@ export const dynamic = 'force-dynamic';
 // zod schema — mirrors contracts/payments-api.md § 1 InitiatePaymentInput.
 // Kept inline (not cross-imported) because client-side parsing is not
 // needed; the PaySheet drawer (Group G) posts opaque ids + a method enum.
+//
+// Audit 2026-04-25 finding #18: invoiceId now blocks control chars
+// and exotic UTF-8 that wouldn't match a real invoice id but COULD
+// surface in audit logs / SQL error messages. Permissive enough to
+// accept BOTH UUIDs (Domain canonical — `[0-9a-f]{8}-...`) AND
+// ULID-prefixed test fixtures (`inv_...`). Length 20–40 covers both.
 // ---------------------------------------------------------------------------
+const INVOICE_ID_RE = /^[A-Za-z0-9_-]{20,40}$/;
 const InitiatePaymentBody = z.object({
-  invoiceId: z.string().min(20).max(40),
+  invoiceId: z
+    .string()
+    .min(20)
+    .max(40)
+    .regex(INVOICE_ID_RE, 'invoiceId must be alphanumeric + `_` / `-` (20–40 chars)'),
   method: z.enum(['card', 'promptpay']),
 });
 
@@ -156,12 +167,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (memberCtx && 'response' in memberCtx && memberCtx.response) {
     return memberCtx.response;
   }
+  // Audit 2026-04-25 finding #21: TS now narrows `memberCtx` to the
+  // success variant (MemberContext, no `response`) after the rejection
+  // short-circuit above. Drop the legacy `(memberCtx as ...)` casts
+  // and let the discriminated-union narrowing carry the field types.
+  if (!memberCtx || 'response' in memberCtx) {
+    // Defensive — should be unreachable given the narrowing above.
+    return errorResponse(500, 'internal_error', correlationId);
+  }
 
   const tenantCtx = resolveTenantFromRequest(request);
-  const actorUserId =
-    (memberCtx as { current?: { user?: { id?: string } } } | undefined)?.current?.user?.id ?? 'unknown';
-  const actorMemberId =
-    (memberCtx as { memberId?: string } | undefined)?.memberId ?? 'unknown';
+  const actorUserId = memberCtx.current.user.id;
+  const actorMemberId = memberCtx.memberId;
 
   // 2 — Rate limit (after auth so anonymous spam is 401-ed by the
   // auth layer, but authenticated abuse burns the limiter bucket).
@@ -235,29 +252,38 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     if (result.ok) {
-      // The use-case can return either (a) the canonical flat shape
-      // { payment, clientSecret, publishableKey, paymentIntentId,
-      // promptpayQrSvgUrl, resumed } (Application layer) OR (b) a
-      // pre-shaped `{ payment, stripe: {...} }` nested shape (test
-      // doubles compose the response envelope up-front). Handle both.
-      const value = result.value as unknown as Record<string, unknown>;
-      const payment = value['payment'] as Record<string, unknown>;
-      const nestedStripe = value['stripe'] as Record<string, unknown> | undefined;
-      const stripe = nestedStripe ?? {
-        publishableKey: value['publishableKey'],
-        clientSecret: value['clientSecret'],
-        paymentIntentId: value['paymentIntentId'],
-        promptpayQrSvgUrl: value['promptpayQrSvgUrl'] ?? null,
-      };
+      // Audit 2026-04-25 finding #19: route now expects ONLY the
+      // canonical `InitiatePaymentSuccess` shape from the use-case
+      // (flat: payment + clientSecret + publishableKey + paymentIntentId
+      // + promptpayQrSvgUrl + resumed). The previous nested
+      // `{ payment, stripe: {...} }` test-fixture branch has been
+      // removed; tests updated to match the use-case interface.
+      //
       // NOTE: `clientSecret` is a short-lived Stripe confirmation
       // token — it MUST be returned in the response body (the Elements
       // client needs it) but MUST NOT be logged. No pino log lines
       // carry it (T041 PCI structural guard).
+      const value = result.value;
+      const payment = value.payment as unknown as Record<string, unknown>;
       const initiatedAtRaw = payment['initiatedAt'];
       const initiatedAt =
         initiatedAtRaw instanceof Date
           ? initiatedAtRaw.toISOString()
           : String(initiatedAtRaw);
+      // Audit 2026-04-25 finding #20: serialize bigint as STRING (not
+      // Number). For realistic THB invoices the precision-loss risk
+      // is theoretical (>2^53 satang = ~9e13 THB), but JSON.parse on
+      // the client-side would still see a JS number, losing precision
+      // silently if a future tenant ever exceeds the safe-integer
+      // window. String avoids that class of bug for the cost of one
+      // `BigInt(value)` call on the consumer side.
+      const amountValue = payment['amountSatang'];
+      const amountSerialized =
+        typeof amountValue === 'bigint'
+          ? amountValue.toString()
+          : typeof amountValue === 'number'
+            ? String(amountValue)
+            : amountValue;
       return NextResponse.json(
         {
           payment: {
@@ -265,20 +291,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             invoiceId: payment['invoiceId'],
             method: payment['method'],
             status: payment['status'],
-            amountSatang:
-              typeof payment['amountSatang'] === 'bigint'
-                ? Number(payment['amountSatang'])
-                : payment['amountSatang'],
+            amountSatang: amountSerialized,
             currency: payment['currency'],
             attemptSeq: payment['attemptSeq'],
             initiatedAt,
             processorEnvironment: payment['processorEnvironment'],
           },
           stripe: {
-            publishableKey: stripe['publishableKey'],
-            clientSecret: stripe['clientSecret'],
-            paymentIntentId: stripe['paymentIntentId'],
-            promptpayQrSvgUrl: stripe['promptpayQrSvgUrl'] ?? null,
+            publishableKey: value.publishableKey,
+            clientSecret: value.clientSecret,
+            paymentIntentId: value.paymentIntentId,
+            promptpayQrSvgUrl: value.promptpayQrSvgUrl ?? null,
           },
           correlationId,
         },

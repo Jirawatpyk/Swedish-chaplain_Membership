@@ -237,7 +237,7 @@ Append-only idempotency log for every webhook event processed. Natural PK = Stri
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
 | `id` | `TEXT` | NO | PK; **Stripe event id** (e.g., `evt_…`); naturally unique |
-| `tenant_id` | `TEXT` | YES | FK → `tenants(id)`; NULL during the pre-resolution bypass window (see plan.md § Constitution Check Principle I); filled post-resolution |
+| `tenant_id` | `TEXT` | YES | FK → `tenants(id)`; NULL ONLY for rejection-audit rows (env/api-version mismatch, unknown account) written by `insertRejectedProcessorEvent`. Successful events INSERT with the resolved tenant_id. The original "pre-resolution NULL → UPDATE" design (audit 2026-04-25) is unimplementable under the SELECT policy and was abandoned — see § 5.4 Reality check |
 | `event_type` | `TEXT` | NO | Stripe event type (e.g., `'payment_intent.succeeded'`) |
 | `api_version` | `TEXT` | NO | Stripe API version embedded in the event payload |
 | `livemode` | `BOOLEAN` | NO | Stripe `livemode` flag; used for environment segregation (FR-010) |
@@ -264,22 +264,30 @@ Append-only idempotency log for every webhook event processed. Natural PK = Stri
 
 ### 5.4 RLS policies
 
-**Special case**: to allow the pre-resolution INSERT to succeed without a tenant context, the policy is relaxed to permit NULL tenant writes:
+**Reality check (audit 2026-04-25)**: the original design described a "pre-resolution INSERT with NULL tenant_id → UPDATE to set tenant_id once resolved" flow. This flow was never implementable under the actual policies because PostgreSQL applies the SELECT policy USING clause as a visibility filter BEFORE the UPDATE policy is evaluated — and the strict SELECT (`tenant_id = current_setting`) hides NULL rows from every chamber_app context, so the UPDATE finds 0 rows.
+
+**Production behaviour**: the webhook route resolves the tenant via `resolveTenantByProcessorAccountId` BEFORE entering `processWebhookEvent`, then INSERTs with the resolved tenant_id from the start. NULL-tenant rows ONLY appear via `insertRejectedProcessorEvent` for rejection-audit records (env mismatch, api-version mismatch, unknown-account `acknowledged_only`). Those rejection rows are system-level audit and are never promoted to a tenant — they remain invisible to all chamber_app contexts and are inspected out-of-band by the `neondb_owner` operator role.
 
 ```sql
 ALTER TABLE processor_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE processor_events FORCE ROW LEVEL SECURITY;
 
--- SELECT: require tenant match OR superuser bypass
+-- SELECT: strict tenant match. NULL-tenant rejection rows are
+--         deliberately invisible to chamber_app — ops inspects them
+--         via neondb_owner.
 CREATE POLICY processor_events_select ON processor_events FOR SELECT
   USING (tenant_id = current_setting('app.current_tenant', TRUE));
 
--- INSERT: webhook handler inserts before tenant is known; allow NULL tenant_id
---         on insert ONLY. Post-resolution UPDATE fills tenant_id.
+-- INSERT: permits NULL tenant_id so the rejection-audit path
+--         (insertRejectedProcessorEvent) can write env/api/unknown-
+--         account rows. Successful events INSERT with tenant_id set.
 CREATE POLICY processor_events_insert ON processor_events FOR INSERT
   WITH CHECK (tenant_id IS NULL OR tenant_id = current_setting('app.current_tenant', TRUE));
 
--- UPDATE: only inside runInTenant post-resolution; tenant_id must match
+-- UPDATE: tenant-scoped only. The `OR tenant_id IS NULL` branch is
+--         dead under chamber_app (SELECT policy hides NULL rows
+--         before UPDATE evaluation) and is retained ONLY for owner-
+--         role maintenance scripts that may run with row_security off.
 CREATE POLICY processor_events_update ON processor_events FOR UPDATE
   USING (tenant_id = current_setting('app.current_tenant', TRUE) OR tenant_id IS NULL)
   WITH CHECK (tenant_id = current_setting('app.current_tenant', TRUE));
@@ -288,7 +296,7 @@ CREATE POLICY processor_events_update ON processor_events FOR UPDATE
 CREATE POLICY processor_events_no_delete ON processor_events FOR DELETE USING (false);
 ```
 
-The admin observability view (US3) reads with a real tenant context so only that tenant's events are visible.
+The admin observability view (US3) reads with a real tenant context so only that tenant's events are visible. NULL-tenant rejection records are excluded from every tenant-scoped view by design.
 
 ---
 

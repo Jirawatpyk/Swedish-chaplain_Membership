@@ -72,9 +72,12 @@ export function OnlinePaymentDisabledCard({
 }: OnlinePaymentDisabledCardProps) {
   const t = useTranslations('portal.payment.disabled');
 
+  // Subject line is i18n-driven so Thai/Swedish members email Thai/
+  // Swedish admins in the member's own language rather than a
+  // hardcoded English string (audit 2026-04-25 finding #8).
   const mailtoHref = tenantContactEmail
     ? `mailto:${tenantContactEmail}?subject=${encodeURIComponent(
-        `Bank-transfer instructions for invoice ${invoiceNumber}`,
+        t('mailSubject', { invoiceNumber }),
       )}`
     : null;
 

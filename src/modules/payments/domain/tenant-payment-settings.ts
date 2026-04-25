@@ -59,7 +59,15 @@ export type SettingsIncompleteReason =
   | 'missing_processor_account_id'
   | 'missing_publishable_key'
   | 'no_enabled_methods'
-  | 'key_environment_mismatch';
+  | 'key_environment_mismatch'
+  /**
+   * No tenant_payment_settings row exists at all (tenant never
+   * completed initial F5 configuration). Distinct from
+   * `missing_processor_account_id` which means a row exists but with
+   * an empty processorAccountId — different ops remediation path
+   * (audit 2026-04-25 finding #1).
+   */
+  | 'settings_row_missing';
 
 export function assertSettingsComplete(
   s: TenantPaymentSettings,

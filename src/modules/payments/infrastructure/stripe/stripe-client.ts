@@ -45,6 +45,21 @@ export interface StripeClient {
 let _instance: Stripe | null = null;
 
 /**
+ * Test-only override for the Stripe SDK constructor options. When set,
+ * the next `getStripeClient()` call uses these overrides INSTEAD of
+ * the default config. Cleared by `__resetStripeClientForTesting()`.
+ *
+ * Audit 2026-04-25: introduced so the MSW-mocked integration test
+ * (`tests/integration/payments/stripe-gateway-mock.test.ts`) can
+ * inject `httpClient: Stripe.createFetchHttpClient()`. Stripe SDK
+ * v22's default Node https client + keep-alive pool doesn't reliably
+ * round-trip through MSW v2's ClientRequest interceptor on Node 20;
+ * fetch-based client + MSW intercepts cleanly. Production code
+ * NEVER calls this — only tests do.
+ */
+let _testOverrides: Partial<NonNullable<ConstructorParameters<typeof Stripe>[1]>> | null = null;
+
+/**
  * Lazily create + memoise the Stripe client on first call. Safe to
  * call from any server-side code; returns the same instance every
  * time. Webhook + server actions + cron handlers all share the
@@ -63,7 +78,7 @@ let _instance: Stripe | null = null;
  */
 export function getStripeClient(): StripeClient {
   if (_instance === null) {
-    _instance = new Stripe(env.stripe.secretKey, {
+    const baseConfig: NonNullable<ConstructorParameters<typeof Stripe>[1]> = {
       apiVersion: env.stripe.apiVersion as unknown as '2026-03-25.dahlia',
       typescript: true,
       // Bounded SDK resilience — prevents an unbounded Stripe API hang
@@ -81,16 +96,34 @@ export function getStripeClient(): StripeClient {
         version: '0.1.0',
         url: 'https://swecham.zyncdata.app',
       },
+    };
+    _instance = new Stripe(env.stripe.secretKey, {
+      ...baseConfig,
+      ...(_testOverrides ?? {}),
     });
   }
   return _instance;
 }
 
 /**
- * Test-only: reset the memoised instance. Used by unit tests that
- * need to re-initialise with a different env setup between cases.
- * NO production code should call this.
+ * Test-only: reset the memoised instance + clear any overrides. Used
+ * by unit tests that need to re-initialise with a different env setup
+ * between cases. NO production code should call this.
  */
 export function __resetStripeClientForTesting(): void {
   _instance = null;
+  _testOverrides = null;
+}
+
+/**
+ * Test-only: install Stripe SDK constructor overrides (e.g.
+ * `httpClient: Stripe.createFetchHttpClient()` for MSW interception).
+ * Call BEFORE the first `getStripeClient()` call in the test (or
+ * after `__resetStripeClientForTesting()` to take effect on the next
+ * call). Audit 2026-04-25 — see `_testOverrides` JSDoc above.
+ */
+export function __setStripeClientOverridesForTesting(
+  overrides: Partial<NonNullable<ConstructorParameters<typeof Stripe>[1]>>,
+): void {
+  _testOverrides = overrides;
 }

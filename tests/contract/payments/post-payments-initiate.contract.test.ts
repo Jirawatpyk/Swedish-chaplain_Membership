@@ -171,6 +171,11 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
 
   it('201 — happy path card: response envelope matches spec shape', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    // Canonical flat shape (audit 2026-04-25 finding #19): mock returns
+    // the exact `InitiatePaymentSuccess` interface from the use-case.
+    // Route now ONLY accepts this shape — the previous nested
+    // `{ payment, stripe }` test fixture was a contract drift that
+    // forced the route to handle two shapes.
     initiatePaymentMock.mockResolvedValueOnce(
       ok({
         payment: {
@@ -184,12 +189,11 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
           initiatedAt: '2026-05-12T07:03:11.123Z',
           processorEnvironment: 'test',
         },
-        stripe: {
-          publishableKey: 'pk_test_xxx',
-          clientSecret: 'pi_test_xxx_secret_yyy',
-          paymentIntentId: 'pi_test_xxx',
-          promptpayQrSvgUrl: null,
-        },
+        clientSecret: 'pi_test_xxx_secret_yyy',
+        publishableKey: 'pk_test_xxx',
+        paymentIntentId: 'pi_test_xxx',
+        promptpayQrSvgUrl: null,
+        resumed: false,
       }),
     );
 
@@ -246,12 +250,11 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
           initiatedAt: '2026-05-12T07:03:11.123Z',
           processorEnvironment: 'test',
         },
-        stripe: {
-          publishableKey: 'pk_test_xxx',
-          clientSecret: 'pi_test_yyy_secret_zzz',
-          paymentIntentId: 'pi_test_yyy',
-          promptpayQrSvgUrl: 'data:image/svg+xml;base64,abc==',
-        },
+        clientSecret: 'pi_test_yyy_secret_zzz',
+        publishableKey: 'pk_test_xxx',
+        paymentIntentId: 'pi_test_yyy',
+        promptpayQrSvgUrl: 'data:image/svg+xml;base64,abc==',
+        resumed: false,
       }),
     );
 
@@ -361,7 +364,10 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
   it('422 tenant_settings_incomplete — processor_publishable_key missing', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberContext);
     initiatePaymentMock.mockResolvedValueOnce(
-      err({ code: 'tenant_settings_incomplete', missing: ['processor_publishable_key'] }),
+      err({
+        code: 'tenant_settings_incomplete',
+        reason: 'missing_publishable_key',
+      }),
     );
 
     const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };

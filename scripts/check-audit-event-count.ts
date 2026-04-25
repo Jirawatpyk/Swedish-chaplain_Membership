@@ -36,6 +36,10 @@ const ROOT = process.cwd();
 const F5_MIGRATIONS = [
   resolve(ROOT, 'drizzle/migrations/0040_audit_log_f5_extension.sql'),
   resolve(ROOT, 'drizzle/migrations/0043_audit_log_rate_limit_events.sql'),
+  resolve(
+    ROOT,
+    'drizzle/migrations/0046_audit_log_webhook_unknown_state_events.sql',
+  ),
 ];
 const SPEC_DIR = resolve(ROOT, 'specs/009-online-payment');
 const REVIEWS_SUBDIR = 'reviews'; // Point-in-time reports — exempt from drift check.

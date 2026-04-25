@@ -149,10 +149,17 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
 
     async updateStatus(txUnknown, input): Promise<Payment> {
       const tx = txUnknown as TenantTx;
-      const patch: Record<string, unknown> = {
+      // Audit 2026-04-25 finding #4: typed partial-row instead of
+      // `Record<string, unknown>` so column-name keys are type-checked
+      // against Drizzle's inferred shape. Catches typos like
+      // `cardLast` (missing 4) at compile time. `updatedAt` uses a
+      // server-side `now()` SQL expression — drizzle-orm allows
+      // `SQL<unknown>` as a value at the update site, but the inferred
+      // insert type has the column typed as `Date`, so the value is
+      // built separately and merged below.
+      const patch: Partial<typeof payments.$inferInsert> = {
         status: input.nextStatus,
         completedAt: input.completedAt,
-        updatedAt: sql`now()`,
       };
       if (input.processorChargeId !== undefined) {
         patch.processorChargeId = input.processorChargeId;
@@ -176,7 +183,7 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
 
       const [updated] = await tx
         .update(payments)
-        .set(patch)
+        .set({ ...patch, updatedAt: sql`now()` })
         .where(
           and(
             eq(payments.tenantId, input.tenantId),

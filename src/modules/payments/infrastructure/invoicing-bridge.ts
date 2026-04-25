@@ -63,14 +63,37 @@ function mapF4GetError(
  * shape. F4's discriminated errors are operational (audit + runbook)
  * rather than user-facing; F5 callers surface as a single
  * `f4_bridge_error` code.
+ *
+ * Audit 2026-04-25 finding #16: previous fallback `JSON.stringify(e)`
+ * could leak F4-side PII (member email, invoice line text, etc.) into
+ * F5's audit trail when an unfamiliar error variant flowed through.
+ * We now whitelist scalar string fields on the discriminator + drop
+ * everything else. If a future F4 error variant carries genuinely
+ * useful structured detail, add a typed branch here rather than
+ * widening the JSON.stringify fallback.
  */
 function summariseF4Error(e: F4MarkPaidFromProcessorError): {
   code: string;
   detail: string;
 } {
-  const shape = e as { code?: string; kind?: string; detail?: string };
-  const code = shape.code ?? shape.kind ?? 'f4_error';
-  const detail = shape.detail ?? JSON.stringify(e);
+  const shape = e as {
+    code?: unknown;
+    kind?: unknown;
+    detail?: unknown;
+    reason?: unknown;
+  };
+  const code =
+    typeof shape.code === 'string'
+      ? shape.code
+      : typeof shape.kind === 'string'
+        ? shape.kind
+        : 'f4_error';
+  const detail =
+    typeof shape.detail === 'string'
+      ? shape.detail
+      : typeof shape.reason === 'string'
+        ? shape.reason
+        : `unknown_f4_error_shape (code=${code})`;
   return { code, detail };
 }
 

@@ -28,3 +28,5 @@ export type { AuditPort, F5AuditEvent, F5AuditEventType } from './audit-port';
 export type { ClockPort } from './clock-port';
 export { systemClock } from './clock-port';
 export type { RateLimiterPort } from './rate-limiter-port';
+export type { LoggerPort } from './logger-port';
+export { noopLogger } from './logger-port';

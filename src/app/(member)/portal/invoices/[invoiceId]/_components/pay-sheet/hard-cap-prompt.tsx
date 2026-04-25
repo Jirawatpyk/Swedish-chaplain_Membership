@@ -38,6 +38,13 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
   const t = useTranslations('portal.payment.hardCap');
   const [remaining, setRemaining] = useState<number>(COUNTDOWN_SECONDS);
   const interruptedRef = useRef<boolean>(false);
+  // WCAG 2.4.3 Focus Order: alertdialog must receive focus on mount so
+  // keyboard + SR users land on the decision target without a stray
+  // Tab press (audit 2026-04-25 finding #14).
+  const continueButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    continueButtonRef.current?.focus();
+  }, []);
 
   // Ticker: decrement once per second.
   useEffect(() => {
@@ -68,8 +75,11 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
   return (
     <section
       role="alertdialog"
+      aria-modal="true"
       aria-live="assertive"
       aria-atomic="true"
+      aria-labelledby="pay-sheet-hard-cap-title"
+      aria-describedby="pay-sheet-hard-cap-body"
       data-testid="pay-sheet-hard-cap-prompt"
       className="flex flex-col items-center gap-4 text-center"
     >
@@ -77,9 +87,20 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
         aria-hidden="true"
         className="size-12 text-muted-foreground"
       />
-      <h3 className="text-h3 font-semibold text-foreground">{t('title')}</h3>
-      <p className="text-body text-muted-foreground">{t('body')}</p>
+      <h3
+        id="pay-sheet-hard-cap-title"
+        className="text-h3 font-semibold text-foreground"
+      >
+        {t('title')}
+      </h3>
+      <p
+        id="pay-sheet-hard-cap-body"
+        className="text-body text-muted-foreground"
+      >
+        {t('body')}
+      </p>
       <Button
+        ref={continueButtonRef}
         type="button"
         variant="default"
         onClick={() => {

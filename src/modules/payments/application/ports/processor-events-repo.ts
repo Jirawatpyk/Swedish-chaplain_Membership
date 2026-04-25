@@ -15,8 +15,13 @@ export interface ProcessorEventsRepo {
    *   - `{ inserted: true, event }` on first delivery
    *   - `{ inserted: false, event }` on duplicate (short-circuit; skip dispatch)
    *
-   * `tenantId` MAY be null during the pre-resolution bypass window
-   * (data-model § 5.4); adapter handles the NULL-allowed RLS policy.
+   * `tenantId` MAY be null ONLY for rejection-audit rows written by
+   * `insertRejectedProcessorEvent` (env mismatch / api-version mismatch /
+   * unknown-account `acknowledged_only`). Successful events INSERT with
+   * the resolved tenant_id from the start. The original "pre-resolution
+   * NULL → UPDATE" flow (data-model.md § 5.4 historical) is unimplement-
+   * able under the SELECT policy — see audit 2026-04-25 reality-check
+   * block in data-model.md.
    */
   insertIfNew(
     tx: unknown,
@@ -33,12 +38,6 @@ export interface ProcessorEventsRepo {
       readonly receivedAt: Date;
     },
   ): Promise<{ readonly inserted: boolean; readonly event: ProcessorEvent }>;
-
-  /** Update the (nullable) tenant id once resolved from `event.account`. */
-  updateTenantId(
-    tx: unknown,
-    input: { readonly id: string; readonly tenantId: string },
-  ): Promise<void>;
 
   /** Stamp `processed_at = now()`. Called at pipeline step 10. */
   markProcessed(tx: unknown, id: string): Promise<void>;

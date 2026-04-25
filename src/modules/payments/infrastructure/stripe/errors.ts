@@ -29,6 +29,14 @@
  * route handler narrows back down before calling Application code
  * (emits the `webhook_signature_rejected` audit with `clock_skew`
  * detail but still raises an HTTP 400 like the other kinds).
+ *
+ * Audit 2026-04-25 finding #15: this widening is intentional but
+ * Application code MUST NOT directly catch `WebhookSignatureError`
+ * from this module — only the route handler does, and it duck-types
+ * on the `kind` field rather than `instanceof`. If Application code
+ * ever needs the `clock_skew` discriminator, add it to the port
+ * union at `src/modules/payments/application/ports/webhook-verifier-port.ts`
+ * (and update the route's narrowing logic in lockstep).
  */
 export class WebhookSignatureError extends Error {
   readonly kind:

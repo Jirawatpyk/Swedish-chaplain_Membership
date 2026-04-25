@@ -123,7 +123,7 @@ All 31 Phase 2 tasks + 1 Main-agent-Gate addition (T025b migration 0040) shipped
 - **Sub-batch D** (T032-T035): Logger PAN+CVV+secret redaction (pci-saqa-guardian specialist review → 2 CRITICAL fixes + R1 expansion + R3 header casings) + CSP Stripe allowlist scoped per-route + F5 RBAC policy matrix + auditEventTypeEnum extension. 86 unit tests across 3 files.
 - **Sub-batch E** (T036-T040): Stripe SDK singleton + API version const + i18n stubs + top-20 decline-code catalogue in 3 locales + check-i18n extension.
 
-**All US phases (Phase 3+) can now start in parallel.** Foundational surface includes: F4 bridge ready (mark paid + issue CN with source_refund_id + invoice DTO), 4 F5 tables with strict tenant isolation, 18 F5 audit event types enum-ed + migrated (16 via migration 0040 + 2 rate-limit via migration 0043), RBAC policy + CSP Stripe allowlist + PAN redaction already wired, Stripe client singleton ready, decline-code i18n catalogue in 3 locales, payments module barrel + Drizzle schema + infrastructure scaffold in place.
+**All US phases (Phase 3+) can now start in parallel.** Foundational surface includes: F4 bridge ready (mark paid + issue CN with source_refund_id + invoice DTO), 4 F5 tables with strict tenant isolation, 20 F5 audit event types enum-ed + migrated (16 via migration 0040 + 2 rate-limit via migration 0043 + 2 webhook ops-visibility via migration 0046), RBAC policy + CSP Stripe allowlist + PAN redaction already wired, Stripe client singleton ready, decline-code i18n catalogue in 3 locales, payments module barrel + Drizzle schema + infrastructure scaffold in place.
 
 **Carried to Phase 3+**:
 - PCI Guardian R2 (webhook logging allow-list) → documented in T056 Implement process-webhook-event dispatcher.

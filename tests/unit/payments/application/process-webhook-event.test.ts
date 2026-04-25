@@ -107,7 +107,6 @@ function makeDeps(): ProcessWebhookEventDeps {
         correlationId: 'corr_1',
       },
     })),
-    updateTenantId: vi.fn(),
     markProcessed: vi.fn(),
     updateOutcome: vi.fn(),
     findById: vi.fn(),

@@ -316,6 +316,20 @@
       "when": 1777420800000,
       "tag": "0044_fix_card_metadata_check_canceled_failed",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1777507200000,
+      "tag": "0045_invoice_snapshot_email_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1777593600000,
+      "tag": "0046_audit_log_webhook_unknown_state_events",
+      "breakpoints": true
     }
   ]
 }

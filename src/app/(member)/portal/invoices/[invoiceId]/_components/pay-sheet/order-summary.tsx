@@ -19,13 +19,18 @@ export interface OrderSummaryProps {
   readonly invoiceNumber: string;
   /** Amount due in satang (1 THB = 100 satang). */
   readonly amountDue: number;
-  readonly currency: string;
+  /**
+   * Reserved for future multi-currency tenants. The component currently
+   * formats as THB only via `formatSatangThb` — when non-THB support
+   * lands, branch on this value to select the appropriate formatter
+   * (audit 2026-04-25 finding #18).
+   */
+  readonly currency?: string;
 }
 
 export function OrderSummary({
   invoiceNumber,
   amountDue,
-  currency: _currency,
 }: OrderSummaryProps) {
   const t = useTranslations('portal.payment.summary');
   const locale = useLocale();

@@ -41,7 +41,7 @@
  * + confirmation panel + the hard-cap prompt.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -168,6 +168,69 @@ export function PaySheet({
   // `onPaymentSettled`.
   const [paymentSettled, setPaymentSettled] = useState<boolean>(false);
 
+  // Preserve the latest cache + settled flag in refs so the
+  // cancel-on-unmount cleanup (below) can read the final values
+  // without re-creating the effect on every state change.
+  const cachedInitiateRef = useRef<
+    import('./pay-sheet-internal').CachedInitiate | null
+  >(null);
+  const paymentSettledRef = useRef<boolean>(false);
+  useEffect(() => {
+    cachedInitiateRef.current = cachedInitiate;
+  }, [cachedInitiate]);
+  useEffect(() => {
+    paymentSettledRef.current = paymentSettled;
+  }, [paymentSettled]);
+
+  // Explicit-cancel helper. Shared by:
+  //   (a) unmount backstop — fires on page navigate-away
+  //   (b) user-initiated cancel — ProcessingPanel / 3DS "Cancel payment"
+  //       buttons + HardCapPrompt 60-second auto-cancel
+  // Called with a `reason` that ends up in the audit trail so ops can
+  // distinguish abandon patterns (navigated away vs deliberately
+  // clicked cancel vs idle-timeout).
+  const firePaymentCancel = (
+    reason: 'user_navigated_away' | 'user_clicked_cancel' | 'hard_cap_timeout',
+  ) => {
+    const cache = cachedInitiateRef.current;
+    const settled = paymentSettledRef.current;
+    if (cache === null || settled) return;
+    void fetch(`/api/payments/${cache.paymentDbId}/cancel`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+      keepalive: true,
+    }).catch(() => {
+      // Stripe's 1-hour PI auto-expiry is the backstop.
+    });
+    cachedInitiateRef.current = null;
+    setCachedInitiate(null);
+  };
+
+  // FR-025c — cancel stale PaymentIntent on PAGE navigation away
+  // (true unmount), NOT on every drawer open/close cycle.
+  //
+  // Previous behaviour (audit 2026-04-25 "4-5 open-close ชน limit"):
+  // every close fired /cancel + cleared cache → every reopen fetched
+  // a fresh /initiate. With Upstash rate-limits at 10 initiates /
+  // 5 min and dev-mode React StrictMode double-invoking each fetch,
+  // the user hit the rate-limit ceiling after ~5 open-close cycles.
+  //
+  // New behaviour: cache persists across open/close cycles so a
+  // reopen reuses the existing PaymentIntent + clientSecret. A
+  // PaymentIntent is only cancelled when (a) the containing PaySheet
+  // unmounts (member navigates away from the invoice detail page), or
+  // (b) the member explicitly clicks "Cancel payment" inside the
+  // drawer. Stripe's own 1-hour PaymentIntent auto-expiry catches any
+  // remaining edge case (browser tab abruptly closed, etc).
+  useEffect(() => {
+    return () => {
+      firePaymentCancel('user_navigated_away');
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleOpenChange = (next: boolean) => {
     if (isControlled) {
       onOpenChange?.(next);
@@ -175,30 +238,22 @@ export function PaySheet({
       setUncontrolledOpen(next);
     }
     if (!next) {
-      // FR-025c — cancel stale PaymentIntent on explicit close when
-      // the payment has not yet settled. Fire-and-forget: the server
-      // writes + audits the cancel, the user does not wait for it.
-      if (cachedInitiate !== null && !paymentSettled) {
-        const cancelUrl = `/api/payments/${cachedInitiate.paymentDbId}/cancel`;
-        void fetch(cancelUrl, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason: 'user_closed_drawer' }),
-          // `keepalive: true` so the request survives the drawer
-          // unmount + any subsequent route change — important because
-          // React may unmount PaySheet before fetch completes.
-          keepalive: true,
-        }).catch(() => {
-          // Best-effort: server will cancel via Stripe's auto-expiry
-          // eventually; audit log will note the missed client cancel.
-        });
-        // Invalidate local cache so the next drawer open creates a
-        // fresh PaymentIntent rather than reusing the canceled one.
-        setCachedInitiate(null);
-      }
       onClose?.();
     }
+  };
+
+  // Wired to PaySheetInternal's explicit-cancel paths (ProcessingPanel
+  // "Cancel payment", 3DS "Cancel payment", HardCapPrompt auto-cancel).
+  // Unlike a plain drawer close, these invocations cancel the PI
+  // server-side AND clear the cache so a subsequent reopen initiates
+  // a fresh PaymentIntent.
+  const handleExplicitCancel = (
+    origin: 'user_clicked_cancel' | 'hard_cap_timeout',
+  ) => {
+    firePaymentCancel(origin);
+    if (isControlled) onOpenChange?.(false);
+    else setUncontrolledOpen(false);
+    onClose?.();
   };
 
   return (
@@ -303,7 +358,7 @@ export function PaySheet({
               // under it.
               <HardCapPrompt
                 onContinue={() => resetHardCap()}
-                onCancel={() => handleOpenChange(false)}
+                onCancel={() => handleExplicitCancel('hard_cap_timeout')}
               />
             ) : hasOpened ? (
               <PaySheetInternal
@@ -336,6 +391,9 @@ export function PaySheet({
                   setCachedInitiate(null);
                 }}
                 onRequestClose={() => handleOpenChange(false)}
+                onExplicitCancel={() =>
+                  handleExplicitCancel('user_clicked_cancel')
+                }
               />
             ) : null}
           </div>

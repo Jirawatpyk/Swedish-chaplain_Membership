@@ -18,6 +18,10 @@
  * reads cannot survive a processor-account-id rotation.
  */
 import { eq, sql } from 'drizzle-orm';
+// TODO(audit 2026-04-25 finding #9): `unstable_cache` is being
+// deprecated in Next.js 16 — track migration to the new `cache()`
+// primitive once the public API stabilises. Until then, the existing
+// API works and we pin the import path explicitly.
 import { revalidateTag, unstable_cache } from 'next/cache';
 import type { TenantPaymentSettingsRepo } from '../../application/ports/tenant-payment-settings-repo';
 import type {
@@ -69,49 +73,60 @@ export interface UpdateTenantPaymentSettingsInput {
   readonly previousProcessorAccountId?: string;
 }
 
+// Audit 2026-04-25 finding #10: hoist cache wrapper factories to module
+// scope so each call reuses the SAME `unstable_cache` instance for a
+// given key. Previous shape rebuilt the wrapper on every getByTenantId
+// call (allocating a fresh closure that Next.js then memoised by key).
+// Equivalent observable behaviour but cheaper allocation profile.
+
+const cachedGetByTenantId = (tenantId: string) =>
+  unstable_cache(
+    async (): Promise<TenantPaymentSettings | null> => {
+      const ctx = asTenantContext(tenantId);
+      return runInTenant(ctx, async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(tenantPaymentSettings)
+          .where(eq(tenantPaymentSettings.tenantId, tenantId))
+          .limit(1);
+        return row ? toDomain(row as TenantPaymentSettingsRow) : null;
+      });
+    },
+    ['tenant_payment_settings', tenantId],
+    {
+      tags: [`tenant_payment_settings:${tenantId}`],
+      revalidate: 3600,
+    },
+  );
+
+const cachedFindByProcessorAccountId = (processorAccountId: string) =>
+  unstable_cache(
+    async (): Promise<TenantPaymentSettings | null> => {
+      // Bypass-RLS read by design: webhook pre-resolution lookup.
+      // We don't yet know the tenant — `processor_account_id` IS
+      // the lookup key. Row contains no PII (processor settings
+      // + publishable key, which is also surfaced to the browser).
+      const [row] = await db
+        .select()
+        .from(tenantPaymentSettings)
+        .where(eq(tenantPaymentSettings.processorAccountId, processorAccountId))
+        .limit(1);
+      return row ? toDomain(row as TenantPaymentSettingsRow) : null;
+    },
+    ['tenant_payment_settings_by_account', processorAccountId],
+    {
+      tags: [`tenant_payment_settings_by_account:${processorAccountId}`],
+      revalidate: 3600,
+    },
+  );
+
 export function makeDrizzleTenantPaymentSettingsRepo(): TenantPaymentSettingsRepo {
   return {
     async getByTenantId(tenantId) {
-      return unstable_cache(
-        async (): Promise<TenantPaymentSettings | null> => {
-          const ctx = asTenantContext(tenantId);
-          return runInTenant(ctx, async (tx) => {
-            const [row] = await tx
-              .select()
-              .from(tenantPaymentSettings)
-              .where(eq(tenantPaymentSettings.tenantId, tenantId))
-              .limit(1);
-            return row ? toDomain(row as TenantPaymentSettingsRow) : null;
-          });
-        },
-        ['tenant_payment_settings', tenantId],
-        {
-          tags: [`tenant_payment_settings:${tenantId}`],
-          revalidate: 3600,
-        },
-      )();
+      return cachedGetByTenantId(tenantId)();
     },
-
     async findByProcessorAccountId(processorAccountId) {
-      return unstable_cache(
-        async (): Promise<TenantPaymentSettings | null> => {
-          // Bypass-RLS read: this is the webhook pre-resolution
-          // path — by definition we do NOT yet know the tenant.
-          // The row does not contain PII; processor_account_id
-          // lookup is the whole point of this method.
-          const [row] = await db
-            .select()
-            .from(tenantPaymentSettings)
-            .where(eq(tenantPaymentSettings.processorAccountId, processorAccountId))
-            .limit(1);
-          return row ? toDomain(row as TenantPaymentSettingsRow) : null;
-        },
-        ['tenant_payment_settings_by_account', processorAccountId],
-        {
-          tags: [`tenant_payment_settings_by_account:${processorAccountId}`],
-          revalidate: 3600,
-        },
-      )();
+      return cachedFindByProcessorAccountId(processorAccountId)();
     },
   };
 }
@@ -122,10 +137,14 @@ export function makeDrizzleTenantPaymentSettingsRepo(): TenantPaymentSettingsRep
  * the caller-supplied `tx` (the admin use-case's `runInTenant`
  * transaction) so the audit row + settings row commit atomically.
  *
- * Cache invalidation is fired AFTER the tx closes — `revalidateTag`
- * is idempotent and side-effect-free, so calling it from inside the
- * tx callback is safe even if the tx later rolls back (worst case:
- * a single extra DB read on the next call, no data corruption).
+ * Cache invalidation: `revalidateTag` HAS side effects (it busts the
+ * cache key) but those side effects are SAFE under tx rollback. If the
+ * outer tx rolls back, the next read after invalidation rebuilds from
+ * the unchanged DB row — same data, just without the cached copy.
+ * Worst case: a single extra DB round-trip. Audit 2026-04-25 finding
+ * #8 — comment was previously misleading ("idempotent and side-effect-
+ * free"); side-effect-free is wrong, but the rollback safety claim
+ * remains correct.
  */
 export async function updateTenantPaymentSettings(
   txUnknown: unknown,

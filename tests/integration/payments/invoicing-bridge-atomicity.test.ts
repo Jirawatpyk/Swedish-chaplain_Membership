@@ -192,8 +192,10 @@ describe('InvoicingBridge (F5 → F4) — live Neon', () => {
           legal_name: 'Test Co',
           tax_id: '1234567890123',
           address: 'Bangkok',
-          primary_contact_name: 'n',
-          primary_contact_email: 'n@n.n',
+          primary_contact_name: 'Test Contact',
+          // Valid zod email (TLD ≥ 2 chars) — `n@n.n` failed validation
+          // after the repo-boundary zod guard landed in commit 9b1b374.
+          primary_contact_email: 'test@example.com',
         },
         pdfBlobKey: 'invoices/test.pdf',
         pdfSha256: 'a'.repeat(64),

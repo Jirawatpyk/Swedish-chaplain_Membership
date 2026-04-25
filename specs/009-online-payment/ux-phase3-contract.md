@@ -23,26 +23,55 @@ No other pay-sheet behaviour is re-specified here — FR-028 (a–j) remains aut
 
 ## 2. C-A — Stripe Elements shimmer contract
 
-### 2.1 State machine
+### 2.1 State machine (rev 2 — 2026-04-25 after T082 empirical repair)
 
 ```text
   Sheet open
-  ┌──────────────────────────┐
-  │  skeleton (mandatory)    │  aria-busy="true"
-  │  min 300 ms displayed    │  (ux-standards § 2.3)
-  └──────────┬───────────────┘
-             │  Stripe `<PaymentElement onReady>` fires
+  ┌────────────────────────────────────┐
+  │  [payState.kind='idle'|'initiating']│  POST /api/payments/initiate
+  │  <PaySheetSkeleton>                │  in flight (no clientSecret yet)
+  │  aria-busy="true" role="status"    │  rendered in normal flow —
+  │  min 300 ms displayed              │  provides parent height.
+  └──────────┬─────────────────────────┘
+             │  initiate response arrives → payState='card-form'
              ▼
-  ┌──────────────────────────┐
-  │  PaymentElement visible  │  aria-busy="false"
-  └──────────────────────────┘
+  ┌────────────────────────────────────┐
+  │  [payState.kind='card-form',        │  <PaySheetSkeleton> still in
+  │   cardFormVisible=false]            │  normal flow (parent-owned).
+  │  <CardForm> mounted BEHIND skeleton │  CardForm wrapper:
+  │  (absolute inset-0 opacity-0        │    opacity-0 + aria-hidden
+  │   pointer-events-none               │    + overflow-hidden to
+  │   overflow-hidden aria-hidden)      │  prevent iframe overflow
+  │  Stripe <PaymentElement> paints     │  bleeding into ancestor
+  │  iframe off-view                    │  .overflow-y-auto scrollbar.
+  └──────────┬─────────────────────────┘
+             │  PaymentElement onReady + 300 ms floor → onVisible
+             ▼
+  ┌────────────────────────────────────┐
+  │  [payState.kind='card-form',        │  skeleton UNMOUNTS.
+  │   cardFormVisible=true]             │  CardForm wrapper reverts
+  │  <CardForm> visible in normal flow  │  to normal flow — SAME
+  │  aria-busy="false"                  │  React node, iframe
+  │                                     │  preserved (no re-paint).
+  └────────────────────────────────────┘
 ```
+
+> **Architectural invariant** (added after T082 empirical audit
+> 2026-04-25, finding #5): `<CardForm>` is mounted EXACTLY ONCE across
+> all three states. Its wrapper div swaps between `absolute inset-0
+> opacity-0 pointer-events-none overflow-hidden` and (unset) —
+> position changes, but React treats the subtree as the same node.
+> Previous dual-mount patterns (sr-only sibling → visible sibling)
+> tore down the Stripe `<Elements>` tree on every `cardFormVisible`
+> flip and defeated the keep-mounted intent. Do NOT refactor toward
+> two render branches — use a single wrapper with conditional
+> className + `overflow-hidden` to contain the iframe paint.
 
 ### 2.2 Implementation rules
 
 1. **Skeleton component**: MUST use `<Skeleton>` from `@/components/ui/skeleton` — do NOT fork. Motion-reduce fallback is handled inside the primitive by the `.skeleton-shimmer` CSS class (`src/app/globals.css`) via `@media (prefers-reduced-motion: reduce)` — DO NOT add a redundant Tailwind `motion-reduce:animate-pulse` utility on the wrapper.
 2. **Shape fidelity** (CLS = 0): skeleton layout MUST match the real `<PaymentElement>` — 3 rectangular rows (card number ~48 px; expiry+CVC half-width pair ~48 px; zip/country ~48 px) + 1 button rect ~40 px, matching the `<Elements>` `appearance.variables.borderRadius` token. Verified by a visual-regression Playwright snapshot in T046.
-3. **Minimum display duration**: 300 ms from Sheet open, even if `ready` fires sooner. Use a `useMinDelay(300)` hook — **this hook does NOT exist yet in the codebase** (verified 2026-04-23). T073 (SheetSkeleton) MUST create it at `src/hooks/use-min-delay.ts` with a RED-first unit test at `tests/unit/hooks/use-min-delay.test.ts` per Constitution Principle II before wiring it into the skeleton wrapper. Signature: `useMinDelay(ms: number, ready: boolean): boolean` — returns `true` only when both `ready === true` AND `ms` has elapsed since mount.
+3. **Minimum display duration**: 300 ms from Sheet open, even if `ready` fires sooner. Use the `useMinDelay(300, ready)` hook at `src/hooks/use-min-delay.ts` (✅ landed 2026-04-24 via T073 with paired RED-first unit test at `tests/unit/hooks/use-min-delay.test.ts`). Signature: `useMinDelay(ms: number, ready: boolean): boolean` — returns `true` only when both `ready === true` AND `ms` has elapsed since mount.
 4. **Ready signal**: rely on the official Stripe callback — `<PaymentElement onReady={() => setElementReady(true)} />`. Do NOT poll, do NOT use timeouts as a proxy for readiness.
 5. **Failure fallback**: if `<PaymentElement>` dispatches `loaderror` (network / SDK blocked), replace the skeleton with the error-state card per `docs/ux-standards.md` § 4.3 using i18n key `portal.payment.error.elementLoadFailed` (add alongside C-C keys if absent at implementation time).
 6. **ARIA-busy contract**: the skeleton container MUST carry `aria-busy="true"` + `role="status"` so screen readers announce progress. Flip to `aria-busy="false"` once the element is ready.

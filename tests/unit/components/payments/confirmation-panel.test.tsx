@@ -39,10 +39,23 @@ const messages = {
   },
 };
 
-function renderPanel(
-  overrides: Partial<React.ComponentProps<typeof ConfirmationPanel>> = {},
-) {
-  const props: React.ComponentProps<typeof ConfirmationPanel> = {
+// Test-overrides type: allow `last4: undefined` explicitly so tests
+// can simulate "no last4 supplied". `exactOptionalPropertyTypes: true`
+// rejects this on `Partial<ConfirmationPanelProps>` (an optional field
+// must be omitted, not set to undefined), so we widen the override
+// type with `| undefined` for the optional fields here only.
+type ConfirmationPanelOverrides = Omit<
+  Partial<React.ComponentProps<typeof ConfirmationPanel>>,
+  'last4'
+> & {
+  last4?: string | undefined;
+};
+
+function renderPanel(overrides: ConfirmationPanelOverrides = {}) {
+  // Build defaults, then merge overrides while DELETING any keys that
+  // were explicitly set to `undefined` so the resulting props object
+  // satisfies `exactOptionalPropertyTypes: true` at the JSX boundary.
+  const merged: Record<string, unknown> = {
     method: 'card',
     amount: 'THB 12,000.00',
     last4: '4242',
@@ -52,17 +65,16 @@ function renderPanel(
     onDownload: vi.fn(),
     ...overrides,
   };
-  // Omit last4 if promptpay (exactOptionalPropertyTypes).
-  if (props.method === 'promptpay') {
-    const { last4: _last4, ...rest } = props;
-    void _last4;
-    render(
-      <NextIntlClientProvider locale="en" messages={messages}>
-        <ConfirmationPanel {...rest} />
-      </NextIntlClientProvider>,
-    );
-    return rest as typeof props;
+  for (const key of Object.keys(overrides) as Array<keyof typeof overrides>) {
+    if (overrides[key] === undefined) {
+      delete merged[key as string];
+    }
   }
+  // Omit last4 if promptpay (exactOptionalPropertyTypes).
+  if (merged['method'] === 'promptpay') {
+    delete merged['last4'];
+  }
+  const props = merged as unknown as React.ComponentProps<typeof ConfirmationPanel>;
   render(
     <NextIntlClientProvider locale="en" messages={messages}>
       <ConfirmationPanel {...props} />

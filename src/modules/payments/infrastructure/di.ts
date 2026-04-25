@@ -43,6 +43,7 @@ import { invoicingBridge } from './invoicing-bridge';
 // reaching into `./stripe/stripe-webhook-verifier` directly.
 export { stripeWebhookVerifier };
 import { f5AuditAdapter } from './audit/drizzle-payments-audit';
+import { paymentsLogger } from './logger/payments-logger';
 
 // ---------------------------------------------------------------------------
 // RefundsRepo — TEMPORARY STUB.
@@ -126,6 +127,9 @@ export function makeProcessWebhookEventDeps(tenantId: string): ProcessWebhookEve
     invoicingBridge,
     audit: f5AuditAdapter,
     clock: systemClock,
+    // Audit 2026-04-25 finding #5: route Application-layer warn lines
+    // through pino instead of console.warn.
+    logger: paymentsLogger,
   };
 }
 
@@ -140,6 +144,9 @@ export function makeConfirmPaymentDeps(tenantId: string): ConfirmPaymentDeps {
     invoicingBridge,
     audit: f5AuditAdapter,
     clock: systemClock,
+    // Audit 2026-04-25 finding #4: pass processorEventsRepo so the
+    // dispatch tx can fold markProcessed in atomically.
+    processorEventsRepo: makeDrizzleProcessorEventsRepo(),
   };
 }
 
@@ -153,6 +160,7 @@ export function makeFailPaymentDeps(tenantId: string): FailPaymentDeps {
     processorGateway: stripeGateway,
     audit: f5AuditAdapter,
     clock: systemClock,
+    processorEventsRepo: makeDrizzleProcessorEventsRepo(),
   };
 }
 
@@ -177,6 +185,7 @@ export function makeHandleCancelEventDeps(tenantId: string): HandleCancelEventDe
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     audit: f5AuditAdapter,
     clock: systemClock,
+    processorEventsRepo: makeDrizzleProcessorEventsRepo(),
   };
 }
 

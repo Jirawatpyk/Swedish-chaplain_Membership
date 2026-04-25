@@ -73,7 +73,14 @@ export type InitiatePaymentError =
   | { readonly code: 'method_not_enabled'; readonly requestedMethod: PaymentMethod }
   | {
       readonly code: 'tenant_settings_incomplete';
-      readonly missing: readonly SettingsIncompleteReason[];
+      /**
+       * The single reason completeness validation failed. Was previously
+       * typed as `readonly SettingsIncompleteReason[]` but always
+       * contained exactly one element — `assertSettingsComplete` returns
+       * on first violation. Renamed to scalar for honesty (audit
+       * 2026-04-25 finding #2).
+       */
+      readonly reason: SettingsIncompleteReason;
     }
   | { readonly code: 'processor_unavailable'; readonly reason: string };
 
@@ -92,12 +99,13 @@ export async function initiatePayment(
   deps: InitiatePaymentDeps,
   input: InitiatePaymentInput,
 ): Promise<Result<InitiatePaymentSuccess, InitiatePaymentError>> {
-  // Step 1: tenant settings
+  // Step 1: tenant settings — distinct error code for "no row exists"
+  // vs "row exists with missing fields" (audit 2026-04-25 finding #1).
   const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
   if (!settings) {
     return err({
       code: 'tenant_settings_incomplete',
-      missing: ['missing_processor_account_id'],
+      reason: 'settings_row_missing',
     });
   }
 
@@ -109,7 +117,7 @@ export async function initiatePayment(
     }
     return err({
       code: 'tenant_settings_incomplete',
-      missing: [completeness.reason],
+      reason: completeness.reason,
     });
   }
 

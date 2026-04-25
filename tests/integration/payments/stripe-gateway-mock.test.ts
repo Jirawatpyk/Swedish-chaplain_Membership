@@ -20,30 +20,28 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
+import Stripe from 'stripe';
 import { logger } from '@/lib/logger';
 import { stripeGateway } from '@/modules/payments/infrastructure/stripe/stripe-gateway';
-import { __resetStripeClientForTesting } from '@/modules/payments/infrastructure/stripe/stripe-client';
+import {
+  __resetStripeClientForTesting,
+  __setStripeClientOverridesForTesting,
+} from '@/modules/payments/infrastructure/stripe/stripe-client';
 
 // ---------------------------------------------------------------------------
-// MSW interception gate.
+// MSW interception fixture.
 //
-// The Stripe SDK v22 ships its own HTTP client that dispatches through
-// Node's `https` module. MSW v2's ClientRequest interceptor is supposed
-// to catch these, but in practice the Stripe SDK's internal keepAlive
-// pool + TLS handshake don't round-trip through the interceptor in
-// every Node 20 environment. When interception fails, the test hangs on
-// the real network call until the 30s test timeout.
+// Audit 2026-04-25: previously gated behind `ENABLE_STRIPE_MSW_TESTS=1`
+// with a `describe.skip` because the Stripe SDK v22 default `httpClient`
+// (Node `https` module + keep-alive pool) didn't reliably round-trip
+// through MSW v2's `ClientRequest` interceptor on Node 20 — tests hung
+// on real network calls until timeout.
 //
-// Group F will land a Stripe SDK seam (`getStripeClient()` indirection
-// with a mockable `httpClient` option) that makes this deterministic.
-// Until then, gate the suite behind an env flag so CI skips it by
-// default but local contributors can still opt in when they need the
-// end-to-end signal.
-//
-// To run: set `ENABLE_STRIPE_MSW_TESTS=1` in `.env.local`.
+// Fix: inject `Stripe.createFetchHttpClient()` via the test-only seam
+// (`__setStripeClientOverridesForTesting`). MSW v2 intercepts global
+// `fetch` deterministically, so the SDK's HTTP roundtrips reach our
+// handlers in every Node 20 environment.
 // ---------------------------------------------------------------------------
-const MSW_ENABLED = process.env.ENABLE_STRIPE_MSW_TESTS === '1';
-const describeMaybe = MSW_ENABLED ? describe : describe.skip;
 
 // Capture requests MSW sees — assertions run against this record.
 interface CapturedRequest {
@@ -84,12 +82,18 @@ beforeEach(() => {
   captured.length = 0;
   server.resetHandlers();
   __resetStripeClientForTesting();
+  // Switch SDK to fetch-based httpClient so MSW v2 intercepts every
+  // outbound Stripe call (audit 2026-04-25 — see file header).
+  __setStripeClientOverridesForTesting({
+    httpClient: Stripe.createFetchHttpClient(),
+  });
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  __resetStripeClientForTesting();
 });
 
-describeMaybe('stripeGateway — MSW-mocked Stripe API', () => {
+describe('stripeGateway — MSW-mocked Stripe API', () => {
   it('createPaymentIntent propagates Idempotency-Key + Stripe-Account headers, maps to port shape', async () => {
     server.use(
       http.post('https://api.stripe.com/v1/payment_intents', async ({ request }) => {

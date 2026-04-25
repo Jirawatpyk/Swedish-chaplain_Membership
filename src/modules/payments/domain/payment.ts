@@ -59,14 +59,27 @@ export function isTerminalPaymentStatus(
 declare const PaymentIdBrand: unique symbol;
 export type PaymentId = string & { readonly [PaymentIdBrand]: true };
 
-// Permissive ULID-like regex: accepts 20–40 Crockford base32 chars
-// (no I/L/O/U) PLUS underscore as the id-prefix separator — Chamber-OS
-// payment rows use `pmt_<26-char-ulid>` (~30 chars total). Strict
-// Crockford would reject the `_` separator; we allow it here because
-// the branded cast is unchecked and route-boundary validation only
-// needs to block "wildly wrong" input (empty strings, injection
-// attempts). Application repositories use the DB's UNIQUE constraint
-// on `payments.id` for authoritative uniqueness.
+// Permissive ULID-like regex for payment ids.
+//
+// Chamber-OS payment rows use the format `pmt_<26-char-ulid>` (~30 chars).
+// Crockford base32 alphabet excludes I, L, O, U (to avoid visual
+// ambiguity with 1 / 0 / V). We allow both cases + `_` as the id-prefix
+// separator.
+//
+// Character set spelled out for readability:
+//   digits        0-9
+//   uppercase     A B C D E F G H   J K   M N   P Q R S T   V W X Y Z
+//                                  ^(no I)   ^(no L)(no O)     ^(no U)
+//   lowercase     a b c d e f g h   j k   m n   p q r s t   v w x y z
+//                                  ^(no i)   ^(no l)(no o)     ^(no u)
+//   separator     _
+//   length        20–40 chars (covers `pmt_` prefix + 26-char ULID
+//                 body + headroom for future prefix schemes)
+//
+// Strict Crockford ULID parsers reject `_`; we allow it because this is
+// a boundary guard against wildly-wrong input (empty strings, injection
+// attempts). Authoritative uniqueness is enforced by the DB UNIQUE
+// constraint on `payments.id`.
 const RE_ULID_LIKE = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z_]{20,40}$/;
 
 export type PaymentIdError = { readonly kind: 'invalid_payment_id'; readonly raw: string };

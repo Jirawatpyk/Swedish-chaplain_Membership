@@ -78,8 +78,18 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
 
   if (objectType === 'payment_intent') {
     const lc = raw['latest_charge'];
-    latestChargeId =
-      typeof lc === 'string' ? lc : lc === null || lc === undefined ? null : null;
+    // Audit 2026-04-25 finding #13: handle EXPANDED charge objects
+    // (Stripe SDK returns `latest_charge` as either a `ch_…` string
+    // OR a full Charge object when `expand: ['latest_charge']` was
+    // requested). The previous triple-ternary always emitted null for
+    // the object case → lost the charge id on every retrieve.
+    if (typeof lc === 'string') {
+      latestChargeId = lc;
+    } else if (lc !== null && typeof lc === 'object' && typeof (lc as Record<string, unknown>)['id'] === 'string') {
+      latestChargeId = (lc as Record<string, unknown>)['id'] as string;
+    } else {
+      latestChargeId = null;
+    }
     const lpe = raw['last_payment_error'] as
       | { code?: string | null }
       | null
@@ -172,8 +182,17 @@ export const stripeWebhookVerifier: WebhookVerifierPort = {
         e instanceof Error ? e.message : 'unknown verification error';
       // Map the SDK's message text to our typed reason. The SDK does
       // not expose structured reason codes on this class, so textual
-      // matching is the only option; we err on the side of returning
-      // `bad_signature` for anything we can't positively identify.
+      // matching is the only option.
+      //
+      // Audit 2026-04-25 finding #14: this textual matching is fragile
+      // against future Stripe SDK message wording changes. The
+      // `getStripeClient()` is pinned to `env.stripe.apiVersion`
+      // (currently `2025-09-30.clover`), and the SDK is pinned in
+      // `package.json` — but a `pnpm update stripe` could change the
+      // wording silently. Mitigation: the default fallback is
+      // `bad_signature` (safest classification), and the route handler
+      // returns the same 401 regardless of kind. Audit detail differs
+      // by kind but the user-facing behaviour is identical.
       let kind: WebhookSignatureError['kind'] = 'bad_signature';
       if (message.includes('timestamp')) {
         kind = 'clock_skew';

@@ -1,8 +1,18 @@
 /**
- * Unit tests for PaySheet's W2 stale-PaymentIntent cleanup on close
- * (commit e038afa). FR-025c: closing the drawer WITHOUT settling the
- * payment MUST fire POST /api/payments/{id}/cancel so the stale
- * PaymentIntent does not linger until Stripe's ~1 h auto-expiry.
+ * Unit tests for PaySheet's W2 stale-PaymentIntent cleanup (FR-025c),
+ * revised after audit 2026-04-25 "4-5 open-close ชน limit".
+ *
+ * Contract (revised):
+ *   - Plain drawer close (X / Esc / backdrop) → DOES NOT cancel the
+ *     PaymentIntent. Cache persists so a reopen reuses the existing PI
+ *     (prevents rate-limit burn on open-close flicker).
+ *   - Explicit cancel (ProcessingPanel / 3DS "Cancel payment" buttons,
+ *     HardCapPrompt 60-second timeout) → fires POST /cancel + clears
+ *     cache + closes drawer.
+ *   - Component unmount (page navigate-away) → fires POST /cancel as a
+ *     backstop. Stripe's 1-hour PI auto-expiry is the final safety net.
+ *   - Payment settled (success / failure) → parent clears cache; no
+ *     cancel fires on subsequent close.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
@@ -168,70 +178,66 @@ function renderPaySheet() {
 }
 
 // ---- Tests ----------------------------------------------------------------
-describe('<PaySheet> W2 stale-PI cleanup on explicit close (FR-025c)', () => {
-  let fetchSpy: ReturnType<typeof vi.spyOn>;
+describe('<PaySheet> W2 stale-PI cleanup (FR-025c — audit 2026-04-25)', () => {
+  // vitest's `MockInstance` for the concrete fetch overload set is
+  // structurally incompatible with `ReturnType<typeof vi.spyOn>` (which
+  // collapses to a generic `MockInstance<(this: unknown, ...args:
+  // unknown[]) => unknown>`). The Node test runtime DOM-shim makes
+  // `globalThis.fetch` callable but TS sees the global's keys as the
+  // narrow Web-Worker scope where `fetch` isn't directly indexed by
+  // `vi.spyOn`'s key constraint. Use the `.mock.calls`-accessing slice
+  // we actually need + cast the full spy.
+  let fetchSpy: {
+    mock: { calls: unknown[][] };
+    mockRestore: () => void;
+  };
 
   beforeEach(() => {
     searchParamsMock.current = new URLSearchParams();
     fetchSpy = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(null, { status: 204 }));
+      .mockResolvedValue(new Response(null, { status: 204 })) as unknown as typeof fetchSpy;
   });
   afterEach(() => {
     cleanup();
     fetchSpy.mockRestore();
   });
 
-  it('fires POST /api/payments/{id}/cancel when drawer closes WITHOUT settlement', async () => {
+  it('does NOT fire cancel on plain drawer close (rate-limit friendly — cache persists for reopen)', async () => {
     renderPaySheet();
     fireEvent.click(screen.getByTestId('trigger'));
-    // Simulate initiate resolving — cache populates with paymentDbId.
     act(() => {
       fireEvent.click(screen.getByTestId('stub-fire-initiate'));
     });
-    // User dismisses via Escape.
+    // User dismisses via Escape — should NOT fire cancel per the
+    // revised FR-025c contract (audit 2026-04-25). Previous behaviour
+    // fired /cancel on every close and burned the rate-limit budget
+    // after ~5 open-close cycles.
     act(() => {
       fireEvent.keyDown(window, { key: 'Escape' });
     });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('fires POST /api/payments/{id}/cancel on component unmount (page navigate-away backstop)', async () => {
+    const { unmount } = renderPaySheet();
+    fireEvent.click(screen.getByTestId('trigger'));
+    act(() => {
+      fireEvent.click(screen.getByTestId('stub-fire-initiate'));
+    });
+    // True unmount = member navigated away. Cleanup must fire cancel.
+    unmount();
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/payments/pmt_test_001/cancel');
     expect(init.method).toBe('POST');
     expect(init.keepalive).toBe(true);
     const body = JSON.parse(String(init.body));
-    expect(body.reason).toBe('user_closed_drawer');
+    expect(body.reason).toBe('user_navigated_away');
   });
 
-  it('does NOT fire cancel when payment has already settled (success/failure)', async () => {
-    renderPaySheet();
-    fireEvent.click(screen.getByTestId('trigger'));
-    act(() => {
-      fireEvent.click(screen.getByTestId('stub-fire-initiate'));
-    });
-    // Simulate payment terminal (success or failure).
-    act(() => {
-      fireEvent.click(screen.getByTestId('stub-fire-settled'));
-    });
-    // User closes — settled = skip cancel.
-    act(() => {
-      fireEvent.keyDown(window, { key: 'Escape' });
-    });
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it('does NOT fire cancel when drawer closes BEFORE initiate resolves (no cached PI)', async () => {
-    renderPaySheet();
-    fireEvent.click(screen.getByTestId('trigger'));
-    // User changes mind immediately — no initiate click.
-    act(() => {
-      fireEvent.keyDown(window, { key: 'Escape' });
-    });
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it('re-fires cancel for a NEW PaymentIntent on a re-open after settle+close', async () => {
-    renderPaySheet();
-    // Open #1 — settle + close. No cancel (settled path).
+  it('does NOT fire cancel on unmount when payment has already settled', async () => {
+    const { unmount } = renderPaySheet();
     fireEvent.click(screen.getByTestId('trigger'));
     act(() => {
       fireEvent.click(screen.getByTestId('stub-fire-initiate'));
@@ -239,24 +245,32 @@ describe('<PaySheet> W2 stale-PI cleanup on explicit close (FR-025c)', () => {
     act(() => {
       fireEvent.click(screen.getByTestId('stub-fire-settled'));
     });
-    act(() => {
-      fireEvent.keyDown(window, { key: 'Escape' });
-    });
+    unmount();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
 
-    // Open #2 — new initiate resolves with a FRESH paymentDbId.
-    // Because the earlier `onPaymentSettled` cleared the cache AND set
-    // paymentSettled=true, the next initiate must reset the settled
-    // flag so the close-cleanup path runs for the NEW PI.
+  it('does NOT fire cancel on unmount when no PaymentIntent was ever created', async () => {
+    const { unmount } = renderPaySheet();
+    fireEvent.click(screen.getByTestId('trigger'));
+    // User opens + immediately navigates away WITHOUT the initiate
+    // completing → cache is null → no cancel needed.
+    unmount();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('preserves cache across open-close cycles (reopens DO NOT re-initiate — rate-limit invariant)', async () => {
+    renderPaySheet();
     fireEvent.click(screen.getByTestId('trigger'));
     act(() => {
       fireEvent.click(screen.getByTestId('stub-fire-initiate'));
     });
-    act(() => {
-      fireEvent.keyDown(window, { key: 'Escape' });
-    });
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [url] = fetchSpy.mock.calls[0] as [string];
-    expect(url).toBe('/api/payments/pmt_test_001/cancel');
+    // Simulate several open-close cycles. None should fire /cancel.
+    for (let i = 0; i < 4; i++) {
+      act(() => {
+        fireEvent.keyDown(window, { key: 'Escape' });
+      });
+      fireEvent.click(screen.getByTestId('trigger'));
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

@@ -84,7 +84,7 @@ If any of the above is "No", **SAQ-A does NOT apply** and we MUST escalate to SA
 ### Regularly Monitor and Test Networks
 
 **10.1** Audit trails track all access to system components.
-- **Status**: ✅ COMPLIANT — append-only `audit_log` table extended with 18 F5 event types (FR-020; 16 via migration 0040 + 2 rate-limit events via migration 0043 per Threat F-09); 5-year retention minimum
+- **Status**: ✅ COMPLIANT — append-only `audit_log` table extended with 20 F5 event types (FR-020; 16 via migration 0040 + 2 rate-limit events via migration 0043 per Threat F-09 + 2 webhook ops-visibility events via migration 0046 per audit 2026-04-25 findings #10/#13); 5-year retention minimum
 
 **11.1** Quarterly external vulnerability scans.
 - **Status**: 🟡 INHERITED — Vercel + Stripe handle infrastructure scans; we add a quarterly app-level dependency scan (npm audit + Snyk) as part of the engineering chore cadence

@@ -17,6 +17,7 @@ const messages = {
         contactAdminCta: 'Contact administrator',
         noContactEmail:
           'No administrator email is configured yet. Please contact the chamber office directly.',
+        mailSubject: 'Bank-transfer instructions for invoice {invoiceNumber}',
       },
     },
   },

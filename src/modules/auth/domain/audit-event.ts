@@ -47,6 +47,10 @@ export const AUDIT_EVENT_TYPES = [
   'webhook_api_version_mismatch',
   'payment_initiate_rate_limited',
   'payment_cancel_rate_limited',
+  // --- Webhook ops-visibility events added by migration 0046
+  //     (audit 2026-04-25 findings #10 + #13).
+  'webhook_unknown_intent',
+  'webhook_payment_already_canceled',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -58,7 +62,19 @@ export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
  *   - 'system:bootstrap' — the bootstrap admin seed script (T080)
  *   - 'system:cron'      — scheduled jobs (T160 lockout-cleanup)
  */
-export type ActorRef = UserId | 'anonymous' | 'system:bootstrap' | 'system:cron';
+/**
+ * `'system:webhook'` added 2026-04-25 (audit finding #2): Stripe
+ * webhook reject paths (signature/env/api-version mismatches) need a
+ * dedicated sentinel — `'system:cron'` lumps them with scheduled-job
+ * actors, polluting audit dashboards. Use `'system:webhook'` for any
+ * non-cron synchronous-event-handler context (Stripe, Resend, etc.).
+ */
+export type ActorRef =
+  | UserId
+  | 'anonymous'
+  | 'system:bootstrap'
+  | 'system:cron'
+  | 'system:webhook';
 
 export interface AuditEvent {
   readonly id: AuditEventId;
