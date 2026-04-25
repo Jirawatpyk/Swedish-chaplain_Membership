@@ -285,6 +285,17 @@ describe('processWebhookEvent (T056)', () => {
     expect(
       auditCalls.some((c) => c[1].eventType === 'out_of_band_refund_detected'),
     ).toBe(false);
+    // R5 review-round-3 I-NEW-2 (2026-04-25): pin the I3 contract —
+    // the dispatcher MUST forward the affected `invoiceId` from the
+    // first DB-existing refund row up onto `outcome.invoiceId` so the
+    // route handler can fire surgical revalidatePath. Without this
+    // assertion, removing the `refundedInvoiceId = existing.invoiceId`
+    // line in process-webhook-event.ts would silently regress to the
+    // broad `[invoiceId]` cache-bust pattern and busts every tenant's
+    // invoice cache on a single refund event.
+    if (result.ok && result.value.kind === 'processed') {
+      expect(result.value.invoiceId).toBe('inv_1');
+    }
   });
 
   it('charge.refunded with no refundIds — no audit emitted (empty-array branch)', async () => {

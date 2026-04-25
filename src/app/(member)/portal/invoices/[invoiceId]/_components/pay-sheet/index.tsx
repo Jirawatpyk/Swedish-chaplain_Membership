@@ -241,6 +241,13 @@ export function PaySheet({
       attempts += 1;
       if (attempts < MAX_ATTEMPTS) {
         timer = setTimeout(poll, BACKOFF_MS);
+      } else {
+        // R5 review-round-3 polish (2026-04-25): explicitly null the
+        // ref after the final attempt so the cleanup branch's
+        // `clearTimeout(timer)` doesn't fire on a stale handle that
+        // already executed. Harmless either way (clearTimeout on a
+        // fired handle is a no-op) but keeps intent explicit.
+        timer = null;
       }
     };
     poll();
@@ -452,6 +459,15 @@ export function PaySheet({
                   // close-with-stale-cleanup path (FR-025c) runs for
                   // the NEW PI if the user dismisses before paying.
                   setPaymentSettled(false);
+                  // R5 review-round-3 B-NEW-2 (2026-04-25): re-arm
+                  // the polling-retry latch for the NEXT settlement
+                  // cycle. Without this, a failure → retry → success
+                  // path leaves `refreshFiredRef.current === true`
+                  // from the FIRST settlement, so the second
+                  // `paymentSettled=true` flip skips
+                  // `router.refresh()` → invoice page stays "Issued"
+                  // even though DB is now `paid`.
+                  refreshFiredRef.current = false;
                 }}
                 // Clear the cached initiate response once the
                 // PaymentIntent reaches a terminal state (success or

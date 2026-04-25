@@ -10,6 +10,14 @@
  *
  * Does NOT emit audit events (intentional — script flags this as a
  * dev-only fast-path, not a webhook replacement).
+ *
+ * Production-DB guard
+ * --------------------
+ * Refuses to run if `NODE_ENV=production` OR if `DATABASE_URL`
+ * matches production markers (`prod`/`live`/`vercel-storage`).
+ * Override (e.g. for a Neon staging branch whose URL pattern looks
+ * production-like) by setting `DEV_SCRIPT_FORCE=1`. Use only after
+ * verifying the target is genuinely a non-production environment.
  */
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';

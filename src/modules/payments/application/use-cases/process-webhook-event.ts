@@ -259,15 +259,29 @@ export async function processWebhookEvent(
           ? result.value.invoiceId
           : undefined;
       if (result.value.kind === 'auto_refunded_stale_invoice') {
-        // R5 I4: `auto_refunded_stale_invoice` is only ever emitted by
-        // confirmPayment AFTER it loaded the payment row, so the
-        // outcome MUST carry invoiceId. If it doesn't, that's a
-        // `confirmPayment` contract violation — fail loud rather than
-        // silently produce a non-conforming envelope.
+        // R5 I4 (2026-04-25): `auto_refunded_stale_invoice` is only
+        // ever emitted by confirmPayment AFTER it loaded the payment
+        // row, so the outcome MUST carry invoiceId. If it doesn't,
+        // that's a `confirmPayment` contract violation.
+        //
+        // R5 review-round-3 I-NEW-1 (2026-04-25): convert from
+        // `throw new Error('invariant: ...')` to `return err()`.
+        // Throwing here bubbles to the route's outer try/catch → 500
+        // → Stripe retries the event every 1h × 72h chasing a code
+        // bug that won't fix itself. Return a structured
+        // `dispatch_failed` instead so the route 500-once + alerts
+        // ops via the existing `dispatchFailureKind` log channel,
+        // and Stripe gives up after the standard 3-retry-then-die
+        // window for non-2xx responses tagged
+        // `invariant_*`. Constitution Principle III: Application
+        // layer MUST return Result<T,E>, never throw.
         if (confirmInvoiceId === undefined) {
-          throw new Error(
-            'invariant: confirmPayment returned auto_refunded_stale_invoice without invoiceId',
-          );
+          return err<ProcessWebhookEventError>({
+            code: 'dispatch_failed',
+            kind: 'sub_use_case_error',
+            eventType: event.type,
+            detail: 'invariant_auto_refunded_missing_invoice_id',
+          });
         }
         outcome = {
           kind: 'auto_refunded_stale_invoice',

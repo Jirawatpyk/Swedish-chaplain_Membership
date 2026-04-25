@@ -53,15 +53,20 @@ describe('useInitiatePayment regression contract', () => {
   it('hook captures `initialInitiate` via useRef so prop changes after mount are inert', () => {
     // The fix's mechanism: `useRef(opts.initialInitiate)` freezes the
     // value on first render. The effect reads `initialInitiateRef.current`
-    // instead of the prop directly. R5 B1 (2026-04-25) added an
-    // `enabled` gate so cold-mount with enabled=false doesn't capture
-    // a stale value — the matcher accepts either form (with or without
-    // the gate) so the cold-mount fix doesn't trip the regression test.
+    // instead of the prop directly.
+    //
+    // R5 review-round-3 I-NEW-3 (2026-04-25): the matcher REQUIRES
+    // the `opts.enabled ?` ternary gate (B1 fix). Earlier the regex
+    // was permissive — it accepted both `useRef(opts.initialInitiate)`
+    // (the original buggy form) AND the gated form. A future
+    // refactor that REVERTS the gate would silently pass CI. The
+    // tightened pattern explicitly requires `opts.enabled` to appear
+    // before `opts.initialInitiate` inside the initializer.
     expect(
       source,
-      'expected `useRef<CachedInitiate | null>(...)` initializer reading `opts.initialInitiate` (with optional `enabled` gate) — the canonical freeze pattern',
+      'expected `useRef<CachedInitiate | null>(opts.enabled ? opts.initialInitiate : null)` — the canonical freeze pattern WITH cold-mount gate (B1)',
     ).toMatch(
-      /useRef<CachedInitiate \| null>\(\s*[\s\S]*?opts\.initialInitiate[\s\S]*?\)/,
+      /useRef<CachedInitiate \| null>\(\s*opts\.enabled\s*\?\s*opts\.initialInitiate\s*:\s*null\s*,?\s*\)/,
     );
     expect(
       source,

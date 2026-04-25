@@ -115,7 +115,15 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
   useEffect(() => {
     if (!enabled) return;
     // Read once-frozen `initialInitiate` from ref — not the latest prop.
-    if (initialInitiateRef.current !== null && retryCount === 0) return;
+    if (initialInitiateRef.current !== null && retryCount === 0) {
+      // R5 review-round-3 B-NEW-1: consume the ref so subsequent
+      // re-runs (tab toggle, etc.) DON'T re-skip with a now-stale
+      // value. The cache's purpose is fulfilled once we've decided
+      // to use it; from this point on payState is the source of
+      // truth.
+      initialInitiateRef.current = null;
+      return;
+    }
 
     const abortController = new AbortController();
     let cancelled = false;
@@ -155,6 +163,20 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
         }
         const payload = (await response.json()) as InitiateResponse;
         if (cancelled) return;
+        // R5 review-round-3 B-NEW-1 (2026-04-25): clear the cached
+        // initiate ref AFTER the first fetch resolves. The ref's
+        // sole purpose is to skip the FIRST fetch on a re-opened
+        // drawer when the parent has a fresh cache. Once the hook
+        // has actually fetched, any subsequent effect re-run
+        // (enabled flip false→true on tab switch, retryCount bump)
+        // should NOT re-skip on the now-irrelevant cached value.
+        // Without this clear, the closed defensive scenario was:
+        // mount with cache → fetch succeeds (or is skipped) → user
+        // switches tabs → returns to Card → effect re-runs with
+        // ref still non-null + retryCount=0 → fetch SKIPPED with a
+        // stale (now-terminal) clientSecret → CardForm renders
+        // PaymentElement against terminal PI → IntegrationError.
+        initialInitiateRef.current = null;
         optsRef.current.onSuccess(payload);
       } catch (err) {
         if (cancelled) return;
