@@ -5,7 +5,7 @@
  * own cancelPayment (T059; row already `canceled` → no-op idempotent)
  * OR by a dashboard-initiated cancel (rare).
  */
-import { err, ok, type Result } from '@/lib/result';
+import { ok, type Result } from '@/lib/result';
 import type {
   AuditPort,
   ClockPort,
@@ -99,10 +99,27 @@ export async function handleCancelEvent(
         await markProcessedIfPresent(deps, input, tx);
         return ok<HandleCancelEventOutcome>({ kind: 'already_canceled' });
       }
-      return err<HandleCancelEventError>({
-        code: 'illegal_transition',
-        from: payment.status,
+      // R4 I-3: illegal_transition on webhook-side cancel is a PERMANENT
+      // mismatch. Acknowledge atomically + forensic audit + no-op.
+      // (`already_canceled` is the closest no-op kind in the union;
+      // ops dashboards filter on the audit row to spot the anomaly.)
+      await markProcessedIfPresent(deps, input, tx);
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_processor_retrieve_failed',
+        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+        summary: `handleCancelEvent hit illegal_transition from ${payment.status} (acknowledged + no-op to break retry loop)`,
+        payload: {
+          payment_intent_id: input.paymentIntentId,
+          payment_id: payment.id,
+          from_status: payment.status,
+          to_status: 'canceled',
+          processor_error_kind: 'illegal_transition',
+        },
+        retentionYears: retentionFor('payment_processor_retrieve_failed'),
       });
+      return ok<HandleCancelEventOutcome>({ kind: 'already_canceled' });
     }
 
     const completedAt = new Date(input.eventCreatedAtUnixSeconds * 1000);

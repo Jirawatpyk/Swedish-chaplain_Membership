@@ -374,28 +374,165 @@ describe('processWebhookEvent (T056)', () => {
     expect(result.error.code).toBe('dispatch_failed');
   });
 
-  it('cancel-event sub-use-case failure propagates dispatch_failed (illegal from succeeded)', async () => {
+  it('cancel-event illegal_transition from partially_refunded → R4 I-3: ack as processed (NOT dispatch_failed)', async () => {
+    // R4 I-3: previously the dispatcher propagated illegal_transition →
+    // dispatch_failed → 500 → Stripe 24h retry loop on a permanent
+    // mismatch. handleCancelEvent now markProcessed + emits a forensic
+    // audit + returns `already_canceled`, which the dispatcher maps to
+    // `processed` outcome (Stripe sees 200, retry loop broken).
     const deps = makeDeps();
-    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      { ...PENDING_PAYMENT, status: 'succeeded' as const },
-    );
-    // succeeded is terminal-ish for cancel → handleCancelEvent returns
-    // already_canceled (no-op ok), so no dispatch_failed. Instead force an
-    // illegal_transition by simulating an unreachable state. The state
-    // machine treats `succeeded → canceled` as terminal (no destinations
-    // out), which handleCancelEvent maps to already_canceled. To hit the
-    // `illegal_transition` err branch at the dispatcher we'd need a state
-    // with destinations that doesn't include 'canceled'. `partially_refunded`
-    // has destinations `[partially_refunded, refunded]` — no `canceled` →
-    // illegal_transition.
-    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockReset();
     (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       { ...PENDING_PAYMENT, status: 'partially_refunded' as const },
     );
     const event = makeEvent({ type: 'payment_intent.canceled' });
     const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+  });
+
+  // ---------------------------------------------------------------------------
+  // CR-3 / R3 I-8 — try/catch around the inline withTx blocks (charge.refunded,
+  // charge.dispute.created, default unknown event). A tx rejection MUST surface
+  // as `dispatch_failed` so the route returns 500 → Stripe retries — NOT fall
+  // through to `return ok(outcome)` with `outcome` undefined. The error detail
+  // is the Error class name only (never `e.message`) because Stripe error
+  // payloads can carry partial API key fragments / internal ids.
+  // ---------------------------------------------------------------------------
+
+  // Helper — withTx is called TWICE per dispatch path (once for the step-6
+  // idempotency insert, once inside the branch). Make call #1 pass through
+  // and call #2 throw, so the rejection lands in the dispatch try/catch we
+  // want to exercise.
+  function rejectSecondTx(
+    deps: ProcessWebhookEventDeps,
+    error: unknown,
+  ): void {
+    const tx = deps.paymentsRepo.withTx as ReturnType<typeof vi.fn>;
+    tx.mockReset();
+    tx.mockImplementationOnce(async <T>(fn: (t: unknown) => Promise<T>) => fn({}));
+    tx.mockImplementationOnce(async () => {
+      throw error;
+    });
+  }
+
+  it('CR-3: charge.refunded — withTx rejection returns dispatch_failed (no fall-through)', async () => {
+    const deps = makeDeps();
+    class StripeAPIError extends Error {
+      constructor() {
+        super('audit insert failed: connection lost');
+        this.name = 'StripeAPIError';
+      }
+    }
+    rejectSecondTx(deps, new StripeAPIError());
+    const event = makeEvent({
+      type: 'charge.refunded',
+      dataObject: {
+        id: 'ch_test_001',
+        type: 'charge',
+        refundIds: ['re_test_1'],
+        amountSatang: 5_350_000n,
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('dispatch_failed');
+    expect(result.error.eventType).toBe('charge.refunded');
+    // detail is the Error class name (no message — PII-safety guarantee).
+    expect(result.error.detail).toBe('StripeAPIError');
+  });
+
+  it('CR-3: charge.dispute.created — withTx rejection returns dispatch_failed (no fall-through)', async () => {
+    const deps = makeDeps();
+    rejectSecondTx(deps, new Error('audit table unreachable'));
+    const event = makeEvent({
+      type: 'charge.dispute.created',
+      dataObject: {
+        id: 'ch_disputed',
+        type: 'dispute',
+        disputeId: 'dp_test_1',
+        amountSatang: 5_350_000n,
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('dispatch_failed');
+    expect(result.error.eventType).toBe('charge.dispute.created');
+    expect(result.error.detail).toBe('Error');
+  });
+
+  it('CR-3 / R3 I-8: unknown event type — withTx rejection returns dispatch_failed', async () => {
+    const deps = makeDeps();
+    rejectSecondTx(deps, new Error('processor_events INSERT denied by RLS'));
+    const event = makeEvent({ type: 'some.future.event' });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('dispatch_failed');
+    expect(result.error.eventType).toBe('some.future.event');
+    expect(result.error.detail).toBe('Error');
+  });
+
+  it('charge.refunded with unknown refund id but no amountSatang — `?? 0n` fallback in audit payload', async () => {
+    // Branch coverage: line ~327 has `(dataObject.amountSatang ?? 0n).toString()`.
+    // Existing tests pass amountSatang explicitly; this one omits it so the
+    // nullish-coalesce fallback fires.
+    const deps = makeDeps();
+    const event = makeEvent({
+      type: 'charge.refunded',
+      dataObject: {
+        id: 'ch_test_no_amount',
+        type: 'charge',
+        refundIds: ['re_unknown_no_amount'],
+        // amountSatang intentionally omitted → triggers `?? 0n` fallback
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const oobCall = auditCalls.find(
+      (c) => c[1].eventType === 'out_of_band_refund_detected',
+    );
+    expect(oobCall?.[1].payload.amount_satang).toBe('0');
+  });
+
+  it('charge.dispute.created with no disputeId nor amountSatang — both `??` fallbacks fire', async () => {
+    // Branch coverage: lines ~363-365 have `disputeId ?? null` and
+    // `(amountSatang ?? 0n).toString()`. Cover both fallbacks in one test.
+    const deps = makeDeps();
+    const event = makeEvent({
+      type: 'charge.dispute.created',
+      dataObject: {
+        id: 'ch_disputed_minimal',
+        type: 'dispute',
+        // disputeId + amountSatang both omitted → trigger fallbacks
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const disputeCall = auditCalls.find(
+      (c) => c[1].eventType === 'dispute_created',
+    );
+    expect(disputeCall?.[1].payload.dispute_id).toBeNull();
+    expect(disputeCall?.[1].payload.amount_satang).toBe('0');
+  });
+
+  it('CR-3 (default branch): non-Error throw maps detail to "unknown" (string-throw safety)', async () => {
+    const deps = makeDeps();
+    // A rare but real case: postgres-js can reject with a non-Error value
+    // (e.g. a pure string). The detail mapper falls back to "unknown" so
+    // we never leak the raw payload into the response.
+    rejectSecondTx(deps, 'connection terminated unexpectedly: pi_secret_abc123');
+    const event = makeEvent({
+      type: 'charge.refunded',
+      dataObject: { id: 'ch_x', type: 'charge', refundIds: [], amountSatang: 0n },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.detail).toBe('unknown');
   });
 });

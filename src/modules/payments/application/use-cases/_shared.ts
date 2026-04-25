@@ -52,7 +52,11 @@ export async function markProcessedIfPresent(
 }
 
 interface UnknownIntentInput {
-  readonly tenantId: string;
+  // R4 S-1: nullable to match `F5AuditEvent.tenantId: string | null`.
+  // Today's callers always pass a resolved tenantId, but the audit
+  // contract permits null (pre-resolution probe path); keeping the
+  // helper input aligned avoids a future type-trap.
+  readonly tenantId: string | null;
   readonly requestId: string | null;
   readonly paymentIntentId: string;
   readonly eventCreatedAtUnixSeconds: number;

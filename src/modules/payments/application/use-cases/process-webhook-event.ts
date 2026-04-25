@@ -94,6 +94,19 @@ export interface WebhookDispatchEnvelope {
   readonly livemode: boolean;
 }
 
+/**
+ * PII-safe error detail formatter for `dispatch_failed` responses.
+ *
+ * Returns the Error class name (e.g. `"StripeAPIError"`, `"PostgresError"`)
+ * if the thrown value is an Error instance, else `"unknown"`. Never returns
+ * `e.message` because Stripe error payloads can carry partial API key
+ * fragments / internal ids — the route logs the full error into pino +
+ * audit downstream where leak risk is contained.
+ */
+function formatDispatchErrorDetail(e: unknown): string {
+  return e instanceof Error ? e.constructor.name : 'unknown';
+}
+
 export async function processWebhookEvent(
   deps: ProcessWebhookEventDeps,
   input: ProcessWebhookEventInput,
@@ -264,6 +277,7 @@ export async function processWebhookEvent(
           processorEventId: event.id,
         },
       );
+      /* v8 ignore start -- R4 I-3 (2026-04-26): handleCancelEvent now ack's every error case as ok({kind:'already_canceled'}) to break Stripe's 24h retry loop on permanent mismatches. The err arm here is dead code preserved structurally so the dispatcher matches the other branches' shape; if a future handleCancelEvent revision reintroduces err returns, this guard prevents a silent fall-through to ok(outcome) with `outcome` undefined. */
       if (!result.ok) {
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
@@ -271,6 +285,7 @@ export async function processWebhookEvent(
           detail: result.error.code,
         });
       }
+      /* v8 ignore stop */
       outcome = { kind: 'processed', dispatched: envelope.type };
       // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
       // typed against HandleCancelEventOutcome.
@@ -326,7 +341,7 @@ export async function processWebhookEvent(
           // Stripe error messages can carry partial API key
           // fragments / internal ids. Use the class name only — caller
           // logs it into pino + audit downstream where leak risk is real.
-          detail: e instanceof Error ? e.constructor.name : 'unknown',
+          detail: formatDispatchErrorDetail(e),
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
@@ -361,7 +376,7 @@ export async function processWebhookEvent(
           // Stripe error messages can carry partial API key
           // fragments / internal ids. Use the class name only — caller
           // logs it into pino + audit downstream where leak risk is real.
-          detail: e instanceof Error ? e.constructor.name : 'unknown',
+          detail: formatDispatchErrorDetail(e),
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
@@ -388,7 +403,7 @@ export async function processWebhookEvent(
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
           eventType: event.type,
-          detail: e instanceof Error ? e.constructor.name : 'unknown',
+          detail: formatDispatchErrorDetail(e),
         });
       }
       outcome = { kind: 'acknowledged_only' };
@@ -406,6 +421,16 @@ export async function processWebhookEvent(
   // than silently leave a stuck row. Production should NEVER reach the
   // `if (!markedProcessedAtomically)` body — the warn line is the
   // canary that flags any regression.
+  //
+  // Coverage: the canary is unreachable through input manipulation alone
+  // because every current outcome.kind is in the corresponding whitelist.
+  // The branch only fires if a future dev adds a new outcome.kind to a
+  // sub-use-case AND forgets to whitelist it — i.e. a code-change
+  // regression, not a runtime input. v8-ignore here is honest: testing
+  // it would require coercing the type system to inject a fake outcome,
+  // and that test would only re-prove the type system's exhaustiveness
+  // (already enforced by the typed `Set<X['kind']>` declarations above).
+  /* v8 ignore start */
   if (!markedProcessedAtomically) {
     const log: LoggerPort = deps.logger ?? noopLogger;
     log.error(
@@ -433,6 +458,7 @@ export async function processWebhookEvent(
       });
     }
   }
+  /* v8 ignore stop */
 
   return ok(outcome);
 }

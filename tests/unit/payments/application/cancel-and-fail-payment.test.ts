@@ -168,13 +168,25 @@ describe('failPayment (T058)', () => {
     expect(r.ok).toBe(true);
   });
 
-  it('illegal transition from a state with destinations to failed → err illegal_transition', async () => {
+  it('illegal transition from a state with destinations to failed → R4 I-3: ack + already_terminal (NOT err)', async () => {
     const d = deps();
     (d.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       { ...PENDING, status: 'partially_refunded' as const },
     );
     const r = await failPayment(d, INPUT);
-    expect(r.ok).toBe(false);
+    // R4 I-3: was `err` → caused stuck-row loop. Now acknowledged.
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.kind).toBe('already_terminal');
+    expect(d.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'payment_processor_retrieve_failed',
+        payload: expect.objectContaining({
+          processor_error_kind: 'illegal_transition',
+        }),
+      }),
+    );
   });
 });
 
@@ -341,14 +353,24 @@ describe('handleCancelEvent (T060)', () => {
     expect(r.value.kind).toBe('already_canceled');
   });
 
-  it('illegal transition from partially_refunded → err illegal_transition', async () => {
+  it('illegal transition from partially_refunded → R4 I-3: ack + already_canceled (NOT err)', async () => {
     const d = deps();
     (d.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       { ...PENDING, status: 'partially_refunded' as const },
     );
     const r = await handleCancelEvent(d, INPUT);
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.error.code).toBe('illegal_transition');
+    // R4 I-3: was `err` → caused stuck-row loop. Now acknowledged.
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.kind).toBe('already_canceled');
+    expect(d.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'payment_processor_retrieve_failed',
+        payload: expect.objectContaining({
+          processor_error_kind: 'illegal_transition',
+        }),
+      }),
+    );
   });
 });

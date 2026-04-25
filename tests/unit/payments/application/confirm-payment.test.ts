@@ -257,19 +257,35 @@ describe('confirmPayment (T057)', () => {
     expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
   });
 
-  it('illegal transition (partially_refunded → succeeded) — illegal_transition error', async () => {
+  it('illegal transition (partially_refunded → succeeded) — R4 I-3: ack + no-op (NOT err) to break Stripe retry loop', async () => {
     const deps = makeDeps();
     (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      // succeeded → succeeded is illegal (treated as terminal_state by domain);
-      // to get an illegal_transition we'd need a state that has destinations
-      // but `succeeded` is not one. Simulate via partially_refunded (has
-      // destinations but not `succeeded`).
+      // partially_refunded has destinations but NOT `succeeded` — fits
+      // the `illegal_transition` (non-terminal) branch.
       { ...PENDING_PAYMENT, status: 'partially_refunded' as const },
     );
     const result = await confirmPayment(deps, INPUT);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe('illegal_transition');
+    // R4 I-3 behaviour change: was `err({code:'illegal_transition'})`
+    // which 500-ed Stripe and caused 24h retry loop on a permanent
+    // mismatch. Now acknowledged as `already_succeeded` no-op +
+    // forensic audit on null tx.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('already_succeeded');
+    // No state mutation.
+    expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    // Forensic audit on null tx (best-effort) so ops sees the anomaly.
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'payment_processor_retrieve_failed',
+        payload: expect.objectContaining({
+          processor_error_kind: 'illegal_transition',
+          from_status: 'partially_refunded',
+        }),
+      }),
+    );
   });
 
   it('invariant violation — duplicate succeeded payment on same invoice', async () => {
@@ -355,5 +371,21 @@ describe('confirmPayment (T057)', () => {
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
     const succeededCall = auditCalls.find((c) => c[1].eventType === 'payment_succeeded');
     expect(succeededCall?.[1].payload.card_brand).toBeUndefined();
+  });
+
+  it('promptpay payment.method maps to "stripe_promptpay" on F4 markPaid bridge call (vs "stripe_card")', async () => {
+    // Branch coverage: confirm-payment.ts line ~387 has
+    //   `payment.method === 'card' ? 'stripe_card' : 'stripe_promptpay'`
+    // The default fixture uses method='card'; this test exercises the
+    // promptpay arm so the bridge invocation is correct end-to-end.
+    const deps = makeDeps();
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      { ...PENDING_PAYMENT, method: 'promptpay' as const, card: null },
+    );
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(true);
+    const bridgeCall = (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>)
+      .mock.calls[0]?.[0];
+    expect(bridgeCall?.method).toBe('stripe_promptpay');
   });
 });

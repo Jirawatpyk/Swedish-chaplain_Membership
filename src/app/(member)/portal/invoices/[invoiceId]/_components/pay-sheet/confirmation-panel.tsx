@@ -24,7 +24,11 @@ import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
 
-const AUTO_CLOSE_SECONDS = 5;
+// Exported so tests can express timing assertions in terms of the
+// canonical value (e.g. `for i < AUTO_CLOSE_SECONDS * 2`) instead of
+// hard-coding a magic number that drifts when the UX team retunes
+// the auto-close window.
+export const AUTO_CLOSE_SECONDS = 5;
 
 export interface ConfirmationPanelProps {
   readonly method: 'card' | 'promptpay';
@@ -116,6 +120,16 @@ export function ConfirmationPanel({
           dateTime,
         })
       : t('summaryPromptPay', { amount, dateTime });
+
+  // R4 polish: extracted from JSX to avoid a 3-arm nested ternary inside
+  // the SR live-region. Visible countdown stays inline because it has
+  // a trivial 2-arm shape.
+  const SR_THRESHOLD_SECONDS = [3, 1] as const;
+  const srMessage = paused
+    ? t('autoClosePaused')
+    : (SR_THRESHOLD_SECONDS as readonly number[]).includes(remaining)
+      ? t('autoCloseCountdown', { seconds: remaining })
+      : '';
 
   return (
     <section
@@ -223,11 +237,7 @@ export function ConfirmationPanel({
         aria-atomic="true"
         data-testid="pay-sheet-confirmation-countdown-sr"
       >
-        {paused
-          ? t('autoClosePaused')
-          : remaining === 3 || remaining === 1
-            ? t('autoCloseCountdown', { seconds: remaining })
-            : ''}
+        {srMessage}
       </p>
     </section>
   );

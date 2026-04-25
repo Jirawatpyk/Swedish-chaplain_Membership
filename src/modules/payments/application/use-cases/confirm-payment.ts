@@ -101,6 +101,12 @@ export async function confirmPayment(
   }
 
   return await deps.paymentsRepo.withTx(async (tx) => {
+    // R4 polish (M1): the `markProcessedIfPresent(deps, input, tx)` triple
+    // appears 6× below. Local closure removes the repetition without
+    // hiding the contract — `_shared.markProcessedIfPresent` is still
+    // the canonical no-op-when-absent helper.
+    const markProcessed = () => markProcessedIfPresent(deps, input, tx);
+
     const payment = await deps.paymentsRepo.lockForUpdateByPaymentIntentId(
       tx,
       input.paymentIntentId,
@@ -108,7 +114,7 @@ export async function confirmPayment(
     if (!payment) {
       // Audit 2026-04-26 round-2 #5b: atomic markProcessed even for
       // unknown_intent so the dispatch tail short-circuits.
-      await markProcessedIfPresent(deps, input, tx);
+      await markProcessed();
       return ok<ConfirmPaymentOutcome>({ kind: 'unknown_intent' });
     }
 
@@ -124,7 +130,7 @@ export async function confirmPayment(
         // `unknown_intent` short-circuit at line 109. Returning ok(...)
         // (not err) prevents the route from 5xx-ing and triggering a
         // retry storm on a permanently-unrecoverable mismatch.
-        await markProcessedIfPresent(deps, input, tx);
+        await markProcessed();
         // S5 (migration 0048): forensic audit row so ops see Stripe
         // webhooks arriving for invoices the local DB does not have.
         // Atomic with markProcessed inside this withTx — if the audit
@@ -157,8 +163,14 @@ export async function confirmPayment(
     // cast. `not_payable` is the only error variant that carries a
     // status; forbidden/not_found don't, and we never enter step 3 via
     // those paths (step 2 returns early).
+    // Defensive resolver — `forbidden` and `not_found` were already
+    // short-circuited at step 2, so the only remaining error variant
+    // here is `not_payable` (carries `status`). The `=== 'not_payable'`
+    // false branch and the trailing `: undefined` arm are unreachable
+    // through normal webhook input → both are v8-ignored.
     const invoiceStatus = invoiceResult.ok
       ? invoiceResult.value.status
+      /* v8 ignore next 3 -- defensive ternary: forbidden/not_found returned at step 2; only not_payable carries `status` */
       : invoiceResult.error.code === 'not_payable'
         ? invoiceResult.error.status
         : undefined;
@@ -180,7 +192,9 @@ export async function confirmPayment(
       const cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status' = (() => {
         // `invoiceStatus === undefined` only when the bridge returned
         // a forbidden/not_found path that already short-circuited
-        // step 2 — defensive only.
+        // step 2 — defensive only (paired with the v8-ignored
+        // `: undefined` ternary arm above).
+        /* v8 ignore next -- defensive: paired with the unreachable `: undefined` arm at line ~164 */
         if (invoiceStatus === undefined) return 'invoice_unknown_status';
         // `'issued'` is excluded by the `inPayableStatus` gate above
         // → TS narrows `invoiceStatus` to the remaining InvoiceStatus
@@ -193,6 +207,7 @@ export async function confirmPayment(
           case 'credited':
           case 'partially_credited':
             return 'invoice_credited';
+          /* v8 ignore start -- defensive: drafts never carry an active PaymentIntent (F4 invariant) */
           case 'draft':
             // `'draft'` should never reach here — drafts never carry an
             // active PaymentIntent — but defensive in case the bridge
@@ -207,6 +222,7 @@ export async function confirmPayment(
             void _exhaustive;
             return 'invoice_unknown_status';
           }
+          /* v8 ignore stop */
         }
       })();
 
@@ -242,6 +258,10 @@ export async function confirmPayment(
         requestId: input.requestId,
         eventType: 'payment_auto_refunded_stale_invoice',
         actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+        // `?? 'unknown'` — defensive: invoiceStatus is always defined on this
+        // path (see the `if (invoiceStatus === undefined)` early return above
+        // marked v8-ignore for the same unreachable case).
+        /* v8 ignore next -- defensive nullish coalesce paired with line ~164 */
         summary: `Auto-refunded payment ${payment.id} — invoice not payable (${invoiceStatus ?? 'unknown'})`,
         payload: {
           payment_id: payment.id,
@@ -256,7 +276,7 @@ export async function confirmPayment(
         retentionYears: retentionFor('payment_auto_refunded_stale_invoice'),
       });
       // Audit 2026-04-26 round-2 #5b: atomic markProcessed.
-      await markProcessedIfPresent(deps, input, tx);
+      await markProcessed();
       return ok<ConfirmPaymentOutcome>({ kind: 'auto_refunded_stale_invoice' });
     }
 
@@ -268,15 +288,36 @@ export async function confirmPayment(
       // back at Stripe triggering a retry storm).
       if (transition.error.kind === 'terminal_state') {
         // Atomic markProcessed (audit 2026-04-26 round-2 #5b).
-        await markProcessedIfPresent(deps, input, tx);
+        await markProcessed();
         return ok<ConfirmPaymentOutcome>({ kind: 'already_succeeded' });
       }
-      // illegal_transition (e.g. pending → succeeded mismatch is
-      // impossible; but partially_refunded → succeeded is illegal).
-      return err<ConfirmPaymentError>({
-        code: 'illegal_transition',
-        from: payment.status,
+      // illegal_transition (e.g. partially_refunded → succeeded). R4 I-3:
+      // webhook-side this is a PERMANENT mismatch — returning err would
+      // bubble to a 500 → Stripe retries 24h → ON CONFLICT idempotency
+      // hits + processedAt re-check fails the same way every time → row
+      // stays stuck for the entire retry window. Acknowledge atomically:
+      // markProcessed + emit forensic audit (best-effort tx=null so
+      // Stripe sees 200 even if audit fails) + return `already_succeeded`
+      // no-op. Reuses `payment_processor_retrieve_failed` event type
+      // since it's the closest "permanent processor anomaly" bucket; if
+      // ops needs distinction later, add a new event type.
+      await markProcessed();
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_processor_retrieve_failed',
+        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+        summary: `confirmPayment hit illegal_transition from ${payment.status} (acknowledged + no-op to break retry loop)`,
+        payload: {
+          payment_intent_id: input.paymentIntentId,
+          payment_id: payment.id,
+          from_status: payment.status,
+          to_status: 'succeeded',
+          processor_error_kind: 'illegal_transition',
+        },
+        retentionYears: retentionFor('payment_processor_retrieve_failed'),
       });
+      return ok<ConfirmPaymentOutcome>({ kind: 'already_succeeded' });
     }
 
     // Step 5 — 1-succeeded-per-invoice invariant.
@@ -403,7 +444,7 @@ export async function confirmPayment(
     // separate tx and leave the row with `outcome='processed'` but
     // `processed_at=NULL`. Only runs when the parent (processWebhook
     // Event) supplied both deps + input.
-    await markProcessedIfPresent(deps, input, tx);
+    await markProcessed();
 
     return ok<ConfirmPaymentOutcome>({ kind: 'processed' });
   });

@@ -99,10 +99,27 @@ export async function failPayment(
         await markProcessedIfPresent(deps, input, tx);
         return ok<FailPaymentOutcome>({ kind: 'already_terminal' });
       }
-      return err<FailPaymentError>({
-        code: 'illegal_transition',
-        from: payment.status,
+      // R4 I-3: illegal_transition (e.g. succeeded → failed) is a
+      // PERMANENT webhook-side mismatch. Returning err would bubble
+      // to 500 → Stripe retries 24h → stuck-row loop. Acknowledge
+      // atomically + forensic audit + no-op return.
+      await markProcessedIfPresent(deps, input, tx);
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_processor_retrieve_failed',
+        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+        summary: `failPayment hit illegal_transition from ${payment.status} (acknowledged + no-op to break retry loop)`,
+        payload: {
+          payment_intent_id: input.paymentIntentId,
+          payment_id: payment.id,
+          from_status: payment.status,
+          to_status: 'failed',
+          processor_error_kind: 'illegal_transition',
+        },
+        retentionYears: retentionFor('payment_processor_retrieve_failed'),
       });
+      return ok<FailPaymentOutcome>({ kind: 'already_terminal' });
     }
 
     // Re-fetch to read last_payment_error.code (PCI SAQ-A: never from

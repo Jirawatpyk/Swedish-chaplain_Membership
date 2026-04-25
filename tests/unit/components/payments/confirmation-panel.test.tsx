@@ -21,7 +21,10 @@ vi.mock('sonner', () => ({
 }));
 import { toast } from 'sonner';
 
-import { ConfirmationPanel } from '@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/confirmation-panel';
+import {
+  AUTO_CLOSE_SECONDS,
+  ConfirmationPanel,
+} from '@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/confirmation-panel';
 
 const messages = {
   portal: {
@@ -167,6 +170,14 @@ describe('<ConfirmationPanel>', () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
     expect(sr.textContent).toContain('1');
+    // R4 boundary: at remaining=0 the SR live region must go silent
+    // again (the dispatch effect calls onExpire, but the live-region
+    // node should NOT continue announcing "0 s" — that's a stale tick).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      await Promise.resolve();
+    });
+    expect(sr.textContent).toBe('');
   });
 
   it('download receipt anchor has ≥44px tap target (G-Review #5)', () => {
@@ -211,8 +222,10 @@ describe('<ConfirmationPanel>', () => {
     // The Pause button itself disappears once paused (no double-pause).
     expect(screen.queryByTestId('pay-sheet-confirmation-pause')).toBeNull();
 
-    // Advance past the would-be auto-close deadline. onClose MUST NOT fire.
-    for (let i = 0; i < 10; i++) {
+    // Advance past 2× the would-be auto-close deadline. R4: anchored to
+    // `AUTO_CLOSE_SECONDS` so a future UX retune (e.g. 8s) doesn't
+    // silently invalidate this assertion.
+    for (let i = 0; i < AUTO_CLOSE_SECONDS * 2; i++) {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000);
       });

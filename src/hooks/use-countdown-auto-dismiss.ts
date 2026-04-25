@@ -31,9 +31,15 @@ export function useCountdownAutoDismiss(
   // so the bug is latent — guarding here keeps the hook safe to use
   // with inline lambdas.
   const firedRef = useRef<boolean>(false);
+  // R4 I-2: hold the interval id at hook scope so `interrupt()` can
+  // call `clearInterval` synchronously. Previously the interval was
+  // only torn down inside the next setRemaining-updater after the
+  // ref flag was observed — meaning one extra tick could fire
+  // between the `interrupt()` call and the updater seeing the flag,
+  // visibly decrementing `remaining` by 1 after a Pause click.
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Ticker: decrement once per second; clears interval on interrupt
-  // OR when remaining hits 0.
+  // Ticker: decrement once per second.
   useEffect(() => {
     const timer = setInterval(() => {
       setRemaining((prev) => {
@@ -48,6 +54,7 @@ export function useCountdownAutoDismiss(
         return prev - 1;
       });
     }, 1000);
+    timerRef.current = timer;
     return () => clearInterval(timer);
   }, []);
 
@@ -65,6 +72,12 @@ export function useCountdownAutoDismiss(
     remaining,
     interrupt: () => {
       interruptedRef.current = true;
+      // R4 I-2: clear the interval directly so no further tick fires
+      // after the user-initiated pause.
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     },
   };
 }

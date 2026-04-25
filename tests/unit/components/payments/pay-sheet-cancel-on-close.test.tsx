@@ -139,8 +139,8 @@ const messages = {
       methods: {
         card: 'Card',
         promptpay: 'PromptPay',
-        cardAriaLabel: 'Switch to card',
-        promptpayAriaLabel: 'Switch to PromptPay',
+        cardAriaLabel: 'Card — switch payment method',
+        promptpayAriaLabel: 'PromptPay — switch payment method',
         cardPlaceholder: '',
         promptpayPlaceholder: '',
       },
