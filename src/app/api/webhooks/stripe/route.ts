@@ -182,6 +182,35 @@ function jsonInternalError(
   );
 }
 
+/**
+ * R5 S007 — extract `latest_charge` cross-ref id from a Stripe data.object.
+ *
+ * Stripe expands `latest_charge` into a Charge object when the event was
+ * emitted with `expand: ['latest_charge']`. Verifier path normally sends
+ * the string id, but a misconfigured upstream OR a direct test payload
+ * can carry the expanded object form. Three accepted shapes:
+ *
+ *   - string                         → returned verbatim
+ *   - { id: string, ... }            → returned `.id`
+ *   - undefined / null / other       → undefined
+ *
+ * Without this guard a previous `typeof latestCharge === 'string'` check
+ * would silently drop the field, writing NULL into
+ * `payments.processor_charge_id` and breaking downstream reconciliation
+ * (`payments_processor_charge_id_idx` partial index would lose the row).
+ */
+export function extractLatestChargeId(
+  rawDataObject: Record<string, unknown> | undefined,
+): string | undefined {
+  const raw = rawDataObject?.['latest_charge'] ?? rawDataObject?.['latestChargeId'];
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'object' && raw !== null) {
+    const id = (raw as Record<string, unknown>)['id'];
+    return typeof id === 'string' ? id : undefined;
+  }
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
@@ -395,25 +424,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // ids the dispatcher needs are passed downstream. The verifier
   // path's `dataObject` is already projected — re-projecting here is
   // a no-op for known keys + drops anything unexpected.
-  // R3 I-2: Stripe expands `latest_charge` into a Charge object when the
-  // event was emitted with `expand: ['latest_charge']`. The verifier
-  // typically sends the string id, but a misconfigured upstream OR a
-  // direct test payload can carry the expanded object form. Without
-  // this guard the previous `typeof latestCharge === 'string'` check
-  // silently dropped the field and we wrote NULL into
-  // `payments.processor_charge_id` — breaking downstream reconciliation
-  // (`payments_processor_charge_id_idx` partial index loses these rows).
-  const latestChargeRaw =
-    rawDataObject?.['latest_charge'] ?? rawDataObject?.['latestChargeId'];
-  const latestCharge: string | undefined =
-    typeof latestChargeRaw === 'string'
-      ? latestChargeRaw
-      : typeof latestChargeRaw === 'object' && latestChargeRaw !== null
-        ? (() => {
-            const id = (latestChargeRaw as Record<string, unknown>)['id'];
-            return typeof id === 'string' ? id : undefined;
-          })()
-        : undefined;
+  // R3 I-2 / R5 S007: handle expanded `latest_charge` (Charge object) AND
+  // string-id forms via `extractLatestChargeId`. See helper docblock.
+  const latestCharge = extractLatestChargeId(rawDataObject);
   const refundsNode = rawDataObject?.['refunds'] as
     | { data?: Array<Record<string, unknown>> }
     | undefined;
@@ -510,6 +523,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // "not an error" → 200. Don't simplify to `!result.ok` without
     // also rewriting all stubs to the Result shape.
     if ((result as { ok?: boolean }).ok === false) {
+      // R5 S006 — pipe `kind` discriminator into pino so ops dashboards
+      // can filter dispatch failures by class (sub_use_case_error vs
+      // dispatch_threw vs unknown_event_type_threw) without re-parsing
+      // log lines.
+      const errorObj = (result as { error?: { kind?: string; detail?: string } })
+        .error;
+      logger.error(
+        {
+          eventId: evId,
+          eventType: evType,
+          tenantId,
+          correlationId,
+          requestId,
+          dispatchFailureKind: errorObj?.kind ?? 'unknown',
+          dispatchFailureDetail: errorObj?.detail ?? 'unknown',
+        },
+        'stripe-webhook.dispatch_failed',
+      );
       return jsonInternalError('dispatch_failed', correlationId);
     }
     return jsonOk(correlationId);

@@ -37,6 +37,7 @@ const messages = {
         close: 'Close',
         autoCloseCountdown: 'Closing in {seconds} s',
         pauseAutoClose: 'Pause',
+        resumeAutoClose: 'Resume',
         autoClosePaused: 'Auto-close paused',
         toast: 'Payment received. Receipt emailed to you.',
       },

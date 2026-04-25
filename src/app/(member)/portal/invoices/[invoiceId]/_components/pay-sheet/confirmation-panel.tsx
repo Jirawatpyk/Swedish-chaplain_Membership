@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { CheckCircle2Icon, DownloadIcon, PauseIcon } from 'lucide-react';
+import { CheckCircle2Icon, DownloadIcon, PauseIcon, PlayIcon } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -89,20 +89,27 @@ export function ConfirmationPanel({
   // split inside the hook avoids "Cannot update a component while
   // rendering a different component" by dispatching onExpire from a
   // post-commit effect instead of from the setState updater.
-  const { remaining, interrupt: interruptAutoClose } = useCountdownAutoDismiss(
-    AUTO_CLOSE_SECONDS,
-    onClose,
-  );
+  const {
+    remaining,
+    interrupt: interruptAutoClose,
+    resume: resumeAutoClose,
+  } = useCountdownAutoDismiss(AUTO_CLOSE_SECONDS, onClose);
 
   // R3 WCAG 2.2.1 (Timing Adjustable): a 5s auto-close is below the 20s
   // statutory threshold for "essential" timing. Provide an explicit
   // user-controlled pause so keyboard / SR / cognitive-disability users
-  // can stop the timer without committing to Download / Close. Once
-  // paused the panel stays open until the user dismisses explicitly.
+  // can stop the timer without committing to Download / Close. R5 S008:
+  // pause is now reversible — Pause toggles to Resume which re-arms the
+  // countdown from the current `remaining` (avoids the "stuck panel
+  // forever" UX trap when a user pauses by mistake).
   const [paused, setPaused] = useState<boolean>(false);
   const handlePause = () => {
     interruptAutoClose();
     setPaused(true);
+  };
+  const handleResume = () => {
+    resumeAutoClose();
+    setPaused(false);
   };
 
   // `last4Display`: when the backend supplies the actual last 4
@@ -216,20 +223,22 @@ export function ConfirmationPanel({
             ? t('autoClosePaused')
             : t('autoCloseCountdown', { seconds: remaining })}
         </p>
-        {!paused && (
-          <button
-            type="button"
-            onClick={handlePause}
-            // 24×24 minimum target (WCAG 2.5.8) — kept compact since
-            // this is a "soft" affordance next to the countdown text;
-            // primary keyboard targets remain Download / Close.
-            className="inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            data-testid="pay-sheet-confirmation-pause"
-          >
+        <button
+          type="button"
+          onClick={paused ? handleResume : handlePause}
+          // 24×24 minimum target (WCAG 2.5.8) — kept compact since
+          // this is a "soft" affordance next to the countdown text;
+          // primary keyboard targets remain Download / Close.
+          className="inline-flex min-h-[24px] min-w-[24px] items-center gap-1 rounded text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          data-testid={paused ? 'pay-sheet-confirmation-resume' : 'pay-sheet-confirmation-pause'}
+        >
+          {paused ? (
+            <PlayIcon aria-hidden="true" className="size-3" />
+          ) : (
             <PauseIcon aria-hidden="true" className="size-3" />
-            {t('pauseAutoClose')}
-          </button>
-        )}
+          )}
+          {paused ? t('resumeAutoClose') : t('pauseAutoClose')}
+        </button>
       </div>
       <p
         className="sr-only"

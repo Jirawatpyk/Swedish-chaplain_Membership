@@ -60,8 +60,21 @@ export type ProcessWebhookEventOutcome =
   | { readonly kind: 'acknowledged_only' }
   | { readonly kind: 'auto_refunded_stale_invoice' };
 
+/**
+ * R5 S006 — `kind` discriminator lets ops dashboards filter dispatch
+ * failures by class WITHOUT re-parsing pino logs:
+ *   - `sub_use_case_error`     → confirm/fail/cancel use-case returned err
+ *   - `dispatch_threw`         → withTx (audit / markProcessed) threw inside
+ *                                charge.refunded / charge.dispute.created
+ *   - `unknown_event_type_threw` → default-branch withTx threw while
+ *                                acknowledging an unrecognised event type
+ */
 export type ProcessWebhookEventError = {
   readonly code: 'dispatch_failed';
+  readonly kind:
+    | 'sub_use_case_error'
+    | 'dispatch_threw'
+    | 'unknown_event_type_threw';
   readonly eventType: string;
   readonly detail: string;
 };
@@ -193,6 +206,7 @@ export async function processWebhookEvent(
       if (!result.ok) {
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
+          kind: 'sub_use_case_error',
           eventType: event.type,
           detail: result.error.code,
         });
@@ -245,6 +259,7 @@ export async function processWebhookEvent(
       if (!result.ok) {
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
+          kind: 'sub_use_case_error',
           eventType: event.type,
           detail: result.error.code,
         });
@@ -281,6 +296,7 @@ export async function processWebhookEvent(
       if (!result.ok) {
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
+          kind: 'sub_use_case_error',
           eventType: event.type,
           detail: result.error.code,
         });
@@ -337,6 +353,7 @@ export async function processWebhookEvent(
       } catch (e) {
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
+          kind: 'dispatch_threw',
           eventType: event.type,
           // Stripe error messages can carry partial API key
           // fragments / internal ids. Use the class name only — caller
@@ -372,6 +389,7 @@ export async function processWebhookEvent(
       } catch (e) {
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
+          kind: 'dispatch_threw',
           eventType: event.type,
           // Stripe error messages can carry partial API key
           // fragments / internal ids. Use the class name only — caller
@@ -402,6 +420,7 @@ export async function processWebhookEvent(
       } catch (e) {
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
+          kind: 'unknown_event_type_threw',
           eventType: event.type,
           detail: formatDispatchErrorDetail(e),
         });

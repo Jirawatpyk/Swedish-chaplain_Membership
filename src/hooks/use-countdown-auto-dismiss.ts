@@ -20,7 +20,11 @@ import { useEffect, useRef, useState } from 'react';
 export function useCountdownAutoDismiss(
   initialSeconds: number,
   onExpire: () => void,
-): { readonly remaining: number; readonly interrupt: () => void } {
+): {
+  readonly remaining: number;
+  readonly interrupt: () => void;
+  readonly resume: () => void;
+} {
   const [remaining, setRemaining] = useState<number>(initialSeconds);
   const interruptedRef = useRef<boolean>(false);
   // Audit 2026-04-25 latent-bug B1: guard against double-fire when
@@ -38,9 +42,14 @@ export function useCountdownAutoDismiss(
   // between the `interrupt()` call and the updater seeing the flag,
   // visibly decrementing `remaining` by 1 after a Pause click.
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // R5 S008: a tick spins on `tickKey` so `resume()` can re-arm a
+  // fresh interval AFTER `interrupt()` cleared the previous one.
+  const [tickKey, setTickKey] = useState<number>(0);
 
-  // Ticker: decrement once per second.
+  // Ticker: decrement once per second. Re-runs when tickKey changes
+  // (resume() bumps it).
   useEffect(() => {
+    if (interruptedRef.current) return;
     const timer = setInterval(() => {
       setRemaining((prev) => {
         if (interruptedRef.current) {
@@ -56,7 +65,7 @@ export function useCountdownAutoDismiss(
     }, 1000);
     timerRef.current = timer;
     return () => clearInterval(timer);
-  }, []);
+  }, [tickKey]);
 
   // Dispatch onExpire once when countdown hits zero. Separate effect =
   // runs after commit, safely outside any render pass.
@@ -78,6 +87,17 @@ export function useCountdownAutoDismiss(
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
+    },
+    /**
+     * R5 S008 — re-arm the countdown from the current `remaining`. No-op
+     * if already expired (firedRef set) or never paused. Used by
+     * <ConfirmationPanel> Pause↔Resume toggle.
+     */
+    resume: () => {
+      if (firedRef.current) return;
+      if (!interruptedRef.current) return;
+      interruptedRef.current = false;
+      setTickKey((k) => k + 1);
     },
   };
 }

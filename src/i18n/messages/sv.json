@@ -1609,6 +1609,7 @@
         "close": "Stäng",
         "autoCloseCountdown": "Stänger om {seconds} s",
         "pauseAutoClose": "Pausa",
+        "resumeAutoClose": "Återuppta",
         "autoClosePaused": "Automatisk stängning pausad",
         "toast": "Betalningen mottagen. Kvittot har skickats till din e-post."
       },
