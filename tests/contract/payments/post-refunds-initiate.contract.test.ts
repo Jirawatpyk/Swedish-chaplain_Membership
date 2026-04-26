@@ -324,7 +324,18 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('403 forbidden_role — manager session is rejected', async () => {
+  it('403 forbidden_role — manager session is rejected (AS4) + body shape pinned', async () => {
+    // I8 (review 2026-04-27): AS4 ("manager → 403 + button hidden") —
+    // the route delegates auth-failure response synthesis to
+    // `requireAdminContext` (shared helper). Pin the contract:
+    //   1. Status 403 surfaces verbatim.
+    //   2. Body carries the helper's `{error: 'forbidden'}` payload
+    //      unchanged — the route does NOT silently re-wrap it into
+    //      a different shape, which would break the F1 admin-route
+    //      pattern shared across `/api/auth/users/*`.
+    // The F5-specific i18n envelope (`messageThai`, `correlationId`)
+    // applies only to use-case-driven errors; auth-context
+    // rejections use the project-wide minimal shape.
     requireAdminContextMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'forbidden' }), {
         status: 403,
@@ -335,6 +346,10 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     const { POST } = await importRoute();
     const res = await POST(makeJsonRequest(VALID_BODY));
     expect(res.status).toBe(403);
+    const body = (await res.json()) as Record<string, unknown>;
+    // Helper's pre-built shape pinned — if a future route refactor
+    // synthesises its own envelope here, this assertion catches it.
+    expect(body['error']).toBe('forbidden');
   });
 
   it('404 payment_not_found — id does not exist OR cross-tenant', async () => {

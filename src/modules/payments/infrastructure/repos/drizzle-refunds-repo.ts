@@ -28,6 +28,7 @@ import { asPaymentId, type PaymentId } from '../../domain/payment';
 import { refunds, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
+import { logger } from '@/lib/logger';
 
 function toDomain(row: RefundRow): DomainRefundRow {
   return {
@@ -64,6 +65,20 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         })
         .returning();
       if (!inserted) {
+        // I4: structured pino warn before throw
+        // so ops can correlate the failure via correlationId. Full
+        // Result-return migration (port signature change) deferred
+        // — current callers `withTx` rolls back on throw, which is
+        // acceptable for an unexpected-no-row case.
+        logger.warn(
+          {
+            tenantId: input.tenantId,
+            paymentId: input.paymentId,
+            refundId: input.id,
+            correlationId: input.correlationId,
+          },
+          'drizzle-refunds-repo.insert.no_row_returned',
+        );
         throw new Error('drizzle-refunds-repo: insert returned no row');
       }
       return toDomain(inserted as RefundRow);
@@ -101,6 +116,15 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         )
         .returning();
       if (!updated) {
+        // I4: structured pino warn before throw.
+        logger.warn(
+          {
+            tenantId: input.tenantId,
+            refundId: input.refundId,
+            nextStatus: input.nextStatus,
+          },
+          'drizzle-refunds-repo.updateStatus.zero_rows',
+        );
         throw new Error(
           `drizzle-refunds-repo: updateStatus matched zero rows for ${input.refundId}`,
         );
@@ -140,7 +164,7 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
       // Single index scan over `refunds_tenant_payment_status_idx`
       // returns all three aggregates the use-case needs inside the
       // payment-row FOR UPDATE lock. Saves 2 roundtrips per refund
-      // initiation (review 2026-04-26 simplify E3).
+      // initiation.
       //
       // FILTER (WHERE …) is the standard SQL idiom for conditional
       // aggregates; Postgres optimises this into a single pass.

@@ -7,8 +7,10 @@
  * `charge.refunded` branch + future refund use-case.
  */
 import type { PaymentId } from '../../domain/payment';
-
-export type RefundStatus = 'pending' | 'succeeded' | 'failed';
+// Single source of truth — Domain owns the status enum so a future
+// `'voided'` addition (post-MVP) cannot drift between Domain + Port.
+import type { RefundStatus } from '../../domain/refund';
+export type { RefundStatus };
 
 export interface RefundRow {
   readonly id: string;
@@ -64,7 +66,7 @@ export interface RefundsRepo {
    * Used by `issueRefund` (T108) — replaces the previous trio of
    * `countPendingForPayment` + `sumSucceededForPayment` +
    * `nextRefundSeq` so the lock-hold window does not absorb 3
-   * separate roundtrips (review 2026-04-26 simplify E3).
+   * separate roundtrips.
    *
    * Returns:
    *   - `pendingCount` — # of refunds with status='pending'.

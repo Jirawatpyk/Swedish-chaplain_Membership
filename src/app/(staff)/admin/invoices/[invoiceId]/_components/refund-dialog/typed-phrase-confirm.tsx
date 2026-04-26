@@ -30,11 +30,13 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
   const t = useTranslations('admin.refund.form.typedPhrase');
   const fieldId = useId();
   const helpId = `${fieldId}-help`;
+  const errorId = `${fieldId}-error`;
 
   const expected = `REFUND ${companyName}`;
   // Case-sensitive — see component docstring above for rationale.
   const matches = value === expected;
   const hasInput = value.length > 0;
+  const showError = hasInput && !matches;
 
   return (
     <div className="grid gap-2">
@@ -52,13 +54,28 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
         autoCorrect="off"
         spellCheck={false}
         enterKeyHint="done"
-        aria-describedby={helpId}
-        aria-invalid={hasInput && !matches}
+        aria-describedby={showError ? `${helpId} ${errorId}` : helpId}
+        aria-invalid={showError}
+        aria-required="true"
         data-testid="refund-typed-phrase-input"
       />
       <p id={helpId} className="text-xs text-muted-foreground">
         {t('help')}
       </p>
+      {showError && (
+        // I10: visible error explains WHY the
+        // Confirm button stays disabled — without this, an admin
+        // who mistypes sees a disabled button + no feedback.
+        // `role="alert"` triggers SR live-region announcement.
+        <p
+          id={errorId}
+          role="alert"
+          className="text-xs text-destructive"
+          data-testid="refund-typed-phrase-error"
+        >
+          {t('mismatch', { phrase: expected })}
+        </p>
+      )}
     </div>
   );
 }

@@ -4,9 +4,11 @@
  * Admin-initiated refund against a succeeded Payment. Mirrors the
  * shape of `/api/payments/initiate` (T069); the differences are:
  *   - Auth via `requireAdminContext` (manager → 403)
- *   - Rate limit 20 / 5min per (tenant, actor) — tighter than
- *     payment.initiate's 10/5min because admin operations against
- *     real money should not be hammered in tight loops
+ *   - Rate limit 20 / 5min per (tenant, actor) — looser than
+ *     payment.initiate's 10/5min on purpose: legitimate admin batch-
+ *     refund workflows (e.g. processing 6 cancellations after a
+ *     board meeting) need headroom; a 4×/min sustained rate is well
+ *     above any realistic throughput so abuse still trips the limit
  *   - 404 `payment_not_found` is NOT collapsed (admin-only surface;
  *     cross-tenant defended by RLS, not by HTTP-shape opacity)
  *   - 502 `f4_bridge_error` is a DISTINCT route code (not collapsed
@@ -95,7 +97,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
   const correlationId = randomUUID();
 
-  // F1 (review 2026-04-26 simplify): explicit `'refund'` resource +
+  // F1: explicit `'refund'` resource +
   // `'write'` action — previously the call relied on the helper's
   // default `auth:user/write` policy which gates refunds via the
   // user-management permission. With a dedicated resource the RBAC
@@ -113,8 +115,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const tenantCtx = resolveTenantFromRequest(request);
   const actorUserId = adminCtx.current.user.id;
 
-  // 20/5min — tighter than initiate-payment's 10/5min because refunds
-  // are admin-against-real-money operations.
+  // 20/5min — looser than initiate-payment's 10/5min so legitimate
+  // admin batch-refund workflows have headroom; abuse still trips
+  // the limit since 4×/min sustained is well above realistic.
   const rl = await rateLimiter.check(
     `refunds.initiate:${tenantCtx.slug}:${actorUserId}`,
     20,

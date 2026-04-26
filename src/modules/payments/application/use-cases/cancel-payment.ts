@@ -36,7 +36,18 @@ export type CancelPaymentError =
   | { readonly code: 'payment_not_found' }
   | { readonly code: 'forbidden_payment' }
   | { readonly code: 'payment_not_cancelable'; readonly currentStatus: string }
-  | { readonly code: 'processor_unavailable'; readonly reason: string };
+  | {
+      readonly code: 'processor_unavailable';
+      // C3: explicit `kind` distinguishes
+      // retryable (Stripe transient) from permanent (tenant
+      // settings missing, etc.) so the route's Retry-After header
+      // can fire only on the retryable variant. Without `kind`,
+      // `buildUseCaseErrorTelemetry` defaults to 30s on every
+      // cancel `processor_unavailable` — wrong for permanent
+      // failures.
+      readonly kind: 'retryable' | 'permanent';
+      readonly reason: string;
+    };
 
 export interface CancelPaymentDeps {
   readonly paymentsRepo: PaymentsRepo;
@@ -62,7 +73,9 @@ export async function cancelPayment(
   // rare — accept it. R2-C1 revert.
   const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
   if (!settings) {
-    return err({ code: 'processor_unavailable', reason: 'tenant_settings_missing' });
+    // Permanent: tenant settings missing means a configuration gap;
+    // retrying does not heal it.
+    return err({ code: 'processor_unavailable', kind: 'permanent', reason: 'tenant_settings_missing' });
   }
 
   return await deps.paymentsRepo.withTx(async (tx) => {
@@ -133,8 +146,16 @@ export async function cancelPayment(
       settings.processorAccountId,
     );
     if (!cancelResult.ok) {
+      // Stripe gateway error.kind has 3 values (retryable |
+      // permanent | idempotency_conflict). Map to the cancel
+      // route's binary kind: retryable stays retryable, both
+      // permanent + idempotency_conflict surface as 'permanent'
+      // (no Retry-After header).
+      const kind: 'retryable' | 'permanent' =
+        cancelResult.error.kind === 'retryable' ? 'retryable' : 'permanent';
       return err<CancelPaymentError>({
         code: 'processor_unavailable',
+        kind,
         reason: cancelResult.error.kind,
       });
     }

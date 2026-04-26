@@ -1,5 +1,5 @@
 /**
- * Generic table-driven state-machine guard (review 2026-04-26 simplify R2).
+ * Generic table-driven state-machine guard.
  *
  * Eliminates the duplicated transition-guard scaffold previously
  * inlined in `payment-status-transitions.ts` and `refund.ts` —

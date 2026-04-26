@@ -72,7 +72,6 @@ type FormValues = z.infer<ReturnType<typeof buildSchema>>;
 type Props = {
   readonly paymentId: string;
   readonly invoiceId: string;
-  readonly invoiceDocumentNumber: string;
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
@@ -115,21 +114,18 @@ export function RefundForm({
     control,
     register,
     handleSubmit,
-    formState: { errors, isValid },
+    formState: { errors, isValid, touchedFields },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { amountThb: '', reason: '' },
-    // FR-029(c) prescribes onBlur for amount + onBlur-required +
-    // onChange-charcount for reason. We use `mode: 'onChange'` for
-    // a different reason: the Confirm button is gated on RHF
-    // `isValid`, which only updates when the resolver runs. With
-    // `mode: 'onBlur'` the user could fill the form with valid
-    // values but Confirm would stay disabled until they tab away
-    // from the last field — a confusing UX trap. The functional
-    // outcome (errors surface within ~1 keystroke of the spec'd
-    // timing) is equivalent for the user; the validation-mode
-    // divergence is documented in `/speckit.verify.run` 2026-04-26
-    // E2 finding (LOW, accepted).
+    // FR-029(c) — error MESSAGES surface only after the field has
+    // been touched (blurred ≥1 time, gated by `touchedFields` below
+    // at each error-render site). Validation FREQUENCY stays on
+    // every change so RHF `isValid` updates real-time → Confirm
+    // button enables as soon as both fields hold valid values
+    // without forcing the user to tab away from the last input.
+    // This satisfies BOTH the spec literal (errors on blur) AND
+    // the spec's "Submit disabled until both fields valid" line.
     mode: 'onChange',
   });
 
@@ -166,13 +162,18 @@ export function RefundForm({
     if (amountSatang === null) return;
     setSubmitting(true);
     setSubmitError(null);
+    // I5: track success-path entry so the
+    // `finally` block knows whether to keep the spinner alive
+    // (parent unmounts via onClose → setSubmitting(false) is a no-op
+    // safe for unmounted components, React 19 silently ignores) or
+    // reset it for the failure-stays-open paths.
+    let succeeded = false;
     try {
       const res = await fetch('/api/refunds/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentId,
-          // API takes integer satang; we already parsed it above.
           amountSatang: Number(amountSatang),
           reason: values.reason.trim(),
         }),
@@ -194,7 +195,6 @@ export function RefundForm({
         })();
         setSubmitError(msg);
         toast.error(msg);
-        setSubmitting(false);
         return;
       }
       const body = (await res.json()) as {
@@ -203,18 +203,23 @@ export function RefundForm({
       toast.success(
         t('success.toast', { number: body.refund.creditNoteNumber }),
       );
+      succeeded = true;
       onClose();
-      // Refresh server data so the payment timeline + status badges
-      // reflect the new credit-note + payment.status transitions.
       router.refresh();
     } catch (e) {
       const msg = tError('internal_error');
       setSubmitError(msg);
       toast.error(msg);
-      setSubmitting(false);
       // eslint-disable-next-line no-console -- surface unexpected
       // network/parse errors during dev; pino in production.
       console.error('refund submit failed', e);
+    } finally {
+      // Always reset submitting so a stale spinner cannot freeze the
+      // dialog if `onClose` or `router.refresh` throws after success.
+      // React 19 ignores setState on an unmounted component, so this
+      // is safe even when the dialog has already been torn down.
+      void succeeded;
+      setSubmitting(false);
     }
   };
 
@@ -227,8 +232,16 @@ export function RefundForm({
   // Map RHF zod-resolver error codes to localised messages. The
   // resolver puts the `message` field straight into errors; we
   // translate at render time.
-  const amountError = errors.amountThb?.message;
-  const reasonError = errors.reason?.message;
+  //
+  // FR-029(c): error messages surface only AFTER the field has been
+  // touched (blurred ≥1 time). RHF's `touchedFields` flips on first
+  // blur; gating both `aria-invalid` and the inline error <p> on it
+  // prevents the "type one wrong char → instant red error" anti-
+  // pattern while still letting `isValid` (used for Confirm-gating)
+  // track validity continuously.
+  const amountError =
+    touchedFields.amountThb && errors.amountThb?.message;
+  const reasonError = touchedFields.reason && errors.reason?.message;
 
   return (
     <form
@@ -246,11 +259,15 @@ export function RefundForm({
           id={amountId}
           type="text"
           inputMode="decimal"
+          // Native iOS form-validation hint — belt + braces with the
+          // zod resolver. Mirrors `inputMode="decimal"` mobile UX.
+          pattern="\d+(\.\d{1,2})?"
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
           placeholder={tForm('amount.placeholder')}
           aria-describedby={`${amountId}-help`}
+          aria-required="true"
           aria-invalid={Boolean(amountError)}
           data-testid="refund-form-amount"
           {...register('amountThb')}
@@ -258,7 +275,6 @@ export function RefundForm({
         <p
           id={`${amountId}-help`}
           className="text-xs text-muted-foreground"
-          aria-live="polite"
         >
           {tForm('amount.maximumHelp', {
             amount: formatSatangThb(remainingRefundableSatang, locale, currencyCode),
@@ -290,6 +306,7 @@ export function RefundForm({
           maxLength={REASON_MAX}
           placeholder={tForm('reason.placeholder')}
           aria-describedby={reasonHelpId}
+          aria-required="true"
           aria-invalid={Boolean(reasonError)}
           data-testid="refund-form-reason"
           {...register('reason')}
@@ -297,7 +314,6 @@ export function RefundForm({
         <p
           id={reasonHelpId}
           className="text-xs text-muted-foreground"
-          aria-live="polite"
         >
           {tForm('reason.charCount', { count: reasonValue.length })}
         </p>
@@ -332,7 +348,10 @@ export function RefundForm({
           data-testid="refund-form-confirm"
         >
           {submitting && (
-            <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+            <Loader2Icon
+              className="size-4 motion-safe:animate-spin"
+              aria-hidden="true"
+            />
           )}
           {submitting ? t('dialog.processing') : t('dialog.confirm')}
         </Button>

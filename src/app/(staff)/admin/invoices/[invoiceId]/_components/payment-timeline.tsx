@@ -36,7 +36,7 @@ import {
   type LoadInvoicePaymentActivityOutput,
   type RefundActivityDto,
 } from '@/modules/payments';
-// E1 (review 2026-04-26 simplify): request-scoped cached loader
+// E1: request-scoped cached loader
 // dedups the activity query between page.tsx (refund-button gating)
 // and this Suspense'd timeline panel — same args within one request
 // → one DB roundtrip instead of two.

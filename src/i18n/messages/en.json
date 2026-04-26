@@ -1326,7 +1326,8 @@
         "typedPhrase": {
           "label": "Type {phrase} to confirm a full refund",
           "placeholder": "{phrase}",
-          "help": "Full refunds require typed confirmation to prevent accidental processing."
+          "help": "Full refunds require typed confirmation to prevent accidental processing.",
+          "mismatch": "Phrase does not match. Type exactly: {phrase}"
         }
       },
       "success": {

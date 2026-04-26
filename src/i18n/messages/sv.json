@@ -1326,7 +1326,8 @@
         "typedPhrase": {
           "label": "Skriv {phrase} för att bekräfta full återbetalning",
           "placeholder": "{phrase}",
-          "help": "Full återbetalning kräver inskriven bekräftelse för att förhindra oavsiktlig bearbetning."
+          "help": "Full återbetalning kräver inskriven bekräftelse för att förhindra oavsiktlig bearbetning.",
+          "mismatch": "Frasen matchar inte. Skriv exakt: {phrase}"
         }
       },
       "success": {

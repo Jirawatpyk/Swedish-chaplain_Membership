@@ -1,6 +1,5 @@
 /**
  * Request-scoped cached wrapper around `loadInvoicePaymentActivity`
- * (review 2026-04-26 simplify E1).
  *
  * The admin invoice detail page calls this twice per render:
  *   1. `page.tsx` to decide whether to render the Refund button

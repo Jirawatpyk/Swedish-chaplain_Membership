@@ -1,6 +1,5 @@
 /**
- * Cross-module satang → currency display formatter (review 2026-04-26
- * simplify R3).
+ * Cross-module satang → currency display formatter.
  *
  * Promoted from `src/app/(member)/portal/invoices/_utils/format.ts`
  * — was originally portal-scoped because F4 was the first consumer,

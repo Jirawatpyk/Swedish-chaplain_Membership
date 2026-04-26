@@ -227,7 +227,7 @@ describe('issueRefund (T108) — error branches', () => {
     expect(asMock(deps.refundsRepo.insert)).not.toHaveBeenCalled();
   });
 
-  it('refund_exceeds_remaining — pre-flight FR-011b', async () => {
+  it('refund_exceeds_remaining — pre-flight FR-011b + AS6 NO audit emit', async () => {
     const deps = makeDeps();
     asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
       pendingCount: 0,
@@ -245,6 +245,13 @@ describe('issueRefund (T108) — error branches', () => {
         expect(r.error.remainingSatang).toBe(350_000n);
       }
     }
+    // I6 (review 2026-04-27): AS6 explicitly states "no audit event
+    // is written" on a pre-flight rejection. Without this guard, a
+    // future refactor that emits `refund_initiated` BEFORE the
+    // remainder check would silently violate the spec — the prior
+    // `refund_in_progress.code` assertion alone does not catch it.
+    expect(asMock(deps.audit.emit)).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.insert)).not.toHaveBeenCalled();
   });
 });
 
@@ -350,6 +357,36 @@ describe('issueRefund (T108) — happy paths', () => {
     const eventTypes = asMock(deps.audit.emit).mock.calls.map((c) => c[1].eventType);
     expect(eventTypes).toContain('refund_initiated');
     expect(eventTypes).toContain('refund_succeeded');
+  });
+
+  it('AS2 — PromptPay refund happy path uses same flow as card', async () => {
+    // I7 (review 2026-04-27): AS2 explicitly states "the downstream
+    // F4 credit-note flow is identical to the card case" for
+    // PromptPay refunds. Pin the method-agnostic behaviour so a
+    // future gateway change that treats `method='promptpay'` rows
+    // differently (e.g. refusing to refund) is caught here.
+    const deps = makeDeps();
+    asMock(deps.paymentsRepo.lockForUpdate).mockResolvedValueOnce(
+      makePayment({ method: 'promptpay', card: null, processorChargeId: null }),
+    );
+
+    const r = await issueRefund(deps, baseInput({ amountSatang: 350_000n }));
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.refund.status).toBe('succeeded');
+      expect(r.value.payment.status).toBe('partially_refunded');
+      expect(r.value.invoice.status).toBe('partially_credited');
+    }
+    // Stripe gateway receives the PaymentIntent id of the PromptPay
+    // PI — Stripe routes the refund to the originating Thai bank
+    // account; no card-specific metadata in the call.
+    const stripeCall = asMock(deps.processorGateway.createRefund).mock.calls[0]?.[0] as {
+      paymentIntentId: string;
+      metadata: Record<string, string>;
+    };
+    expect(stripeCall.paymentIntentId).toBe('pi_test_xxx');
+    // F4 bridge receives the same input shape regardless of method.
+    expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund)).toHaveBeenCalledTimes(1);
   });
 
   it('full refund (sum=0 + amount=total) — payment.status → refunded', async () => {

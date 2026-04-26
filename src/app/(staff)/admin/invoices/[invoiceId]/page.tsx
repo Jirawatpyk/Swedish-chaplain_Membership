@@ -254,13 +254,11 @@ export default async function InvoiceDetailPage({
 
   const breadcrumbLabel = invoice.documentNumber?.raw ?? t('draftTitle');
 
-  // F5 Phase 6 (T112) — load payment activity at page level so the
-  // Refund action button can be rendered conditionally based on the
-  // existence of a succeeded payment with remaining refundable balance.
-  // The PaymentTimeline panel below also reads this data via its own
-  // call inside Suspense; both queries are tenant-scoped index hits
-  // so the duplication cost is one DB roundtrip — acceptable trade
-  // for the synchronous render of the action row.
+  // Load payment activity at page level so the Refund action button
+  // can be rendered conditionally on succeeded-payment + remaining-
+  // refundable presence. Shares the React `cache()`-deduplicated
+  // loader with the Suspense'd PaymentTimeline panel below — one
+  // DB roundtrip per request, not two.
   let refundButtonProps: {
     paymentId: string;
     remainingRefundableSatang: bigint;
@@ -372,19 +370,24 @@ export default async function InvoiceDetailPage({
                 > 0). Sits next to the F4 manual credit-note CTA so
                 admins see both options on paid invoices. */}
             {refundButtonProps && (
-              <RefundDialog
-                paymentId={refundButtonProps.paymentId}
-                invoiceId={invoice.invoiceId}
-                invoiceDocumentNumber={invoice.documentNumber?.raw ?? ''}
-                memberCompanyName={memberDisplayName}
-                remainingRefundableSatang={
-                  refundButtonProps.remainingRefundableSatang
-                }
-                currencyCode={
-                  (invoice.tenantIdentitySnapshot as { currency_code?: string } | null)
-                    ?.currency_code ?? 'THB'
-                }
-              />
+              // C1: wrap in <Suspense> because
+              // RefundDialog reads useSearchParams() — without a
+              // Suspense boundary Next.js bails the entire page out
+              // to CSR, losing SSR + streaming.
+              <Suspense fallback={null}>
+                <RefundDialog
+                  paymentId={refundButtonProps.paymentId}
+                  invoiceId={invoice.invoiceId}
+                  memberCompanyName={memberDisplayName}
+                  remainingRefundableSatang={
+                    refundButtonProps.remainingRefundableSatang
+                  }
+                  currencyCode={
+                    (invoice.tenantIdentitySnapshot as { currency_code?: string } | null)
+                      ?.currency_code ?? 'THB'
+                  }
+                />
+              </Suspense>
             )}
             {/* Secondary actions (Download PDF, Resend invoice, Resend
                 receipt) collapse into one "⋯" icon dropdown so the

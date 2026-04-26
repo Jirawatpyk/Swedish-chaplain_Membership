@@ -33,7 +33,6 @@ import { RefundForm } from './refund-form';
 type Props = {
   readonly paymentId: string;
   readonly invoiceId: string;
-  readonly invoiceDocumentNumber: string;
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
@@ -42,7 +41,6 @@ type Props = {
 export function RefundDialog({
   paymentId,
   invoiceId,
-  invoiceDocumentNumber,
   memberCompanyName,
   remainingRefundableSatang,
   currencyCode,
@@ -91,7 +89,6 @@ export function RefundDialog({
         <RefundForm
           paymentId={paymentId}
           invoiceId={invoiceId}
-          invoiceDocumentNumber={invoiceDocumentNumber}
           memberCompanyName={memberCompanyName}
           remainingRefundableSatang={remainingRefundableSatang}
           currencyCode={currencyCode}

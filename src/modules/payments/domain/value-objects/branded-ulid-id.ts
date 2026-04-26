@@ -1,5 +1,5 @@
 /**
- * Branded ULID-like id helper (review 2026-04-26 simplify R1).
+ * Branded ULID-like id helper.
  *
  * Eliminates the duplicated `RE_ULID_LIKE` regex + parser scaffold
  * that appears in `payment.ts` and `refund.ts` — both id types use

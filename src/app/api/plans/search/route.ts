@@ -142,8 +142,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           // refunded out of band. Bounded to pageSize (max 10) so the
           // N+1 cost is capped; `Promise.all` parallelises the 10
           // tenant-scoped activity reads so palette latency stays
-          // close to ~1×RTT instead of ~10×RTT (review 2026-04-26
-          // simplify E2).
+          // close to ~1×RTT instead of ~10×RTT.
           const activityDeps = makeLoadInvoicePaymentActivityDeps(tenant.slug);
           const activities = await Promise.all(
             paid.value.rows.map((inv) =>

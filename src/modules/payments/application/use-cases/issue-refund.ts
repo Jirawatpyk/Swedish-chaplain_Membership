@@ -129,7 +129,7 @@ const STRIPE_REFUND_REASON_REQUESTED_BY_CUSTOMER = 'requested_by_customer' as co
  * Phase-B failure helper — flips the pending refund row to `failed`
  * + emits a `refund_failed` audit row in a single tx. Used by both
  * the Stripe-failure branch and the F4-bridge-failure branch
- * (review 2026-04-26 Q2: previously copy-pasted with subtly
+ * (Q2: previously copy-pasted with subtly
  * different payloads — drift risk).
  *
  * Caller supplies the discriminating fields (`failureReasonCode`,
@@ -233,7 +233,7 @@ export async function issueRefund(
       } as const;
     }
 
-    // E3 (review 2026-04-26): one combined SELECT instead of 3
+    // E3: one combined SELECT instead of 3
     // separate roundtrips inside the FOR UPDATE lock window.
     const ctx = await deps.refundsRepo.getRefundContextForUpdate(
       tx,
@@ -337,7 +337,7 @@ export async function issueRefund(
       failureReasonCode: stripeRefund.error.kind,
       summary: `Stripe refund failed (${stripeRefund.error.kind}) for refund ${prepared.refundId}`,
     });
-    // Q1 fix (review 2026-04-26): preserve all 3 gateway kinds —
+    // Q1 fix: preserve all 3 gateway kinds —
     // previously `idempotency_conflict` silently collapsed to
     // `permanent`. Also propagate the gateway's `reason` string
     // verbatim instead of overwriting with the discriminator.
@@ -390,53 +390,89 @@ export async function issueRefund(
   const isFullyRefunded = newSucceededSum >= prepared.payment.amountSatang;
   const nextPaymentStatus = isFullyRefunded ? 'refunded' : 'partially_refunded';
 
-  await deps.paymentsRepo.withTx(async (tx) => {
-    await deps.refundsRepo.updateStatus(tx, {
+  // C2: wrap Phase B in try/catch so a DB outage
+  // post-Stripe + post-F4 success does not leave the refund row
+  // permanently `pending` (which would block all future refunds on
+  // this payment via the `refund_in_progress` guard). On Phase B
+  // throw, flip the row to `failed` via `finaliseFailedRefund`
+  // (separate tx — the outer one already rolled back), audit
+  // `refund_failed` with `f4_bridge_phase_b_db_error`, and surface
+  // the failure to the caller as `f4_bridge_error`. Stripe + F4 CN
+  // already succeeded so the out-of-band-refund runbook is the
+  // recovery path for ops.
+  try {
+    await deps.paymentsRepo.withTx(async (tx) => {
+      await deps.refundsRepo.updateStatus(tx, {
+        refundId: prepared.refundId,
+        tenantId: input.tenantId,
+        nextStatus: 'succeeded',
+        processorRefundId: stripeRefund.value.id,
+        creditNoteId: cnResult.value.creditNoteId,
+        completedAt,
+      });
+
+      await deps.paymentsRepo.updateStatus(tx, {
+        paymentId,
+        tenantId: input.tenantId,
+        nextStatus: nextPaymentStatus,
+        completedAt,
+      });
+
+      // Invoice status derived arithmetically: F5 invariant is "one
+      // PaymentIntent per invoice covers the whole invoice" so
+      // `payment.amountSatang === invoice.totalSatang`. When the
+      // cumulative refund equals the payment amount, the invoice is
+      // fully credited; otherwise partially credited. Avoids a second
+      // DB roundtrip to F4.
+      const nextInvoiceStatus: 'credited' | 'partially_credited' = isFullyRefunded
+        ? 'credited'
+        : 'partially_credited';
+
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'refund_succeeded',
+        actorUserId: input.actorUserId,
+        summary: `Refund ${prepared.refundId} succeeded — credit note ${cnResult.value.creditNoteNumber} issued for ${input.amountSatang.toString()} satang`,
+        payload: {
+          refund_id: prepared.refundId,
+          payment_id: paymentId,
+          invoice_id: prepared.payment.invoiceId,
+          processor_refund_id: stripeRefund.value.id,
+          credit_note_id: cnResult.value.creditNoteId,
+          credit_note_number: cnResult.value.creditNoteNumber,
+          amount_satang: input.amountSatang.toString(),
+          payment_next_status: nextPaymentStatus,
+          invoice_next_status: nextInvoiceStatus,
+        },
+        retentionYears: retentionFor('refund_succeeded'),
+      });
+    });
+  } catch (phaseBError) {
+    const detail =
+      phaseBError instanceof Error ? phaseBError.message : String(phaseBError);
+    await finaliseFailedRefund(deps, {
       refundId: prepared.refundId,
-      tenantId: input.tenantId,
-      nextStatus: 'succeeded',
-      processorRefundId: stripeRefund.value.id,
-      creditNoteId: cnResult.value.creditNoteId,
-      completedAt,
-    });
-
-    await deps.paymentsRepo.updateStatus(tx, {
       paymentId,
-      tenantId: input.tenantId,
-      nextStatus: nextPaymentStatus,
-      completedAt,
-    });
-
-    // Invoice status derived arithmetically: F5 invariant is "one
-    // PaymentIntent per invoice covers the whole invoice" so
-    // `payment.amountSatang === invoice.totalSatang`. When the
-    // cumulative refund equals the payment amount, the invoice is
-    // fully credited; otherwise partially credited. Avoids a second
-    // DB roundtrip to F4 (review 2026-04-26 finding E1).
-    const nextInvoiceStatus: 'credited' | 'partially_credited' = isFullyRefunded
-      ? 'credited'
-      : 'partially_credited';
-
-    await deps.audit.emit(tx, {
+      invoiceId: prepared.payment.invoiceId,
       tenantId: input.tenantId,
       requestId: input.requestId,
-      eventType: 'refund_succeeded',
       actorUserId: input.actorUserId,
-      summary: `Refund ${prepared.refundId} succeeded — credit note ${cnResult.value.creditNoteNumber} issued for ${input.amountSatang.toString()} satang`,
-      payload: {
-        refund_id: prepared.refundId,
-        payment_id: paymentId,
-        invoice_id: prepared.payment.invoiceId,
+      failureReasonCode: 'f4_bridge_phase_b_db_error',
+      summary: `Phase B finalisation failed for refund ${prepared.refundId} (Stripe refund ${stripeRefund.value.id} + F4 CN ${cnResult.value.creditNoteId} both succeeded — ops follow up via out-of-band-refund runbook)`,
+      extraPayload: {
         processor_refund_id: stripeRefund.value.id,
         credit_note_id: cnResult.value.creditNoteId,
         credit_note_number: cnResult.value.creditNoteNumber,
-        amount_satang: input.amountSatang.toString(),
-        payment_next_status: nextPaymentStatus,
-        invoice_next_status: nextInvoiceStatus,
+        phase_b_detail: detail.slice(0, 200),
       },
-      retentionYears: retentionFor('refund_succeeded'),
+    }).catch(() => {
+      // If even the failure-finalise tx throws, the pending row
+      // stays — the T130a stale-pending-refund sweep cron is the
+      // last-resort recovery (Phase 9 polish).
     });
-  });
+    return err({ code: 'f4_bridge_error', detail });
+  }
 
   return ok({
     refund: {

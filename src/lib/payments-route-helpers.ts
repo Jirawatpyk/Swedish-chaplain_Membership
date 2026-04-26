@@ -1,6 +1,5 @@
 /**
  * Shared response-shape helpers for F5 payment + refund route handlers
- * (review 2026-04-26 simplify R1 + Q2).
  *
  * Eliminates the duplicated `baseHeaders` + `errorResponse` boilerplate
  * previously inlined in:
@@ -103,7 +102,6 @@ export function errorResponse(
 
 /**
  * PCI / log-hygiene telemetry extractor for use-case error results
- * (review 2026-04-26 simplify R3).
  *
  * Replaces the ternary-chain copy that appeared verbatim in 3 routes
  * (`payments/initiate`, `refunds/initiate`, `payments/[id]/cancel`)
