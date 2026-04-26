@@ -30,6 +30,7 @@
     "db:verify": "node --env-file=.env.local --import tsx scripts/verify-schema.ts",
     "db:seed-admin": "node --env-file=.env.local --import tsx scripts/seed-bootstrap-admin.ts",
     "seed:f5-e2e": "node --env-file=.env.local --import tsx scripts/seed-f5-e2e-payment-settings.ts",
+    "seed:f5-e2e:reconciliation": "node --env-file=.env.local --import tsx scripts/seed-f5-e2e-reconciliation.ts",
     "db:clear-ratelimit": "node --env-file=.env.local --import tsx scripts/clear-rate-limit.ts",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
