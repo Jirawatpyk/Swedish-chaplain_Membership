@@ -688,11 +688,13 @@ export default async function InvoiceDetailPage({
               behaviour documented inside the component file. */}
           <Suspense fallback={<PaymentTimelineSkeleton />}>
             <PaymentTimeline
-              invoiceId={invoice.invoiceId}
+              invoice={{
+                invoiceId: invoice.invoiceId,
+                status: invoice.status,
+                paidAt: invoice.paidAt,
+                paymentRecordedByUserId: invoice.paymentRecordedByUserId,
+              }}
               tenantId={tenantCtx.slug}
-              invoicePaidAt={invoice.paidAt}
-              invoicePaymentRecordedByUserId={invoice.paymentRecordedByUserId}
-              invoiceStatus={invoice.status}
               isAdmin={isAdmin}
             />
           </Suspense>

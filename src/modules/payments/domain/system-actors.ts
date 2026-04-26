@@ -21,3 +21,14 @@
  */
 export const SYSTEM_ACTOR_STRIPE_WEBHOOK =
   '00000000-0000-0000-0000-0000000f5001' as const;
+
+/**
+ * Legacy string-form actor sentinel used by F5 audit-emit paths that
+ * pre-date the migration-0041 UUID convention. Synthesized timeline
+ * events (`payment_succeeded`, `payment_failed`, `payment_canceled`,
+ * `refund_*`) carry this value instead of the UUID. Both forms are
+ * recognised by the admin reconciliation timeline's `isSystemActor()`
+ * helper and render as the i18n `actorSystem` label.
+ */
+export const SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY =
+  'system:stripe-webhook' as const;

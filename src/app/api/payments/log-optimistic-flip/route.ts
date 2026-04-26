@@ -37,7 +37,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
-import { hashIdForLog } from '@/lib/crypto';
+import { hashId } from '@/lib/log-id';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -109,18 +109,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return noContent(400);
   }
 
-  // R3-fix Imp#1+#2 (2026-04-26): use shared `hashIdForLog` helper
-  // from `@/lib/crypto` (was inline + dynamic `await import('node:crypto')`
-  // — top-level static import is fine in Node.js runtime and saves
-  // a microtask per request).
-  const actorUserIdHash = hashIdForLog(actorUserId);
-
   logger.info(
     {
       event: 'client_optimistic_flip',
       tenantId: tenantCtx.slug,
       invoiceId: parsedBody.invoiceId,
-      actorUserIdHash,
+      userIdHash: hashId(actorUserId),
       correlationId,
     },
     'Member optimistically flipped invoice to paid client-side',

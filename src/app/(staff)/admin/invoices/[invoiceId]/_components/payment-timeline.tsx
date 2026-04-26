@@ -17,7 +17,7 @@
  * mutating triggers (record-payment / void / refund) are gated
  * elsewhere by `isAdmin` checks on the parent page.
  */
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import {
   ArrowDownToLineIcon,
   BanknoteIcon,
@@ -34,6 +34,7 @@ import {
   loadInvoicePaymentActivity,
   makeLoadInvoicePaymentActivityDeps,
   SYSTEM_ACTOR_STRIPE_WEBHOOK,
+  SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
   type LoadInvoicePaymentActivityOutput,
   type RefundActivityDto,
 } from '@/modules/payments';
@@ -45,7 +46,7 @@ import {
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { logger } from '@/lib/logger';
-import { hashIdForLog } from '@/lib/crypto';
+import { hashId } from '@/lib/log-id';
 import { CopyChargeIdButton } from './copy-charge-id-button';
 
 type SyntheticEventType =
@@ -188,7 +189,7 @@ export function buildEvents(
           actorUserId:
             terminalType === 'payment_canceled'
               ? p.actorUserId
-              : `${SYSTEM_ACTOR_PREFIX}stripe-webhook`,
+              : SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
           subjectId: p.id,
         });
       }
@@ -204,7 +205,7 @@ export function buildEvents(
       type: 'invoice_paid',
       timestamp: new Date(invoicePaidAtIso),
       actorUserId:
-        invoicePaymentRecordedByUserId ?? `${SYSTEM_ACTOR_PREFIX}stripe-webhook`,
+        invoicePaymentRecordedByUserId ?? SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
       subjectId: 'invoice',
     });
   }
@@ -224,7 +225,7 @@ export function buildEvents(
         id: `${r.refundId}-${terminalType}`,
         type: terminalType,
         timestamp: r.completedAt,
-        actorUserId: `${SYSTEM_ACTOR_PREFIX}stripe-webhook`,
+        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
         subjectId: r.refundId,
       });
     }
@@ -234,36 +235,34 @@ export function buildEvents(
   return events;
 }
 
+/** Subset of the F4 `Invoice` aggregate the timeline reads. */
+export interface InvoiceForTimeline {
+  readonly invoiceId: string;
+  readonly status: string;
+  /** ISO UTC. Null when invoice has not transitioned to paid. */
+  readonly paidAt: string | null;
+  /**
+   * Canonical actor for the `invoice_paid` event. Online payments
+   * carry `SYSTEM_ACTOR_STRIPE_WEBHOOK`; manual record-payment carries
+   * the admin's userId.
+   */
+  readonly paymentRecordedByUserId: string | null;
+}
+
 export async function PaymentTimeline({
-  invoiceId,
+  invoice,
   tenantId,
-  invoicePaidAt,
-  invoicePaymentRecordedByUserId,
-  invoiceStatus,
   isAdmin = false,
 }: {
-  readonly invoiceId: string;
+  readonly invoice: InvoiceForTimeline;
   readonly tenantId: string;
-  /** F4 `invoice.paidAt` (ISO UTC). Null when invoice has not transitioned to paid. */
-  readonly invoicePaidAt: string | null;
   /**
-   * E2 fix — F4 `invoice.paymentRecordedByUserId` is the canonical actor for
-   * the `invoice_paid` event. For online payments this is `system:stripe-webhook`
-   * (set by `markPaidFromProcessor`); for manual paths it is the admin's userId.
-   * Pass-through gives the right actor without re-deriving from the (currently)
-   * stripe-only timeline scope.
+   * Drives the admin-only "Record a payment manually" CTA in the empty
+   * state when invoice is `issued`. Defaults to false (manager view).
    */
-  readonly invoicePaymentRecordedByUserId: string | null;
-  /**
-   * Verify-fix S4 (2026-04-26): drives the admin-only "Record payment
-   * manually" CTA in the empty state. Only renders when (a) viewer is
-   * admin, (b) invoice is `issued` (record-payment is allowed only on
-   * issued — manual record on paid/void/credited is not a thing), and
-   * (c) timeline is empty (no F5 + no F4 manual flow yet).
-   */
-  readonly invoiceStatus?: string | undefined;
   readonly isAdmin?: boolean;
 }) {
+  const { invoiceId, paidAt: invoicePaidAt, paymentRecordedByUserId: invoicePaymentRecordedByUserId, status: invoiceStatus } = invoice;
   const t = await getTranslations('admin.paymentReconciliation.timeline');
   const tEvents = await getTranslations(
     'admin.paymentReconciliation.timeline.events',
@@ -271,8 +270,7 @@ export async function PaymentTimeline({
   const tCharge = await getTranslations(
     'admin.paymentReconciliation.timeline.chargeId',
   );
-  const localeMod = await import('next-intl/server');
-  const userLocale = await localeMod.getLocale();
+  const userLocale = await getLocale();
 
   const result = await loadInvoicePaymentActivity(
     makeLoadInvoicePaymentActivityDeps(tenantId),
@@ -330,11 +328,8 @@ export async function PaymentTimeline({
         // structured warning so a flapping users-table or schema-grant break
         // surfaces in pino aggregation; the UI still degrades gracefully by
         // falling back to the raw uuid.
-        // R3-fix Imp#2 (2026-04-26): hash via shared `hashIdForLog`
-        // helper from `@/lib/crypto` (was a local hash function with
-        // duplicate logic on the API-route side; consolidated).
         logger.warn(
-          { cause, actor_user_id_hash: hashIdForLog(uid) },
+          { cause, userIdHash: hashId(uid) },
           'payment-timeline: user lookup failed, falling back to actor uuid',
         );
         userEmailMap.set(uid, uid);

@@ -8,7 +8,10 @@
  */
 
 // --- Domain re-exports ------------------------------------------------------
-export { SYSTEM_ACTOR_STRIPE_WEBHOOK } from './domain/system-actors';
+export {
+  SYSTEM_ACTOR_STRIPE_WEBHOOK,
+  SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
+} from './domain/system-actors';
 export {
   PAYMENT_METHODS,
   parsePaymentMethod,

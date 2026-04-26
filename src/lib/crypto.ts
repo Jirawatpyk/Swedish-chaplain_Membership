@@ -12,19 +12,8 @@ export function sha256Hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-/**
- * 16-char SHA-256 prefix for log correlation. Use for any user/session
- * id that ends up in pino logs (CLAUDE.md "Hash user IDs in logs where
- * cross-request correlation is needed").
- *
- * Trade-off: the truncated form keeps log lines compact while preserving
- * enough entropy for cross-request correlation within a tenant. It is
- * NOT true anonymization — an operator with a roster of all user ids
- * can pre-compute the same hashes and reverse-lookup. For correlation
- * use cases (the reason this helper exists), that is acceptable; for
- * stronger anonymization a future caller should switch to HMAC-SHA256
- * with a server-side secret. Documented per /speckit.review R3 S5.
- */
-export function hashIdForLog(value: string): string {
-  return sha256Hex(value).slice(0, 16);
-}
+// Note: log-correlation user-id hashing lives in `src/lib/log-id.ts`
+// (`hashId()`) — NOT here. That helper uses djb2 (fast, non-crypto) and
+// is the canonical primitive for pino log fields per CLAUDE.md. Do not
+// re-introduce a SHA-256 variant for the same purpose; it duplicates
+// the established helper and was rolled back per /simplify R3 review.
