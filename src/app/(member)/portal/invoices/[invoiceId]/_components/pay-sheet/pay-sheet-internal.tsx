@@ -47,6 +47,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 
 import { PaymentFailurePanel } from './payment-failure-panel';
 import { useThreeDSecurePoll } from '@/hooks/use-three-d-secure-poll';
@@ -116,7 +117,7 @@ export function promptPayPollOutcomeToState(
   return { kind: 'expired' };
 }
 
-type PayState =
+export type PayState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'initiating' }
   | { readonly kind: 'card-form'; readonly clientSecret: string }
@@ -129,6 +130,35 @@ type PayState =
       readonly receiptUrl: string;
     }
   | { readonly kind: 'failure'; readonly reason: string };
+
+/**
+ * Pure derivation of the FR-028(j) screen-reader announcement string
+ * for the consolidated aria-live region. Extracted so unit tests can
+ * cover all 7 payState branches without mounting the full subtree
+ * (which requires Stripe SDK + initiate-fetch mocks).
+ *
+ * Returns `''` for transient pre-interactive kinds — there is nothing
+ * worth announcing yet, and an empty live region does not fire AT.
+ */
+export function derivePayStateAnnouncement(
+  payState: PayState,
+  t: TranslateFn,
+): string {
+  switch (payState.kind) {
+    case 'idle':
+    case 'initiating':
+    case 'card-form':
+      return '';
+    case 'processing':
+      return t('processing.title');
+    case 'requires-action':
+      return t('threeDSecure.title');
+    case 'success':
+      return t('success.title');
+    case 'failure':
+      return `${t('retry.title')}: ${payState.reason}`;
+  }
+}
 
 // `InitiateResponse` moved to `./use-initiate-payment.ts` (audit
 // 2026-04-26 round-2 #1 refactor — extracted with the fetch hook).
@@ -536,6 +566,9 @@ export function PaySheetInternal({
   const handleCardFailure = useCallback(
     ({ message }: { message: string }) => {
       setPayState({ kind: 'failure', reason: message });
+      // Persistent toast — the inline <PaymentFailurePanel> can scroll
+      // out of view on mobile or be torn down with the drawer.
+      toast.error(message);
     },
     [],
   );
@@ -748,8 +781,21 @@ export function PaySheetInternal({
   // choosing a method. Render the branch panel directly so the
   // ConfirmationPanel etc. get the full drawer body.
   const showChrome = showSummary; // same gate as OrderSummary
+
+  // FR-028(j) — single persistent live region. Per-panel aria-live
+  // mounts are unreliable across NVDA/VoiceOver/TalkBack when one
+  // region replaces another mid-announcement.
+  const announcement = derivePayStateAnnouncement(payState, t);
   return (
     <div className="space-y-4">
+      <div
+        aria-live="polite"
+        role="status"
+        className="sr-only"
+        data-testid="pay-sheet-aria-announcer"
+      >
+        {announcement}
+      </div>
       {showSummary ? (
         <OrderSummary
           invoiceNumber={invoice.invoiceNumber}
