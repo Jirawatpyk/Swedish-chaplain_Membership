@@ -49,11 +49,11 @@ export const dynamic = 'force-dynamic';
 // Kept inline (not cross-imported) because client-side parsing is not
 // needed; the PaySheet drawer (Group G) posts opaque ids + a method enum.
 //
-// Audit 2026-04-25 finding #18: invoiceId now blocks control chars
-// and exotic UTF-8 that wouldn't match a real invoice id but COULD
-// surface in audit logs / SQL error messages. Permissive enough to
-// accept BOTH UUIDs (Domain canonical — `[0-9a-f]{8}-...`) AND
-// ULID-prefixed test fixtures (`inv_...`). Length 20–40 covers both.
+// `invoiceId` blocks control chars and exotic UTF-8 that wouldn't
+// match a real invoice id but COULD surface in audit logs / SQL
+// error messages. Permissive enough to accept BOTH UUIDs (Domain
+// canonical `[0-9a-f]{8}-...`) AND ULID-prefixed test fixtures
+// (`inv_...`). Length 20–40 covers both.
 // ---------------------------------------------------------------------------
 const INVOICE_ID_RE = /^[A-Za-z0-9_-]{20,40}$/;
 const InitiatePaymentBody = z.object({
@@ -167,10 +167,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (memberCtx && 'response' in memberCtx && memberCtx.response) {
     return memberCtx.response;
   }
-  // Audit 2026-04-25 finding #21: TS now narrows `memberCtx` to the
-  // success variant (MemberContext, no `response`) after the rejection
-  // short-circuit above. Drop the legacy `(memberCtx as ...)` casts
-  // and let the discriminated-union narrowing carry the field types.
+  // After the rejection short-circuit above, `memberCtx` narrows
+  // to the success variant (MemberContext, no `response`) — no
+  // cast needed; the discriminated-union narrowing carries the
+  // field types.
   if (!memberCtx || 'response' in memberCtx) {
     // Defensive — should be unreachable given the narrowing above.
     return errorResponse(500, 'internal_error', correlationId);
@@ -252,17 +252,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     if (result.ok) {
-      // Audit 2026-04-25 finding #19: route now expects ONLY the
-      // canonical `InitiatePaymentSuccess` shape from the use-case
-      // (flat: payment + clientSecret + publishableKey + paymentIntentId
-      // + promptpayQrSvgUrl + resumed). The previous nested
-      // `{ payment, stripe: {...} }` test-fixture branch has been
-      // removed; tests updated to match the use-case interface.
-      //
-      // NOTE: `clientSecret` is a short-lived Stripe confirmation
-      // token — it MUST be returned in the response body (the Elements
-      // client needs it) but MUST NOT be logged. No pino log lines
-      // carry it (T041 PCI structural guard).
+      // `clientSecret` is a short-lived Stripe confirmation token —
+      // MUST be returned in the response body (Elements needs it)
+      // but MUST NOT be logged. No pino log lines carry it (PCI
+      // structural guard).
       const value = result.value;
       const payment = value.payment as unknown as Record<string, unknown>;
       const initiatedAtRaw = payment['initiatedAt'];
@@ -302,9 +295,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             clientSecret: value.clientSecret,
             paymentIntentId: value.paymentIntentId,
             promptpayQrSvgUrl: value.promptpayQrSvgUrl ?? null,
-            // Verify-fix C1 (2026-04-26): expose tenant-configured QR
-            // expiry so the panel countdown matches the server-side PI
-            // expiry window instead of the client's hardcoded 900s.
+            // Server-locked: panel countdown must match the server
+            // PI expiry window — never a client default.
             promptpayQrExpirySeconds: value.promptpayQrExpirySeconds,
           },
           correlationId,
@@ -316,17 +308,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Error branch.
     const errCode = result.error.code;
     const { status, routeCode } = httpStatusForUseCaseError(errCode);
-    // C1 fix (2026-04-26 PCI hygiene): log ONLY the gateway error
-    // `kind` discriminator — never `result.error.reason` (which
-    // originates from Stripe SDK `error.message` and may embed
-    // account ids / key prefixes / forbidden detail). The matching
-    // `stripe-gateway: SDK error` line in pino carries the full
-    // SDK-level diagnostic with allow-listed fields only.
+    // PCI: log ONLY the gateway error `kind` discriminator —
+    // never `result.error.reason` (originates from Stripe SDK
+    // `error.message` and may embed account ids / key prefixes /
+    // forbidden detail). The matching `stripe-gateway: SDK error`
+    // pino line carries the full SDK-level diagnostic with
+    // allow-listed fields only.
     //
-    // I6 fix (2026-04-26): Retry-After is meaningful ONLY for
-    // retryable errors. Permanent failures (PromptPay-not-enabled,
-    // country-mismatch, key-mismatch) never recover within 30s and
-    // sending Retry-After misleads upstream proxies + monitoring.
+    // Retry-After is meaningful ONLY for retryable errors.
+    // Permanent failures (PromptPay-not-enabled, country-mismatch,
+    // key-mismatch) never recover within 30s and the header would
+    // mislead upstream proxies + monitoring.
     const processorErrorKind =
       result.error.code === 'processor_unavailable'
         ? result.error.kind

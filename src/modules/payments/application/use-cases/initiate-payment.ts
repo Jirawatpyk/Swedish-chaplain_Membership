@@ -68,7 +68,6 @@ export interface InitiatePaymentSuccess {
    * populated — defaults from the DB column (typically 900s = 15 min)
    * apply at insert time. Frontend uses this to drive the countdown
    * timer in <PromptPayPanel> rather than hardcoding a default.
-   * Verify-fix C1 (2026-04-26).
    */
   readonly promptpayQrExpirySeconds: number;
   /** True when this is a resume (pre-existing pending row) — caller skips audit. */
@@ -241,25 +240,47 @@ export async function initiatePayment(
     // a card `clientSecret` would be returned for a PromptPay request
     // with `promptpayQrSvgUrl=null` → silent UI failure.
     //
-    // C3 fix (2026-04-26): proactively cancel the mismatched-method
-    // pending PI on Stripe AND mark its DB row `canceled` BEFORE
-    // falling through to create the new-method PI. This guarantees
-    // happy-path correctness without depending on the Phase 9 T101
-    // stale-pending sweep cron and prevents a future
-    // `findPendingByInvoiceAndActor` call from returning the stale
-    // mismatched-method row.
+    // Cross-method skip path: cancel the mismatched-method PI on
+    // Stripe + mark its DB row `canceled` BEFORE falling through.
+    // Lock-hold tradeoff: `cancelPaymentIntent` is a network call
+    // (≤10 s timeout, see stripe-client.ts) that runs inside the
+    // tx, so the row-lock is held until Stripe responds. This is
+    // acceptable because (a) cross-method switch is a rare user
+    // action, (b) the alternative (cancel outside tx) would
+    // sacrifice atomicity — a partial completion could leave a
+    // canceled Stripe PI with a still-`pending` DB row that the
+    // next request would pick up again.
     if (pending && pending.method !== input.method) {
-      // Best-effort cancel: if Stripe returns a permanent error
-      // (PI already terminal, etc.) we still proceed — the DB row is
-      // marked canceled regardless so it cannot be picked up again.
-      // Retryable errors swallow: the sweep cron is the backstop.
       const cancelResult = await deps.processorGateway.cancelPaymentIntent(
         pending.processorPaymentIntentId,
         settings.processorAccountId,
       );
-      // Mark the DB row terminal even if the Stripe cancel was
-      // already terminal — same outcome from our row's perspective.
-      void cancelResult;
+      // Financial-integrity guard: Stripe reports the PI as
+      // `succeeded` when the customer paid via the original method
+      // (e.g. card 3DS just resolved) but our webhook hasn't
+      // arrived yet to flip the row. Marking the row `canceled`
+      // here would create a DB-says-canceled vs Stripe-says-paid
+      // drift while the customer was actually charged. Surface as
+      // `processor_unavailable` so the new-method initiate aborts;
+      // the inbound webhook will reconcile to `succeeded` shortly.
+      if (
+        !cancelResult.ok &&
+        cancelResult.error.kind === 'permanent' &&
+        'code' in cancelResult.error &&
+        cancelResult.error.code === 'payment_intent_already_succeeded'
+      ) {
+        return err<InitiatePaymentError>({
+          code: 'processor_unavailable',
+          kind: 'permanent',
+          reason: 'cross_method_pi_already_succeeded',
+        });
+      }
+      // For all other cancel outcomes (success / retryable / other
+      // permanent errors like already-canceled / not-found), proceed
+      // to mark the row terminal. If `updateStatus` or `audit.emit`
+      // throws inside this tx, the entire tx rolls back, leaving
+      // the row in `pending`; the stale-pending sweep cron is the
+      // backstop for that recovery window.
       await deps.paymentsRepo.updateStatus(tx, {
         paymentId: pending.id,
         tenantId: pending.tenantId,
@@ -320,11 +341,10 @@ export async function initiatePayment(
         clientSecret: retrieved.value.clientSecret,
         publishableKey: settings.processorPublishableKey,
         paymentIntentId: retrieved.value.id,
-        // I3 fix (2026-04-26): retrievePaymentIntent now expands the
-        // PI's `next_action` and returns `promptpayQrSvgUrl` for any
-        // PromptPay PI still in the scan window, so the resumed
-        // attempt can render the same QR back to the browser without
-        // a "load failed" failure-state flash.
+        // retrievePaymentIntent expands `next_action` and returns
+        // `promptpayQrSvgUrl` for any PromptPay PI still in the scan
+        // window, so the resumed attempt re-renders the same QR
+        // without a "load failed" failure-state flash.
         promptpayQrSvgUrl: retrieved.value.promptpayQrSvgUrl,
         promptpayQrExpirySeconds: settings.promptpayQrExpirySeconds,
         resumed: true,

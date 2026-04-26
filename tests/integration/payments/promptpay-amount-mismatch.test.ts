@@ -122,6 +122,31 @@ describe('PromptPay server-locked amount (T089 / FR-009)', () => {
     expect(body).toContain('payment_method_data[type]=promptpay');
   });
 
+  it('returns permanent error when promptpay is mixed with another method (Result, not throw)', async () => {
+    // PromptPay requires server-confirm to surface the QR. Multi-
+    // method PIs would skip server-confirm → silent UI failure.
+    // The gateway must reject this synchronously with a typed
+    // `permanent` error — NOT throw — so the Result<T,E> contract
+    // at the boundary is preserved.
+    const result = await stripeGateway.createPaymentIntent({
+      amountSatang: 53500n,
+      currency: 'thb',
+      paymentMethodTypes: ['promptpay', 'card'],
+      metadata: { invoice_id: 'inv_t089' },
+      idempotencyKey: 'inv-inv_t089-attempt-mixed',
+      stripeAccount: STRIPE_ACCOUNT,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected error');
+    expect(result.error.kind).toBe('permanent');
+    if (result.error.kind !== 'permanent') throw new Error('unreachable');
+    expect(result.error.code).toBe('promptpay_mixed_methods');
+    // No Stripe HTTP call should have been issued — assertion
+    // short-circuits before the SDK is touched.
+    expect(captured.length).toBe(0);
+  });
+
   it('Stripe rejects out-of-band amount drift after server-confirm (mock 400)', async () => {
     // Even if a downstream layer attempts a confirmation with a different
     // amount, Stripe rejects it. We model this by returning an

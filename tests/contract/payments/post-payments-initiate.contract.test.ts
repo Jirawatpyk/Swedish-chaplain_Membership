@@ -395,9 +395,15 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
     expect(res.headers.get('Retry-After')).not.toBeNull();
   });
 
-  it('502 processor_unavailable — Stripe API exhausted retries', async () => {
+  it('502 processor_unavailable retryable — includes Retry-After header', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberContext);
-    initiatePaymentMock.mockResolvedValueOnce(err({ code: 'processor_unavailable' }));
+    initiatePaymentMock.mockResolvedValueOnce(
+      err({
+        code: 'processor_unavailable',
+        kind: 'retryable',
+        reason: 'retryable',
+      }),
+    );
 
     const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(makeJsonRequest(VALID_BODY));
@@ -405,10 +411,56 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
     const body = await res.json() as Record<string, unknown>;
     const error = body['error'] as Record<string, unknown>;
     expect(error['code']).toBe('processor_unavailable');
-    // Senior-tester F2 (Group B deferred, 2026-04-24): 502 is transient
-    // per contracts/payments-api.md § 4 (Common headers) — Retry-After
-    // MUST accompany transient-failure codes so the client can back off.
+    // Retryable transient failures MUST advertise a back-off window
+    // so the client can pace its retries.
     expect(res.headers.get('Retry-After')).not.toBeNull();
+  });
+
+  it('502 processor_unavailable permanent — does NOT include Retry-After (would mislead clients)', async () => {
+    // Permanent processor errors (PromptPay-not-enabled, country
+    // mismatch, key-environment mismatch) never recover within the
+    // back-off window. Sending Retry-After: 30 misleads upstream
+    // proxies + monitoring into thinking a retry would help.
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    initiatePaymentMock.mockResolvedValueOnce(
+      err({
+        code: 'processor_unavailable',
+        kind: 'permanent',
+        reason: 'cross_method_pi_already_succeeded',
+      }),
+    );
+
+    const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    expect(res.status).toBe(502);
+    const body = await res.json() as Record<string, unknown>;
+    const error = body['error'] as Record<string, unknown>;
+    expect(error['code']).toBe('processor_unavailable');
+    expect(res.headers.get('Retry-After')).toBeNull();
+  });
+
+  it('502 processor_unavailable — error envelope MUST NOT leak the gateway `reason` (PCI / forbidden-fields hygiene)', async () => {
+    // The route maps gateway errors to a static i18n message; the
+    // raw `reason` (which originates from Stripe SDK error.message
+    // and may carry account ids / key prefixes / forbidden detail)
+    // must NEVER reach the client response body. Pin this so a
+    // future regression that re-introduces `processorReason` into
+    // the envelope is caught immediately.
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    initiatePaymentMock.mockResolvedValueOnce(
+      err({
+        code: 'processor_unavailable',
+        kind: 'permanent',
+        reason: 'sk_live_FORBIDDEN_DETAIL_THAT_MUST_NOT_LEAK',
+      }),
+    );
+
+    const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    const bodyText = await res.text();
+    expect(bodyText).not.toContain('sk_live_FORBIDDEN_DETAIL_THAT_MUST_NOT_LEAK');
+    expect(bodyText).not.toContain('processorReason');
+    expect(bodyText).not.toContain('FORBIDDEN_DETAIL');
   });
 
   // Senior-tester F4 (Group B deferred, 2026-04-24): the standard error

@@ -62,7 +62,7 @@
  * apply `useLocale().split('-')[0]` truncation in <CardForm>.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { RefreshCwIcon } from 'lucide-react';
@@ -110,6 +110,14 @@ export interface PromptPayPanelProps {
 }
 
 /**
+ * Maximum in-component QR `<img>` reload attempts before escalating
+ * to the parent's failure state. Stripe-hosted SVGs over a flaky
+ * mobile connection occasionally drop one byte; one or two retries
+ * is usually enough to recover without burning a Stripe PI.
+ */
+export const MAX_QR_LOAD_RETRIES = 2;
+
+/**
  * Pure helper — extracted for unit-testability of the countdown format.
  * Always renders MM:SS with leading zeros so SR announcements are stable.
  */
@@ -139,6 +147,24 @@ export function PromptPayPanel({
   const locale = useLocale();
 
   const [remaining, setRemaining] = useState<number>(expirySeconds);
+  // Image-load retry counter. The browser fires `<img onError>` on
+  // any load failure, including transient network hiccups that the
+  // browser would have recovered from on a retry. Without
+  // debouncing, a single 3G blip would escalate to the parent
+  // failure state → user clicks Refresh → new Stripe PI created →
+  // attempt_seq + rate-limit budget burned for nothing. Allow up
+  // to `MAX_QR_LOAD_RETRIES` in-component retries (force-reload by
+  // appending a cache-busting query param) before escalating.
+  const [qrLoadAttempts, setQrLoadAttempts] = useState<number>(0);
+  const qrLoadAttemptsRef = useRef<number>(0);
+  useEffect(() => {
+    qrLoadAttemptsRef.current = qrLoadAttempts;
+  }, [qrLoadAttempts]);
+  // Reset retry counter whenever the QR URL itself changes (parent
+  // produced a fresh PaymentIntent → fresh attempt).
+  useEffect(() => {
+    setQrLoadAttempts(0);
+  }, [qrSvgUrl]);
 
   // Drive the countdown via setInterval. Reset whenever the expiry
   // window changes (parent passes a new expirySeconds) or the QR URL
@@ -153,6 +179,19 @@ export function PromptPayPanel({
     }, 1_000);
     return () => clearInterval(intervalId);
   }, [expirySeconds, qrSvgUrl, status]);
+
+  const handleQrLoadError = useCallback(() => {
+    if (qrLoadAttemptsRef.current < MAX_QR_LOAD_RETRIES) {
+      setQrLoadAttempts((n) => n + 1);
+      return;
+    }
+    onLoadError?.();
+  }, [onLoadError]);
+
+  // Cache-bust query param forces the browser to retry on attempt
+  // bump. The same Stripe SVG URL is reused — no new PI is created.
+  const qrSrc =
+    qrLoadAttempts === 0 ? qrSvgUrl : `${qrSvgUrl}#retry=${qrLoadAttempts}`;
 
   const { minutes, seconds } = formatCountdown(remaining);
   const amountDisplay = useMemo(
@@ -221,14 +260,14 @@ export function PromptPayPanel({
          * intrinsic-sizing.
          */}
         <Image
-          src={qrSvgUrl}
+          src={qrSrc}
           alt={t('qrAlt')}
           width={220}
           height={220}
           unoptimized
           className="aspect-square h-auto w-[220px] rounded-md border border-border bg-popover p-3"
           data-testid="pay-sheet-promptpay-qr"
-          onError={onLoadError}
+          onError={handleQrLoadError}
         />
         <p className="text-body text-foreground">{t('instructions')}</p>
         <p className="text-caption text-muted-foreground">

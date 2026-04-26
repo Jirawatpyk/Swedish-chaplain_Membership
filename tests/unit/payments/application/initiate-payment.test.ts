@@ -109,11 +109,10 @@ function makeDeps(
       ok({
         id: 'pi_existing',
         status: 'requires_payment_method',
-        // Group E1 (2026-04-24) — resume path now reads clientSecret
-        // directly from retrievePaymentIntent (Architect D-01). Default
-        // mock returns a non-null value so the resume happy-path test
-        // exits `ok` instead of falling into the null-clientSecret
-        // processor_unavailable branch.
+        // Resume path reads clientSecret from retrievePaymentIntent
+        // (not a second createPaymentIntent). Default mock returns
+        // non-null so happy-path resume tests don't fall into the
+        // null-clientSecret processor_unavailable branch.
         clientSecret: 'pi_existing_secret_resume',
         latestChargeId: null,
         livemode: false,
@@ -224,15 +223,9 @@ describe('initiatePayment (T055)', () => {
     (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       existing,
     );
-    (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      ok({
-        id: 'pi_existing',
-        clientSecret: 'pi_existing_secret_resume',
-        status: 'requires_payment_method',
-        livemode: false,
-        promptpayQrSvgUrl: null,
-      }),
-    );
+    // Resume reads via `retrievePaymentIntent` (default mock returns
+    // a non-null clientSecret); no `createPaymentIntent` call should
+    // be made on the resume path.
 
     const result = await initiatePayment(deps, makeInput());
     expect(result.ok).toBe(true);
@@ -241,6 +234,12 @@ describe('initiatePayment (T055)', () => {
     expect(result.value.payment.id).toBe(existing.id);
     expect(deps.audit.emit).not.toHaveBeenCalled(); // no re-audit on resume
     expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    // Resume MUST go through retrieve, not create
+    expect(deps.processorGateway.retrievePaymentIntent).toHaveBeenCalledWith(
+      'pi_existing',
+      'acct_test_123',
+    );
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
   });
 
   it('resume path — retrievePaymentIntent failure surfaces processor_unavailable', async () => {
@@ -332,13 +331,12 @@ describe('initiatePayment (T055)', () => {
     expect(result.error.reason).toBe('retrieved_client_secret_null');
   });
 
-  it('cross-method resume skip — pending card PI does NOT resume when promptpay requested (Verify-fix F1, 2026-04-26)', async () => {
-    // Phase 4 verify-fix F1 / spec § Edge Cases: when a member opens
-    // the card tab (creates a pending card PI), then switches to the
-    // PromptPay tab, the use-case must NOT hand back the card PI's
-    // clientSecret with `promptpayQrSvgUrl=null`. It must skip the
-    // resume branch and create a fresh promptpay PaymentIntent so the
-    // browser receives a real QR.
+  it('cross-method resume skip — pending card PI does NOT resume when promptpay requested', async () => {
+    // When a member opens the card tab (creating a pending card PI)
+    // then switches to the PromptPay tab, the use-case must NOT hand
+    // back the card PI's clientSecret with `promptpayQrSvgUrl=null`.
+    // It must cancel the stale-method PI and create a fresh
+    // PromptPay PaymentIntent so the browser receives a real QR.
     const existingCard: Payment = {
       id: asPaymentId('pmt_existing_card'),
       tenantId: TENANT_ID,
@@ -391,9 +389,9 @@ describe('initiatePayment (T055)', () => {
     // retrievePaymentIntent (resume-only call) MUST NOT have been called
     // — that's how we distinguish skip-resume vs took-resume.
     expect(deps.processorGateway.retrievePaymentIntent).not.toHaveBeenCalled();
-    // C3 fix (2026-04-26): the stale card PI MUST have been canceled
-    // both on Stripe AND in our DB row, with a `payment_canceled`
-    // audit emitted — no orphan PI lingering until the T101 cron.
+    // The stale card PI MUST have been canceled both on Stripe AND
+    // in our DB row, with a `payment_canceled` audit emitted — no
+    // orphan PI lingering until the stale-pending sweep cron.
     expect(deps.processorGateway.cancelPaymentIntent).toHaveBeenCalledWith(
       'pi_existing_card',
       'acct_test_123',
@@ -447,6 +445,122 @@ describe('initiatePayment (T055)', () => {
     expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
     expect(deps.audit.emit).not.toHaveBeenCalled();
     expect(deps.processorGateway.retrievePaymentIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('cross-method skip — Stripe reports PI already succeeded → returns processor_unavailable WITHOUT marking DB canceled (financial integrity)', async () => {
+    // Race window: user clicks card → enters card details → 3DS
+    // resolves → Stripe PI flips to `succeeded` → user switches to
+    // PromptPay tab BEFORE the inbound webhook has updated our DB
+    // row. Cross-method skip would normally cancel the stale row,
+    // but Stripe rejects the cancel with
+    // `payment_intent_already_succeeded`. We MUST NOT mark the DB
+    // row `canceled` in that window — the customer was charged.
+    const existingCard: Payment = {
+      id: asPaymentId('pmt_existing_card_succeeded'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'card',
+      status: 'pending',
+      amountSatang: 5_350_000n,
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_existing_card',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_prev',
+    };
+    const deps = makeDeps();
+    (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      existingCard,
+    );
+    // Stripe rejects the cancel because the PI just succeeded.
+    (deps.processorGateway.cancelPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({
+        kind: 'permanent',
+        code: 'payment_intent_already_succeeded',
+        reason: 'PI is succeeded; cannot be canceled',
+      }),
+    );
+
+    const result = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('processor_unavailable');
+    if (result.error.code !== 'processor_unavailable') return;
+    expect(result.error.kind).toBe('permanent');
+    expect(result.error.reason).toBe('cross_method_pi_already_succeeded');
+
+    // Critical: DB row MUST NOT have been marked canceled
+    expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+    // No new PI was created either — caller must reconcile via webhook
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    // No payment_canceled audit emitted (would be misleading)
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const cancelEmits = auditCalls.filter(
+      (call) => call[1]?.eventType === 'payment_canceled',
+    );
+    expect(cancelEmits.length).toBe(0);
+  });
+
+  it('cross-method skip — Stripe cancel retryable error → still proceeds to create new-method PI (best-effort)', async () => {
+    // Distinct from the succeeded case: a transient Stripe error
+    // (network blip, rate-limit) should NOT block the new-method PI.
+    // The DB row is still marked canceled; the stale-pending sweep
+    // cron is the backstop if Stripe still has the PI alive.
+    const existingCard: Payment = {
+      id: asPaymentId('pmt_existing_card_retry'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'card',
+      status: 'pending',
+      amountSatang: 5_350_000n,
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_existing_retry',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_prev',
+    };
+    const deps = makeDeps();
+    (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      existingCard,
+    );
+    (deps.processorGateway.cancelPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'retryable', reason: 'network timeout' }),
+    );
+    (deps.paymentsRepo.nextAttemptSeq as ReturnType<typeof vi.fn>).mockResolvedValueOnce(2);
+    (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'pi_promptpay_new',
+        clientSecret: 'pi_promptpay_new_secret',
+        status: 'requires_action',
+        livemode: false,
+        promptpayQrSvgUrl: 'https://qr.stripe.com/v1/x.svg',
+      }),
+    );
+
+    const result = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // DB row WAS marked canceled (best-effort despite retryable Stripe error)
+    expect(deps.paymentsRepo.updateStatus).toHaveBeenCalled();
+    // New PI created
+    expect(deps.paymentsRepo.insert).toHaveBeenCalledTimes(1);
   });
 
   it('tenant_settings missing — tenant_settings_incomplete', async () => {

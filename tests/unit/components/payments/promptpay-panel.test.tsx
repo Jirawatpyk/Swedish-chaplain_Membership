@@ -1,13 +1,14 @@
 /**
- * Unit tests for <PromptPayPanel> + `formatCountdown` — Phase 4 / T091.
+ * Unit tests for <PromptPayPanel> + `formatCountdown`.
  *
- * Coverage targets (review C4 fix, 2026-04-26):
- *   - `formatCountdown` 5 branches: clamp <0, non-integer floor,
- *     leading-zero padding (mm and ss), large value
- *   - <PromptPayPanel> 3 status states: pending, expired, waiting-confirmation
- *   - QR <img> onError → onLoadError callback fires (I4)
- *   - Refresh CTA wires onRefresh
- *   - Currency fallback path (currency !== 'thb')
+ * Coverage:
+ *   - `formatCountdown` clamps negatives, floors non-integers,
+ *     pads MM/SS with leading zeros, handles large values
+ *   - 3 status states: pending / expired / waiting-confirmation
+ *   - QR `<img>` onError debounces transient failures via internal
+ *     retry counter; escalates to `onLoadError` only after limit
+ *   - Refresh CTA wires `onRefresh`
+ *   - Currency fallback when `currency !== 'thb'`
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
@@ -16,6 +17,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import {
   PromptPayPanel,
   formatCountdown,
+  MAX_QR_LOAD_RETRIES,
   type PromptPayPanelProps,
 } from '@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/promptpay-panel';
 
@@ -131,12 +133,32 @@ describe('<PromptPayPanel> — pending status', () => {
     expect(amountNode.textContent).toContain('12345 USD');
   });
 
-  it('fires onLoadError when QR <img> fails to load (I4 fix)', () => {
+  it('debounces transient QR <img> errors — first MAX_QR_LOAD_RETRIES errors do NOT escalate', () => {
     const onLoadError = vi.fn();
     renderWithIntl({ ...baseProps, status: 'pending', onLoadError });
     const qr = screen.getByTestId('pay-sheet-promptpay-qr');
+    // Each error within the retry budget triggers an internal retry,
+    // not an escalation to the parent.
+    for (let i = 0; i < MAX_QR_LOAD_RETRIES; i += 1) {
+      fireEvent.error(qr);
+    }
+    expect(onLoadError).not.toHaveBeenCalled();
+    // The (MAX+1)th error escalates.
     fireEvent.error(qr);
     expect(onLoadError).toHaveBeenCalledTimes(1);
+  });
+
+  it('QR <img> src includes a cache-bust query param after a retry to force browser reload', () => {
+    renderWithIntl({ ...baseProps, status: 'pending' });
+    const qr = screen.getByTestId('pay-sheet-promptpay-qr') as HTMLImageElement;
+    const originalSrc = qr.getAttribute('src');
+    expect(originalSrc).toBe('https://qr.stripe.com/v1/test.svg');
+    fireEvent.error(qr);
+    const retriedSrc = (
+      screen.getByTestId('pay-sheet-promptpay-qr') as HTMLImageElement
+    ).getAttribute('src');
+    expect(retriedSrc).toContain('https://qr.stripe.com/v1/test.svg');
+    expect(retriedSrc).toMatch(/retry=\d+/);
   });
 });
 
