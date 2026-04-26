@@ -432,6 +432,17 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+
+  /* Sonner toast slide-in / swipe-out (verify-fix U-I8 2026-04-26) —
+     sonner uses CSS animations on its `[data-sonner-toast]` element
+     plus translate transitions for the slide effect. Neutralise both
+     so the toast appears instantly under reduced-motion preference,
+     matching the rest of the platform's WCAG 2.3.3 posture. */
+  [data-sonner-toast],
+  [data-sonner-toaster] {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* --- FilterBar responsive children ---

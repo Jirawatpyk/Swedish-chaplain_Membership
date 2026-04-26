@@ -49,6 +49,16 @@ export const INVOICES_PALETTE_ENTRIES: readonly InvoicesPaletteEntry[] = [
     url: '/admin/invoices/new',
     labelKey: 'new',
   },
+  // Verify-fix S1 (2026-04-26): F5 Phase 5 admin reconciliation jump-
+  // point. Smart-chamber-features § MVP #4 (command palette) — the
+  // "filter to paid-online invoices" action is a high-frequency
+  // monthly-reconciliation step worth surfacing here so admins don't
+  // need to hunt the chip in the filter bar.
+  {
+    key: 'invoices.paidOnline',
+    url: '/admin/invoices?paidOnline=1',
+    labelKey: 'paidOnline',
+  },
 ];
 
 /**

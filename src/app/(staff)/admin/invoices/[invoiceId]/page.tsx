@@ -703,6 +703,8 @@ export default async function InvoiceDetailPage({
               tenantId={tenantCtx.slug}
               invoicePaidAt={invoice.paidAt}
               invoicePaymentRecordedByUserId={invoice.paymentRecordedByUserId}
+              invoiceStatus={invoice.status}
+              isAdmin={isAdmin}
             />
           </Suspense>
         </div>

@@ -238,6 +238,8 @@ export async function PaymentTimeline({
   tenantId,
   invoicePaidAt,
   invoicePaymentRecordedByUserId,
+  invoiceStatus,
+  isAdmin = false,
 }: {
   readonly invoiceId: string;
   readonly tenantId: string;
@@ -251,6 +253,15 @@ export async function PaymentTimeline({
    * stripe-only timeline scope.
    */
   readonly invoicePaymentRecordedByUserId: string | null;
+  /**
+   * Verify-fix S4 (2026-04-26): drives the admin-only "Record payment
+   * manually" CTA in the empty state. Only renders when (a) viewer is
+   * admin, (b) invoice is `issued` (record-payment is allowed only on
+   * issued — manual record on paid/void/credited is not a thing), and
+   * (c) timeline is empty (no F5 + no F4 manual flow yet).
+   */
+  readonly invoiceStatus?: string | undefined;
+  readonly isAdmin?: boolean;
 }) {
   const t = await getTranslations('admin.paymentReconciliation.timeline');
   const tEvents = await getTranslations(
@@ -332,7 +343,20 @@ export async function PaymentTimeline({
       : null;
 
   return (
-    <Card data-testid="payment-timeline" aria-labelledby="payment-timeline-heading">
+    // Verify-fix U-I3 (2026-04-26): `role="region"` makes the Card a
+    // proper landmark for AT navigation; `aria-live="polite"` +
+    // `aria-atomic="false"` causes the appended events to be announced
+    // when the server component re-renders after a webhook-driven
+    // revalidation (e.g. admin records a manual payment, page revalidates,
+    // a new event row appears) — without flooding the user with the
+    // entire timeline on every refresh.
+    <Card
+      data-testid="payment-timeline"
+      role="region"
+      aria-labelledby="payment-timeline-heading"
+      aria-live="polite"
+      aria-atomic="false"
+    >
       <CardHeader>
         <CardTitle id="payment-timeline-heading" className="text-base">
           {t('title')}
@@ -384,9 +408,13 @@ export async function PaymentTimeline({
           </div>
         )}
 
-        {/* T098 — empty state. */}
+        {/* T098 — empty state.
+            Verify-fix S4 (2026-04-26): admin viewers get a secondary
+            "Record payment manually" CTA when the invoice is still
+            `issued` — it's the most likely next action when no online
+            payment has settled (chamber admin reconciling a wire). */}
         {events.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
             <BanknoteIcon
               className="size-12 text-muted-foreground"
               aria-hidden="true"
@@ -395,6 +423,15 @@ export async function PaymentTimeline({
             <p className="text-xs text-muted-foreground max-w-md">
               {t('empty.body')}
             </p>
+            {isAdmin && invoiceStatus === 'issued' && (
+              <a
+                href={`/admin/invoices/${invoiceId}#record-payment`}
+                data-testid="empty-state-record-payment-link"
+                className="text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+              >
+                {t('empty.recordManualLink')}
+              </a>
+            )}
           </div>
         ) : (
           <ol className="flex flex-col gap-3">

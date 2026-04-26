@@ -1339,7 +1339,8 @@
         "viewInStripeAria": "Öppna denna transaktion i Stripe-instrumentpanelen (öppnas i ny flik)",
         "empty": {
           "title": "Inga onlinebetalningar ännu",
-          "body": "Onlinebetalningar via kort eller PromptPay visas här när en medlem genomför en. Manuellt registrerade betalningar visas i avsnittet Betalningsdetaljer ovan."
+          "body": "Onlinebetalningar via kort eller PromptPay visas här när en medlem genomför en. Manuellt registrerade betalningar visas i avsnittet Betalningsdetaljer ovan.",
+          "recordManualLink": "Registrera en betalning manuellt"
         }
       }
     },
@@ -1372,6 +1373,7 @@
       "dashboard": "Instrumentpanel",
       "membersList": "Medlemslista",
       "invoicesList": "Fakturalista",
+      "invoicesPaidOnline": "Fakturor: betalda online (avstämning)",
       "creditNotesList": "Kreditnotalista"
     }
   },

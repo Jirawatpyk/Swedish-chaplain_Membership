@@ -148,6 +148,16 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     requires: 'read',
   },
   {
+    // Verify-fix S1 (2026-04-26): F5 Phase 5 paid-online reconciliation
+    // jump-point. Smart-chamber-features § MVP #4 — high-frequency
+    // monthly-reconciliation step. Available to admin + manager (both
+    // roles see the timeline read-only on /admin/invoices).
+    id: 'nav.invoicesPaidOnline',
+    label: 'palette.navigate.invoicesPaidOnline',
+    url: '/admin/invoices?paidOnline=1',
+    requires: 'read',
+  },
+  {
     // G-4 — Credit notes directory (/admin/credit-notes). Typing
     // 'CN' / 'credit' / 'kreditnota' hits the palette fuzzy match
     // via the i18n label so bookkeepers can jump straight to the

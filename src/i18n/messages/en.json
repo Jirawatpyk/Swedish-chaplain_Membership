@@ -1339,7 +1339,8 @@
         "viewInStripeAria": "Open this charge in the Stripe dashboard (opens in a new tab)",
         "empty": {
           "title": "No online payment activity",
-          "body": "Online payments via card or PromptPay will appear here once a member completes one. Manually-recorded payments are shown in the Payment details section above."
+          "body": "Online payments via card or PromptPay will appear here once a member completes one. Manually-recorded payments are shown in the Payment details section above.",
+          "recordManualLink": "Record a payment manually"
         }
       }
     },
@@ -1372,6 +1373,7 @@
       "dashboard": "Dashboard",
       "membersList": "Members list",
       "invoicesList": "Invoices list",
+      "invoicesPaidOnline": "Invoices: paid online (reconciliation)",
       "creditNotesList": "Credit notes list"
     }
   },
