@@ -90,6 +90,14 @@ export interface PromptPayPanelProps {
    */
   readonly onRefresh: () => void;
   /**
+   * Fires when the QR `<img>` fails to load (Stripe SVG 404, CSP block,
+   * network failure mid-load). Without this hook, the panel would render
+   * a blank box with a ticking countdown — silent failure. The parent is
+   * expected to map this to a recoverable failure state (e.g. set
+   * `promptpayState` to `failure` with a localized reason).
+   */
+  readonly onLoadError?: () => void;
+  /**
    * `'pending'` (default) renders the QR + countdown.
    * `'expired'` swaps to the "QR expired — Refresh" panel.
    * `'waiting-confirmation'` keeps the QR up but shows a "waiting for
@@ -124,6 +132,7 @@ export function PromptPayPanel({
   currency,
   expirySeconds = 900,
   onRefresh,
+  onLoadError,
   status = 'pending',
 }: PromptPayPanelProps) {
   const t = useTranslations('portal.payment.promptpay');
@@ -219,6 +228,7 @@ export function PromptPayPanel({
           unoptimized
           className="aspect-square h-auto w-[220px] rounded-md border border-border bg-popover p-3"
           data-testid="pay-sheet-promptpay-qr"
+          onError={onLoadError}
         />
         <p className="text-body text-foreground">{t('instructions')}</p>
         <p className="text-caption text-muted-foreground">

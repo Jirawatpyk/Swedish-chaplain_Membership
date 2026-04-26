@@ -119,6 +119,7 @@ function makeDeps(
         livemode: false,
         lastPaymentErrorCode: null,
         card: null,
+        promptpayQrSvgUrl: null,
       }),
     ),
     cancelPaymentIntent: vi.fn(async () => ok(undefined)),
@@ -390,6 +391,25 @@ describe('initiatePayment (T055)', () => {
     // retrievePaymentIntent (resume-only call) MUST NOT have been called
     // — that's how we distinguish skip-resume vs took-resume.
     expect(deps.processorGateway.retrievePaymentIntent).not.toHaveBeenCalled();
+    // C3 fix (2026-04-26): the stale card PI MUST have been canceled
+    // both on Stripe AND in our DB row, with a `payment_canceled`
+    // audit emitted — no orphan PI lingering until the T101 cron.
+    expect(deps.processorGateway.cancelPaymentIntent).toHaveBeenCalledWith(
+      'pi_existing_card',
+      'acct_test_123',
+    );
+    expect(deps.paymentsRepo.updateStatus).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        paymentId: existingCard.id,
+        nextStatus: 'canceled',
+      }),
+    );
+    // Two audit emits expected: payment_canceled (cross-method skip)
+    // + payment_initiated (new PI). Order matters — cancel first.
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(auditCalls.length).toBeGreaterThanOrEqual(2);
+    expect(auditCalls[0]?.[1]).toMatchObject({ eventType: 'payment_canceled' });
   });
 
   it('same-method resume — pending promptpay PI resumes when promptpay requested', async () => {

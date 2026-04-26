@@ -26,6 +26,16 @@ export interface RetrievedPaymentIntent {
   readonly id: string;
   readonly status: string;
   /**
+   * PromptPay QR SVG URL extracted from `next_action.promptpay_display_qr_code.image_url_svg`.
+   * Populated only on PromptPay PIs that are still in `requires_action`
+   * (the bank-app scan window). Null on terminal states (succeeded /
+   * canceled / failed) and on card PIs. Surfaced through retrieve so
+   * the use-case `initiatePayment` resume path can return a real QR
+   * to the browser instead of a null that the panel would render as
+   * a load-failure.
+   */
+  readonly promptpayQrSvgUrl: string | null;
+  /**
    * Architect D-01 / PCI F2 (Group E1, 2026-04-24): `client_secret` is
    * exposed so the resume path of `initiatePayment` can read it from a
    * single `retrievePaymentIntent` call instead of re-invoking

@@ -316,18 +316,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Error branch.
     const errCode = result.error.code;
     const { status, routeCode } = httpStatusForUseCaseError(errCode);
-    const retryAfterSeconds = routeCode === 'processor_unavailable' ? 30 : undefined;
-    // structured log on every use-case error so processor
-    // outages, idempotency conflicts, and rate-limit drops are visible
-    // in pino without relying on the unexpected-throw catch below.
-    // Phase 4 fix: also surface the underlying processor reason field on
-    // `processor_unavailable` so a dev tailing the logs can immediately
-    // see WHY Stripe rejected the call (PromptPay-not-enabled,
-    // country-mismatch, idempotency-collision, etc.) without grepping
-    // for the matching `stripe-gateway: SDK error` line.
-    const processorReason =
+    // C1 fix (2026-04-26 PCI hygiene): log ONLY the gateway error
+    // `kind` discriminator — never `result.error.reason` (which
+    // originates from Stripe SDK `error.message` and may embed
+    // account ids / key prefixes / forbidden detail). The matching
+    // `stripe-gateway: SDK error` line in pino carries the full
+    // SDK-level diagnostic with allow-listed fields only.
+    //
+    // I6 fix (2026-04-26): Retry-After is meaningful ONLY for
+    // retryable errors. Permanent failures (PromptPay-not-enabled,
+    // country-mismatch, key-mismatch) never recover within 30s and
+    // sending Retry-After misleads upstream proxies + monitoring.
+    const processorErrorKind =
       result.error.code === 'processor_unavailable'
-        ? result.error.reason
+        ? result.error.kind
+        : undefined;
+    const retryAfterSeconds =
+      routeCode === 'processor_unavailable' && processorErrorKind === 'retryable'
+        ? 30
         : undefined;
     logger.warn(
       {
@@ -338,7 +344,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         useCaseErrorCode: errCode,
         httpStatus: status,
         routeCode,
-        ...(processorReason ? { processorReason } : {}),
+        ...(processorErrorKind ? { processorErrorKind } : {}),
       },
       'payments.initiate.use_case_error',
     );

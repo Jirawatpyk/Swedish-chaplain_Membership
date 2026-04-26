@@ -233,6 +233,21 @@ export const stripeGateway: ProcessorGatewayPort = {
       const isPromptPayOnly =
         input.paymentMethodTypes.length === 1 &&
         input.paymentMethodTypes[0] === 'promptpay';
+      // Defensive: PromptPay requires server-confirm to surface the QR
+      // in `next_action`. A multi-method PI (e.g. ['promptpay','card'])
+      // would skip server-confirm → return a PI with no QR → silent UI
+      // failure. Fail loudly here so a future caller can't introduce
+      // that mode without an explicit redesign.
+      if (
+        input.paymentMethodTypes.includes('promptpay') &&
+        !isPromptPayOnly
+      ) {
+        throw new Error(
+          'stripe-gateway.createPaymentIntent: PromptPay must be the only payment_method_type ' +
+            '(server-confirm requires a single method to populate next_action.promptpay_display_qr_code). ' +
+            `Received: [${input.paymentMethodTypes.join(', ')}]`,
+        );
+      }
       const createParams: Stripe.PaymentIntentCreateParams = {
         amount: Number(input.amountSatang),
         currency: input.currency,
@@ -312,6 +327,11 @@ export const stripeGateway: ProcessorGatewayPort = {
         livemode: pi.livemode,
         lastPaymentErrorCode: pi.last_payment_error?.code ?? null,
         card: extractCardMetadata(pi),
+        // I3 fix: surface PromptPay QR URL on retrieve so the resume
+        // path of initiatePayment can re-render the QR for a member
+        // who closed/reopened the drawer mid-scan. `next_action` is
+        // already in the response — no extra Stripe call.
+        promptpayQrSvgUrl: extractPromptPayQrUrl(pi),
       });
     } catch (e) {
       return err(mapStripeError(e, { stripeAccount, paymentIntentId }));

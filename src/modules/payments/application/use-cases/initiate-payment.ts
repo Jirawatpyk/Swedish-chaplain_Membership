@@ -92,7 +92,20 @@ export type InitiatePaymentError =
        */
       readonly reason: SettingsIncompleteReason;
     }
-  | { readonly code: 'processor_unavailable'; readonly reason: string };
+  | {
+      readonly code: 'processor_unavailable';
+      /**
+       * `kind` mirrors `ProcessorGatewayError.kind` so the route handler
+       * can gate `Retry-After` on `'retryable'` only — permanent errors
+       * (e.g. PromptPay-not-enabled, country-mismatch, key-mismatch)
+       * never recover within 30 s and should not advertise a retry
+       * window. `reason` is a SAFE string limited to the gateway error
+       * `kind`-tag — NEVER the raw Stripe SDK `error.message` (which
+       * may embed account ids / key prefixes / forbidden details).
+       */
+      readonly kind: 'retryable' | 'permanent' | 'idempotency_conflict';
+      readonly reason: string;
+    };
 
 export interface InitiatePaymentDeps {
   readonly paymentsRepo: PaymentsRepo;
@@ -223,14 +236,52 @@ export async function initiatePayment(
       input.actorUserId,
       tx,
     );
-    // Phase 4 fix (2026-04-25): only resume when the pending attempt
-    // matches the requested method. Otherwise (e.g. user opened the
-    // card tab, then switched to PromptPay) we'd hand back the existing
-    // card PI's clientSecret with a null `promptpayQrSvgUrl`, which the
-    // PromptPay UI renders as a load-failure. Fall through to the
-    // first-attempt branch and let nextAttemptSeq + Stripe SDK create
-    // a fresh PaymentIntent for the new method. The stale pending row
-    // gets reaped by the stale-pending sweep cron (Phase 9 T101).
+    // Resume only when the pending attempt matches the requested
+    // method. Otherwise (user opened card tab, switched to PromptPay)
+    // a card `clientSecret` would be returned for a PromptPay request
+    // with `promptpayQrSvgUrl=null` → silent UI failure.
+    //
+    // C3 fix (2026-04-26): proactively cancel the mismatched-method
+    // pending PI on Stripe AND mark its DB row `canceled` BEFORE
+    // falling through to create the new-method PI. This guarantees
+    // happy-path correctness without depending on the Phase 9 T101
+    // stale-pending sweep cron and prevents a future
+    // `findPendingByInvoiceAndActor` call from returning the stale
+    // mismatched-method row.
+    if (pending && pending.method !== input.method) {
+      // Best-effort cancel: if Stripe returns a permanent error
+      // (PI already terminal, etc.) we still proceed — the DB row is
+      // marked canceled regardless so it cannot be picked up again.
+      // Retryable errors swallow: the sweep cron is the backstop.
+      const cancelResult = await deps.processorGateway.cancelPaymentIntent(
+        pending.processorPaymentIntentId,
+        settings.processorAccountId,
+      );
+      // Mark the DB row terminal even if the Stripe cancel was
+      // already terminal — same outcome from our row's perspective.
+      void cancelResult;
+      await deps.paymentsRepo.updateStatus(tx, {
+        paymentId: pending.id,
+        tenantId: pending.tenantId,
+        nextStatus: 'canceled',
+        completedAt: new Date(deps.clock.nowIso()),
+      });
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_canceled',
+        actorUserId: input.actorUserId,
+        summary: `Payment ${pending.id} canceled — actor switched method from ${pending.method} to ${input.method}`,
+        payload: {
+          payment_id: pending.id,
+          previous_method: pending.method,
+          new_method: input.method,
+          processor_payment_intent_id: pending.processorPaymentIntentId,
+        },
+        retentionYears: retentionFor('payment_canceled'),
+      });
+      // Fall through to first-attempt flow below.
+    }
     if (pending && pending.method === input.method) {
       // Architect D-01 (Group E1, 2026-04-24): resume path reads the
       // live `clientSecret` from `retrievePaymentIntent` directly. The
@@ -248,17 +299,19 @@ export async function initiatePayment(
       if (!retrieved.ok) {
         return err<InitiatePaymentError>({
           code: 'processor_unavailable',
+          kind: retrieved.error.kind,
           reason: retrieved.error.kind,
         });
       }
       if (retrieved.value.clientSecret === null) {
         // Stripe returns null clientSecret for intents in terminal
         // states (succeeded / canceled). A pending row pointing at a
-        // terminal PI is a state-drift bug upstream — surface as
-        // processor_unavailable so the caller can retry after the
-        // reconciliation cron normalises the payment row.
+        // terminal PI is a state-drift bug upstream — classify as
+        // permanent (the cron normalises the row; the user retrying
+        // 30s later won't help).
         return err<InitiatePaymentError>({
           code: 'processor_unavailable',
+          kind: 'permanent',
           reason: 'retrieved_client_secret_null',
         });
       }
@@ -267,12 +320,12 @@ export async function initiatePayment(
         clientSecret: retrieved.value.clientSecret,
         publishableKey: settings.processorPublishableKey,
         paymentIntentId: retrieved.value.id,
-        // retrievePaymentIntent does not expose the PromptPay QR SVG
-        // URL (that field only comes back from createPaymentIntent's
-        // next_action object). For a resumed PromptPay attempt the
-        // browser re-fetches the QR via the PI's `next_action` on
-        // its own using the clientSecret.
-        promptpayQrSvgUrl: null,
+        // I3 fix (2026-04-26): retrievePaymentIntent now expands the
+        // PI's `next_action` and returns `promptpayQrSvgUrl` for any
+        // PromptPay PI still in the scan window, so the resumed
+        // attempt can render the same QR back to the browser without
+        // a "load failed" failure-state flash.
+        promptpayQrSvgUrl: retrieved.value.promptpayQrSvgUrl,
         promptpayQrExpirySeconds: settings.promptpayQrExpirySeconds,
         resumed: true,
       });
@@ -311,6 +364,7 @@ export async function initiatePayment(
     if (!created.ok) {
       return err<InitiatePaymentError>({
         code: 'processor_unavailable',
+        kind: created.error.kind,
         reason: created.error.kind,
       });
     }

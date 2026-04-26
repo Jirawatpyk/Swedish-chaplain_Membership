@@ -308,10 +308,17 @@ export function PaySheetInternal({
   // QR payload in `promptpayState`. The Refresh CTA bumps
   // `promptpayRetryCount` to force a re-initiate.
   useInitiatePayment({
+    // C2 / I1 fix (2026-04-26): only fire when state is `idle` —
+    // explicitly excludes `initiating` (in-flight de-dupe), `qr`
+    // (already loaded), `failure`, and `expired` (require explicit
+    // user-driven Refresh CTA via `handlePromptPayRefresh` which
+    // resets to `idle` and bumps `promptpayRetryCount`). Previously
+    // any non-`qr` kind would re-fire on parent re-render and
+    // burn the rate-limit budget on a failed attempt loop.
     enabled:
       activeMethod === 'promptpay' &&
       enabledMethods.includes('promptpay') &&
-      promptpayState.kind !== 'qr',
+      promptpayState.kind === 'idle',
     invoiceId: invoice.id,
     method: 'promptpay',
     initialInitiate: null,
@@ -366,11 +373,23 @@ export function PaySheetInternal({
   );
   const handlePromptPayFailed = useCallback(
     (reason: '3ds_timeout' | 'canceled' | 'card_declined') => {
-      // For PromptPay the only reachable terminal failure modes from the
-      // poll are `canceled` (user / system cancel) + `3ds_timeout` (we
-      // hit the 5-min cap). Map both onto the panel's expired state so
-      // the user can refresh.
-      void reason;
+      // I2 fix (2026-04-26): distinguish reachable failure modes
+      // instead of collapsing all to `expired`.
+      //   - `card_declined` — Stripe rejected the PromptPay charge
+      //     (e.g. issuer block, amount mismatch on the rail). Show a
+      //     proper failure panel with the bank-declined message; a
+      //     blind "QR expired — Refresh" prompt would mislead the
+      //     user into infinite retry.
+      //   - `canceled` / `3ds_timeout` — QR scan window expired or
+      //     the system canceled the PI; the `expired` panel + Refresh
+      //     CTA is the correct UX.
+      if (reason === 'card_declined') {
+        setPromptpayState({
+          kind: 'failure',
+          reason: tRef.current('retry.reasonCardDeclined'),
+        });
+        return;
+      }
       setPromptpayState({ kind: 'expired' });
     },
     [],
@@ -503,6 +522,16 @@ export function PaySheetInternal({
             currency={invoice.currency}
             expirySeconds={promptpayState.expirySeconds}
             onRefresh={handlePromptPayRefresh}
+            // I4 fix (2026-04-26): convert silent QR <img> 404 / CSP
+            // block into the existing recoverable failure panel. The
+            // user sees the localized loadFailed message + Refresh CTA
+            // instead of a blank box with a ticking countdown.
+            onLoadError={() =>
+              setPromptpayState({
+                kind: 'failure',
+                reason: tRef.current('promptpay.loadFailed'),
+              })
+            }
             status="pending"
           />
         );
