@@ -20,7 +20,7 @@
  *      router.refresh() to update payment timeline + status badges.
  *   4. On 4xx/5xx: inline alert above buttons (FR-029(g)) + sonner.
  */
-import { useState, useEffect, useId } from 'react';
+import { useState, useId, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -102,7 +102,11 @@ export function RefundForm({
   const tError = useTranslations('admin.refund.error');
   const router = useRouter();
   const remainingThb = Number(remainingRefundableSatang) / 100;
-  const schema = buildSchema(remainingThb);
+  // Stabilise the schema reference so zodResolver doesn't re-validate
+  // unrelated re-renders (RHF runs the resolver each time `resolver`
+  // identity changes). Cheap to memoise; the schema only needs to
+  // rebuild when `remainingThb` itself changes.
+  const schema = useMemo(() => buildSchema(remainingThb), [remainingThb]);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -208,22 +212,11 @@ export function RefundForm({
     }
   };
 
-  // Cancel button receives default focus per FR-029(d) (destructive
-  // dialogs default to safe action). useEffect ensures the focus is
-  // applied after the AlertDialog mounts its internal focus trap.
-  useEffect(() => {
-    // AlertDialog focuses its first focusable element by default;
-    // shadcn renders the close button first then the form. Defer
-    // focus to the Cancel button via querySelector so the Radix
-    // focus-scope picks it up.
-    const id = setTimeout(() => {
-      const btn = document.querySelector<HTMLButtonElement>(
-        '[data-refund-cancel-default-focus]',
-      );
-      btn?.focus();
-    }, 0);
-    return () => clearTimeout(id);
-  }, []);
+  // Cancel button gets default focus per FR-029(d) (destructive
+  // dialogs default to safe action) — Radix's focus-scope autofocuses
+  // the first tabbable child of <AlertDialogContent>, and we render
+  // <AlertDialogCancel> before the destructive Confirm button, so no
+  // explicit focus management is required.
 
   // Map RHF zod-resolver error codes to localised messages. The
   // resolver puts the `message` field straight into errors; we
@@ -321,10 +314,7 @@ export function RefundForm({
       )}
 
       <AlertDialogFooter>
-        <AlertDialogCancel
-          disabled={submitting}
-          data-refund-cancel-default-focus
-        >
+        <AlertDialogCancel disabled={submitting}>
           {t('dialog.cancel')}
         </AlertDialogCancel>
         <Button

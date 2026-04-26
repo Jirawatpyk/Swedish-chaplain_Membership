@@ -17,30 +17,12 @@
  */
 import { test, expect } from './fixtures';
 import { fillField } from './fixtures';
+import { signInAsAdmin } from './helpers/admin-session';
+import { readMaximumRefundableMajorNumber as readMaximumRefundableMajor } from './helpers/refund';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const PAID_ONLINE_INVOICE_ID = process.env.E2E_PAID_ONLINE_INVOICE_ID;
-
-async function signInAsAdmin(
-  page: import('@playwright/test').Page,
-  email: string,
-  password: string,
-): Promise<void> {
-  await page.goto('/admin/sign-in');
-  await fillField(page.getByLabel(/email/i), email);
-  await fillField(page.getByLabel(/password/i), password);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL('**/admin', { timeout: 30_000 });
-}
-
-async function readMaximumRefundableMajor(
-  page: import('@playwright/test').Page,
-): Promise<number> {
-  const helpText = await page.locator('[id$="-help"]').first().textContent();
-  const match = helpText?.match(/([\d,]+(?:\.\d+)?)/);
-  return match ? Number(match[1]!.replace(/,/g, '')) : 0;
-}
 
 test.describe('admin partial refund UI — @payment @refund @e2e (T104, US4)', () => {
   test('partial amount < remaining → typed-phrase HIDDEN; Confirm enables', async ({
@@ -51,7 +33,7 @@ test.describe('admin partial refund UI — @payment @refund @e2e (T104, US4)', (
       'Admin creds + E2E_PAID_ONLINE_INVOICE_ID seed required (run pnpm seed:f5-e2e:reconciliation).',
     );
 
-    await signInAsAdmin(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    await signInAsAdmin(page);
     await page.goto(`/admin/invoices/${PAID_ONLINE_INVOICE_ID}`);
     await page.waitForLoadState('networkidle');
 
@@ -90,7 +72,7 @@ test.describe('admin partial refund UI — @payment @refund @e2e (T104, US4)', (
       'Admin creds + E2E_PAID_ONLINE_INVOICE_ID seed required.',
     );
 
-    await signInAsAdmin(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    await signInAsAdmin(page);
     await page.goto(`/admin/invoices/${PAID_ONLINE_INVOICE_ID}`);
     await page.waitForLoadState('networkidle');
 
@@ -123,7 +105,7 @@ test.describe('admin partial refund UI — @payment @refund @e2e (T104, US4)', (
       'Admin creds + E2E_PAID_ONLINE_INVOICE_ID seed required.',
     );
 
-    await signInAsAdmin(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    await signInAsAdmin(page);
     await page.goto(`/admin/invoices/${PAID_ONLINE_INVOICE_ID}`);
     await page.waitForLoadState('networkidle');
 

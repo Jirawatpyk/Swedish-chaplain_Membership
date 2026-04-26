@@ -31,13 +31,16 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
-  loadInvoicePaymentActivity,
-  makeLoadInvoicePaymentActivityDeps,
   SYSTEM_ACTOR_STRIPE_WEBHOOK,
   SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
   type LoadInvoicePaymentActivityOutput,
   type RefundActivityDto,
 } from '@/modules/payments';
+// E1 (review 2026-04-26 simplify): request-scoped cached loader
+// dedups the activity query between page.tsx (refund-button gating)
+// and this Suspense'd timeline panel — same args within one request
+// → one DB roundtrip instead of two.
+import { getInvoicePaymentActivity } from '../_lib/cached-payment-activity';
 // Same direct-repo escape hatch already used elsewhere in the admin
 // detail page (settings repo, credit-note repo) — F1 has no
 // Application-layer `getStaffUser` use-case yet, and we only need a
@@ -272,10 +275,7 @@ export async function PaymentTimeline({
   );
   const userLocale = await getLocale();
 
-  const result = await loadInvoicePaymentActivity(
-    makeLoadInvoicePaymentActivityDeps(tenantId),
-    { tenantId, invoiceId },
-  );
+  const result = await getInvoicePaymentActivity(tenantId, invoiceId);
   // R2-fix C1 (2026-04-26): post verify-fix C2 the use-case CAN return
   // `Result.err({kind:'repo_unavailable', cause})` when the underlying
   // F5 repo throws (DB outage, RLS misconfiguration, schema drift). The

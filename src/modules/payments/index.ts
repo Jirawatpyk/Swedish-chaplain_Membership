@@ -88,6 +88,7 @@ export {
 } from './application/use-cases/list-succeeded-payment-methods';
 export {
   loadInvoicePaymentActivity,
+  computeRemainingRefundable,
   type LoadInvoicePaymentActivityInput,
   type LoadInvoicePaymentActivityOutput,
   type LoadInvoicePaymentActivityError,

@@ -32,35 +32,12 @@
  */
 import { test, expect } from './fixtures';
 import { fillField } from './fixtures';
+import { signInAsAdmin } from './helpers/admin-session';
+import { readMaximumRefundableMajor } from './helpers/refund';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const PAID_ONLINE_INVOICE_ID = process.env.E2E_PAID_ONLINE_INVOICE_ID;
-
-async function signInAsAdmin(
-  page: import('@playwright/test').Page,
-  email: string,
-  password: string,
-): Promise<void> {
-  await page.goto('/admin/sign-in');
-  await fillField(page.getByLabel(/email/i), email);
-  await fillField(page.getByLabel(/password/i), password);
-  await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL('**/admin', { timeout: 30_000 });
-}
-
-async function readMaximumRefundableMajor(
-  page: import('@playwright/test').Page,
-): Promise<string> {
-  // Amount input's `aria-describedby` help-text carries
-  // "Maximum refundable: 53,500.00 THB" — extract the numeric
-  // portion (digits + commas + optional decimals), strip group
-  // separators, return as a major-unit string suitable for the
-  // amount input.
-  const helpText = await page.locator('[id$="-help"]').first().textContent();
-  const match = helpText?.match(/([\d,]+(?:\.\d+)?)/);
-  return match ? match[1]!.replace(/,/g, '') : '0';
-}
 
 test.describe('admin full refund UI — @payment @refund @e2e (T103, US4)', () => {
   test('full refund: typed-phrase gate enables Confirm only on exact match', async ({
@@ -71,7 +48,7 @@ test.describe('admin full refund UI — @payment @refund @e2e (T103, US4)', () =
       'Admin creds + E2E_PAID_ONLINE_INVOICE_ID seed required (run pnpm seed:f5-e2e:reconciliation).',
     );
 
-    await signInAsAdmin(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    await signInAsAdmin(page);
     await page.goto(`/admin/invoices/${PAID_ONLINE_INVOICE_ID}`);
     await page.waitForLoadState('networkidle');
 
@@ -137,7 +114,7 @@ test.describe('admin full refund UI — @payment @refund @e2e (T103, US4)', () =
       'Admin creds + E2E_PAID_ONLINE_INVOICE_ID seed required.',
     );
 
-    await signInAsAdmin(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    await signInAsAdmin(page);
     // T118 cmdk navigation lands here with the auto-open query param.
     await page.goto(`/admin/invoices/${PAID_ONLINE_INVOICE_ID}?refund=1`);
     await page.waitForLoadState('networkidle');

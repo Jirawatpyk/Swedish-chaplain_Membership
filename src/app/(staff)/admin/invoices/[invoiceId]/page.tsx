@@ -68,11 +68,9 @@ import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
 import { PaymentTimeline } from './_components/payment-timeline';
 import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
-import { RefundButton } from './_components/refund-button';
-import {
-  loadInvoicePaymentActivity,
-  makeLoadInvoicePaymentActivityDeps,
-} from '@/modules/payments';
+import { RefundDialog } from './_components/refund-dialog';
+import { computeRemainingRefundable } from '@/modules/payments';
+import { getInvoicePaymentActivity } from './_lib/cached-payment-activity';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -271,34 +269,17 @@ export default async function InvoiceDetailPage({
     isAdmin &&
     (invoice.status === 'paid' || invoice.status === 'partially_credited')
   ) {
-    const activity = await loadInvoicePaymentActivity(
-      makeLoadInvoicePaymentActivityDeps(tenantCtx.slug),
-      { tenantId: tenantCtx.slug, invoiceId },
+    const activity = await getInvoicePaymentActivity(
+      tenantCtx.slug,
+      invoiceId,
     );
     if (activity.ok) {
-      // Latest succeeded payment (one-succeeded-per-invoice invariant
-      // means there's at most one in practice, but `completed_at DESC`
-      // ordering is deterministic if a future flow ever permits more).
-      const succeededPayment = [...activity.value.payments]
-        .filter((p) => p.status === 'succeeded' || p.status === 'partially_refunded')
-        .sort((a, b) => {
-          const aT = a.completedAt?.getTime() ?? 0;
-          const bT = b.completedAt?.getTime() ?? 0;
-          return bT - aT;
-        })[0];
-      if (succeededPayment) {
-        const succeededRefundsSum = activity.value.refunds
-          .filter((r) => r.status === 'succeeded')
-          .filter((r) => r.paymentId === succeededPayment.id)
-          .reduce((acc, r) => acc + r.amountSatang, 0n);
-        const remaining =
-          succeededPayment.amountSatang - succeededRefundsSum;
-        if (remaining > 0n) {
-          refundButtonProps = {
-            paymentId: succeededPayment.id,
-            remainingRefundableSatang: remaining,
-          };
-        }
+      const remaining = computeRemainingRefundable(activity.value);
+      if (remaining) {
+        refundButtonProps = {
+          paymentId: remaining.paymentId,
+          remainingRefundableSatang: remaining.remainingSatang,
+        };
       }
     }
   }
@@ -391,7 +372,7 @@ export default async function InvoiceDetailPage({
                 > 0). Sits next to the F4 manual credit-note CTA so
                 admins see both options on paid invoices. */}
             {refundButtonProps && (
-              <RefundButton
+              <RefundDialog
                 paymentId={refundButtonProps.paymentId}
                 invoiceId={invoice.invoiceId}
                 invoiceDocumentNumber={invoice.documentNumber?.raw ?? ''}

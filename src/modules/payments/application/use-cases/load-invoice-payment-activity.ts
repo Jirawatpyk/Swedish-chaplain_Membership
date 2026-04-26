@@ -63,3 +63,44 @@ export async function loadInvoicePaymentActivity(
     return err({ kind: 'repo_unavailable', cause });
   }
 }
+
+/**
+ * Pure projection over `LoadInvoicePaymentActivityOutput` — surfaces
+ * the latest succeeded payment (one-succeeded-per-invoice invariant
+ * means this is unique in practice; `completed_at DESC` ordering is
+ * deterministic if a future flow ever permits more) and the
+ * remaining refundable balance, computed as
+ *
+ *     remaining = succeededPayment.amountSatang
+ *               − Σ(refunds where status='succeeded'
+ *                   AND payment_id === succeededPayment.id)
+ *
+ * Returns `null` when no succeeded payment exists OR when the
+ * remaining is ≤ 0 (i.e. the payment is fully refunded). Callers
+ * should treat null as "no refund possible" and hide the refund UI.
+ *
+ * Used by the admin invoice detail page (`page.tsx`) and the cmdk
+ * palette refundable-invoice fetch (`/api/plans/search`) — extracted
+ * here so both surfaces share the exact same arithmetic.
+ */
+export function computeRemainingRefundable(
+  activity: LoadInvoicePaymentActivityOutput,
+): { readonly paymentId: string; readonly remainingSatang: bigint } | null {
+  const succeededPayment = [...activity.payments]
+    .filter(
+      (p) => p.status === 'succeeded' || p.status === 'partially_refunded',
+    )
+    .sort((a, b) => {
+      const aT = a.completedAt?.getTime() ?? 0;
+      const bT = b.completedAt?.getTime() ?? 0;
+      return bT - aT;
+    })[0];
+  if (!succeededPayment) return null;
+  const sumSucceededRefunds = activity.refunds
+    .filter((r) => r.status === 'succeeded')
+    .filter((r) => r.paymentId === succeededPayment.id)
+    .reduce((acc, r) => acc + r.amountSatang, 0n);
+  const remaining = succeededPayment.amountSatang - sumSucceededRefunds;
+  if (remaining <= 0n) return null;
+  return { paymentId: succeededPayment.id, remainingSatang: remaining };
+}

@@ -22,6 +22,7 @@ import {
 import {
   loadInvoicePaymentActivity,
   makeLoadInvoicePaymentActivityDeps,
+  computeRemainingRefundable,
 } from '@/modules/payments';
 import type {
   PaletteMemberEntity,
@@ -139,34 +140,24 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           // Per-invoice remaining-refundable filter — drop any
           // candidate where the succeeded F5 payment has been fully
           // refunded out of band. Bounded to pageSize (max 10) so the
-          // N+1 cost is capped + caches via the same `loadInvoice
-          // PaymentActivity` query the detail page uses (single
-          // index hit per invoice).
+          // N+1 cost is capped; `Promise.all` parallelises the 10
+          // tenant-scoped activity reads so palette latency stays
+          // close to ~1×RTT instead of ~10×RTT (review 2026-04-26
+          // simplify E2).
           const activityDeps = makeLoadInvoicePaymentActivityDeps(tenant.slug);
+          const activities = await Promise.all(
+            paid.value.rows.map((inv) =>
+              loadInvoicePaymentActivity(activityDeps, {
+                tenantId: tenant.slug,
+                invoiceId: String(inv.invoiceId),
+              }).then((r) => ({ inv, result: r })),
+            ),
+          );
           const items: PaletteRefundableInvoiceEntity[] = [];
-          for (const inv of paid.value.rows) {
-            const activity = await loadInvoicePaymentActivity(activityDeps, {
-              tenantId: tenant.slug,
-              invoiceId: String(inv.invoiceId),
-            });
-            if (!activity.ok) continue;
-            const succeededPayment = [...activity.value.payments]
-              .filter(
-                (p) =>
-                  p.status === 'succeeded' || p.status === 'partially_refunded',
-              )
-              .sort((a, b) => {
-                const aT = a.completedAt?.getTime() ?? 0;
-                const bT = b.completedAt?.getTime() ?? 0;
-                return bT - aT;
-              })[0];
-            if (!succeededPayment) continue;
-            const sumSucceededRefunds = activity.value.refunds
-              .filter((r) => r.status === 'succeeded')
-              .filter((r) => r.paymentId === succeededPayment.id)
-              .reduce((acc, r) => acc + r.amountSatang, 0n);
-            const remaining = succeededPayment.amountSatang - sumSucceededRefunds;
-            if (remaining <= 0n) continue;
+          for (const { inv, result } of activities) {
+            if (!result.ok) continue;
+            const remaining = computeRemainingRefundable(result.value);
+            if (!remaining) continue;
 
             const total = inv.total ? Number(inv.total.satang) / 100 : 0;
             const memberCompany =

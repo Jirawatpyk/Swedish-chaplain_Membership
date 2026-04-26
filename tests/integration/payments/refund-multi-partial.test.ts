@@ -30,7 +30,7 @@
  * the success envelope unchanged.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { issueRefund } from '@/modules/payments';
@@ -298,11 +298,17 @@ describe('issueRefund — multi-partial + race (T102)', () => {
    */
   async function seedPlaceholderCN(): Promise<string> {
     const creditNoteId = randomUUID();
+    const seq = Math.floor(Math.random() * 1_000_000);
+    const docNumber = `TC-2026-${String(seq).padStart(6, '0')}`;
+    const pdfSha = 'a'.repeat(64);
     await runInTenant(tenant.ctx, async (tx) => {
-      // Direct raw insert — F4's credit_notes table; we use raw SQL
-      // with `db.execute(sql\`...\`)` to bypass the ESM import of the
-      // F4 schema (kept lighter — this test is F5-owned).
-      await tx.execute(/* sql */ `
+      // Drizzle's `sql` template parameterises the values so the F4-
+      // owned credit_notes row is seeded without raw string
+      // interpolation (review 2026-04-26 simplify Q5). Test fixture,
+      // not a prod path — but the parameterised form removes the
+      // SQLi smell from review and matches the `tx.execute(sql\`...\`)`
+      // pattern used elsewhere in the F5 integration tests.
+      await tx.execute(sql`
         INSERT INTO credit_notes (
           tenant_id, credit_note_id, original_invoice_id,
           fiscal_year, sequence_number, document_number,
@@ -312,15 +318,15 @@ describe('issueRefund — multi-partial + race (T102)', () => {
           pdf_blob_key, pdf_sha256, pdf_template_version,
           created_at, updated_at
         ) VALUES (
-          '${tenant.ctx.slug}',
-          '${creditNoteId}',
-          '${invoiceId}',
-          2026, ${Math.floor(Math.random() * 1_000_000)},
-          'TC-2026-${String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')}',
-          '2026-04-15', '${user.userId}', 'integration test',
+          ${tenant.ctx.slug},
+          ${creditNoteId},
+          ${invoiceId},
+          2026, ${seq},
+          ${docNumber},
+          '2026-04-15', ${user.userId}, 'integration test',
           1, 0, 1,
           '{}'::jsonb, '{}'::jsonb,
-          'placeholder', '${'a'.repeat(64)}', 1,
+          'placeholder', ${pdfSha}, 1,
           NOW(), NOW()
         )
       `);
@@ -351,10 +357,10 @@ describe('issueRefund — multi-partial + race (T102)', () => {
 
   async function countSucceededRefunds(): Promise<number> {
     return runInTenant(tenant.ctx, async (tx) => {
-      const rows = (await tx.execute(/* sql */ `
+      const rows = (await tx.execute(sql`
         SELECT COUNT(*)::int AS c FROM refunds
-        WHERE tenant_id = '${tenant.ctx.slug}'
-          AND payment_id = '${paymentId}'
+        WHERE tenant_id = ${tenant.ctx.slug}
+          AND payment_id = ${paymentId}
           AND status = 'succeeded'
       `)) as unknown as Array<{ c: number | string }>;
       return Number(rows[0]?.c ?? 0);
