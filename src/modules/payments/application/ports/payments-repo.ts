@@ -87,4 +87,21 @@ export interface PaymentsRepo {
    * relied on. Callers invoke inside a tx to avoid race.
    */
   nextAttemptSeq(tx: unknown, tenantId: string, invoiceId: string): Promise<number>;
+
+  /**
+   * F5 US3 reconciliation badge — return the succeeded payment method
+   * (card or promptpay) for each invoice in the input set that has at
+   * least one succeeded payment. Invoices with no succeeded payment are
+   * ABSENT from the returned map.
+   *
+   * If multiple succeeded payments exist for the same invoice (e.g. an
+   * earlier success was followed by a separate refund + re-attempt),
+   * the latest by `completed_at` wins. The one-succeeded-per-invoice
+   * invariant means this collision is rare in practice but the ordering
+   * is deterministic.
+   */
+  listSucceededMethodByInvoiceIds(
+    tenantId: string,
+    invoiceIds: readonly string[],
+  ): Promise<ReadonlyMap<string, PaymentMethod>>;
 }

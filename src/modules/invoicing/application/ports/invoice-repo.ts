@@ -63,6 +63,12 @@ export interface InvoiceRepo {
    * Offset-based page + total count for numbered pagination (admin
    * directory). Uses the same filter shape as `list` but runs a parallel
    * COUNT(*) query so UI can render "Showing X–Y of Z" + page numbers.
+   *
+   * `paidOnlineOnly` (F5 US3 reconciliation) restricts to invoices with
+   * at least one succeeded F5 payment row (method ∈ {card, promptpay}).
+   * Implementation MUST use an EXISTS subquery — `invoices.payment_method`
+   * itself is `'other'` for online payments per the F5↔F4 bridge (T012),
+   * so a direct LIKE/equality filter on `payment_method` is impossible.
    */
   listPaged(
     tenantId: string,
@@ -74,6 +80,7 @@ export interface InvoiceRepo {
       readonly memberId?: string | undefined;
       readonly search?: string | undefined;
       readonly includeDrafts?: boolean | undefined;
+      readonly paidOnlineOnly?: boolean | undefined;
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 

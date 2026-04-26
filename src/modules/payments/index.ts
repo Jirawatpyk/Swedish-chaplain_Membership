@@ -76,6 +76,13 @@ export {
   type HandleCancelEventError,
   type HandleCancelEventDeps,
 } from './application/use-cases/handle-cancel-event';
+export {
+  listSucceededPaymentMethods,
+  type ListSucceededPaymentMethodsInput,
+  type ListSucceededPaymentMethodsOutput,
+  type ListSucceededPaymentMethodsError,
+  type ListSucceededPaymentMethodsDeps,
+} from './application/use-cases/list-succeeded-payment-methods';
 
 // --- Composition-root factories (Group E3 — real Drizzle/Stripe wiring) ----
 // Each factory returns the per-request `Deps` graph a route handler
@@ -89,4 +96,5 @@ export {
   makeFailPaymentDeps,
   makeCancelPaymentDeps,
   makeHandleCancelEventDeps,
+  makeListSucceededPaymentMethodsDeps,
 } from './infrastructure/di';

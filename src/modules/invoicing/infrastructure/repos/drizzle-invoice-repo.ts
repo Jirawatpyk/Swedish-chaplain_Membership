@@ -413,6 +413,23 @@ export function makeDrizzleInvoiceRepo(
         if (opts.search && opts.search.length > 0) {
           filters.push(ilike(invoices.documentNumber, `%${opts.search}%`));
         }
+        if (opts.paidOnlineOnly) {
+          // F5 US3 reconciliation filter — invoice has at least one
+          // succeeded F5 payment via card or PromptPay. Raw SQL because
+          // F4 should not import F5 Drizzle schema (`payments` is the
+          // F5 table; coupling stays as a fixed string identifier here,
+          // verified by the F5 RLS coverage test). RLS on `payments`
+          // already enforces tenant isolation, so the explicit
+          // `tenant_id = invoices.tenant_id` join clause is defence in
+          // depth (same posture used elsewhere in this file).
+          filters.push(sql`EXISTS (
+            SELECT 1 FROM payments p
+            WHERE p.invoice_id = ${invoices.invoiceId}
+              AND p.tenant_id = ${invoices.tenantId}
+              AND p.status = 'succeeded'
+              AND p.method IN ('card', 'promptpay')
+          )`);
+        }
 
         const [rowsRaw, countRows] = await Promise.all([
           tx

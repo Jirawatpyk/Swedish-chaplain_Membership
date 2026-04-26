@@ -26,6 +26,7 @@ import type { ConfirmPaymentDeps } from '../application/use-cases/confirm-paymen
 import type { FailPaymentDeps } from '../application/use-cases/fail-payment';
 import type { CancelPaymentDeps } from '../application/use-cases/cancel-payment';
 import type { HandleCancelEventDeps } from '../application/use-cases/handle-cancel-event';
+import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
 import type { RefundsRepo } from '../application/ports/refunds-repo';
 
 import { systemClock } from '../application/ports/clock-port';
@@ -196,6 +197,20 @@ export function makeHandleCancelEventDeps(tenantId: string): HandleCancelEventDe
     audit: f5AuditAdapter,
     clock: systemClock,
     processorEventsRepo: makeDrizzleProcessorEventsRepo(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// T096 (Phase 5) — listSucceededPaymentMethods composition.
+//
+// Read-only — the use-case is a thin facade over the repo, but kept on
+// the use-case side so Presentation does not import a Repo port.
+// ---------------------------------------------------------------------------
+export function makeListSucceededPaymentMethodsDeps(
+  tenantId: string,
+): ListSucceededPaymentMethodsDeps {
+  return {
+    paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
   };
 }
 

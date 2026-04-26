@@ -12,10 +12,11 @@
 import { useCallback, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SearchIcon, XIcon } from 'lucide-react';
+import { SearchIcon, XIcon, CheckIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { FilterBar } from '@/components/ui/filter-bar';
+import { cn } from '@/lib/utils';
 import {
   Select,
   SelectContent,
@@ -45,8 +46,10 @@ export function InvoiceFilters() {
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const tReconciliation = useTranslations('admin.paymentReconciliation.filterChip');
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
+  const paidOnlineActive = searchParams.get('paidOnline') === '1';
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -72,7 +75,12 @@ export function InvoiceFilters() {
     }, DEBOUNCE_MS);
   };
 
-  const hasAnyFilter = currentQ !== '' || currentStatus !== 'all';
+  const hasAnyFilter =
+    currentQ !== '' || currentStatus !== 'all' || paidOnlineActive;
+
+  const togglePaidOnline = () => {
+    pushUrl({ paidOnline: paidOnlineActive ? null : '1' });
+  };
 
   return (
     <FilterBar>
@@ -120,11 +128,25 @@ export function InvoiceFilters() {
           ))}
         </SelectContent>
       </Select>
+      <Button
+        type="button"
+        variant={paidOnlineActive ? 'default' : 'outline'}
+        size="sm"
+        onClick={togglePaidOnline}
+        data-testid="paid-online-filter-chip"
+        aria-pressed={paidOnlineActive}
+        aria-label={tReconciliation('ariaLabel')}
+        title={tReconciliation('tooltip')}
+        className={cn('gap-1', paidOnlineActive && 'shadow-sm')}
+      >
+        {paidOnlineActive && <CheckIcon className="size-3.5" aria-hidden="true" />}
+        {tReconciliation('label')}
+      </Button>
       {hasAnyFilter && (
         <Button
           variant="ghost"
           onClick={() =>
-            pushUrl({ q: null, status: null })
+            pushUrl({ q: null, status: null, paidOnline: null })
           }
           aria-label={t('filters.clearAll')}
         >

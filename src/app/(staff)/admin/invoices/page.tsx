@@ -24,6 +24,10 @@ import {
   isTenantInvoiceSetupComplete,
   computeIsOverdue,
 } from '@/modules/invoicing';
+import {
+  listSucceededPaymentMethods,
+  makeListSucceededPaymentMethodsDeps,
+} from '@/modules/payments';
 import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { TableContainer } from '@/components/layout';
@@ -50,6 +54,11 @@ interface SearchParams {
   readonly q?: string;
   readonly status?: string;
   readonly page?: string;
+  /**
+   * F5 Phase 5 (T096) — `?paidOnline=1` filter chip toggles invoices
+   * settled via card or PromptPay. Any other value (or absent) is OFF.
+   */
+  readonly paidOnline?: string;
 }
 
 export default async function AdminInvoicesPage({
@@ -100,7 +109,9 @@ export default async function AdminInvoicesPage({
   const statusFilter =
     query.status && VALID_STATUSES.has(query.status) ? query.status : undefined;
   const includeDrafts = statusFilter === 'draft';
-  const hasFilters = Boolean(qTrim) || Boolean(statusFilter);
+  const paidOnlineOnly = query.paidOnline === '1';
+  const hasFilters =
+    Boolean(qTrim) || Boolean(statusFilter) || paidOnlineOnly;
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -121,6 +132,7 @@ export default async function AdminInvoicesPage({
       ? { status: statusFilter as 'issued' | 'paid' | 'void' | 'credited' | 'partially_credited' }
       : {}),
     ...(qTrim ? { search: qTrim } : {}),
+    ...(paidOnlineOnly ? { paidOnlineOnly: true } : {}),
   });
 
   // G-2 — batched CN count per invoice on the current page. Single
@@ -160,6 +172,32 @@ export default async function AdminInvoicesPage({
     } catch {
       // Best-effort: count failures never 500 the list page. Missing
       // map entries fall back to 0 in the row mapper below.
+    }
+  }
+
+  // F5 Phase 5 (T096) — succeeded online payment method per invoice on
+  // the current page. Single batched query keyed by invoice_id; absent
+  // entries fall back to `null` in the row mapper, which renders as a
+  // long-dash on the Method column. Only fetched when the Method
+  // column will actually render (`paidOnlineOnly` is the trigger);
+  // saves a roundtrip on the default view.
+  const onlineMethodById = new Map<string, 'card' | 'promptpay'>();
+  if (
+    paidOnlineOnly &&
+    invoicesResult.ok &&
+    invoicesResult.value.rows.length > 0
+  ) {
+    const methodResult = await listSucceededPaymentMethods(
+      makeListSucceededPaymentMethodsDeps(tenantCtx.slug),
+      {
+        tenantId: tenantCtx.slug,
+        invoiceIds: invoicesResult.value.rows.map((r) => r.invoiceId),
+      },
+    );
+    if (methodResult.ok) {
+      for (const [invoiceId, method] of methodResult.value) {
+        onlineMethodById.set(invoiceId, method);
+      }
     }
   }
 
@@ -220,6 +258,7 @@ export default async function AdminInvoicesPage({
         // `creditNoteCount` comes from the batched GROUP BY above.
         creditNoteCount: creditNoteCountById.get(r.invoiceId) ?? 0,
         creditedTotalSatang: r.creditedTotal.satang.toString(),
+        onlinePaymentMethod: onlineMethodById.get(r.invoiceId) ?? null,
       }))
     : [];
 
@@ -274,7 +313,7 @@ export default async function AdminInvoicesPage({
             </div>
           ) : (
             <>
-              <InvoicesTable rows={rows} />
+              <InvoicesTable rows={rows} showMethodColumn={paidOnlineOnly} />
               <TablePagination
                 page={page}
                 pageSize={PAGE_SIZE}

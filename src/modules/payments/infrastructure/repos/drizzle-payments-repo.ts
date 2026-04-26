@@ -267,5 +267,38 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       const current = Number(rows[0]?.max_seq ?? 0);
       return current + 1;
     },
+
+    async listSucceededMethodByInvoiceIds(
+      tenantIdArg: string,
+      invoiceIds: readonly string[],
+    ): Promise<ReadonlyMap<string, PaymentMethod>> {
+      if (invoiceIds.length === 0) {
+        return new Map<string, PaymentMethod>();
+      }
+      return runInTenant(ctx, async (tx) => {
+        // DISTINCT ON (invoice_id) ORDER BY completed_at DESC picks the
+        // latest succeeded payment per invoice. The
+        // one-succeeded-per-invoice invariant typically guarantees
+        // single-row, but this ordering survives historical lineage
+        // (refund + re-attempt). Tenant scoping comes from RLS first;
+        // the explicit `tenant_id =` clause is defence-in-depth.
+        const rows = (await tx.execute(sql`
+          SELECT DISTINCT ON (invoice_id) invoice_id, method
+            FROM payments
+           WHERE tenant_id = ${tenantIdArg}
+             AND status = 'succeeded'
+             AND invoice_id IN (${sql.join(
+               invoiceIds.map((id) => sql`${id}`),
+               sql`, `,
+             )})
+           ORDER BY invoice_id, completed_at DESC
+        `)) as unknown as Array<{ invoice_id: string; method: PaymentMethod }>;
+        const result = new Map<string, PaymentMethod>();
+        for (const row of rows) {
+          result.set(row.invoice_id, row.method);
+        }
+        return result;
+      });
+    },
   };
 }
