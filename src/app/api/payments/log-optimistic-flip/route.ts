@@ -37,6 +37,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
+import { hashIdForLog } from '@/lib/crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -108,15 +109,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return noContent(400);
   }
 
-  // R2-fix S1 (2026-04-26): hash actor user id (CLAUDE.md "Hash user
-  // IDs in logs where cross-request correlation is needed"). Field
-  // renamed from `userId` to `actorUserIdHash` so ops dashboards
-  // know it is a sha256-truncated value, not a raw UUID.
-  const { createHash } = await import('node:crypto');
-  const actorUserIdHash = createHash('sha256')
-    .update(actorUserId)
-    .digest('hex')
-    .slice(0, 16);
+  // R3-fix Imp#1+#2 (2026-04-26): use shared `hashIdForLog` helper
+  // from `@/lib/crypto` (was inline + dynamic `await import('node:crypto')`
+  // — top-level static import is fine in Node.js runtime and saves
+  // a microtask per request).
+  const actorUserIdHash = hashIdForLog(actorUserId);
 
   logger.info(
     {

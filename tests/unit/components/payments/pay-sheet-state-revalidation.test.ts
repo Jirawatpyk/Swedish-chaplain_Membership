@@ -17,6 +17,21 @@
  * Runtime tests for these timing-sensitive paths are flaky in the
  * jsdom + AbortController + fake-timer surface; the static contracts
  * are sufficient to catch regressions at CI time.
+ *
+ * R3-fix TQ-3 (2026-04-26) — escape hatch for maintainers:
+ * If a test in this file fails after a Prettier reformat or
+ * cosmetic edit (line wrapping, comment block reflow), the regex
+ * patterns are likely matching whitespace-sensitive content and
+ * need updating — NOT the production behaviour. Walk the steps:
+ *   1. Open the production file path printed in the failure.
+ *   2. Confirm the contract under test still holds (e.g. "exactly
+ *      one router.refresh() call site", "no setInterval in settled
+ *      effect").
+ *   3. If yes → adjust the regex `[\s\S]{0,4000}?` ranges, comment
+ *      detection, or whitespace tolerance to match the new format.
+ *   4. If no → fix the production code; the contract guard worked.
+ * The static-analysis approach is intentional (see header above);
+ * its trade-off is regex fragility, mitigated by this runbook.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';

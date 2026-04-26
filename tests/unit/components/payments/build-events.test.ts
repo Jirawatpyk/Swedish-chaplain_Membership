@@ -90,25 +90,42 @@ describe('buildEvents', () => {
     );
     expect(events).toHaveLength(2);
     expect(events[1]?.type).toBe('payment_succeeded');
-    // R2-fix TQ-1 (2026-04-26): pin the security-relevant actor
-    // identity. The string `system:stripe-webhook` is the canonical
-    // legacy prefix-form actor id (matched by isSystemActor()
-    // alongside the SYSTEM_ACTOR_STRIPE_WEBHOOK UUID). Hardcoded
-    // here to defend against silent refactor: if production code
-    // changed to use `r.initiatorUserId` (a member's UUID), this
-    // assertion would catch the regression even though the event
-    // still appears in the list.
+    // R3-fix S2 (2026-04-26, was R2-fix TQ-1): pin the security-
+    // relevant actor identity.
+    //
+    // STRING FORM (this test): the value `'system:stripe-webhook'`
+    // is what `buildEvents` produces via the template literal
+    // `${SYSTEM_ACTOR_PREFIX}stripe-webhook` for synthesized
+    // `payment_succeeded` / `payment_failed` / `refund_*` events.
+    //
+    // UUID FORM (NOT this test): `SYSTEM_ACTOR_STRIPE_WEBHOOK`
+    // (`'00000000-0000-0000-0000-0000000f5001'`) is what F4 stores
+    // in `invoice.payment_recorded_by_user_id` after the webhook
+    // path calls `markPaidFromProcessor`. Tested via the
+    // `invoice_paid` event below where the prop is supplied.
+    //
+    // Both are matched by `isSystemActor()` (R2-fix C1) and render
+    // as the i18n `actorSystem` label. Hardcoded here so a refactor
+    // swapping in `p.actorUserId` (the member's UUID) gets caught.
     expect(events[1]?.actorUserId).toBe('system:stripe-webhook');
   });
 
-  it('adds payment_failed terminal when status=failed', () => {
+  it('adds payment_failed terminal with system:stripe-webhook actor (security-relevant)', () => {
+    // R3-fix Imp#4 (2026-04-26): payment_failed shares the same
+    // security boundary as refund_failed/refund_succeeded — webhook-
+    // initiated terminal vs human-initiated. The previous test
+    // asserted only event presence. Pin the actor sentinel so a
+    // refactor swapping in `p.actorUserId` (the member's UUID) is
+    // caught by CI rather than slipping into production.
     const events = buildEvents(
       [makeCardPayment({ status: 'failed', completedAt: T1 })],
       [],
       null,
       null,
     );
-    expect(events.find((e) => e.type === 'payment_failed')).toBeDefined();
+    const terminal = events.find((e) => e.type === 'payment_failed');
+    expect(terminal).toBeDefined();
+    expect(terminal?.actorUserId).toBe('system:stripe-webhook');
   });
 
   it('adds payment_canceled terminal with the member actor (not the webhook)', () => {

@@ -463,6 +463,15 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
     // row stays pending, and Stripe re-delivers the webhook on its own
     // schedule.
     expect(result.error.kind).toBe('retryable');
+    // R3-fix TQ-5 (2026-04-26): caller-behaviour contract pinned here.
+    // The adapter only returns the discriminant; the caller (process-
+    // webhook-event use-case) is responsible for: (a) NOT writing a
+    // terminal F5 payment row on `retryable`; (b) leaving processor_events
+    // row at outcome='pending' so the next webhook redelivery wakes the
+    // pipeline; (c) NOT calling F4 markPaidFromProcessor. Those caller
+    // invariants are exercised by the `webhook-idempotency.contract.test.ts`
+    // + `concurrent-cross-method-cancel.test.ts` suites which assert
+    // markPaidFromProcessor is invoked exactly once across retries.
   });
 
   it('connection_error / 500 → retryable', async () => {

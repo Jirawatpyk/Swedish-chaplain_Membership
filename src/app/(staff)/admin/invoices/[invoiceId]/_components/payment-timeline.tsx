@@ -45,20 +45,8 @@ import {
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { logger } from '@/lib/logger';
-import { createHash } from 'node:crypto';
+import { hashIdForLog } from '@/lib/crypto';
 import { CopyChargeIdButton } from './copy-charge-id-button';
-
-/**
- * R2-fix R-I3 (2026-04-26): truncated sha256 hash for log
- * correlation. The previous `uid.slice(0, 8)` was a UUID prefix
- * (still uniquely identifying within ~256 users — not a hash).
- * CLAUDE.md: "Hash user IDs in logs where cross-request correlation
- * is needed". 16-char prefix of sha256 keeps the field compact while
- * preserving correlation entropy.
- */
-function hashUserIdForLog(uid: string): string {
-  return createHash('sha256').update(uid).digest('hex').slice(0, 16);
-}
 
 type SyntheticEventType =
   | 'payment_initiated'
@@ -342,11 +330,11 @@ export async function PaymentTimeline({
         // structured warning so a flapping users-table or schema-grant break
         // surfaces in pino aggregation; the UI still degrades gracefully by
         // falling back to the raw uuid.
-        // R2-fix R-I3 (2026-04-26): use real sha256 truncation for the
-        // log key (was a UUID prefix that still uniquely identified
-        // the user — see CLAUDE.md "Hash user IDs in logs").
+        // R3-fix Imp#2 (2026-04-26): hash via shared `hashIdForLog`
+        // helper from `@/lib/crypto` (was a local hash function with
+        // duplicate logic on the API-route side; consolidated).
         logger.warn(
-          { cause, actor_user_id_hash: hashUserIdForLog(uid) },
+          { cause, actor_user_id_hash: hashIdForLog(uid) },
           'payment-timeline: user lookup failed, falling back to actor uuid',
         );
         userEmailMap.set(uid, uid);
@@ -380,17 +368,9 @@ export async function PaymentTimeline({
       : null;
 
   return (
-    // R2-fix N1/I2 (2026-04-26): the previous wiring placed
-    // `aria-live="polite"` on the Card itself. On a Server Component
-    // an aria-live region announces on EVERY DOM mount, including the
-    // soft-navigation re-render — flooding the SR user with the
-    // entire timeline whenever they tab between invoices. The intent
-    // (announce only on webhook revalidation) requires a Client
-    // Component watching event-count deltas, which is post-MVP for
-    // Phase 5 read-only scope. Until then we keep `role="region"` for
-    // landmark navigation but drop the live-region attribute. The
-    // empty-state CTA + sonner toast on user-driven mutations cover
-    // the actionable cases. Tracking: see review notes 2026-04-26 N1.
+    // `role="region"` only — `aria-live="polite"` on a Server Component
+    // re-announces the whole timeline on every soft-nav remount. Proper
+    // delta-aware announcer needs a Client Component (post-MVP).
     <Card
       data-testid="payment-timeline"
       role="region"

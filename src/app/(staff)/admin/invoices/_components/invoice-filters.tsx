@@ -27,7 +27,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
@@ -134,37 +133,44 @@ export function InvoiceFilters() {
           ))}
         </SelectContent>
       </Select>
-      <TooltipProvider>
-        <Tooltip>
-          {/* R2-fix I1 (2026-04-26): switched to render-function form
-              for parity with DropdownMenuTrigger usage elsewhere
-              (invoice-more-menu.tsx) and to guarantee Base UI props
-              (data-state, refs, ARIA wiring) flow through. The
-              element-form variant cloned the Button but is more
-              fragile across Base UI prop spreads. */}
-          <TooltipTrigger
-            render={(triggerProps) => (
-              <Button
-                {...triggerProps}
-                type="button"
-                variant={paidOnlineActive ? 'default' : 'outline'}
-                size="sm"
-                onClick={togglePaidOnline}
-                data-testid="paid-online-filter-chip"
-                aria-pressed={paidOnlineActive}
-                aria-label={tReconciliation('ariaLabel')}
-                className={cn('gap-1', paidOnlineActive && 'shadow-sm')}
-              >
-                {paidOnlineActive && (
-                  <CheckIcon className="size-3.5" aria-hidden="true" />
-                )}
-                {tReconciliation('label')}
-              </Button>
-            )}
-          />
-          <TooltipContent>{tReconciliation('tooltip')}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      {/* R3-fix N7 (2026-04-26): the staff admin layout already
+          mounts `<TooltipProvider>` at the shell level — a local
+          provider here would remount on every searchParam change
+          (router.replace fires on every filter edit). The shell
+          provider is sufficient.
+          R3-fix N6 (2026-04-26, Base UI Tooltip touch behaviour):
+          Base UI `Tooltip` opens on hover/focus only (per Tooltip
+          design philosophy — tooltips are supplementary, not
+          primary info). Sighted touch users do NOT see the popup
+          on tap (taps toggle the filter, the primary action). The
+          `aria-label` on the trigger carries the scope information
+          for SR + voice-control users; the visible chip label
+          ("Paid online") is sufficient for sighted touch users
+          since the filter result speaks for itself once toggled.
+          Accepted Base UI limitation. */}
+      <Tooltip>
+        <TooltipTrigger
+          render={(triggerProps) => (
+            <Button
+              {...triggerProps}
+              type="button"
+              variant={paidOnlineActive ? 'default' : 'outline'}
+              size="sm"
+              onClick={togglePaidOnline}
+              data-testid="paid-online-filter-chip"
+              aria-pressed={paidOnlineActive}
+              aria-label={tReconciliation('ariaLabel')}
+              className={cn('gap-1', paidOnlineActive && 'shadow-sm')}
+            >
+              {paidOnlineActive && (
+                <CheckIcon className="size-3.5" aria-hidden="true" />
+              )}
+              {tReconciliation('label')}
+            </Button>
+          )}
+        />
+        <TooltipContent>{tReconciliation('tooltip')}</TooltipContent>
+      </Tooltip>
       {hasAnyFilter && (
         <Button
           variant="ghost"

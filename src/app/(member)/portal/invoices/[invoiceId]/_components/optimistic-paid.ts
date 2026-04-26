@@ -176,24 +176,25 @@ export function useOptimisticPaid(
   options: UseOptimisticPaidOptions = {},
 ): boolean {
   const { onCrossTabPaid } = options;
-  // R2-fix I4 (2026-04-26): dev-only double-subscriber detection.
-  if (
-    typeof window !== 'undefined' &&
-    _crossTabPaidSubscribers &&
-    onCrossTabPaid
-  ) {
-    if (_crossTabPaidSubscribers.has(invoiceId)) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[useOptimisticPaid] duplicate onCrossTabPaid subscriber for invoice ${invoiceId}. ` +
-          'router.refresh() will fire twice on cross-tab paid signals. ' +
-          'Wire onCrossTabPaid on ONE consumer per page (typically PayNowButton).',
-      );
-    }
-  }
   const subscribe = useCallback(
     (onChange: () => void) => {
+      // R3-fix Imp#3 (2026-04-26): atomic check + add inside the
+      // subscribe callback itself. The previous shape split check
+      // (render body) and add (subscribe callback), so two concurrent
+      // renders both saw `has(id)===false` and silently registered
+      // before either added — losing the duplicate warning. Moving
+      // both steps into the callback (which React serialises) makes
+      // the check atomic. Production (NODE_ENV='production') skips
+      // the entire instrumentation via the null-Set guard above.
       if (_crossTabPaidSubscribers && onCrossTabPaid) {
+        if (_crossTabPaidSubscribers.has(invoiceId)) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[useOptimisticPaid] duplicate onCrossTabPaid subscriber for invoice ${invoiceId}. ` +
+              'router.refresh() will fire twice on cross-tab paid signals. ' +
+              'Wire onCrossTabPaid on ONE consumer per page (typically PayNowButton).',
+          );
+        }
         _crossTabPaidSubscribers.add(invoiceId);
       }
       const unsubscribe = subscribePaidFlag(invoiceId, {

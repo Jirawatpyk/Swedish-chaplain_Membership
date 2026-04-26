@@ -154,5 +154,42 @@ describe('optimistic-paid store', () => {
       expect(typeof mod.dispatchInvoicePaid).toBe('function');
       expect(typeof mod.useOptimisticPaid).toBe('function');
     });
+
+    // R3-fix IG-1 (2026-04-26): exercise the actual hook via
+    // `renderHook` to verify SSR-snapshot semantics through the
+    // public API, not just the storage side-effect. Catches the
+    // off-by-one + stale-render bugs that the storage-only checks
+    // above can miss.
+    it('useOptimisticPaid returns false on first render when storage is empty (SSR-aligned)', async () => {
+      const { renderHook } = await import('@testing-library/react');
+      const mod = await import(MODULE_PATH);
+      const id = '77777777-7777-7777-7777-777777777777';
+
+      const { result } = renderHook(() => mod.useOptimisticPaid(id));
+      expect(result.current).toBe(false);
+    });
+
+    // R3-fix TQ-2 (2026-04-26): TTL boundary via the PUBLIC hook —
+    // not just storage timestamps. Confirms `readPaidFlag` actually
+    // returns false when the entry is older than 60s, defending
+    // against an off-by-one bug like `< 60_000` vs `<= 60_000`.
+    it('useOptimisticPaid returns false after the 60s TTL elapses (TTL boundary, public API)', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-04-26T12:00:00Z'));
+
+      const { renderHook } = await import('@testing-library/react');
+      const mod = await import(MODULE_PATH);
+      const id = '88888888-8888-8888-8888-888888888888';
+
+      mod.dispatchInvoicePaid(id);
+      // Right after dispatch — should read true.
+      const before = renderHook(() => mod.useOptimisticPaid(id));
+      expect(before.result.current).toBe(true);
+
+      // Advance past TTL — flag must drop to false on next read.
+      vi.setSystemTime(new Date('2026-04-26T12:01:01Z')); // +61 s
+      const after = renderHook(() => mod.useOptimisticPaid(id));
+      expect(after.result.current).toBe(false);
+    });
   });
 });

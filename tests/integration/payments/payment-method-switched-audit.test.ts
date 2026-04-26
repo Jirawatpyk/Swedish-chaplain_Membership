@@ -147,4 +147,34 @@ describe('f5AuditAdapter — payment_method_switched persistence', () => {
   it('retention map returns 10 years for payment_method_switched (compliance baseline)', () => {
     expect(retentionFor('payment_method_switched')).toBe(10);
   });
+
+  it('cross-tenant: tenant B SELECT under runInTenant cannot see tenant A audit rows (R3-fix IG-4)', async () => {
+    // R3-fix IG-4 (2026-04-26): Constitution v1.4.0 Principle I clause 3
+    // requires every feature touching tenant-scoped data to include a
+    // cross-tenant integration test. This file already exercises
+    // single-tenant persistence; this `it` block adversarially probes
+    // tenant B against the previously-seeded tenant A row to prove
+    // RLS enforcement on the audit_log read path under
+    // `runInTenant(B, …)`.
+    const tenantB = await createTestTenant('test-chamber');
+    try {
+      // The first `it` above seeded a payment_method_switched row in
+      // tenant A's audit_log. Tenant B reading the same eventType must
+      // see ZERO rows for tenant A (and zero rows of its own — none seeded).
+      const rowsFromB = await runInTenant(tenantB.ctx, async (tx) =>
+        tx
+          .select()
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.tenantId, tenant.ctx.slug),
+              eq(auditLog.eventType, 'payment_method_switched'),
+            ),
+          ),
+      );
+      expect(rowsFromB.length).toBe(0);
+    } finally {
+      await tenantB.cleanup().catch(() => {});
+    }
+  });
 });

@@ -7,7 +7,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
-import { Skeleton } from '@/components/ui/skeleton';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.meta');
@@ -68,6 +67,7 @@ import { RecordPaymentDialog } from '../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
 import { PaymentTimeline } from './_components/payment-timeline';
+import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -683,28 +683,10 @@ export default async function InvoiceDetailPage({
           either, so non-paid drafts/issued invoices show a clean card. */}
       {!isDraft && (
         <div className="mt-4">
-          {/* Verify-fix S6 (2026-04-26): wrap in Suspense so the F5 DB
-              read does not block the rest of the detail page from
-              streaming. R2-fix Q2+Q4 (2026-04-26): use shimmer
-              variant per ux-standards § 2.1 (drops to pulse under
-              prefers-reduced-motion via globals.css), and improve
-              shape fidelity to match the rendered Card more closely:
-              header (h-6) + chip block (h-12) + 3 event rows (h-14)
-              keeps CLS within an acceptable window for the typical
-              paid-online invoice. */}
-          <Suspense
-            fallback={
-              <Card>
-                <CardContent className="flex flex-col gap-3 py-6">
-                  <Skeleton className="h-6 w-40 skeleton-shimmer" />
-                  <Skeleton className="h-12 w-full skeleton-shimmer" />
-                  <Skeleton className="h-14 w-full skeleton-shimmer" />
-                  <Skeleton className="h-14 w-full skeleton-shimmer" />
-                  <Skeleton className="h-14 w-full skeleton-shimmer" />
-                </CardContent>
-              </Card>
-            }
-          >
+          {/* Suspense + extracted PaymentTimelineSkeleton primitive
+              (R3-fix S4 2026-04-26). Shape fidelity + shimmer
+              behaviour documented inside the component file. */}
+          <Suspense fallback={<PaymentTimelineSkeleton />}>
             <PaymentTimeline
               invoiceId={invoice.invoiceId}
               tenantId={tenantCtx.slug}

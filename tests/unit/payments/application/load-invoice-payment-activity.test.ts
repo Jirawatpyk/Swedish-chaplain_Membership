@@ -66,6 +66,10 @@ describe('loadInvoicePaymentActivity', () => {
       { tenantId: 'swecham', invoiceId: 'inv-1' },
     );
 
+    // R3-fix S1 (2026-04-26): expect.assertions(N) guards against
+    // the `if (!result.ok)` block silently passing when result IS ok
+    // (3 expect calls = 1 outer + 2 inner; mismatch fails the test).
+    expect.assertions(3);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('repo_unavailable');
@@ -86,6 +90,7 @@ describe('loadInvoicePaymentActivity', () => {
       { paymentsRepo },
       { tenantId: 'swecham', invoiceId: 'inv-1' },
     );
+    expect.assertions(3); // R3-fix S1 — guard against silent green
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('repo_unavailable');
@@ -104,6 +109,7 @@ describe('loadInvoicePaymentActivity', () => {
       { paymentsRepo },
       { tenantId: 'swecham', invoiceId: 'inv-1' },
     );
+    expect.assertions(3); // R3-fix S1 — guard against silent green
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('repo_unavailable');
