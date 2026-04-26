@@ -129,6 +129,7 @@ function buildEvents(
   payments: LoadInvoicePaymentActivityOutput['payments'],
   refunds: readonly RefundActivityDto[],
   invoicePaidAtIso: string | null,
+  invoicePaymentRecordedByUserId: string | null,
 ): TimelineEvent[] {
   const events: TimelineEvent[] = [];
 
@@ -169,7 +170,8 @@ function buildEvents(
       id: 'invoice-paid',
       type: 'invoice_paid',
       timestamp: new Date(invoicePaidAtIso),
-      actorUserId: `${SYSTEM_ACTOR_PREFIX}stripe-webhook`,
+      actorUserId:
+        invoicePaymentRecordedByUserId ?? `${SYSTEM_ACTOR_PREFIX}stripe-webhook`,
       subjectId: 'invoice',
     });
   }
@@ -203,11 +205,20 @@ export async function PaymentTimeline({
   invoiceId,
   tenantId,
   invoicePaidAt,
+  invoicePaymentRecordedByUserId,
 }: {
   readonly invoiceId: string;
   readonly tenantId: string;
   /** F4 `invoice.paidAt` (ISO UTC). Null when invoice has not transitioned to paid. */
   readonly invoicePaidAt: string | null;
+  /**
+   * E2 fix — F4 `invoice.paymentRecordedByUserId` is the canonical actor for
+   * the `invoice_paid` event. For online payments this is `system:stripe-webhook`
+   * (set by `markPaidFromProcessor`); for manual paths it is the admin's userId.
+   * Pass-through gives the right actor without re-deriving from the (currently)
+   * stripe-only timeline scope.
+   */
+  readonly invoicePaymentRecordedByUserId: string | null;
 }) {
   const t = await getTranslations('admin.paymentReconciliation.timeline');
   const tEvents = await getTranslations(
@@ -227,7 +238,12 @@ export async function PaymentTimeline({
   // is structurally impossible. Defensive fallback keeps tsc happy.
   const activity = result.ok ? result.value : { payments: [], refunds: [] };
 
-  const events = buildEvents(activity.payments, activity.refunds, invoicePaidAt);
+  const events = buildEvents(
+    activity.payments,
+    activity.refunds,
+    invoicePaidAt,
+    invoicePaymentRecordedByUserId,
+  );
 
   // Resolve unique non-system actor user ids → email for display.
   const userIds = Array.from(

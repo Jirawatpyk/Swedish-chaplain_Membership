@@ -1336,8 +1336,8 @@
         "viewInStripe": "View in Stripe",
         "viewInStripeAria": "Open this charge in the Stripe dashboard (opens in a new tab)",
         "empty": {
-          "title": "No payment activity yet",
-          "body": "Payments will appear here once recorded — manual reconciliation, online card, or PromptPay."
+          "title": "No online payment activity",
+          "body": "Online payments via card or PromptPay will appear here once a member completes one. Manually-recorded payments are shown in the Payment details section above."
         }
       }
     },
@@ -1611,9 +1611,6 @@
     "payment": {
       "payNow": "Pay now",
       "payAmount": "Pay {amount}",
-      "toast": {
-        "paymentSucceeded": "Payment successful"
-      },
       "drawer": {
         "title": "Pay invoice",
         "subtitle": "{invoiceNumber}",

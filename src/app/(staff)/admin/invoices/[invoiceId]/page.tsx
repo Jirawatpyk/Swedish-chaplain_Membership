@@ -685,6 +685,7 @@ export default async function InvoiceDetailPage({
             invoiceId={invoice.invoiceId}
             tenantId={tenantCtx.slug}
             invoicePaidAt={invoice.paidAt}
+            invoicePaymentRecordedByUserId={invoice.paymentRecordedByUserId}
           />
         </div>
       )}

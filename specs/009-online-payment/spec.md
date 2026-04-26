@@ -144,7 +144,7 @@ processor charge id + click-through URL to the live processor dashboard.
 
 **Acceptance Scenarios**:
 
-1. **Given** a month with 12 paid-online invoices (8 card + 4 PromptPay) and 6 manually-reconciled (offline bank transfer) invoices, **When** admin opens `/admin/invoices` and filters by "paid online", **Then** exactly 12 rows are returned with a method badge (card / PromptPay) and a processor charge id visible.
+1. **Given** a month with 12 paid-online invoices (8 card + 4 PromptPay) and 6 manually-reconciled (offline bank transfer) invoices, **When** admin opens `/admin/invoices` and filters by "paid online", **Then** exactly 12 rows are returned with a method badge (card / PromptPay). The processor charge id is **not** rendered as a list-row column (long charge ids would clutter the table) — instead it surfaces on the per-invoice detail timeline where the admin can copy it + click through to the processor dashboard (see AS2). Amendment 2026-04-26 (Phase 5 `/speckit.verify.run` D1): aligned with `tasks.md` T096 + shipped implementation; the literal "charge id visible on rows" phrasing in earlier drafts was inconsistent with the table's column inventory.
 2. **Given** a paid-online invoice, **When** admin opens the detail, **Then** a "Payment timeline" panel shows `payment_initiated @ 10:00:03` → `payment_succeeded @ 10:00:41` → `invoice_paid @ 10:00:41` with actor = member email and a copy-to-clipboard action for the processor charge id.
 3. **Given** a `manager` role (read-only on finance), **When** they view the same panel, **Then** they see the full timeline but no mutating actions (refund, resend receipt).
 
