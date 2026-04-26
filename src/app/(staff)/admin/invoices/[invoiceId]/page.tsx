@@ -1,11 +1,13 @@
 /**
  * T056 — /admin/invoices/[invoiceId] detail page.
  */
+import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.meta');
@@ -681,12 +683,28 @@ export default async function InvoiceDetailPage({
           either, so non-paid drafts/issued invoices show a clean card. */}
       {!isDraft && (
         <div className="mt-4">
-          <PaymentTimeline
-            invoiceId={invoice.invoiceId}
-            tenantId={tenantCtx.slug}
-            invoicePaidAt={invoice.paidAt}
-            invoicePaymentRecordedByUserId={invoice.paymentRecordedByUserId}
-          />
+          {/* Verify-fix S6 (2026-04-26): wrap in Suspense so the F5 DB
+              read does not block the rest of the detail page from
+              streaming. Skeleton mirrors the timeline layout (Card +
+              header + 2 event rows) for CLS=0. */}
+          <Suspense
+            fallback={
+              <Card>
+                <CardContent className="flex flex-col gap-4 py-6">
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                </CardContent>
+              </Card>
+            }
+          >
+            <PaymentTimeline
+              invoiceId={invoice.invoiceId}
+              tenantId={tenantCtx.slug}
+              invoicePaidAt={invoice.paidAt}
+              invoicePaymentRecordedByUserId={invoice.paymentRecordedByUserId}
+            />
+          </Suspense>
         </div>
       )}
     </DetailContainer>

@@ -20,7 +20,7 @@
     "test:coverage": "vitest run --coverage --passWithNoTests",
     "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
     "test:perf": "tsx scripts/run-perf-tests.ts",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --workers=1",
     "test:e2e:ui": "playwright test --ui",
     "check:i18n": "tsx scripts/check-i18n-coverage.ts",
     "check:layout": "tsx scripts/check-layout-container-usage.ts",

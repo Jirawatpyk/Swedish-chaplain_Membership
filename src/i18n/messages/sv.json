@@ -1335,7 +1335,7 @@
           "copyFailed": "Kunde inte kopiera — kopiera manuellt"
         },
         "testModeBadge": "Testläge",
-        "viewInStripe": "Visa i Stripe",
+        "viewInStripe": "Öppna i Stripe",
         "viewInStripeAria": "Öppna denna transaktion i Stripe-instrumentpanelen (öppnas i ny flik)",
         "empty": {
           "title": "Inga onlinebetalningar ännu",

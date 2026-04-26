@@ -57,7 +57,7 @@ type SyntheticEventType =
   | 'refund_succeeded'
   | 'refund_failed';
 
-interface TimelineEvent {
+export interface TimelineEvent {
   readonly id: string;
   readonly type: SyntheticEventType;
   readonly timestamp: Date;
@@ -157,7 +157,7 @@ function buildStripeDashboardUrl(
   return `https://dashboard.stripe.com/${segment}payments/${chargeOrIntentId}`;
 }
 
-function buildEvents(
+export function buildEvents(
   payments: LoadInvoicePaymentActivityOutput['payments'],
   refunds: readonly RefundActivityDto[],
   invoicePaidAtIso: string | null,

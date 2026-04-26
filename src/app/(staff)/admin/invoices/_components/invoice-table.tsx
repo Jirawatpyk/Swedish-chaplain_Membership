@@ -134,7 +134,12 @@ export function InvoicesTable({
 }) {
   const t = useTranslations('admin.invoices.list');
   return (
-    <div className="overflow-x-auto">
+    // Verify-fix U-I4 (2026-04-26): inset shadow on the right edge gives
+    // mobile users a visual cue that the table scrolls horizontally
+    // (8 cols when the Method column is on; 7 otherwise). Without the
+    // cue the overflow was invisible and admins missed columns to the
+    // right.
+    <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)]">
       <Table>
         <TableHeader>
           <TableRow>

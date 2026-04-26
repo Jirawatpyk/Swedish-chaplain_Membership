@@ -24,6 +24,12 @@ import {
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 const DEBOUNCE_MS = 300;
 
@@ -128,23 +134,34 @@ export function InvoiceFilters() {
           ))}
         </SelectContent>
       </Select>
-      <Button
-        type="button"
-        variant={paidOnlineActive ? 'default' : 'outline'}
-        size="sm"
-        onClick={togglePaidOnline}
-        data-testid="paid-online-filter-chip"
-        aria-pressed={paidOnlineActive}
-        aria-label={tReconciliation('ariaLabel')}
-        title={tReconciliation('tooltip')}
-        className={cn('gap-1', paidOnlineActive && 'shadow-sm')}
-      >
-        {paidOnlineActive && <CheckIcon className="size-3.5" aria-hidden="true" />}
-        {tReconciliation('label')}
-      </Button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant={paidOnlineActive ? 'default' : 'outline'}
+                size="sm"
+                onClick={togglePaidOnline}
+                data-testid="paid-online-filter-chip"
+                aria-pressed={paidOnlineActive}
+                aria-label={tReconciliation('ariaLabel')}
+                className={cn('gap-1', paidOnlineActive && 'shadow-sm')}
+              >
+                {paidOnlineActive && (
+                  <CheckIcon className="size-3.5" aria-hidden="true" />
+                )}
+                {tReconciliation('label')}
+              </Button>
+            }
+          />
+          <TooltipContent>{tReconciliation('tooltip')}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       {hasAnyFilter && (
         <Button
           variant="ghost"
+          size="sm"
           onClick={() =>
             pushUrl({ q: null, status: null, paidOnline: null })
           }

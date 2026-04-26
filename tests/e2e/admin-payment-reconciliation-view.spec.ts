@@ -194,10 +194,13 @@ test.describe('admin payment reconciliation view — @payment @e2e (T095, US3)',
     await expect(timeline).toBeVisible({ timeout: 5_000 });
 
     // Manager MUST NOT see mutating action triggers anywhere on the
-    // page (refund, void, record-payment). This is the read-only
-    // RBAC contract from spec.md US3 + plan.md § Security § RBAC.
+    // page (refund, void, record-payment, resend-receipt). This is the
+    // read-only RBAC contract from spec.md US3 + plan.md § Security § RBAC.
+    // Verify-fix IG-2 (2026-04-26): added `resend-receipt-trigger`
+    // assertion which the spec AS3 explicitly mandates.
     await expect(page.getByTestId('refund-dialog-trigger')).toHaveCount(0);
     await expect(page.getByTestId('void-invoice-trigger')).toHaveCount(0);
     await expect(page.getByTestId('record-payment-trigger')).toHaveCount(0);
+    await expect(page.getByTestId('resend-receipt-trigger')).toHaveCount(0);
   });
 });
