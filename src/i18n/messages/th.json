@@ -1076,7 +1076,8 @@
           "dueDate": "ครบกำหนด",
           "total": "ยอดรวม",
           "actions": "",
-          "member": "สมาชิก"
+          "member": "สมาชิก",
+          "method": "ช่องทางชำระ"
         },
         "statuses": {
           "draft": "ร่าง",
@@ -1301,7 +1302,44 @@
       "title": "คืนเงิน"
     },
     "paymentReconciliation": {
-      "title": "กระทบยอดการชำระเงิน"
+      "title": "กระทบยอดการชำระเงิน",
+      "filterChip": {
+        "label": "ชำระออนไลน์",
+        "ariaLabel": "กรองเฉพาะใบแจ้งหนี้ที่ชำระออนไลน์",
+        "tooltip": "แสดงเฉพาะใบแจ้งหนี้ที่ชำระผ่านบัตรหรือ PromptPay"
+      },
+      "methodBadge": {
+        "card": "บัตร",
+        "promptpay": "PromptPay",
+        "manual": "บันทึกเอง"
+      },
+      "timeline": {
+        "title": "กิจกรรมการชำระเงิน",
+        "actorSystem": "ระบบ (Stripe webhook)",
+        "actorAnonymous": "ไม่ระบุผู้ใช้",
+        "events": {
+          "payment_initiated": "เริ่มทำรายการชำระเงิน",
+          "payment_succeeded": "ชำระเงินสำเร็จ",
+          "payment_failed": "ชำระเงินไม่สำเร็จ",
+          "payment_canceled": "ยกเลิกการชำระเงิน",
+          "payment_auto_refunded_stale_invoice": "คืนเงินอัตโนมัติ (ใบแจ้งหนี้หมดอายุ)",
+          "invoice_paid": "บันทึกใบแจ้งหนี้เป็นชำระแล้ว",
+          "refund_initiated": "เริ่มคืนเงิน",
+          "refund_succeeded": "คืนเงินสำเร็จ",
+          "refund_failed": "คืนเงินไม่สำเร็จ"
+        },
+        "chargeId": {
+          "label": "รหัสรายการ",
+          "copyAction": "คัดลอกรหัสรายการ",
+          "copySuccess": "คัดลอกรหัสรายการแล้ว"
+        },
+        "viewInStripe": "เปิดใน Stripe",
+        "viewInStripeAria": "เปิดรายการนี้ในแดชบอร์ด Stripe (เปิดในแท็บใหม่)",
+        "empty": {
+          "title": "ยังไม่มีกิจกรรมการชำระเงิน",
+          "body": "รายการชำระเงินจะปรากฏที่นี่หลังบันทึก — ทั้งกระทบยอดด้วยมือ บัตรออนไลน์ หรือ PromptPay"
+        }
+      }
     },
     "paymentSettings": {
       "title": "ตั้งค่าการชำระเงิน"

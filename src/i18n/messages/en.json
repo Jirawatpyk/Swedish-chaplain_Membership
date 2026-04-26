@@ -1076,7 +1076,8 @@
           "dueDate": "Due",
           "total": "Total",
           "actions": "Actions",
-          "member": "Member"
+          "member": "Member",
+          "method": "Method"
         },
         "statuses": {
           "draft": "Draft",
@@ -1301,7 +1302,44 @@
       "title": "Issue refund"
     },
     "paymentReconciliation": {
-      "title": "Payment reconciliation"
+      "title": "Payment reconciliation",
+      "filterChip": {
+        "label": "Paid online",
+        "ariaLabel": "Filter to invoices paid online",
+        "tooltip": "Show only invoices settled via card or PromptPay"
+      },
+      "methodBadge": {
+        "card": "Card",
+        "promptpay": "PromptPay",
+        "manual": "Manual"
+      },
+      "timeline": {
+        "title": "Payment activity",
+        "actorSystem": "System (Stripe webhook)",
+        "actorAnonymous": "Anonymous",
+        "events": {
+          "payment_initiated": "Payment initiated",
+          "payment_succeeded": "Payment succeeded",
+          "payment_failed": "Payment failed",
+          "payment_canceled": "Payment canceled",
+          "payment_auto_refunded_stale_invoice": "Auto-refunded (stale invoice)",
+          "invoice_paid": "Invoice marked paid",
+          "refund_initiated": "Refund initiated",
+          "refund_succeeded": "Refund completed",
+          "refund_failed": "Refund failed"
+        },
+        "chargeId": {
+          "label": "Charge id",
+          "copyAction": "Copy charge id",
+          "copySuccess": "Charge id copied to clipboard"
+        },
+        "viewInStripe": "View in Stripe",
+        "viewInStripeAria": "Open this charge in the Stripe dashboard (opens in a new tab)",
+        "empty": {
+          "title": "No payment activity yet",
+          "body": "Payments will appear here once recorded — manual reconciliation, online card, or PromptPay."
+        }
+      }
     },
     "paymentSettings": {
       "title": "Payment settings"

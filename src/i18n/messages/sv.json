@@ -1076,7 +1076,8 @@
           "dueDate": "Förfaller",
           "total": "Totalt",
           "actions": "",
-          "member": "Medlem"
+          "member": "Medlem",
+          "method": "Metod"
         },
         "statuses": {
           "draft": "Utkast",
@@ -1301,7 +1302,44 @@
       "title": "Utfärda återbetalning"
     },
     "paymentReconciliation": {
-      "title": "Betalningsavstämning"
+      "title": "Betalningsavstämning",
+      "filterChip": {
+        "label": "Betald online",
+        "ariaLabel": "Filtrera till fakturor betalda online",
+        "tooltip": "Visa endast fakturor som betalats via kort eller PromptPay"
+      },
+      "methodBadge": {
+        "card": "Kort",
+        "promptpay": "PromptPay",
+        "manual": "Manuell"
+      },
+      "timeline": {
+        "title": "Betalningshändelser",
+        "actorSystem": "System (Stripe webhook)",
+        "actorAnonymous": "Anonym",
+        "events": {
+          "payment_initiated": "Betalning påbörjad",
+          "payment_succeeded": "Betalning genomförd",
+          "payment_failed": "Betalning misslyckades",
+          "payment_canceled": "Betalning avbruten",
+          "payment_auto_refunded_stale_invoice": "Automatiskt återbetald (utgången faktura)",
+          "invoice_paid": "Faktura markerad som betald",
+          "refund_initiated": "Återbetalning påbörjad",
+          "refund_succeeded": "Återbetalning genomförd",
+          "refund_failed": "Återbetalning misslyckades"
+        },
+        "chargeId": {
+          "label": "Transaktions-id",
+          "copyAction": "Kopiera transaktions-id",
+          "copySuccess": "Transaktions-id kopierat"
+        },
+        "viewInStripe": "Visa i Stripe",
+        "viewInStripeAria": "Öppna denna transaktion i Stripe-instrumentpanelen (öppnas i ny flik)",
+        "empty": {
+          "title": "Inga betalningshändelser ännu",
+          "body": "Betalningar visas här när de registrerats — manuell avstämning, online-kort eller PromptPay."
+        }
+      }
     },
     "paymentSettings": {
       "title": "Betalningsinställningar"
