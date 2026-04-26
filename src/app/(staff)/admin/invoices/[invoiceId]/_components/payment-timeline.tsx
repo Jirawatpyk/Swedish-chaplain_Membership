@@ -45,7 +45,20 @@ import {
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { logger } from '@/lib/logger';
+import { createHash } from 'node:crypto';
 import { CopyChargeIdButton } from './copy-charge-id-button';
+
+/**
+ * R2-fix R-I3 (2026-04-26): truncated sha256 hash for log
+ * correlation. The previous `uid.slice(0, 8)` was a UUID prefix
+ * (still uniquely identifying within ~256 users — not a hash).
+ * CLAUDE.md: "Hash user IDs in logs where cross-request correlation
+ * is needed". 16-char prefix of sha256 keeps the field compact while
+ * preserving correlation entropy.
+ */
+function hashUserIdForLog(uid: string): string {
+  return createHash('sha256').update(uid).digest('hex').slice(0, 16);
+}
 
 type SyntheticEventType =
   | 'payment_initiated'
@@ -277,9 +290,30 @@ export async function PaymentTimeline({
     makeLoadInvoicePaymentActivityDeps(tenantId),
     { tenantId, invoiceId },
   );
-  // `Result` from this use-case has `error: never`, so a non-ok branch
-  // is structurally impossible. Defensive fallback keeps tsc happy.
-  const activity = result.ok ? result.value : { payments: [], refunds: [] };
+  // R2-fix C1 (2026-04-26): post verify-fix C2 the use-case CAN return
+  // `Result.err({kind:'repo_unavailable', cause})` when the underlying
+  // F5 repo throws (DB outage, RLS misconfiguration, schema drift). The
+  // previous comment claimed `error: never` which became stale after
+  // C2 — and the fallback silently degraded to an empty timeline,
+  // making a DB outage look identical to "no payment activity yet" to
+  // the admin. Now: structured pino warn so the operator sees the
+  // outage in observability, plus the empty fallback so the page
+  // continues to render rather than 500-ing the whole detail view.
+  let activity: LoadInvoicePaymentActivityOutput;
+  if (result.ok) {
+    activity = result.value;
+  } else {
+    logger.warn(
+      {
+        kind: result.error.kind,
+        cause: result.error.cause,
+        invoiceId,
+        tenantId,
+      },
+      'payment-timeline: repo unavailable, rendering empty state',
+    );
+    activity = { payments: [], refunds: [] };
+  }
 
   const events = buildEvents(
     activity.payments,
@@ -308,8 +342,11 @@ export async function PaymentTimeline({
         // structured warning so a flapping users-table or schema-grant break
         // surfaces in pino aggregation; the UI still degrades gracefully by
         // falling back to the raw uuid.
+        // R2-fix R-I3 (2026-04-26): use real sha256 truncation for the
+        // log key (was a UUID prefix that still uniquely identified
+        // the user — see CLAUDE.md "Hash user IDs in logs").
         logger.warn(
-          { cause, actor_user_id_hash: uid.slice(0, 8) },
+          { cause, actor_user_id_hash: hashUserIdForLog(uid) },
           'payment-timeline: user lookup failed, falling back to actor uuid',
         );
         userEmailMap.set(uid, uid);
@@ -343,19 +380,21 @@ export async function PaymentTimeline({
       : null;
 
   return (
-    // Verify-fix U-I3 (2026-04-26): `role="region"` makes the Card a
-    // proper landmark for AT navigation; `aria-live="polite"` +
-    // `aria-atomic="false"` causes the appended events to be announced
-    // when the server component re-renders after a webhook-driven
-    // revalidation (e.g. admin records a manual payment, page revalidates,
-    // a new event row appears) — without flooding the user with the
-    // entire timeline on every refresh.
+    // R2-fix N1/I2 (2026-04-26): the previous wiring placed
+    // `aria-live="polite"` on the Card itself. On a Server Component
+    // an aria-live region announces on EVERY DOM mount, including the
+    // soft-navigation re-render — flooding the SR user with the
+    // entire timeline whenever they tab between invoices. The intent
+    // (announce only on webhook revalidation) requires a Client
+    // Component watching event-count deltas, which is post-MVP for
+    // Phase 5 read-only scope. Until then we keep `role="region"` for
+    // landmark navigation but drop the live-region attribute. The
+    // empty-state CTA + sonner toast on user-driven mutations cover
+    // the actionable cases. Tracking: see review notes 2026-04-26 N1.
     <Card
       data-testid="payment-timeline"
       role="region"
       aria-labelledby="payment-timeline-heading"
-      aria-live="polite"
-      aria-atomic="false"
     >
       <CardHeader>
         <CardTitle id="payment-timeline-heading" className="text-base">
@@ -375,7 +414,11 @@ export async function PaymentTimeline({
             <Badge
               variant="outline"
               data-testid="processor-charge-id"
-              className="font-mono text-xs select-text"
+              // R2-fix N4 (2026-04-26): on 320px viewports the 27-char
+              // pi_/ch_ ids overflow the Badge horizontally even with
+              // flex-wrap. `break-all` lets the value wrap mid-token
+              // so the chip stays inside the row container.
+              className="font-mono text-xs select-text break-all"
             >
               <span className="text-muted-foreground mr-1">
                 {tCharge('label')}:

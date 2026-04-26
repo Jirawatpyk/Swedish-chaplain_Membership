@@ -90,7 +90,15 @@ describe('buildEvents', () => {
     );
     expect(events).toHaveLength(2);
     expect(events[1]?.type).toBe('payment_succeeded');
-    expect(events[1]?.actorUserId).toBe(`system:stripe-webhook`);
+    // R2-fix TQ-1 (2026-04-26): pin the security-relevant actor
+    // identity. The string `system:stripe-webhook` is the canonical
+    // legacy prefix-form actor id (matched by isSystemActor()
+    // alongside the SYSTEM_ACTOR_STRIPE_WEBHOOK UUID). Hardcoded
+    // here to defend against silent refactor: if production code
+    // changed to use `r.initiatorUserId` (a member's UUID), this
+    // assertion would catch the regression even though the event
+    // still appears in the list.
+    expect(events[1]?.actorUserId).toBe('system:stripe-webhook');
   });
 
   it('adds payment_failed terminal when status=failed', () => {
@@ -170,24 +178,34 @@ describe('buildEvents', () => {
     expect(inits).toHaveLength(2);
   });
 
-  it('adds refund_succeeded terminal when refund status=succeeded', () => {
+  it('adds refund_succeeded terminal with system:stripe-webhook actor (security-relevant)', () => {
+    // R2-fix CG-A (2026-04-26): assert actorUserId is the system
+    // sentinel — this is a security boundary (webhook-initiated
+    // refund vs. human-initiated). The previous test only asserted
+    // the terminal event existed, so a refactor swapping in
+    // `r.initiatorUserId` would have passed silently.
     const events = buildEvents(
       [],
       [makeRefund({ status: 'succeeded', completedAt: T2 })],
       null,
       null,
     );
-    expect(events.find((e) => e.type === 'refund_succeeded')).toBeDefined();
+    const terminal = events.find((e) => e.type === 'refund_succeeded');
+    expect(terminal).toBeDefined();
+    expect(terminal?.actorUserId).toBe('system:stripe-webhook');
   });
 
-  it('adds refund_failed terminal when refund status=failed', () => {
+  it('adds refund_failed terminal with system:stripe-webhook actor (security-relevant)', () => {
+    // R2-fix CG-A (2026-04-26): same security pin as refund_succeeded.
     const events = buildEvents(
       [],
       [makeRefund({ status: 'failed', completedAt: T2 })],
       null,
       null,
     );
-    expect(events.find((e) => e.type === 'refund_failed')).toBeDefined();
+    const terminal = events.find((e) => e.type === 'refund_failed');
+    expect(terminal).toBeDefined();
+    expect(terminal?.actorUserId).toBe('system:stripe-webhook');
   });
 
   it('returns events sorted by timestamp ascending', () => {

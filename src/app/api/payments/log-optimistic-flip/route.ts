@@ -108,12 +108,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return noContent(400);
   }
 
+  // R2-fix S1 (2026-04-26): hash actor user id (CLAUDE.md "Hash user
+  // IDs in logs where cross-request correlation is needed"). Field
+  // renamed from `userId` to `actorUserIdHash` so ops dashboards
+  // know it is a sha256-truncated value, not a raw UUID.
+  const { createHash } = await import('node:crypto');
+  const actorUserIdHash = createHash('sha256')
+    .update(actorUserId)
+    .digest('hex')
+    .slice(0, 16);
+
   logger.info(
     {
       event: 'client_optimistic_flip',
       tenantId: tenantCtx.slug,
       invoiceId: parsedBody.invoiceId,
-      userId: actorUserId,
+      actorUserIdHash,
       correlationId,
     },
     'Member optimistically flipped invoice to paid client-side',

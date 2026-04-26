@@ -55,7 +55,7 @@ describe('loadInvoicePaymentActivity', () => {
     );
   });
 
-  it('wraps a thrown repo error into Result.err({kind:"repo_unavailable"}) (verify-fix C2)', async () => {
+  it('wraps a thrown Error into Result.err({kind:"repo_unavailable"}) (verify-fix C2)', async () => {
     const cause = new Error('Postgres connection lost');
     const paymentsRepo = makeStubRepo({
       listInvoiceActivity: vi.fn().mockRejectedValue(cause),
@@ -70,6 +70,44 @@ describe('loadInvoicePaymentActivity', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('repo_unavailable');
       expect(result.error.cause).toBe(cause);
+    }
+  });
+
+  it('wraps a thrown string into Result.err (R2-fix CG-B — drivers can throw non-Error)', async () => {
+    // Postgres-js + node-postgres occasionally surface `ECONNRESET`
+    // or `'timeout'` as plain strings on unstable network paths.
+    // The catch declares `cause: unknown`, so the wrapper must
+    // accept any thrown shape verbatim without `instanceof Error`
+    // narrowing.
+    const paymentsRepo = makeStubRepo({
+      listInvoiceActivity: vi.fn().mockRejectedValue('ECONNRESET'),
+    });
+    const result = await loadInvoicePaymentActivity(
+      { paymentsRepo },
+      { tenantId: 'swecham', invoiceId: 'inv-1' },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('repo_unavailable');
+      expect(result.error.cause).toBe('ECONNRESET');
+    }
+  });
+
+  it('wraps a thrown undefined into Result.err (R2-fix CG-B — bare reject() edge case)', async () => {
+    // Some Drizzle timeout paths reject with no value (`reject()` /
+    // `Promise.reject()`). The wrapper must still return Result.err
+    // rather than letting `undefined` propagate as a thrown rejection.
+    const paymentsRepo = makeStubRepo({
+      listInvoiceActivity: vi.fn().mockRejectedValue(undefined),
+    });
+    const result = await loadInvoicePaymentActivity(
+      { paymentsRepo },
+      { tenantId: 'swecham', invoiceId: 'inv-1' },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('repo_unavailable');
+      expect(result.error.cause).toBeUndefined();
     }
   });
 });

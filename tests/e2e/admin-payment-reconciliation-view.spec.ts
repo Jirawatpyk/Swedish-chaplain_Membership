@@ -77,6 +77,18 @@ const PAID_ONLINE_INVOICE_ID = process.env.E2E_PAID_ONLINE_INVOICE_ID;
 // manager fixtures are not yet shipped. Until they land, tests skip
 // cleanly in BOTH local + CI. `_isCi` retained (prefixed with _) so
 // re-arming the CI hard-fail later is a one-line uncomment.
+//
+// R2-fix IG-2 (2026-04-26): explicit restore criteria so this is not
+// a permanent skip. Restore the CI hard-fail when ALL of:
+//   1. `pnpm seed:f5-e2e:reconciliation` is wired into the CI seed
+//      pipeline (currently a manual step on dev machines only).
+//   2. The 12 paid-online + 6 manual cohort exists deterministically
+//      so AS1 row-count assertion can replace the testid presence
+//      check (verify-fix IG-1).
+//   3. `e2e-manager@swecham.test` fixture is provisioned in CI env
+//      (already present locally via seed-e2e-user.ts).
+// Tracking: F5 Phase 5 polish backlog — see verify-run notes
+// 2026-04-26 D2/D3 + IG-1/IG-2.
 const _isCi = process.env.CI === 'true' || process.env.CI === '1';
 void _isCi;
 

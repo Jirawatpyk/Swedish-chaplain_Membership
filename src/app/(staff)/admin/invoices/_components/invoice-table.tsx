@@ -138,8 +138,10 @@ export function InvoicesTable({
     // mobile users a visual cue that the table scrolls horizontally
     // (8 cols when the Method column is on; 7 otherwise). Without the
     // cue the overflow was invisible and admins missed columns to the
-    // right.
-    <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)]">
+    // right. R2-fix Q1 (2026-04-26): dual-tone shadow so the cue is
+    // visible in both light AND dark mode (the rgba(0,0,0,0.08) ink
+    // disappeared on `bg-card` dark surfaces).
+    <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
       <Table>
         <TableHeader>
           <TableRow>

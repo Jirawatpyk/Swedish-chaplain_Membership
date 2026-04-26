@@ -136,9 +136,16 @@ export function InvoiceFilters() {
       </Select>
       <TooltipProvider>
         <Tooltip>
+          {/* R2-fix I1 (2026-04-26): switched to render-function form
+              for parity with DropdownMenuTrigger usage elsewhere
+              (invoice-more-menu.tsx) and to guarantee Base UI props
+              (data-state, refs, ARIA wiring) flow through. The
+              element-form variant cloned the Button but is more
+              fragile across Base UI prop spreads. */}
           <TooltipTrigger
-            render={
+            render={(triggerProps) => (
               <Button
+                {...triggerProps}
                 type="button"
                 variant={paidOnlineActive ? 'default' : 'outline'}
                 size="sm"
@@ -153,7 +160,7 @@ export function InvoiceFilters() {
                 )}
                 {tReconciliation('label')}
               </Button>
-            }
+            )}
           />
           <TooltipContent>{tReconciliation('tooltip')}</TooltipContent>
         </Tooltip>

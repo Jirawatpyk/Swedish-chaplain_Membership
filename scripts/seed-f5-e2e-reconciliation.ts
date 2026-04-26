@@ -196,12 +196,22 @@ async function upsertSucceededPayment(
 
   const initiatedAt = invoice.paidAt ?? new Date();
   const completedAt = invoice.paidAt ?? new Date();
-  // Member is the tenant-resolved actor for the F5 use-case path.
-  // For the seed we attribute the payment to the member id directly
-  // since `payments.actor_user_id` is `text` (UUID-or-system) at the
-  // schema level and a member's user binding is not relevant for the
-  // reconciliation surface (system-actor renders for the
-  // `invoice_paid` event regardless).
+  // R2-fix I3 (2026-04-26): `actor_user_id` here is the e2e-admin
+  // user (not a member) — the previous comment claimed "Member is the
+  // actor" which mismatches reality. In production the F5 path sets
+  // this to the MEMBER's user id (the tenant-resolved actor of
+  // `payment_initiated`). For the reconciliation E2E fixture we use
+  // admin as a stand-in because:
+  //   1. `payments.actor_user_id` is FK-constrained to `users.id` and
+  //      the e2e-member fixture's user already exists.
+  //   2. The admin reconciliation surface only reads system-actor for
+  //      the `invoice_paid` event (verified by isSystemActor() in
+  //      payment-timeline.tsx); other events render the actor's email
+  //      via userRepo.findById.
+  //   3. Either UUID is structurally correct for the schema; the
+  //      timeline assertions in the E2E test don't care which user.
+  // If a future test asserts "actor email matches the paying member",
+  // swap this to look up `e2e-member@swecham.test`'s user id instead.
   const row: NewPaymentRow = {
     id: target.paymentId,
     tenantId: ctx.slug,

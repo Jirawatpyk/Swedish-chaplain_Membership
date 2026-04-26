@@ -162,14 +162,51 @@ export interface UseOptimisticPaidOptions {
   readonly onCrossTabPaid?: (() => void) | undefined;
 }
 
+// R2-fix I4 (2026-04-26): dev-mode guard for the "wire ONE consumer
+// per page" contract above. Module-level Set tracks which invoice ids
+// have an active `onCrossTabPaid` subscriber; a duplicate registration
+// triggers a console warning so the cross-tab refresh doesn't fire
+// twice silently. Production (NODE_ENV='production') skips the
+// instrumentation to avoid the Set-allocation cost.
+const _crossTabPaidSubscribers =
+  process.env.NODE_ENV !== 'production' ? new Set<string>() : null;
+
 export function useOptimisticPaid(
   invoiceId: string,
   options: UseOptimisticPaidOptions = {},
 ): boolean {
   const { onCrossTabPaid } = options;
+  // R2-fix I4 (2026-04-26): dev-only double-subscriber detection.
+  if (
+    typeof window !== 'undefined' &&
+    _crossTabPaidSubscribers &&
+    onCrossTabPaid
+  ) {
+    if (_crossTabPaidSubscribers.has(invoiceId)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[useOptimisticPaid] duplicate onCrossTabPaid subscriber for invoice ${invoiceId}. ` +
+          'router.refresh() will fire twice on cross-tab paid signals. ' +
+          'Wire onCrossTabPaid on ONE consumer per page (typically PayNowButton).',
+      );
+    }
+  }
   const subscribe = useCallback(
-    (onChange: () => void) =>
-      subscribePaidFlag(invoiceId, { onChange, onCrossTabPaid }),
+    (onChange: () => void) => {
+      if (_crossTabPaidSubscribers && onCrossTabPaid) {
+        _crossTabPaidSubscribers.add(invoiceId);
+      }
+      const unsubscribe = subscribePaidFlag(invoiceId, {
+        onChange,
+        onCrossTabPaid,
+      });
+      return () => {
+        if (_crossTabPaidSubscribers && onCrossTabPaid) {
+          _crossTabPaidSubscribers.delete(invoiceId);
+        }
+        unsubscribe();
+      };
+    },
     [invoiceId, onCrossTabPaid],
   );
   const getSnapshot = useCallback(() => readPaidFlag(invoiceId), [invoiceId]);

@@ -53,6 +53,13 @@ export function RecordPaymentDialog({ invoiceId, documentNumber, issueDate }: Pr
       <DialogTrigger
         className={buttonVariants({ variant: 'default' })}
         data-testid="record-payment-trigger"
+        // R2-fix N3 (2026-04-26): the empty-state CTA in
+        // payment-timeline.tsx links to `#record-payment` so the
+        // browser scrolls + focus lands on this trigger. Without the
+        // id the link was a dead anchor (silent jump-to-top). Pairing
+        // with a `tabindex=-1` is unnecessary because the trigger is a
+        // real <button> that already accepts focus.
+        id="record-payment"
       >
         {tDetail('actions.pay')}
       </DialogTrigger>
