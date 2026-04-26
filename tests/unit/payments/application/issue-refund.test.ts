@@ -126,7 +126,6 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
       ok({
         creditNoteId: 'cn_test_1',
         creditNoteNumber: 'TC-2026-000001',
-        invoiceStatus: 'partially_credited' as const,
       }),
     ),
   };
@@ -254,7 +253,9 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
     expect(r.ok).toBe(false);
     if (!r.ok && r.error.code === 'processor_unavailable') {
       expect(r.error.kind).toBe('retryable');
-      expect(r.error.reason).toBe('retryable');
+      // Q1 fix: propagate gateway's `reason` (human-readable) — not the
+      // discriminator. Mock supplies `reason: 'rate_limit'`.
+      expect(r.error.reason).toBe('rate_limit');
     }
     // Pending refund row must have been flipped to failed + refund_failed audit emitted.
     const updateCalls = asMock(deps.refundsRepo.updateStatus).mock.calls;
@@ -269,13 +270,28 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
   it('processor_unavailable permanent — Stripe createRefund permanent error', async () => {
     const deps = makeDeps();
     asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
-      err({ kind: 'permanent', code: 'charge_already_refunded', reason: 'permanent' }),
+      err({ kind: 'permanent', code: 'charge_already_refunded', reason: 'charge_already_refunded' }),
     );
 
     const r = await issueRefund(deps, baseInput());
     expect(r.ok).toBe(false);
     if (!r.ok && r.error.code === 'processor_unavailable') {
       expect(r.error.kind).toBe('permanent');
+      expect(r.error.reason).toBe('charge_already_refunded');
+    }
+  });
+
+  it('processor_unavailable idempotency_conflict — preserved (Q1 fix, no longer collapsed to permanent)', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
+      err({ kind: 'idempotency_conflict', reason: 'duplicate_idempotency_key' }),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.code === 'processor_unavailable') {
+      expect(r.error.kind).toBe('idempotency_conflict');
+      expect(r.error.reason).toBe('duplicate_idempotency_key');
     }
   });
 
@@ -332,7 +348,6 @@ describe('issueRefund (T108) — happy paths', () => {
       ok({
         creditNoteId: 'cn_full',
         creditNoteNumber: 'TC-2026-000002',
-        invoiceStatus: 'credited' as const,
       }),
     );
 
@@ -355,7 +370,6 @@ describe('issueRefund (T108) — happy paths', () => {
       ok({
         creditNoteId: 'cn_exhausting',
         creditNoteNumber: 'TC-2026-000003',
-        invoiceStatus: 'credited' as const,
       }),
     );
 

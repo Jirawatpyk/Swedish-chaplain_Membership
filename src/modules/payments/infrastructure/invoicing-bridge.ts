@@ -27,6 +27,8 @@ import {
   type GetInvoiceForPaymentError as F4GetInvoiceForPaymentError,
   type MarkPaidFromProcessorError as F4MarkPaidFromProcessorError,
 } from '@/modules/invoicing';
+// Bridge response uses the public `CreditedInvoiceStatus` type — kept on
+// the port file so the F5 caller derives the value without re-reading.
 import type {
   InvoicingBridgePort,
   InvoiceForPaymentDTO,
@@ -144,13 +146,12 @@ export const invoicingBridge: InvoicingBridgePort = {
    * OUTSIDE its own DB tx (Phase B/external) — F4 manages its own
    * atomicity via the wrapped use-case's internal `withTx`.
    *
-   * After F4 commits, we re-read the invoice via
-   * `getInvoiceForPayment` to project the canonical post-transition
-   * status (`partially_credited` | `credited`) — F5's success
-   * envelope renders this directly, no further round-trip on the
-   * caller side. F4 errors are summarised into the bridge's stable
-   * `{ code, detail }` shape (no PII leak — see `summariseF4Error`
-   * docstring).
+   * Returns only the new CN id + canonical document number — the F5
+   * caller derives the post-transition invoice status arithmetically
+   * (`refundedAmount === payment.amountSatang` → `'credited'`),
+   * avoiding a redundant DB roundtrip. F4 errors are summarised into
+   * the stable `{ code, detail }` shape (no PII leak — see
+   * `summariseF4Error` docstring).
    */
   async issueCreditNoteFromRefund(input) {
     const cn = await f4IssueCreditNoteFromRefund({
@@ -169,24 +170,9 @@ export const invoicingBridge: InvoicingBridgePort = {
       return err(summariseF4Error(cn.error as unknown as F4MarkPaidFromProcessorError));
     }
 
-    // Project the post-transition invoice status. F4's CN issuance
-    // flips `invoices.status` to `credited` (full) or
-    // `partially_credited` (partial) inside its own tx — re-read via
-    // F4's barrel to get the canonical value rather than re-deriving
-    // arithmetically (would duplicate F4's remainder-credit policy).
-    const fresh = await f4GetInvoiceForPayment(
-      makeGetInvoiceDeps(input.tenantId),
-      { tenantId: input.tenantId, invoiceId: input.invoiceId },
-    );
-    const projectedStatus: 'partially_credited' | 'credited' =
-      fresh.ok && fresh.value.status === 'credited'
-        ? 'credited'
-        : 'partially_credited';
-
     return ok({
       creditNoteId: cn.value.creditNoteId,
       creditNoteNumber: cn.value.documentNumber.raw,
-      invoiceStatus: projectedStatus,
     });
   },
 };

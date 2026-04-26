@@ -55,49 +55,27 @@ export function isTerminalPaymentStatus(
 // ---------------------------------------------------------------------------
 // Branded PaymentId
 // ---------------------------------------------------------------------------
+//
+// Chamber-OS payment rows use the format `pmt_<26-char-ulid>` (~30 chars).
+// Regex + parser scaffold lives in `value-objects/branded-ulid-id.ts`
+// (shared with `RefundId` and any future Crockford-base32 branded id).
+
+import { makeUlidIdHelpers } from './value-objects/branded-ulid-id';
 
 declare const PaymentIdBrand: unique symbol;
 export type PaymentId = string & { readonly [PaymentIdBrand]: true };
 
-// Permissive ULID-like regex for payment ids.
-//
-// Chamber-OS payment rows use the format `pmt_<26-char-ulid>` (~30 chars).
-// Crockford base32 alphabet excludes I, L, O, U (to avoid visual
-// ambiguity with 1 / 0 / V). We allow both cases + `_` as the id-prefix
-// separator.
-//
-// Character set spelled out for readability:
-//   digits        0-9
-//   uppercase     A B C D E F G H   J K   M N   P Q R S T   V W X Y Z
-//                                  ^(no I)   ^(no L)(no O)     ^(no U)
-//   lowercase     a b c d e f g h   j k   m n   p q r s t   v w x y z
-//                                  ^(no i)   ^(no l)(no o)     ^(no u)
-//   separator     _
-//   length        20–40 chars (covers `pmt_` prefix + 26-char ULID
-//                 body + headroom for future prefix schemes)
-//
-// Strict Crockford ULID parsers reject `_`; we allow it because this is
-// a boundary guard against wildly-wrong input (empty strings, injection
-// attempts). Authoritative uniqueness is enforced by the DB UNIQUE
-// constraint on `payments.id`.
-const RE_ULID_LIKE = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z_]{20,40}$/;
-
 export type PaymentIdError = { readonly kind: 'invalid_payment_id'; readonly raw: string };
 
+const _paymentIdHelpers = makeUlidIdHelpers<PaymentId, 'invalid_payment_id'>(
+  'invalid_payment_id',
+);
+
 /** Unchecked brand cast — use in TRUSTED contexts (DB row → Domain). */
-export function asPaymentId(raw: string): PaymentId {
-  return raw as PaymentId;
-}
+export const asPaymentId = _paymentIdHelpers.as;
 
 /** Validated parse — use at route/webhook boundaries. */
-export function parsePaymentId(
-  raw: string,
-): { ok: true; value: PaymentId } | { ok: false; error: PaymentIdError } {
-  if (RE_ULID_LIKE.test(raw)) {
-    return { ok: true, value: raw as PaymentId };
-  }
-  return { ok: false, error: { kind: 'invalid_payment_id', raw } };
-}
+export const parsePaymentId = _paymentIdHelpers.parse;
 
 // ---------------------------------------------------------------------------
 // Card metadata sub-VO

@@ -96,9 +96,18 @@ export interface InvoicingBridgePort {
       {
         readonly creditNoteId: string;
         readonly creditNoteNumber: string;
-        readonly invoiceStatus: 'partially_credited' | 'credited';
       },
       { readonly code: string; readonly detail: string }
     >
   >;
 }
+
+/**
+ * Post-CN invoice status. The F5 caller derives this from the refund
+ * arithmetic (`refundedAmountSatang === payment.amountSatang` →
+ * `'credited'` else `'partially_credited'`) — `payment.amountSatang`
+ * equals `invoice.totalSatang` under F5's "one PaymentIntent covers
+ * the whole invoice" invariant, so re-reading the invoice for the
+ * status would be a redundant DB roundtrip.
+ */
+export type CreditedInvoiceStatus = 'partially_credited' | 'credited';

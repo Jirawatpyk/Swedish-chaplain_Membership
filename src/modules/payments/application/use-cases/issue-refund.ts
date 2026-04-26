@@ -48,7 +48,6 @@ import type {
   RefundsRepo,
   TenantPaymentSettingsRepo,
 } from '../ports';
-import { canTransition } from '../../domain/policies/payment-status-transitions';
 import { checkRefundNotExceedingRemainder } from '../../domain/invariants/refund-not-exceeding-remainder';
 import {
   asPaymentId,
@@ -112,11 +111,72 @@ export type IssueRefundError =
   | { readonly code: 'refund_in_progress' }
   | {
       readonly code: 'processor_unavailable';
-      readonly kind: 'retryable' | 'permanent';
+      readonly kind: 'retryable' | 'idempotency_conflict' | 'permanent';
       readonly reason: string;
     }
   | { readonly code: 'f4_bridge_error'; readonly detail: string }
   | { readonly code: 'tenant_settings_missing' };
+
+/**
+ * Stripe Refund.reason enum literal. Exported as a const so an SDK
+ * version drift (or a future code-path that wants `'duplicate'` /
+ * `'fraudulent'`) surfaces at compile time instead of being a free-
+ * form string.
+ */
+const STRIPE_REFUND_REASON_REQUESTED_BY_CUSTOMER = 'requested_by_customer' as const;
+
+/**
+ * Phase-B failure helper — flips the pending refund row to `failed`
+ * + emits a `refund_failed` audit row in a single tx. Used by both
+ * the Stripe-failure branch and the F4-bridge-failure branch
+ * (review 2026-04-26 Q2: previously copy-pasted with subtly
+ * different payloads — drift risk).
+ *
+ * Caller supplies the discriminating fields (`failureReasonCode`,
+ * `summary`, optional `extraPayload`) — the helper owns the shared
+ * scaffolding (tx open, updateStatus call, audit shape, retention
+ * lookup).
+ */
+async function finaliseFailedRefund(
+  deps: IssueRefundDeps,
+  input: {
+    readonly refundId: string;
+    readonly paymentId: string;
+    readonly invoiceId: string;
+    readonly tenantId: string;
+    readonly requestId: string | null;
+    readonly actorUserId: string;
+    readonly failureReasonCode: string;
+    readonly summary: string;
+    readonly extraPayload?: Readonly<Record<string, unknown>>;
+  },
+): Promise<void> {
+  const failedAt = new Date(deps.clock.nowMs());
+  await deps.paymentsRepo.withTx(async (tx) => {
+    await deps.refundsRepo.updateStatus(tx, {
+      refundId: input.refundId,
+      tenantId: input.tenantId,
+      nextStatus: 'failed',
+      failureReasonCode: input.failureReasonCode,
+      completedAt: failedAt,
+    });
+    await deps.audit.emit(tx, {
+      tenantId: input.tenantId,
+      requestId: input.requestId,
+      eventType: 'refund_failed',
+      actorUserId: input.actorUserId,
+      summary: input.summary,
+      payload: {
+        refund_id: input.refundId,
+        payment_id: input.paymentId,
+        invoice_id: input.invoiceId,
+        failure_reason_code: input.failureReasonCode,
+        ...(input.extraPayload ?? {}),
+      },
+      retentionYears: retentionFor('refund_failed'),
+    });
+  });
+}
 
 export interface IssueRefundDeps {
   readonly paymentsRepo: PaymentsRepo;
@@ -258,7 +318,7 @@ export async function issueRefund(
   const stripeRefund = await deps.processorGateway.createRefund({
     paymentIntentId: prepared.payment.processorPaymentIntentId,
     amountSatang: input.amountSatang,
-    reason: 'requested_by_customer',
+    reason: STRIPE_REFUND_REASON_REQUESTED_BY_CUSTOMER,
     metadata: {
       refundId: prepared.refundId,
       paymentId,
@@ -271,35 +331,24 @@ export async function issueRefund(
   });
 
   if (!stripeRefund.ok) {
-    // Phase B (failure) — flip refund row + audit + return processor_unavailable
-    const failedAt = new Date(deps.clock.nowMs());
-    await deps.paymentsRepo.withTx(async (tx) => {
-      await deps.refundsRepo.updateStatus(tx, {
-        refundId: prepared.refundId,
-        tenantId: input.tenantId,
-        nextStatus: 'failed',
-        failureReasonCode: stripeRefund.error.kind,
-        completedAt: failedAt,
-      });
-      await deps.audit.emit(tx, {
-        tenantId: input.tenantId,
-        requestId: input.requestId,
-        eventType: 'refund_failed',
-        actorUserId: input.actorUserId,
-        summary: `Stripe refund failed (${stripeRefund.error.kind}) for refund ${prepared.refundId}`,
-        payload: {
-          refund_id: prepared.refundId,
-          payment_id: paymentId,
-          invoice_id: prepared.payment.invoiceId,
-          failure_reason_code: stripeRefund.error.kind,
-        },
-        retentionYears: retentionFor('refund_failed'),
-      });
+    await finaliseFailedRefund(deps, {
+      refundId: prepared.refundId,
+      paymentId,
+      invoiceId: prepared.payment.invoiceId,
+      tenantId: input.tenantId,
+      requestId: input.requestId,
+      actorUserId: input.actorUserId,
+      failureReasonCode: stripeRefund.error.kind,
+      summary: `Stripe refund failed (${stripeRefund.error.kind}) for refund ${prepared.refundId}`,
     });
+    // Q1 fix (review 2026-04-26): preserve all 3 gateway kinds —
+    // previously `idempotency_conflict` silently collapsed to
+    // `permanent`. Also propagate the gateway's `reason` string
+    // verbatim instead of overwriting with the discriminator.
     return err({
       code: 'processor_unavailable',
-      kind: stripeRefund.error.kind === 'retryable' ? 'retryable' : 'permanent',
-      reason: stripeRefund.error.kind,
+      kind: stripeRefund.error.kind,
+      reason: stripeRefund.error.reason,
     });
   }
 
@@ -317,33 +366,22 @@ export async function issueRefund(
   });
 
   if (!cnResult.ok) {
-    // Phase B (failure) — refund row → failed; out-of-band runbook
-    // owns the Stripe-refund-without-CN reconciliation
-    const failedAt = new Date(deps.clock.nowMs());
-    await deps.paymentsRepo.withTx(async (tx) => {
-      await deps.refundsRepo.updateStatus(tx, {
-        refundId: prepared.refundId,
-        tenantId: input.tenantId,
-        nextStatus: 'failed',
-        failureReasonCode: `f4_bridge_${cnResult.error.code}`,
-        completedAt: failedAt,
-      });
-      await deps.audit.emit(tx, {
-        tenantId: input.tenantId,
-        requestId: input.requestId,
-        eventType: 'refund_failed',
-        actorUserId: input.actorUserId,
-        summary: `F4 credit-note issuance failed for refund ${prepared.refundId} (Stripe refund ${stripeRefund.value.id} succeeded — ops follow up via out-of-band-refund runbook)`,
-        payload: {
-          refund_id: prepared.refundId,
-          payment_id: paymentId,
-          invoice_id: prepared.payment.invoiceId,
-          processor_refund_id: stripeRefund.value.id,
-          failure_reason_code: `f4_bridge_${cnResult.error.code}`,
-          f4_detail: cnResult.error.detail,
-        },
-        retentionYears: retentionFor('refund_failed'),
-      });
+    // Stripe refund already succeeded — Stripe-refund-without-CN
+    // reconciliation is owned by the `out_of_band_refund_detected`
+    // runbook (`docs/runbooks/out-of-band-refund.md`).
+    await finaliseFailedRefund(deps, {
+      refundId: prepared.refundId,
+      paymentId,
+      invoiceId: prepared.payment.invoiceId,
+      tenantId: input.tenantId,
+      requestId: input.requestId,
+      actorUserId: input.actorUserId,
+      failureReasonCode: `f4_bridge_${cnResult.error.code}`,
+      summary: `F4 credit-note issuance failed for refund ${prepared.refundId} (Stripe refund ${stripeRefund.value.id} succeeded — ops follow up via out-of-band-refund runbook)`,
+      extraPayload: {
+        processor_refund_id: stripeRefund.value.id,
+        f4_detail: cnResult.error.detail,
+      },
     });
     return err({ code: 'f4_bridge_error', detail: cnResult.error.detail });
   }
@@ -355,18 +393,6 @@ export async function issueRefund(
   const newSucceededSum = prepared.sumSucceededBefore + input.amountSatang;
   const isFullyRefunded = newSucceededSum >= prepared.payment.amountSatang;
   const nextPaymentStatus = isFullyRefunded ? 'refunded' : 'partially_refunded';
-
-  // Defence-in-depth: even though step 1 narrowed status to
-  // {succeeded, partially_refunded} and the table guarantees these
-  // can transition, re-check before persisting so a future state-
-  // machine edit cannot silently break the invariant.
-  const transition = canTransition(prepared.payment.status, nextPaymentStatus);
-  /* v8 ignore next 5 -- defensive guard: succeeded → partially_refunded|refunded
-     and partially_refunded → partially_refunded|refunded are both legal per
-     payment-status-transitions.ts. Unreachable under correct status table. */
-  if (!transition.ok) {
-    return err({ code: 'f4_bridge_error', detail: 'illegal_payment_transition' });
-  }
 
   await deps.paymentsRepo.withTx(async (tx) => {
     await deps.refundsRepo.updateStatus(tx, {
@@ -385,6 +411,16 @@ export async function issueRefund(
       completedAt,
     });
 
+    // Invoice status derived arithmetically: F5 invariant is "one
+    // PaymentIntent per invoice covers the whole invoice" so
+    // `payment.amountSatang === invoice.totalSatang`. When the
+    // cumulative refund equals the payment amount, the invoice is
+    // fully credited; otherwise partially credited. Avoids a second
+    // DB roundtrip to F4 (review 2026-04-26 finding E1).
+    const nextInvoiceStatus: 'credited' | 'partially_credited' = isFullyRefunded
+      ? 'credited'
+      : 'partially_credited';
+
     await deps.audit.emit(tx, {
       tenantId: input.tenantId,
       requestId: input.requestId,
@@ -400,7 +436,7 @@ export async function issueRefund(
         credit_note_number: cnResult.value.creditNoteNumber,
         amount_satang: input.amountSatang.toString(),
         payment_next_status: nextPaymentStatus,
-        invoice_next_status: cnResult.value.invoiceStatus,
+        invoice_next_status: nextInvoiceStatus,
       },
       retentionYears: retentionFor('refund_succeeded'),
     });
@@ -429,7 +465,7 @@ export async function issueRefund(
     },
     invoice: {
       id: prepared.payment.invoiceId,
-      status: cnResult.value.invoiceStatus,
+      status: isFullyRefunded ? 'credited' : 'partially_credited',
     },
   });
 }

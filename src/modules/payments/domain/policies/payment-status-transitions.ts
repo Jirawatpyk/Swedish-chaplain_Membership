@@ -22,29 +22,9 @@
  * *shape* of the transition (which destinations are legal from which
  * source).
  *
- * Pure TypeScript — no framework/ORM imports.
- */
-import type { PaymentStatus } from '../payment';
-
-export type TransitionError =
-  | { readonly kind: 'terminal_state'; readonly from: PaymentStatus }
-  | {
-      readonly kind: 'illegal_transition';
-      readonly from: PaymentStatus;
-      readonly to: PaymentStatus;
-    };
-
-// Transition table. Values are the set of legal destinations from the key.
-const TRANSITIONS: Readonly<Record<PaymentStatus, readonly PaymentStatus[]>> = {
-  pending: ['succeeded', 'failed', 'canceled'],
-  succeeded: ['partially_refunded', 'refunded'],
-  partially_refunded: ['partially_refunded', 'refunded'],
-  failed: [],
-  canceled: [],
-  refunded: [],
-};
-
-/**
+ * Generic guard scaffold lives in `_state-machine.ts` (shared with
+ * `refund.ts`); this file declares only the payment-specific table.
+ *
  * ⚠️ Idempotency contract (reliability-guardian F-01, 2026-04-23):
  *
  * `succeeded → succeeded` is NOT legal — it returns `illegal_transition`.
@@ -56,28 +36,27 @@ const TRANSITIONS: Readonly<Record<PaymentStatus, readonly PaymentStatus[]>> = {
  * route returns 5xx → Stripe retries again → endless retry storm →
  * webhook endpoint eventually circuit-breaks. `T056 processWebhookEvent`
  * owns that dedupe — see `contracts/stripe-webhook.md` § 3 step 6.
+ *
+ * Pure TypeScript — no framework/ORM imports.
  */
-export function canTransition(
-  from: PaymentStatus,
-  to: PaymentStatus,
-): { ok: true } | { ok: false; error: TransitionError } {
-  const allowed = TRANSITIONS[from];
-  if (allowed.length === 0) {
-    return { ok: false, error: { kind: 'terminal_state', from } };
-  }
-  if (!allowed.includes(to)) {
-    return { ok: false, error: { kind: 'illegal_transition', from, to } };
-  }
-  return { ok: true };
-}
+import type { PaymentStatus } from '../payment';
+import {
+  makeStateMachine,
+  type StateMachineError,
+} from './_state-machine';
 
-/**
- * Convenience predicate — useful at route boundaries where a boolean
- * guard is nicer than pattern-matching a Result.
- */
-export function isLegalTransition(
-  from: PaymentStatus,
-  to: PaymentStatus,
-): boolean {
-  return canTransition(from, to).ok;
-}
+export type TransitionError = StateMachineError<PaymentStatus>;
+
+const TRANSITIONS: Readonly<Record<PaymentStatus, readonly PaymentStatus[]>> = {
+  pending: ['succeeded', 'failed', 'canceled'],
+  succeeded: ['partially_refunded', 'refunded'],
+  partially_refunded: ['partially_refunded', 'refunded'],
+  failed: [],
+  canceled: [],
+  refunded: [],
+};
+
+const _stateMachine = makeStateMachine<PaymentStatus>(TRANSITIONS);
+
+export const canTransition = _stateMachine.canTransition;
+export const isLegalTransition = _stateMachine.isLegalTransition;

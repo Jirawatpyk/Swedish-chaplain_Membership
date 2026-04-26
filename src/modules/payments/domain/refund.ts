@@ -41,33 +41,27 @@ export function isTerminalRefundStatus(s: RefundStatus): s is TerminalRefundStat
 // ---------------------------------------------------------------------------
 // Branded RefundId
 // ---------------------------------------------------------------------------
+//
+// Chamber-OS refund rows use the format `rfnd_<26-char-ulid>` (~31 chars).
+// Regex + parser scaffold lives in `value-objects/branded-ulid-id.ts`
+// (shared with `PaymentId`).
+
+import { makeUlidIdHelpers } from './value-objects/branded-ulid-id';
 
 declare const RefundIdBrand: unique symbol;
 export type RefundId = string & { readonly [RefundIdBrand]: true };
 
-/**
- * Permissive ULID-like regex. Mirrors `payment.ts` (Crockford base32
- * alphabet — no I, L, O, U) plus `_` separator for prefix schemes
- * (`rfnd_<26-char-ulid>` ≈ 31 chars).
- */
-const RE_ULID_LIKE = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z_]{20,40}$/;
-
 export type RefundIdError = { readonly kind: 'invalid_refund_id'; readonly raw: string };
 
+const _refundIdHelpers = makeUlidIdHelpers<RefundId, 'invalid_refund_id'>(
+  'invalid_refund_id',
+);
+
 /** Unchecked brand cast — use in TRUSTED contexts (DB row → Domain). */
-export function asRefundId(raw: string): RefundId {
-  return raw as RefundId;
-}
+export const asRefundId = _refundIdHelpers.as;
 
 /** Validated parse — use at route/webhook boundaries. */
-export function parseRefundId(
-  raw: string,
-): { ok: true; value: RefundId } | { ok: false; error: RefundIdError } {
-  if (RE_ULID_LIKE.test(raw)) {
-    return { ok: true, value: raw as RefundId };
-  }
-  return { ok: false, error: { kind: 'invalid_refund_id', raw } };
-}
+export const parseRefundId = _refundIdHelpers.parse;
 
 // ---------------------------------------------------------------------------
 // Refund aggregate
@@ -97,16 +91,15 @@ export interface Refund {
 }
 
 // ---------------------------------------------------------------------------
-// State-machine guard — pure
+// State-machine guard — pure (delegates to shared `_state-machine.ts`)
 // ---------------------------------------------------------------------------
 
-export type RefundTransitionError =
-  | { readonly kind: 'terminal_state'; readonly from: RefundStatus }
-  | {
-      readonly kind: 'illegal_transition';
-      readonly from: RefundStatus;
-      readonly to: RefundStatus;
-    };
+import {
+  makeStateMachine,
+  type StateMachineError,
+} from './policies/_state-machine';
+
+export type RefundTransitionError = StateMachineError<RefundStatus>;
 
 const TRANSITIONS: Readonly<Record<RefundStatus, readonly RefundStatus[]>> = {
   pending: ['succeeded', 'failed'],
@@ -114,28 +107,15 @@ const TRANSITIONS: Readonly<Record<RefundStatus, readonly RefundStatus[]>> = {
   failed: [],
 };
 
+const _refundStateMachine = makeStateMachine<RefundStatus>(TRANSITIONS);
+
 /**
  * Guard a Refund status transition. Returns ok on a legal move, err
  * otherwise. Does NOT touch persistence — the Application layer pairs
  * this with `SELECT … FOR UPDATE` on `payments(id)`.
  */
-export function canTransitionRefund(
-  from: RefundStatus,
-  to: RefundStatus,
-): { ok: true } | { ok: false; error: RefundTransitionError } {
-  const allowed = TRANSITIONS[from];
-  if (allowed.length === 0) {
-    return { ok: false, error: { kind: 'terminal_state', from } };
-  }
-  if (!allowed.includes(to)) {
-    return { ok: false, error: { kind: 'illegal_transition', from, to } };
-  }
-  return { ok: true };
-}
-
-export function isLegalRefundTransition(from: RefundStatus, to: RefundStatus): boolean {
-  return canTransitionRefund(from, to).ok;
-}
+export const canTransitionRefund = _refundStateMachine.canTransition;
+export const isLegalRefundTransition = _refundStateMachine.isLegalTransition;
 
 // ---------------------------------------------------------------------------
 // Completeness invariant — fail-fast on rows that bypass DB CHECKs
