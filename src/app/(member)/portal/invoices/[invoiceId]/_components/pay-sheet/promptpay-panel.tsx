@@ -64,12 +64,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { RefreshCwIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { formatSatangThb } from '@/app/(member)/portal/invoices/_utils/format';
-import { useLocale } from 'next-intl';
+import { paymentsMetrics } from '@/lib/metrics';
+import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
 
 export interface PromptPayPanelProps {
   /** PromptPay QR SVG URL returned by Stripe `next_action`. */
@@ -107,6 +108,15 @@ export interface PromptPayPanelProps {
    * between `'pending'` and `'expired'`.
    */
   readonly status?: 'pending' | 'expired' | 'waiting-confirmation';
+  /**
+   * Whether the panel is the visible tab. PaySheet's `MethodTabs`
+   * uses `keepMounted` so this component stays in the DOM (just
+   * `hidden`) when the user is on the Card tab — without this gate
+   * the 1Hz countdown `setInterval` would tick + re-render
+   * unnecessarily on the inactive tab. Defaults to `true` for
+   * single-tab callers + tests.
+   */
+  readonly active?: boolean;
 }
 
 /**
@@ -142,11 +152,31 @@ export function PromptPayPanel({
   onRefresh,
   onLoadError,
   status = 'pending',
+  active = true,
 }: PromptPayPanelProps) {
   const t = useTranslations('portal.payment.promptpay');
   const locale = useLocale();
 
-  const [remaining, setRemaining] = useState<number>(expirySeconds);
+  // Reuses the shared interval ticker (also used by ConfirmationPanel
+  // + HardCapPrompt). The parent must remount this panel via a
+  // `key` change when a fresh PaymentIntent is issued so the
+  // countdown re-arms — see the `key={promptpayState.qrSvgUrl}` on
+  // the call site in `pay-sheet-internal.tsx`.
+  const { remaining, interrupt } = useCountdownAutoDismiss(
+    expirySeconds,
+    () => {
+      // No-op: expiry is rendered via the `showExpired` derivation
+      // below. The hook's `firedRef` ensures `onExpire` runs once
+      // even if React re-renders the panel after `remaining=0`.
+    },
+  );
+  // Stop ticking the moment the panel transitions out of `pending`
+  // (e.g. parent flips status='expired' or 'waiting-confirmation')
+  // OR the user is on a different tab (kept-mounted but hidden).
+  useEffect(() => {
+    if (status !== 'pending' || !active) interrupt();
+  }, [status, active, interrupt]);
+
   // Image-load retry counter. The browser fires `<img onError>` on
   // any load failure, including transient network hiccups that the
   // browser would have recovered from on a retry. Without
@@ -155,43 +185,28 @@ export function PromptPayPanel({
   // attempt_seq + rate-limit budget burned for nothing. Allow up
   // to `MAX_QR_LOAD_RETRIES` in-component retries (force-reload by
   // appending a cache-busting query param) before escalating.
-  const [qrLoadAttempts, setQrLoadAttempts] = useState<number>(0);
-  const qrLoadAttemptsRef = useRef<number>(0);
-  useEffect(() => {
-    qrLoadAttemptsRef.current = qrLoadAttempts;
-  }, [qrLoadAttempts]);
-  // Reset retry counter whenever the QR URL itself changes (parent
+  const qrRetryCountRef = useRef<number>(0);
+  const [qrSrc, setQrSrc] = useState<string>(qrSvgUrl);
+  // Reset retry state whenever the QR URL itself changes (parent
   // produced a fresh PaymentIntent → fresh attempt).
   useEffect(() => {
-    setQrLoadAttempts(0);
+    qrRetryCountRef.current = 0;
+    setQrSrc(qrSvgUrl);
   }, [qrSvgUrl]);
 
-  // Drive the countdown via setInterval. Reset whenever the expiry
-  // window changes (parent passes a new expirySeconds) or the QR URL
-  // changes (refresh produced a new attempt). The qrSvgUrl is a
-  // deterministic id for a Stripe PI/QR pair, so it doubles as a
-  // re-arm key.
-  useEffect(() => {
-    if (status !== 'pending') return;
-    setRemaining(expirySeconds);
-    const intervalId = setInterval(() => {
-      setRemaining((prev) => Math.max(0, prev - 1));
-    }, 1_000);
-    return () => clearInterval(intervalId);
-  }, [expirySeconds, qrSvgUrl, status]);
-
   const handleQrLoadError = useCallback(() => {
-    if (qrLoadAttemptsRef.current < MAX_QR_LOAD_RETRIES) {
-      setQrLoadAttempts((n) => n + 1);
+    if (qrRetryCountRef.current < MAX_QR_LOAD_RETRIES) {
+      qrRetryCountRef.current += 1;
+      // Cache-bust query param forces the browser to retry. The
+      // same Stripe SVG URL is reused — no new PI is created.
+      setQrSrc(`${qrSvgUrl}#retry=${qrRetryCountRef.current}`);
       return;
     }
+    // Retry budget exhausted — emit metric so flaky-CDN / CSP-block
+    // patterns surface in dashboards.
+    paymentsMetrics.qrLoadRetriesExhausted();
     onLoadError?.();
-  }, [onLoadError]);
-
-  // Cache-bust query param forces the browser to retry on attempt
-  // bump. The same Stripe SVG URL is reused — no new PI is created.
-  const qrSrc =
-    qrLoadAttempts === 0 ? qrSvgUrl : `${qrSvgUrl}#retry=${qrLoadAttempts}`;
+  }, [onLoadError, qrSvgUrl]);
 
   const { minutes, seconds } = formatCountdown(remaining);
   const amountDisplay = useMemo(

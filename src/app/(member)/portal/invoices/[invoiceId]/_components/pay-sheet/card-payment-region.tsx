@@ -29,7 +29,6 @@ export interface CardPaymentRegionProps {
   readonly clientSecret: string;
   readonly publishableKey: string;
   readonly amountDue: number;
-  readonly currency: string;
   readonly invoiceId: string;
   readonly memberId: string;
   readonly cardFormVisible: boolean;
@@ -43,7 +42,6 @@ export function CardPaymentRegion({
   clientSecret,
   publishableKey,
   amountDue,
-  currency,
   invoiceId,
   memberId,
   cardFormVisible,
@@ -67,7 +65,6 @@ export function CardPaymentRegion({
           clientSecret={clientSecret}
           publishableKey={publishableKey}
           amountDue={amountDue}
-          currency={currency}
           invoiceId={invoiceId}
           memberId={memberId}
           onSuccess={onSuccess}

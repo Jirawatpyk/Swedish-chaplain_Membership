@@ -453,32 +453,36 @@ export default async function PortalInvoiceDetailPage({
         * "ConfirmationPanel up + Pay-now button STILL rendered"
         * UX glitch.
         */}
+      {/*
+       * R7 (2026-04-26): NO <OptimisticPaidOverlay> wrapper around
+       * <PayNowButton> — wrapping unmounts the Radix Sheet portal
+       * (rooted at PayNowButton's subtree) the instant the optimistic
+       * CustomEvent fires, killing <ConfirmationPanel> mid-render.
+       * Visibility instead flips via the page-level `router.refresh()`
+       * in PaySheet's settled effect; the drawer's own auto-close
+       * covers the brief gap so no "Paid badge + Pay button" glitch.
+       * The badge above CAN still use the overlay — it mounts only a
+       * static <Badge>, no portal children.
+       */}
       {invoice.status === 'issued' ? (
-        <OptimisticPaidOverlay
-          invoiceId={invoice.invoiceId}
-          focusSelectorOnPaid='[data-pay-focus-target="download-pdf"]'
-          whenUnpaid={
-            canPayOnline && paymentSettings ? (
-              <PayNowButton
-                invoice={{
-                  id: invoice.invoiceId,
-                  invoiceNumber: documentNumber,
-                  amountDue: total !== null ? Number(total) : 0,
-                  currency: 'THB',
-                  status: invoice.status,
-                }}
-                enabledMethods={paymentSettings.enabledMethods}
-                tenantPublishableKey={paymentSettings.processorPublishableKey}
-              />
-            ) : (
-              <OnlinePaymentDisabledCard
-                invoiceNumber={documentNumber}
-                tenantContactEmail={null}
-              />
-            )
-          }
-          whenPaid={null}
-        />
+        canPayOnline && paymentSettings ? (
+          <PayNowButton
+            invoice={{
+              id: invoice.invoiceId,
+              invoiceNumber: documentNumber,
+              amountDue: total !== null ? Number(total) : 0,
+              currency: 'THB',
+              status: invoice.status,
+            }}
+            enabledMethods={paymentSettings.enabledMethods}
+            tenantPublishableKey={paymentSettings.processorPublishableKey}
+          />
+        ) : (
+          <OnlinePaymentDisabledCard
+            invoiceNumber={documentNumber}
+            tenantContactEmail={null}
+          />
+        )
       ) : null}
 
       {portalCreditNotes.length > 0 && (

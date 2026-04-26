@@ -31,6 +31,13 @@ export type F5AuditEventType =
   | 'payment_succeeded'
   | 'payment_failed'
   | 'payment_canceled'
+  // Migration 0049 — distinct from `payment_canceled` (which means
+  // user-abandon / sweep-cron / explicit cancel). Method-switch is
+  // a different forensic class: the user did NOT abandon — they
+  // continued to a different rail. Distinguishing these makes
+  // audit-log queries unambiguous (Constitution Principle I sub-
+  // clause #4).
+  | 'payment_method_switched'
   | 'payment_auto_refunded_stale_invoice'
   | 'payment_auto_refunded_concurrent_manual_mark'
   | 'payment_environment_mismatch'
@@ -91,6 +98,7 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   payment_succeeded: 10,
   payment_failed: 10,
   payment_canceled: 10,
+  payment_method_switched: 10,
   payment_auto_refunded_stale_invoice: 10,
   payment_auto_refunded_concurrent_manual_mark: 10,
   refund_initiated: 10,

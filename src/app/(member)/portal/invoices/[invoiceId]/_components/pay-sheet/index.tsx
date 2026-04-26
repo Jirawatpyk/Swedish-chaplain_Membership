@@ -44,7 +44,7 @@
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { dispatchInvoicePaid } from '../optimistic-paid-overlay';
+import { dispatchInvoicePaid } from '../optimistic-paid';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { XIcon } from 'lucide-react';
@@ -501,14 +501,22 @@ export function PaySheet({
                 // terminal clientSecret — Stripe rejects the latter
                 // with a 400 on `elements/sessions` (T082 empirical
                 // submit test 2026-04-24).
-                onPaymentSettled={() => {
-                  // Success OR failure — payment has reached a
-                  // terminal state. Skip the stale-cleanup cancel
-                  // path on subsequent close (FR-025c W2) AND
-                  // invalidate the cached initiate so next open
-                  // creates a fresh PaymentIntent.
-                  setPaymentSettled(true);
+                onPaymentSettled={(outcome) => {
+                  // Cache invalidation runs on BOTH outcomes — the PI
+                  // is in a terminal state either way, and a stale
+                  // clientSecret would make a re-opened drawer fail
+                  // at Stripe Elements with 400 on /elements/sessions.
                   setCachedInitiate(null);
+                  // Optimistic UI flip MUST be success-only. Firing
+                  // `setPaymentSettled(true)` on failure cascades into
+                  // `dispatchInvoicePaid()` + `router.refresh()` →
+                  // page badge flips to "Paid" + Pay-now button hides
+                  // even though Stripe rejected the charge (audit
+                  // 2026-04-26 — user reported "ขึ้น Paid ทั้งที่
+                  // ยังไม่ได้จ่าย").
+                  if (outcome === 'success') {
+                    setPaymentSettled(true);
+                  }
                 }}
                 onRequestClose={() => handleOpenChange(false)}
                 onExplicitCancel={() =>

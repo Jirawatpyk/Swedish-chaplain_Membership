@@ -136,26 +136,30 @@ describe('PaySheet state-revalidation regression contracts', () => {
     );
   });
 
-  // ---- B-NEW-1: initialInitiateRef consumed after first use ----------------
+  // ---- B-NEW-1: cached-initiate ref is consumed after first use ----------
+  //
+  // Refactored 2026-04-26: the inline `initialInitiateRef.current = null`
+  // pattern was extracted into a helper `useShouldSkipInitialFetch` whose
+  // RETURN CLOSURE both checks AND consumes the ref in one step. The
+  // semantics are identical (skip on first hit, never re-skip on
+  // subsequent runs) but the source pattern moved out of the main effect.
+  // These tests now pin the helper-based contract instead.
 
-  it('B-NEW-1: initialInitiateRef is cleared (set to null) AFTER consuming the cached value via early-return', () => {
-    // After the early-return skip path, the ref's role is fulfilled —
-    // it MUST be cleared so subsequent effect re-runs (tab toggle,
-    // retryCount bump) don't re-skip with the now-stale value.
-    const skipBlock = useInitiateSource.match(
-      /if\s*\(\s*initialInitiateRef\.current\s*!==\s*null[\s\S]*?\}\s*\n/,
-    );
-    expect(skipBlock, 'expected skip-path early-return block').toBeTruthy();
-    expect(skipBlock![0]).toMatch(/initialInitiateRef\.current\s*=\s*null/);
+  it('B-NEW-1: useShouldSkipInitialFetch helper exists and is invoked from the main effect', () => {
+    // Helper extraction is the canonical pattern for the cached-initiate
+    // skip — keeps Concurrent-React safety + ref-freeze semantics in one
+    // testable unit instead of inlining ref management in the main hook.
+    expect(useInitiateSource).toMatch(/function\s+useShouldSkipInitialFetch\s*\(/);
+    expect(useInitiateSource).toMatch(/shouldSkipFirstFetch\s*\(\s*\)/);
   });
 
-  it('B-NEW-1: initialInitiateRef is ALSO cleared after the first fetch resolves', () => {
-    // Mirror the skip-path consumption: after the fetch path commits
-    // an onSuccess, the ref's value is irrelevant. Clearing it
-    // protects against future re-runs (e.g. tab cycle that toggles
-    // `enabled`) accidentally reusing the cached value.
+  it('B-NEW-1: helper closure CONSUMES the ref (sets to null) when returning true', () => {
+    // The closure must clear the ref on use so subsequent effect re-runs
+    // (tab toggle, retryCount bump) don't re-skip with a now-irrelevant
+    // value. Match the inner `ref.current = null` adjacent to the
+    // `return true` branch.
     expect(useInitiateSource).toMatch(
-      /initialInitiateRef\.current\s*=\s*null[\s\S]{0,200}?onSuccess/,
+      /ref\.current\s*=\s*null[\s\S]{0,80}?return\s+true/,
     );
   });
 });

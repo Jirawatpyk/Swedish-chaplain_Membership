@@ -40,7 +40,7 @@ async function main() {
   const client = postgres(databaseUrl, { max: 1 });
   const db = drizzle(client);
   const inv = await db.execute(sql`SELECT invoice_id, status FROM invoices WHERE invoice_id = ${id}`);
-  const pay = await db.execute(sql`SELECT id, status, attempt_seq, processor_payment_intent_id, initiated_at FROM payments WHERE invoice_id = ${id} ORDER BY initiated_at DESC LIMIT 20`);
+  const pay = await db.execute(sql`SELECT id, method, status, attempt_seq, processor_payment_intent_id, initiated_at FROM payments WHERE invoice_id = ${id} ORDER BY initiated_at DESC LIMIT 20`);
   console.log('invoices:', JSON.stringify(inv, null, 2));
   console.log('payments:', JSON.stringify(pay, null, 2));
   await client.end();

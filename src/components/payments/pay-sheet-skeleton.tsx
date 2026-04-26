@@ -12,22 +12,37 @@
  *   - ARIA-busy contract: `role="status"` + `aria-busy="true"` +
  *     `aria-live="polite"` on the root container so SR users hear that
  *     the payment form is loading (§ 2.2 rule 6).
- *   - `data-testid="pay-sheet-card-skeleton"` is mandated by E2E T046
- *     (§ 2.2 rule 7).
+ *   - `data-testid="pay-sheet-card-skeleton"` (default) or
+ *     `pay-sheet-promptpay-skeleton` (when `variant="promptpay"`) is
+ *     mandated by E2E T046 (§ 2.2 rule 7). R7 fix: both tabs pre-render
+ *     simultaneously, so a single testid produced strict-mode locator
+ *     violations in Playwright. Parameterising lets each tab's
+ *     skeleton be addressed independently.
  */
 import { useTranslations } from 'next-intl';
 
 import { Skeleton } from '@/components/ui/skeleton';
 
-export function PaySheetSkeleton() {
+export interface PaySheetSkeletonProps {
+  /**
+   * Which payment-method tab this skeleton sits under. Drives the
+   * `data-testid` so card vs promptpay skeletons are independently
+   * locatable from E2E specs even though both tabs pre-render. */
+  readonly variant?: 'card' | 'promptpay';
+}
+
+export function PaySheetSkeleton({
+  variant = 'card',
+}: PaySheetSkeletonProps = {}) {
   const t = useTranslations('portal.payment.skeleton');
+  const testIdRoot = `pay-sheet-${variant}-skeleton`;
   return (
     <div
       role="status"
       aria-busy="true"
       aria-live="polite"
       aria-label={t('loading')}
-      data-testid="pay-sheet-card-skeleton"
+      data-testid={testIdRoot}
       className="space-y-4"
     >
       {/* Visible loading hint — reassures the member that the
@@ -36,7 +51,7 @@ export function PaySheetSkeleton() {
           are mute; a short label reduces perceived wait time. */}
       <p
         className="text-caption text-muted-foreground"
-        data-testid="pay-sheet-card-skeleton-label"
+        data-testid={`${testIdRoot}-label`}
       >
         {t('loading')}
       </p>

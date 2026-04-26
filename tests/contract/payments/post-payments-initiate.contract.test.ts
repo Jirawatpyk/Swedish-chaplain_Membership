@@ -463,6 +463,62 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
     expect(bodyText).not.toContain('FORBIDDEN_DETAIL');
   });
 
+  it('502 processor_unavailable — pino log carries ONLY the bounded `processorErrorKind` enum (T-P4-02 / log enum bound)', async () => {
+    // `InitiatePaymentError.processor_unavailable.reason` is a closed
+    // literal union (compile-time bounded) — the type system prevents
+    // free-form Stripe SDK messages from being assigned. The route
+    // logs `processorErrorKind` (a 3-value discriminator) AND
+    // `processorErrorReason` (one of the 6 bounded literals) for ops
+    // visibility. Both must remain bounded; pin the enum sets here.
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    initiatePaymentMock.mockResolvedValueOnce(
+      err({
+        code: 'processor_unavailable',
+        kind: 'retryable',
+        reason: 'cross_method_cancel_retryable',
+      }),
+    );
+
+    const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    await POST(makeJsonRequest(VALID_BODY));
+
+    const loggerMock = await import('@/lib/logger');
+    const warnCalls =
+      (loggerMock.logger.warn as ReturnType<typeof vi.fn>).mock?.calls ?? [];
+    const initiateLogs = warnCalls.filter(
+      (call) => call[1] === 'payments.initiate.use_case_error',
+    );
+    expect(initiateLogs.length).toBeGreaterThan(0);
+
+    const KIND_ENUM = ['retryable', 'permanent', 'idempotency_conflict'];
+    const REASON_ENUM = [
+      'retryable',
+      'permanent',
+      'idempotency_conflict',
+      'retrieved_client_secret_null',
+      'cross_method_pi_already_succeeded',
+      'cross_method_cancel_retryable',
+    ];
+
+    for (const call of initiateLogs) {
+      const fields = call[0] as Record<string, unknown>;
+      // GAP-1: positive presence guard fails loudly if the route
+      // renames or drops the field — without this, the toContain
+      // check below produces a misleading "expected array to contain
+      // undefined" error.
+      expect(fields).toHaveProperty('processorErrorKind');
+      expect(KIND_ENUM).toContain(fields['processorErrorKind']);
+      // The reason field is also bounded (Phase 4 verify-fix LOG-GAP).
+      // Type-narrowed at the use-case `InitiatePaymentError` level.
+      if ('processorErrorReason' in fields) {
+        expect(REASON_ENUM).toContain(fields['processorErrorReason']);
+      }
+      // Forbidden in this log envelope: the raw camelCase variant
+      // `processorReason` (the prior, unsafe pattern).
+      expect(fields).not.toHaveProperty('processorReason');
+    }
+  });
+
   // Senior-tester F4 (Group B deferred, 2026-04-24): the standard error
   // envelope defined in contracts/payments-api.md MUST include a
   // `messageThai` field on every error response so Thai members receive

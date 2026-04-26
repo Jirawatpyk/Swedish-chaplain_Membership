@@ -32,10 +32,10 @@ import { env } from './env';
  */
 
 /**
- * Paths that pino MUST redact before writing any log line. Exported so
- * `tests/unit/lib/logger-redaction.test.ts` can import the canonical
- * list (instead of maintaining a stale copy-paste) — R3 review found
- * the previous local copy had drifted to omit 22 paths.
+ * Paths that pino MUST redact before writing any log line. Exported
+ * so `tests/unit/lib/logger-redaction.test.ts` can import the
+ * canonical list — a local copy in tests is prone to drift (the
+ * test list has been observed to fall behind the production list).
  *
  * Pino's `*` wildcard matches exactly ONE intermediate key. Use
  * `*.field` for depth-1 and `*.*.field` for depth-2 when a field
@@ -122,9 +122,9 @@ export const REDACT_PATHS = [
   // both top-level and nested contexts (see security.md § 4 PDPA/GDPR
   // Cat-B classification). Never leak this to logs even if a caller
   // accidentally passes the full audit event object to `logger.info`.
-  // `*.*.recipient_email` (R3 hardening) covers depth-2 in case a
-  // future caller logs `{ event: { payload: { recipient_email } } }`
-  // — pino's `*` matches exactly ONE intermediate key.
+  // `*.*.recipient_email` covers depth-2 in case a caller logs
+  // `{ event: { payload: { recipient_email } } }` — pino's `*`
+  // matches exactly ONE intermediate key.
   'recipient_email',
   '*.recipient_email',
   '*.*.recipient_email',
@@ -236,14 +236,34 @@ export const REDACT_PATHS = [
   '*.stripe-signature',
   'stripeSignature',
   '*.stripeSignature',
-  // PCI guardian R3 — HTTP header casing variants. Node normalises
-  // incoming headers to lowercase but a caller who logs a custom
-  // Headers object or upper-cases a key during manipulation could
-  // hit either of these shapes.
+  // HTTP header casing variants. Node normalises incoming headers
+  // to lowercase but a caller who logs a custom Headers object or
+  // upper-cases a key during manipulation could hit either shape.
   'STRIPE-SIGNATURE',
   '*.STRIPE-SIGNATURE',
   'StripeSignature',
   '*.StripeSignature',
+  // Defence-in-depth for the F5 gateway error `reason` field. The
+  // route handler explicitly logs only the bounded
+  // `processorErrorKind` discriminator, but if a caller,
+  // middleware, or error boundary ever serialises the gateway
+  // error directly into a pino object, redaction here prevents
+  // the raw Stripe SDK message (which may carry account ids /
+  // key prefixes / forbidden detail) from reaching the log sink.
+  // Coverage matrix — every observable serialization shape:
+  //   - `{processorReason: ...}`              (route-side camelCase)
+  //   - `{reason: ...}`                       (top-level spread of gateway error)
+  //   - `{error: {reason: ...}}`              (gateway error nested under `error`)
+  //   - `{result: {error: {reason: ...}}}`    (full Result<T,E> envelope)
+  //   - `{<anyKey>: {error: {reason: ...}}}`  (depth-2 wildcard)
+  'processorReason',
+  '*.processorReason',
+  'reason',
+  '*.reason',
+  'error.reason',
+  '*.error.reason',
+  'result.error.reason',
+  '*.result.error.reason',
 ];
 
 /**

@@ -245,6 +245,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tenantId: tenantCtx.slug,
       actorUserId,
       actorMemberId,
+      // Required by Stripe `payment_method_data.billing_details.email`
+      // for server-confirmed PromptPay PIs (Card flows ignore it).
+      actorEmail: memberCtx.current.user.email,
       invoiceId: parsedBody.invoiceId,
       method,
       correlationId,
@@ -323,6 +326,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       result.error.code === 'processor_unavailable'
         ? result.error.kind
         : undefined;
+    // Surface the use-case error `reason` so ops can distinguish
+    // between high-level discriminators (`cross_method_pi_already_succeeded`,
+    // `cross_method_cancel_retryable`, etc.) without grepping for
+    // the matching `stripe-gateway: SDK error` line. Safe — `reason`
+    // is a closed literal-union on `InitiatePaymentError`, not raw
+    // Stripe SDK text.
+    const processorErrorReason =
+      'reason' in result.error && typeof result.error.reason === 'string'
+        ? result.error.reason
+        : undefined;
     const retryAfterSeconds =
       routeCode === 'processor_unavailable' && processorErrorKind === 'retryable'
         ? 30
@@ -337,6 +350,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         httpStatus: status,
         routeCode,
         ...(processorErrorKind ? { processorErrorKind } : {}),
+        ...(processorErrorReason ? { processorErrorReason } : {}),
       },
       'payments.initiate.use_case_error',
     );

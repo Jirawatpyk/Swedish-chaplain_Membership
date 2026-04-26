@@ -9,6 +9,24 @@
  * adapter maps to/from Stripe's SDK surface internally.
  */
 
+/**
+ * Gateway error variants — discriminated by `kind`.
+ *
+ * **PCI / log hygiene (NON-NEGOTIABLE)**: `reason` originates from the
+ * Stripe SDK `error.message` field (see `mapStripeError` in
+ * `infrastructure/stripe/stripe-gateway.ts`) and may embed account ids,
+ * key prefixes, or other forbidden detail. **`reason` MUST NEVER**:
+ *   - be written to a pino log line via `logger.*({reason: ...})`
+ *   - be returned in an HTTP response body to the client
+ *   - be persisted to any DB column without explicit redaction
+ *
+ * Use `kind` (the bounded discriminator) for log/response surfaces. The
+ * gateway itself logs only allow-listed fields (`stripeAccount`,
+ * `paymentIntentId`, `stripeErrorType`, `stripeErrorCode`,
+ * `stripeErrorStatus`); callers MUST follow the same allow-list.
+ * Contract test in `tests/contract/payments/post-payments-initiate.contract.test.ts`
+ * pins the route response shape (PCI regression guard).
+ */
 export type ProcessorGatewayError =
   | { readonly kind: 'retryable'; readonly reason: string }
   | { readonly kind: 'idempotency_conflict'; readonly reason: string }
@@ -74,6 +92,13 @@ export interface ProcessorGatewayPort {
     readonly metadata: Readonly<Record<string, string>>;
     readonly idempotencyKey: string;
     readonly stripeAccount: string;      // Connect account = tenant's stripe account id
+    /**
+     * Member email — embedded into `payment_method_data.billing_details
+     * .email` ONLY for server-confirmed PromptPay PIs (Stripe rejects
+     * with `parameter_missing` otherwise). Card flows ignore it (Stripe
+     * Elements collects billing details client-side).
+     */
+    readonly billingEmail?: string;
   }): Promise<Result<CreatedPaymentIntent, ProcessorGatewayError>>;
 
   retrievePaymentIntent(

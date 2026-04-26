@@ -100,6 +100,7 @@ describe('PromptPay server-locked amount (T089 / FR-009)', () => {
       metadata: { invoice_id: 'inv_t089', tenant_id: 'swecham' },
       idempotencyKey: 'inv-inv_t089-attempt-1',
       stripeAccount: STRIPE_ACCOUNT,
+      billingEmail: 'member@swecham.test',
     });
 
     expect(result.ok).toBe(true);
@@ -120,6 +121,14 @@ describe('PromptPay server-locked amount (T089 / FR-009)', () => {
     expect(body).toContain('payment_method_types[0]=promptpay');
     expect(body).toContain('confirm=true');
     expect(body).toContain('payment_method_data[type]=promptpay');
+    // Regression guard: Stripe rejects server-confirmed PromptPay PIs
+    // with `parameter_missing: billing_details[email]` if the field is
+    // omitted. Live caught this once (Phase 4 verify pass); this assert
+    // pins it so a future regression is caught at CI, not in production.
+    // Email is form-encoded with URL-escaped `@` (%40).
+    expect(body).toContain(
+      'payment_method_data[billing_details][email]=member%40swecham.test',
+    );
   });
 
   it('returns permanent error when promptpay is mixed with another method (Result, not throw)', async () => {

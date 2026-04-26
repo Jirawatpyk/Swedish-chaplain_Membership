@@ -33,45 +33,48 @@ const HOOK_SOURCE_PATH = resolve(
 const source = readFileSync(HOOK_SOURCE_PATH, 'utf8');
 
 describe('useInitiatePayment regression contract', () => {
-  it('REGRESSION (2026-04-25): `initialInitiate` MUST NOT appear in the main useEffect deps array', () => {
-    // Find the deps-array argument of the main fetch useEffect — it is
-    // the `useEffect(() => { ... }, [...])` whose body contains the
-    // POST /api/payments/initiate fetch. Any closing `, [<deps>])`
-    // pattern that mentions `initialInitiate` is a regression.
-    const depsArrayMatches = source.match(/\},\s*\[([^\]]+)\]\s*\)/g);
-    expect(depsArrayMatches, 'expected at least one useEffect deps array').toBeTruthy();
-    for (const depsArray of depsArrayMatches!) {
-      expect(
-        depsArray,
-        `deps array MUST NOT include \`initialInitiate\` — it caused effect re-fire after onPaymentSettled cleared the cache.\n` +
-          `If you need to react to changes in initialInitiate, use a ref + a different mechanism.\n` +
-          `Offending deps array: ${depsArray}`,
-      ).not.toMatch(/\binitialInitiate\b/);
-    }
+  // Refactored 2026-04-26: the inline ref-freeze + skip-decision logic
+  // moved into helper `useShouldSkipInitialFetch`. The main effect now
+  // calls the helper's returned closure as a one-shot skip decision.
+  // Tests below pin the NEW architecture but enforce the SAME invariant:
+  // `initialInitiate` prop changes MUST NOT cause the main fetch effect
+  // to re-fire after a `setCachedInitiate(null)` post-success.
+
+  it('REGRESSION (2026-04-25): `initialInitiate` MUST NOT appear in the MAIN useEffect deps array', () => {
+    // Locate the main fetch useEffect — body contains the
+    // `POST /api/payments/initiate` fetch — and assert its deps array
+    // is `[enabled, invoiceId, retryCount, method]` (the legitimate
+    // re-fire triggers). The helper has its own deps array including
+    // `initialInitiate`, but that effect only corrects the ref under
+    // Concurrent-React Offscreen pre-render — it does NOT trigger any
+    // network call.
+    const mainEffectMatch = source.match(
+      /useEffect\(\(\)\s*=>\s*\{[\s\S]*?api\/payments\/initiate[\s\S]*?\},\s*\[([^\]]+)\]/,
+    );
+    expect(mainEffectMatch, 'expected to find the main fetch useEffect').toBeTruthy();
+    expect(
+      mainEffectMatch![1],
+      `MAIN effect deps MUST NOT include \`initialInitiate\` — that caused effect re-fire after onPaymentSettled cleared the cache.\n` +
+        `Offending deps: ${mainEffectMatch![1]}`,
+    ).not.toMatch(/\binitialInitiate\b/);
   });
 
-  it('hook captures `initialInitiate` via useRef so prop changes after mount are inert', () => {
-    // The fix's mechanism: `useRef(opts.initialInitiate)` freezes the
-    // value on first render. The effect reads `initialInitiateRef.current`
-    // instead of the prop directly.
+  it('hook freezes `initialInitiate` via useRef so prop changes after mount are inert', () => {
+    // The fix's mechanism: `useRef(enabled ? initialInitiate : null)`
+    // freezes the value on first render. The `enabled ? ... : null`
+    // gate (B1 fix) prevents a cold-mounted disabled hook from
+    // freezing a stale value the parent later populates.
     //
-    // R5 review-round-3 I-NEW-3 (2026-04-25): the matcher REQUIRES
-    // the `opts.enabled ?` ternary gate (B1 fix). Earlier the regex
-    // was permissive — it accepted both `useRef(opts.initialInitiate)`
-    // (the original buggy form) AND the gated form. A future
-    // refactor that REVERTS the gate would silently pass CI. The
-    // tightened pattern explicitly requires `opts.enabled` to appear
-    // before `opts.initialInitiate` inside the initializer.
+    // After 2026-04-26 helper extraction the freeze lives inside
+    // `useShouldSkipInitialFetch` so the matcher accepts both the
+    // unprefixed-arg form (helper) and the original `opts.`-prefixed
+    // form (legacy inline).
     expect(
       source,
-      'expected `useRef<CachedInitiate | null>(opts.enabled ? opts.initialInitiate : null)` — the canonical freeze pattern WITH cold-mount gate (B1)',
+      'expected `useRef<CachedInitiate | null>(<enabled> ? <initialInitiate> : null)` — the canonical freeze with cold-mount gate (B1)',
     ).toMatch(
-      /useRef<CachedInitiate \| null>\(\s*opts\.enabled\s*\?\s*opts\.initialInitiate\s*:\s*null\s*,?\s*\)/,
+      /useRef<CachedInitiate \| null>\(\s*(?:opts\.)?enabled\s*\?\s*(?:opts\.)?initialInitiate\s*:\s*null\s*,?\s*\)/,
     );
-    expect(
-      source,
-      'expected the effect body to read `initialInitiateRef.current` (not the destructured prop)',
-    ).toMatch(/initialInitiateRef\.current/);
   });
 
   it('main effect deps include `enabled`, `invoiceId`, `retryCount`, `method` (legitimate re-fire triggers)', () => {
@@ -83,7 +86,7 @@ describe('useInitiatePayment regression contract', () => {
     expect(source).toMatch(/\[\s*enabled,\s*invoiceId,\s*retryCount,\s*method\s*\]/);
   });
 
-  it('hook documents WHY `initialInitiate` is excluded from deps (defends future refactor)', () => {
+  it('hook documents WHY `initialInitiate` is excluded from MAIN-effect deps (defends future refactor)', () => {
     // The fix should carry an inline rationale so a dev reading the
     // file understands the constraint and doesn't "helpfully" add
     // `initialInitiate` back to the deps array. We look for the

@@ -15,6 +15,21 @@ import {
 import { asPaymentId, type Payment } from '../../../../src/modules/payments/domain/payment';
 import type { TenantPaymentSettings } from '../../../../src/modules/payments/domain/tenant-payment-settings';
 
+// GAP-2: metrics module mocked so emission can be asserted in tests.
+// Uses `vi.hoisted` to satisfy vitest's mock-before-import constraint.
+const metricsMocks = vi.hoisted(() => ({
+  initiateDurationMs: vi.fn(),
+  qrLoadRetriesExhausted: vi.fn(),
+  crossMethodCancelDurationMs: vi.fn(),
+}));
+vi.mock('@/lib/metrics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/metrics')>();
+  return {
+    ...actual,
+    paymentsMetrics: metricsMocks,
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Test fixtures
 // ---------------------------------------------------------------------------
@@ -50,6 +65,7 @@ function makeInput(overrides: Partial<InitiatePaymentInput> = {}): InitiatePayme
     tenantId: TENANT_ID,
     actorUserId: ACTOR_USER_ID,
     actorMemberId: MEMBER_ID,
+    actorEmail: 'member@swecham.test',
     invoiceId: INVOICE_ID,
     method: 'card',
     correlationId: 'corr_1',
@@ -166,6 +182,79 @@ describe('initiatePayment (T055)', () => {
     expect(deps.audit.emit).toHaveBeenCalledTimes(1);
     const auditCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(auditCall?.[1].eventType).toBe('payment_initiated');
+    // GAP-2: A-07 metric MUST be emitted on the success path with
+    // the bounded `method` label.
+    expect(metricsMocks.initiateDurationMs).toHaveBeenCalledTimes(1);
+    expect(metricsMocks.initiateDurationMs).toHaveBeenCalledWith(
+      'card',
+      expect.any(Number),
+    );
+  });
+
+  it('GAP-2: initiate latency metric fires even on early-exit error paths (no Stripe call)', async () => {
+    // SUG-2 invariant: histogram MUST cover all exit paths so p95
+    // reflects real user experience, not just Stripe-roundtrip code paths.
+    const deps = makeDeps();
+    (deps.tenantSettingsRepo.getByTenantId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    const result = await initiatePayment(deps, makeInput());
+    expect(result.ok).toBe(false);
+    expect(metricsMocks.initiateDurationMs).toHaveBeenCalledTimes(1);
+    expect(metricsMocks.initiateDurationMs).toHaveBeenCalledWith(
+      'card',
+      expect.any(Number),
+    );
+  });
+
+  it('GAP-2: cross-method-cancel duration metric fires with correct outcome label per branch', async () => {
+    // Outcome labels expected for crossMethodCancelDurationMs:
+    //   'ok'        — Stripe confirmed cancel
+    //   'permanent' — Stripe rejected (e.g. already-canceled / not-found)
+    //   'retryable' — transient Stripe error (R-01 path)
+    // Asserted across all 3 in their respective dedicated tests below;
+    // this one pins the happy-path label.
+    const existingCard: Payment = {
+      id: asPaymentId('pmt_metric_observe'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'card',
+      status: 'pending',
+      amountSatang: 5_350_000n,
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_metric_observe',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr-metric',
+    };
+    const deps = makeDeps();
+    (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      existingCard,
+    );
+    (deps.paymentsRepo.nextAttemptSeq as ReturnType<typeof vi.fn>).mockResolvedValueOnce(2);
+    (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'pi_promptpay_new',
+        clientSecret: 'pi_promptpay_new_secret',
+        status: 'requires_action',
+        livemode: false,
+        promptpayQrSvgUrl: 'https://qr.stripe.com/v1/x.svg',
+      }),
+    );
+
+    await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+    expect(metricsMocks.crossMethodCancelDurationMs).toHaveBeenCalledTimes(1);
+    expect(metricsMocks.crossMethodCancelDurationMs).toHaveBeenCalledWith(
+      'ok',
+      expect.any(Number),
+    );
+    // Both metrics fire in the cross-method path
+    expect(metricsMocks.initiateDurationMs).toHaveBeenCalledTimes(1);
   });
 
   // PCI SAQ-A invariant (FR-016) — the inserted payment
@@ -390,8 +479,8 @@ describe('initiatePayment (T055)', () => {
     // — that's how we distinguish skip-resume vs took-resume.
     expect(deps.processorGateway.retrievePaymentIntent).not.toHaveBeenCalled();
     // The stale card PI MUST have been canceled both on Stripe AND
-    // in our DB row, with a `payment_canceled` audit emitted — no
-    // orphan PI lingering until the stale-pending sweep cron.
+    // in our DB row, with a `payment_method_switched` audit emitted
+    // (distinct from `payment_canceled` which means user-abandon).
     expect(deps.processorGateway.cancelPaymentIntent).toHaveBeenCalledWith(
       'pi_existing_card',
       'acct_test_123',
@@ -403,11 +492,19 @@ describe('initiatePayment (T055)', () => {
         nextStatus: 'canceled',
       }),
     );
-    // Two audit emits expected: payment_canceled (cross-method skip)
-    // + payment_initiated (new PI). Order matters — cancel first.
+    // Two audit emits expected: payment_method_switched (cross-method
+    // skip) + payment_initiated (new PI). Order matters — switch first.
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
     expect(auditCalls.length).toBeGreaterThanOrEqual(2);
-    expect(auditCalls[0]?.[1]).toMatchObject({ eventType: 'payment_canceled' });
+    expect(auditCalls[0]?.[1]).toMatchObject({
+      eventType: 'payment_method_switched',
+      payload: expect.objectContaining({
+        attempt_seq: existingCard.attemptSeq,
+        cancel_outcome: 'stripe_confirmed',
+        previous_method: 'card',
+        new_method: 'promptpay',
+      }),
+    });
   });
 
   it('same-method resume — pending promptpay PI resumes when promptpay requested', async () => {
@@ -502,21 +599,24 @@ describe('initiatePayment (T055)', () => {
     // No new PI was created either — caller must reconcile via webhook
     expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
     expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
-    // No payment_canceled audit emitted (would be misleading)
+    // No payment_method_switched audit emitted (would be misleading
+    // — Stripe says succeeded, no method switch occurred)
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
-    const cancelEmits = auditCalls.filter(
-      (call) => call[1]?.eventType === 'payment_canceled',
+    const switchEmits = auditCalls.filter(
+      (call) => call[1]?.eventType === 'payment_method_switched',
     );
-    expect(cancelEmits.length).toBe(0);
+    expect(switchEmits.length).toBe(0);
   });
 
-  it('cross-method skip — Stripe cancel retryable error → still proceeds to create new-method PI (best-effort)', async () => {
-    // Distinct from the succeeded case: a transient Stripe error
-    // (network blip, rate-limit) should NOT block the new-method PI.
-    // The DB row is still marked canceled; the stale-pending sweep
-    // cron is the backstop if Stripe still has the PI alive.
+  it('cross-method skip — Stripe cancel returns RETRYABLE error → returns processor_unavailable WITHOUT marking DB canceled (R-01: prevents DB-canceled / Stripe-pending drift)', async () => {
+    // Without this guard, a transient Stripe error during cancel
+    // (network timeout / rate-limit) would leave the DB row marked
+    // `canceled` while the Stripe PI may STILL be `pending` — the
+    // sweep cron is NOT designed to detect this drift direction.
+    // The customer's old card PI could later auto-confirm and
+    // charge them with no DB row to reconcile.
     const existingCard: Payment = {
-      id: asPaymentId('pmt_existing_card_retry'),
+      id: asPaymentId('pmt_existing_card_retryable'),
       tenantId: TENANT_ID,
       invoiceId: INVOICE_ID,
       memberId: MEMBER_ID,
@@ -524,7 +624,7 @@ describe('initiatePayment (T055)', () => {
       status: 'pending',
       amountSatang: 5_350_000n,
       currency: 'THB',
-      processorPaymentIntentId: 'pi_existing_retry',
+      processorPaymentIntentId: 'pi_existing_retryable',
       processorChargeId: null,
       processorEnvironment: 'test',
       attemptSeq: 1,
@@ -539,10 +639,71 @@ describe('initiatePayment (T055)', () => {
     (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       existingCard,
     );
+    // Stripe transient error during cancel.
     (deps.processorGateway.cancelPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       err({ kind: 'retryable', reason: 'network timeout' }),
     );
-    (deps.paymentsRepo.nextAttemptSeq as ReturnType<typeof vi.fn>).mockResolvedValueOnce(2);
+
+    const result = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('processor_unavailable');
+    if (result.error.code !== 'processor_unavailable') return;
+    expect(result.error.kind).toBe('retryable');
+    expect(result.error.reason).toBe('cross_method_cancel_retryable');
+
+    // Critical: DB row MUST NOT have been marked canceled
+    expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+    // No new PI was created either — caller must retry from a clean slate
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    // No audit emitted (would be misleading — switch did not complete)
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const switchEmits = auditCalls.filter(
+      (call) => call[1]?.eventType === 'payment_method_switched',
+    );
+    expect(switchEmits.length).toBe(0);
+  });
+
+  it('cross-method skip — Stripe cancel returns OTHER permanent error (already-canceled) → marks DB canceled with cancel_outcome=stripe_error_bypassed (T-P4-05)', async () => {
+    // Permanent non-succeeded errors (already-canceled, not-found,
+    // etc.) leave Stripe in a terminal-non-succeeded state from our
+    // perspective, so the local row CAN safely be marked canceled.
+    // The audit's `cancel_outcome` field distinguishes this from the
+    // happy "stripe_confirmed" path for forensic clarity.
+    const existingCard: Payment = {
+      id: asPaymentId('pmt_existing_card_already_canceled'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'card',
+      status: 'pending',
+      amountSatang: 5_350_000n,
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_existing_already_canceled',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 3,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_prev',
+    };
+    const deps = makeDeps();
+    (deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      existingCard,
+    );
+    (deps.processorGateway.cancelPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({
+        kind: 'permanent',
+        code: 'resource_missing',
+        reason: 'No such payment_intent',
+      }),
+    );
+    (deps.paymentsRepo.nextAttemptSeq as ReturnType<typeof vi.fn>).mockResolvedValueOnce(4);
     (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       ok({
         id: 'pi_promptpay_new',
@@ -557,10 +718,18 @@ describe('initiatePayment (T055)', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // DB row WAS marked canceled (best-effort despite retryable Stripe error)
     expect(deps.paymentsRepo.updateStatus).toHaveBeenCalled();
-    // New PI created
     expect(deps.paymentsRepo.insert).toHaveBeenCalledTimes(1);
+    // Audit MUST carry the bypassed-error discriminator + attempt_seq
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const switchEmit = auditCalls.find(
+      (call) => call[1]?.eventType === 'payment_method_switched',
+    );
+    expect(switchEmit).toBeDefined();
+    expect(switchEmit?.[1]?.payload).toMatchObject({
+      attempt_seq: 3,
+      cancel_outcome: 'stripe_error_bypassed',
+    });
   });
 
   it('tenant_settings missing — tenant_settings_incomplete', async () => {

@@ -395,3 +395,63 @@ export const invoicingMetrics = {
     ).add(1, { probe_type: probeType });
   },
 } as const;
+
+// --- F5 payments metrics -----------------------------------------------------
+//
+// Phase 4 (US2 PromptPay) introduces 3 metrics not previously instrumented:
+//   - PromptPay initiate latency (server-confirm + Stripe roundtrip)
+//   - QR <img> retry-debounce exhaustion (S17 — flaky-network signal)
+//   - Cross-method-cancel duration (lock-hold under concurrent load — R1)
+//
+// Cardinality ceilings:
+//   - `method` ∈ {card, promptpay} — bounded enum
+//   - `outcome` ∈ {ok, retryable, permanent, idempotency_conflict}
+//   - NO user/member id labels (high-cardinality forbidden)
+
+export const paymentsMetrics = {
+  /**
+   * Latency of `/api/payments/initiate` end-to-end including Stripe
+   * createPaymentIntent (or retrievePaymentIntent for resume). Target
+   * p95 < 1500 ms — alert if exceeded for 5 min. Labelled by `method`
+   * so card vs PromptPay can be analysed separately.
+   */
+  initiateDurationMs(method: 'card' | 'promptpay', ms: number): void {
+    histogram(
+      'payments_initiate_duration_ms',
+      'POST /api/payments/initiate end-to-end latency, p95 target 1500ms',
+      'ms',
+    ).record(ms, { method });
+  },
+
+  /**
+   * Increments when the in-component QR `<img>` retry counter exhausts
+   * `MAX_QR_LOAD_RETRIES` and escalates to the parent's failure state.
+   * Sustained non-zero rate signals Stripe CDN issues, CSP misconfig,
+   * or systemic flaky-network conditions in the member population.
+   * Alert threshold: > 1% of PromptPay initiates over 1h.
+   */
+  qrLoadRetriesExhausted(): void {
+    counter(
+      'payments_qr_load_retries_exhausted_total',
+      'PromptPay QR image failed to load after retry-debounce (CDN / network signal)',
+    ).add(1);
+  },
+
+  /**
+   * Latency of cross-method-cancel block (Stripe `cancelPaymentIntent`
+   * inside the DB tx). The whole block holds the payments row-lock for
+   * its duration. Target p95 < 3000 ms; alert if exceeded — sustained
+   * spike indicates Stripe API slowness during a hot connection-pool
+   * window.
+   */
+  crossMethodCancelDurationMs(
+    outcome: 'ok' | 'retryable' | 'permanent' | 'idempotency_conflict',
+    ms: number,
+  ): void {
+    histogram(
+      'payments_cross_method_cancel_duration_ms',
+      'Cross-method cancel + DB write block latency, p95 target 3000ms',
+      'ms',
+    ).record(ms, { outcome });
+  },
+} as const;

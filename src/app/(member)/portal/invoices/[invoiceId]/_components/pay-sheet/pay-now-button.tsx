@@ -30,10 +30,10 @@
  *
  * PCI / persistence
  * -----------------
- * No `localStorage`, `sessionStorage`, cookies, or any store that
- * outlives this component's state tree. The Stripe `clientSecret` is
- * owned by <PaySheetInternal> (lazy-loaded inside <PaySheet>) and
- * torn down on route change via React unmount of the page subtree.
+ * Stripe `clientSecret` lives only in <PaySheetInternal>'s React
+ * state. The optimistic-paid flag IS persisted in `sessionStorage`
+ * (60 s TTL, invoiceId only — no card data, no clientSecret, no
+ * auth token) — see `../optimistic-paid.ts` for the PCI rationale.
  *
  * Barrel compliance (Constitution Principle III)
  * ----------------------------------------------
@@ -49,6 +49,7 @@ import { Button } from '@/components/ui/button';
 
 import { PaySheet } from './index';
 import type { PaymentMethod } from './method-tabs';
+import { useOptimisticPaid } from '../optimistic-paid';
 
 export interface PayNowButtonProps {
   readonly invoice: {
@@ -73,18 +74,30 @@ export function PayNowButton({
   const deepLinked = searchParams?.get('pay') === '1';
   const [open, setOpen] = useState<boolean>(deepLinked);
 
+  // Hide the trigger button the moment payment settles client-side
+  // (Stripe SDK confirmPayment success → PaySheet's settled-effect
+  // writes sessionStorage). The Sheet itself stays mounted so the
+  // <ConfirmationPanel> inside it survives the optimistic flip —
+  // unmounting the drawer with `display:none` on the trigger alone
+  // is fine because the Sheet's open/close lifecycle is independent.
+  // Server-truth catches up on next router.refresh and the upstream
+  // conditional (`invoice.status === 'issued'`) drops the component.
+  const optimisticallyPaid = useOptimisticPaid(invoice.id);
+
   return (
     <>
-      <Button
-        type="button"
-        variant="default"
-        size="sm"
-        onClick={() => setOpen(true)}
-        data-testid="pay-now-button"
-        className="min-h-11 px-4"
-      >
-        {t('payNow')}
-      </Button>
+      {!optimisticallyPaid && (
+        <Button
+          type="button"
+          variant="default"
+          size="sm"
+          onClick={() => setOpen(true)}
+          data-testid="pay-now-button"
+          className="min-h-11 px-4"
+        >
+          {t('payNow')}
+        </Button>
+      )}
       <PaySheet
         invoice={{
           id: invoice.id,

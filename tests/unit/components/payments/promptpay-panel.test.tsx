@@ -21,6 +21,20 @@ import {
   type PromptPayPanelProps,
 } from '@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/promptpay-panel';
 
+// GAP-2: metrics module mocked so emission can be asserted.
+const metricsMocks = vi.hoisted(() => ({
+  initiateDurationMs: vi.fn(),
+  qrLoadRetriesExhausted: vi.fn(),
+  crossMethodCancelDurationMs: vi.fn(),
+}));
+vi.mock('@/lib/metrics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/metrics')>();
+  return {
+    ...actual,
+    paymentsMetrics: metricsMocks,
+  };
+});
+
 const messages = {
   portal: {
     payment: {
@@ -134,6 +148,7 @@ describe('<PromptPayPanel> — pending status', () => {
   });
 
   it('debounces transient QR <img> errors — first MAX_QR_LOAD_RETRIES errors do NOT escalate', () => {
+    metricsMocks.qrLoadRetriesExhausted.mockClear();
     const onLoadError = vi.fn();
     renderWithIntl({ ...baseProps, status: 'pending', onLoadError });
     const qr = screen.getByTestId('pay-sheet-promptpay-qr');
@@ -143,9 +158,13 @@ describe('<PromptPayPanel> — pending status', () => {
       fireEvent.error(qr);
     }
     expect(onLoadError).not.toHaveBeenCalled();
+    // GAP-2: A-07 metric MUST NOT fire while still in the retry budget
+    expect(metricsMocks.qrLoadRetriesExhausted).not.toHaveBeenCalled();
     // The (MAX+1)th error escalates.
     fireEvent.error(qr);
     expect(onLoadError).toHaveBeenCalledTimes(1);
+    // GAP-2: A-07 metric fires exactly once on retry-budget exhaustion
+    expect(metricsMocks.qrLoadRetriesExhausted).toHaveBeenCalledTimes(1);
   });
 
   it('QR <img> src includes a cache-bust query param after a retry to force browser reload', () => {

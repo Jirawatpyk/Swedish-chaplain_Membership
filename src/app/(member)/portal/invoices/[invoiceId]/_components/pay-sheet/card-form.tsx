@@ -76,9 +76,8 @@ export interface CardFormFailurePayload {
 export interface CardFormProps {
   readonly clientSecret: string;
   readonly publishableKey: string;
-  /** Amount due (for display-only badges). Currency handled by Stripe. */
+  /** Amount due in satang (display-only). Currency is THB (Thai-only F5 MVP); Stripe owns currency in the PI itself. */
   readonly amountDue: number;
-  readonly currency: string;
   readonly invoiceId: string;
   readonly memberId: string;
   readonly onSuccess: (payload: CardFormSuccessPayload) => void;
@@ -255,7 +254,6 @@ export function CardForm({
   clientSecret,
   publishableKey,
   amountDue,
-  currency,
   invoiceId,
   onSuccess,
   onFailure,
@@ -265,9 +263,8 @@ export function CardForm({
   const t = useTranslations('portal.payment');
   const locale = useLocale();
   const { resolvedTheme } = useTheme();
-  // `amountDue` is carried as number-of-satang; `formatSatangThb`
-  // divides by 100 + emits "3,530.00 THB" — matches OrderSummary.
-  void currency;
+  // `amountDue` is satang; `formatSatangThb` divides by 100 + emits
+  // "3,530.00 THB" — matches OrderSummary.
   const amountLabel = formatSatangThb(BigInt(Math.round(amountDue)), locale);
 
   const [elementReady, setElementReady] = useState<boolean>(false);
@@ -325,15 +322,23 @@ export function CardForm({
      * rgba bytes via `getImageData`. The browser's color pipeline
      * handles every space; we get back guaranteed sRGB bytes.
      */
-    const toHex = (cssColor: string): string | null => {
-      if (!cssColor || typeof document === 'undefined') return null;
-      const canvas = document.createElement('canvas');
+    // Single 1×1 canvas reused across the 4 CSS-var probes below.
+    // Allocating per-call leaked 4 detached canvas elements per
+    // memo recompute (theme toggle / clientSecret change) — minor
+    // on desktop, measurable on low-end Android repeat-render.
+    const canvas =
+      typeof document === 'undefined' ? null : document.createElement('canvas');
+    if (canvas) {
       canvas.width = 1;
       canvas.height = 1;
-      // `willReadFrequently: true` silences the Chrome perf warning
-      // for repeated getImageData reads (one per CSS var resolved).
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return null;
+    }
+    // `willReadFrequently: true` silences the Chrome perf warning
+    // for repeated getImageData reads (one per CSS var resolved).
+    const ctx =
+      canvas?.getContext('2d', { willReadFrequently: true }) ?? null;
+
+    const toHex = (cssColor: string): string | null => {
+      if (!cssColor || !ctx) return null;
       try {
         // Validate by setting + probing — invalid colors leave fillStyle
         // at its previous value. Seed with a sentinel to detect that.
@@ -437,8 +442,20 @@ export function CardForm({
     );
   }
 
+  // `key` includes BOTH `remountKey` (bumped by the retry button) AND
+  // the live `clientSecret`. Stripe.js does NOT support mutating
+  // `options.clientSecret` on an existing <Elements> instance — the
+  // iframe keeps the original secret internally and `confirmPayment`
+  // submits to a stale (often-canceled) PI → 400. Keying off
+  // `clientSecret` forces a clean remount whenever the parent hands
+  // in a fresh PI (e.g. after a cross-method tab switch canceled the
+  // previous PI; audit 2026-04-26).
   return (
-    <Elements key={remountKey} stripe={stripePromise} options={options}>
+    <Elements
+      key={`${remountKey}-${clientSecret}`}
+      stripe={stripePromise}
+      options={options}
+    >
       <CardFormInner
         invoiceId={invoiceId}
         amountLabel={amountLabel}

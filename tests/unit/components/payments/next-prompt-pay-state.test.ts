@@ -1,5 +1,5 @@
 /**
- * Unit tests for `nextPromptPayStateOnPollFailure` — pure transition
+ * Unit tests for `promptPayPollOutcomeToState` — pure transition
  * helper extracted from `<PaySheetInternal>` so its `card_declined`
  * vs `canceled`/`3ds_timeout` routing can be tested without rendering
  * the full pay-sheet subtree.
@@ -15,25 +15,25 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { nextPromptPayStateOnPollFailure } from '@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/pay-sheet-internal';
+import { promptPayPollOutcomeToState } from '@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/pay-sheet-internal';
 
 const DECLINED_MSG = 'Your card was declined.';
 
-describe('nextPromptPayStateOnPollFailure', () => {
+describe('promptPayPollOutcomeToState', () => {
   it('card_declined → failure state with the supplied localized reason', () => {
-    const next = nextPromptPayStateOnPollFailure('card_declined', DECLINED_MSG);
+    const next = promptPayPollOutcomeToState('card_declined', DECLINED_MSG);
     expect(next.kind).toBe('failure');
     if (next.kind !== 'failure') return;
     expect(next.reason).toBe(DECLINED_MSG);
   });
 
   it('canceled → expired state', () => {
-    const next = nextPromptPayStateOnPollFailure('canceled', DECLINED_MSG);
+    const next = promptPayPollOutcomeToState('canceled', DECLINED_MSG);
     expect(next.kind).toBe('expired');
   });
 
   it('3ds_timeout → expired state', () => {
-    const next = nextPromptPayStateOnPollFailure('3ds_timeout', DECLINED_MSG);
+    const next = promptPayPollOutcomeToState('3ds_timeout', DECLINED_MSG);
     expect(next.kind).toBe('expired');
   });
 });

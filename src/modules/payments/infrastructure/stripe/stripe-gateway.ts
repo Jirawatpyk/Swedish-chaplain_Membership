@@ -107,6 +107,8 @@ export function mapStripeError(
     readonly code?: string;
     readonly message?: string;
     readonly statusCode?: number;
+    readonly param?: string;
+    readonly raw?: { readonly param?: string };
   };
 
   const type = err_.type ?? 'unknown';
@@ -120,7 +122,11 @@ export function mapStripeError(
   const code = err_.code ?? 'unknown_stripe_error';
   const reason = err_.message ?? `Stripe ${type}`;
 
-  // Safe structured log — only allow-list fields.
+  // Safe structured log — only allow-list fields. Stripe error
+  // messages + `param` describe API parameter complaints (no PII /
+  // card data), so they're safe to log AND essential for debugging
+  // 4xx-class errors (especially `parameter_missing`).
+  const stripeErrorParam = err_.param ?? err_.raw?.param;
   logger.warn(
     {
       stripeAccount: context.stripeAccount,
@@ -128,6 +134,8 @@ export function mapStripeError(
       stripeErrorType: type,
       stripeErrorCode: err_.code,
       stripeErrorStatus: err_.statusCode,
+      stripeErrorMessage: err_.message,
+      ...(stripeErrorParam ? { stripeErrorParam } : {}),
     },
     'stripe-gateway: SDK error',
   );
@@ -263,7 +271,27 @@ export const stripeGateway: ProcessorGatewayPort = {
       };
       if (isPromptPayOnly) {
         createParams.confirm = true;
-        createParams.payment_method_data = { type: 'promptpay' };
+        // Stripe rejects server-confirmed PromptPay PIs with
+        // `parameter_missing: billing_details[email]` if email is
+        // absent. Card flows do NOT need this — Stripe Elements
+        // collects billing details client-side. Throw a typed error
+        // here rather than at the SDK boundary so the failure mode
+        // is obvious during composition rather than as a 502 from
+        // Stripe at runtime.
+        if (!input.billingEmail) {
+          return err({
+            kind: 'permanent',
+            code: 'promptpay_billing_email_missing',
+            reason:
+              'PromptPay PI requires billingEmail (Stripe ' +
+              '`payment_method_data.billing_details.email`). Composition ' +
+              'root must plumb member email through `initiatePayment` input.',
+          });
+        }
+        createParams.payment_method_data = {
+          type: 'promptpay',
+          billing_details: { email: input.billingEmail },
+        };
       }
       const pi = await client.paymentIntents.create(createParams, {
         idempotencyKey: input.idempotencyKey,

@@ -9,8 +9,13 @@
  * payment method:
  *
  *   - StrictMode double-invoke safety via AbortController + cancelled flag
- *   - Backend Idempotency-Key (`inv-{invoiceId}-attempt-{seq}`) dedupes at
- *     Stripe, so duplicate fetches do NOT create duplicate PaymentIntents
+ *   - Server-side dedupe: the `/api/payments/initiate` route's
+ *     `findPendingByInvoiceAndActor` resume path returns the same
+ *     clientSecret for repeat calls within the pending-PI window;
+ *     additionally the use-case stamps Stripe `Idempotency-Key`
+ *     (`inv-{invoiceId}-attempt-{seq}`) on createPaymentIntent so
+ *     concurrent retries with the same sequence collapse to ONE PI.
+ *     Client does NOT send the header — the server owns key generation.
  *   - Retry safety: bumping `retryCount` triggers cleanup which aborts
  *     prior fetch — no in-flight-flag deadlock
  *   - Unmount safety: cleanup aborts + flips `cancelled` so late-arriving
@@ -67,6 +72,86 @@ export interface UseInitiatePaymentOptions {
   readonly onFailure: (reason: string) => void;
 }
 
+/**
+ * Cache-decision sub-hook (A-X-HOOK partial extraction, 2026-04-26).
+ *
+ * Invariants — DO NOT collapse back into the parent hook without the
+ * test suite green:
+ *   1. The cache value (`initialInitiate`) is FROZEN on the first
+ *      render where `enabled === true`. Subsequent prop changes are
+ *      inert — preserves the post-success path: parent invalidates
+ *      its cache → setting it to null → the parent hook MUST NOT
+ *      re-fetch with a now-terminal clientSecret.
+ *   2. Frozen value is CONSUMED (set to null) immediately after the
+ *      decision to skip the fetch — preserves the tab-switch path:
+ *      effect re-runs → ref already null → fetch fires normally.
+ *   3. Concurrent-React safety: if the frozen value disagrees with
+ *      the latest prop on the FIRST enabled run, the latest prop is
+ *      authoritative and the ref is corrected (Offscreen pre-render
+ *      may have committed a stale value).
+ *
+ * Returns a one-shot decision function the parent calls inside its
+ * effect: `true` = skip the fetch; `false` = proceed with fetch.
+ */
+function useShouldSkipInitialFetch(
+  enabled: boolean,
+  initialInitiate: CachedInitiate | null,
+): () => boolean {
+  const ref = useRef<CachedInitiate | null>(
+    enabled ? initialInitiate : null,
+  );
+  // Concurrent-React safety lives in `useEffect`, NOT in the
+  // returned closure. Without this separation, the closure would
+  // overwrite `ref.current` every time the parent re-renders with
+  // a changed `initialInitiate` (e.g. parent invalidating its
+  // cache to null after success) — zeroing out a frozen-but-still-
+  // valid cache before the skip decision was made. Effect dep
+  // `[enabled, initialInitiate]` means the correction fires once
+  // per genuine prop change (post-commit), not on every closure
+  // invocation.
+  const cacheWasEnabledOnMountRef = useRef<boolean>(enabled);
+  useEffect(() => {
+    if (!cacheWasEnabledOnMountRef.current && enabled) {
+      // Hook is being enabled for the first time AFTER a cold mount
+      // (e.g. user lands on PromptPay tab; later switches to Card and
+      // the card hook's `enabled` flips true). The ref was initialised
+      // to null on the cold mount; the latest prop is authoritative.
+      ref.current = initialInitiate;
+      cacheWasEnabledOnMountRef.current = true;
+      return;
+    }
+    if (
+      process.env.NODE_ENV !== 'production' &&
+      enabled &&
+      ref.current !== null &&
+      ref.current !== initialInitiate &&
+      initialInitiate !== null
+    ) {
+      // The ref-frozen value disagrees with the latest prop AND the
+      // latest prop is itself non-null → Concurrent-React Offscreen
+      // pre-render may have committed a stale value. Correct + warn.
+      // (We do NOT correct when the latest prop is null — that's the
+      // parent's normal post-success cache invalidation, which the
+      // ref-frozen value is supposed to outlive per invariant #1.)
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[use-initiate-payment] ref-frozen initialInitiate differs from current prop — using current prop',
+      );
+      ref.current = initialInitiate;
+    }
+  }, [enabled, initialInitiate]);
+
+  return () => {
+    if (ref.current !== null) {
+      // Consume so subsequent runs (tab toggle, retry bump) don't
+      // re-skip on a now-irrelevant value.
+      ref.current = null;
+      return true;
+    }
+    return false;
+  };
+}
+
 export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
   const optsRef = useRef(opts);
   useEffect(() => {
@@ -80,49 +165,14 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
     method = 'card',
   } = opts;
 
-  // R5 canonical fix (2026-04-25): `initialInitiate` is read via ref
-  // instead of being a useEffect dep. The previous shape included
-  // `initialInitiate` in the deps array, so when the parent set the
-  // cached initiate to `null` AFTER a successful payment (to invalidate
-  // its cache), this effect re-fired and overwrote `payState='success'`
-  // back to `card-form` with a fresh PaymentIntent — the user saw
-  // ConfirmationPanel flash then revert to the card form (with the now-
-  // terminal old clientSecret raising "PaymentIntent in terminal state"
-  // inside Stripe Elements). The fix: only the FIRST render reads
-  // `initialInitiate` to decide whether to skip the fetch; subsequent
-  // changes are inert. This is correct because the cache exists ONLY to
-  // skip the initial fetch on a re-opened drawer; once the effect has
-  // run, the cache is no longer relevant — payState owns the truth.
-  //
-  // R5 review B1 (2026-04-25): only freeze the cached value when the
-  // hook is enabled on first mount. Otherwise, a user who lands on the
-  // PromptPay tab first (card hook starts disabled) would freeze a
-  // potentially-stale `opts.initialInitiate` that the parent later
-  // populated; when the user switches to Card the effect would skip
-  // the fetch forever (`initialInitiateRef.current !== null`) and
-  // `payState` would stay at `idle` — card form never renders.
-  //
-  // Concurrent React caveat (R5 N2): in React 18+ Concurrent Mode the
-  // initializer runs in any candidate render — including ones React
-  // may discard (e.g. via <Offscreen>). The committed render's first
-  // run is the one whose value the ref keeps. Today's caller mounts
-  // <PaySheetInternal> via `{hasOpened && ...}`, gated on a state
-  // flip, so the first-rendered tree IS committed. If a future React
-  // version pre-renders this subtree, revisit this assumption.
-  const initialInitiateRef = useRef<CachedInitiate | null>(
-    opts.enabled ? opts.initialInitiate : null,
+  const shouldSkipFirstFetch = useShouldSkipInitialFetch(
+    opts.enabled,
+    opts.initialInitiate,
   );
 
   useEffect(() => {
     if (!enabled) return;
-    // Read once-frozen `initialInitiate` from ref — not the latest prop.
-    if (initialInitiateRef.current !== null && retryCount === 0) {
-      // R5 review-round-3 B-NEW-1: consume the ref so subsequent
-      // re-runs (tab toggle, etc.) DON'T re-skip with a now-stale
-      // value. The cache's purpose is fulfilled once we've decided
-      // to use it; from this point on payState is the source of
-      // truth.
-      initialInitiateRef.current = null;
+    if (retryCount === 0 && shouldSkipFirstFetch()) {
       return;
     }
 
@@ -164,20 +214,10 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
         }
         const payload = (await response.json()) as InitiateResponse;
         if (cancelled) return;
-        // R5 review-round-3 B-NEW-1 (2026-04-25): clear the cached
-        // initiate ref AFTER the first fetch resolves. The ref's
-        // sole purpose is to skip the FIRST fetch on a re-opened
-        // drawer when the parent has a fresh cache. Once the hook
-        // has actually fetched, any subsequent effect re-run
-        // (enabled flip false→true on tab switch, retryCount bump)
-        // should NOT re-skip on the now-irrelevant cached value.
-        // Without this clear, the closed defensive scenario was:
-        // mount with cache → fetch succeeds (or is skipped) → user
-        // switches tabs → returns to Card → effect re-runs with
-        // ref still non-null + retryCount=0 → fetch SKIPPED with a
-        // stale (now-terminal) clientSecret → CardForm renders
-        // PaymentElement against terminal PI → IntegrationError.
-        initialInitiateRef.current = null;
+        // Cache consumption is centralized in `useShouldSkipInitialFetch`
+        // — the ref is cleared the moment the skip-decision is made,
+        // not after fetch resolves. So a re-run on tab-toggle or retry
+        // bump always proceeds to a fresh fetch.
         optsRef.current.onSuccess(payload);
       } catch (err) {
         if (cancelled) return;
@@ -192,9 +232,10 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
       cancelled = true;
       abortController.abort();
     };
-    // `initialInitiate` removed from deps — see ref-based pattern
-    // documented above; `method` retained because switching tabs is a
-    // legitimate cause for a re-fire with a new method body.
-
+    // `initialInitiate` is intentionally absent from deps — its
+    // role is encapsulated in `useShouldSkipInitialFetch`. `method`
+    // IS in deps because switching tabs is a legitimate cause for
+    // a re-fire with a new method body.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, invoiceId, retryCount, method]);
 }

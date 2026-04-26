@@ -34,6 +34,7 @@ import type {
   ClockPort,
   InvoicingBridgePort,
   PaymentsRepo,
+  ProcessorGatewayError,
   ProcessorGatewayPort,
   TenantPaymentSettingsRepo,
 } from '../ports';
@@ -45,11 +46,20 @@ import {
   isMethodEnabled,
   type SettingsIncompleteReason,
 } from '../../domain/tenant-payment-settings';
+import { paymentsMetrics } from '@/lib/metrics';
 
 export interface InitiatePaymentInput {
   readonly tenantId: string;
   readonly actorUserId: string;
   readonly actorMemberId: string;
+  /**
+   * Member's account email — required for Stripe PromptPay PIs.
+   * Stripe's `payment_method_data.billing_details.email` is mandatory
+   * when we server-confirm a PromptPay PaymentMethod (Card flow uses
+   * Stripe Elements which collects billing details client-side).
+   * Always populated from `requireMemberContext().current.user.email`.
+   */
+  readonly actorEmail: string;
   readonly invoiceId: string;
   readonly method: PaymentMethod;
   readonly correlationId: string;
@@ -98,12 +108,29 @@ export type InitiatePaymentError =
        * can gate `Retry-After` on `'retryable'` only — permanent errors
        * (e.g. PromptPay-not-enabled, country-mismatch, key-mismatch)
        * never recover within 30 s and should not advertise a retry
-       * window. `reason` is a SAFE string limited to the gateway error
-       * `kind`-tag — NEVER the raw Stripe SDK `error.message` (which
-       * may embed account ids / key prefixes / forbidden details).
+       * window. `reason` is a CLOSED literal-union: the type system
+       * prevents free-form Stripe SDK messages from being assigned
+       * here, so the route handler can safely log `processorErrorReason`
+       * without PCI hygiene risk. Adding a new value REQUIRES updating
+       * this union — making the surface auditable at compile time.
        */
-      readonly kind: 'retryable' | 'permanent' | 'idempotency_conflict';
-      readonly reason: string;
+      readonly kind: ProcessorGatewayError['kind'];
+      readonly reason:
+        // Echo of `ProcessorGatewayError.kind` for the standard
+        // create/retrieve gateway-error paths. Reusing the port's
+        // own union ensures any new kind added to the gateway
+        // automatically widens the use-case union — no drift.
+        | ProcessorGatewayError['kind']
+        // Resume-path: Stripe returned a PI in a terminal state with
+        // `null` clientSecret; sweep cron normalises the row.
+        | 'retrieved_client_secret_null'
+        // Cross-method-skip: Stripe reports the original-method PI as
+        // already succeeded (race vs webhook).
+        | 'cross_method_pi_already_succeeded'
+        // Cross-method-skip: Stripe cancel returned a transient error;
+        // we abort without DB write to avoid the DB-canceled vs
+        // Stripe-pending drift the sweep cron is not designed to detect.
+        | 'cross_method_cancel_retryable';
     };
 
 export interface InitiatePaymentDeps {
@@ -136,6 +163,27 @@ export interface InitiatePaymentDeps {
 }
 
 export async function initiatePayment(
+  deps: InitiatePaymentDeps,
+  input: InitiatePaymentInput,
+): Promise<Result<InitiatePaymentSuccess, InitiatePaymentError>> {
+  // Capture start time at function entry so all exit paths —
+  // including pre-Stripe early errors (settings_row_missing,
+  // method_not_enabled, invoice bridge failures) — contribute to
+  // the latency histogram. `try/finally` guarantees the metric
+  // fires on every code path (success + every typed error
+  // variant), regardless of where the body returns from.
+  const initiateStartMs = deps.clock.nowMs();
+  try {
+    return await initiatePaymentBody(deps, input);
+  } finally {
+    paymentsMetrics.initiateDurationMs(
+      input.method,
+      deps.clock.nowMs() - initiateStartMs,
+    );
+  }
+}
+
+async function initiatePaymentBody(
   deps: InitiatePaymentDeps,
   input: InitiatePaymentInput,
 ): Promise<Result<InitiatePaymentSuccess, InitiatePaymentError>> {
@@ -251,18 +299,25 @@ export async function initiatePayment(
     // canceled Stripe PI with a still-`pending` DB row that the
     // next request would pick up again.
     if (pending && pending.method !== input.method) {
+      const cancelStartMs = deps.clock.nowMs();
       const cancelResult = await deps.processorGateway.cancelPaymentIntent(
         pending.processorPaymentIntentId,
         settings.processorAccountId,
       );
-      // Financial-integrity guard: Stripe reports the PI as
-      // `succeeded` when the customer paid via the original method
-      // (e.g. card 3DS just resolved) but our webhook hasn't
-      // arrived yet to flip the row. Marking the row `canceled`
-      // here would create a DB-says-canceled vs Stripe-says-paid
-      // drift while the customer was actually charged. Surface as
-      // `processor_unavailable` so the new-method initiate aborts;
-      // the inbound webhook will reconcile to `succeeded` shortly.
+      // Cross-method-cancel latency — scope is Stripe SDK roundtrip
+      // only (excludes the surrounding tx + findPending lookup).
+      paymentsMetrics.crossMethodCancelDurationMs(
+        cancelResult.ok ? 'ok' : cancelResult.error.kind,
+        deps.clock.nowMs() - cancelStartMs,
+      );
+      // Financial-integrity guard: Stripe reports `succeeded` when
+      // the customer paid via the original method (e.g. card 3DS
+      // just resolved) but our webhook hasn't arrived yet. Marking
+      // the row `canceled` here would create a DB-says-canceled vs
+      // Stripe-says-paid drift while the customer was actually
+      // charged. Surface as `processor_unavailable` so the new-
+      // method initiate aborts; the inbound webhook reconciles
+      // shortly.
       if (
         !cancelResult.ok &&
         cancelResult.error.kind === 'permanent' &&
@@ -275,31 +330,60 @@ export async function initiatePayment(
           reason: 'cross_method_pi_already_succeeded',
         });
       }
-      // For all other cancel outcomes (success / retryable / other
-      // permanent errors like already-canceled / not-found), proceed
-      // to mark the row terminal. If `updateStatus` or `audit.emit`
-      // throws inside this tx, the entire tx rolls back, leaving
-      // the row in `pending`; the stale-pending sweep cron is the
-      // backstop for that recovery window.
+      // Retryable-cancel guard: when Stripe returns a transient
+      // error (network timeout, rate-limit), the PI may STILL be
+      // `pending` upstream.
+      // Marking our DB row `canceled` would create the opposite
+      // drift (DB-canceled / Stripe-pending) which the stale-
+      // pending sweep cron is NOT designed to detect (it scans
+      // for `status='pending'`). The customer's old PI could later
+      // auto-confirm without our row being there to reconcile —
+      // financial-integrity class bug. Bail without writing the
+      // DB; client UX surfaces "try again".
+      if (!cancelResult.ok && cancelResult.error.kind === 'retryable') {
+        return err<InitiatePaymentError>({
+          code: 'processor_unavailable',
+          kind: 'retryable',
+          reason: 'cross_method_cancel_retryable',
+        });
+      }
+      // Cancel outcome is now safe to mark on the DB row. Either
+      // (a) Stripe confirmed the cancel, or (b) Stripe returned a
+      // permanent non-succeeded error (already-canceled / not-found
+      // / etc.) — both leave Stripe in a terminal-non-succeeded
+      // state from our perspective, so the local row CAN be
+      // marked canceled. The audit `cancel_outcome` discriminator
+      // distinguishes the two paths for forensics.
+      const cancelOutcome: 'stripe_confirmed' | 'stripe_error_bypassed' =
+        cancelResult.ok ? 'stripe_confirmed' : 'stripe_error_bypassed';
+
       await deps.paymentsRepo.updateStatus(tx, {
         paymentId: pending.id,
         tenantId: pending.tenantId,
         nextStatus: 'canceled',
         completedAt: new Date(deps.clock.nowIso()),
       });
+      // Distinct event type from `payment_canceled` (which
+      // semantically means user-abandon / sweep-cron / explicit
+      // cancel). Method-switch is a different forensic class:
+      // the user did NOT abandon — they continued to a different
+      // rail. Distinguishing makes audit-log queries unambiguous
+      // (Constitution Principle I sub-clause #4).
       await deps.audit.emit(tx, {
         tenantId: input.tenantId,
         requestId: input.requestId,
-        eventType: 'payment_canceled',
+        eventType: 'payment_method_switched',
         actorUserId: input.actorUserId,
-        summary: `Payment ${pending.id} canceled — actor switched method from ${pending.method} to ${input.method}`,
+        summary: `Payment ${pending.id} method switched from ${pending.method} to ${input.method}`,
         payload: {
           payment_id: pending.id,
           previous_method: pending.method,
           new_method: input.method,
           processor_payment_intent_id: pending.processorPaymentIntentId,
+          attempt_seq: pending.attemptSeq,
+          cancel_outcome: cancelOutcome,
         },
-        retentionYears: retentionFor('payment_canceled'),
+        retentionYears: retentionFor('payment_method_switched'),
       });
       // Fall through to first-attempt flow below.
     }
@@ -380,6 +464,9 @@ export async function initiatePayment(
       },
       idempotencyKey,
       stripeAccount: settings.processorAccountId,
+      // Required by Stripe for server-confirmed PromptPay PIs (the
+      // gateway only embeds it when method='promptpay').
+      billingEmail: input.actorEmail,
     });
     if (!created.ok) {
       return err<InitiatePaymentError>({

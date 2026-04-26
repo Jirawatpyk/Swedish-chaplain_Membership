@@ -49,11 +49,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import {
-  InlineAlert,
-  InlineAlertDescription,
-  InlineAlertTitle,
-} from '@/components/ui/inline-alert';
+import { PaymentFailurePanel } from './payment-failure-panel';
 import { useThreeDSecurePoll } from '@/hooks/use-three-d-secure-poll';
 import { formatPaymentDateTime } from '@/lib/format-payment-summary';
 import { formatSatangThb } from '@/app/(member)/portal/invoices/_utils/format';
@@ -111,7 +107,7 @@ export type PromptPayState =
  * or the system canceled the PI — the `expired` panel + Refresh CTA
  * is the correct UX.
  */
-export function nextPromptPayStateOnPollFailure(
+export function promptPayPollOutcomeToState(
   reason: '3ds_timeout' | 'canceled' | 'card_declined',
   cardDeclinedMessage: string,
 ): PromptPayState {
@@ -195,7 +191,7 @@ export interface PaySheetInternalProps {
    * clientSecrets with a 400 on `elements/sessions` (T082 empirical
    * submit test 2026-04-24).
    */
-  readonly onPaymentSettled?: () => void;
+  readonly onPaymentSettled?: (outcome: 'success' | 'failure') => void;
   /**
    * Callback requesting the drawer to close WITHOUT canceling the
    * PaymentIntent. Fired from ConfirmationPanel (payment already
@@ -297,9 +293,15 @@ export function PaySheetInternal({
     if (settledRef.current) return;
     if (payState.kind === 'success' || payState.kind === 'failure') {
       settledRef.current = true;
-      onPaymentSettledRef.current?.();
+      // Pass the outcome so the parent can branch — success drives
+      // the page-level optimistic-paid UI flip, failure is cache
+      // invalidation only (audit 2026-04-26: prior shape called the
+      // same callback for both, leading the parent to flip the
+      // invoice badge to "Paid" on every Stripe failure too).
+      onPaymentSettledRef.current?.(payState.kind);
     }
   }, [payState.kind]);
+
   // `publishableKey` is initialised from the cached initiate response
   // when available, else the tenant prop. The /initiate response is
   // authoritative when a new fetch runs — it may return a different
@@ -347,17 +349,17 @@ export function PaySheetInternal({
   // QR payload in `promptpayState`. The Refresh CTA bumps
   // `promptpayRetryCount` to force a re-initiate.
   useInitiatePayment({
-    // Fire only when state is `idle` — explicitly excludes
-    // `initiating` (in-flight de-dupe), `qr` (already loaded),
-    // `failure`, and `expired` (all require an explicit user-driven
-    // Refresh CTA via `handlePromptPayRefresh` which resets to
-    // `idle` and bumps `promptpayRetryCount`). Any looser predicate
-    // re-fires on parent re-render and burns the rate-limit budget
-    // on a failed-attempt loop.
+    // `'initiating'` MUST stay in the predicate (audit 2026-04-26):
+    // without it, `onInitiating` flipped enabled true→false → useEffect
+    // cleanup aborted its OWN in-flight fetch → `cancelled=true`
+    // swallowed the resolved callback → state stuck on `initiating`
+    // forever. Terminal kinds (qr/failure/expired) keep enabled=false
+    // so re-render doesn't auto-refire — Refresh CTA bumps retryCount.
     enabled:
       activeMethod === 'promptpay' &&
       enabledMethods.includes('promptpay') &&
-      promptpayState.kind === 'idle',
+      (promptpayState.kind === 'idle' ||
+        promptpayState.kind === 'initiating'),
     invoiceId: invoice.id,
     method: 'promptpay',
     initialInitiate: null,
@@ -413,7 +415,7 @@ export function PaySheetInternal({
   const handlePromptPayFailed = useCallback(
     (reason: '3ds_timeout' | 'canceled' | 'card_declined') => {
       setPromptpayState(
-        nextPromptPayStateOnPollFailure(
+        promptPayPollOutcomeToState(
           reason,
           tRef.current('retry.reasonCardDeclined'),
         ),
@@ -540,10 +542,14 @@ export function PaySheetInternal({
     switch (promptpayState.kind) {
       case 'idle':
       case 'initiating':
-        return <PaySheetSkeleton />;
+        return <PaySheetSkeleton variant="promptpay" />;
       case 'qr':
         return (
           <PromptPayPanel
+            // Remount on QR change so the countdown ticker re-arms
+            // from the fresh `expirySeconds` window. Cheaper than
+            // threading a re-arm key through the hook.
+            key={promptpayState.qrSvgUrl}
             qrSvgUrl={promptpayState.qrSvgUrl}
             amountSatang={invoice.amountDue}
             currency={invoice.currency}
@@ -560,6 +566,7 @@ export function PaySheetInternal({
               })
             }
             status="pending"
+            active={activeMethod === 'promptpay'}
           />
         );
       case 'expired':
@@ -574,28 +581,13 @@ export function PaySheetInternal({
         );
       case 'failure':
         return (
-          <InlineAlert
-            tone="destructive"
-            data-testid="pay-sheet-promptpay-failure"
-            className="space-y-4"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
-          >
-            <InlineAlertTitle>{t('retry.title')}</InlineAlertTitle>
-            <InlineAlertDescription>
-              {t('retry.body', { reason: promptpayState.reason })}
-            </InlineAlertDescription>
-            <Button
-              type="button"
-              variant="default"
-              onClick={handlePromptPayRefresh}
-              className="min-h-[44px] w-full"
-              data-testid="pay-sheet-promptpay-retry"
-            >
-              {t('promptpay.refresh')}
-            </Button>
-          </InlineAlert>
+          <PaymentFailurePanel
+            reason={promptpayState.reason}
+            ctaLabel={t('promptpay.refresh')}
+            onRetry={handlePromptPayRefresh}
+            testId="pay-sheet-promptpay-failure"
+            ctaTestId="pay-sheet-promptpay-retry"
+          />
         );
     }
   })();
@@ -649,7 +641,6 @@ export function PaySheetInternal({
             clientSecret={payState.clientSecret}
             publishableKey={publishableKey}
             amountDue={invoice.amountDue}
-            currency={invoice.currency}
             invoiceId={invoice.id}
             memberId={memberId}
             cardFormVisible={cardFormVisible}
@@ -683,33 +674,16 @@ export function PaySheetInternal({
         return (
           // FR-028j — failure must be announced to SR via aria-live.
           // `role="alert"` (which InlineAlert sets) is implicitly
-          // assertive; we keep it but ALSO pin aria-live="assertive" +
-          // aria-atomic for AT compatibility across NVDA/VoiceOver/
-          // TalkBack (G-Review audit 2026-04-24).
-          <InlineAlert
-            tone="destructive"
-            data-testid="pay-sheet-retry-panel"
-            className="space-y-4"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
-          >
-            <InlineAlertTitle>{t('retry.title')}</InlineAlertTitle>
-            <InlineAlertDescription>
-              {t('retry.body', { reason: payState.reason })}
-            </InlineAlertDescription>
-            <Button
-              type="button"
-              variant="default"
-              onClick={handleRetry}
-              // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px on mobile
-              // (G-Review Finding #7).
-              className="min-h-[44px] w-full"
-              data-testid="pay-sheet-retry-cta"
-            >
-              {t('retry.cta')}
-            </Button>
-          </InlineAlert>
+          // assertive but `<PaymentFailurePanel>` ALSO pins
+          // aria-live="assertive" + aria-atomic for AT compatibility
+          // across NVDA / VoiceOver / TalkBack.
+          <PaymentFailurePanel
+            reason={payState.reason}
+            ctaLabel={t('retry.cta')}
+            onRetry={handleRetry}
+            testId="pay-sheet-retry-panel"
+            ctaTestId="pay-sheet-retry-cta"
+          />
         );
     }
   })();

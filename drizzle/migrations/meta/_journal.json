@@ -344,6 +344,13 @@
       "when": 1777766400000,
       "tag": "0048_audit_log_invoice_not_found",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1777852800000,
+      "tag": "0049_audit_log_payment_method_switched",
+      "breakpoints": true
     }
   ]
 }

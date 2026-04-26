@@ -119,7 +119,6 @@ function renderCardForm(
     clientSecret: 'pi_test_secret_123',
     publishableKey: 'pk_test_fake',
     amountDue: 12_000,
-    currency: 'THB',
     invoiceId: 'inv_1',
     memberId: 'mem_1',
     onSuccess: vi.fn(),

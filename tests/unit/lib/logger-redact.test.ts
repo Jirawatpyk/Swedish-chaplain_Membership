@@ -61,6 +61,9 @@ describe('F5 logger path-based redaction (T032)', () => {
     // PCI guardian R3 — header casing variants
     'STRIPE-SIGNATURE',
     'StripeSignature',
+    // OBS-Q1 + LOG-GAP — F5 gateway error reason field defence-in-depth
+    'processorReason',
+    'reason',
   ])('redacts top-level field %s', (field) => {
     const out = captureLog({ [field]: 'secret-value-12345' });
     expect(out).not.toContain('secret-value-12345');
@@ -88,6 +91,39 @@ describe('F5 logger path-based redaction (T032)', () => {
       },
     });
     expect(out).not.toContain('5555555555554444');
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it('LOG-GAP: redacts gateway-error `reason` at the `error.reason` shape', () => {
+    const out = captureLog({
+      error: {
+        kind: 'permanent',
+        reason: 'sk_live_FORBIDDEN_DETAIL_THAT_MUST_NOT_LEAK',
+      },
+    });
+    expect(out).not.toContain('sk_live_FORBIDDEN_DETAIL');
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it('LOG-GAP: redacts gateway-error `reason` at the `result.error.reason` shape', () => {
+    const out = captureLog({
+      result: {
+        error: {
+          kind: 'permanent',
+          reason: 'sk_live_RESULT_WRAPPED_FORBIDDEN_DETAIL',
+        },
+      },
+    });
+    expect(out).not.toContain('sk_live_RESULT_WRAPPED_FORBIDDEN_DETAIL');
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it('LOG-GAP: redacts top-level `reason` (spread serialization shape)', () => {
+    const out = captureLog({
+      kind: 'permanent',
+      reason: 'sk_live_TOP_LEVEL_FORBIDDEN_DETAIL',
+    });
+    expect(out).not.toContain('sk_live_TOP_LEVEL_FORBIDDEN_DETAIL');
     expect(out).toContain('[REDACTED]');
   });
 });
