@@ -297,17 +297,41 @@ describe('issueRefund — multi-partial + race (T102)', () => {
    * issuance flow is mocked so its content is never read.
    */
   async function seedPlaceholderCN(): Promise<string> {
-    const creditNoteId = randomUUID();
-    const seq = Math.floor(Math.random() * 1_000_000);
-    const docNumber = `TC-2026-${String(seq).padStart(6, '0')}`;
+    const ids = await seedPlaceholderCNs(1, invoiceId);
+    return ids[0]!;
+  }
+
+  /**
+   * Batch variant — seeds N placeholder credit_notes rows in ONE
+   * INSERT…VALUES. Drops 2 roundtrips per multi-partial test (R001
+   * polish, prior staff review).
+   */
+  async function seedPlaceholderCNs(
+    count: number,
+    targetInvoiceId: string,
+  ): Promise<string[]> {
+    const ids = Array.from({ length: count }, () => randomUUID());
     const pdfSha = 'a'.repeat(64);
     await runInTenant(tenant.ctx, async (tx) => {
-      // Drizzle's `sql` template parameterises the values so the F4-
-      // owned credit_notes row is seeded without raw string
-      // interpolation (review 2026-04-26 simplify Q5). Test fixture,
-      // not a prod path — but the parameterised form removes the
-      // SQLi smell from review and matches the `tx.execute(sql\`...\`)`
-      // pattern used elsewhere in the F5 integration tests.
+      // F4 credit_notes table seed — parameterised per row via
+      // Drizzle's `sql.join` so a single round-trip covers all
+      // placeholder rows. Test fixture (F4 issuance chain mocked).
+      const valueRows = ids.map((cnId) => {
+        const seq = Math.floor(Math.random() * 1_000_000);
+        const docNumber = `TC-2026-${String(seq).padStart(6, '0')}`;
+        return sql`(
+          ${tenant.ctx.slug},
+          ${cnId},
+          ${targetInvoiceId},
+          2026, ${seq},
+          ${docNumber},
+          '2026-04-15', ${user.userId}, 'integration test',
+          1, 0, 1,
+          '{}'::jsonb, '{}'::jsonb,
+          'placeholder', ${pdfSha}, 1,
+          NOW(), NOW()
+        )`;
+      });
       await tx.execute(sql`
         INSERT INTO credit_notes (
           tenant_id, credit_note_id, original_invoice_id,
@@ -317,21 +341,10 @@ describe('issueRefund — multi-partial + race (T102)', () => {
           tenant_identity_snapshot, member_identity_snapshot,
           pdf_blob_key, pdf_sha256, pdf_template_version,
           created_at, updated_at
-        ) VALUES (
-          ${tenant.ctx.slug},
-          ${creditNoteId},
-          ${invoiceId},
-          2026, ${seq},
-          ${docNumber},
-          '2026-04-15', ${user.userId}, 'integration test',
-          1, 0, 1,
-          '{}'::jsonb, '{}'::jsonb,
-          'placeholder', ${pdfSha}, 1,
-          NOW(), NOW()
-        )
+        ) VALUES ${sql.join(valueRows, sql`, `)}
       `);
     });
-    return creditNoteId;
+    return ids;
   }
 
   /**
@@ -370,8 +383,12 @@ describe('issueRefund — multi-partial + race (T102)', () => {
   it('multi-partial accumulation: 2 partials → partially_refunded; 3rd > remaining → rejected; 4th exhausts → refunded', async () => {
     const deps = buildHybridDeps(tenant.ctx.slug);
 
+    // R001 polish: pre-seed all 3 placeholder CNs in ONE INSERT
+    // instead of 3 sequential roundtrips per refund step.
+    const cnIds = await seedPlaceholderCNs(3, invoiceId);
+
     // ---- Partial #1 — 1,000,000 satang (THB 10,000) ----
-    rebindBridgeForNextRefund(deps, await seedPlaceholderCN(), 'TC-2026-100001');
+    rebindBridgeForNextRefund(deps, cnIds[0]!, 'TC-2026-100001');
     const r1 = await issueRefund(deps, {
       tenantId: tenant.ctx.slug,
       paymentId,
@@ -391,7 +408,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
     expect(await readPaymentStatus()).toBe('partially_refunded');
 
     // ---- Partial #2 — 1,500,000 satang (cumulative = 2,500,000) ----
-    rebindBridgeForNextRefund(deps, await seedPlaceholderCN(), 'TC-2026-100002');
+    rebindBridgeForNextRefund(deps, cnIds[1]!, 'TC-2026-100002');
     const r2 = await issueRefund(deps, {
       tenantId: tenant.ctx.slug,
       paymentId,
@@ -436,7 +453,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
     expect(await countSucceededRefunds()).toBe(2);
 
     // ---- Exhausting refund — 2,850,000 satang → cumulative = TOTAL → 'refunded' ----
-    rebindBridgeForNextRefund(deps, await seedPlaceholderCN(), 'TC-2026-100003');
+    rebindBridgeForNextRefund(deps, cnIds[2]!, 'TC-2026-100003');
     const r4 = await issueRefund(deps, {
       tenantId: tenant.ctx.slug,
       paymentId,

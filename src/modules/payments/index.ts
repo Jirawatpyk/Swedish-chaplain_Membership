@@ -103,6 +103,13 @@ export {
   type IssueRefundDeps,
 } from './application/use-cases/issue-refund';
 export {
+  sweepStalePendingRefunds,
+  type SweepStalePendingRefundsInput,
+  type SweepStalePendingRefundsOutput,
+  type SweepStalePendingRefundsError,
+  type SweepStalePendingRefundsDeps,
+} from './application/use-cases/sweep-stale-pending-refunds';
+export {
   REFUND_STATUSES,
   TERMINAL_REFUND_STATUSES,
   asRefundId,
@@ -129,4 +136,5 @@ export {
   makeListSucceededPaymentMethodsDeps,
   makeLoadInvoicePaymentActivityDeps,
   makeIssueRefundDeps,
+  makeSweepStalePendingRefundsDeps,
 } from './infrastructure/di';

@@ -151,6 +151,8 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   // --- F5 confirm-step invoice_not_found trail added by migration 0048 ---
   //     (Review S5 — F5 Phase 3 R2 closeout)
   'payment_invoice_not_found',
+  // --- F5 stale-pending-refund sweep added by migration 0050 (T130a) ---
+  'stale_pending_refund_detected',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

@@ -80,6 +80,7 @@ function makeUnimplementedRefundsRepo(): RefundsRepo {
     updateStatus: () => unimplemented('updateStatus'),
     findByProcessorRefundId: () => unimplemented('findByProcessorRefundId'),
     getRefundContextForUpdate: () => unimplemented('getRefundContextForUpdate'),
+    listPendingOlderThan: () => unimplemented('listPendingOlderThan'),
   };
 }
 
@@ -266,6 +267,22 @@ export function makeIssueRefundDeps(tenantId: string): IssueRefundDeps {
     idempotencyKeyFactory: env.isDevelopment
       ? (baseKey: string) => `${baseKey}-d-${Date.now()}`
       : (baseKey: string) => baseKey,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// T130a — sweepStalePendingRefunds composition.
+// ---------------------------------------------------------------------------
+import type { SweepStalePendingRefundsDeps } from '../application/use-cases/sweep-stale-pending-refunds';
+
+export function makeSweepStalePendingRefundsDeps(
+  tenantId: string,
+): SweepStalePendingRefundsDeps {
+  return {
+    refundsRepo: makeDrizzleRefundsRepo(tenantId),
+    paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+    audit: f5AuditAdapter,
+    clock: systemClock,
   };
 }
 

@@ -67,7 +67,18 @@ export type F5AuditEventType =
   // (cross-tenant mis-route, data-migration gap, or Stripe test-mode
   // replay against a clean DB). markProcessed folds atomically; ops
   // get the forensic trail without 5xx-ing Stripe.
-  | 'payment_invoice_not_found';
+  | 'payment_invoice_not_found'
+  // T130a — emitted by `sweepStalePendingRefunds` when a refund row
+  // remains in `pending` status longer than the sweep threshold (24h
+  // default). Indicates the issueRefund Phase B finalisation never
+  // ran AND the Phase B catch's failure-finalise tx also failed
+  // (Postgres double-fault). Sweep flips the row to `failed` so a
+  // subsequent admin-initiated refund is not blocked by the
+  // `refund_in_progress` guard. Stripe + F4 may have already
+  // succeeded — ops cross-checks via the runbook
+  // `docs/runbooks/stale-pending-refund-sweep.md`. 10-year retention
+  // because the row touches the F4 credit-note tax-document lineage.
+  | 'stale_pending_refund_detected';
 
 export interface F5AuditEvent {
   readonly tenantId: string | null;        // NULL for pre-resolution webhook rejects
@@ -105,6 +116,7 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   refund_succeeded: 10,
   refund_failed: 10,
   out_of_band_refund_detected: 10,
+  stale_pending_refund_detected: 10,
   dispute_created: 10,
 
   payment_environment_mismatch: 5,

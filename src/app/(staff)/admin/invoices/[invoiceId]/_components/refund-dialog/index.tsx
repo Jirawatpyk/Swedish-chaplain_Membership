@@ -27,7 +27,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { RefundForm } from './refund-form';
 
 type Props = {
@@ -74,8 +74,13 @@ export function RefundDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
+      {/* R003: render the Trigger via the project's `<Button>` primitive
+          so the destructive-outline trigger inherits the shared focus-
+          ring + cursor + disabled-state styling from `ux-standards.md`
+          § 11 instead of just the `buttonVariants` class shape. Base
+          UI's `render` prop is the equivalent of Radix's `asChild`. */}
       <AlertDialogTrigger
-        className={buttonVariants({ variant: 'destructive-outline' })}
+        render={<Button variant="destructive-outline" />}
         aria-label={t('button.ariaLabel')}
         data-testid="refund-dialog-trigger"
       >

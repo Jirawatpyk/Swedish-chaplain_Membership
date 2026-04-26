@@ -151,6 +151,52 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
       return row ? toDomain(row as RefundRow) : null;
     },
 
+    async listPendingOlderThan(
+      txUnknown,
+      tenantIdArg: string,
+      cutoff: Date,
+    ): Promise<
+      ReadonlyArray<{
+        readonly id: string;
+        readonly paymentId: PaymentId;
+        readonly invoiceId: string;
+        readonly amountSatang: bigint;
+        readonly initiatedAt: Date;
+        readonly correlationId: string;
+        readonly initiatorUserId: string;
+      }>
+    > {
+      const tx = txUnknown as TenantTx;
+      const rows = await tx
+        .select({
+          id: refunds.id,
+          paymentId: refunds.paymentId,
+          invoiceId: refunds.invoiceId,
+          amountSatang: refunds.amountSatang,
+          initiatedAt: refunds.initiatedAt,
+          correlationId: refunds.correlationId,
+          initiatorUserId: refunds.initiatorUserId,
+        })
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.tenantId, tenantIdArg),
+            eq(refunds.status, 'pending'),
+            sql`${refunds.initiatedAt} < ${cutoff.toISOString()}`,
+          ),
+        )
+        .limit(100); // bounded sweep — repeat call drains the rest
+      return rows.map((r) => ({
+        id: r.id,
+        paymentId: asPaymentId(r.paymentId),
+        invoiceId: r.invoiceId,
+        amountSatang: BigInt(r.amountSatang as unknown as string),
+        initiatedAt: r.initiatedAt,
+        correlationId: r.correlationId,
+        initiatorUserId: r.initiatorUserId,
+      }));
+    },
+
     async getRefundContextForUpdate(
       txUnknown,
       tenantIdArg: string,

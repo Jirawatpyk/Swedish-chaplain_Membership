@@ -44,12 +44,30 @@ export const dynamic = 'force-dynamic';
 // `paymentId` length 20–40 covers the Domain `RE_ULID_LIKE` regex; the
 // use-case re-validates via `parsePaymentId` so a malformed string that
 // passes this length check still fails downstream with `invalid_payment_id`.
+//
+// `amountSatang` accepts BOTH `number` (current 20M-THB cap fits safely
+// inside `Number.MAX_SAFE_INTEGER`) AND `string` (BigInt-future-safe for
+// tenants exceeding the safe-integer window). The output envelope
+// already serialises bigint as string per audit finding #20 — the input
+// union closes the symmetry so a tenant that exceeds the safe-integer
+// window can post `"3000000000000"` (3T satang ≈ 30B THB) without
+// silent precision loss. The use-case + DB schema are bigint-native.
+//
 // `reason` blocks CR/LF so the value renders cleanly in the credit-note
 // PDF + audit log without forcing downstream consumers to escape newlines.
 const REASON_NO_NEWLINE_RE = /^[^\r\n]+$/;
+const AMOUNT_SATANG_MAX = 2_000_000_000n; // 20M THB cap — raise via spec amendment, not silent inflation
 const InitiateRefundBody = z.object({
   paymentId: z.string().min(20).max(40),
-  amountSatang: z.number().int().positive().max(2_000_000_000),
+  amountSatang: z
+    .union([
+      z.number().int().positive(),
+      z.string().regex(/^\d+$/, 'amountSatang must be a positive integer string'),
+    ])
+    .transform((v) => BigInt(v))
+    .refine((v) => v > 0n && v <= AMOUNT_SATANG_MAX, {
+      message: `amountSatang must be > 0 and ≤ ${AMOUNT_SATANG_MAX}`,
+    }),
   reason: z
     .string()
     .min(1)
@@ -154,10 +172,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const result = await issueRefund(deps, {
       tenantId: tenantCtx.slug,
       paymentId: parsedBody.paymentId,
-      // Use-case takes bigint; route schema validates as JSON number.
-      // Convert at the boundary rather than asking every client to
-      // send strings.
-      amountSatang: BigInt(parsedBody.amountSatang),
+      // Schema's `.transform(BigInt)` already returned a bigint — pass
+      // through directly. Number/string union accepted at boundary
+      // (R002 polish — bigint-symmetric input, no silent precision
+      // loss for tenants exceeding the safe-integer window).
+      amountSatang: parsedBody.amountSatang,
       reason: parsedBody.reason,
       actorUserId,
       correlationId,

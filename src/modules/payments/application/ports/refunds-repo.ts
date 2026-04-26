@@ -91,4 +91,34 @@ export interface RefundsRepo {
     readonly succeededSumSatang: bigint;
     readonly nextSeq: number;
   }>;
+
+  /**
+   * T130a — list refunds in `pending` status older than the cutoff.
+   * Used by the stale-pending-refund sweep cron to flip orphaned
+   * pending rows to `failed` so they don't permanently block future
+   * refunds on the same payment via the `refund_in_progress` guard.
+   *
+   * Tenant-scoped; reads run under `runInTenant` so RLS+FORCE
+   * filters cross-tenant rows. The cron's caller iterates active
+   * tenants and calls this once per tenant.
+   *
+   * Returns the minimum fields the sweep + audit emit need; the row
+   * is updated in a separate `updateStatus` call inside the same
+   * tx as the audit emit for atomicity.
+   */
+  listPendingOlderThan(
+    tx: unknown,
+    tenantId: string,
+    cutoff: Date,
+  ): Promise<
+    ReadonlyArray<{
+      readonly id: string;
+      readonly paymentId: PaymentId;
+      readonly invoiceId: string;
+      readonly amountSatang: bigint;
+      readonly initiatedAt: Date;
+      readonly correlationId: string;
+      readonly initiatorUserId: string;
+    }>
+  >;
 }
