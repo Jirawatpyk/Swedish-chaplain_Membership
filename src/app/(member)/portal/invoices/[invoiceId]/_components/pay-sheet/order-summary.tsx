@@ -13,7 +13,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { FileTextIcon } from 'lucide-react';
 
-import { formatSatangThb } from '@/app/(member)/portal/invoices/_utils/format';
+import { formatSatangThb } from '@/lib/format-thb';
 
 export interface OrderSummaryProps {
   readonly invoiceNumber: string;

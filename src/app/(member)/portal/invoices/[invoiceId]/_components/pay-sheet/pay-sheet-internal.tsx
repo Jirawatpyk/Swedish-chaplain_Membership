@@ -51,7 +51,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { PaymentFailurePanel } from './payment-failure-panel';
 import { useThreeDSecurePoll } from '@/hooks/use-three-d-secure-poll';
 import { formatPaymentDateTime } from '@/lib/format-payment-summary';
-import { formatSatangThb } from '@/app/(member)/portal/invoices/_utils/format';
+import { formatSatangThb } from '@/lib/format-thb';
 
 import { PaySheetSkeleton } from '@/components/payments/pay-sheet-skeleton';
 

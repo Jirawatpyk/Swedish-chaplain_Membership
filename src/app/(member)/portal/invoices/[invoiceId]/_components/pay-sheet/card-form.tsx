@@ -43,7 +43,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 
-import { formatSatangThb } from '@/app/(member)/portal/invoices/_utils/format';
+import { formatSatangThb } from '@/lib/format-thb';
 import { type StripeElementsOptions } from '@stripe/stripe-js';
 import {
   Elements,

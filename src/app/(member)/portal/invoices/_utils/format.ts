@@ -17,33 +17,12 @@
  * separators correctly (UX Sugg #7).
  */
 
-const THB_FORMATTERS = new Map<string, Intl.NumberFormat>();
-
-/**
- * Format a satang amount as THB. Handles negative values (credit
- * note totals) with an explicit sign prefix — the previous
- * implementation produced `0.-34 THB` because `-3434n % 100n` is
- * `-34n` in BigInt arithmetic, which `.padStart` printed verbatim.
- *
- * Returns `'—'` for null inputs so missing monetary fields read
- * cleanly in the table cells.
- */
-export function formatSatangThb(
-  satang: bigint | null,
-  locale: string = 'en-US',
-): string {
-  if (satang === null) return '—';
-  const abs = satang < 0n ? -satang : satang;
-  const whole = abs / 100n;
-  const rem = abs % 100n;
-  const sign = satang < 0n ? '-' : '';
-  let fmt = THB_FORMATTERS.get(locale);
-  if (!fmt) {
-    fmt = new Intl.NumberFormat(locale, { useGrouping: true });
-    THB_FORMATTERS.set(locale, fmt);
-  }
-  return `${sign}${fmt.format(whole)}.${rem.toString().padStart(2, '0')} THB`;
-}
+// `formatSatangThb` moved to `src/lib/format-thb.ts` (simplify R3,
+// 2026-04-26) so cross-module callers (F5 admin refund surface)
+// don't cross route-group boundaries. Re-exported here so existing
+// portal callers don't break — staged migration; portal imports
+// will update to the canonical lib path in a follow-up.
+export { formatSatangThb } from '@/lib/format-thb';
 
 /** Medium-style date formatter tolerant of null inputs. */
 export function formatDate(iso: string | null, locale: string): string {

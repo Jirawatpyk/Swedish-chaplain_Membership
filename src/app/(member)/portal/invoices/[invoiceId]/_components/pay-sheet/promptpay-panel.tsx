@@ -68,7 +68,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { RefreshCwIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { formatSatangThb } from '@/app/(member)/portal/invoices/_utils/format';
+import { formatSatangThb } from '@/lib/format-thb';
 import { paymentsMetrics } from '@/lib/metrics';
 import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
 

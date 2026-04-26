@@ -41,6 +41,8 @@ import {
   InlineAlertDescription,
   InlineAlertTitle,
 } from '@/components/ui/inline-alert';
+import { useLocale } from 'next-intl';
+import { formatSatangThb } from '@/lib/format-thb';
 import { TypedPhraseConfirm } from './typed-phrase-confirm';
 
 const REASON_MAX = 500;
@@ -77,17 +79,9 @@ type Props = {
   readonly onClose: () => void;
 };
 
-function formatThb(satang: bigint, currency: string): string {
-  // Display-only formatting — uses Intl. Server-side accounting
-  // arithmetic stays in satang.
-  const value = Number(satang) / 100;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
+// Display-only formatting via the canonical `formatSatangThb` helper
+// (`src/lib/format-thb.ts`). Server-side accounting arithmetic stays
+// in satang.
 
 export function RefundForm({
   paymentId,
@@ -100,6 +94,7 @@ export function RefundForm({
   const t = useTranslations('admin.refund');
   const tForm = useTranslations('admin.refund.form');
   const tError = useTranslations('admin.refund.error');
+  const locale = useLocale();
   const router = useRouter();
   const remainingThb = Number(remainingRefundableSatang) / 100;
   // Stabilise the schema reference so zodResolver doesn't re-validate
@@ -255,15 +250,16 @@ export function RefundForm({
           aria-live="polite"
         >
           {tForm('amount.maximumHelp', {
-            amount: formatThb(remainingRefundableSatang, currencyCode),
+            amount: formatSatangThb(remainingRefundableSatang, locale, currencyCode),
           })}
         </p>
         {amountError && (
           <p className="text-xs text-destructive" role="alert">
             {amountError === 'amountRange'
               ? tError('refund_exceeds_remaining', {
-                  remaining: formatThb(
+                  remaining: formatSatangThb(
                     remainingRefundableSatang,
+                    locale,
                     currencyCode,
                   ),
                 })
