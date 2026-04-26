@@ -1305,7 +1305,7 @@
         "ariaLabel": "Utfärda en återbetalning för denna faktura"
       },
       "dialog": {
-        "title": "Utfärda återbetalning",
+        "title": "Utfärda återbetalning?",
         "description": "Återbetala hela eller delar av denna betalning. Motsvarande kreditnota utfärdas och skickas till medlemmen via e-post.",
         "cancel": "Avbryt",
         "confirm": "Utfärda återbetalning",

@@ -95,7 +95,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
   const correlationId = randomUUID();
 
-  const adminCtx = await requireAdminContext(request);
+  // F1 (review 2026-04-26 simplify): explicit `'refund'` resource +
+  // `'write'` action — previously the call relied on the helper's
+  // default `auth:user/write` policy which gates refunds via the
+  // user-management permission. With a dedicated resource the RBAC
+  // table (`auth/domain/policies.ts`) now expresses the actual
+  // refund permission directly: admin-only, no read surface (the
+  // refund-history view is part of the `payment` timeline resource).
+  const adminCtx = await requireAdminContext(request, {
+    resource: 'refund',
+    action: 'write',
+  });
   if ('response' in adminCtx && adminCtx.response) {
     return adminCtx.response as NextResponse;
   }

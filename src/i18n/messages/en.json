@@ -1305,7 +1305,7 @@
         "ariaLabel": "Issue a refund for this invoice"
       },
       "dialog": {
-        "title": "Issue refund",
+        "title": "Issue refund?",
         "description": "Refund all or part of this payment. The matching credit note will be issued and emailed to the member.",
         "cancel": "Cancel",
         "confirm": "Issue refund",

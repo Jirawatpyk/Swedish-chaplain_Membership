@@ -65,6 +65,11 @@ export type Action = 'read' | 'write' | 'delete' | 'admin' | 'clone';
  *   - 'invoice'             — invoice CRUD (admin RW, manager R, member R own)
  *   - 'credit_note'         — credit note CRUD (admin RW, manager R)
  *   - 'tenant_invoice_settings' — tenant tax/numbering/logo config (admin RW)
+ *
+ * F5 resource ids (added by 009-online-payment Phase 6):
+ *   - 'refund'              — admin-initiated refund issuance (admin only;
+ *                             manager + member denied — refunds touch real
+ *                             money + an append-only F4 credit note)
  */
 export type Resource =
   | 'auth:self'
@@ -82,6 +87,7 @@ export type Resource =
   | 'invoice'
   | 'credit_note'
   | 'tenant_invoice_settings'
+  | 'refund'
   | (string & {});
 
 /** Self-service resource id — actions on the actor's OWN account. */

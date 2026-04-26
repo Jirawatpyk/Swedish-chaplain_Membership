@@ -119,6 +119,17 @@ export function RefundForm({
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { amountThb: '', reason: '' },
+    // FR-029(c) prescribes onBlur for amount + onBlur-required +
+    // onChange-charcount for reason. We use `mode: 'onChange'` for
+    // a different reason: the Confirm button is gated on RHF
+    // `isValid`, which only updates when the resolver runs. With
+    // `mode: 'onBlur'` the user could fill the form with valid
+    // values but Confirm would stay disabled until they tab away
+    // from the last field — a confusing UX trap. The functional
+    // outcome (errors surface within ~1 keystroke of the spec'd
+    // timing) is equivalent for the user; the validation-mode
+    // divergence is documented in `/speckit.verify.run` 2026-04-26
+    // E2 finding (LOW, accepted).
     mode: 'onChange',
   });
 
