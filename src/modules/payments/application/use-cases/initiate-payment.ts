@@ -321,7 +321,6 @@ async function initiatePaymentBody(
       if (
         !cancelResult.ok &&
         cancelResult.error.kind === 'permanent' &&
-        'code' in cancelResult.error &&
         cancelResult.error.code === 'payment_intent_already_succeeded'
       ) {
         return err<InitiatePaymentError>({

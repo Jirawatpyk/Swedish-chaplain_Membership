@@ -133,7 +133,6 @@ function useShouldSkipInitialFetch(
       // (We do NOT correct when the latest prop is null — that's the
       // parent's normal post-success cache invalidation, which the
       // ref-frozen value is supposed to outlive per invariant #1.)
-      // eslint-disable-next-line no-console
       console.warn(
         '[use-initiate-payment] ref-frozen initialInitiate differs from current prop — using current prop',
       );

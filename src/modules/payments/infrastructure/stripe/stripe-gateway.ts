@@ -122,10 +122,17 @@ export function mapStripeError(
   const code = err_.code ?? 'unknown_stripe_error';
   const reason = err_.message ?? `Stripe ${type}`;
 
-  // Safe structured log — only allow-list fields. Stripe error
-  // messages + `param` describe API parameter complaints (no PII /
-  // card data), so they're safe to log AND essential for debugging
-  // 4xx-class errors (especially `parameter_missing`).
+  // Safe structured log — only allow-list fields. `param` is an
+  // enum-shaped pointer to the offending API parameter
+  // ("payment_method_data[billing_details][email]", etc.) — never
+  // contains the value, safe to log.
+  //
+  // We INTENTIONALLY do not log `err_.message` because some Stripe
+  // validation messages embed user-submitted values verbatim (e.g.
+  // "Invalid email address: foo@bar.com"). The redact pipeline
+  // matches by KEY name, not by value pattern, so an embedded email
+  // would slip through. `code` + `param` give ops enough to triage
+  // without exposing PII.
   const stripeErrorParam = err_.param ?? err_.raw?.param;
   logger.warn(
     {
@@ -134,7 +141,6 @@ export function mapStripeError(
       stripeErrorType: type,
       stripeErrorCode: err_.code,
       stripeErrorStatus: err_.statusCode,
-      stripeErrorMessage: err_.message,
       ...(stripeErrorParam ? { stripeErrorParam } : {}),
     },
     'stripe-gateway: SDK error',

@@ -48,7 +48,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
 import { PaymentFailurePanel } from './payment-failure-panel';
 import { useThreeDSecurePoll } from '@/hooks/use-three-d-secure-poll';
 import { formatPaymentDateTime } from '@/lib/format-payment-summary';
@@ -231,7 +230,7 @@ export function PaySheetInternal({
     enabledMethods[0] ??
     'card';
 
-  const [activeMethod, setActiveMethod] =
+  const [activeMethod, setActiveMethodState] =
     useState<PaymentMethod>(initialMethod);
   // `cardFormVisible` — set by <CardForm> once its PaymentElement is
   // fully painted (Stripe onReady + 300ms skeleton floor). Used to
@@ -270,6 +269,48 @@ export function PaySheetInternal({
   const [promptpayState, setPromptpayState] = useState<PromptPayState>({
     kind: 'idle',
   });
+
+  // Stable read of the current `payState` for the `setActiveMethod`
+  // wrapper below — avoids re-creating the wrapper on every payState
+  // change (which would re-render <MethodTabs>).
+  const payStateRef = useRef<PayState>(payState);
+  useEffect(() => {
+    payStateRef.current = payState;
+  }, [payState]);
+
+  // Wrap `setActiveMethod` to also reset the OPPOSITE method's state
+  // back to `idle` when switching tabs. Without this, e.g. a user on
+  // PromptPay (state=`qr`) who switches to Card → server cancels the
+  // PromptPay PI as cross-method-switch → polling against a now-
+  // canceled PI burns Stripe API quota and lands the receiver back
+  // on the `expired` panel without ever having seen QR expire. The
+  // initiate gate (`kind === 'idle' || 'initiating'`) re-fires a
+  // fresh QR/intent on the next switch back.
+  const setActiveMethod = useCallback(
+    (next: PaymentMethod) => {
+      setActiveMethodState((current) => {
+        if (current === next) return current;
+        if (next === 'card') {
+          // Switching to Card → reset PromptPay state.
+          setPromptpayState({ kind: 'idle' });
+        } else if (next === 'promptpay') {
+          // Switching to PromptPay → reset Card state ONLY when the
+          // card flow is in a non-terminal state. Terminal states
+          // (success/failure) must stay so the user can re-open the
+          // drawer and see their result.
+          if (
+            payStateRef.current.kind === 'card-form' ||
+            payStateRef.current.kind === 'initiating' ||
+            payStateRef.current.kind === 'idle'
+          ) {
+            setPayState({ kind: 'idle' });
+          }
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   // Keep latest callback/translator refs so the initiate effect does
   // not re-fire on parent re-render (inline arrow props). Avoids the

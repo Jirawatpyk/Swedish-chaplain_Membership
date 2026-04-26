@@ -160,7 +160,7 @@ describe('T123 — VAT source chain pin (tenant_invoice_settings → invoice row
             tax_id: '1234567890123',
             address: 'Bangkok',
             primary_contact_name: 'n',
-            primary_contact_email: 'n@n.n',
+            primary_contact_email: 'test@example.com',
           },
         })),
         markRegistrationFeePaid: vi.fn(async () => {}),

@@ -63,7 +63,7 @@ describe('PaySheet state-revalidation regression contracts', () => {
     // settled effect must be a single synchronous fire — no
     // deferred / repeating timers.
     const settledEffectMatch = indexSource.match(
-      /useEffect\(\(\)\s*=>\s*\{[\s\S]{0,4000}?paymentSettled[\s\S]{0,4000}?\},\s*\[paymentSettled,\s*router,\s*invoice\.id,\s*tToast\]/,
+      /useEffect\(\(\)\s*=>\s*\{[\s\S]{0,4000}?paymentSettled[\s\S]{0,4000}?\},\s*\[paymentSettled,\s*router,\s*invoice\.id\]/,
     );
     expect(settledEffectMatch, 'expected settled effect block').toBeTruthy();
     expect(settledEffectMatch![0]).not.toMatch(/setInterval\s*\(/);
@@ -72,7 +72,7 @@ describe('PaySheet state-revalidation regression contracts', () => {
 
   it('H1 (R5 round-7): settled effect calls `dispatchInvoicePaid` to drive the optimistic UI overlay', () => {
     const settledEffectMatch = indexSource.match(
-      /useEffect\(\(\)\s*=>\s*\{[\s\S]{0,4000}?paymentSettled[\s\S]{0,4000}?\},\s*\[paymentSettled,\s*router,\s*invoice\.id,\s*tToast\]/,
+      /useEffect\(\(\)\s*=>\s*\{[\s\S]{0,4000}?paymentSettled[\s\S]{0,4000}?\},\s*\[paymentSettled,\s*router,\s*invoice\.id\]/,
     );
     expect(settledEffectMatch).toBeTruthy();
     expect(settledEffectMatch![0]).toMatch(/dispatchInvoicePaid\(/);

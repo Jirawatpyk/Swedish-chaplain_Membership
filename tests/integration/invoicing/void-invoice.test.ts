@@ -62,7 +62,7 @@ const SNAP_MEMBER = {
   tax_id: '1234567890123',
   address: 'Bangkok',
   primary_contact_name: 'n',
-  primary_contact_email: 'n@n.n',
+  primary_contact_email: 'test@example.com',
 };
 const ORIGINAL_SHA = 'a'.repeat(64);
 const RERENDERED_SHA = 'b'.repeat(64);

@@ -61,12 +61,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (code === 'forbidden_role' || code === 'unauthorized' || code === 'no-session') {
       return noContent(401);
     }
+    // Unexpected throw from requireMemberContext (DB outage,
+    // misconfigured env, etc.) — log so ops doesn't see a silent
+    // 500 spike. Pattern matches `/api/payments/initiate` route.
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        correlationId,
+      },
+      'payments.log_optimistic_flip.member_context_throw',
+    );
     return noContent(500);
   }
   if (memberCtx && 'response' in memberCtx && memberCtx.response) {
     return memberCtx.response;
   }
   if (!memberCtx || 'response' in memberCtx) {
+    logger.error(
+      { correlationId },
+      'payments.log_optimistic_flip.member_context_unreachable',
+    );
     return noContent(500);
   }
 

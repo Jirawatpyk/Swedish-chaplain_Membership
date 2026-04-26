@@ -46,7 +46,6 @@ import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { dispatchInvoicePaid } from '../optimistic-paid';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
 import { XIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -132,7 +131,6 @@ export function PaySheet({
   children,
 }: PaySheetProps) {
   const t = useTranslations('portal.payment.drawer');
-  const tToast = useTranslations('portal.payment.toast');
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -262,13 +260,14 @@ export function PaySheet({
     dispatchInvoicePaid(invoice.id);
     router.refresh();
 
-    // 🟡 #6 — page-level success toast. The drawer's
-    // <ConfirmationPanel> already shows in-drawer success copy,
-    // but if the user closes the drawer immediately the page
-    // surface goes silent (the optimistic badge swap is a quiet
-    // visual change). A `sonner` toast keeps `docs/ux-standards.md`
-    // § 15 in compliance for state-changing actions.
-    toast.success(tToast('paymentSucceeded'));
+    // 🟡 #6 — page-level success toast: REMOVED 2026-04-26.
+    // <ConfirmationPanel> already fires its own one-shot success
+    // toast on mount (`portal.payment.success.toast`). Adding a
+    // second toast here produced a double-toast on every successful
+    // payment — both toasts visible side-by-side. The drawer's
+    // toast IS visible to the user before/after the drawer closes
+    // (sonner persists across drawer unmount), so silence here is
+    // correct.
 
     // 🟡 M3 — fire-and-forget telemetry ping. Lets ops correlate
     // optimistic flips with subsequent webhook arrivals; missing
@@ -284,7 +283,7 @@ export function PaySheet({
       // Best-effort. A failed telemetry ping must NEVER bubble
       // into the user-facing success flow.
     });
-  }, [paymentSettled, router, invoice.id, tToast]);
+  }, [paymentSettled, router, invoice.id]);
 
   // Explicit-cancel helper. Shared by:
   //   (a) unmount backstop — fires on page navigate-away

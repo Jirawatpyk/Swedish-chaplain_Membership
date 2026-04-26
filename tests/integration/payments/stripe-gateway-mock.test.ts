@@ -429,7 +429,7 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
     }
   });
 
-  it('429 rate_limit → permanent (SDK already retried, surface to caller)', async () => {
+  it('429 rate_limit → retryable (R3 I-7: surface as retryable so webhook re-delivery can succeed naturally)', async () => {
     server.use(
       http.post('https://api.stripe.com/v1/payment_intents', () =>
         HttpResponse.json(
@@ -454,9 +454,15 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
     });
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected err');
-    // SDK retried 3x already (per stripe-client maxNetworkRetries) before
-    // we see this; do NOT classify as retryable at the adapter layer.
-    expect(result.error.kind).toBe('permanent');
+    // R3 I-7 (commit 86964b2): the adapter classifies StripeRateLimitError
+    // as `retryable`, NOT `permanent`. The SDK has already retried 3× under
+    // the hood (stripe-client.ts maxNetworkRetries), but classifying as
+    // `permanent` would force the caller to fail the user's payment
+    // outright instead of letting the next webhook delivery / next user
+    // retry succeed naturally. The dispatch tx rolls back, processor_events
+    // row stays pending, and Stripe re-delivers the webhook on its own
+    // schedule.
+    expect(result.error.kind).toBe('retryable');
   });
 
   it('connection_error / 500 → retryable', async () => {

@@ -53,6 +53,23 @@ function getTabSenderId(): string {
   return tabSenderId;
 }
 
+/**
+ * Lazily-initialised module-level BroadcastChannel for the dispatcher.
+ * Earlier shape opened + closed a fresh channel per `dispatchInvoicePaid`
+ * call, which races spec-compliant message delivery on Firefox/Safari/jsdom
+ * (closing immediately after `postMessage` is allowed to drop the queued
+ * task per HTML spec). Keeping one long-lived channel for the lifetime
+ * of the tab sidesteps the race entirely.
+ */
+let dispatcherChannel: BroadcastChannel | null = null;
+function getDispatcherChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === 'undefined') return null;
+  if (dispatcherChannel === null) {
+    dispatcherChannel = new BroadcastChannel(PAID_EVENT);
+  }
+  return dispatcherChannel;
+}
+
 function storageKey(invoiceId: string): string {
   return `${SESSION_STORAGE_KEY_PREFIX}${invoiceId}`;
 }
@@ -173,16 +190,12 @@ export function dispatchInvoicePaid(invoiceId: string): void {
   window.dispatchEvent(
     new CustomEvent(PAID_EVENT, { detail: { invoiceId } }),
   );
-  if (typeof BroadcastChannel !== 'undefined') {
-    const channel = new BroadcastChannel(PAID_EVENT);
-    try {
-      const payload: BroadcastPayload = {
-        invoiceId,
-        senderId: getTabSenderId(),
-      };
-      channel.postMessage(payload);
-    } finally {
-      channel.close();
-    }
+  const channel = getDispatcherChannel();
+  if (channel !== null) {
+    const payload: BroadcastPayload = {
+      invoiceId,
+      senderId: getTabSenderId(),
+    };
+    channel.postMessage(payload);
   }
 }
