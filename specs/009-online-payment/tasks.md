@@ -299,13 +299,13 @@ The following pay-sheet files were added beyond T072–T086 to support the empir
 
 ### API + UI
 
-- [ ] T111 [US4] Implement `src/app/api/refunds/initiate/route.ts` — POST handler per `contracts/payments-api.md` § 3; rate-limit (20 / 5 min); admin-only RBAC; call `issueRefund` use case.
+- [X] T111 [US4] Implement `src/app/api/refunds/initiate/route.ts` — POST handler per `contracts/payments-api.md` § 3; rate-limit (20 / 5 min); admin-only RBAC; call `issueRefund` use case.
 - [ ] T112 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-button.tsx` — admin-only CTA ("Issue refund"); destructive-outline variant; opens `<RefundDialog>`.
 - [ ] T113 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/index.tsx` (composed multiple files for clarity) — shadcn `<AlertDialog>` per FR-029 anatomy; bilingual title + description; `<RefundForm>`; Cancel-default focus; spinner pattern on Confirm.
 - [ ] T114 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form.tsx` — react-hook-form + zod resolver; Amount input (`inputmode="decimal"`) + label-above + asterisk + live "Maximum refundable: {remaining} THB" help-text per FR-029(b); Reason textarea + 500-char counter; validation timing per FR-029(c).
 - [ ] T115 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/typed-phrase-confirm.tsx` — only renders when `amount === remaining` (full refund) per FR-029(f); requires exact text match `REFUND {company_name}` (case-sensitive) before Confirm enables.
 - [ ] T116 [US4] Wire refund success: dialog closes + `sonner.success("Refund processed — credit note CN-{number} issued and emailed to member")`; on failure: dialog stays open + inline error card surfaces above buttons + Confirm re-enables.
-- [ ] T117 [US4] Add bilingual i18n keys for admin.refund.* + email.refundConfirmation.*.
+- [X] T117 [US4] Add bilingual i18n keys for admin.refund.* + email.refundConfirmation.*.
 
 ### Smart-feature: Cmdk
 

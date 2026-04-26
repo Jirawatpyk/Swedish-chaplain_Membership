@@ -19,39 +19,12 @@ import {
   makeCancelPaymentDeps,
   parsePaymentId,
 } from '@/modules/payments';
-import {
-  messagesFor,
-  type F5RouteErrorCode,
-} from '@/lib/payments-errors-i18n';
+import { type F5RouteErrorCode } from '@/lib/payments-errors-i18n';
+import { baseHeaders, errorResponse } from '@/lib/payments-route-helpers';
 import { auditRepo, type ActorRef } from '@/lib/stripe-webhook-deps';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function baseHeaders(correlationId: string, extra?: Record<string, string>): HeadersInit {
-  return {
-    'Cache-Control': 'no-store, private',
-    'X-Correlation-Id': correlationId,
-    ...(extra ?? {}),
-  };
-}
-
-function errorResponse(
-  status: number,
-  code: F5RouteErrorCode,
-  correlationId: string,
-  extra?: { retryAfterSeconds?: number },
-): NextResponse {
-  const { message, messageThai } = messagesFor(code);
-  const headers: Record<string, string> = {};
-  if (extra?.retryAfterSeconds !== undefined) {
-    headers['Retry-After'] = String(extra.retryAfterSeconds);
-  }
-  return NextResponse.json(
-    { error: { code, message, messageThai }, correlationId },
-    { status, headers: baseHeaders(correlationId, headers) },
-  );
-}
 
 function httpStatusForUseCaseError(code: string): {
   status: number;

@@ -96,18 +96,18 @@ async function getMockedAuthDeps() {
  * Turns GREEN: T111 creates the route file; the import succeeds.
  */
 async function importRoute() {
+  // Route exists post T111 (Batch D landed). Vitest's transformer
+  // resolves the @/ alias at transform time; the dynamic import below
+  // goes through vitest's module graph and picks up every vi.mock()
+  // declared above.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional Vite bypass; see comment above
-    const dynImport = new Function('m', 'return import(m)') as (
-      m: string,
-    ) => Promise<typeof import('next/server')>;
-    return (await dynImport('@/app/api/refunds/initiate/route')) as unknown as {
+    return (await import('@/app/api/refunds/initiate/route')) as unknown as {
       POST: (req: NextRequest) => Promise<Response>;
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(
-      `[RED — T101] route not yet implemented (Batch D T111). Import error: ${msg}`,
+      `[T101] route import failed unexpectedly. Import error: ${msg}`,
     );
   }
 }
@@ -203,11 +203,16 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     expect(refund['status']).toBe('succeeded');
     expect(refund['processorRefundId']).toMatch(/^re_/);
     expect(refund['creditNoteId']).toMatch(/^cn_/);
-    expect(refund['amountSatang']).toBe(350_000);
+    // Audit 2026-04-25 finding #20: bigint amounts serialise as STRING
+    // in the JSON envelope (project convention) so a future tenant
+    // exceeding the JS safe-integer window (~9e15) does not lose
+    // precision. Same convention as `payments.amountSatang` on the
+    // initiate-payment success envelope.
+    expect(refund['amountSatang']).toBe('350000');
 
     const payment = body['payment'] as Record<string, unknown>;
     expect(payment['status']).toBe('partially_refunded');
-    expect(payment['refundedAmountSatang']).toBe(350_000);
+    expect(payment['refundedAmountSatang']).toBe('350000');
 
     const invoice = body['invoice'] as Record<string, unknown>;
     expect(invoice['status']).toBe('partially_credited');
@@ -242,7 +247,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     const payment = body['payment'] as Record<string, unknown>;
     const invoice = body['invoice'] as Record<string, unknown>;
     expect(payment['status']).toBe('refunded');
-    expect(payment['remainingRefundableSatang']).toBe(0);
+    expect(payment['remainingRefundableSatang']).toBe('0');
     expect(invoice['status']).toBe('credited');
   });
 

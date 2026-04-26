@@ -42,6 +42,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { webhookVerifier } from '@/lib/stripe-webhook-verifier';
+import { baseHeaders } from '@/lib/payments-route-helpers';
 import {
   processWebhookEvent,
   makeProcessWebhookEventDeps,
@@ -72,13 +73,11 @@ const OK_RECEIVED = { received: true } as const;
 // Helpers
 // ---------------------------------------------------------------------------
 
-function baseHeaders(correlationId: string): HeadersInit {
-  return {
-    'Content-Type': 'application/json',
-    'Cache-Control': 'no-store, private',
-    'X-Correlation-Id': correlationId,
-  };
-}
+// `baseHeaders` re-exported from `@/lib/payments-route-helpers` (review
+// 2026-04-26 simplify R1). The previous inline copy added a redundant
+// `Content-Type: application/json` — `NextResponse.json` already sets
+// it on every site here, so dropping it keeps the response shape
+// byte-identical.
 
 function sha256Hex(input: string): string {
   return createHash('sha256').update(input).digest('hex');

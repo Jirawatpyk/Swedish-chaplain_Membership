@@ -35,10 +35,8 @@ import { logger } from '@/lib/logger';
 import { randomUUID } from 'node:crypto';
 import { initiatePayment, makeInitiatePaymentDeps } from '@/modules/payments';
 import type { PaymentMethod } from '@/modules/payments';
-import {
-  messagesFor,
-  type F5RouteErrorCode,
-} from '@/lib/payments-errors-i18n';
+import { type F5RouteErrorCode } from '@/lib/payments-errors-i18n';
+import { baseHeaders, errorResponse } from '@/lib/payments-route-helpers';
 import { auditRepo, type ActorRef } from '@/lib/stripe-webhook-deps';
 
 export const runtime = 'nodejs';
@@ -64,44 +62,6 @@ const InitiatePaymentBody = z.object({
     .regex(INVOICE_ID_RE, 'invoiceId must be alphanumeric + `_` / `-` (20–40 chars)'),
   method: z.enum(['card', 'promptpay']),
 });
-
-// ---------------------------------------------------------------------------
-// Response helpers — every response shares the same header set so no
-// branch can accidentally drop `X-Correlation-Id` or `Cache-Control`.
-// ---------------------------------------------------------------------------
-function baseHeaders(correlationId: string, extra?: Record<string, string>): HeadersInit {
-  return {
-    'Cache-Control': 'no-store, private',
-    'X-Correlation-Id': correlationId,
-    ...(extra ?? {}),
-  };
-}
-
-function errorResponse(
-  status: number,
-  code: F5RouteErrorCode,
-  correlationId: string,
-  extra?: { retryAfterSeconds?: number; fieldErrors?: Record<string, string[]> },
-): NextResponse {
-  const { message, messageThai } = messagesFor(code);
-  const body: Record<string, unknown> = {
-    error: {
-      code,
-      message,
-      messageThai,
-      ...(extra?.fieldErrors ? { fieldErrors: extra.fieldErrors } : {}),
-    },
-    correlationId,
-  };
-  const headers: Record<string, string> = {};
-  if (extra?.retryAfterSeconds !== undefined) {
-    headers['Retry-After'] = String(extra.retryAfterSeconds);
-  }
-  return NextResponse.json(body, {
-    status,
-    headers: baseHeaders(correlationId, headers),
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Use-case error-code → HTTP status mapping (payments-api.md § 1 table).

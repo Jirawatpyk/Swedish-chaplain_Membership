@@ -37,7 +37,17 @@ export type F5RouteErrorCode =
   | 'processor_unavailable'
   | 'internal_error'
   | 'missing_header'
-  | 'bad_signature';
+  | 'bad_signature'
+  // F5 Phase 6 / US4 refund-specific codes (T111).
+  | 'payment_not_found'
+  | 'payment_not_refundable'
+  | 'refund_exceeds_remaining'
+  | 'refund_in_progress'
+  // F4 credit-note issuance failure during the refund flow (Phase 6 T111
+  // + simplify Q3). Distinct from `processor_unavailable` so monitoring
+  // can route F4 alerts to the F4 on-call channel instead of paging the
+  // payments team for a CN-PDF / Blob / sequence-allocator issue.
+  | 'f4_bridge_error';
 
 interface Bilingual {
   readonly message: string;
@@ -107,6 +117,36 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   bad_signature: {
     message: 'Webhook signature verification failed.',
     messageThai: 'การตรวจสอบลายเซ็นเว็บฮุกล้มเหลว',
+  },
+  // ---------------------------------------------------------------------
+  // F5 Phase 6 / US4 refund-specific codes (T111).
+  //
+  // Per `contracts/payments-api.md` § 3, refund errors do NOT collapse
+  // not-found ↔ cross-tenant the way the member-facing initiate-payment
+  // route does — refund is an admin-only surface, so an admin trying
+  // to refund a payment that does not exist simply gets a 404. The
+  // cross-tenant defence is the RLS policy on `payments` (FORCE) plus
+  // the use-case's tenant-scoped `lockForUpdate(tenantId)` guard.
+  // ---------------------------------------------------------------------
+  payment_not_found: {
+    message: 'Payment not found.',
+    messageThai: 'ไม่พบรายการชำระเงิน',
+  },
+  payment_not_refundable: {
+    message: 'This payment is not in a refundable state.',
+    messageThai: 'รายการชำระเงินนี้ไม่สามารถคืนเงินได้',
+  },
+  refund_exceeds_remaining: {
+    message: 'Refund amount exceeds the remaining refundable balance.',
+    messageThai: 'จำนวนเงินคืนเกินยอดที่สามารถคืนได้',
+  },
+  refund_in_progress: {
+    message: 'Another refund is currently in progress for this payment. Please retry shortly.',
+    messageThai: 'กำลังดำเนินการคืนเงินรายการอื่นอยู่ กรุณาลองใหม่อีกครั้งในอีกสักครู่',
+  },
+  f4_bridge_error: {
+    message: 'Credit-note issuance failed. Operations have been notified.',
+    messageThai: 'การออกใบลดหนี้ล้มเหลว ทีมงานได้รับแจ้งแล้วและจะติดต่อกลับโดยเร็ว',
   },
 };
 

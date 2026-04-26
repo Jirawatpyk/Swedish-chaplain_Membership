@@ -1299,7 +1299,58 @@
       }
     },
     "refund": {
-      "title": "Utfärda återbetalning"
+      "title": "Utfärda återbetalning",
+      "button": {
+        "label": "Utfärda återbetalning",
+        "ariaLabel": "Utfärda en återbetalning för denna faktura"
+      },
+      "dialog": {
+        "title": "Utfärda återbetalning",
+        "description": "Återbetala hela eller delar av denna betalning. Motsvarande kreditnota utfärdas och skickas till medlemmen via e-post.",
+        "cancel": "Avbryt",
+        "confirm": "Utfärda återbetalning",
+        "processing": "Bearbetar återbetalning…"
+      },
+      "form": {
+        "amount": {
+          "label": "Återbetalningsbelopp (THB)",
+          "placeholder": "0.00",
+          "maximumHelp": "Maximalt återbetalningsbart: {amount} THB",
+          "ariaDescribed": "Ange återbetalningsbeloppet i thailändska baht. Beloppet dras från den ursprungliga betalningen."
+        },
+        "reason": {
+          "label": "Anledning",
+          "placeholder": "Kort anledning till denna återbetalning…",
+          "charCount": "{count} / 500"
+        },
+        "typedPhrase": {
+          "label": "Skriv {phrase} för att bekräfta full återbetalning",
+          "placeholder": "{phrase}",
+          "help": "Full återbetalning kräver inskriven bekräftelse för att förhindra oavsiktlig bearbetning."
+        }
+      },
+      "success": {
+        "toast": "Återbetalning utförd — kreditnota {number} utfärdad och skickad till medlemmen"
+      },
+      "error": {
+        "payment_not_found": "Betalning hittades inte.",
+        "payment_not_refundable": "Denna betalning kan inte återbetalas i sitt nuvarande tillstånd.",
+        "refund_exceeds_remaining": "Återbetalningsbeloppet överskrider återstående återbetalningsbar saldo ({remaining} THB).",
+        "refund_in_progress": "En annan återbetalning pågår för denna betalning. Försök igen om en stund.",
+        "processor_unavailable": "Betalningssystemet är tillfälligt otillgängligt. Försök igen.",
+        "f4_bridge_error": "Utfärdande av kreditnota misslyckades. Driften har meddelats.",
+        "internal_error": "Ett oväntat fel uppstod. Försök igen."
+      },
+      "cmdk": {
+        "label": "Utfärda återbetalning",
+        "hint": "Sök betalda fakturor att återbetala"
+      }
+    },
+    "email": {
+      "refundConfirmation": {
+        "subject": "Återbetalning utförd för faktura {invoiceNumber}",
+        "bodyLine": "Återbetalning av THB {amount} utförd den {date}. Kreditnota {creditNoteNumber} bifogas."
+      }
     },
     "paymentReconciliation": {
       "title": "Betalningsavstämning",

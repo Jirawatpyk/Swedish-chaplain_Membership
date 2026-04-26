@@ -1299,7 +1299,58 @@
       }
     },
     "refund": {
-      "title": "Issue refund"
+      "title": "Issue refund",
+      "button": {
+        "label": "Issue refund",
+        "ariaLabel": "Issue a refund for this invoice"
+      },
+      "dialog": {
+        "title": "Issue refund",
+        "description": "Refund all or part of this payment. The matching credit note will be issued and emailed to the member.",
+        "cancel": "Cancel",
+        "confirm": "Issue refund",
+        "processing": "Processing refund…"
+      },
+      "form": {
+        "amount": {
+          "label": "Refund amount (THB)",
+          "placeholder": "0.00",
+          "maximumHelp": "Maximum refundable: {amount} THB",
+          "ariaDescribed": "Enter the refund amount in Thai Baht. The amount will be deducted from the original payment."
+        },
+        "reason": {
+          "label": "Reason",
+          "placeholder": "Brief reason for this refund…",
+          "charCount": "{count} / 500"
+        },
+        "typedPhrase": {
+          "label": "Type {phrase} to confirm a full refund",
+          "placeholder": "{phrase}",
+          "help": "Full refunds require typed confirmation to prevent accidental processing."
+        }
+      },
+      "success": {
+        "toast": "Refund processed — credit note {number} issued and emailed to member"
+      },
+      "error": {
+        "payment_not_found": "Payment not found.",
+        "payment_not_refundable": "This payment cannot be refunded in its current state.",
+        "refund_exceeds_remaining": "Refund amount exceeds the remaining refundable balance ({remaining} THB).",
+        "refund_in_progress": "Another refund is in progress for this payment. Please retry shortly.",
+        "processor_unavailable": "Payment processor temporarily unavailable. Please retry.",
+        "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",
+        "internal_error": "An unexpected error occurred. Please try again."
+      },
+      "cmdk": {
+        "label": "Issue refund",
+        "hint": "Search paid invoices to refund"
+      }
+    },
+    "email": {
+      "refundConfirmation": {
+        "subject": "Refund processed for invoice {invoiceNumber}",
+        "bodyLine": "Refund of THB {amount} processed on {date}. Credit note {creditNoteNumber} is attached."
+      }
     },
     "paymentReconciliation": {
       "title": "Payment reconciliation",
