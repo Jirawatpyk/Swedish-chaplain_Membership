@@ -65,6 +65,7 @@ import { IssueInvoiceDialog } from '../_components/issue-invoice-dialog';
 import { RecordPaymentDialog } from '../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
+import { PaymentTimeline } from './_components/payment-timeline';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -316,6 +317,7 @@ export default async function InvoiceDetailPage({
               <Link
                 href={`/admin/invoices/${invoice.invoiceId}/void`}
                 className={buttonVariants({ variant: 'destructive-outline' })}
+                data-testid="void-invoice-trigger"
               >
                 {t('actions.void')}
               </Link>
@@ -671,6 +673,21 @@ export default async function InvoiceDetailPage({
           </section>
         </CardContent>
       </Card>
+      {/* F5 Phase 5 (T097–T099) — payment activity timeline. Renders
+          for both admin + manager (read-only); mutating refund/void/
+          record-payment actions are gated above by `isAdmin`. The
+          panel hides behind its own empty state when the invoice has
+          no F5 payment + the F4 record-payment flow has not been used
+          either, so non-paid drafts/issued invoices show a clean card. */}
+      {!isDraft && (
+        <div className="mt-4">
+          <PaymentTimeline
+            invoiceId={invoice.invoiceId}
+            tenantId={tenantCtx.slug}
+            invoicePaidAt={invoice.paidAt}
+          />
+        </div>
+      )}
     </DetailContainer>
   );
 }

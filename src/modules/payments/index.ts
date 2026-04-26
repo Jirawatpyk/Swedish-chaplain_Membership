@@ -83,6 +83,14 @@ export {
   type ListSucceededPaymentMethodsError,
   type ListSucceededPaymentMethodsDeps,
 } from './application/use-cases/list-succeeded-payment-methods';
+export {
+  loadInvoicePaymentActivity,
+  type LoadInvoicePaymentActivityInput,
+  type LoadInvoicePaymentActivityOutput,
+  type LoadInvoicePaymentActivityError,
+  type LoadInvoicePaymentActivityDeps,
+} from './application/use-cases/load-invoice-payment-activity';
+export type { RefundActivityDto } from './application/ports/payments-repo';
 
 // --- Composition-root factories (Group E3 — real Drizzle/Stripe wiring) ----
 // Each factory returns the per-request `Deps` graph a route handler
@@ -97,4 +105,5 @@ export {
   makeCancelPaymentDeps,
   makeHandleCancelEventDeps,
   makeListSucceededPaymentMethodsDeps,
+  makeLoadInvoicePaymentActivityDeps,
 } from './infrastructure/di';

@@ -27,6 +27,7 @@ import type { FailPaymentDeps } from '../application/use-cases/fail-payment';
 import type { CancelPaymentDeps } from '../application/use-cases/cancel-payment';
 import type { HandleCancelEventDeps } from '../application/use-cases/handle-cancel-event';
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
+import type { LoadInvoicePaymentActivityDeps } from '../application/use-cases/load-invoice-payment-activity';
 import type { RefundsRepo } from '../application/ports/refunds-repo';
 
 import { systemClock } from '../application/ports/clock-port';
@@ -209,6 +210,17 @@ export function makeHandleCancelEventDeps(tenantId: string): HandleCancelEventDe
 export function makeListSucceededPaymentMethodsDeps(
   tenantId: string,
 ): ListSucceededPaymentMethodsDeps {
+  return {
+    paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// T097 (Phase 5) — loadInvoicePaymentActivity composition.
+// ---------------------------------------------------------------------------
+export function makeLoadInvoicePaymentActivityDeps(
+  tenantId: string,
+): LoadInvoicePaymentActivityDeps {
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
   };

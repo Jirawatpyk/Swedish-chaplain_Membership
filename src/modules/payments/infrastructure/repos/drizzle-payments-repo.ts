@@ -16,8 +16,8 @@
  * III). The `toDomain` helper owns the card-metadata null triage
  * (promptpay → null; card+pending+all-NULL → null; otherwise full VO).
  */
-import { and, eq, ne, sql } from 'drizzle-orm';
-import type { PaymentsRepo } from '../../application/ports/payments-repo';
+import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import type { PaymentsRepo, RefundActivityDto } from '../../application/ports/payments-repo';
 import {
   asPaymentId,
   type Payment,
@@ -26,9 +26,26 @@ import {
   type CardMetadata,
 } from '../../domain/payment';
 import type { PaymentMethod } from '../../domain/value-objects/payment-method';
-import { payments, type PaymentRow } from '../schema';
+import { payments, refunds, type PaymentRow, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
+
+function rowToRefundActivity(row: RefundRow): RefundActivityDto {
+  return {
+    refundId: row.id,
+    paymentId: row.paymentId,
+    invoiceId: row.invoiceId,
+    status: row.status as 'pending' | 'succeeded' | 'failed',
+    amountSatang: BigInt(row.amountSatang as unknown as string),
+    reason: row.reason,
+    initiatedAt: row.initiatedAt,
+    completedAt: row.completedAt,
+    initiatorUserId: row.initiatorUserId,
+    processorRefundId: row.processorRefundId,
+    failureReasonCode: row.failureReasonCode,
+    creditNoteId: row.creditNoteId,
+  };
+}
 
 function toDomain(row: PaymentRow): Payment {
   // Card metadata triage:
@@ -266,6 +283,47 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       // silently concatenate with `+ 1` to become "01" (JS string semantics).
       const current = Number(rows[0]?.max_seq ?? 0);
       return current + 1;
+    },
+
+    async listInvoiceActivity(
+      tenantIdArg: string,
+      invoiceId: string,
+    ): Promise<{
+      readonly payments: readonly Payment[];
+      readonly refunds: readonly RefundActivityDto[];
+    }> {
+      return runInTenant(ctx, async (tx) => {
+        const paymentRows = (await tx
+          .select()
+          .from(payments)
+          .where(
+            and(
+              eq(payments.tenantId, tenantIdArg),
+              eq(payments.invoiceId, invoiceId),
+            ),
+          )
+          .orderBy(asc(payments.initiatedAt))) as PaymentRow[];
+
+        const paymentIds = paymentRows.map((r) => r.id);
+        let refundRows: RefundRow[] = [];
+        if (paymentIds.length > 0) {
+          refundRows = (await tx
+            .select()
+            .from(refunds)
+            .where(
+              and(
+                eq(refunds.tenantId, tenantIdArg),
+                eq(refunds.invoiceId, invoiceId),
+              ),
+            )
+            .orderBy(asc(refunds.initiatedAt))) as RefundRow[];
+        }
+
+        return {
+          payments: paymentRows.map((r) => toDomain(r)),
+          refunds: refundRows.map((r) => rowToRefundActivity(r)),
+        };
+      });
     },
 
     async listSucceededMethodByInvoiceIds(

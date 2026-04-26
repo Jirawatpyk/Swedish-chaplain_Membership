@@ -50,7 +50,10 @@ export function RecordPaymentDialog({ invoiceId, documentNumber, issueDate }: Pr
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger className={buttonVariants({ variant: 'default' })}>
+      <DialogTrigger
+        className={buttonVariants({ variant: 'default' })}
+        data-testid="record-payment-trigger"
+      >
         {tDetail('actions.pay')}
       </DialogTrigger>
       <DialogContent>

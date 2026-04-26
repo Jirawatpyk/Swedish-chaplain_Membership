@@ -104,4 +104,40 @@ export interface PaymentsRepo {
     tenantId: string,
     invoiceIds: readonly string[],
   ): Promise<ReadonlyMap<string, PaymentMethod>>;
+
+  /**
+   * F5 US3 timeline panel — return all payment + refund rows tied to
+   * the invoice, ordered by initiation time ascending. Refunds carry
+   * the parent paymentId; UI groups refunds under their parent in the
+   * timeline. Read-only projection — no Refund domain entity since
+   * Group F has not landed; the DTO `RefundActivityDto` is defined on
+   * the use-case side.
+   */
+  listInvoiceActivity(
+    tenantId: string,
+    invoiceId: string,
+  ): Promise<{
+    readonly payments: readonly Payment[];
+    readonly refunds: readonly RefundActivityDto[];
+  }>;
+}
+
+/**
+ * Read-only refund DTO used by the F5 reconciliation timeline. Lives
+ * on the port file so the Application use-case can depend on it
+ * without importing Infrastructure types.
+ */
+export interface RefundActivityDto {
+  readonly refundId: string;
+  readonly paymentId: string;
+  readonly invoiceId: string;
+  readonly status: 'pending' | 'succeeded' | 'failed';
+  readonly amountSatang: bigint;
+  readonly reason: string;
+  readonly initiatedAt: Date;
+  readonly completedAt: Date | null;
+  readonly initiatorUserId: string;
+  readonly processorRefundId: string | null;
+  readonly failureReasonCode: string | null;
+  readonly creditNoteId: string | null;
 }
