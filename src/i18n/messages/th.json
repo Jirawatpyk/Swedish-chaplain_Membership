@@ -1322,7 +1322,6 @@
           "payment_succeeded": "ชำระเงินสำเร็จ",
           "payment_failed": "ชำระเงินไม่สำเร็จ",
           "payment_canceled": "ยกเลิกการชำระเงิน",
-          "payment_auto_refunded_stale_invoice": "คืนเงินอัตโนมัติ (ใบแจ้งหนี้หมดอายุ)",
           "invoice_paid": "บันทึกใบแจ้งหนี้เป็นชำระแล้ว",
           "refund_initiated": "เริ่มคืนเงิน",
           "refund_succeeded": "คืนเงินสำเร็จ",
@@ -1331,8 +1330,11 @@
         "chargeId": {
           "label": "รหัสรายการ",
           "copyAction": "คัดลอกรหัสรายการ",
-          "copySuccess": "คัดลอกรหัสรายการแล้ว"
+          "copySuccess": "คัดลอกรหัสรายการแล้ว",
+          "copySuccessAnnouncement": "คัดลอกแล้ว",
+          "copyFailed": "คัดลอกไม่สำเร็จ กรุณาคัดลอกด้วยตนเอง"
         },
+        "testModeBadge": "โหมดทดสอบ",
         "viewInStripe": "เปิดใน Stripe",
         "viewInStripeAria": "เปิดรายการนี้ในแดชบอร์ด Stripe (เปิดในแท็บใหม่)",
         "empty": {

@@ -104,11 +104,16 @@ const headCls = 'text-xs uppercase tracking-wide text-muted-foreground';
 
 function MethodBadge({ method }: { method: 'card' | 'promptpay' }) {
   const t = useTranslations('admin.paymentReconciliation.methodBadge');
+  const tCol = useTranslations('admin.invoices.list.columns');
   return (
     <Badge
       variant="secondary"
       data-testid={`method-badge-${method}`}
       className="font-normal"
+      // S3 verify-fix (2026-04-26): SR users hearing only "Card" without
+      // column context get an ambiguous label. The aria-label adds the
+      // column name so readers row-by-row get "Method: Card" / "Method: PromptPay".
+      aria-label={`${tCol('method')}: ${t(method)}`}
     >
       {t(method)}
     </Badge>

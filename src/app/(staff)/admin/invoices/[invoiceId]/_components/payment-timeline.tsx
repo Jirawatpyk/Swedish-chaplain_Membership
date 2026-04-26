@@ -33,6 +33,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   loadInvoicePaymentActivity,
   makeLoadInvoicePaymentActivityDeps,
+  SYSTEM_ACTOR_STRIPE_WEBHOOK,
   type LoadInvoicePaymentActivityOutput,
   type RefundActivityDto,
 } from '@/modules/payments';
@@ -43,6 +44,7 @@ import {
 // eslint-disable-next-line no-restricted-imports
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
+import { logger } from '@/lib/logger';
 import { CopyChargeIdButton } from './copy-charge-id-button';
 
 type SyntheticEventType =
@@ -63,8 +65,35 @@ interface TimelineEvent {
   readonly subjectId: string; // paymentId or refundId
 }
 
+// Detect non-human actors: either the legacy "system:..." string prefix
+// (used by some F5 audit emit paths) OR the canonical reserved UUID
+// `SYSTEM_ACTOR_STRIPE_WEBHOOK` from migration 0041 — which is what F4
+// `payment_recorded_by_user_id` actually carries on online payments.
+// Pre-fix: only the prefix branch matched, so the UUID slipped past the
+// filter into `userRepo.findById` and rendered the seeded internal email
+// `system-stripe-webhook@chamber-os.internal` instead of the i18n
+// `actorSystem` label.
 const SYSTEM_ACTOR_PREFIX = 'system:';
+function isSystemActor(actorUserId: string): boolean {
+  return (
+    actorUserId.startsWith(SYSTEM_ACTOR_PREFIX) ||
+    actorUserId === SYSTEM_ACTOR_STRIPE_WEBHOOK
+  );
+}
 
+/**
+ * Format an event timestamp for display on the timeline.
+ *
+ * Verify-fix U-I6 (2026-04-26): the previous comment claimed this used
+ * "Thai Buddhist Era for `th` locale via existing F4 formatDate" but
+ * the code was actually a fresh `toLocaleString` call. Modern V8 / ICU
+ * (Node 22 LTS, current Chrome / Firefox / Safari) DOES return BE for
+ * the `th-TH` locale by default — verified via `new Date().toLocaleString('th-TH', {year:'numeric'})` → `"2569"` — so the off-by-543-years
+ * concern is a false positive on the runtime targets we ship to. The
+ * comment is now explicit so future readers don't repeat the audit.
+ *
+ * Storage stays ISO UTC (CLAUDE.md). This helper is display-only.
+ */
 function formatTimestamp(date: Date, locale: string): string {
   return date.toLocaleString(locale, {
     year: 'numeric',
@@ -104,7 +133,10 @@ function eventIconClass(type: SyntheticEventType): string {
     case 'payment_succeeded':
     case 'invoice_paid':
     case 'refund_succeeded':
-      return 'text-emerald-600';
+      // Verify-fix U-I2 (2026-04-26): emerald-600 alone fails dark-mode
+      // contrast on `bg-card` — paired with `dark:text-emerald-400` so
+      // the success icon stays ≥ 4.5:1 in both themes (WCAG 1.4.11).
+      return 'text-emerald-600 dark:text-emerald-400';
     case 'payment_failed':
     case 'refund_failed':
       return 'text-destructive';
@@ -250,7 +282,7 @@ export async function PaymentTimeline({
     new Set(
       events
         .map((e) => e.actorUserId)
-        .filter((id) => !id.startsWith(SYSTEM_ACTOR_PREFIX) && id !== 'anonymous'),
+        .filter((id) => !isSystemActor(id) && id !== 'anonymous'),
     ),
   );
   const userEmailMap = new Map<string, string>();
@@ -259,14 +291,23 @@ export async function PaymentTimeline({
       try {
         const row = await userRepo.findById(asUserId(uid));
         userEmailMap.set(uid, row?.email ?? uid);
-      } catch {
+      } catch (cause) {
+        // R-I1 verify-fix (2026-04-26): the previous catch silently swallowed
+        // every userRepo failure, hiding DB outages from operators. Log a
+        // structured warning so a flapping users-table or schema-grant break
+        // surfaces in pino aggregation; the UI still degrades gracefully by
+        // falling back to the raw uuid.
+        logger.warn(
+          { cause, actor_user_id_hash: uid.slice(0, 8) },
+          'payment-timeline: user lookup failed, falling back to actor uuid',
+        );
         userEmailMap.set(uid, uid);
       }
     }),
   );
 
   function resolveActor(actorUserId: string): string {
-    if (actorUserId.startsWith(SYSTEM_ACTOR_PREFIX)) return t('actorSystem');
+    if (isSystemActor(actorUserId)) return t('actorSystem');
     if (actorUserId === 'anonymous') return t('actorAnonymous');
     return userEmailMap.get(actorUserId) ?? actorUserId;
   }
@@ -300,25 +341,41 @@ export async function PaymentTimeline({
       <CardContent className="flex flex-col gap-4">
         {/* T099 — processor charge id chip + copy + dashboard link.
             Hidden when no succeeded payment exists. */}
-        {processorRef && dashboardUrl && (
-          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+        {processorRef && dashboardUrl && latestSucceeded && (
+          // Verify-fix S8 (2026-04-26): on narrow viewports (<sm) the chip
+          // + copy + external-link wrap onto 3 lines unevenly. Stack
+          // vertically below sm; revert to row at sm+. The chip itself
+          // gets `select-text` (S6) so power users can triple-click the
+          // charge id without hitting the copy button.
+          <div className="flex flex-col items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center">
             <Badge
               variant="outline"
               data-testid="processor-charge-id"
-              className="font-mono text-xs"
+              className="font-mono text-xs select-text"
             >
               <span className="text-muted-foreground mr-1">
                 {tCharge('label')}:
               </span>
               {processorRef}
             </Badge>
+            {/* Verify-fix S10 (2026-04-26): test-mode chip surfaces test
+                vs live unambiguously to admins reconciling on prod. */}
+            {latestSucceeded.processorEnvironment === 'test' && (
+              <Badge variant="secondary" className="text-[10px] uppercase">
+                {t('testModeBadge')}
+              </Badge>
+            )}
             <CopyChargeIdButton chargeId={processorRef} />
             <a
               href={dashboardUrl}
               target="_blank"
               rel="noopener noreferrer"
               data-testid="view-in-stripe-link"
-              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+              // Verify-fix M-3 (2026-04-26): `outline-2 outline-ring` was
+              // not valid Tailwind v4 + diverged from shadcn pattern.
+              // Switched to `ring-2 ring-ring ring-offset-2` (ux-standards
+              // § 7.5).
+              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
               aria-label={t('viewInStripeAria')}
             >
               <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
@@ -340,7 +397,7 @@ export async function PaymentTimeline({
             </p>
           </div>
         ) : (
-          <ol className="flex flex-col gap-3" aria-label={t('title')}>
+          <ol className="flex flex-col gap-3">
             {events.map((event) => {
               const Icon = eventIcon(event.type);
               return (

@@ -1322,7 +1322,6 @@
           "payment_succeeded": "Betalning genomförd",
           "payment_failed": "Betalning misslyckades",
           "payment_canceled": "Betalning avbruten",
-          "payment_auto_refunded_stale_invoice": "Automatiskt återbetald (utgången faktura)",
           "invoice_paid": "Faktura markerad som betald",
           "refund_initiated": "Återbetalning påbörjad",
           "refund_succeeded": "Återbetalning genomförd",
@@ -1331,8 +1330,11 @@
         "chargeId": {
           "label": "Transaktions-id",
           "copyAction": "Kopiera transaktions-id",
-          "copySuccess": "Transaktions-id kopierat"
+          "copySuccess": "Transaktions-id kopierat",
+          "copySuccessAnnouncement": "Kopierat",
+          "copyFailed": "Kunde inte kopiera — kopiera manuellt"
         },
+        "testModeBadge": "Testläge",
         "viewInStripe": "Visa i Stripe",
         "viewInStripeAria": "Öppna denna transaktion i Stripe-instrumentpanelen (öppnas i ny flik)",
         "empty": {

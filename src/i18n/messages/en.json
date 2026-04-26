@@ -1322,7 +1322,6 @@
           "payment_succeeded": "Payment succeeded",
           "payment_failed": "Payment failed",
           "payment_canceled": "Payment canceled",
-          "payment_auto_refunded_stale_invoice": "Auto-refunded (stale invoice)",
           "invoice_paid": "Invoice marked paid",
           "refund_initiated": "Refund initiated",
           "refund_succeeded": "Refund completed",
@@ -1331,8 +1330,11 @@
         "chargeId": {
           "label": "Charge id",
           "copyAction": "Copy charge id",
-          "copySuccess": "Charge id copied to clipboard"
+          "copySuccess": "Charge id copied to clipboard",
+          "copySuccessAnnouncement": "Copied",
+          "copyFailed": "Could not copy — please copy manually"
         },
+        "testModeBadge": "Test mode",
         "viewInStripe": "View in Stripe",
         "viewInStripeAria": "Open this charge in the Stripe dashboard (opens in a new tab)",
         "empty": {

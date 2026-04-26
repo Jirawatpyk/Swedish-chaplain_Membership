@@ -12,8 +12,16 @@
  *
  * No mutation, no audit emit, no Stripe call. Tenant isolation is
  * enforced by `runInTenant` + RLS+FORCE policies inside the repo.
+ *
+ * Verify-fix C2 (2026-04-26): the previous `error: never` typing
+ * silently let DB / RLS errors propagate as thrown exceptions, which
+ * surfaced as 500s without context in the admin detail page. This
+ * use-case now wraps the repo call in try/catch and returns a typed
+ * `Result.err({kind: 'repo_unavailable', cause})` so the server
+ * component can render a graceful empty / error state instead of
+ * crashing the whole route.
  */
-import { ok, type Result } from '@/lib/result';
+import { ok, err, type Result } from '@/lib/result';
 import type {
   PaymentsRepo,
   RefundActivityDto,
@@ -30,7 +38,10 @@ export interface LoadInvoicePaymentActivityOutput {
   readonly refunds: readonly RefundActivityDto[];
 }
 
-export type LoadInvoicePaymentActivityError = never;
+export type LoadInvoicePaymentActivityError = {
+  readonly kind: 'repo_unavailable';
+  readonly cause: unknown;
+};
 
 export interface LoadInvoicePaymentActivityDeps {
   readonly paymentsRepo: PaymentsRepo;
@@ -42,9 +53,13 @@ export async function loadInvoicePaymentActivity(
 ): Promise<
   Result<LoadInvoicePaymentActivityOutput, LoadInvoicePaymentActivityError>
 > {
-  const activity = await deps.paymentsRepo.listInvoiceActivity(
-    input.tenantId,
-    input.invoiceId,
-  );
-  return ok(activity);
+  try {
+    const activity = await deps.paymentsRepo.listInvoiceActivity(
+      input.tenantId,
+      input.invoiceId,
+    );
+    return ok(activity);
+  } catch (cause) {
+    return err({ kind: 'repo_unavailable', cause });
+  }
 }
