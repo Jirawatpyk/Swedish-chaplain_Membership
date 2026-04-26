@@ -66,4 +66,39 @@ export interface InvoicingBridgePort {
     input: MarkPaidFromProcessorInput,
     tx?: unknown,
   ): Promise<Result<void, { readonly code: string; readonly detail: string }>>;
+
+  /**
+   * Issue a credit note tied to an F5 refund (Phase 6 / T108).
+   *
+   * Wraps F4's `issueCreditNoteFromRefund` use-case. F4 owns the CN
+   * row, sequence allocation, PDF render+upload, audit emission,
+   * outbox enqueue, and the invoice status transition (→ `credited`
+   * or `partially_credited`). F5 supplies the refund context.
+   *
+   * Returns the F4 credit-note id + invoice status post-transition
+   * so the F5 use-case can include them in the `issueRefund` success
+   * envelope (admin UI shows the new CN number immediately).
+   *
+   * Errors are summarised to the same `{ code, detail }` shape as
+   * `markPaidFromProcessor` — F5 callers branch on a single
+   * `f4_bridge_error` code; F4-domain detail lands in audit + log.
+   */
+  issueCreditNoteFromRefund(input: {
+    readonly tenantId: string;
+    readonly invoiceId: string;
+    readonly refundId: string;
+    readonly amountSatang: bigint;
+    readonly reason: string;
+    readonly actorUserId: string;
+    readonly requestId: string | null;
+  }): Promise<
+    Result<
+      {
+        readonly creditNoteId: string;
+        readonly creditNoteNumber: string;
+        readonly invoiceStatus: 'partially_credited' | 'credited';
+      },
+      { readonly code: string; readonly detail: string }
+    >
+  >;
 }

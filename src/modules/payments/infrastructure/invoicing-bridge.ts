@@ -21,6 +21,7 @@ import { err, ok, type Result } from '@/lib/result';
 import {
   getInvoiceForPayment as f4GetInvoiceForPayment,
   markPaidFromProcessor as f4MarkPaidFromProcessor,
+  issueCreditNoteFromRefund as f4IssueCreditNoteFromRefund,
   makeGetInvoiceDeps,
   type InvoiceForPayment as F4InvoiceForPayment,
   type GetInvoiceForPaymentError as F4GetInvoiceForPaymentError,
@@ -131,5 +132,61 @@ export const invoicingBridge: InvoicingBridgePort = {
       return err(summariseF4Error(f4Result.error));
     }
     return ok(undefined);
+  },
+
+  /**
+   * T108 (Phase 6) — F5 → F4 credit-note bridge for the refund flow.
+   *
+   * Wraps F4's `issueCreditNoteFromRefund`. F4 owns the CN row,
+   * sequence allocation, PDF render+upload, audit emission, outbox
+   * enqueue, and the invoice status transition (→ `credited` or
+   * `partially_credited`). The F5 caller `issueRefund` invokes this
+   * OUTSIDE its own DB tx (Phase B/external) — F4 manages its own
+   * atomicity via the wrapped use-case's internal `withTx`.
+   *
+   * After F4 commits, we re-read the invoice via
+   * `getInvoiceForPayment` to project the canonical post-transition
+   * status (`partially_credited` | `credited`) — F5's success
+   * envelope renders this directly, no further round-trip on the
+   * caller side. F4 errors are summarised into the bridge's stable
+   * `{ code, detail }` shape (no PII leak — see `summariseF4Error`
+   * docstring).
+   */
+  async issueCreditNoteFromRefund(input) {
+    const cn = await f4IssueCreditNoteFromRefund({
+      tenantId: input.tenantId,
+      invoiceId: input.invoiceId,
+      refundId: input.refundId,
+      amountSatang: input.amountSatang,
+      reason: input.reason,
+      actorUserId: input.actorUserId,
+      ...(input.requestId !== null ? { requestId: input.requestId } : {}),
+    });
+    if (!cn.ok) {
+      // Reuse the same scalar-only summariser used for
+      // markPaidFromProcessor errors. F4's `IssueCreditNoteError` is
+      // a discriminated union; the cast lets us share one helper.
+      return err(summariseF4Error(cn.error as unknown as F4MarkPaidFromProcessorError));
+    }
+
+    // Project the post-transition invoice status. F4's CN issuance
+    // flips `invoices.status` to `credited` (full) or
+    // `partially_credited` (partial) inside its own tx — re-read via
+    // F4's barrel to get the canonical value rather than re-deriving
+    // arithmetically (would duplicate F4's remainder-credit policy).
+    const fresh = await f4GetInvoiceForPayment(
+      makeGetInvoiceDeps(input.tenantId),
+      { tenantId: input.tenantId, invoiceId: input.invoiceId },
+    );
+    const projectedStatus: 'partially_credited' | 'credited' =
+      fresh.ok && fresh.value.status === 'credited'
+        ? 'credited'
+        : 'partially_credited';
+
+    return ok({
+      creditNoteId: cn.value.creditNoteId,
+      creditNoteNumber: cn.value.documentNumber.raw,
+      invoiceStatus: projectedStatus,
+    });
   },
 };

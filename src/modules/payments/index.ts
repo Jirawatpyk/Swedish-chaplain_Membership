@@ -94,6 +94,24 @@ export {
   type LoadInvoicePaymentActivityDeps,
 } from './application/use-cases/load-invoice-payment-activity';
 export type { RefundActivityDto } from './application/ports/payments-repo';
+export {
+  issueRefund,
+  type IssueRefundInput,
+  type IssueRefundSuccess,
+  type IssueRefundError,
+  type IssueRefundDeps,
+} from './application/use-cases/issue-refund';
+export {
+  REFUND_STATUSES,
+  TERMINAL_REFUND_STATUSES,
+  asRefundId,
+  parseRefundId,
+  isTerminalRefundStatus,
+  isLegalRefundTransition,
+  type Refund,
+  type RefundId,
+  type RefundStatus as DomainRefundStatus,
+} from './domain/refund';
 
 // --- Composition-root factories (Group E3 — real Drizzle/Stripe wiring) ----
 // Each factory returns the per-request `Deps` graph a route handler
@@ -109,4 +127,5 @@ export {
   makeHandleCancelEventDeps,
   makeListSucceededPaymentMethodsDeps,
   makeLoadInvoicePaymentActivityDeps,
+  makeIssueRefundDeps,
 } from './infrastructure/di';

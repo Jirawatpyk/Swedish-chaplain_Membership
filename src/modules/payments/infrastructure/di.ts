@@ -28,6 +28,7 @@ import type { CancelPaymentDeps } from '../application/use-cases/cancel-payment'
 import type { HandleCancelEventDeps } from '../application/use-cases/handle-cancel-event';
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
 import type { LoadInvoicePaymentActivityDeps } from '../application/use-cases/load-invoice-payment-activity';
+import type { IssueRefundDeps } from '../application/use-cases/issue-refund';
 import type { RefundsRepo } from '../application/ports/refunds-repo';
 
 import { systemClock } from '../application/ports/clock-port';
@@ -67,9 +68,10 @@ import { paymentsLogger } from './logger/payments-logger';
 function makeUnimplementedRefundsRepo(): RefundsRepo {
   const unimplemented = (method: string): never => {
     throw new Error(
-      `[F5] RefundsRepo.${method} is not wired yet — Group F lands the Drizzle adapter ` +
-        `(scoped with the refund HTTP route + charge.refunded webhook branch). ` +
-        `Today only refund-specific webhook replay paths reach this; routes MUST NOT ship until Group F.`,
+      `[F5] RefundsRepo.${method} is not wired yet — Phase 6 T109 lands the ` +
+        `Drizzle adapter (scoped with the refund HTTP route + admin-initiated ` +
+        `refund use-case). Webhook replay paths reach this only via the not- ` +
+        `yet-shipped refund branch; routes MUST NOT ship until T109.`,
     );
   };
   return {
@@ -77,7 +79,19 @@ function makeUnimplementedRefundsRepo(): RefundsRepo {
     updateStatus: () => unimplemented('updateStatus'),
     findByProcessorRefundId: () => unimplemented('findByProcessorRefundId'),
     sumSucceededForPayment: () => unimplemented('sumSucceededForPayment'),
+    countPendingForPayment: () => unimplemented('countPendingForPayment'),
+    nextRefundSeq: () => unimplemented('nextRefundSeq'),
   };
+}
+
+/**
+ * Generate a fresh F5 Refund ID of the form `rfnd_<hex>` (mirrors
+ * `generatePaymentId`). Stripped UUIDv4 → 32 hex chars inside the
+ * Domain regex's allowed set; the `rfnd_` prefix is the F5 Refund
+ * convention (data-model.md § 3.1).
+ */
+function generateRefundId(): string {
+  return `rfnd_${randomUUID().replace(/-/g, '')}`;
 }
 
 /**
@@ -226,6 +240,40 @@ export function makeLoadInvoicePaymentActivityDeps(
   };
 }
 
+// ---------------------------------------------------------------------------
+// T108 (Phase 6) — issueRefund composition.
+//
+// The Drizzle RefundsRepo lands in T109 (Batch C). Until then the
+// stub `makeUnimplementedRefundsRepo` is wired here so the type
+// graph compiles + barrel `makeIssueRefundDeps` is callable; any
+// route attempting an actual refund will throw a loud, well-marked
+// error from the stub instead of silently no-op-ing. Replaced by
+// `makeDrizzleRefundsRepo` in T109.
+// ---------------------------------------------------------------------------
+export function makeIssueRefundDeps(tenantId: string): IssueRefundDeps {
+  return {
+    paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+    refundsRepo: makeUnimplementedRefundsRepo(),
+    tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
+    processorGateway: stripeGateway,
+    invoicingBridge,
+    audit: f5AuditAdapter,
+    clock: systemClock,
+    generateRefundId,
+    // Same dev-mode salt strategy as `makeInitiatePaymentDeps`. In
+    // production the seq-based key is the Stripe dedupe contract;
+    // dev adds a millisecond suffix so manual repeat-testing is not
+    // blocked by Stripe's 24h key cache.
+    idempotencyKeyFactory: env.isDevelopment
+      ? (baseKey: string) => `${baseKey}-d-${Date.now()}`
+      : (baseKey: string) => baseKey,
+  };
+}
+
 // --- Internal test hooks (NOT re-exported from the public barrel) ----------
 /** @internal — test-only: unit tests for the DI module assert this stub is in place. */
-export const __internal = { makeUnimplementedRefundsRepo, generatePaymentId };
+export const __internal = {
+  makeUnimplementedRefundsRepo,
+  generatePaymentId,
+  generateRefundId,
+};

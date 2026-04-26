@@ -283,17 +283,17 @@ The following pay-sheet files were added beyond T072–T086 to support the empir
 
 ### Tests for US4 (TDD)
 
-- [ ] T101 [P] [US4] Contract test `tests/contract/payments/post-refunds-initiate.contract.test.ts` — POST body zod validation, success/failure response shapes per `contracts/payments-api.md` § 3.
+- [X] T101 [P] [US4] Contract test `tests/contract/payments/post-refunds-initiate.contract.test.ts` — POST body zod validation, success/failure response shapes per `contracts/payments-api.md` § 3.
 - [ ] T102 [P] [US4] Integration test `tests/integration/payments/refund-multi-partial.test.ts` (FR-011b + US4 AS5/AS6) — issue 2 partial refunds summing < total (assert `partially_refunded` + `partially_credited`); 3rd refund exceeding remaining (assert pre-flight rejection); 4th exhausting (assert `refunded` + `credited`). Includes concurrent-race scenario via `Promise.all()` — assert exactly one succeeds, other fails with `refund_in_progress` conflict.
 - [ ] T103 [P] [US4] E2E test `tests/e2e/admin-refund-full.spec.ts` — `--workers=1`; full refund happy path with typed-phrase confirmation; assert credit-note PDF emailed.
 - [ ] T104 [P] [US4] E2E test `tests/e2e/admin-refund-partial.spec.ts` — `--workers=1`; partial refund (no typed-phrase); assert remaining-refundable updates; second partial; final exhausting partial.
 
 ### Domain + application
 
-- [ ] T105 [P] [US4] Create `src/modules/payments/domain/refund.ts` — `Refund` aggregate root with state machine (`pending → succeeded|failed`) + 100% line coverage in `tests/unit/payments/domain/refund-state-machine.test.ts`.
-- [ ] T106 [P] [US4] Create `src/modules/payments/domain/value-objects/refundable-amount.ts` — policy object computing `remaining = payment.amount_satang − Σ(succeeded refunds)`; pure function with full unit-test coverage.
-- [ ] T107 [P] [US4] Create `src/modules/payments/domain/invariants/refund-not-exceeding-remainder.ts` — invariant + unit test.
-- [ ] T108 [US4] Implement `src/modules/payments/application/issue-refund.ts` — authz (admin only) + `SELECT … FOR UPDATE` on payments(id) + zod-validate + insert pending refund + Stripe `refunds.create` + on success update + invoke F4 `issueCreditNoteFromRefund` + update Payment.status. **100% branch coverage** in `tests/unit/payments/application/issue-refund.test.ts`.
+- [X] T105 [P] [US4] Create `src/modules/payments/domain/refund.ts` — `Refund` aggregate root with state machine (`pending → succeeded|failed`) + 100% line coverage in `tests/unit/payments/domain/refund-state-machine.test.ts`.
+- [X] T106 [P] [US4] Create `src/modules/payments/domain/value-objects/refundable-amount.ts` — policy object computing `remaining = payment.amount_satang − Σ(succeeded refunds)`; pure function with full unit-test coverage.
+- [X] T107 [P] [US4] Create `src/modules/payments/domain/invariants/refund-not-exceeding-remainder.ts` — invariant + unit test.
+- [X] T108 [US4] Implement `src/modules/payments/application/issue-refund.ts` — authz (admin only) + `SELECT … FOR UPDATE` on payments(id) + zod-validate + insert pending refund + Stripe `refunds.create` + on success update + invoke F4 `issueCreditNoteFromRefund` + update Payment.status. **100% branch coverage** in `tests/unit/payments/application/issue-refund.test.ts`.
 - [ ] T109 [US4] Implement Refund repo `src/modules/payments/infrastructure/db/refunds-repo.drizzle.ts`.
 - [ ] T110 [US4] Extend `stripe-gateway.ts` (T064) with `createRefund({payment_intent, amount, reason, metadata}, idempotencyKey: 'rfnd-{payment_id}-{seq}')`.
 
