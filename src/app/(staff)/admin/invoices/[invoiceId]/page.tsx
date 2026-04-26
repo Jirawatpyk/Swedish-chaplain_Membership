@@ -68,6 +68,11 @@ import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
 import { PaymentTimeline } from './_components/payment-timeline';
 import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
+import { RefundButton } from './_components/refund-button';
+import {
+  loadInvoicePaymentActivity,
+  makeLoadInvoicePaymentActivityDeps,
+} from '@/modules/payments';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -251,6 +256,53 @@ export default async function InvoiceDetailPage({
 
   const breadcrumbLabel = invoice.documentNumber?.raw ?? t('draftTitle');
 
+  // F5 Phase 6 (T112) — load payment activity at page level so the
+  // Refund action button can be rendered conditionally based on the
+  // existence of a succeeded payment with remaining refundable balance.
+  // The PaymentTimeline panel below also reads this data via its own
+  // call inside Suspense; both queries are tenant-scoped index hits
+  // so the duplication cost is one DB roundtrip — acceptable trade
+  // for the synchronous render of the action row.
+  let refundButtonProps: {
+    paymentId: string;
+    remainingRefundableSatang: bigint;
+  } | null = null;
+  if (
+    isAdmin &&
+    (invoice.status === 'paid' || invoice.status === 'partially_credited')
+  ) {
+    const activity = await loadInvoicePaymentActivity(
+      makeLoadInvoicePaymentActivityDeps(tenantCtx.slug),
+      { tenantId: tenantCtx.slug, invoiceId },
+    );
+    if (activity.ok) {
+      // Latest succeeded payment (one-succeeded-per-invoice invariant
+      // means there's at most one in practice, but `completed_at DESC`
+      // ordering is deterministic if a future flow ever permits more).
+      const succeededPayment = [...activity.value.payments]
+        .filter((p) => p.status === 'succeeded' || p.status === 'partially_refunded')
+        .sort((a, b) => {
+          const aT = a.completedAt?.getTime() ?? 0;
+          const bT = b.completedAt?.getTime() ?? 0;
+          return bT - aT;
+        })[0];
+      if (succeededPayment) {
+        const succeededRefundsSum = activity.value.refunds
+          .filter((r) => r.status === 'succeeded')
+          .filter((r) => r.paymentId === succeededPayment.id)
+          .reduce((acc, r) => acc + r.amountSatang, 0n);
+        const remaining =
+          succeededPayment.amountSatang - succeededRefundsSum;
+        if (remaining > 0n) {
+          refundButtonProps = {
+            paymentId: succeededPayment.id,
+            remainingRefundableSatang: remaining,
+          };
+        }
+      }
+    }
+  }
+
   return (
     <DetailContainer>
       <PlanBreadcrumbLabel segment={invoiceId} label={breadcrumbLabel} />
@@ -333,6 +385,26 @@ export default async function InvoiceDetailPage({
                   {t('actions.issueCreditNote')}
                 </Link>
               )}
+            {/* F5 Phase 6 (T112) — Refund online payment. Only appears
+                when the invoice was paid via Stripe (i.e. there is a
+                succeeded F5 payment with remaining refundable balance
+                > 0). Sits next to the F4 manual credit-note CTA so
+                admins see both options on paid invoices. */}
+            {refundButtonProps && (
+              <RefundButton
+                paymentId={refundButtonProps.paymentId}
+                invoiceId={invoice.invoiceId}
+                invoiceDocumentNumber={invoice.documentNumber?.raw ?? ''}
+                memberCompanyName={memberDisplayName}
+                remainingRefundableSatang={
+                  refundButtonProps.remainingRefundableSatang
+                }
+                currencyCode={
+                  (invoice.tenantIdentitySnapshot as { currency_code?: string } | null)
+                    ?.currency_code ?? 'THB'
+                }
+              />
+            )}
             {/* Secondary actions (Download PDF, Resend invoice, Resend
                 receipt) collapse into one "⋯" icon dropdown so the
                 action row exposes only primary/destructive CTAs as

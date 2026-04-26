@@ -28,6 +28,18 @@ vi.mock('@/modules/plans/application/search-plans', () => ({
 vi.mock('@/modules/members', async () => ({
   directorySearch: async () => ok({ items: [], nextCursor: null }),
 }));
+// F5 Phase 6 (T118a) — route augments the response with refundable-
+// invoice fuzzy search for admin role. Contract test stubs these to
+// empty OK so the new branch doesn't reach live infra; the dedicated
+// `palette.refundableInvoices` group has its own tests downstream.
+vi.mock('@/modules/invoicing', async () => ({
+  listInvoicesPaged: async () => ok({ rows: [], total: 0 }),
+  makeListInvoicesDeps: () => ({}),
+}));
+vi.mock('@/modules/payments', async () => ({
+  loadInvoicePaymentActivity: async () => ok({ payments: [], refunds: [] }),
+  makeLoadInvoicePaymentActivityDeps: () => ({}),
+}));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
 }));

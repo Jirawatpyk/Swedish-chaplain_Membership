@@ -1408,14 +1408,16 @@
       "plans": "Plans",
       "actions": "Actions",
       "navigate": "Navigate",
-      "members": "Members"
+      "members": "Members",
+      "refundableInvoices": "Refund a paid invoice"
     },
     "actions": {
       "newPlan": "Create new plan",
       "cloneYear": "Clone year",
       "viewAuditLog": "View audit log",
       "newMember": "Create new member",
-      "newInvoice": "Create new invoice"
+      "newInvoice": "Create new invoice",
+      "issueRefund": "Issue refund — find paid invoice"
     },
     "navigate": {
       "plansList": "Plans list",

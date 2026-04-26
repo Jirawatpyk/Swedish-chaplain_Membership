@@ -1408,14 +1408,16 @@
       "plans": "Paket",
       "actions": "Åtgärder",
       "navigate": "Navigera",
-      "members": "Medlemmar"
+      "members": "Medlemmar",
+      "refundableInvoices": "Återbetala en betald faktura"
     },
     "actions": {
       "newPlan": "Skapa nytt paket",
       "cloneYear": "Klona år",
       "viewAuditLog": "Visa revisionslogg",
       "newMember": "Skapa ny medlem",
-      "newInvoice": "Skapa ny faktura"
+      "newInvoice": "Skapa ny faktura",
+      "issueRefund": "Utfärda återbetalning — hitta betald faktura"
     },
     "navigate": {
       "plansList": "Paketlista",

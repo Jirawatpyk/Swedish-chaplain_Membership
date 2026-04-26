@@ -284,9 +284,9 @@ The following pay-sheet files were added beyond T072–T086 to support the empir
 ### Tests for US4 (TDD)
 
 - [X] T101 [P] [US4] Contract test `tests/contract/payments/post-refunds-initiate.contract.test.ts` — POST body zod validation, success/failure response shapes per `contracts/payments-api.md` § 3.
-- [ ] T102 [P] [US4] Integration test `tests/integration/payments/refund-multi-partial.test.ts` (FR-011b + US4 AS5/AS6) — issue 2 partial refunds summing < total (assert `partially_refunded` + `partially_credited`); 3rd refund exceeding remaining (assert pre-flight rejection); 4th exhausting (assert `refunded` + `credited`). Includes concurrent-race scenario via `Promise.all()` — assert exactly one succeeds, other fails with `refund_in_progress` conflict.
-- [ ] T103 [P] [US4] E2E test `tests/e2e/admin-refund-full.spec.ts` — `--workers=1`; full refund happy path with typed-phrase confirmation; assert credit-note PDF emailed.
-- [ ] T104 [P] [US4] E2E test `tests/e2e/admin-refund-partial.spec.ts` — `--workers=1`; partial refund (no typed-phrase); assert remaining-refundable updates; second partial; final exhausting partial.
+- [X] T102 [P] [US4] Integration test `tests/integration/payments/refund-multi-partial.test.ts` (FR-011b + US4 AS5/AS6) — issue 2 partial refunds summing < total (assert `partially_refunded` + `partially_credited`); 3rd refund exceeding remaining (assert pre-flight rejection); 4th exhausting (assert `refunded` + `credited`). Includes concurrent-race scenario via `Promise.all()` — assert exactly one succeeds, other fails with `refund_in_progress` conflict.
+- [X] T103 [P] [US4] E2E test `tests/e2e/admin-refund-full.spec.ts` — `--workers=1`; full refund happy path with typed-phrase confirmation; assert credit-note PDF emailed.
+- [X] T104 [P] [US4] E2E test `tests/e2e/admin-refund-partial.spec.ts` — `--workers=1`; partial refund (no typed-phrase); assert remaining-refundable updates; second partial; final exhausting partial.
 
 ### Domain + application
 
@@ -300,16 +300,16 @@ The following pay-sheet files were added beyond T072–T086 to support the empir
 ### API + UI
 
 - [X] T111 [US4] Implement `src/app/api/refunds/initiate/route.ts` — POST handler per `contracts/payments-api.md` § 3; rate-limit (20 / 5 min); admin-only RBAC; call `issueRefund` use case.
-- [ ] T112 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-button.tsx` — admin-only CTA ("Issue refund"); destructive-outline variant; opens `<RefundDialog>`.
-- [ ] T113 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/index.tsx` (composed multiple files for clarity) — shadcn `<AlertDialog>` per FR-029 anatomy; bilingual title + description; `<RefundForm>`; Cancel-default focus; spinner pattern on Confirm.
-- [ ] T114 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form.tsx` — react-hook-form + zod resolver; Amount input (`inputmode="decimal"`) + label-above + asterisk + live "Maximum refundable: {remaining} THB" help-text per FR-029(b); Reason textarea + 500-char counter; validation timing per FR-029(c).
-- [ ] T115 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/typed-phrase-confirm.tsx` — only renders when `amount === remaining` (full refund) per FR-029(f); requires exact text match `REFUND {company_name}` (case-sensitive) before Confirm enables.
-- [ ] T116 [US4] Wire refund success: dialog closes + `sonner.success("Refund processed — credit note CN-{number} issued and emailed to member")`; on failure: dialog stays open + inline error card surfaces above buttons + Confirm re-enables.
+- [X] T112 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-button.tsx` — admin-only CTA ("Issue refund"); destructive-outline variant; opens `<RefundDialog>`.
+- [X] T113 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/index.tsx` (composed multiple files for clarity) — shadcn `<AlertDialog>` per FR-029 anatomy; bilingual title + description; `<RefundForm>`; Cancel-default focus; spinner pattern on Confirm.
+- [X] T114 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form.tsx` — react-hook-form + zod resolver; Amount input (`inputmode="decimal"`) + label-above + asterisk + live "Maximum refundable: {remaining} THB" help-text per FR-029(b); Reason textarea + 500-char counter; validation timing per FR-029(c).
+- [X] T115 [US4] Create `src/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/typed-phrase-confirm.tsx` — only renders when `amount === remaining` (full refund) per FR-029(f); requires exact text match `REFUND {company_name}` (case-sensitive) before Confirm enables.
+- [X] T116 [US4] Wire refund success: dialog closes + `sonner.success("Refund processed — credit note CN-{number} issued and emailed to member")`; on failure: dialog stays open + inline error card surfaces above buttons + Confirm re-enables.
 - [X] T117 [US4] Add bilingual i18n keys for admin.refund.* + email.refundConfirmation.*.
 
 ### Smart-feature: Cmdk
 
-- [ ] T118 [US4] Extend command palette with "Issue refund" command — admin-role-only; fuzzy-search admin's tenant invoices with `status='paid'`; selection navigates to `/admin/invoices/[id]?refund=1` (auto-opens dialog via query-param hook).
+- [X] T118 [US4] Extend command palette with "Issue refund" command — admin-role-only; fuzzy-search admin's tenant invoices with `status='paid'`; selection navigates to `/admin/invoices/[id]?refund=1` (auto-opens dialog via query-param hook).
 
 **Checkpoint US4**: Admin in-app refund flow works end-to-end with full + partial scenarios.
 

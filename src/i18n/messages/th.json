@@ -1408,14 +1408,16 @@
       "plans": "แพ็กเกจ",
       "actions": "การดำเนินการ",
       "navigate": "ไปยัง",
-      "members": "สมาชิก"
+      "members": "สมาชิก",
+      "refundableInvoices": "คืนเงินใบแจ้งหนี้ที่ชำระแล้ว"
     },
     "actions": {
       "newPlan": "สร้างแพ็กเกจใหม่",
       "cloneYear": "คัดลอกปี",
       "viewAuditLog": "ดูประวัติการตรวจสอบ",
       "newMember": "สร้างสมาชิกใหม่",
-      "newInvoice": "สร้างใบแจ้งหนี้ใหม่"
+      "newInvoice": "สร้างใบแจ้งหนี้ใหม่",
+      "issueRefund": "คืนเงิน — ค้นหาใบแจ้งหนี้ที่ชำระแล้ว"
     },
     "navigate": {
       "plansList": "รายการแพ็กเกจ",

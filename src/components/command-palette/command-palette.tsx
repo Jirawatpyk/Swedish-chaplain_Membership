@@ -59,6 +59,7 @@ type CommandPaletteProps = {
 const EMPTY_RESULTS: PaletteSearchResponse['results'] = {
   plans: [],
   members: [],
+  refundableInvoices: [],
   actions: [],
   navigate: [],
 };
@@ -181,6 +182,9 @@ export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
       : {
           plans: sourceResults.plans,
           members: sourceResults.members,
+          // Refundable-invoice search is admin-only; manager + member
+          // never see this group even if a server bug populates it.
+          refundableInvoices: [],
           actions:
             currentUserRole === 'manager'
               ? sourceResults.actions.filter((a) => !isAdminOnlyAction(a.id))
@@ -191,6 +195,7 @@ export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
   const hasAnyResult =
     filteredResults.plans.length +
       filteredResults.members.length +
+      filteredResults.refundableInvoices.length +
       filteredResults.actions.length +
       filteredResults.navigate.length >
     0;
