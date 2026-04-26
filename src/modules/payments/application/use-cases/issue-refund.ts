@@ -217,7 +217,7 @@ export async function issueRefund(
   // Phase A — prepareRefund tx: lock, validate, insert pending, audit init
   // -------------------------------------------------------------------------
   type PreparedRefund =
-    | { readonly kind: 'prepared'; readonly refundId: string; readonly idempotencyKey: string; readonly payment: Payment; readonly sumSucceededBefore: bigint }
+    | { readonly kind: 'prepared'; readonly refundId: string; readonly idempotencyKey: string; readonly payment: Payment; readonly succeededSumBefore: bigint }
     | { readonly kind: 'rejected'; readonly error: IssueRefundError };
 
   const prepared: PreparedRefund = await deps.paymentsRepo.withTx(async (tx) => {
@@ -233,23 +233,20 @@ export async function issueRefund(
       } as const;
     }
 
-    const pendingCount = await deps.refundsRepo.countPendingForPayment(
+    // E3 (review 2026-04-26): one combined SELECT instead of 3
+    // separate roundtrips inside the FOR UPDATE lock window.
+    const ctx = await deps.refundsRepo.getRefundContextForUpdate(
       tx,
       input.tenantId,
       paymentId,
     );
-    if (pendingCount > 0) {
+    if (ctx.pendingCount > 0) {
       return { kind: 'rejected', error: { code: 'refund_in_progress' } } as const;
     }
 
-    const sumSucceededBefore = await deps.refundsRepo.sumSucceededForPayment(
-      tx,
-      input.tenantId,
-      paymentId,
-    );
     const invariant = checkRefundNotExceedingRemainder({
       paymentAmountSatang: payment.amountSatang,
-      succeededSumSatang: sumSucceededBefore,
+      succeededSumSatang: ctx.succeededSumSatang,
       newRefundSatang: input.amountSatang,
     });
     if (!invariant.ok) {
@@ -263,8 +260,7 @@ export async function issueRefund(
       } as const;
     }
 
-    const seq = await deps.refundsRepo.nextRefundSeq(tx, input.tenantId, paymentId);
-    const idempotencyKey = deps.idempotencyKeyFactory(`rfnd-${paymentId}-${seq}`);
+    const idempotencyKey = deps.idempotencyKeyFactory(`rfnd-${paymentId}-${ctx.nextSeq}`);
     const refundId = deps.generateRefundId();
     const initiatedAt = new Date(deps.clock.nowMs());
 
@@ -304,7 +300,7 @@ export async function issueRefund(
       refundId,
       idempotencyKey,
       payment,
-      sumSucceededBefore,
+      succeededSumBefore: ctx.succeededSumSatang,
     } as const;
   });
 
@@ -390,7 +386,7 @@ export async function issueRefund(
   // Phase B (success) — finalise refund + payment status + audit succeeded
   // -------------------------------------------------------------------------
   const completedAt = new Date(deps.clock.nowMs());
-  const newSucceededSum = prepared.sumSucceededBefore + input.amountSatang;
+  const newSucceededSum = prepared.succeededSumBefore + input.amountSatang;
   const isFullyRefunded = newSucceededSum >= prepared.payment.amountSatang;
   const nextPaymentStatus = isFullyRefunded ? 'refunded' : 'partially_refunded';
 

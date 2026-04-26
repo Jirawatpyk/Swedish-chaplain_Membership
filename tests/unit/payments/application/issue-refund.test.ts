@@ -93,9 +93,11 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
     })),
     updateStatus: vi.fn(),
     findByProcessorRefundId: vi.fn(),
-    sumSucceededForPayment: vi.fn(async () => 0n),
-    countPendingForPayment: vi.fn(async () => 0),
-    nextRefundSeq: vi.fn(async () => 1),
+    getRefundContextForUpdate: vi.fn(async () => ({
+      pendingCount: 0,
+      succeededSumSatang: 0n,
+      nextSeq: 1,
+    })),
   };
   const tenantSettingsRepo = {
     getByTenantId: vi.fn(async () => ({
@@ -211,9 +213,13 @@ describe('issueRefund (T108) — error branches', () => {
     },
   );
 
-  it('refund_in_progress — countPendingForPayment > 0', async () => {
+  it('refund_in_progress — getRefundContextForUpdate.pendingCount > 0', async () => {
     const deps = makeDeps();
-    asMock(deps.refundsRepo.countPendingForPayment).mockResolvedValueOnce(1);
+    asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
+      pendingCount: 1,
+      succeededSumSatang: 0n,
+      nextSeq: 1,
+    });
 
     const r = await issueRefund(deps, baseInput());
     expect(r.ok).toBe(false);
@@ -223,7 +229,11 @@ describe('issueRefund (T108) — error branches', () => {
 
   it('refund_exceeds_remaining — pre-flight FR-011b', async () => {
     const deps = makeDeps();
-    asMock(deps.refundsRepo.sumSucceededForPayment).mockResolvedValueOnce(5_000_000n);
+    asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
+      pendingCount: 0,
+      succeededSumSatang: 5_000_000n,
+      nextSeq: 1,
+    });
 
     const r = await issueRefund(deps, baseInput({ amountSatang: 1_000_000n }));
     // payment.amount=5,350,000 - sum=5,000,000 → remaining=350,000 < 1,000,000
@@ -365,7 +375,11 @@ describe('issueRefund (T108) — happy paths', () => {
     asMock(deps.paymentsRepo.lockForUpdate).mockResolvedValueOnce(
       makePayment({ status: 'partially_refunded' }),
     );
-    asMock(deps.refundsRepo.sumSucceededForPayment).mockResolvedValueOnce(5_000_000n);
+    asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
+      pendingCount: 0,
+      succeededSumSatang: 5_000_000n,
+      nextSeq: 2,
+    });
     asMock(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
       ok({
         creditNoteId: 'cn_exhausting',
@@ -386,7 +400,11 @@ describe('issueRefund (T108) — happy paths', () => {
     asMock(deps.paymentsRepo.lockForUpdate).mockResolvedValueOnce(
       makePayment({ status: 'partially_refunded' }),
     );
-    asMock(deps.refundsRepo.sumSucceededForPayment).mockResolvedValueOnce(2_000_000n);
+    asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
+      pendingCount: 0,
+      succeededSumSatang: 2_000_000n,
+      nextSeq: 2,
+    });
 
     const r = await issueRefund(deps, baseInput({ amountSatang: 1_000_000n }));
     expect(r.ok).toBe(true);
@@ -397,9 +415,13 @@ describe('issueRefund (T108) — happy paths', () => {
     }
   });
 
-  it('idempotency key picks up nextRefundSeq', async () => {
+  it('idempotency key picks up nextSeq from refund context', async () => {
     const deps = makeDeps();
-    asMock(deps.refundsRepo.nextRefundSeq).mockResolvedValueOnce(3);
+    asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
+      pendingCount: 0,
+      succeededSumSatang: 0n,
+      nextSeq: 3,
+    });
 
     await issueRefund(deps, baseInput());
     const stripeCall = asMock(deps.processorGateway.createRefund).mock.calls[0]?.[0] as { idempotencyKey: string };

@@ -294,8 +294,8 @@ The following pay-sheet files were added beyond T072–T086 to support the empir
 - [X] T106 [P] [US4] Create `src/modules/payments/domain/value-objects/refundable-amount.ts` — policy object computing `remaining = payment.amount_satang − Σ(succeeded refunds)`; pure function with full unit-test coverage.
 - [X] T107 [P] [US4] Create `src/modules/payments/domain/invariants/refund-not-exceeding-remainder.ts` — invariant + unit test.
 - [X] T108 [US4] Implement `src/modules/payments/application/issue-refund.ts` — authz (admin only) + `SELECT … FOR UPDATE` on payments(id) + zod-validate + insert pending refund + Stripe `refunds.create` + on success update + invoke F4 `issueCreditNoteFromRefund` + update Payment.status. **100% branch coverage** in `tests/unit/payments/application/issue-refund.test.ts`.
-- [ ] T109 [US4] Implement Refund repo `src/modules/payments/infrastructure/db/refunds-repo.drizzle.ts`.
-- [ ] T110 [US4] Extend `stripe-gateway.ts` (T064) with `createRefund({payment_intent, amount, reason, metadata}, idempotencyKey: 'rfnd-{payment_id}-{seq}')`.
+- [X] T109 [US4] Implement Refund repo `src/modules/payments/infrastructure/db/refunds-repo.drizzle.ts`.
+- [X] T110 [US4] Extend `stripe-gateway.ts` (T064) with `createRefund({payment_intent, amount, reason, metadata}, idempotencyKey: 'rfnd-{payment_id}-{seq}')`.
 
 ### API + UI
 

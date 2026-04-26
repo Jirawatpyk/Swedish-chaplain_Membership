@@ -37,6 +37,7 @@ import { asPaymentId, type PaymentId } from '../domain/payment';
 // Infrastructure adapters.
 import { makeDrizzlePaymentsRepo } from './repos/drizzle-payments-repo';
 import { makeDrizzleProcessorEventsRepo } from './repos/drizzle-processor-events-repo';
+import { makeDrizzleRefundsRepo } from './repos/drizzle-refunds-repo';
 import { makeDrizzleTenantPaymentSettingsRepo } from './repos/drizzle-tenant-payment-settings-repo';
 import { stripeGateway } from './stripe/stripe-gateway';
 import { stripeWebhookVerifier } from './stripe/stripe-webhook-verifier';
@@ -78,9 +79,7 @@ function makeUnimplementedRefundsRepo(): RefundsRepo {
     insert: () => unimplemented('insert'),
     updateStatus: () => unimplemented('updateStatus'),
     findByProcessorRefundId: () => unimplemented('findByProcessorRefundId'),
-    sumSucceededForPayment: () => unimplemented('sumSucceededForPayment'),
-    countPendingForPayment: () => unimplemented('countPendingForPayment'),
-    nextRefundSeq: () => unimplemented('nextRefundSeq'),
+    getRefundContextForUpdate: () => unimplemented('getRefundContextForUpdate'),
   };
 }
 
@@ -243,17 +242,17 @@ export function makeLoadInvoicePaymentActivityDeps(
 // ---------------------------------------------------------------------------
 // T108 (Phase 6) — issueRefund composition.
 //
-// The Drizzle RefundsRepo lands in T109 (Batch C). Until then the
-// stub `makeUnimplementedRefundsRepo` is wired here so the type
-// graph compiles + barrel `makeIssueRefundDeps` is callable; any
-// route attempting an actual refund will throw a loud, well-marked
-// error from the stub instead of silently no-op-ing. Replaced by
-// `makeDrizzleRefundsRepo` in T109.
+// T109 wired the real `makeDrizzleRefundsRepo`; the
+// `makeUnimplementedRefundsRepo` stub is retained ONLY for paths
+// that haven't been routed yet (e.g. `processWebhookEvent`'s
+// charge.refunded branch — F5 webhook gap, separate task) so a
+// production crash on those paths is a loud, well-marked error
+// instead of a silent NPE.
 // ---------------------------------------------------------------------------
 export function makeIssueRefundDeps(tenantId: string): IssueRefundDeps {
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
-    refundsRepo: makeUnimplementedRefundsRepo(),
+    refundsRepo: makeDrizzleRefundsRepo(tenantId),
     tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
     processorGateway: stripeGateway,
     invoicingBridge,

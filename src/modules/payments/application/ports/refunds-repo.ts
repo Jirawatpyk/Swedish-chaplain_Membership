@@ -58,30 +58,35 @@ export interface RefundsRepo {
     processorRefundId: string,
   ): Promise<RefundRow | null>;
 
-  /** Sum of succeeded refund amounts against a payment — remaining-refundable invariant. */
-  sumSucceededForPayment(tx: unknown, tenantId: string, paymentId: PaymentId): Promise<bigint>;
-
   /**
-   * Count refunds against a payment in `pending` status. Used by
-   * `issueRefund` (T108) inside the payment-row FOR UPDATE lock to
-   * detect a concurrent in-flight refund and surface
-   * `refund_in_progress` (409) instead of inserting a duplicate row.
+   * Combined aggregate snapshot for a (tenant, payment) tuple,
+   * computed in ONE SELECT under the payment-row FOR UPDATE lock.
+   * Used by `issueRefund` (T108) — replaces the previous trio of
+   * `countPendingForPayment` + `sumSucceededForPayment` +
+   * `nextRefundSeq` so the lock-hold window does not absorb 3
+   * separate roundtrips (review 2026-04-26 simplify E3).
    *
-   * Under correct usage the lock + count happens inside the same
-   * tx so the read sees the latest committed state.
+   * Returns:
+   *   - `pendingCount` — # of refunds with status='pending'.
+   *     `> 0` → use-case rejects with `refund_in_progress`.
+   *   - `succeededSumSatang` — Σ amount_satang WHERE status='succeeded'.
+   *     Drives the FR-011b remaining-refundable invariant.
+   *   - `nextSeq` — `COUNT(*) + 1` over all rows in the partition;
+   *     drives the Stripe idempotency key `rfnd-{paymentId}-{seq}`
+   *     so repeated client clicks within the lock window collapse
+   *     onto the same Stripe refund row.
+   *
+   * Caller MUST invoke inside the tx that holds the
+   * `SELECT … FOR UPDATE` on `payments(id)` so all three reads see
+   * the same committed snapshot.
    */
-  countPendingForPayment(
+  getRefundContextForUpdate(
     tx: unknown,
     tenantId: string,
     paymentId: PaymentId,
-  ): Promise<number>;
-
-  /**
-   * Next attempt-sequence number for (tenant, payment). Drives the
-   * Stripe idempotency key `rfnd-{paymentId}-{seq}` so repeated
-   * client clicks within the lock window collapse onto the same
-   * Stripe refund row (T110). Caller invokes inside the same tx as
-   * the FOR UPDATE lock to avoid race.
-   */
-  nextRefundSeq(tx: unknown, tenantId: string, paymentId: PaymentId): Promise<number>;
+  ): Promise<{
+    readonly pendingCount: number;
+    readonly succeededSumSatang: bigint;
+    readonly nextSeq: number;
+  }>;
 }
