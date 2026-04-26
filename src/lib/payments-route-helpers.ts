@@ -100,3 +100,56 @@ export function errorResponse(
     headers: baseHeaders(correlationId, extraHeaders),
   });
 }
+
+/**
+ * PCI / log-hygiene telemetry extractor for use-case error results
+ * (review 2026-04-26 simplify R3).
+ *
+ * Replaces the ternary-chain copy that appeared verbatim in 3 routes
+ * (`payments/initiate`, `refunds/initiate`, `payments/[id]/cancel`)
+ * for processing the closed-union error shape returned by every F5
+ * use-case:
+ *
+ *     | { code: 'processor_unavailable'; kind?: 'retryable' | 'permanent' | 'idempotency_conflict'; reason: string }
+ *     | { code: '<other>'; ... }
+ *
+ * Returns:
+ *   - `processorErrorKind` — bounded discriminator for log payload
+ *     (`undefined` on error codes other than `processor_unavailable`,
+ *     and on cancel-payment's variant which lacks the `kind` field)
+ *   - `processorErrorReason` — closed-union literal for log payload
+ *     (NEVER raw Stripe SDK text — every F5 use-case's
+ *     `reason` is a typed literal-union)
+ *   - `retryAfterSeconds` — `30` for retryable processor failures (or
+ *     for any `processor_unavailable` on routes whose error union
+ *     lacks a `kind` field, e.g. cancel-payment); `undefined` for
+ *     permanent failures, idempotency conflicts, F4 bridge errors,
+ *     and non-processor errors. Permanent / non-retryable failures
+ *     MUST NOT carry Retry-After (would mislead upstream proxies +
+ *     monitoring into thinking a retry would help).
+ */
+export function buildUseCaseErrorTelemetry(error: {
+  readonly code: string;
+  readonly kind?: unknown;
+  readonly reason?: unknown;
+}): {
+  readonly processorErrorKind: string | undefined;
+  readonly processorErrorReason: string | undefined;
+  readonly retryAfterSeconds: number | undefined;
+} {
+  const isProcessorUnavailable = error.code === 'processor_unavailable';
+  const processorErrorKind =
+    isProcessorUnavailable && typeof error.kind === 'string'
+      ? error.kind
+      : undefined;
+  const processorErrorReason =
+    isProcessorUnavailable && typeof error.reason === 'string'
+      ? error.reason
+      : undefined;
+  const retryAfterSeconds =
+    isProcessorUnavailable &&
+    (processorErrorKind === 'retryable' || processorErrorKind === undefined)
+      ? 30
+      : undefined;
+  return { processorErrorKind, processorErrorReason, retryAfterSeconds };
+}

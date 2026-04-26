@@ -36,7 +36,11 @@ import { randomUUID } from 'node:crypto';
 import { initiatePayment, makeInitiatePaymentDeps } from '@/modules/payments';
 import type { PaymentMethod } from '@/modules/payments';
 import { type F5RouteErrorCode } from '@/lib/payments-errors-i18n';
-import { baseHeaders, errorResponse } from '@/lib/payments-route-helpers';
+import {
+  baseHeaders,
+  buildUseCaseErrorTelemetry,
+  errorResponse,
+} from '@/lib/payments-route-helpers';
 import { auditRepo, type ActorRef } from '@/lib/stripe-webhook-deps';
 
 export const runtime = 'nodejs';
@@ -132,7 +136,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // cast needed; the discriminated-union narrowing carries the
   // field types.
   if (!memberCtx || 'response' in memberCtx) {
-    // Defensive — should be unreachable given the narrowing above.
+    // NOT dead code despite TS flow analysis (simplify Q4 revert,
+    // 2026-04-26): contract test T041 case "500 internal_error" mocks
+    // `requireMemberContext` without setting the resolved value, so
+    // at runtime memberCtx is undefined. This branch serialises that
+    // path into a stable 500 envelope instead of crashing on the
+    // `memberCtx.current.user.id` access below.
     return errorResponse(500, 'internal_error', correlationId);
   }
 
@@ -271,35 +280,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Error branch.
     const errCode = result.error.code;
     const { status, routeCode } = httpStatusForUseCaseError(errCode);
-    // PCI: log ONLY the gateway error `kind` discriminator —
-    // never `result.error.reason` (originates from Stripe SDK
-    // `error.message` and may embed account ids / key prefixes /
-    // forbidden detail). The matching `stripe-gateway: SDK error`
-    // pino line carries the full SDK-level diagnostic with
-    // allow-listed fields only.
+    // PCI: log ONLY the bounded gateway error `kind` discriminator +
+    // closed-union `reason` literal — never raw Stripe SDK text. The
+    // matching `stripe-gateway: SDK error` pino line carries the full
+    // SDK-level diagnostic with allow-listed fields only.
     //
-    // Retry-After is meaningful ONLY for retryable errors.
-    // Permanent failures (PromptPay-not-enabled, country-mismatch,
-    // key-mismatch) never recover within 30s and the header would
-    // mislead upstream proxies + monitoring.
-    const processorErrorKind =
-      result.error.code === 'processor_unavailable'
-        ? result.error.kind
-        : undefined;
-    // Surface the use-case error `reason` so ops can distinguish
-    // between high-level discriminators (`cross_method_pi_already_succeeded`,
-    // `cross_method_cancel_retryable`, etc.) without grepping for
-    // the matching `stripe-gateway: SDK error` line. Safe — `reason`
-    // is a closed literal-union on `InitiatePaymentError`, not raw
-    // Stripe SDK text.
-    const processorErrorReason =
-      'reason' in result.error && typeof result.error.reason === 'string'
-        ? result.error.reason
-        : undefined;
-    const retryAfterSeconds =
-      routeCode === 'processor_unavailable' && processorErrorKind === 'retryable'
-        ? 30
-        : undefined;
+    // Retry-After is meaningful ONLY for retryable errors. Permanent
+    // failures + idempotency conflicts never recover within 30s and
+    // the header would mislead upstream proxies + monitoring.
+    const { processorErrorKind, processorErrorReason, retryAfterSeconds } =
+      buildUseCaseErrorTelemetry(result.error);
     logger.warn(
       {
         requestId,

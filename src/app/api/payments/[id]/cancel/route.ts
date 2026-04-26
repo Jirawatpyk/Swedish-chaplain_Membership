@@ -20,7 +20,11 @@ import {
   parsePaymentId,
 } from '@/modules/payments';
 import { type F5RouteErrorCode } from '@/lib/payments-errors-i18n';
-import { baseHeaders, errorResponse } from '@/lib/payments-route-helpers';
+import {
+  baseHeaders,
+  buildUseCaseErrorTelemetry,
+  errorResponse,
+} from '@/lib/payments-route-helpers';
 import { auditRepo, type ActorRef } from '@/lib/stripe-webhook-deps';
 
 export const runtime = 'nodejs';
@@ -167,8 +171,12 @@ export async function POST(
 
     const errCode = result.error.code;
     const { status, routeCode } = httpStatusForUseCaseError(errCode);
-    const retryAfterSeconds = routeCode === 'processor_unavailable' ? 30 : undefined;
-    // structured log on every use-case error.
+    // R3: shared telemetry extractor — cancel's error union has no
+    // `kind` field, so `processorErrorKind === undefined` triggers
+    // the helper's "default-to-30s back-off on `processor_unavailable`"
+    // branch (matches cancel's prior behaviour byte-identically).
+    const { processorErrorKind, processorErrorReason, retryAfterSeconds } =
+      buildUseCaseErrorTelemetry(result.error);
     logger.warn(
       {
         requestId,
@@ -179,6 +187,8 @@ export async function POST(
         useCaseErrorCode: errCode,
         httpStatus: status,
         routeCode,
+        ...(processorErrorKind ? { processorErrorKind } : {}),
+        ...(processorErrorReason ? { processorErrorReason } : {}),
       },
       'payments.cancel.use_case_error',
     );

@@ -30,7 +30,11 @@ import {
   type IssueRefundError,
 } from '@/modules/payments';
 import { type F5RouteErrorCode } from '@/lib/payments-errors-i18n';
-import { baseHeaders, errorResponse } from '@/lib/payments-route-helpers';
+import {
+  baseHeaders,
+  buildUseCaseErrorTelemetry,
+  errorResponse,
+} from '@/lib/payments-route-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -186,15 +190,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const { status, routeCode } = httpStatusForUseCaseError(errCode);
     // PCI: log ONLY the bounded `kind` discriminator + closed-union
     // `reason` literal — never raw Stripe SDK text.
-    const processorErrorKind =
-      result.error.code === 'processor_unavailable' ? result.error.kind : undefined;
-    const processorErrorReason =
-      result.error.code === 'processor_unavailable' ? result.error.reason : undefined;
-    // Retry-After only on retryable processor failures. Permanent
-    // gateway failures + idempotency conflicts + F4 bridge errors do
-    // not benefit from a back-off (the underlying state is durable).
-    const retryAfterSeconds =
-      processorErrorKind === 'retryable' ? 30 : undefined;
+    const { processorErrorKind, processorErrorReason, retryAfterSeconds } =
+      buildUseCaseErrorTelemetry(result.error);
     logger.warn(
       {
         requestId,
