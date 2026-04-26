@@ -105,15 +105,22 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         patch.creditNoteId = input.creditNoteId;
       }
 
+      const whereClauses = [
+        eq(refunds.tenantId, input.tenantId),
+        eq(refunds.id, input.refundId),
+      ];
+      // Optimistic concurrency guard — sweep passes
+      // `expectedCurrentStatus: 'pending'` so a row already finalised
+      // by a different writer (delayed webhook charge.refunded) is
+      // NOT overwritten. Zero rows returned → throw below → caller's
+      // tx rolls back, no audit row commits.
+      if (input.expectedCurrentStatus !== undefined) {
+        whereClauses.push(eq(refunds.status, input.expectedCurrentStatus));
+      }
       const [updated] = await tx
         .update(refunds)
         .set({ ...patch, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(refunds.tenantId, input.tenantId),
-            eq(refunds.id, input.refundId),
-          ),
-        )
+        .where(and(...whereClauses))
         .returning();
       if (!updated) {
         // I4: structured pino warn before throw.
@@ -186,6 +193,15 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
           ),
         )
         .limit(100); // bounded sweep — repeat call drains the rest
+      // Surface cap-hit so ops can manually re-trigger via
+      // `?olderThanHours=N` for faster drain when a real outage
+      // produces > 100 stale rows in one tenant.
+      if (rows.length === 100) {
+        logger.warn(
+          { tenantId: tenantIdArg, cap: 100 },
+          'refunds.list_pending_older_than.cap_hit',
+        );
+      }
       return rows.map((r) => ({
         id: r.id,
         paymentId: asPaymentId(r.paymentId),

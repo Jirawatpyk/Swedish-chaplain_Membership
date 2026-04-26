@@ -1,8 +1,13 @@
 /**
  * T130a — Stale-pending-refund sweep cron.
  *
- * Scheduled via Vercel Cron (e.g. hourly) — `vercel.json` entry:
- *   { "path": "/api/cron/sweep-stale-pending-refunds", "schedule": "0 * * * *" }
+ * Scheduled via Vercel Cron Hobby (daily) — `vercel.json` entry:
+ *   { "path": "/api/cron/sweep-stale-pending-refunds", "schedule": "0 3 * * *" }
+ *
+ * Also scheduled redundantly on cron-job.org at `0 15 * * *` UTC
+ * (12h offset). Sweep is idempotent — dual-firing safe (verified by
+ * the integration test's "idempotent" case). See runbook
+ * § "Redundant scheduling".
  *
  * Recovery sweep for the Postgres double-fault scenario in
  * `issueRefund` (Phase 6 review fix C2 covers the common case;
@@ -28,6 +33,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { db } from '@/lib/db';
+import { verifyCronBearer } from '@/lib/cron-auth';
 // Cron path: bulk read across tenants + per-tenant use-case
 // invocation. No top-level Application use case exists for cross-
 // tenant orchestration — it is a maintenance path, not a user
@@ -52,11 +58,10 @@ const DEFAULT_OLDER_THAN_HOURS = 24;
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
-  // Bearer-secret gate (mirrors `/api/cron/lockout-cleanup`).
   const authHeader = request.headers.get('authorization');
   const expected = process.env.CRON_SECRET;
   if (expected) {
-    if (authHeader !== `Bearer ${expected}`) {
+    if (!verifyCronBearer(authHeader, expected)) {
       logger.warn({ requestId }, 'cron.sweep_stale_pending_refunds.unauthorized');
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }

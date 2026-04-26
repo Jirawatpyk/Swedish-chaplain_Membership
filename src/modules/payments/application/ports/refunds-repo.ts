@@ -50,6 +50,18 @@ export interface RefundsRepo {
       readonly failureReasonCode?: string | null;
       readonly creditNoteId?: string | null;
       readonly completedAt: Date;
+      /**
+       * Optional optimistic-concurrency guard (S5). When set, the
+       * UPDATE additionally filters `WHERE status = expectedCurrentStatus`.
+       * Zero rows matched → repo throws → caller's tx rolls back.
+       *
+       * Used by `sweepStalePendingRefunds` to ensure the sweep does
+       * not flip a row that has been concurrently finalised to
+       * `succeeded` by a different writer (e.g. a future webhook
+       * `charge.refunded` branch wired to the real adapter — the
+       * F5 webhook gap noted in `infrastructure/di.ts`).
+       */
+      readonly expectedCurrentStatus?: RefundStatus;
     },
   ): Promise<RefundRow>;
 

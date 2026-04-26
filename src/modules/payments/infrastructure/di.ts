@@ -51,28 +51,27 @@ import { f5AuditAdapter } from './audit/drizzle-payments-audit';
 import { paymentsLogger } from './logger/payments-logger';
 
 // ---------------------------------------------------------------------------
-// RefundsRepo — TEMPORARY STUB.
+// RefundsRepo — RESIDUAL STUB.
 //
-// The `refunds` table schema + migration (0034) is shipped, but the
-// concrete `DrizzleRefundsRepo` has NOT been implemented yet — it is
-// scoped to Group F's refund HTTP route + full refund use-case work
-// (charge.refunded webhook branch + admin-initiated refund flow).
+// T109 wired the real `DrizzleRefundsRepo` and `makeIssueRefundDeps`
+// (line ~256 below) consumes it. This stub is now retained ONLY for
+// `processWebhookEvent`'s `charge.refunded` branch, which has not
+// yet been routed end-to-end through the real repo (separate F5
+// webhook gap, tracked outside Phase 6).
 //
-// Today this stub is reachable ONLY through `processWebhookEvent`'s
-// refund branch. All unit tests mock the repo, and the existing
-// integration tests exercise paths that never call into it. A
-// production `charge.refunded` event with this stub in place would
-// throw (loud failure → logged → next webhook retry re-tries), which
-// is the correct behaviour until Group F lands. See Group F gap-note
-// at bottom of file.
+// A production `charge.refunded` event reaching this stub throws a
+// loud, well-marked error (logged → Stripe webhook retry kicks in
+// on its own schedule), which is the intended fail-loud behaviour
+// until the webhook branch is migrated.
 // ---------------------------------------------------------------------------
 function makeUnimplementedRefundsRepo(): RefundsRepo {
   const unimplemented = (method: string): never => {
     throw new Error(
-      `[F5] RefundsRepo.${method} is not wired yet — Phase 6 T109 lands the ` +
-        `Drizzle adapter (scoped with the refund HTTP route + admin-initiated ` +
-        `refund use-case). Webhook replay paths reach this only via the not- ` +
-        `yet-shipped refund branch; routes MUST NOT ship until T109.`,
+      `[F5] RefundsRepo.${method} is reachable only via ` +
+        `processWebhookEvent's charge.refunded branch (not yet wired to ` +
+        `the real DrizzleRefundsRepo — separate F5 webhook gap). ` +
+        `Admin-initiated refund flow already uses the real adapter via ` +
+        `makeIssueRefundDeps.`,
     );
   };
   return {

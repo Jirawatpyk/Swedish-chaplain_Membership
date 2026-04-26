@@ -15,15 +15,19 @@
  * `issueRefund` step 3 then permanently blocks all future refunds on
  * that payment until ops manually flip the row.
  *
- * This sweep runs hourly (or on-demand via the cron route at
- * `/api/internal/sweep-stale-pending-refunds`) and:
+ * This sweep runs daily (Vercel Cron Hobby `0 3 * * *` + cron-job.org
+ * `0 15 * * *` redundantly — see runbook § "Redundant scheduling") or
+ * on-demand at `/api/cron/sweep-stale-pending-refunds` and:
  *
  *   1. Finds pending refunds older than `olderThanHours` (default 24).
- *   2. For each row: flip status='failed' with
- *      `failureReasonCode='stale_pending_sweep'` + emit
- *      `stale_pending_refund_detected` audit (10y retention — F4
- *      tax-doc lineage) with payload `{refund_id, payment_id,
- *      invoice_id, age_minutes, runbook_url}`.
+ *   2. For each row, in its OWN transaction (W1 fix — Postgres tx-abort
+ *      semantics make a single shared tx degenerate after the first
+ *      per-row error): emit `stale_pending_refund_detected` audit FIRST
+ *      (W2 fix — audit-before-mutation guarantees no orphan failed row
+ *      without an audit trail), THEN flip status='failed' with
+ *      `failureReasonCode='stale_pending_sweep'`. If audit emit fails,
+ *      updateStatus does not run and the per-row tx rolls back; the
+ *      next sweep picks the row up again.
  *   3. Returns counts so the route handler can log + emit a metric.
  *
  * **Important**: Stripe + F4 may have already succeeded on these
@@ -81,61 +85,76 @@ export async function sweepStalePendingRefunds(
   let sweptCount = 0;
   let skippedCount = 0;
 
+  // Read phase in its own short tx; each row then processed in its
+  // OWN write tx below. Postgres aborts a tx on the first statement
+  // error, so a single shared tx would degenerate after one bad row
+  // ("current transaction is aborted, commands ignored"). Per-row tx
+  // gives the for-loop's catch real "skip + continue" semantics.
+  let stale: Awaited<ReturnType<typeof deps.refundsRepo.listPendingOlderThan>>;
   try {
-    await deps.paymentsRepo.withTx(async (tx) => {
-      const stale = await deps.refundsRepo.listPendingOlderThan(
-        tx,
-        input.tenantId,
-        cutoff,
-      );
-      for (const row of stale) {
-        try {
-          const failedAt = new Date(deps.clock.nowMs());
-          await deps.refundsRepo.updateStatus(tx, {
-            refundId: row.id,
-            tenantId: input.tenantId,
-            nextStatus: 'failed',
-            failureReasonCode: 'stale_pending_sweep',
-            completedAt: failedAt,
-          });
-          const ageMinutes = Math.floor(
-            (failedAt.getTime() - row.initiatedAt.getTime()) / 60_000,
-          );
-          await deps.audit.emit(tx, {
-            tenantId: input.tenantId,
-            requestId: input.requestId,
-            eventType: 'stale_pending_refund_detected',
-            // SECURITY: synthetic system actor — the sweep is
-            // unattended; this row should never be attributed to a
-            // human admin even though the original refund had one.
-            actorUserId: SWEEP_ACTOR_USER_ID,
-            summary: `Swept stale pending refund ${row.id} (age ${ageMinutes}min) — Postgres double-fault recovery; ops follow up via runbook`,
-            payload: {
-              refund_id: row.id,
-              payment_id: row.paymentId,
-              invoice_id: row.invoiceId,
-              amount_satang: row.amountSatang.toString(),
-              age_minutes: ageMinutes,
-              original_initiator_user_id: row.initiatorUserId,
-              original_correlation_id: row.correlationId,
-              runbook_url: STALE_PENDING_RUNBOOK_URL,
-            },
-            retentionYears: retentionFor('stale_pending_refund_detected'),
-          });
-          sweptCount += 1;
-        } catch {
-          // Per-row error — skip + continue. The next sweep run
-          // picks up the row again. Don't let one bad row block
-          // the whole sweep batch.
-          skippedCount += 1;
-        }
-      }
-    });
+    stale = await deps.paymentsRepo.withTx((tx) =>
+      deps.refundsRepo.listPendingOlderThan(tx, input.tenantId, cutoff),
+    );
   } catch (cause) {
     return err({
       code: 'sweep_failed',
       cause: cause instanceof Error ? cause.message : String(cause),
     });
+  }
+
+  for (const row of stale) {
+    try {
+      await deps.paymentsRepo.withTx(async (tx) => {
+        const failedAt = new Date(deps.clock.nowMs());
+        const ageMinutes = Math.floor(
+          (failedAt.getTime() - row.initiatedAt.getTime()) / 60_000,
+        );
+        // Audit emits BEFORE state change. If emit throws, updateStatus
+        // doesn't run and the per-row tx rolls back; the row stays
+        // pending for the next sweep. Guarantees no `failed` row
+        // exists without a corresponding audit trail (Constitution
+        // Principle I sub-clause #4).
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'stale_pending_refund_detected',
+          // SECURITY: synthetic system actor — the sweep is
+          // unattended; this row should never be attributed to a
+          // human admin even though the original refund had one.
+          actorUserId: SWEEP_ACTOR_USER_ID,
+          summary: `Swept stale pending refund ${row.id} (age ${ageMinutes}min) — Postgres double-fault recovery; ops follow up via runbook`,
+          payload: {
+            refund_id: row.id,
+            payment_id: row.paymentId,
+            invoice_id: row.invoiceId,
+            amount_satang: row.amountSatang.toString(),
+            age_minutes: ageMinutes,
+            original_initiator_user_id: row.initiatorUserId,
+            original_correlation_id: row.correlationId,
+            runbook_url: STALE_PENDING_RUNBOOK_URL,
+          },
+          retentionYears: retentionFor('stale_pending_refund_detected'),
+        });
+        await deps.refundsRepo.updateStatus(tx, {
+          refundId: row.id,
+          tenantId: input.tenantId,
+          nextStatus: 'failed',
+          failureReasonCode: 'stale_pending_sweep',
+          completedAt: failedAt,
+          // Concurrency guard — if a different writer (future webhook
+          // charge.refunded → real adapter) finalised this row between
+          // our read tx and now, zero rows match → per-row tx rolls
+          // back → row keeps its newer terminal state, no audit commits.
+          expectedCurrentStatus: 'pending',
+        });
+      });
+      sweptCount += 1;
+    } catch {
+      // Per-row error — the per-row tx already rolled back, leaving
+      // the row in `pending` for the next sweep to retry. Skip and
+      // continue: don't let one bad row block the whole batch.
+      skippedCount += 1;
+    }
   }
 
   return ok({

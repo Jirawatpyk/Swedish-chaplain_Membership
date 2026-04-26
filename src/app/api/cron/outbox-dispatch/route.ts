@@ -33,9 +33,10 @@
  * event emission (FR-012c parity for unrenderable rows).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { and, count, eq, lt, lte, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { verifyCronBearer } from '@/lib/cron-auth';
 /* eslint-disable no-restricted-imports --
  * Cron job: direct UPDATE on `notifications_outbox` + auditLog — this
  * is the operational drain path, not a user flow. Same escape hatch
@@ -668,12 +669,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // immutable after boot. If the env var IS unset (impossible in
   // prod), the comparison to `Bearer undefined` still triggers 401
   // for any caller — no dev fallback, no unauthenticated drain.
-  const authHeader = request.headers.get('authorization');
-  // T-F4-01 — constant-time comparison to defeat timing side-channel
-  // on `CRON_SECRET` enumeration. Length-check first (timingSafeEqual
-  // throws on length mismatch), then constant-time byte-compare. Null
-  // / missing header is treated as a length-mismatch → unauthorized.
-  //
   // R15-04 — explicit misconfiguration guard replaces the old `?? ''`
   // fallback. `src/lib/env.ts` validates `CRON_SECRET` as
   // `z.string().min(16)` at boot, so the app refuses to start on miss.
@@ -691,16 +686,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       { status: 500 },
     );
   }
-  const expectedAuth = `Bearer ${secret}`;
-  const received = authHeader ?? '';
-  let authOk = false;
-  if (received.length === expectedAuth.length) {
-    authOk = timingSafeEqual(
-      Buffer.from(received, 'utf8'),
-      Buffer.from(expectedAuth, 'utf8'),
-    );
-  }
-  if (!authOk) {
+  if (!verifyCronBearer(request.headers.get('authorization'), secret)) {
     logger.warn({ requestId }, 'cron.outbox_dispatch.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }

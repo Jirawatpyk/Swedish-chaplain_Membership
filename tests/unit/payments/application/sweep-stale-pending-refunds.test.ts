@@ -127,7 +127,9 @@ describe('sweepStalePendingRefunds (T130a)', () => {
     expect(asMock(deps.audit.emit)).toHaveBeenCalledTimes(3);
   });
 
-  it("per-row error — one row's updateStatus throws; others continue; skipped count", async () => {
+  it("per-row error (W1) — one row's updateStatus throws; others continue in their own tx", async () => {
+    // Each row gets its own withTx call so row A's aborted Postgres
+    // tx does not corrupt row B's tx.
     const deps = makeDeps();
     asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
       makeStaleRow({ id: 'rfnd_a' }),
@@ -143,6 +145,59 @@ describe('sweepStalePendingRefunds (T130a)', () => {
       expect(r.value.sweptCount).toBe(1);
       expect(r.value.skippedCount).toBe(1);
     }
+    // Per-row tx evidence — withTx invoked ≥ 3 times (1 read + 2
+    // per-row write tx). One-tx-for-all would call withTx exactly once.
+    expect(asMock(deps.paymentsRepo.withTx).mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('concurrency guard (S5) — row finalised between read+write → zero rows matched → skipped', async () => {
+    // Sweep passes `expectedCurrentStatus: 'pending'`. If a concurrent
+    // writer (future webhook charge.refunded → real adapter) flipped
+    // the row to `succeeded` between our read tx and the per-row
+    // write tx, repo's UPDATE matches zero rows and throws → per-row
+    // tx rolls back → audit doesn't commit → sweep skips the row.
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
+      makeStaleRow({ id: 'rfnd_raced' }),
+    ]);
+    asMock(deps.refundsRepo.updateStatus).mockImplementationOnce(async () => {
+      throw new Error(
+        'drizzle-refunds-repo: updateStatus matched zero rows for rfnd_raced',
+      );
+    });
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+    }
+
+    // Sweep MUST pass the concurrency guard so the repo can do the
+    // status check.
+    const updateCall = asMock(deps.refundsRepo.updateStatus).mock.calls[0]?.[1];
+    expect(updateCall.expectedCurrentStatus).toBe('pending');
+  });
+
+  it('audit-emit failure (W2) — updateStatus is NOT called; row stays pending', async () => {
+    // Audit emit runs BEFORE updateStatus inside the per-row tx; if
+    // audit throws, updateStatus must not run (audit-before-mutation).
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
+      makeStaleRow({ id: 'rfnd_audit_fail' }),
+    ]);
+    asMock(deps.audit.emit).mockImplementationOnce(async () => {
+      throw new Error('audit log offline');
+    });
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+    }
+    // No orphan failed row — updateStatus must never have been called.
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
   });
 
   it('invalid olderThanHours (≤ 0) → sweep_failed', async () => {
