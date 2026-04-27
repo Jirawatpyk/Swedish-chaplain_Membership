@@ -122,17 +122,36 @@ export interface F5AuditPayloadByType {
   payment_succeeded: {
     payment_id: string;
     invoice_id: string;
-    processor_charge_id: string | null;
-    amount_satang: string;
     method: 'card' | 'promptpay';
+    amount_satang: string;
+    processor_charge_id: string | null;
+    completed_at: string;
+    /** Card metadata only present on `method='card'` succeeded payments. */
+    card_brand?: string;
+    card_last4?: string;
   };
   payment_failed: {
     payment_id: string;
     invoice_id: string;
     failure_reason_code: string;
   };
-  payment_canceled: Record<string, unknown>;
-  payment_method_switched: Record<string, unknown>;
+  payment_canceled: {
+    payment_id: string;
+    invoice_id: string;
+    actor_type: 'member' | 'webhook' | 'admin';
+    /** Set on Stripe-failure path (cancel-payment.ts:170). Omitted on happy path. */
+    outcome?: 'stripe_error';
+    /** Stripe gateway error.kind on the failure path. */
+    processor_error_kind?: 'retryable' | 'permanent' | 'idempotency_conflict';
+  };
+  payment_method_switched: {
+    payment_id: string;
+    previous_method: 'card' | 'promptpay';
+    new_method: 'card' | 'promptpay';
+    processor_payment_intent_id: string;
+    attempt_seq: number;
+    cancel_outcome: 'stripe_confirmed' | 'stripe_error_bypassed';
+  };
   payment_auto_refunded_stale_invoice: {
     payment_id: string;
     invoice_id: string;
@@ -157,13 +176,36 @@ export interface F5AuditPayloadByType {
     invoice_id: string;
     amount_satang: string;
     reason: string;
+    idempotency_key: string;
   };
-  refund_succeeded: {
-    refund_id: string;
-    processor_refund_id: string;
-    processor_charge_id?: string;
-    recovery_path?: 'webhook_charge_refunded' | 'in_app_phase_b';
-  };
+  /**
+   * Two emit shapes:
+   *   (a) admin-initiated refund (issue-refund.ts:492) — creates F4 CN
+   *       and flips payment/invoice status; payload carries the full
+   *       state-transition record.
+   *   (b) webhook-driven recovery (process-charge-refunded.ts:155) —
+   *       Stripe `charge.refunded` event arrives for a known refund
+   *       row that was stuck `pending`; payload carries Stripe ids +
+   *       recovery_path discriminator.
+   */
+  refund_succeeded:
+    | {
+        refund_id: string;
+        payment_id: string;
+        invoice_id: string;
+        processor_refund_id: string;
+        credit_note_id: string;
+        credit_note_number: string;
+        amount_satang: string;
+        payment_next_status: 'partially_refunded' | 'refunded';
+        invoice_next_status: 'partially_credited' | 'credited';
+      }
+    | {
+        refund_id: string;
+        processor_refund_id: string;
+        processor_charge_id: string;
+        recovery_path: 'webhook_charge_refunded';
+      };
   refund_failed: {
     refund_id: string;
     payment_id: string;
@@ -179,8 +221,24 @@ export interface F5AuditPayloadByType {
     amount_satang: string;
     runbook_url: string;
   };
+  /**
+   * NOTE: `webhook_signature_rejected` + `webhook_api_version_mismatch`
+   * are emitted via the F1 `auditRepo.append` path (route handler at
+   * `src/app/api/webhooks/stripe/route.ts:auditReject`), NOT via this
+   * F5 `audit.emit` port. The F1 audit shape uses `{ reason }` at the
+   * top level instead of `payload`. These entries are kept here so the
+   * `F5AuditEventType` discriminated union remains exhaustive — the
+   * permissive payload shape is defensive only.
+   */
   webhook_signature_rejected: Record<string, unknown>;
   webhook_api_version_mismatch: Record<string, unknown>;
+  /**
+   * NOTE: emitted by the admin tenant-payment-settings UPDATE surface
+   * (Phase 9 polish, not yet wired). When that ships, tighten this to
+   * `{ before_keys: string[]; after_keys: string[]; actor_user_id: string; ... }`
+   * — never include the actual values (PCI scope: secret-key fields
+   * MUST NOT travel through audit log).
+   */
   tenant_payment_settings_updated: Record<string, unknown>;
   online_payment_toggled: Record<string, unknown>;
   dispute_created: Record<string, unknown>;
@@ -217,16 +275,26 @@ export type F5AuditEventTyped<T extends F5AuditEventType> = {
   readonly retentionYears: 5 | 10;
 };
 
-export interface F5AuditEvent {
-  readonly tenantId: string | null;        // NULL for pre-resolution webhook rejects
-  readonly requestId: string | null;
-  readonly eventType: F5AuditEventType;
-  readonly actorUserId: string;            // system actor UUID for webhook paths
-  readonly summary: string;
-  readonly payload: Record<string, unknown>;
-  /** Retention policy (data-model § 7.1). */
-  readonly retentionYears: 5 | 10;
-}
+/**
+ * R2 TD-13 (2026-04-27 → F5.1-B 2026-04-28): F5AuditEvent is now a
+ * discriminated union over `F5AuditEventType`. The `payload` field
+ * narrows automatically based on `eventType` literal at the emit site,
+ * giving compile-time field-name + value-shape validation for the 12
+ * tightened event types. Permissive entries (`Record<string, unknown>`)
+ * stay loose to allow incremental hardening without breaking change.
+ */
+export type F5AuditEvent = {
+  [T in F5AuditEventType]: {
+    readonly tenantId: string | null;        // NULL for pre-resolution webhook rejects
+    readonly requestId: string | null;
+    readonly eventType: T;
+    readonly actorUserId: string;            // system actor UUID for webhook paths
+    readonly summary: string;
+    readonly payload: F5AuditPayloadByType[T];
+    /** Retention policy (data-model § 7.1). */
+    readonly retentionYears: 5 | 10;
+  };
+}[F5AuditEventType];
 
 export interface AuditPort {
   /**
