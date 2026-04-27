@@ -96,6 +96,15 @@ export interface MarkPaidFromProcessorInput {
    * `SET LOCAL app.current_tenant` is in effect.
    */
   readonly tx?: unknown;
+  /**
+   * T128a (2026-04-27): when `true`, F4's `recordPayment` skips the
+   * auto-email outbox enqueue. Set by F5 `confirmPayment` when the
+   * tenant's `tenant_payment_settings.auto_email_on_payment = false`.
+   * Status flip, audit, PDF render, and registration-fee flip all
+   * still run — only the dispatcher enqueue is gated. Spec.md:433
+   * "MAY suppress" optional override.
+   */
+  readonly suppressReceiptEmail?: boolean;
 }
 
 export type MarkPaidFromProcessorError = RecordPaymentError;
@@ -146,5 +155,8 @@ export async function markPaidFromProcessor(
     ),
     paymentReference: input.paymentIntentId,
     paymentDate: input.settlementDate,
+    ...(input.suppressReceiptEmail !== undefined
+      ? { suppressReceiptEmail: input.suppressReceiptEmail }
+      : {}),
   });
 }

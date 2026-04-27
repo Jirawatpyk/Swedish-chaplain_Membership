@@ -169,6 +169,9 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
   let user: TestUser;
   let cardSeed: IssuedSeed;
   let promptpaySeed: IssuedSeed;
+  // T128a (verify-driven 2026-04-27): third seed, identical shape to
+  // cardSeed, used by the `autoEmailOnPayment=false` suppression test.
+  let suppressedSeed: IssuedSeed;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -193,6 +196,16 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
       paymentIntentId: `pi_test_t128_pp_${randomUUID().slice(0, 8)}`,
       chargeId: `ch_test_t128_pp_${randomUUID().slice(0, 8)}`,
       method: 'promptpay',
+    };
+    suppressedSeed = {
+      invoiceId: randomUUID(),
+      memberId: randomUUID(),
+      paymentId: asPaymentId(
+        `pmt_${randomUUID().replace(/-/g, '').slice(0, 26)}`,
+      ),
+      paymentIntentId: `pi_test_t128a_${randomUUID().slice(0, 8)}`,
+      chargeId: `ch_test_t128a_${randomUUID().slice(0, 8)}`,
+      method: 'card',
     };
 
     const settings: NewTenantPaymentSettingsRow = {
@@ -270,9 +283,10 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
         })
         .onConflictDoNothing();
 
-      // Seed two parallel, identical-shape (issued, same totals)
-      // invoice + payment chains — one for card, one for PromptPay.
-      for (const seed of [cardSeed, promptpaySeed]) {
+      // Seed three parallel, identical-shape (issued, same totals)
+      // invoice + payment chains — card, PromptPay, plus suppressedSeed
+      // (third card chain for the autoEmailOnPayment=false test).
+      for (const seed of [cardSeed, promptpaySeed, suppressedSeed]) {
         await tx.insert(members).values({
           tenantId: tenant.ctx.slug,
           memberId: seed.memberId,
@@ -395,7 +409,11 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
     };
   }
 
-  async function runConfirmFor(seed: IssuedSeed) {
+  async function runConfirmFor(
+    seed: IssuedSeed,
+    overrides: { autoEmailOnPayment?: boolean } = {},
+  ) {
+    const autoEmailOnPayment = overrides.autoEmailOnPayment ?? true;
     return runInTenant(tenant.ctx, async () =>
       confirmPayment(
         {
@@ -409,7 +427,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
               processorPublishableKey: `pk_test_${tenant.ctx.slug.slice(-8)}`,
               enabledMethods: ['card', 'promptpay'],
               onlinePaymentEnabled: true,
-              autoEmailOnPayment: true,
+              autoEmailOnPayment,
               promptpayQrExpirySeconds: 900,
               allowAnonymousPaylink: false,
             }),
@@ -572,6 +590,62 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
     // fail — this redundant guard is a fast canary.
     expect(enqueueSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   }, 30_000);
+
+  /**
+   * T128a (verify-driven 2026-04-27) — `autoEmailOnPayment=false`
+   * suppression. spec.md:433 + FR-015 say tenants MAY override the
+   * default-on receipt-email-on-payment auto-send. Until the verify
+   * pass, the schema column existed but no code path consumed it
+   * before F4's outbox enqueue → the toggle was inert.
+   *
+   * After the fix, F5 `confirmPayment` reads
+   * `tenantPaymentSettings.autoEmailOnPayment` and threads
+   * `suppressReceiptEmail = !autoEmailOnPayment` through
+   * `markPaidFromProcessor` → F4 `recordPayment` skips the
+   * dispatcher enqueue. ALL OTHER side-effects MUST still run:
+   * status flip to `paid`, audit emit, PDF render+upload,
+   * registration-fee flip. The suppression is dispatcher-only.
+   */
+  it('T128a — autoEmailOnPayment=false → outbox NOT enqueued + invoice still flips paid', async () => {
+    renderSpy.mockClear();
+    enqueueSpy.mockClear();
+
+    const result = await runConfirmFor(suppressedSeed, {
+      autoEmailOnPayment: false,
+    });
+    expect(result.ok, `confirmPayment failed: ${JSON.stringify(!result.ok && result.error)}`).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+
+    // Receipt PDF render STILL fires — the F5 settlement flow is
+    // identical except for the dispatcher enqueue. Storing the PDF
+    // means admins can later resend manually from /admin/invoices.
+    expect(renderSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+    // Outbox enqueue MUST NOT fire — this is the FR-015 invariant.
+    expect(
+      enqueueSpy,
+      'auto_email_on_payment=false → enqueue MUST be skipped',
+    ).not.toHaveBeenCalled();
+
+    // Invoice MUST still flip to 'paid' — the suppression governs
+    // the dispatcher only, not the state transition.
+    const [row] = await db
+      .select({
+        status: invoices.status,
+        paymentNotes: invoices.paymentNotes,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, tenant.ctx.slug),
+          eq(invoices.invoiceId, suppressedSeed.invoiceId),
+        ),
+      );
+    expect(row?.status).toBe('paid');
+    expect(row?.paymentNotes).toContain('Stripe card');
+    expect(row?.paymentNotes).toContain(suppressedSeed.paymentIntentId);
+  }, 60_000);
 
   /**
    * SC-003 reuse — the F5 path supplies the SAME render-input shape as

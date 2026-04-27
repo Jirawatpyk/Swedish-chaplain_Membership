@@ -497,6 +497,12 @@ async function confirmPaymentBody(
         paymentIntentId: input.paymentIntentId,
         chargeId: intent.latestChargeId,
         settlementDate,
+        // T128a: tenant override of receipt-on-payment auto-email.
+        // Default-on (column DEFAULT true). When the admin disables
+        // it, F4 still flips the invoice + writes audit + renders
+        // PDF — only the dispatcher enqueue is skipped. spec.md:433
+        // "MAY suppress" + FR-015.
+        suppressReceiptEmail: !settings.autoEmailOnPayment,
       },
       tx,
     );

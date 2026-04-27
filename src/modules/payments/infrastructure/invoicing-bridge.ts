@@ -128,6 +128,10 @@ export const invoicingBridge: InvoicingBridgePort = {
       chargeId: input.chargeId,
       settlementDate: input.settlementDate,
       ...(tx !== undefined ? { tx } : {}),
+      // T128a: forward F5 suppression flag to F4 record-payment.
+      ...(input.suppressReceiptEmail !== undefined
+        ? { suppressReceiptEmail: input.suppressReceiptEmail }
+        : {}),
     });
 
     if (!f4Result.ok) {

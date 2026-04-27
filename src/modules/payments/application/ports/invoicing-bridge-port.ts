@@ -34,6 +34,16 @@ export interface MarkPaidFromProcessorInput {
   readonly chargeId: string | null;
   /** YYYY-MM-DD Asia/Bangkok settlement date. */
   readonly settlementDate: string;
+  /**
+   * T128a (2026-04-27 verify-driven): when `true`, F4 skips the auto-
+   * email outbox enqueue for the receipt PDF. Other side-effects
+   * (status flip, audit, PDF render+upload, registration-fee flip)
+   * still run. Set by F5 `confirmPayment` from the tenant's
+   * `tenant_payment_settings.auto_email_on_payment` column.
+   * `undefined` keeps default-on (current MVP behaviour) so this is a
+   * pure widening change — no F4-internal call site is affected.
+   */
+  readonly suppressReceiptEmail?: boolean;
 }
 
 export interface InvoicingBridgePort {

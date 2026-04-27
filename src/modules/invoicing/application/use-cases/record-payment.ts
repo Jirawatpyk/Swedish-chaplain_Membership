@@ -66,6 +66,22 @@ export const recordPaymentSchema = z.object({
   // from "first successful apply" on retries. Tracked in
   // `specs/007-invoices-receipts/tasks.md § Phase 10`.
   idempotencyKey: z.string().min(1).max(200).optional(),
+  /**
+   * F5 hook (T128a, formalised 2026-04-27 verify-driven): when `true`,
+   * the auto-email outbox enqueue at the tail is skipped. Does NOT
+   * affect status transition, audit emission, PDF render+upload, or
+   * any other side-effect — only the receipt-email dispatcher row.
+   *
+   * Set by F5 `confirmPayment` when the tenant's
+   * `tenant_payment_settings.auto_email_on_payment = false`. F4
+   * admin-initiated `recordPayment` calls leave this undefined → the
+   * existing `tenant_invoice_settings.autoEmailEnabled` gate continues
+   * to govern as before. F4 behaviour for non-F5 callers is unchanged.
+   *
+   * Constitution Principle IV (PCI DSS): no card data flows through
+   * this flag — pure boolean toggle, audit-trail unaffected.
+   */
+  suppressReceiptEmail: z.boolean().optional(),
 });
 
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
@@ -323,7 +339,15 @@ export async function recordPayment(
     // manually from /admin/invoices once ops investigates.
     const recipientEmail =
       loaded.memberIdentitySnapshot.primary_contact_email ?? null;
-    if (settings.autoEmailEnabled && recipientEmail) {
+    // T128a: F5 caller may suppress the receipt-email enqueue when the
+    // tenant has disabled `auto_email_on_payment`. Status flip + audit +
+    // outbox-skip log row still run — only the dispatcher enqueue is
+    // gated. Spec.md:433: "MAY suppress" (optional override).
+    if (
+      settings.autoEmailEnabled &&
+      recipientEmail &&
+      !input.suppressReceiptEmail
+    ) {
       await deps.outbox.enqueue(tx, {
         tenantId: input.tenantId,
         eventType: 'invoice_paid',
@@ -332,6 +356,24 @@ export async function recordPayment(
         pdfBlobKey: receiptBlobKey,
         pdfTemplateVersion: deps.currentTemplateVersion,
       });
+    } else if (
+      settings.autoEmailEnabled &&
+      recipientEmail &&
+      input.suppressReceiptEmail
+    ) {
+      // T128a observability: explicit log when F5 suppressed an email
+      // that F4 would otherwise have enqueued. Helps ops correlate
+      // "no receipt email" complaints with the tenant's setting state.
+      logger.info(
+        {
+          tenantId: input.tenantId,
+          invoiceId,
+          memberId: loaded.memberId,
+          documentNumber: loaded.documentNumber?.raw,
+          reason: 'tenant_auto_email_on_payment_disabled',
+        },
+        'recordPayment: receipt-email outbox enqueue suppressed by F5 caller',
+      );
     } else if (settings.autoEmailEnabled && !recipientEmail) {
       // Skip-with-warn: snapshot is missing the required field. This
       // is a Domain-invariant violation upstream (likely a legacy or
