@@ -177,6 +177,11 @@ export function ConfirmationPanel({
           // WCAG 2.5.5 / SC 2.5.8 — mobile tap target ≥ 44×44 px
           // (G-Review Finding #5).
           'min-h-[44px] w-full px-4',
+          // T164 — accountant print convenience: hide download CTA when
+          // printing (link is non-functional on paper). The F4 receipt
+          // PDF remains the authoritative Thai-tax-compliant document
+          // (FR-004); the print view here is informal confirmation only.
+          'print:hidden',
         )}
         onClick={() => {
           interruptAutoClose();
@@ -197,7 +202,8 @@ export function ConfirmationPanel({
         // on mobile even though it looks like a link. Muted-foreground
         // keeps it subtler than the primary CTA but still WCAG 2.1 AA
         // contrast (4.5:1 on card background).
-        className="min-h-[44px] text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:rounded"
+        // T164: hide on print — close button has no meaning on paper.
+        className="min-h-[44px] text-caption text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:rounded print:hidden"
         data-testid="pay-sheet-confirmation-close"
       >
         {t('close')}
@@ -213,7 +219,7 @@ export function ConfirmationPanel({
        * dismissal. Once `paused` flips, both nodes show the paused
        * state and the timer is frozen by `interruptAutoClose`.
        */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 print:hidden">
         <p
           className="text-caption text-muted-foreground"
           aria-hidden="true"
@@ -241,7 +247,7 @@ export function ConfirmationPanel({
         </button>
       </div>
       <p
-        className="sr-only"
+        className="sr-only print:hidden"
         aria-live="polite"
         aria-atomic="true"
         data-testid="pay-sheet-confirmation-countdown-sr"
