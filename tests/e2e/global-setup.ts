@@ -25,10 +25,11 @@ async function resetF5IssuedInvoice(): Promise<void> {
   }
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   try {
+    // processor_events has no invoice_id column — stale rows for old
+    // PaymentIntent ids are inert (each test creates a new PI). Skip.
     await sql`DELETE FROM refunds WHERE payment_id IN (SELECT payment_id FROM payments WHERE invoice_id = ${id})`;
-    await sql`DELETE FROM processor_events WHERE invoice_id = ${id}`;
     await sql`DELETE FROM payments WHERE invoice_id = ${id}`;
-    await sql`UPDATE invoices SET status='issued', paid_at=NULL, payment_method=NULL, payment_date=NULL, payment_reference=NULL, paid_amount_satang=NULL, updated_at=NOW() WHERE invoice_id=${id}`;
+    await sql`UPDATE invoices SET status='issued', paid_at=NULL, payment_method=NULL, payment_date=NULL, payment_reference=NULL, updated_at=NOW() WHERE invoice_id=${id}`;
     console.log(`[e2e global setup] reset F5 issued-invoice fixture ${id}`);
   } finally {
     await sql.end({ timeout: 5 });

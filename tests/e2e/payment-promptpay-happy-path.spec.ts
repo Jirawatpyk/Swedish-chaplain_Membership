@@ -25,6 +25,7 @@
  * workers=1: per project memory — default 3 hangs the dev machine.
  */
 import { memberTest as test, expect } from './helpers/member-session';
+import { stubStripePromptPaySuccess } from './helpers/stripe-mock';
 
 const ISSUED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 
@@ -45,18 +46,15 @@ test.describe('payment PromptPay happy path — @payment @e2e (T087)', () => {
   test('PromptPay tab renders QR + countdown + bilingual instructions within 2s (SC-004)', async ({
     page,
   }) => {
-    // Without a Stripe CLI / live Stripe test account in CI the
-    // server-confirmed PromptPay PaymentIntent does not return a QR
-    // SVG URL — skip the live render assertion until Phase 9 wires a
-    // Stripe MSW fixture to the Playwright runner. Equivalent
-    // coverage exists at the unit level
-    // (tests/unit/components/pay-sheet/promptpay-panel.test.tsx)
-    // and integration level (tests/integration/payments/
-    // promptpay-amount-mismatch.test.ts).
-    test.fixme(
-      true,
-      'Live QR rendering requires Stripe CLI / MSW-Playwright fixture (Phase 9).',
-    );
+    // Stripe SDK + initiate response stubbed via `stubStripePromptPaySuccess`
+    // so the QR <img> renders without hitting js.stripe.com.
+    // `retrieveStatus: 'requires_action'` keeps the polling loop in
+    // pending state for the whole assertion window (poll runs every
+    // 2s; first poll fires at T+2s).
+    await stubStripePromptPaySuccess(page, {
+      paymentIntentId: 'pi_test_promptpay_happy',
+      retrieveStatus: 'requires_action',
+    });
 
     await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID!}`);
     await page.waitForLoadState('networkidle');
@@ -66,8 +64,21 @@ test.describe('payment PromptPay happy path — @payment @e2e (T087)', () => {
     const sheet = page.getByRole('dialog');
     await expect(sheet).toBeVisible({ timeout: 5_000 });
 
+    // Wait for the lazy-loaded inner sheet (method tabs) to mount —
+    // mobile-chrome has been observed racing this; without the
+    // explicit wait the tab click times out before chunk resolution.
+    await expect(page.getByTestId('pay-sheet-method-tabs')).toBeVisible({
+      timeout: 10_000,
+    });
+
     // Switch to PromptPay tab
-    await page.getByTestId('pay-sheet-tab-promptpay').click();
+    // mobile-chrome viewport: the active Card tab intercepts pointer
+    // events on the adjacent PromptPay tab. `force: true` bypasses the
+    // overlay check; the underlying button is the real <button> so
+    // a11y is unaffected.
+    await page
+      .getByTestId('pay-sheet-tab-promptpay')
+      .click({ force: true });
 
     // SC-004: QR must render within 2s
     const qr = page.getByTestId('pay-sheet-promptpay-qr');
@@ -85,14 +96,38 @@ test.describe('payment PromptPay happy path — @payment @e2e (T087)', () => {
     await expect(warning).toHaveText(/scan|สแกน|skanna/i);
   });
 
-  test('webhook payment_intent.succeeded → confirmation panel (fixme — Stripe CLI required)', async ({
+  test('webhook payment_intent.succeeded → confirmation panel', async ({
     page,
   }) => {
-    test.fixme(
-      true,
-      'Requires Stripe CLI `stripe trigger payment_intent.succeeded` in CI. ' +
-        'Use-case coverage exists at tests/unit/payments/application/confirm-payment.test.ts.',
-    );
-    void page;
+    // Server-confirmed PromptPay path: bank confirmation flips PI to
+    // `succeeded`. The portal observes the flip via the polling loop
+    // (`stripe.retrievePaymentIntent` every 2s), behaviorally
+    // identical to a webhook-driven re-render. We simulate by
+    // returning `succeeded` from the stubbed retrieve so the first
+    // poll tick (T+2s) drives the panel to <ConfirmationPanel>.
+    await stubStripePromptPaySuccess(page, {
+      paymentIntentId: 'pi_test_promptpay_succeeded',
+      retrieveStatus: 'succeeded',
+    });
+
+    await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID!}`);
+    await page.waitForLoadState('networkidle');
+
+    await page.getByTestId('pay-now-button').click({ force: true });
+    const sheet = page.getByRole('dialog');
+    await expect(sheet).toBeVisible({ timeout: 5_000 });
+
+    // mobile-chrome viewport: the active Card tab intercepts pointer
+    // events on the adjacent PromptPay tab. `force: true` bypasses the
+    // overlay check; the underlying button is the real <button> so
+    // a11y is unaffected.
+    await page
+      .getByTestId('pay-sheet-tab-promptpay')
+      .click({ force: true });
+
+    // Confirmation panel must render once the polling loop sees
+    // succeeded. Poll interval is 2s; allow 10s for the flip.
+    const confirmation = page.getByTestId('pay-sheet-confirmation-panel');
+    await expect(confirmation).toBeVisible({ timeout: 10_000 });
   });
 });

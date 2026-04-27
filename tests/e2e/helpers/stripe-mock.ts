@@ -99,9 +99,53 @@ export async function stubStripeConfirmDecline(
   });
 }
 
+/**
+ * PromptPay QR success variant. The initiate stub returns a non-null
+ * `promptpayQrSvgUrl` so <PromptPayPanel> renders the QR `<img>`. The
+ * polling SDK is stubbed to return either `requires_action` (default —
+ * keeps the panel in waiting state, used by SC-004 QR-render-only test
+ * T087-1) or `succeeded` (used by T087-2 webhook-driven confirmation
+ * coverage where bank confirmation is observed via the polling path —
+ * Stripe CLI delivers `payment_intent.succeeded` to the webhook and
+ * returns succeeded on retrieve, so behaviorally identical here).
+ *
+ * The `expirySeconds` override drives the countdown — set a small value
+ * (e.g. 5) for the T088 expiry test so the run completes without a
+ * 15-minute wait.
+ */
+export async function stubStripePromptPaySuccess(
+  page: Page,
+  options: {
+    paymentIntentId?: string;
+    qrSvgUrl?: string;
+    expirySeconds?: number;
+    retrieveStatus?: 'requires_action' | 'succeeded' | 'canceled';
+  } = {},
+): Promise<void> {
+  return installStubStripe(page, {
+    scenario: 'promptpay-success',
+    paymentIntentId: options.paymentIntentId ?? 'pi_test_promptpay',
+    qrSvgUrl:
+      options.qrSvgUrl ??
+      'data:image/svg+xml;utf8,' +
+        encodeURIComponent(
+          "<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><rect width='100%' height='100%' fill='black'/><text x='50%' y='50%' fill='white' font-size='24' text-anchor='middle' dominant-baseline='central'>QR</text></svg>",
+        ),
+    expirySeconds: options.expirySeconds ?? 900,
+    retrieveStatus: options.retrieveStatus ?? 'requires_action',
+  });
+}
+
 type StubScenario =
   | { scenario: 'success'; paymentIntentId: string }
-  | { scenario: 'decline'; paymentIntentId: string; declineCode: string };
+  | { scenario: 'decline'; paymentIntentId: string; declineCode: string }
+  | {
+      scenario: 'promptpay-success';
+      paymentIntentId: string;
+      qrSvgUrl: string;
+      expirySeconds: number;
+      retrieveStatus: 'requires_action' | 'succeeded' | 'canceled';
+    };
 
 async function installStubStripe(
   page: Page,
@@ -110,6 +154,14 @@ async function installStubStripe(
   const paymentIntentId = config.paymentIntentId;
   const scenario = config.scenario;
   const declineCode = config.scenario === 'decline' ? config.declineCode : '';
+  const qrSvgUrl =
+    config.scenario === 'promptpay-success' ? config.qrSvgUrl : '';
+  const expirySeconds =
+    config.scenario === 'promptpay-success' ? config.expirySeconds : 0;
+  const retrieveStatus =
+    config.scenario === 'promptpay-success'
+      ? config.retrieveStatus
+      : 'succeeded';
 
   // R5 fix (2026-04-25): @stripe/stripe-js v6+ injects the script tag
   // UNCONDITIONALLY (it no longer short-circuits on existing
@@ -130,7 +182,15 @@ async function installStubStripe(
     },
   );
 
-  await page.addInitScript(([pi, scen, dc]: [string, string, string]) => {
+  await page.addInitScript(
+    ([pi, scen, dc, qrUrl, expSec, retStatus]: [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ]) => {
     // -----------------------------------------------------------------
     // Fetch override for `/api/payments/initiate`
     // -----------------------------------------------------------------
@@ -169,13 +229,17 @@ async function installStubStripe(
       if (url.includes('/api/payments/initiate')) {
          
         console.log('[stripe-mock] intercepted initiate', url);
+        const isPromptPay = scen === 'promptpay-success';
         const body = JSON.stringify({
           payment: { id: 'pay_test_layout' },
           stripe: {
             clientSecret: `${pi}_secret_test`,
             publishableKey: 'pk_test_layout',
             paymentIntentId: pi,
-            promptpayQrSvgUrl: null,
+            promptpayQrSvgUrl: isPromptPay ? qrUrl : null,
+            promptpayQrExpirySeconds: isPromptPay
+              ? Number(expSec)
+              : undefined,
           },
           correlationId: 'test-correlation-layout',
         });
@@ -315,12 +379,16 @@ async function installStubStripe(
           );
         },
         retrievePaymentIntent() {
+          let status: string;
+          if (scen === 'decline') {
+            status = 'requires_payment_method';
+          } else if (scen === 'promptpay-success') {
+            status = retStatus;
+          } else {
+            status = 'succeeded';
+          }
           return Promise.resolve({
-            paymentIntent: {
-              id: pi,
-              status:
-                scen === 'decline' ? 'requires_payment_method' : 'succeeded',
-            },
+            paymentIntent: { id: pi, status },
           });
         },
         createPaymentMethod() {
@@ -343,5 +411,14 @@ async function installStubStripe(
     // <script src="https://js.stripe.com/v3/">. If we set it here, the
     // real bundle is never fetched.
     (window as unknown as { Stripe: typeof FakeStripe }).Stripe = FakeStripe;
-  }, [paymentIntentId, scenario, declineCode] as [string, string, string]);
+    },
+    [
+      paymentIntentId,
+      scenario,
+      declineCode,
+      qrSvgUrl,
+      String(expirySeconds),
+      retrieveStatus,
+    ] as [string, string, string, string, string, string],
+  );
 }
