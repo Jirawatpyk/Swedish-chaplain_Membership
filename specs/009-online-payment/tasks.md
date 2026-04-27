@@ -378,7 +378,7 @@ The following pay-sheet files were added beyond T072–T086 to support the empir
 
 ### Concurrent + edge cases
 
-- [ ] T136 [P] Integration test `tests/integration/payments/concurrent-initiate.test.ts` (post-critique R2-E2) — Promise.all() two `POST /api/payments/initiate` for same invoice; assert exactly one Payment row created + both responses return identical clientSecret.
+- [X] T136 [P] Integration test `tests/integration/payments/concurrent-initiate.test.ts` (post-critique R2-E2) — Promise.all() two `POST /api/payments/initiate` for same invoice; assert exactly one Payment row created + both responses return identical clientSecret.
 - [X] T137 [P] Integration test `tests/integration/payments/admin-impersonate-pay-rejected.test.ts` — admin attempts `POST /api/payments/initiate`; assert 403 `forbidden_role` (FR-018 R2-E6 amendment).
 
 ### Stale-pending sweep + observability
