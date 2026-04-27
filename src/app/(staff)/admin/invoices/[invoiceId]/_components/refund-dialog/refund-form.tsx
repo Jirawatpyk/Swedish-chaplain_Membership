@@ -71,7 +71,6 @@ type FormValues = z.infer<ReturnType<typeof buildSchema>>;
 
 type Props = {
   readonly paymentId: string;
-  readonly invoiceId: string;
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
@@ -84,7 +83,6 @@ type Props = {
 
 export function RefundForm({
   paymentId,
-  invoiceId,
   memberCompanyName,
   remainingRefundableSatang,
   currencyCode,
@@ -210,7 +208,7 @@ export function RefundForm({
       const msg = tError('internal_error');
       setSubmitError(msg);
       toast.error(msg);
-      // eslint-disable-next-line no-console -- surface unexpected
+       
       // network/parse errors during dev; pino in production.
       console.error('refund submit failed', e);
     } finally {

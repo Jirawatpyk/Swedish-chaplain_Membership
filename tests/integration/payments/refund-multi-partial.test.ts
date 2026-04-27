@@ -47,7 +47,6 @@ import { systemClock } from '@/modules/payments/application/ports/clock-port';
 import { asPaymentId, type PaymentId } from '@/modules/payments/domain/payment';
 import {
   payments,
-  refunds,
   tenantPaymentSettings,
   type NewTenantPaymentSettingsRow,
 } from '@/modules/payments/infrastructure/schema';

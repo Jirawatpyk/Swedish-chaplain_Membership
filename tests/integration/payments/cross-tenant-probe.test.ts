@@ -329,6 +329,11 @@ describe('CR-5 cross-tenant probe — payment_cross_tenant_probe audit emission 
     expect(payload.acting_tenant_id).toBe(tenantB.ctx.slug);
     expect(payload.probing_actor_id).toBe(userB.userId);
     expect(payload.target_id).toBe(invoiceAId);
+    // T-C (review 2026-04-27): negative assertion locking PII payload
+    // shape — victim tenant id MUST NOT leak into the probe audit row
+    // (would let an actor enumerate cross-tenant tenant slugs via audit
+    // exports). Naming was clarified to `target_id` for this reason.
+    expect(payload.victim_tenant_id).toBeUndefined();
 
     // (3) RLS: the probe audit row is INVISIBLE to tenant A.
     const probeRowsA = await runInTenant(tenantA.ctx, (tx) =>

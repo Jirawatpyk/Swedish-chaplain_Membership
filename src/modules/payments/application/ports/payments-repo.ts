@@ -121,6 +121,28 @@ export interface PaymentsRepo {
     readonly payments: readonly Payment[];
     readonly refunds: readonly RefundActivityDto[];
   }>;
+
+  /**
+   * H-8 (review 2026-04-27) — member-facing refund-notification signal.
+   *
+   * Returns true iff at least one `payment_auto_refunded_stale_invoice`
+   * audit row exists for `(tenant, invoiceId)`. The portal invoice
+   * detail page consumes this to show "Your payment was automatically
+   * refunded because this invoice was voided" alongside the void banner.
+   *
+   * Authoritative source: `audit_log` (append-only — F1). The F5
+   * `refunds.reason` column carries the Stripe enum
+   * (`requested_by_customer`) which doesn't disambiguate auto-stale
+   * vs manual refunds — the audit row is the only deterministic
+   * business-cause signal until a `reason_kind` enum lands (post-MVP).
+   *
+   * Tenant-scoped via RLS+FORCE; `tenantId` is also passed for
+   * defence-in-depth and observability.
+   */
+  hasAutoRefundedStaleInvoice(
+    tenantId: string,
+    invoiceId: string,
+  ): Promise<boolean>;
 }
 
 /**

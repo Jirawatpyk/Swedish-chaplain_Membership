@@ -1556,7 +1556,10 @@
           "voidedAt": "Annullerad den",
           "reasonLabel": "Anledning",
           "notPayable": "Denna faktura ska inte längre betalas. Du behöver inte göra något.",
-          "downloadVoidedPdf": "Ladda ner annullerad faktura (VOID-stämplad)"
+          "downloadVoidedPdf": "Ladda ner annullerad faktura (VOID-stämplad)",
+          "autoRefundHeading": "Betalningen återbetalades automatiskt",
+          "autoRefundBody": "Din betalning återbetalades automatiskt eftersom denna faktura annullerades. Återbetalningen visas på ditt kort eller bankutdrag inom 5–10 arbetsdagar.",
+          "autoRefundContact": "Om du inte ser återbetalningen, kontakta din kammaradministratör."
         }
       }
     },

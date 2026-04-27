@@ -314,6 +314,10 @@ describe('confirmPayment (T057)', () => {
         c[1].payload?.mismatch_kind === 'invariant_violation_duplicate_succeeded',
     );
     expect(invariantAuditCall).toBeDefined();
+    // T-A (review 2026-04-27): pin from_status so a regression in
+    // `_shared.emitTerminalStateAck` (e.g. losing the field or emitting
+    // undefined) is caught here rather than slipping into prod audits.
+    expect(invariantAuditCall![1].payload.from_status).toBe('pending');
   });
 
   it('retrievePaymentIntent failure — processor_unavailable', async () => {

@@ -114,7 +114,7 @@ function signEvent(_body: string, _secret: string, _timestamp: number): string {
  * Deliver one event to the target webhook endpoint. Capture status code
  * + latency. Stripe-Signature header is set per signEvent output.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- SKELETON: full impl deferred to T148b
 async function deliverEvent(
   _config: SoakConfig,
   _event: unknown,

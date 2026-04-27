@@ -188,7 +188,7 @@ export function useOptimisticPaid(
       // the entire instrumentation via the null-Set guard above.
       if (_crossTabPaidSubscribers && onCrossTabPaid) {
         if (_crossTabPaidSubscribers.has(invoiceId)) {
-          // eslint-disable-next-line no-console
+           
           console.warn(
             `[useOptimisticPaid] duplicate onCrossTabPaid subscriber for invoice ${invoiceId}. ` +
               'router.refresh() will fire twice on cross-tab paid signals. ' +

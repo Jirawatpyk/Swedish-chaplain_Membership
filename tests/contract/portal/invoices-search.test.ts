@@ -18,7 +18,7 @@ import { ok, err } from '@/lib/result';
 const requireMemberContextMock = vi.fn();
 const listInvoicesByMemberMock = vi.fn();
 const rateLimiterCheckMock = vi.fn();
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 const makeListInvoicesByMemberDepsMock = vi.fn((..._args: unknown[]) => ({}));
 
 vi.mock('@/lib/member-context', () => ({

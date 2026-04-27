@@ -144,8 +144,8 @@ describe('FR-016a allow_anonymous_paylink — forward-compat flag has no F5 effe
     // column); the schema/test files are allowed to reference it.
     const cwd = process.cwd();
     const useCaseDirRel = 'src/modules/payments/application';
-    const fs = require('node:fs') as typeof import('node:fs');
-    const path = require('node:path') as typeof import('node:path');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
 
     const offenders: string[] = [];
     function walk(dir: string): void {

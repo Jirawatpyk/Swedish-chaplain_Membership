@@ -61,9 +61,9 @@ vi.mock('@/lib/stripe-webhook-verifier', () => ({
 vi.mock('@/lib/stripe-webhook-deps', async () => {
   const auth = await import('@/modules/auth/infrastructure/db/audit-repo');
   return {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     resolveTenantByProcessorAccountId: vi.fn(async (_account: string) => 'test-swecham'),
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     insertRejectedProcessorEvent: vi.fn(async (_input: unknown) => undefined),
     auditRepo: auth.auditRepo,
   };
@@ -98,7 +98,7 @@ vi.mock('@/modules/tenants', () => ({
  */
 vi.mock('@/modules/auth/infrastructure/db/audit-repo', () => ({
   auditRepo: {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest signature required so spread callers type-check (TS2556)
+     
     append: vi.fn(async (..._args: unknown[]) => undefined),
   },
 }));

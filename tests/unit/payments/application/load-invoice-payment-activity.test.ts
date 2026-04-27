@@ -26,6 +26,7 @@ function makeStubRepo(override: Partial<PaymentsRepo> = {}): PaymentsRepo {
     nextAttemptSeq: vi.fn(),
     listSucceededMethodByInvoiceIds: vi.fn(),
     listInvoiceActivity: vi.fn().mockResolvedValue({ payments: [], refunds: [] }),
+    hasAutoRefundedStaleInvoice: vi.fn().mockResolvedValue(false),
     ...override,
   };
 }

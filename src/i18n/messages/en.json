@@ -1556,7 +1556,10 @@
           "voidedAt": "Voided on",
           "reasonLabel": "Reason",
           "notPayable": "This invoice is no longer payable. You do not need to take any action.",
-          "downloadVoidedPdf": "Download voided invoice (VOID-stamped)"
+          "downloadVoidedPdf": "Download voided invoice (VOID-stamped)",
+          "autoRefundHeading": "Payment automatically refunded",
+          "autoRefundBody": "Your payment was automatically refunded because this invoice was voided. The refund will appear on your card or bank statement within 5–10 business days.",
+          "autoRefundContact": "If you don't see the refund, please contact your chamber administrator."
         }
       }
     },

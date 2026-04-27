@@ -413,5 +413,33 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
         return result;
       });
     },
+
+    /**
+     * H-8 (review 2026-04-27) — query audit_log for the
+     * `payment_auto_refunded_stale_invoice` row matching this invoice.
+     * Read-only; runs under RLS via runInTenant. Returns boolean (no
+     * row count needed — caller only cares about existence).
+     */
+    async hasAutoRefundedStaleInvoice(
+      tenantIdArg: string,
+      invoiceId: string,
+    ): Promise<boolean> {
+      return runInTenant(ctx, async (tx) => {
+        const result = await tx.execute(sql`
+          SELECT 1 AS hit
+            FROM audit_log
+           WHERE tenant_id = ${tenantIdArg}
+             AND event_type = 'payment_auto_refunded_stale_invoice'
+             AND payload->>'invoice_id' = ${invoiceId}
+           LIMIT 1
+        `);
+        // Drizzle's `tx.execute` returns either an array or a result
+        // object with `.rows` depending on driver. Normalise via the
+        // same `Array.from` coercion used in the F4 audit-adapter
+        // raw-SQL paths.
+        const rows = Array.from(result as unknown as Iterable<unknown>);
+        return rows.length > 0;
+      });
+    },
   };
 }

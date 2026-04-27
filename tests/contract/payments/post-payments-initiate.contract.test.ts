@@ -45,7 +45,7 @@ vi.mock('@/lib/tenant-context', () => ({
 
 vi.mock('@/lib/auth-deps', () => ({
   rateLimiter: {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest signature required so spread callers type-check (TS2556)
+     
     check: vi.fn(async (..._args: unknown[]) => ({ success: true, reset: Date.now() + 60_000 })),
   },
 }));
@@ -66,7 +66,7 @@ vi.mock('@/modules/tenants', () => ({
  */
 vi.mock('@/lib/stripe-webhook-deps', () => ({
   auditRepo: {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest signature required so spread callers type-check (TS2556)
+     
     append: vi.fn(async (..._args: unknown[]) => undefined),
   },
 }));

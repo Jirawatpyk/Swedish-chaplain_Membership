@@ -21,10 +21,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
 import { ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
-import { asTenantContext } from '@/modules/tenants/domain/tenant-context';
 import { makeInitiatePaymentDeps } from '@/modules/payments/infrastructure/di';
 import { initiatePayment } from '@/modules/payments/application/use-cases/initiate-payment';
 import type {
@@ -84,7 +82,7 @@ function percentile(sorted: number[], p: number): number {
  */
 function makeFastGateway(): ProcessorGatewayPort {
   return {
-    async createPaymentIntent({ idempotencyKey: _ik }) {
+    async createPaymentIntent() {
       const pi: CreatedPaymentIntent = {
         id: `pi_perf_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
         clientSecret: `pi_perf_${randomUUID().slice(0, 8)}_secret_${randomUUID().slice(0, 8)}`,
@@ -189,7 +187,8 @@ describe('T148 payments-initiate latency benchmark (live Neon, mocked Stripe)', 
       });
       // Invoices in `issued` status with totalSatang set so the F4
       // bridge `getInvoiceForPayment` returns ok and `assertPayable`
-      // accepts them.
+      // accepts them. Issue/due dates use today + 30d so the row is
+      // not artificially overdue when the benchmark runs.
       const today = new Date();
       const issueDate = today.toISOString().slice(0, 10);
       const dueDate = new Date(today.getTime() + 30 * 86400_000)
@@ -207,8 +206,8 @@ describe('T148 payments-initiate latency benchmark (live Neon, mocked Stripe)', 
           fiscalYear: 2026,
           sequenceNumber: i + 1,
           documentNumber: `P-2026-${String(i + 1).padStart(6, '0')}`,
-          issueDate: '2026-04-01',
-          dueDate: '2026-05-01',
+          issueDate,
+          dueDate,
           subtotalSatang: 1_000_000n,
           vatRateSnapshot: '0.0700',
           vatSatang: 70_000n,
@@ -323,7 +322,7 @@ describe('T148 payments-initiate latency benchmark (live Neon, mocked Stripe)', 
       const p50 = percentile(samples, 0.5);
       const p95 = percentile(samples, 0.95);
       const p99 = percentile(samples, 0.99);
-      // eslint-disable-next-line no-console
+       
       console.log(
         `[T148] payments-initiate-benchmark: p50=${p50.toFixed(1)}ms p95=${p95.toFixed(1)}ms p99=${p99.toFixed(1)}ms (n=${samples.length}, app-layer only — production adds Stripe RTT)`,
       );

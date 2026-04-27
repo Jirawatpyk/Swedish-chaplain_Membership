@@ -54,6 +54,13 @@ import { asInvoiceId } from '@/modules/invoicing';
 // scoped read under `runInTenant`, so this is safe tenant-wise.
 // eslint-disable-next-line no-restricted-imports
 import { makeDrizzleTenantPaymentSettingsRepo } from '@/modules/payments/infrastructure/repos/drizzle-tenant-payment-settings-repo';
+// H-8 (review 2026-04-27): query audit_log for the auto-refund signal
+// to drive the member-facing refund banner. Same escape-hatch pattern
+// as tenant-payment-settings + CN repo above; the repo is RLS-scoped
+// + read-only. Application-layer use-case is a Phase-10 consolidation
+// candidate.
+// eslint-disable-next-line no-restricted-imports
+import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
@@ -220,6 +227,20 @@ export default async function PortalInvoiceDetailPage({
     .findByOriginalInvoice(asInvoiceId(invoice.invoiceId), tenantCtx.slug)
     .catch(() => [] as never[]);
 
+  // H-8 (review 2026-04-27) — when the invoice is void, check whether
+  // an auto-refund-stale-invoice audit row exists for the member's
+  // mid-flight payment. Best-effort: a repo failure renders the void
+  // banner WITHOUT the refund line (graceful degrade — failing closed
+  // here would hide a real refund-confirmation message from a member
+  // who needs it). Only queried for void invoices to avoid an extra
+  // round-trip on the happy path.
+  const wasAutoRefunded =
+    invoice.status === 'void'
+      ? await makeDrizzlePaymentsRepo(tenantCtx.slug)
+          .hasAutoRefundedStaleInvoice(tenantCtx.slug, invoice.invoiceId)
+          .catch(() => false)
+      : false;
+
   return (
     <DetailContainer>
       <PageHeader
@@ -300,6 +321,22 @@ export default async function PortalInvoiceDetailPage({
             ) : null}
           </dl>
           <p className="mt-3 text-sm text-destructive">{t('void.notPayable')}</p>
+          {wasAutoRefunded && (
+            <div
+              data-testid="portal-invoice-auto-refund-notice"
+              className="mt-4 rounded-md border border-destructive/40 bg-background p-3"
+            >
+              <h3 className="text-sm font-medium text-destructive">
+                {t('void.autoRefundHeading')}
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t('void.autoRefundBody')}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t('void.autoRefundContact')}
+              </p>
+            </div>
+          )}
         </section>
       )}
 

@@ -66,6 +66,23 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    // Project-wide convention — args/vars/destructured fields prefixed
+    // with `_` are intentional placeholders (factory signature symmetry,
+    // skeleton functions, kept-for-API-stability params). Recognised by
+    // every TS project using @typescript-eslint by default.
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          destructuredArrayIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
+  {
     files: ["src/modules/**/domain/**/*.ts", "src/modules/**/domain/**/*.tsx"],
     rules: {
       "no-restricted-imports": [

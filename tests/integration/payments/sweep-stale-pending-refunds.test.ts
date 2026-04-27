@@ -15,7 +15,7 @@
  * audit. No external Stripe/F4 — sweep is pure DB recovery.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { sweepStalePendingRefunds } from '@/modules/payments';
@@ -26,7 +26,6 @@ import { systemClock } from '@/modules/payments/application/ports/clock-port';
 import { asPaymentId, type PaymentId } from '@/modules/payments/domain/payment';
 import {
   payments,
-  refunds,
   tenantPaymentSettings,
   type NewTenantPaymentSettingsRow,
 } from '@/modules/payments/infrastructure/schema';

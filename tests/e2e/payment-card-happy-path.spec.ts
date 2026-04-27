@@ -232,9 +232,7 @@ test.describe('payment card happy path — @payment @e2e (T046)', () => {
     await expect(downloadReceiptCta).toBeVisible({ timeout: 5_000 });
   });
 
-  test('T129 / US6 AS1+AS2: exactly ONE F4 receipt-email outbox row enqueued per success', async ({
-    page: _page,
-  }) => {
+  test('T129 / US6 AS1+AS2: exactly ONE F4 receipt-email outbox row enqueued per success', async () => {
     // T129 (Phase 8) — F4 receipt-email single-email assertion.
     //
     // Spec authority: F5 spec.md US6 AS1 ("a single email (not two)

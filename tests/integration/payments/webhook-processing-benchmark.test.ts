@@ -336,7 +336,7 @@ describe('T149 webhook-processing latency benchmark (canceled branch)', () => {
       const p99 = percentile(samples, 0.99);
       const productionStatus =
         p95 < P95_PRODUCTION_TARGET_MS ? 'within' : 'EXCEEDS';
-      // eslint-disable-next-line no-console
+       
       console.log(
         `[T149] webhook-processing-benchmark: p50=${p50.toFixed(1)}ms p95=${p95.toFixed(1)}ms p99=${p99.toFixed(1)}ms (n=${samples.length}, canceled-branch only). ` +
           `Production target ${P95_PRODUCTION_TARGET_MS}ms — ${productionStatus} (subtract dev cross-border RTT ~150-250ms for prod estimate). ` +

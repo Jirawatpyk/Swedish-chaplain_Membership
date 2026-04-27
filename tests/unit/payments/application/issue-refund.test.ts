@@ -9,11 +9,11 @@
  * Pure unit — no DB, no Stripe SDK. Mocks every dep via the port
  * interfaces.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ok, err } from '@/lib/result';
 import { issueRefund } from '@/modules/payments/application/use-cases/issue-refund';
 import type { IssueRefundDeps, IssueRefundInput } from '@/modules/payments/application/use-cases/issue-refund';
-import type { Payment, PaymentId } from '@/modules/payments/domain/payment';
+import type { Payment } from '@/modules/payments/domain/payment';
 import { asPaymentId } from '@/modules/payments/domain/payment';
 
 // ---------------------------------------------------------------------------

@@ -185,6 +185,10 @@ describe('failPayment (T058)', () => {
         eventType: 'payment_acknowledged_terminal_state',
         payload: expect.objectContaining({
           mismatch_kind: 'illegal_transition',
+          // T-B (review 2026-04-27): pin from_status for parity with
+          // confirm-payment.test line 288 — locks the
+          // `_shared.emitTerminalStateAck` payload shape.
+          from_status: 'partially_refunded',
         }),
       }),
     );
@@ -371,6 +375,10 @@ describe('handleCancelEvent (T060)', () => {
         eventType: 'payment_acknowledged_terminal_state',
         payload: expect.objectContaining({
           mismatch_kind: 'illegal_transition',
+          // T-B (review 2026-04-27): pin from_status for parity with
+          // confirm-payment.test line 288 — locks the
+          // `_shared.emitTerminalStateAck` payload shape.
+          from_status: 'partially_refunded',
         }),
       }),
     );

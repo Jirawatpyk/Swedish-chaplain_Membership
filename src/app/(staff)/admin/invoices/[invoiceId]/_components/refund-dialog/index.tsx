@@ -93,7 +93,6 @@ export function RefundDialog({
         </AlertDialogHeader>
         <RefundForm
           paymentId={paymentId}
-          invoiceId={invoiceId}
           memberCompanyName={memberCompanyName}
           remainingRefundableSatang={remainingRefundableSatang}
           currencyCode={currencyCode}

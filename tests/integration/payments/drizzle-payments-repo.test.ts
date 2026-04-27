@@ -435,4 +435,62 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     );
     expect(rowsUnderB).toHaveLength(0);
   });
+
+  it('H-8: hasAutoRefundedStaleInvoice returns true iff matching audit row exists', async () => {
+    // Use a fresh invoice id for this test so prior cases do not pollute.
+    const repoA = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const probeInvoiceId = randomUUID();
+
+    // (1) No audit row yet → false.
+    const before = await repoA.hasAutoRefundedStaleInvoice(
+      tenantA.ctx.slug,
+      probeInvoiceId,
+    );
+    expect(before).toBe(false);
+
+    // (2) Insert the canonical auto-refund audit row under tenant A's
+    //     context and re-query → true. Uses raw SQL because the
+    //     Drizzle `auditLog` schema does not expose `retention_years`
+    //     (mirrors the existing F4 audit-adapter raw-SQL pattern in
+    //     src/modules/invoicing/infrastructure/adapters/audit-adapter.ts).
+    const { sql: rawSql } = await import('drizzle-orm');
+    const probePayload = JSON.stringify({
+      payment_id: makeUlid(),
+      invoice_id: probeInvoiceId,
+      refunded_amount_satang: '1000000',
+      cause: 'invoice_voided',
+      processor_refund_id: 're_probe',
+    });
+    const probeRequestId = `h8-probe-${probeInvoiceId}`;
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(rawSql`
+        INSERT INTO audit_log
+          (event_type, actor_user_id, summary, request_id, payload,
+           tenant_id, retention_years)
+        VALUES
+          ('payment_auto_refunded_stale_invoice'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000',
+           'H-8 integration probe',
+           ${probeRequestId},
+           ${probePayload}::jsonb,
+           ${tenantA.ctx.slug},
+           10)
+      `);
+    });
+
+    const after = await repoA.hasAutoRefundedStaleInvoice(
+      tenantA.ctx.slug,
+      probeInvoiceId,
+    );
+    expect(after).toBe(true);
+
+    // (3) Tenant B repo asking about tenant A's invoice → false (RLS
+    //     defence-in-depth on the audit_log read path).
+    const repoB = makeDrizzlePaymentsRepo(tenantB.ctx.slug);
+    const crossTenant = await repoB.hasAutoRefundedStaleInvoice(
+      tenantA.ctx.slug,
+      probeInvoiceId,
+    );
+    expect(crossTenant).toBe(false);
+  });
 });

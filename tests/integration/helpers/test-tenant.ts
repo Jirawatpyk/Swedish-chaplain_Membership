@@ -139,7 +139,7 @@ export async function createTwoTestTenants(): Promise<{
  * RLS bypass — but we can't bypass the trigger itself without dropping
  * it. Kept here as a placeholder for future hardening; currently a no-op.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 export async function purgeTestAuditRows(_prefix: TestTenantPrefix): Promise<void> {
   // Intentionally no-op — see the cleanup comment above. The suppression
   // reference ensures this file is valid TypeScript even with unused params.
