@@ -32,7 +32,16 @@ export type ProcessorEventOutcome = (typeof PROCESSOR_EVENT_OUTCOMES)[number];
 // ---------------------------------------------------------------------------
 
 export interface ProcessorEvent {
-  /** Stripe event id, e.g. "evt_1Nxyz…". */
+  /**
+   * Stripe event id, e.g. "evt_1Nxyz…".
+   *
+   * L-3 (review 2026-04-27): kept as plain `string` rather than a
+   * branded ULID type because the id originates from Stripe and is
+   * passed through verbatim (no `as` cast at our boundary). Branding
+   * would force ~20 call sites + tests + Stripe SDK adapter changes
+   * for a marginal type-safety win on a Stripe-supplied identifier.
+   * Document only — not promoting to branded type pre-ship.
+   */
   readonly id: string;
 
   /** NULL during the pre-resolution bypass window. */

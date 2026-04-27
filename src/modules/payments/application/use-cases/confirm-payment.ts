@@ -523,8 +523,11 @@ async function confirmPaymentBody(
         // T128a: tenant override of receipt-on-payment auto-email.
         // Default-on (column DEFAULT true). When the admin disables
         // it, F4 still flips the invoice + writes audit + renders
-        // PDF — only the dispatcher enqueue is skipped. spec.md:433
-        // "MAY suppress" + FR-015.
+        // PDF — only the dispatcher enqueue is skipped. See spec.md
+        // § US3 auto-email toggle + FR-015 ("MAY suppress").
+        // M-3 (review 2026-04-27): replaced hardcoded line number
+        // with section reference so the comment doesn't rot when the
+        // spec is reformatted.
         suppressReceiptEmail: !settings.autoEmailOnPayment,
       },
       tx,

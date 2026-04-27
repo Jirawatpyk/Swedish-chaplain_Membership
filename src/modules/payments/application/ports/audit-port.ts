@@ -92,6 +92,20 @@ export interface F5AuditEvent {
 }
 
 export interface AuditPort {
+  /**
+   * Emit one audit row.
+   *
+   * `tx: unknown` carries the caller's Drizzle transaction handle on
+   * mutation paths so the audit row commits atomically with the state
+   * change. Pass `null` for forensic / best-effort emits that must
+   * survive the caller's tx rollback (e.g. cross-tenant probe rejects
+   * before any state change). Type is `unknown` (not Drizzle's `tx`)
+   * because Application MUST stay ORM-free per Constitution Principle
+   * III; the Infrastructure adapter narrows it.
+   *
+   * M-7 (review 2026-04-27): documented `tx` semantics inline so
+   * future implementers see the contract at the type definition.
+   */
   emit(tx: unknown, event: F5AuditEvent): Promise<void>;
 }
 

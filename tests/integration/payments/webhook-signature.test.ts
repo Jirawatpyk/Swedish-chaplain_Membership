@@ -183,7 +183,13 @@ function makeSpiedRequest(
 // Behaviour: 401; body (req.text()) must NOT be called.
 // ---------------------------------------------------------------------------
 
-describe('webhook-signature: verify-before-parse invariant (T044)', () => {
+// M-9 (review 2026-04-27): describe-name flagged that this file lives
+// under tests/integration/ but mocks every port — keeping the file
+// path stable to preserve git history but the suite name reflects its
+// real scope (route-boundary contract / component test, not a
+// live-Neon integration). The Senior-tester F9 comment in the header
+// docstring already documents this trade-off.
+describe('webhook-signature route contract: verify-before-parse invariant (T044)', () => {
   afterEach(() => {
     vi.clearAllMocks();
   });

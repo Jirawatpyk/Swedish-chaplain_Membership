@@ -118,8 +118,17 @@ function makeRaceGateway(piId: string): {
     gateway: {
       async createPaymentIntent() {
         counts.createPaymentIntent += 1;
-        // Small delay so concurrent callers overlap inside withTx.
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        // L-4 (review 2026-04-27): bumped from 50ms to 250ms to absorb
+        // CI cold-start latency on GitHub Actions. The original 50ms
+        // sometimes did not produce overlap on slow runners (Neon
+        // Singapore RTT + Vitest worker boot). 250ms keeps the test
+        // fast (median <500ms wall-clock) while leaving ample margin
+        // for the second caller to arrive at the use-case's withTx
+        // before the first releases. A proper barrier-promise pattern
+        // would be cleaner but requires use-case-level instrumentation
+        // hooks (one caller takes the createIntent path, the other
+        // takes the retrieve path under the resume guard) — deferred.
+        await new Promise((resolve) => setTimeout(resolve, 250));
         return ok(created);
       },
       async retrievePaymentIntent() {

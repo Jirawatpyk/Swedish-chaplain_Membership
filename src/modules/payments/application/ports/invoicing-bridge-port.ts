@@ -59,10 +59,16 @@ export interface InvoicingBridgePort {
   }): Promise<Result<InvoiceForPaymentDTO, GetInvoiceForPaymentBridgeError>>;
 
   /**
-   * Passthrough to F4's `markPaidFromProcessor`. Returns the raw F4
-   * error shape (`RecordPaymentError`) as an opaque `unknown` error —
-   * F5 callers surface as a single `f4_bridge_error` code since each
-   * F4 failure is operational (logger + audit) rather than user-facing.
+   * Passthrough to F4's `markPaidFromProcessor`. Returns F4 errors
+   * summarised into a `{ code: string; detail: string }` shape via
+   * `summariseF4Error` (whitelisted scalar fields only — audit
+   * 2026-04-25 finding #16, no PII leak). F5 callers surface as a
+   * single `f4_bridge_error` code since each F4 failure is operational
+   * (logger + audit) rather than user-facing.
+   *
+   * M-4 (review 2026-04-27): clarified comment — earlier docstring
+   * claimed "raw F4 error shape as an opaque `unknown` error" which
+   * is false (the type signature shows `{code, detail}` already).
    *
    * Reliability D-03 (Group E1, 2026-04-24): accepts an optional `tx`
    * param so the adapter can share the Drizzle connection/transaction

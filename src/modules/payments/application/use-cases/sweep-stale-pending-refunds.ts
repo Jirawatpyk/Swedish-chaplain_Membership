@@ -40,6 +40,7 @@
  * Pure Application — no framework imports.
  */
 import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { AuditPort, ClockPort, RefundsRepo } from '../ports';
 import { retentionFor } from '../ports/audit-port';
 
@@ -149,10 +150,23 @@ export async function sweepStalePendingRefunds(
         });
       });
       sweptCount += 1;
-    } catch {
-      // Per-row error — the per-row tx already rolled back, leaving
-      // the row in `pending` for the next sweep to retry. Skip and
-      // continue: don't let one bad row block the whole batch.
+    } catch (cause) {
+      // M-5 (review 2026-04-27): structured pino warn so ops can
+      // correlate which row + tenant tripped the sweep. Constructor
+      // name only (no error.message) — Postgres errors can carry SQL
+      // params + literal values per the project log redact contract.
+      // Per-row tx already rolled back, leaving the row in `pending`
+      // for the next sweep to retry; skip and continue.
+      logger.warn(
+        {
+          tenantId: input.tenantId,
+          refundId: row.id,
+          paymentId: row.paymentId,
+          errKind:
+            cause instanceof Error ? cause.constructor.name : 'unknown',
+        },
+        'sweep_stale_pending_refunds.row_skipped',
+      );
       skippedCount += 1;
     }
   }

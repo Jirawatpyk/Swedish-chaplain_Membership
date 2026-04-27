@@ -14,10 +14,14 @@
  * trace has named hops aligned with `plan.md § VII Distributed tracing`.
  *
  * Span attributes follow the project log redact contract — no PII /
- * card / secret / Authorization values. Tenant id is hashed via
- * `cryptoHash('sha256', tenantId)` only when broader correlation is
- * needed; otherwise raw small-cardinality fields (event_type, method,
- * outcome) are safe to set verbatim.
+ * card / secret / Authorization values. Tenant id is passed as-is —
+ * a small-cardinality bounded string at SaaS scale (one tenant per
+ * chamber). L-1 (review 2026-04-27): clarified that this module does
+ * NOT hash tenantId; an earlier docstring suggested a hash-when-
+ * correlation-needed strategy that was never implemented. If
+ * cross-request user-level correlation requires tenantId obfuscation
+ * in spans, swap to `cryptoHash('sha256', tenantId)` at the call
+ * site — but no F5 use-case needs that today.
  */
 import { trace, type Tracer } from '@opentelemetry/api';
 

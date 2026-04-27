@@ -7,6 +7,7 @@
  */
 import type { Payment, PaymentStatus, PaymentId, CardMetadata } from '../../domain/payment';
 import type { PaymentMethod } from '../../domain/value-objects/payment-method';
+import type { RefundStatus } from '../../domain/refund';
 
 export interface PaymentsRepo {
   /** Run `fn` inside a serializable transaction; rollback on throw. */
@@ -131,7 +132,11 @@ export interface RefundActivityDto {
   readonly refundId: string;
   readonly paymentId: string;
   readonly invoiceId: string;
-  readonly status: 'pending' | 'succeeded' | 'failed';
+  // M-6 (review 2026-04-27): import the canonical RefundStatus union
+  // from Domain instead of re-declaring inline. Keeps DTO + Domain in
+  // lockstep — adding a new refund status (e.g. 'voided') becomes a
+  // compile-error here automatically instead of silent drift.
+  readonly status: RefundStatus;
   readonly amountSatang: bigint;
   readonly reason: string;
   readonly initiatedAt: Date;

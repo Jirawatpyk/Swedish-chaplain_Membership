@@ -5,7 +5,16 @@
  * the full error table. Returns `Result<InitiatePaymentSuccess,
  * InitiatePaymentError>` — boundary NEVER throws (Principle VIII).
  *
- * Pipeline (all in one transaction when row-insert is needed):
+ * Pipeline:
+ *   Pre-tx (steps 1–4): tenant settings load + completeness gate +
+ *   method-enabled gate + F4 invoice payability bridge. These run
+ *   OUTSIDE `withTx` because `getByTenantId` does not accept a `tx`
+ *   parameter (its Drizzle adapter wraps an `unstable_cache` fetcher
+ *   on its own connection) and the F4 bridge owns its own tx for
+ *   the cross-tenant-probe audit. M-2 (review 2026-04-27): clarified
+ *   from the prior misleading "all in one transaction" claim — only
+ *   steps 5–6 are inside `paymentsRepo.withTx`.
+ *
  *   1. Load tenant settings (cached). `null` → tenant_settings_incomplete.
  *   2. assertSettingsComplete → map any `reason` to a typed error.
  *   3. isMethodEnabled(method) → method_not_enabled.
