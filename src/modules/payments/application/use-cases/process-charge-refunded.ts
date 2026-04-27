@@ -54,6 +54,7 @@ import type {
 } from '../ports';
 import { retentionFor } from '../ports/audit-port';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
+import { paymentsMetrics } from '@/lib/metrics';
 
 const RUNBOOK_URL = 'docs/runbooks/out-of-band-refund.md';
 
@@ -68,6 +69,13 @@ export interface ProcessChargeRefundedInput {
   readonly refundIds: readonly string[];
   /** Charge amount in satang (`event.data.object.amount` projected by adapter). */
   readonly amountSatang: bigint;
+  /**
+   * Stripe `event.livemode` projected to processor-env label. Powers the
+   * T141 `out_of_band_refund_rejected_total{tenant, processor_env}`
+   * counter so dashboards can split test-mode noise from live-mode
+   * forensics (FR-011a alert pivots on live-mode only).
+   */
+  readonly processorEnv: 'test' | 'live';
 }
 
 /**
@@ -145,6 +153,19 @@ export async function processChargeRefunded(
             },
             retentionYears: retentionFor('out_of_band_refund_detected'),
           });
+          // T141 metric: per-tenant + per-env OOB-refund counter feeds
+          // alert rule `out_of_band_refund_rejected_total > 0 / day`
+          // (observability.md §21.3). Emitted INSIDE the tx so a
+          // dispatch rollback (markProcessed failure) does not leave
+          // orphan metric counts; OTel buffers writes until process
+          // boundary flush — practical effect is a tiny over-count
+          // window if the tx rolls back, acceptable trade-off vs the
+          // post-tx alternative which would silently drop on early
+          // returns inside the loop.
+          paymentsMetrics.outOfBandRefundRejected(
+            input.tenantId,
+            input.processorEnv,
+          );
         }
         // Branch (a) — known refund: in-app `issueRefund` already
         // synchronously updated state when Stripe's refunds.create

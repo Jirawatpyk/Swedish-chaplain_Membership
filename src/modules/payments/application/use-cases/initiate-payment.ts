@@ -47,6 +47,8 @@ import {
   type SettingsIncompleteReason,
 } from '../../domain/tenant-payment-settings';
 import { paymentsMetrics } from '@/lib/metrics';
+import { paymentsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 export interface InitiatePaymentInput {
   readonly tenantId: string;
@@ -166,6 +168,11 @@ export async function initiatePayment(
   deps: InitiatePaymentDeps,
   input: InitiatePaymentInput,
 ): Promise<Result<InitiatePaymentSuccess, InitiatePaymentError>> {
+  // T140 OTel span: hop 2 of `portal_click → api_payments_initiate →
+  // stripe_create_intent → ...` (plan.md § VII). Auto-instrumentation
+  // already wraps the route handler (hop 1) + Stripe SDK fetch (hop 3);
+  // this span captures the use-case boundary so traces show where
+  // tenant settings load + invoice payability + tx work happens.
   // Capture start time at function entry so all exit paths —
   // including pre-Stripe early errors (settings_row_missing,
   // method_not_enabled, invoice bridge failures) — contribute to
@@ -173,14 +180,40 @@ export async function initiatePayment(
   // fires on every code path (success + every typed error
   // variant), regardless of where the body returns from.
   const initiateStartMs = deps.clock.nowMs();
-  try {
-    return await initiatePaymentBody(deps, input);
-  } finally {
-    paymentsMetrics.initiateDurationMs(
-      input.method,
-      deps.clock.nowMs() - initiateStartMs,
-    );
-  }
+  return await paymentsTracer().startActiveSpan(
+    'payments.initiate',
+    {
+      attributes: {
+        'payments.method': input.method,
+        'payments.invoice_id': input.invoiceId,
+        'payments.tenant_id': input.tenantId,
+      },
+    },
+    async (span) => {
+      try {
+        const result = await initiatePaymentBody(deps, input);
+        if (!result.ok) {
+          span.setAttribute('payments.outcome', result.error.code);
+        } else {
+          span.setAttribute('payments.outcome', 'ok');
+          span.setAttribute('payments.resumed', result.value.resumed);
+        }
+        return result;
+      } catch (e) {
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: e instanceof Error ? e.message : 'initiate_threw',
+        });
+        throw e;
+      } finally {
+        paymentsMetrics.initiateDurationMs(
+          input.method,
+          deps.clock.nowMs() - initiateStartMs,
+        );
+        span.end();
+      }
+    },
+  );
 }
 
 async function initiatePaymentBody(
@@ -419,6 +452,9 @@ async function initiatePaymentBody(
           reason: 'retrieved_client_secret_null',
         });
       }
+      // T141 metric: count successful initiates (resume hit) so the
+      // RED-rate gauge captures both first-attempt + resume paths.
+      paymentsMetrics.initiateCount(input.tenantId, input.method);
       return ok<InitiatePaymentSuccess>({
         payment: pending,
         clientSecret: retrieved.value.clientSecret,
@@ -509,6 +545,9 @@ async function initiatePaymentBody(
       },
       retentionYears: retentionFor('payment_initiated'),
     });
+
+    // T141 metric: count successful first-attempt initiates by method.
+    paymentsMetrics.initiateCount(input.tenantId, input.method);
 
     return ok<InitiatePaymentSuccess>({
       payment,

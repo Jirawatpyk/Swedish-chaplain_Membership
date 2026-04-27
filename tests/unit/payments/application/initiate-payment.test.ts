@@ -21,6 +21,20 @@ const metricsMocks = vi.hoisted(() => ({
   initiateDurationMs: vi.fn(),
   qrLoadRetriesExhausted: vi.fn(),
   crossMethodCancelDurationMs: vi.fn(),
+  initiateCount: vi.fn(),
+  succeededCount: vi.fn(),
+  failedCount: vi.fn(),
+  autoRefundedStaleCount: vi.fn(),
+  refundInitiateCount: vi.fn(),
+  refundSucceededCount: vi.fn(),
+  refundFailedCount: vi.fn(),
+  webhookReceiveCount: vi.fn(),
+  webhookDuplicateIgnored: vi.fn(),
+  webhookSignatureRejected: vi.fn(),
+  webhookApiVersionMismatch: vi.fn(),
+  outOfBandRefundRejected: vi.fn(),
+  stalePendingCount: vi.fn(),
+  inviteToPaymentFunnelStep: vi.fn(),
 }));
 vi.mock('@/lib/metrics', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/metrics')>();

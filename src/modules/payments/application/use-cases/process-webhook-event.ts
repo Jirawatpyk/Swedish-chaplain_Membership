@@ -46,6 +46,9 @@ import { confirmPayment, type ConfirmPaymentOutcome } from './confirm-payment';
 import { failPayment, type FailPaymentOutcome } from './fail-payment';
 import { handleCancelEvent, type HandleCancelEventOutcome } from './handle-cancel-event';
 import { processChargeRefunded } from './process-charge-refunded';
+import { paymentsMetrics } from '@/lib/metrics';
+import { paymentsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 export interface ProcessWebhookEventInput {
   readonly tenantId: string;
@@ -178,7 +181,56 @@ export async function processWebhookEvent(
   deps: ProcessWebhookEventDeps,
   input: ProcessWebhookEventInput,
 ): Promise<Result<ProcessWebhookEventOutcome, ProcessWebhookEventError>> {
+  // T140 OTel span: hop 4 of the F5 distributed trace
+  // (`webhook_receive` boundary). Sub-use-case spans (confirm/fail/
+  // cancel/charge.refunded) become children automatically via OTel
+  // active-context propagation. Route-level signature verify lives in
+  // the auto-instrumented Next route handler; this span starts AFTER
+  // verify + tenant resolution.
+  return await paymentsTracer().startActiveSpan(
+    'payments.webhook.process',
+    {
+      attributes: {
+        'webhook.event_id': input.event.id,
+        'webhook.event_type': input.event.type,
+        'webhook.api_version': input.event.apiVersion,
+        'webhook.livemode': input.event.livemode,
+        'payments.tenant_id': input.tenantId,
+      },
+    },
+    async (span) => {
+      try {
+        const result = await processWebhookEventBody(deps, input);
+        if (result.ok) {
+          span.setAttribute('webhook.outcome', result.value.kind);
+        } else {
+          span.setAttribute('webhook.outcome', `err:${result.error.code}`);
+        }
+        return result;
+      } catch (e) {
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: e instanceof Error ? e.message : 'webhook_threw',
+        });
+        throw e;
+      } finally {
+        span.end();
+      }
+    },
+  );
+}
+
+async function processWebhookEventBody(
+  deps: ProcessWebhookEventDeps,
+  input: ProcessWebhookEventInput,
+): Promise<Result<ProcessWebhookEventOutcome, ProcessWebhookEventError>> {
   const { event, tenantId } = input;
+
+  // T141 metric: per-tenant per-event-type ingest rate. Emitted at
+  // dispatch entry (after route-level signature/livemode/api_version
+  // gates) so it counts only the events that genuinely reached the
+  // tenant-resolved dispatcher. Powers dashboard top-row.
+  paymentsMetrics.webhookReceiveCount(tenantId, event.type);
 
   // Step 6 — idempotency insert. Runs on its own tx so a duplicate is
   // observed before we open the dispatch tx (avoids a useless row lock
@@ -209,6 +261,11 @@ export async function processWebhookEvent(
     // `processed_at IS NULL` as "in-flight, retry the dispatch" so the
     // recovery path proceeds normally.
     if (inserted.event.processedAt !== null) {
+      // T141 metric: idempotency hit — webhook redelivery skipped
+      // because the prior dispatch already committed `processed_at`.
+      // Useful baseline for FR-008 idempotency assurance + healthy
+      // baseline for SLO-F5-006 zero-double-credit invariant.
+      paymentsMetrics.webhookDuplicateIgnored(tenantId, event.type);
       return ok<ProcessWebhookEventOutcome>({ kind: 'duplicate' });
     }
     // Fall through into the dispatch block — the row already exists,
@@ -438,6 +495,7 @@ export async function processWebhookEvent(
           chargeId: dataObject.id,
           refundIds: dataObject.refundIds ?? [],
           amountSatang: dataObject.amountSatang ?? 0n,
+          processorEnv: event.livemode ? 'live' : 'test',
         },
       );
       if (!refundResult.ok) {

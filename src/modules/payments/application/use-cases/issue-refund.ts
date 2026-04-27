@@ -56,6 +56,9 @@ import {
   type PaymentId,
 } from '../../domain/payment';
 import { retentionFor } from '../ports/audit-port';
+import { paymentsMetrics } from '@/lib/metrics';
+import { paymentsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 // ---------------------------------------------------------------------------
 // Public input / output / error shapes
@@ -176,6 +179,10 @@ async function finaliseFailedRefund(
       retentionYears: retentionFor('refund_failed'),
     });
   });
+  // T141 metric: refund failure forensics by reason_code (OUTSIDE tx
+  // — the helper completed its own write tx; emit only after commit
+  // attempt to align with the audit row's existence).
+  paymentsMetrics.refundFailedCount(input.tenantId, input.failureReasonCode);
 }
 
 export interface IssueRefundDeps {
@@ -196,6 +203,43 @@ export interface IssueRefundDeps {
 // ---------------------------------------------------------------------------
 
 export async function issueRefund(
+  deps: IssueRefundDeps,
+  input: IssueRefundInput,
+): Promise<Result<IssueRefundSuccess, IssueRefundError>> {
+  // T140 OTel span — admin-initiated refund lifecycle (Phase A → Stripe
+  // → F4 CN bridge → Phase B). Children: Drizzle tx + Stripe SDK auto-
+  // instrumented spans.
+  return await paymentsTracer().startActiveSpan(
+    'payments.refund',
+    {
+      attributes: {
+        'payments.payment_id': input.paymentId,
+        'payments.tenant_id': input.tenantId,
+        'payments.amount_satang': Number(input.amountSatang),
+      },
+    },
+    async (span) => {
+      try {
+        const result = await issueRefundBody(deps, input);
+        span.setAttribute(
+          'payments.outcome',
+          result.ok ? 'ok' : `err:${result.error.code}`,
+        );
+        return result;
+      } catch (e) {
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: e instanceof Error ? e.message : 'refund_threw',
+        });
+        throw e;
+      } finally {
+        span.end();
+      }
+    },
+  );
+}
+
+async function issueRefundBody(
   deps: IssueRefundDeps,
   input: IssueRefundInput,
 ): Promise<Result<IssueRefundSuccess, IssueRefundError>> {
@@ -307,6 +351,16 @@ export async function issueRefund(
   if (prepared.kind === 'rejected') {
     return err(prepared.error);
   }
+
+  // T141 metric: count admin-initiated refunds by method + partial flag.
+  // Phase-A committed (pending row + audit), so this counter aligns
+  // with the `refund_initiated` audit existence — even if Stripe later
+  // declines, the attempt is recorded.
+  paymentsMetrics.refundInitiateCount(
+    input.tenantId,
+    prepared.payment.method,
+    input.amountSatang < prepared.payment.amountSatang,
+  );
 
   // -------------------------------------------------------------------------
   // External Step — Stripe createRefund (outside any DB tx)
@@ -448,6 +502,10 @@ export async function issueRefund(
         retentionYears: retentionFor('refund_succeeded'),
       });
     });
+    // T141 metric: refund → CN throughput. Emitted AFTER Phase B tx
+    // commits so a Phase B rollback (caught below) does not bump the
+    // counter when the row stays pending.
+    paymentsMetrics.refundSucceededCount(input.tenantId);
   } catch (phaseBError) {
     const detail =
       phaseBError instanceof Error ? phaseBError.message : String(phaseBError);

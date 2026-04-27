@@ -60,6 +60,7 @@ function makeInput(
     chargeId: 'ch_test_001',
     refundIds: [],
     amountSatang: 100_000n,
+    processorEnv: 'test',
     ...partial,
   };
 }

@@ -42,6 +42,9 @@ import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
 import { markProcessedIfPresent } from './_shared';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
+import { paymentsMetrics } from '@/lib/metrics';
+import { paymentsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 export interface ConfirmPaymentInput {
   readonly tenantId: string;
@@ -101,6 +104,46 @@ export interface ConfirmPaymentDeps {
 }
 
 export async function confirmPayment(
+  deps: ConfirmPaymentDeps,
+  input: ConfirmPaymentInput,
+): Promise<Result<ConfirmPaymentOutcome, ConfirmPaymentError>> {
+  // T140 OTel span: webhook → f4_markpaid hop. Wraps the entire
+  // confirmPayment lifecycle (incl. retrievePaymentIntent + invoicing
+  // bridge call) so traces clearly show settlement-side latency.
+  return await paymentsTracer().startActiveSpan(
+    'payments.confirm',
+    {
+      attributes: {
+        'payments.payment_intent_id': input.paymentIntentId,
+        'payments.tenant_id': input.tenantId,
+        ...(input.processorEventId !== undefined
+          ? { 'payments.processor_event_id': input.processorEventId }
+          : {}),
+      },
+    },
+    async (span) => {
+      try {
+        const result = await confirmPaymentBody(deps, input);
+        if (result.ok) {
+          span.setAttribute('payments.outcome', result.value.kind);
+        } else {
+          span.setAttribute('payments.outcome', `err:${result.error.code}`);
+        }
+        return result;
+      } catch (e) {
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: e instanceof Error ? e.message : 'confirm_threw',
+        });
+        throw e;
+      } finally {
+        span.end();
+      }
+    },
+  );
+}
+
+async function confirmPaymentBody(
   deps: ConfirmPaymentDeps,
   input: ConfirmPaymentInput,
 ): Promise<Result<ConfirmPaymentOutcome, ConfirmPaymentError>> {
@@ -291,6 +334,10 @@ export async function confirmPayment(
       });
       // Audit 2026-04-26 round-2 #5b: atomic markProcessed.
       await markProcessed();
+      // T141 metric: stale-invoice guard-rail fired (alert: > 0 → invoice
+      // overpaid / void-race). Emit AFTER tx work but BEFORE return so
+      // failed-emit isn't silenced by an in-flight error path.
+      paymentsMetrics.autoRefundedStaleCount(input.tenantId);
       return ok<ConfirmPaymentOutcome>({
         kind: 'auto_refunded_stale_invoice',
         invoiceId: payment.invoiceId,
@@ -468,6 +515,10 @@ export async function confirmPayment(
     // `processed_at=NULL`. Only runs when the parent (processWebhook
     // Event) supplied both deps + input.
     await markProcessed();
+
+    // T141 metric: settlement throughput (RED — Rate / Errors / Duration).
+    // Powers SLO-F5-005 success-rate denominator + dashboard top-row gauge.
+    paymentsMetrics.succeededCount(input.tenantId, payment.method);
 
     return ok<ConfirmPaymentOutcome>({
       kind: 'processed',

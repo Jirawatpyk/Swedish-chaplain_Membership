@@ -52,6 +52,7 @@ import {
   insertRejectedProcessorEvent as insertRejectedProcessorEventImpl,
   auditRepo,
 } from '@/lib/stripe-webhook-deps';
+import { paymentsMetrics } from '@/lib/metrics';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -102,6 +103,17 @@ async function auditReject(
   reason: string,
   requestId: string,
 ): Promise<void> {
+  // T141 metric: signature/api-version rejection counters. NO tenant
+  // label (rejected pre-resolution by design — abuse / misconfig
+  // canary fires regardless of which tenant the attacker targeted).
+  // observability.md §21.3 alert rules pivot on `> 0 / 5 min` —
+  // emitting here, BEFORE the audit append, guarantees the counter
+  // bumps even if the audit-rail itself is degraded.
+  if (eventType === 'webhook_signature_rejected') {
+    paymentsMetrics.webhookSignatureRejected();
+  } else if (eventType === 'webhook_api_version_mismatch') {
+    paymentsMetrics.webhookApiVersionMismatch();
+  }
   try {
     await auditRepo.append({
       eventType,

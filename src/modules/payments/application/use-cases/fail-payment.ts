@@ -16,6 +16,9 @@ import { canTransition } from '../../domain/policies/payment-status-transitions'
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
 import { emitWebhookUnknownIntent, markProcessedIfPresent } from './_shared';
+import { paymentsMetrics } from '@/lib/metrics';
+import { paymentsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 /**
  * Sentinel reason code emitted on `payment_failed` audit when Stripe
@@ -66,6 +69,41 @@ export interface FailPaymentDeps {
 }
 
 export async function failPayment(
+  deps: FailPaymentDeps,
+  input: FailPaymentInput,
+): Promise<Result<FailPaymentOutcome, FailPaymentError>> {
+  // T140 OTel span — webhook failure-branch latency.
+  return await paymentsTracer().startActiveSpan(
+    'payments.fail',
+    {
+      attributes: {
+        'payments.payment_intent_id': input.paymentIntentId,
+        'payments.tenant_id': input.tenantId,
+      },
+    },
+    async (span) => {
+      try {
+        const result = await failPaymentBody(deps, input);
+        if (result.ok) {
+          span.setAttribute('payments.outcome', result.value.kind);
+        } else {
+          span.setAttribute('payments.outcome', `err:${result.error.code}`);
+        }
+        return result;
+      } catch (e) {
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: e instanceof Error ? e.message : 'fail_threw',
+        });
+        throw e;
+      } finally {
+        span.end();
+      }
+    },
+  );
+}
+
+async function failPaymentBody(
   deps: FailPaymentDeps,
   input: FailPaymentInput,
 ): Promise<Result<FailPaymentOutcome, FailPaymentError>> {
@@ -195,6 +233,11 @@ export async function failPayment(
 
     // Atomic markProcessed (audit 2026-04-25 #4) — same tx as audit + status update.
     await markProcessedIfPresent(deps, input, tx);
+
+    // T141 metric: decline-rate / forensics by reason_code. Powers
+    // SLO-F5-005 success-rate numerator (failures by reason) +
+    // dashboard third-row failure breakdown.
+    paymentsMetrics.failedCount(input.tenantId, payment.method, reasonCode);
 
     return ok<FailPaymentOutcome>({
       kind: 'processed',
