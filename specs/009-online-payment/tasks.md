@@ -368,23 +368,23 @@ The following pay-sheet files were added beyond T072–T086 to support the empir
 
 ### API version mismatch + environment segregation
 
-- [ ] T132 [P] Integration test `tests/integration/payments/api-version-pinning.test.ts` (FR-026) — feed event with non-pinned `api_version`; assert 200 + `processor_events.outcome='acknowledged_only'` + `webhook_api_version_mismatch` audit + no downstream side effects.
-- [ ] T133 [P] Integration test `tests/integration/payments/environment-mismatch.test.ts` (FR-010) — test event hitting live endpoint (or vice versa); assert rejected + `payment_environment_mismatch` audit.
+- [X] T132 [P] Integration test `tests/integration/payments/api-version-pinning.test.ts` (FR-026) — feed event with non-pinned `api_version`; assert 200 + `processor_events.outcome='acknowledged_only'` + `webhook_api_version_mismatch` audit + no downstream side effects.
+- [X] T133 [P] Integration test `tests/integration/payments/environment-mismatch.test.ts` (FR-010) — test event hitting live endpoint (or vice versa); assert rejected + `payment_environment_mismatch` audit.
 
 ### Kill switch + retention backfill
 
-- [ ] T134 [P] Integration test `tests/integration/payments/kill-switch.test.ts` (FR-016 + SC-013) — toggle `online_payment_enabled=false`; assert empty-state UI + 503 on API + `online_payment_toggled` audit; toggle back; assert restoration within 60s (cache invalidation tag).
-- [ ] T135 [P] Integration test `tests/integration/payments/audit-retention-backfill.test.ts` (R2-E4 **Review-Gate blocker**) — seed one row of every F4 + F5 audit event type; run migration 0038; assert each row's `retention_years` matches data-model.md § 7.1 + 7.2 mapping (10 for tax-document touching, 5 otherwise). FAIL = compliance regression.
+- [X] T134 [P] Integration test `tests/integration/payments/kill-switch.test.ts` (FR-016 + SC-013) — toggle `online_payment_enabled=false`; assert empty-state UI + 503 on API + `online_payment_toggled` audit; toggle back; assert restoration within 60s (cache invalidation tag).
+- [X] T135 [P] Integration test `tests/integration/payments/audit-retention-backfill.test.ts` (R2-E4 **Review-Gate blocker**) — seed one row of every F4 + F5 audit event type; run migration 0038; assert each row's `retention_years` matches data-model.md § 7.1 + 7.2 mapping (10 for tax-document touching, 5 otherwise). FAIL = compliance regression.
 
 ### Concurrent + edge cases
 
 - [ ] T136 [P] Integration test `tests/integration/payments/concurrent-initiate.test.ts` (post-critique R2-E2) — Promise.all() two `POST /api/payments/initiate` for same invoice; assert exactly one Payment row created + both responses return identical clientSecret.
-- [ ] T137 [P] Integration test `tests/integration/payments/admin-impersonate-pay-rejected.test.ts` — admin attempts `POST /api/payments/initiate`; assert 403 `forbidden_role` (FR-018 R2-E6 amendment).
+- [X] T137 [P] Integration test `tests/integration/payments/admin-impersonate-pay-rejected.test.ts` — admin attempts `POST /api/payments/initiate`; assert 403 `forbidden_role` (FR-018 R2-E6 amendment).
 
 ### Stale-pending sweep + observability
 
 - [X] T138 Implement `src/app/api/internal/metrics/stale-pending-count/route.ts` — **external cron-job.org handler** (not Vercel Cron — Hobby plan daily-cron limit); GET route validating `Authorization: Bearer ${CRON_SECRET}` against `env.cron.secret`; runs Drizzle query per plan.md § VII.Metrics; emits one OTel gauge per tenant. Document the cron-job.org configuration (URL + bearer + `*/5 * * * *` schedule) in `docs/runbooks/stale-pending-count.md` (new runbook) so re-creation is reproducible if the external account is lost.
-- [ ] T139 [P] Integration test `tests/integration/payments/stale-pending-cron.test.ts` — seed pending Payment > 24h; trigger cron handler; assert metric emitted with correct tenant + count.
+- [X] T139 [P] Integration test `tests/integration/payments/stale-pending-cron.test.ts` — seed pending Payment > 24h; trigger cron handler; assert metric emitted with correct tenant + count.
 - [ ] T140 [P] Wire OTel instrumentation across the F5 lifecycle per plan.md § VII — distributed trace spanning portal_click → api_payments_initiate → stripe_create_intent → webhook_receive → webhook_verify → f4_markpaid → receipt_email_enqueued.
 - [X] T141 [P] Wire 14 metrics per plan.md § VII.Metrics — `payments.initiate.*`, `payments.succeeded.*`, `payments.failed.*`, `payments.auto_refunded_stale.*`, `refunds.*`, `webhook.receive.*`, `webhook.duplicate_ignored.*`, `webhook.signature_rejected_total`, `webhook.api_version_mismatch_total`, `out_of_band_refund_rejected_total`, `member_invite_to_payment_funnel_dropoff`, `payments.stale_pending_count` (T138).
 - [ ] T142 [P] Add alert thresholds to observability config per plan.md § VII.Alerts — 9 alert rules incl. `stale_pending_count > 5 for any tenant` (R2-E3) + `webhook_api_version_mismatch > 0` (Q5 monitoring).
