@@ -396,14 +396,23 @@ export function CardForm({
       }
     }
 
+    // R2-E2 (plan § R2-E2 + FR-022): Stripe Elements requires ISO 639-1
+    // codes (`'th'`, `'en'`, `'sv'`); next-intl's `useLocale()` returns
+    // BCP-47 (`'th-TH'`, `'en-US'`, `'sv-SE'`). Direct passing silently
+    // falls back to English (Stripe defaults unknown locales to `'auto'`).
+    // Without this prop, Thai users see English card-form labels even
+    // under NEXT_LOCALE=th — caught by `tests/e2e/payment-i18n.spec.ts`
+    // (T145, 2026-04-27).
+    const stripeLocale = (locale.split('-')[0] ?? 'en') as 'th' | 'en' | 'sv';
     return {
       clientSecret,
+      locale: stripeLocale,
       appearance: {
         theme: resolvedTheme === 'dark' ? 'night' : 'stripe',
         variables: resolved,
       },
     };
-  }, [clientSecret, resolvedTheme]);
+  }, [clientSecret, resolvedTheme, locale]);
 
   // G-Review Finding #10 — the previous dev-only "guard" effect was a
   // no-op (`void clientSecret`) that produced misleading signal. We do

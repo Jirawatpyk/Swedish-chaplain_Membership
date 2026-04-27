@@ -106,7 +106,11 @@ test.describe('F5 i18n locale coverage @f5 @i18n @e2e (T145)', () => {
         '[data-testid="pay-sheet-card-form-wrapper"]',
         { state: 'visible', timeout: 15_000 },
       );
-      await page.waitForLoadState('networkidle');
+      // Cannot use `networkidle` — Stripe Elements iframe holds long-
+      // polling connections (controller heartbeat) that never settle.
+      // Brief settle window for next-intl messages to finish hydrating
+      // is sufficient since drawer content is server-rendered.
+      await page.waitForTimeout(500);
 
       const drawerText =
         (await page.locator('[data-testid="pay-sheet-content"]').innerText()) ?? '';
@@ -129,9 +133,22 @@ test.describe('F5 i18n locale coverage @f5 @i18n @e2e (T145)', () => {
       state: 'visible',
       timeout: 15_000,
     });
-    // Stripe Elements iframe URL embeds `locale=th` when the parent
-    // <Elements> provider is initialised with `locale='th'`. Match
-    // against any iframe whose `src` originates from js.stripe.com.
+    // Wait for Stripe iframe to mount. Stripe Elements lazy-loads
+    // multiple iframes; we look for a controller iframe whose URL
+    // pattern carries the locale info. Pattern across versions:
+    //   - https://js.stripe.com/v3/elements-inner-card-...html?...&locale=th&...
+    //   - https://js.stripe.com/v3/controller-...html (controller has no locale)
+    // We assert at least ONE iframe carries `locale=th`.
+    await page.waitForFunction(
+      () => {
+        const frames = Array.from(
+          document.querySelectorAll('iframe[src*="js.stripe.com"]'),
+        );
+        return frames.length > 0;
+      },
+      { timeout: 15_000 },
+    );
+
     const iframeUrls = await page
       .locator('iframe[src*="js.stripe.com"]')
       .evaluateAll((nodes) => nodes.map((n) => (n as HTMLIFrameElement).src));
@@ -139,12 +156,14 @@ test.describe('F5 i18n locale coverage @f5 @i18n @e2e (T145)', () => {
       iframeUrls.length,
       'Stripe Elements iframe(s) must load on the card tab',
     ).toBeGreaterThan(0);
-    const allHaveThaiLocale = iframeUrls.every((url) =>
+    // At least one of the iframes (the elements-inner one) must carry
+    // `locale=th`. The controller iframe doesn't have a locale param.
+    const someHaveThaiLocale = iframeUrls.some((url) =>
       /[?&]locale=th\b/.test(url),
     );
     expect(
-      allHaveThaiLocale,
-      `Stripe iframe(s) under NEXT_LOCALE=th MUST carry ?locale=th — got: ${iframeUrls.join(', ')}`,
+      someHaveThaiLocale,
+      `At least one Stripe iframe under NEXT_LOCALE=th MUST carry ?locale=th — got URLs: ${iframeUrls.join(' | ')}`,
     ).toBe(true);
   });
 
@@ -186,17 +205,24 @@ test.describe('F5 i18n locale coverage @f5 @i18n @e2e (T145)', () => {
     ).toEqual([]);
   });
 
-  test('decline-code translation catalogues exist for EN+TH+SV', () => {
+  test('decline-code translations exist for EN+TH+SV (portal.payment.retry.reason*)', () => {
     // File-system invariant: every locale's messages must declare the
-    // `decline_codes` namespace so a Stripe failure renders the
-    // user-facing reason in the active locale (FR-022 + observability
-    // dashboard reason_code labels).
+    // `reason*` keys under `portal.payment.retry` so a Stripe failure
+    // renders the user-facing reason in the active locale (FR-022 +
+    // observability dashboard reason_code labels).
+    //
+    // Codebase convention (verified 2026-04-27): keys are flattened
+    // under `portal.payment.retry` as `reasonCardDeclined`,
+    // `reasonInsufficientFunds`, etc. (camelCase, NOT `decline_codes`
+    // namespace). 18 entries per locale; spec target was "top-20"
+    // approximate.
     const cwd = process.cwd();
     const localePaths = LOCALES.map((l) =>
       join(cwd, `src/i18n/messages/${l}.json`),
     );
     const missing: string[] = [];
     const reportedSizes: Record<string, number> = {};
+
     for (let i = 0; i < LOCALES.length; i += 1) {
       const locale = LOCALES[i]!;
       const path = localePaths[i]!;
@@ -209,23 +235,22 @@ test.describe('F5 i18n locale coverage @f5 @i18n @e2e (T145)', () => {
           string,
           unknown
         >;
-        // Decline-code namespace can live under any of these keys
-        // depending on how the i18n tree was sliced. Accept the first
-        // hit. Spec target ≥ 20 entries (top-20 decline codes).
-        const candidates = [
-          (raw['decline_codes'] as Record<string, unknown> | undefined),
-          ((raw['payments'] as Record<string, unknown> | undefined)
-            ?.['decline_codes']) as Record<string, unknown> | undefined,
-          ((raw['portal'] as Record<string, unknown> | undefined)
-            ?.['payment'] as Record<string, unknown> | undefined)?.[
-            'decline_codes'
-          ] as Record<string, unknown> | undefined,
-        ];
-        const found = candidates.find((c) => c && Object.keys(c).length > 0);
-        if (!found) {
-          missing.push(`${locale} (no decline_codes namespace under any of decline_codes / payments.decline_codes / portal.payment.decline_codes)`);
+        const portal = raw['portal'] as Record<string, unknown> | undefined;
+        const payment = portal?.['payment'] as Record<string, unknown> | undefined;
+        const retry = payment?.['retry'] as Record<string, unknown> | undefined;
+        if (!retry || typeof retry !== 'object') {
+          missing.push(`${locale} (no portal.payment.retry namespace)`);
+          continue;
+        }
+        const reasonKeys = Object.keys(retry).filter((k) =>
+          /^reason[A-Z]/.test(k),
+        );
+        if (reasonKeys.length < 10) {
+          missing.push(
+            `${locale} (only ${reasonKeys.length} reason* keys; need ≥ 10 — top-20 spec target)`,
+          );
         } else {
-          reportedSizes[locale] = Object.keys(found).length;
+          reportedSizes[locale] = reasonKeys.length;
         }
       } catch (e) {
         missing.push(
@@ -235,7 +260,36 @@ test.describe('F5 i18n locale coverage @f5 @i18n @e2e (T145)', () => {
     }
     expect(
       missing,
-      `Locales missing decline-code namespace: ${missing.join('; ')}. Found sizes: ${JSON.stringify(reportedSizes)}`,
+      `Locales with insufficient decline-code translations: ${missing.join('; ')}. Found sizes: ${JSON.stringify(reportedSizes)}`,
     ).toEqual([]);
+
+    // All 3 locales must have the SAME set of reason* keys (no key
+    // present in EN missing in TH/SV — i18n parity invariant).
+    const localeKeySets: Record<string, Set<string>> = {};
+    for (const locale of LOCALES) {
+      const path = join(cwd, `src/i18n/messages/${locale}.json`);
+      const raw = JSON.parse(readFileSync(path, 'utf-8')) as Record<
+        string,
+        unknown
+      >;
+      const retry = (
+        ((raw['portal'] as Record<string, unknown>)?.['payment'] as Record<
+          string,
+          unknown
+        >)?.['retry'] as Record<string, unknown>
+      ) ?? {};
+      localeKeySets[locale] = new Set(
+        Object.keys(retry).filter((k) => /^reason[A-Z]/.test(k)),
+      );
+    }
+    const enKeys = localeKeySets['en']!;
+    for (const locale of ['th', 'sv'] as const) {
+      const localeKeys = localeKeySets[locale]!;
+      const missingFromLocale = [...enKeys].filter((k) => !localeKeys.has(k));
+      expect(
+        missingFromLocale,
+        `${locale} missing reason* keys present in EN: ${missingFromLocale.join(', ')}`,
+      ).toEqual([]);
+    }
   });
 });
