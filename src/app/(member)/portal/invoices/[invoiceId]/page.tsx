@@ -227,19 +227,13 @@ export default async function PortalInvoiceDetailPage({
     .findByOriginalInvoice(asInvoiceId(invoice.invoiceId), tenantCtx.slug)
     .catch(() => [] as never[]);
 
-  // H-8 (review 2026-04-27) — when the invoice is void, check whether
-  // an auto-refund-stale-invoice audit row exists for the member's
-  // mid-flight payment. Best-effort: a repo failure renders the void
-  // banner WITHOUT the refund line (graceful degrade — failing closed
-  // here would hide a real refund-confirmation message from a member
-  // who needs it). Only queried for void invoices to avoid an extra
-  // round-trip on the happy path.
-  const wasAutoRefunded =
+  // Graceful-degrade: a repo failure hides the refund line, not the void banner.
+  const autoRefund =
     invoice.status === 'void'
       ? await makeDrizzlePaymentsRepo(tenantCtx.slug)
-          .hasAutoRefundedStaleInvoice(tenantCtx.slug, invoice.invoiceId)
-          .catch(() => false)
-      : false;
+          .findStaleInvoiceAutoRefund(invoice.invoiceId)
+          .catch(() => null)
+      : null;
 
   return (
     <DetailContainer>
@@ -321,12 +315,24 @@ export default async function PortalInvoiceDetailPage({
             ) : null}
           </dl>
           <p className="mt-3 text-sm text-destructive">{t('void.notPayable')}</p>
-          {wasAutoRefunded && (
-            <div
+          {autoRefund && (
+            // Reassuring-news section — distinct from the destructive
+            // void parent: own `<section>` + `aria-labelledby` so screen
+            // readers announce a separate landmark, info-toned border
+            // (ring/accent) so the member is not double-punished by
+            // stacked red blocks, and `role="status" aria-live="polite"`
+            // so SPA navigations re-announce the refund confirmation.
+            <section
+              role="status"
+              aria-live="polite"
+              aria-labelledby="invoice-auto-refund-heading"
               data-testid="portal-invoice-auto-refund-notice"
-              className="mt-4 rounded-md border border-destructive/40 bg-background p-3"
+              className="mt-4 rounded-md border border-ring/30 bg-accent/10 p-3"
             >
-              <h3 className="text-sm font-medium text-destructive">
+              <h3
+                id="invoice-auto-refund-heading"
+                className="text-sm font-medium text-foreground"
+              >
                 {t('void.autoRefundHeading')}
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -335,7 +341,22 @@ export default async function PortalInvoiceDetailPage({
               <p className="mt-1 text-sm text-muted-foreground">
                 {t('void.autoRefundContact')}
               </p>
-            </div>
+              {autoRefund.processorRefundId && (
+                <p
+                  className="mt-2 font-mono text-xs text-muted-foreground"
+                  data-testid="portal-invoice-auto-refund-ref"
+                >
+                  {t('void.autoRefundRef', {
+                    // Stripe refund IDs are stable identifiers — full
+                    // value is safe to surface (no PCI scope; no
+                    // member PII). Truncating to last 8 keeps the line
+                    // scannable on mobile + matches what most banks
+                    // ask for in support tickets.
+                    ref: autoRefund.processorRefundId.slice(-8),
+                  })}
+                </p>
+              )}
+            </section>
           )}
         </section>
       )}

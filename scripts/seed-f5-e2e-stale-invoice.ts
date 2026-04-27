@@ -169,43 +169,31 @@ async function main(): Promise<void> {
     }
   });
 
-  // 3. Append the audit row via raw SQL (idempotent via request_id
-  //    dedup). The Drizzle `auditLog` schema does not expose the
-  //    `retention_years` column, so we mirror the F4 audit-adapter
-  //    raw-SQL pattern (audit-adapter.ts).
-  const existingAudit = (await db.execute(sql`
-    SELECT id FROM audit_log
-     WHERE tenant_id = ${ctx.slug}
-       AND event_type = 'payment_auto_refunded_stale_invoice'
-       AND request_id = ${E2E_STALE_REQUEST_ID}
-     LIMIT 1
-  `)) as unknown as Iterable<unknown>;
-  const existingRows = Array.from(existingAudit);
-  if (existingRows.length === 0) {
-    const payload = JSON.stringify({
-      payment_id: '00000000-e2e0-4fff-9ffe-000000999099',
-      invoice_id: E2E_STALE_INVOICE_ID,
-      refunded_amount_satang: '1070000',
-      cause: 'invoice_voided',
-      processor_refund_id: 're_e2e_h8_fixture',
-    });
-    await db.execute(sql`
-      INSERT INTO audit_log
-        (event_type, actor_user_id, summary, request_id, payload,
-         tenant_id, retention_years)
-      VALUES
-        ('payment_auto_refunded_stale_invoice'::audit_event_type,
-         '00000000-0000-0000-0000-000000000000',
-         'H-8 E2E fixture — auto-refund on void invoice for member portal banner test',
-         ${E2E_STALE_REQUEST_ID},
-         ${payload}::jsonb,
-         ${ctx.slug},
-         10)
-    `);
-    console.log(`  inserted audit row payment_auto_refunded_stale_invoice`);
-  } else {
-    console.log(`  audit row already present (idempotent skip)`);
-  }
+  // 3. Append the audit row. audit_log is append-only and the portal
+  //    page only checks "≥1 row exists for invoiceId", so duplicates
+  //    across re-runs are harmless. Raw SQL because the Drizzle
+  //    auditLog schema does not expose `retention_years`.
+  const payload = JSON.stringify({
+    payment_id: '00000000-e2e0-4fff-9ffe-000000999099',
+    invoice_id: E2E_STALE_INVOICE_ID,
+    refunded_amount_satang: '1070000',
+    cause: 'invoice_voided',
+    processor_refund_id: 're_e2e_h8_fixture',
+  });
+  await db.execute(sql`
+    INSERT INTO audit_log
+      (event_type, actor_user_id, summary, request_id, payload,
+       tenant_id, retention_years)
+    VALUES
+      ('payment_auto_refunded_stale_invoice'::audit_event_type,
+       '00000000-0000-0000-0000-000000000000',
+       'H-8 E2E fixture — auto-refund on void invoice for member portal banner test',
+       ${E2E_STALE_REQUEST_ID},
+       ${payload}::jsonb,
+       ${ctx.slug},
+       10)
+  `);
+  console.log(`  appended audit row payment_auto_refunded_stale_invoice`);
 
   console.log('');
   console.log('--- copy into .env.local ---');

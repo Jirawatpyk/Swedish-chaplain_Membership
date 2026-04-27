@@ -72,12 +72,17 @@ test.describe('PaySheet stale-invoice auto-refund — @payment @f5 @us5', () => 
     // additionally verified for non-emptiness.
     const refundNotice = page.getByTestId('portal-invoice-auto-refund-notice');
     await expect(refundNotice).toBeVisible();
+    await expect(refundNotice).toContainText(/your payment has been refunded/i);
     await expect(refundNotice).toContainText(
-      /payment automatically refunded/i,
+      /returned your payment because this invoice was voided/i,
     );
-    await expect(refundNotice).toContainText(
-      /(automatically refunded because this invoice was voided)/i,
-    );
+
+    // UX MEDIUM-1: refund reference id must be surfaced (last 8 chars
+    // of the audit row's processor_refund_id; seed sets it to
+    // `re_e2e_h8_fixture`, so the rendered ref is `_fixture`).
+    const refundRef = page.getByTestId('portal-invoice-auto-refund-ref');
+    await expect(refundRef).toBeVisible();
+    await expect(refundRef).toContainText('_fixture');
   });
 
   test('T121b: refund banner is absent on a NON-voided invoice (negative case)', async ({

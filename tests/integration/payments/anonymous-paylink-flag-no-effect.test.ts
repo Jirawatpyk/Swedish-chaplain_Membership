@@ -135,7 +135,7 @@ describe('FR-016a allow_anonymous_paylink — forward-compat flag has no F5 effe
     }
   });
 
-  it('(d) no F5 use-case branches on allow_anonymous_paylink in MVP runtime', () => {
+  it('(d) no F5 use-case branches on allow_anonymous_paylink in MVP runtime', async () => {
     // Intent: the flag MUST be invisible to F5 MVP runtime behaviour.
     // The flag is read by the repo's typed shape (Drizzle column) but
     // MUST NOT be checked in any use-case `if`/`switch`/conditional.

@@ -28,6 +28,7 @@ import { asPaymentId, type PaymentId } from '../../domain/payment';
 import { REFUND_STATUSES } from '../../domain/refund';
 import { refunds, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
 import { logger } from '@/lib/logger';
 
 // H-9 / H-10 (review 2026-04-27): defensive boundary guards mirroring
@@ -58,13 +59,13 @@ function toDomain(row: RefundRow): DomainRefundRow {
   };
 }
 
-export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
-  // tenantId is currently unused — every method receives its own
-  // tenant-bound `tx` from the caller (initiate-payment / issue-refund
-  // / sweep-stale-pending-refunds), and tenant scoping is enforced by
-  // RLS+FORCE on the underlying `refunds` table. Kept in the factory
-  // signature for symmetry with `makeDrizzlePaymentsRepo` + future-
-  // proofing if a per-tenant runInTenant read path is added.
+export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
+  // ctx is held in scope so any future standalone read path can call
+  // `runInTenant(ctx, ...)` without a developer reaching for `db`
+  // (which would bypass RLS). Every current method takes a tx from
+  // its caller's runInTenant scope, so this is defensive only.
+  const ctx = asTenantContext(tenantId);
+  void ctx;
   return {
     async insert(txUnknown, input): Promise<DomainRefundRow> {
       const tx = txUnknown as TenantTx;

@@ -415,30 +415,29 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
     },
 
     /**
-     * H-8 (review 2026-04-27) — query audit_log for the
-     * `payment_auto_refunded_stale_invoice` row matching this invoice.
-     * Read-only; runs under RLS via runInTenant. Returns boolean (no
-     * row count needed — caller only cares about existence).
+     * H-8 — read the most-recent auto-refund audit row for this
+     * invoice. Tenant scoping comes from the factory-bound `ctx`
+     * (RLS+FORCE) — defence-in-depth WHERE on `tenant_id` mirrors
+     * `lockForUpdateByPaymentIntentId` (line 188).
      */
-    async hasAutoRefundedStaleInvoice(
-      tenantIdArg: string,
+    async findStaleInvoiceAutoRefund(
       invoiceId: string,
-    ): Promise<boolean> {
+    ): Promise<{ readonly processorRefundId: string | null } | null> {
       return runInTenant(ctx, async (tx) => {
         const result = await tx.execute(sql`
-          SELECT 1 AS hit
+          SELECT payload->>'processor_refund_id' AS processor_refund_id
             FROM audit_log
-           WHERE tenant_id = ${tenantIdArg}
+           WHERE tenant_id = ${tenantId}
              AND event_type = 'payment_auto_refunded_stale_invoice'
              AND payload->>'invoice_id' = ${invoiceId}
+           ORDER BY timestamp DESC
            LIMIT 1
         `);
-        // Drizzle's `tx.execute` returns either an array or a result
-        // object with `.rows` depending on driver. Normalise via the
-        // same `Array.from` coercion used in the F4 audit-adapter
-        // raw-SQL paths.
-        const rows = Array.from(result as unknown as Iterable<unknown>);
-        return rows.length > 0;
+        const rows = Array.from(
+          result as unknown as Iterable<{ processor_refund_id: string | null }>,
+        );
+        if (rows.length === 0) return null;
+        return { processorRefundId: rows[0]!.processor_refund_id };
       });
     },
   };
