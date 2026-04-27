@@ -256,6 +256,15 @@ export const REDACT_PATHS = [
   //   - `{error: {reason: ...}}`              (gateway error nested under `error`)
   //   - `{result: {error: {reason: ...}}}`    (full Result<T,E> envelope)
   //   - `{<anyKey>: {error: {reason: ...}}}`  (depth-2 wildcard)
+  // R2 F-02 (2026-04-27 security review): the bare `reason` and
+  // `*.reason` paths are intentionally broad. The reviewer suggested
+  // narrowing them, but the existing logger-redact.test.ts asserts
+  // that top-level `reason: 'sk_live_FORBIDDEN_DETAIL'` IS redacted
+  // (Stripe SDK errors spread into the log without nesting in some
+  // call paths). Erring on the side of over-redaction is correct for
+  // a PCI SAQ-A-scoped logger. Operational `reason` fields that are
+  // genuinely safe to display should be renamed to a non-`reason` key
+  // (e.g. `dispatchFailureKind` already used in the webhook route).
   'processorReason',
   '*.processorReason',
   'reason',

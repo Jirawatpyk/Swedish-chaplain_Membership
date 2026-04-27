@@ -153,6 +153,21 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       return runInTenant(ctx, async (tx) => fn(tx));
     },
 
+    async acquireInitiateLock(
+      txUnknown,
+      tenantIdArg: string,
+      invoiceId: string,
+    ): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // pg_advisory_xact_lock(bigint) auto-releases at tx end.
+      // hashtextextended is deterministic; using `${tenantId}:${invoiceId}`
+      // produces a per-(tenant,invoice) lock channel without colliding
+      // with unrelated advisory locks elsewhere in the schema.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${tenantIdArg} || ':' || ${invoiceId}, 0))`,
+      );
+    },
+
     async lockForUpdate(
       txUnknown,
       paymentId: PaymentId,

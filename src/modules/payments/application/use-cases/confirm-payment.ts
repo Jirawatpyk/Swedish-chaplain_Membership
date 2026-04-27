@@ -283,6 +283,18 @@ async function confirmPaymentBody(
         }
       })();
 
+      // R2 H-3 (2026-04-27 review) — KNOWN TRADEOFF: this Stripe call
+      // runs inside `withTx`, holding the payment-row FOR UPDATE lock for
+      // up to 10s (Stripe SDK timeout) on the auto-refund path. The
+      // audit emit at line ~313 already commits via separate-tx (`null`)
+      // to survive a withTx rollback, and Stripe idempotencyKey
+      // (`auto-refund-${payment.id}`) makes the refund itself replay-safe.
+      // The remaining concern is lock-contention against concurrent
+      // cancelPayment / second webhook delivery — bounded but real under
+      // tail latency. A two-phase split (lock+decide → unlock → Stripe
+      // → relock+commit-audit) is tracked as post-ship cleanup; it
+      // requires careful idempotency around `markProcessed` so a
+      // pre-empted retry does not double-emit `payment_auto_refunded_*`.
       const refund = await deps.processorGateway.createRefund({
         paymentIntentId: input.paymentIntentId,
         metadata: {

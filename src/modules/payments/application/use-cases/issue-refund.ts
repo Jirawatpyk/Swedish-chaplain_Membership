@@ -43,6 +43,7 @@ import type {
   AuditPort,
   ClockPort,
   InvoicingBridgePort,
+  LoggerPort,
   PaymentsRepo,
   ProcessorGatewayPort,
   RefundsRepo,
@@ -196,6 +197,12 @@ export interface IssueRefundDeps {
   readonly generateRefundId: () => string;
   /** Idempotency-key wrapper (mirrors initiate-payment pattern). */
   readonly idempotencyKeyFactory: (baseKey: string) => string;
+  /**
+   * R2 reliability finding (2026-04-27): optional logger so the
+   * outer `.catch(() => …)` at the failure-finalise tail can record a
+   * structured warn before the stale-pending-refund sweep picks it up.
+   */
+  readonly logger?: LoggerPort;
 }
 
 // ---------------------------------------------------------------------------
@@ -528,10 +535,26 @@ async function issueRefundBody(
         credit_note_number: cnResult.value.creditNoteNumber,
         phase_b_error_kind: detailKind,
       },
-    }).catch(() => {
+    }).catch((finaliseError) => {
       // If even the failure-finalise tx throws, the pending row
       // stays — the T130a stale-pending-refund sweep cron is the
-      // last-resort recovery (Phase 9 polish).
+      // last-resort recovery (Phase 9 polish). R2 reliability fix:
+      // emit a structured warn before suppressing so ops have a
+      // signal to act on between sweeps. Constructor name only —
+      // raw Postgres `error.message` may carry SQL fragments.
+      deps.logger?.warn('issue_refund.finalise_failed_double_fault', {
+        tenantId: input.tenantId,
+        refundId: prepared.refundId,
+        paymentId,
+        invoiceId: prepared.payment.invoiceId,
+        processorRefundId: stripeRefund.value.id,
+        creditNoteId: cnResult.value.creditNoteId,
+        finaliseErrKind:
+          finaliseError instanceof Error
+            ? finaliseError.constructor.name
+            : 'unknown',
+        recovery: 'awaiting_stale_pending_refund_sweep',
+      });
     });
     return err({ code: 'f4_bridge_error', detail: detailKind });
   }

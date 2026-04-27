@@ -29,6 +29,10 @@ import { Button } from '@/components/ui/button';
 import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
 
 const COUNTDOWN_SECONDS = 60;
+// R2 F-7 (2026-04-27): module-level constant so we don't allocate a
+// new array on every render of the per-second countdown. Mirrors the
+// pattern in promptpay-panel.tsx and confirmation-panel.tsx.
+const SR_THRESHOLDS: ReadonlyArray<number> = [30, 10, 5, 1];
 
 export interface HardCapPromptProps {
   readonly onContinue: () => void;
@@ -114,7 +118,7 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
         aria-atomic="true"
         data-testid="pay-sheet-hard-cap-countdown-sr"
       >
-        {[30, 10, 5, 1].includes(remaining)
+        {SR_THRESHOLDS.includes(remaining)
           ? t('autoCancelCountdown', { seconds: remaining })
           : ''}
       </p>

@@ -50,7 +50,7 @@ export default async function Loading() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="grid gap-2 sm:grid-cols-2 sm:justify-items-end">
+          <CardContent className="grid gap-2 sm:grid-cols-[1fr_auto]">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="contents">
                 <SkeletonBlock className="h-3 w-20" />

@@ -40,8 +40,8 @@
  * Pure Application — no framework imports.
  */
 import { ok, err, type Result } from '@/lib/result';
-import { logger } from '@/lib/logger';
-import type { AuditPort, ClockPort, RefundsRepo } from '../ports';
+import type { AuditPort, ClockPort, LoggerPort, RefundsRepo } from '../ports';
+import { noopLogger } from '../ports/logger-port';
 import { retentionFor } from '../ports/audit-port';
 
 const STALE_PENDING_RUNBOOK_URL = 'docs/runbooks/stale-pending-refund-sweep.md';
@@ -69,6 +69,14 @@ export interface SweepStalePendingRefundsDeps {
   readonly paymentsRepo: { readonly withTx: <T>(fn: (tx: unknown) => Promise<T>) => Promise<T> };
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  /**
+   * R2 M-2 (2026-04-27): logger threaded as a port instead of a direct
+   * `@/lib/logger` import (Constitution Principle III — Application
+   * layer must not import framework adapters). Defaults to
+   * `noopLogger` so existing call sites remain non-breaking; the
+   * cron-route composition root wires the real `paymentsLogger`.
+   */
+  readonly logger?: LoggerPort;
 }
 
 export async function sweepStalePendingRefunds(
@@ -157,7 +165,8 @@ export async function sweepStalePendingRefunds(
       // params + literal values per the project log redact contract.
       // Per-row tx already rolled back, leaving the row in `pending`
       // for the next sweep to retry; skip and continue.
-      logger.warn(
+      (deps.logger ?? noopLogger).warn(
+        'sweep_stale_pending_refunds.row_skipped',
         {
           tenantId: input.tenantId,
           refundId: row.id,
@@ -165,7 +174,6 @@ export async function sweepStalePendingRefunds(
           errKind:
             cause instanceof Error ? cause.constructor.name : 'unknown',
         },
-        'sweep_stale_pending_refunds.row_skipped',
       );
       skippedCount += 1;
     }

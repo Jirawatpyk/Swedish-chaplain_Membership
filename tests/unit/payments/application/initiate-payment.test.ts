@@ -94,6 +94,7 @@ function makeDeps(
   const audit = { emit: vi.fn(async () => undefined) };
   const paymentsRepo = {
     withTx: vi.fn(async <T>(fn: (tx: unknown) => Promise<T>) => fn({})),
+    acquireInitiateLock: vi.fn(async () => undefined),
     lockForUpdate: vi.fn(),
     lockForUpdateByPaymentIntentId: vi.fn(),
     insert: vi.fn(async (_tx: unknown, input: { id: string }) => ({
@@ -795,7 +796,14 @@ describe('initiatePayment (T055)', () => {
     expect(result.error.code).toBe('method_not_enabled');
   });
 
-  it('invoice not found — invoice_not_found (no cross-tenant audit)', async () => {
+  it('invoice not found — invoice_not_found + payment_cross_tenant_probe (R2 CR-5)', async () => {
+    // R2 fix (2026-04-27): F4's RLS+FORCE returns `not_found` for
+    // BOTH "invoice doesn't exist" and "invoice exists in another
+    // tenant" — Constitution Principle I sub-clause: ambiguous-by-
+    // design. The use-case now emits `payment_cross_tenant_probe` on
+    // both `not_found` and `forbidden` outcomes so the live cross-
+    // tenant integration test (cross-tenant-probe.test.ts) gets a
+    // forensic audit row even when RLS produces the not_found shape.
     const deps = makeDeps();
     (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       err({ code: 'not_found' }),
@@ -804,7 +812,11 @@ describe('initiatePayment (T055)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('invoice_not_found');
-    expect(deps.audit.emit).not.toHaveBeenCalled();
+    expect(deps.audit.emit).toHaveBeenCalledTimes(1);
+    const auditCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(auditCall?.[0]).toBeNull();
+    expect(auditCall?.[1].eventType).toBe('payment_cross_tenant_probe');
+    expect(auditCall?.[1].payload.bridge_outcome).toBe('not_found');
   });
 
   it('invoice forbidden — forbidden_invoice + payment_cross_tenant_probe emitted', async () => {

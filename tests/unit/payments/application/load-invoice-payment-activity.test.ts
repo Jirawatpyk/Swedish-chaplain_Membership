@@ -17,6 +17,7 @@ import type { PaymentsRepo } from '@/modules/payments/application/ports/payments
 function makeStubRepo(override: Partial<PaymentsRepo> = {}): PaymentsRepo {
   return {
     withTx: vi.fn(),
+    acquireInitiateLock: vi.fn(),
     lockForUpdate: vi.fn(),
     lockForUpdateByPaymentIntentId: vi.fn(),
     insert: vi.fn(),

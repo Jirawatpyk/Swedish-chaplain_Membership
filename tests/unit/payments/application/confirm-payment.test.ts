@@ -126,6 +126,29 @@ describe('confirmPayment (T057)', () => {
     expect(auditCalls.some((c) => c[1].eventType === 'payment_succeeded')).toBe(true);
   });
 
+  // R2 CRIT-1 (2026-04-27): pins audit-chain ordering across F5+F4 for
+  // US1 AS1. The full chain `payment_initiated → payment_succeeded →
+  // invoice_paid` spans 2 use-cases (initiate-payment.test.ts asserts
+  // `payment_initiated`; F4 markPaidFromProcessor emits `invoice_paid`).
+  // At this seam we pin: `payment_succeeded` MUST be emitted BEFORE
+  // F4 `markPaidFromProcessor` is called, so the chain reads in
+  // chronological order from the audit_log query in production.
+  // (E2E `payment-card-happy-path.spec.ts` admin-timeline assertion is
+  // skipped pending F5.1 audit-log UI; this contract pin replaces it.)
+  it('CRIT-1 chain order — payment_succeeded audit emit precedes F4 markPaidFromProcessor', async () => {
+    const deps = makeDeps();
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(true);
+    const succeededEmitOrder =
+      (deps.audit.emit as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+    const markPaidOrder = (
+      deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>
+    ).mock.invocationCallOrder[0];
+    expect(succeededEmitOrder).toBeDefined();
+    expect(markPaidOrder).toBeDefined();
+    expect(succeededEmitOrder!).toBeLessThan(markPaidOrder!);
+  });
+
   it('tenant settings missing — bridge_error tenant_settings_missing', async () => {
     const deps = makeDeps();
     (deps.tenantSettingsRepo.getByTenantId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);

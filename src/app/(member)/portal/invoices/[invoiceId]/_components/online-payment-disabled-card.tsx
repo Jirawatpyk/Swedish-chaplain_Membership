@@ -96,6 +96,7 @@ export function OnlinePaymentDisabledCard({
           <a
             href={mailtoHref}
             data-testid="online-payment-disabled-cta"
+            aria-label={t('contactAdminCtaAria', { invoiceNumber })}
             className={cn(
               buttonVariants({ variant: 'default', size: 'sm' }),
               'min-h-11 px-4',

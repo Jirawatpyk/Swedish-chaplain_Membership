@@ -114,11 +114,17 @@ describe('<PromptPayPanel> — pending status', () => {
     expect(screen.getByTestId('pay-sheet-promptpay-refresh')).not.toBeNull();
   });
 
-  it('countdown region carries aria-live="polite" + initial 15:00 text', () => {
+  it('countdown region carries aria-live="polite" on the sr-only sibling + visible 15:00 text', () => {
     renderWithIntl({ ...baseProps, status: 'pending', expirySeconds: 900 });
-    const countdown = screen.getByTestId('pay-sheet-promptpay-countdown');
-    expect(countdown.getAttribute('aria-live')).toBe('polite');
-    expect(countdown.textContent).toContain('15:00');
+    // H-13 + R2 F-4: visible counter is `aria-hidden="true"` so SR
+    // users don't hear each per-second tick. The aria-live="polite"
+    // belongs to the persistent sr-only sibling that fires only at
+    // threshold boundaries.
+    const visibleCountdown = screen.getByTestId('pay-sheet-promptpay-countdown');
+    expect(visibleCountdown.getAttribute('aria-hidden')).toBe('true');
+    expect(visibleCountdown.textContent).toContain('15:00');
+    const srCountdown = screen.getByTestId('pay-sheet-promptpay-countdown-sr');
+    expect(srCountdown.getAttribute('aria-live')).toBe('polite');
   });
 
   it('Refresh CTA fires onRefresh', () => {
@@ -204,7 +210,13 @@ describe('<PromptPayPanel> — waiting-confirmation status', () => {
     renderWithIntl({ ...baseProps, status: 'waiting-confirmation' });
     expect(screen.getByTestId('pay-sheet-promptpay-qr')).not.toBeNull();
     expect(screen.getByTestId('pay-sheet-promptpay-waiting')).not.toBeNull();
-    expect(screen.getByText('Waiting for payment confirmation…')).not.toBeNull();
+    // R2 F-4: the "Waiting for payment confirmation…" string now
+    // appears in TWO places — the visible (aria-hidden) indicator
+    // AND the persistent sr-only live region (avoids the NVDA
+    // freshly-mounted-region bug). Use getAllByText so both are
+    // accepted; the visual indicator carries the test-id assertion
+    // above.
+    expect(screen.getAllByText('Waiting for payment confirmation…').length).toBeGreaterThanOrEqual(1);
   });
 });
 

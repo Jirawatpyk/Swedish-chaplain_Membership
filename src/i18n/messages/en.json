@@ -1690,9 +1690,7 @@
       "security": {
         "stripeBadge": "Secured by Stripe",
         "encrypted": "Encrypted · PCI-DSS compliant",
-        "cards": "We accept Visa, Mastercard, American Express, JCB",
-        "terms": "By paying you agree to our {termsLink}",
-        "termsLinkLabel": "terms of service"
+        "cards": "We accept Visa, Mastercard, American Express, JCB"
       },
       "methods": {
         "card": "Card",
@@ -1746,6 +1744,7 @@
         "title": "Online payment unavailable",
         "body": "Online card and PromptPay payments are not available for this invoice. Please contact the chamber administrator for bank-transfer instructions.",
         "contactAdminCta": "Contact administrator",
+        "contactAdminCtaAria": "Contact administrator about invoice {invoiceNumber}",
         "noContactEmail": "No administrator email is configured yet. Please contact the chamber office directly.",
         "mailSubject": "Bank-transfer instructions for invoice {invoiceNumber}"
       },

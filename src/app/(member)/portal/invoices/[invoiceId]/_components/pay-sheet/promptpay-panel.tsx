@@ -231,6 +231,18 @@ export function PromptPayPanel({
     }
   }, [remaining, status, active, t]);
 
+  // R2 F-4 (2026-04-27): route the `waiting-confirmation` announcement
+  // through the SAME persistent sr-only live region (line ~326) instead
+  // of relying on the freshly-mounted `aria-live` block below. NVDA +
+  // Firefox and some VoiceOver versions skip the initial content of a
+  // live region that mounted with text already present — the persistent
+  // region's content-mutation is what triggers reliable announcement.
+  useEffect(() => {
+    if (status === 'waiting-confirmation') {
+      setSrAnnouncement(t('waiting'));
+    }
+  }, [status, t]);
+
   const amountDisplay = useMemo(
     () =>
       currency === 'thb'
@@ -332,13 +344,15 @@ export function PromptPayPanel({
       </div>
 
       {status === 'waiting-confirmation' ? (
+        // Visible-only block for sighted users; SR announcement is
+        // delivered through the persistent sr-only live region above
+        // (R2 F-4 fix — avoids the NVDA/VO mount-bug).
         <div
-          aria-live="polite"
+          aria-hidden="true"
           className="flex items-center justify-center gap-2 text-caption text-muted-foreground"
           data-testid="pay-sheet-promptpay-waiting"
         >
           <span
-            aria-hidden="true"
             className="inline-block size-2 rounded-full bg-primary motion-safe:animate-pulse motion-reduce:animate-none"
           />
           {t('waiting')}

@@ -1690,9 +1690,7 @@
       "security": {
         "stripeBadge": "ปลอดภัยด้วย Stripe",
         "encrypted": "เข้ารหัส · รองรับ PCI-DSS",
-        "cards": "รองรับ Visa, Mastercard, American Express, JCB",
-        "terms": "การชำระเงินถือว่ายอมรับ {termsLink}",
-        "termsLinkLabel": "เงื่อนไขการใช้บริการ"
+        "cards": "รองรับ Visa, Mastercard, American Express, JCB"
       },
       "methods": {
         "card": "บัตรเครดิต",
@@ -1746,6 +1744,7 @@
         "title": "ไม่สามารถชำระเงินออนไลน์ได้",
         "body": "ขณะนี้ยังไม่เปิดให้ชำระเงินออนไลน์ผ่านบัตรเครดิตหรือ PromptPay สำหรับใบแจ้งหนี้ฉบับนี้ กรุณาติดต่อผู้ดูแลหอการค้าเพื่อขอข้อมูลการโอนเงินผ่านธนาคาร",
         "contactAdminCta": "ติดต่อผู้ดูแลระบบ",
+        "contactAdminCtaAria": "ติดต่อผู้ดูแลระบบเกี่ยวกับใบแจ้งหนี้ {invoiceNumber}",
         "noContactEmail": "ยังไม่ได้ตั้งค่าอีเมลของผู้ดูแลระบบ กรุณาติดต่อสำนักงานหอการค้าโดยตรง",
         "mailSubject": "ขอข้อมูลการโอนเงินผ่านธนาคารสำหรับใบแจ้งหนี้ {invoiceNumber}"
       },

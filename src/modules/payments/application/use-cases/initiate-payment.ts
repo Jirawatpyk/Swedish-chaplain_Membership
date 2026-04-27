@@ -270,11 +270,15 @@ async function initiatePaymentBody(
   });
   if (!invoiceResult.ok) {
     const e = invoiceResult.error;
-    if (e.code === 'not_found') {
-      return err({ code: 'invoice_not_found' });
-    }
-    if (e.code === 'forbidden') {
-      // F5-side probe audit (best-effort; tx=null).
+    if (e.code === 'not_found' || e.code === 'forbidden') {
+      // CR-5 fix (R2 audit 2026-04-27): emit F5-side probe audit on
+      // BOTH `not_found` and `forbidden` outcomes. F4's RLS layer
+      // returns `not_found` for cross-tenant invoices (Principle I
+      // sub-clause: ambiguous-by-design), so the `forbidden` branch
+      // alone never fires in a real 2-tenant scenario. The audit row
+      // is best-effort (`null` tx) and uses `acting_tenant_id` to
+      // align with cancel-payment's payload key (audit 2026-04-25
+      // finding #12 — naming consistency).
       await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId,
@@ -282,14 +286,17 @@ async function initiatePaymentBody(
         actorUserId: input.actorUserId,
         summary: `Cross-tenant probe on invoice ${input.invoiceId} during payment initiation`,
         payload: {
-          subject_tenant_id: input.tenantId,
+          acting_tenant_id: input.tenantId,
           probing_actor_id: input.actorUserId,
           target_entity: 'invoice',
           target_id: input.invoiceId,
+          bridge_outcome: e.code,
         },
         retentionYears: retentionFor('payment_cross_tenant_probe'),
       });
-      return err({ code: 'forbidden_invoice' });
+      return err({
+        code: e.code === 'not_found' ? 'invoice_not_found' : 'forbidden_invoice',
+      });
     }
     // not_payable
     return err({ code: 'invoice_not_payable', currentStatus: e.status });
@@ -311,6 +318,14 @@ async function initiatePaymentBody(
 
   // Step 5 + 6: withTx → resume or insert+createIntent+audit.
   return await deps.paymentsRepo.withTx(async (tx) => {
+    // R2 fix (2026-04-27): advisory lock on (tenantId, invoiceId) so
+    // two concurrent initiate calls for the same invoice are serialised
+    // at the DB layer. Without it, the findPending TOCTOU window lets
+    // two callers both miss the pending row and both reach Stripe
+    // createPaymentIntent — wasting one Stripe call (idempotency-key
+    // dedupes the PI itself, but we'd emit duplicate audit + metric).
+    // The lock auto-releases at tx end.
+    await deps.paymentsRepo.acquireInitiateLock(tx, input.tenantId, input.invoiceId);
     // Resume check FIRST — if a pending attempt by this actor exists,
     // return it verbatim (same clientSecret path). Reliability F-01
     // idempotency: member clicks "Pay" twice → one intent.

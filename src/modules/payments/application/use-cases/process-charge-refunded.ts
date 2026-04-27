@@ -166,6 +166,14 @@ export async function processChargeRefunded(
             },
             retentionYears: retentionFor('refund_succeeded'),
           });
+          // R2 M-1 (2026-04-27): metric fires INSIDE tx — same trade-off
+          // as `outOfBandRefundRejected` below (line ~198). OTel buffers
+          // the write until process-boundary flush, so a tx rollback
+          // produces at most a tiny over-count window. Moving outside
+          // would silently drop on early-return / control-flow exits
+          // inside the multi-branch webhook loop. Documented divergence
+          // from `issueRefund` (which has linear control flow + emits
+          // post-commit). Acceptable per observability.md § 21.3.
           paymentsMetrics.refundSucceededCount(input.tenantId);
         }
         if (!existing) {

@@ -49,10 +49,26 @@ import { memberTest as test, expect } from './helpers/member-session';
 const STALE_INVOICE_ID = process.env.E2E_STALE_INVOICE_ID;
 
 test.describe('PaySheet stale-invoice auto-refund — @payment @f5 @us5', () => {
-  test.skip(
-    !STALE_INVOICE_ID,
-    'E2E_STALE_INVOICE_ID not set — run `pnpm tsx scripts/seed-f5-e2e-stale-invoice.ts` then export it in .env.local',
-  );
+  // R2 CRIT-2 (2026-04-27): match the T046 CI-hard-fail pattern in
+  // payment-card-happy-path.spec.ts. US5 + FR-011b is a P1 financial-
+  // integrity acceptance scenario; in CI a missing seed must FAIL the
+  // suite, not silently skip. Local-dev contributors can opt out of
+  // running this spec via E2E_ALLOW_SKIP_STALE_INVOICE=1 (CI must NOT
+  // set this flag).
+  const isCi = process.env.CI === 'true' || process.env.CI === '1';
+  const allowSkip = process.env.E2E_ALLOW_SKIP_STALE_INVOICE === '1';
+  if (!STALE_INVOICE_ID) {
+    if (isCi && !allowSkip) {
+      throw new Error(
+        '[T121 CI gate] E2E_STALE_INVOICE_ID is required in CI. ' +
+          'Run `pnpm tsx scripts/seed-f5-e2e-stale-invoice.ts` and export the printed env var.',
+      );
+    }
+    test.skip(
+      true,
+      'E2E_STALE_INVOICE_ID not set — run `pnpm tsx scripts/seed-f5-e2e-stale-invoice.ts` then export it in .env.local',
+    );
+  }
 
   test('T121: void invoice + auto-refund audit row → member sees refund banner', async ({
     page,

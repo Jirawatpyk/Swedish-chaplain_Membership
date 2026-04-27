@@ -152,11 +152,18 @@ export async function cancelPayment(
       // Best-effort emit on `null` tx since we are about to roll the
       // outer tx back via the err() return — using the held tx would
       // discard the audit row on rollback.
-      // NOTE (deferred to MEDIUM batch): the Stripe SDK call still
-      // runs INSIDE `withTx` so the row's FOR UPDATE lock blocks
-      // concurrent webhook arrivals for up to 10s. Two-phase split
-      // (lock-release-then-Stripe-then-relock) tracked as a follow-up
-      // — touches state-machine and isn't a minimal review fix.
+      // R2 HIGH (2026-04-27 reliability-guardian): the Stripe SDK call
+      // still runs INSIDE `withTx` so the row's FOR UPDATE lock blocks
+      // concurrent webhook arrivals for up to 10s under tail latency.
+      // Two-phase split (lock+validate → unlock → Stripe →
+      // relock+commit-audit) tracked as post-ship cleanup — mirrors
+      // issueRefund's pattern but needs careful state-machine
+      // handling (the cancel can race against an in-flight
+      // payment_intent.succeeded webhook). A follow-up event type
+      // `payment_cancel_attempt_failed` (separate from `payment_canceled`)
+      // is also tracked for the failure path so audit-log queries can
+      // distinguish "cancel succeeded" from "cancel attempt failed at
+      // Stripe" — requires a new enum + migration.
       await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId,

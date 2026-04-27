@@ -374,7 +374,19 @@ export default async function InvoiceDetailPage({
               // RefundDialog reads useSearchParams() — without a
               // Suspense boundary Next.js bails the entire page out
               // to CSR, losing SSR + streaming.
-              <Suspense fallback={null}>
+              <Suspense
+                fallback={
+                  /* R2 F-3 (2026-04-27): invisible-but-present
+                   * placeholder reserves the button's layout space so
+                   * the surrounding grid does not shift while the
+                   * dialog hydrates. `aria-hidden` keeps it out of AT
+                   * during the brief flash. */
+                  <div
+                    aria-hidden="true"
+                    className="h-9 w-32 opacity-0"
+                  />
+                }
+              >
                 <RefundDialog
                   paymentId={refundButtonProps.paymentId}
                   invoiceId={invoice.invoiceId}

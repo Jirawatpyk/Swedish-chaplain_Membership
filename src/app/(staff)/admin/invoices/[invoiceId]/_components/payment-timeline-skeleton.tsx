@@ -17,11 +17,14 @@ export async function PaymentTimelineSkeleton() {
   return (
     <Card aria-busy="true" aria-label={t('loading')}>
       <CardContent className="flex flex-col gap-3 py-6">
-        <Skeleton className="h-6 w-40 skeleton-shimmer" />
-        <Skeleton className="h-12 w-full skeleton-shimmer" />
-        <Skeleton className="h-14 w-full skeleton-shimmer" />
-        <Skeleton className="h-14 w-full skeleton-shimmer" />
-        <Skeleton className="h-14 w-full skeleton-shimmer" />
+        {/* R2 F-6: <Skeleton> primitive already applies skeleton-shimmer
+            internally — passing it here duplicates the class on the
+            DOM and diverges from every other skeleton in the codebase. */}
+        <Skeleton className="h-6 w-40" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-14 w-full" />
+        <Skeleton className="h-14 w-full" />
+        <Skeleton className="h-14 w-full" />
       </CardContent>
     </Card>
   );

@@ -270,6 +270,10 @@ export function makeIssueRefundDeps(tenantId: string): IssueRefundDeps {
     idempotencyKeyFactory: env.isDevelopment
       ? (baseKey: string) => `${baseKey}-d-${Date.now()}`
       : (baseKey: string) => baseKey,
+    // R2 reliability (2026-04-27): wire paymentsLogger so the
+    // double-fault `.catch()` at the failure-finalise tail emits a
+    // structured warn instead of silent swallow.
+    logger: paymentsLogger,
   };
 }
 
@@ -286,6 +290,9 @@ export function makeSweepStalePendingRefundsDeps(
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     audit: f5AuditAdapter,
     clock: systemClock,
+    // R2 M-2 (2026-04-27): logger threaded through DI per Constitution
+    // Principle III. Use-case sees only `LoggerPort`, never `@/lib/logger`.
+    logger: paymentsLogger,
   };
 }
 

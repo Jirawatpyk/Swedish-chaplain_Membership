@@ -158,7 +158,18 @@ export function assertCardMetadataComplete(
     return { ok: true };
   }
   // method === 'card'
-  if (p.status !== 'pending' && p.card === null) {
+  // R2 M-2 (2026-04-27): align with migration 0044 which relaxed the
+  // DB CHECK to allow `card + (failed | canceled) + NULL card_metadata`.
+  // These are legitimate states (e.g. member cancels before Stripe
+  // returns the charge, or Stripe declines the PI before any charge is
+  // attached). Only `succeeded`/`partially_refunded`/`refunded` rows
+  // require card metadata, since those imply a settled charge.
+  const REQUIRES_CARD: ReadonlyArray<typeof p.status> = [
+    'succeeded',
+    'partially_refunded',
+    'refunded',
+  ];
+  if (REQUIRES_CARD.includes(p.status) && p.card === null) {
     return { ok: false, reason: 'card_metadata_missing_on_non_pending' };
   }
   return { ok: true };

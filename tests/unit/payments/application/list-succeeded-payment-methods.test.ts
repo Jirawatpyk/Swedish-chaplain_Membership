@@ -19,6 +19,7 @@ function makeStubRepo(
 ): PaymentsRepo {
   return {
     withTx: vi.fn(),
+    acquireInitiateLock: vi.fn(),
     lockForUpdate: vi.fn(),
     lockForUpdateByPaymentIntentId: vi.fn(),
     insert: vi.fn(),

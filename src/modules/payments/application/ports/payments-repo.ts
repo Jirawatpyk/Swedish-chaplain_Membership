@@ -13,6 +13,15 @@ export interface PaymentsRepo {
   /** Run `fn` inside a serializable transaction; rollback on throw. */
   withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T>;
 
+  /**
+   * R2 fix (2026-04-27): advisory tx-lock on a stable hash of
+   * (tenantId, invoiceId). Used by `initiatePayment` to serialise
+   * concurrent callers for the same invoice so the findPending /
+   * createPaymentIntent / insert sequence is race-free. Lock
+   * auto-releases at tx end.
+   */
+  acquireInitiateLock(tx: unknown, tenantId: string, invoiceId: string): Promise<void>;
+
   /** `SELECT … FOR UPDATE` by id; returns null when row missing. */
   lockForUpdate(tx: unknown, paymentId: PaymentId, tenantId: string): Promise<Payment | null>;
 

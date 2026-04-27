@@ -1690,9 +1690,7 @@
       "security": {
         "stripeBadge": "Säkrat av Stripe",
         "encrypted": "Krypterat · PCI-DSS-kompatibelt",
-        "cards": "Vi accepterar Visa, Mastercard, American Express, JCB",
-        "terms": "Genom att betala godkänner du våra {termsLink}",
-        "termsLinkLabel": "användarvillkor"
+        "cards": "Vi accepterar Visa, Mastercard, American Express, JCB"
       },
       "methods": {
         "card": "Kort",
@@ -1746,6 +1744,7 @@
         "title": "Onlinebetalning är inte tillgänglig",
         "body": "Onlinebetalning med kort eller PromptPay är inte tillgänglig för denna faktura. Kontakta kammarens administratör för instruktioner om bankoverföring.",
         "contactAdminCta": "Kontakta administratören",
+        "contactAdminCtaAria": "Kontakta administratören om faktura {invoiceNumber}",
         "noContactEmail": "Ingen administratörs-e-post är konfigurerad ännu. Kontakta kammarkontoret direkt.",
         "mailSubject": "Instruktioner för bankoverföring för faktura {invoiceNumber}"
       },

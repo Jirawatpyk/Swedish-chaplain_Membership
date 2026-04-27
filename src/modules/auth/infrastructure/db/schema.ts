@@ -158,6 +158,9 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     invariant_violation_duplicate_succeeded ack paths instead of
   //     reusing payment_processor_retrieve_failed. ---
   'payment_acknowledged_terminal_state',
+  // --- F5 chargeback path added by migration 0053 (R2 C-1 — 2026-04-27).
+  //     Emitted by processWebhookEvent on `charge.dispute.created`. ---
+  'dispute_created',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [
