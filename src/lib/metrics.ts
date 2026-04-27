@@ -23,7 +23,13 @@
  * (`endpoint`, `template`). NEVER use user id / email / IP as a
  * label — those belong in traces + logs, not metrics.
  */
-import { metrics, type Counter, type Histogram, type Meter } from '@opentelemetry/api';
+import {
+  metrics,
+  type Counter,
+  type Histogram,
+  type Meter,
+  type ObservableGauge,
+} from '@opentelemetry/api';
 
 const METER_NAME = 'swecham.auth';
 
@@ -39,6 +45,10 @@ function meter(): Meter {
 
 const counters = new Map<string, Counter>();
 const histograms = new Map<string, Histogram>();
+const observableGauges = new Map<string, ObservableGauge>();
+// Per-gauge per-tenant value cache. Async observers read from this map
+// at scrape time. Writers call `observeGauge(...)` to update.
+const gaugeValues = new Map<string, Map<string, number>>();
 
 function counter(name: string, description: string, unit?: string): Counter {
   let instr = counters.get(name);
@@ -59,6 +69,49 @@ function histogram(name: string, description: string, unit: string): Histogram {
     histograms.set(name, instr);
   }
   return instr;
+}
+
+/**
+ * Observe a value for an async gauge keyed by an arbitrary label set
+ * (typically `tenant`). Creates the underlying ObservableGauge on first
+ * write and registers a callback that re-reads `gaugeValues` at scrape time.
+ *
+ * Cardinality discipline: callers MUST keep label-value space bounded.
+ * `tenantId` is small-cardinality (≤ a few hundred over project lifetime).
+ */
+function observeGauge(
+  name: string,
+  description: string,
+  labels: Record<string, string>,
+  value: number,
+): void {
+  let perLabel = gaugeValues.get(name);
+  if (!perLabel) {
+    perLabel = new Map<string, number>();
+    gaugeValues.set(name, perLabel);
+  }
+  // Use a stable serialization of labels as the inner-map key.
+  const labelKey = JSON.stringify(
+    Object.fromEntries(Object.entries(labels).sort(([a], [b]) => a.localeCompare(b))),
+  );
+  perLabel.set(labelKey, value);
+
+  if (!observableGauges.has(name)) {
+    const gauge = meter().createObservableGauge(name, { description });
+    gauge.addCallback((observer) => {
+      const current = gaugeValues.get(name);
+      if (!current) return;
+      for (const [k, v] of current) {
+        try {
+          const parsed = JSON.parse(k) as Record<string, string>;
+          observer.observe(v, parsed);
+        } catch {
+          // ignore malformed key
+        }
+      }
+    });
+    observableGauges.set(name, gauge);
+  }
 }
 
 // --- Public API --------------------------------------------------------------
@@ -453,5 +506,186 @@ export const paymentsMetrics = {
       'Cross-method cancel + DB write block latency, p95 target 3000ms',
       'ms',
     ).record(ms, { outcome });
+  },
+
+  // --- T141: F5 metrics catalogue per plan.md § VII --------------------------
+
+  /**
+   * `payments.initiate.count{tenant, method}` — RED rate per method.
+   * Emitted by `/api/payments/initiate` route on every success.
+   */
+  initiateCount(tenantId: string, method: 'card' | 'promptpay'): void {
+    counter(
+      'payments_initiate_count',
+      'POST /api/payments/initiate success rate by method',
+    ).add(1, { tenant: tenantId, method });
+  },
+
+  /**
+   * `payments.succeeded.count{tenant, method}` — settlement throughput.
+   * Emitted by `confirmPayment` use-case after F4 markPaid commits.
+   */
+  succeededCount(tenantId: string, method: 'card' | 'promptpay'): void {
+    counter(
+      'payments_succeeded_count',
+      'Payment settlements by method (post-F4 markPaid commit)',
+    ).add(1, { tenant: tenantId, method });
+  },
+
+  /**
+   * `payments.failed.count{tenant, method, reason_code}` — decline-rate alert
+   * (excluding bank-decline codes per SLO-F5-005).
+   */
+  failedCount(
+    tenantId: string,
+    method: 'card' | 'promptpay',
+    reasonCode: string,
+  ): void {
+    counter(
+      'payments_failed_count',
+      'Payment failures by method and reason_code',
+    ).add(1, { tenant: tenantId, method, reason_code: reasonCode });
+  },
+
+  /**
+   * `payments.auto_refunded_stale.count{tenant}` — guard-rail anomaly.
+   * Fires when webhook `payment_intent.succeeded` lands on an invoice
+   * already not in `issued`/`overdue` state and the system auto-refunds.
+   */
+  autoRefundedStaleCount(tenantId: string): void {
+    counter(
+      'payments_auto_refunded_stale_count',
+      'Auto-refunds triggered by stale-invoice guard-rail',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * `refunds.initiate.count{tenant, method, partial:bool}` — refund volume.
+   */
+  refundInitiateCount(
+    tenantId: string,
+    method: 'card' | 'promptpay',
+    partial: boolean,
+  ): void {
+    counter(
+      'refunds_initiate_count',
+      'Admin-initiated refund attempts',
+    ).add(1, { tenant: tenantId, method, partial: partial ? 'true' : 'false' });
+  },
+
+  /**
+   * `refunds.succeeded.count{tenant}` — refund → CN throughput.
+   */
+  refundSucceededCount(tenantId: string): void {
+    counter(
+      'refunds_succeeded_count',
+      'Refunds reaching succeeded state with credit-note issued',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * `refunds.failed.count{tenant, reason_code}` — refund failure forensics.
+   */
+  refundFailedCount(tenantId: string, reasonCode: string): void {
+    counter(
+      'refunds_failed_count',
+      'Refund failures by reason_code',
+    ).add(1, { tenant: tenantId, reason_code: reasonCode });
+  },
+
+  /**
+   * `webhook.receive.count{tenant, event_type}` — per-type ingest rate.
+   * Pre-tenant-resolution events use `tenant='unresolved'`.
+   */
+  webhookReceiveCount(tenantId: string, eventType: string): void {
+    counter(
+      'payments_webhook_receive_count',
+      'Stripe webhook events received by type',
+    ).add(1, { tenant: tenantId, event_type: eventType });
+  },
+
+  /**
+   * `webhook.duplicate_ignored.count{tenant, event_type}` — idempotency
+   * guard hit-rate (FR-008).
+   */
+  webhookDuplicateIgnored(tenantId: string, eventType: string): void {
+    counter(
+      'payments_webhook_duplicate_ignored_count',
+      'Webhook events skipped via processor_events idempotency guard',
+    ).add(1, { tenant: tenantId, event_type: eventType });
+  },
+
+  /**
+   * `webhook.signature_rejected_total` — abuse / misconfiguration canary.
+   * NO tenant label (rejected pre-verification, before tenant resolution).
+   */
+  webhookSignatureRejected(): void {
+    counter(
+      'payments_webhook_signature_rejected_total',
+      'Webhook events rejected at signature verification',
+    ).add(1);
+  },
+
+  /**
+   * `webhook.api_version_mismatch_total` — Stripe API version drift detector
+   * (FR-026 / Q5). NO tenant label.
+   */
+  webhookApiVersionMismatch(): void {
+    counter(
+      'payments_webhook_api_version_mismatch_total',
+      'Webhook events with non-pinned api_version (acknowledged_only)',
+    ).add(1);
+  },
+
+  /**
+   * `out_of_band_refund_rejected_total{tenant, processor_env}` — FR-011a
+   * leading indicator. Admin used Stripe Dashboard refund instead of
+   * in-app refund flow.
+   */
+  outOfBandRefundRejected(
+    tenantId: string,
+    processorEnv: 'test' | 'live',
+  ): void {
+    counter(
+      'payments_out_of_band_refund_rejected_total',
+      'Refunds detected via charge.refunded webhook with no in-app refund row',
+    ).add(1, { tenant: tenantId, processor_env: processorEnv });
+  },
+
+  /**
+   * `member_invite_to_payment_funnel_dropoff{tenant, step}` — F5.1 promotion
+   * KPI (FR-016a). Steps: invite_sent → invite_opened → account_created →
+   * invoice_viewed → payment_initiated → payment_succeeded.
+   */
+  inviteToPaymentFunnelStep(
+    tenantId: string,
+    step:
+      | 'invite_sent'
+      | 'invite_opened'
+      | 'account_created'
+      | 'invoice_viewed'
+      | 'payment_initiated'
+      | 'payment_succeeded',
+  ): void {
+    counter(
+      'payments_member_invite_to_payment_funnel_dropoff',
+      'Funnel checkpoints from invitation to first payment',
+    ).add(1, { tenant: tenantId, step });
+  },
+
+  /**
+   * `payments.stale_pending_count{tenant}` — async gauge surfacing
+   * Stripe-webhook-giveup zombies (`status='pending'` AND
+   * `initiated_at < now() - 24h`). Emitted by the cron-job.org-triggered
+   * `/api/internal/metrics/stale-pending-count` route at 5-min cadence.
+   * Alert threshold: > 5 for any tenant.
+   */
+  stalePendingCount(tenantId: string, count: number): void {
+    observeGauge(
+      'payments_stale_pending_count',
+      'Pending Payment rows older than 24h, surfaced for stuck-row alerting',
+      { tenant: tenantId },
+      count,
+    );
   },
 } as const;

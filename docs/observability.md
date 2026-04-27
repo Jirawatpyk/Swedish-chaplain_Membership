@@ -733,3 +733,115 @@ Populated in Phase 10 T114b after a live issuance flow on staging. Placeholders:
 
 Target: ≤1500 ms p95 for full issue tx; ≤800 ms p95 for PDF render alone.
 
+
+---
+
+## 21. F5 Online Payment — metrics catalogue (T140–T143)
+
+**Status**: REVIEW-READY (2026-04-27). Branch `009-online-payment`.
+**Source authority**: `specs/009-online-payment/plan.md` § VII Performance & Observability.
+
+F5 wires distributed traces, 14 OTel metrics, and 9 alert rules across the Stripe
+payment lifecycle. The full critical-path span tree:
+
+```
+portal_click
+  └─ api_payments_initiate
+       └─ stripe_create_intent           (external — Stripe API)
+            └─ payments_repo_insert      (DB — pending row)
+asynchronous webhook delivery (Stripe → app):
+  webhook_receive
+    └─ webhook_verify                    (HMAC raw-body, pre-parse)
+         └─ processor_events_upsert      (DB — idempotency guard)
+              └─ runInTenant
+                   └─ confirm-payment | fail-payment | cancel-payment | charge-refunded
+                        └─ f4_markpaid (succeeded branch only)
+                             └─ receipt_email_enqueued
+```
+
+Every span carries `tenant.id`, `invoice.id`, `payment.id`, `payment.method`,
+`processor.event_id` attributes. **No raw card data, full event body, or
+`Stripe-Signature` header value is ever attributed** — those are in pino's
+redact list (see § 21.4).
+
+### 21.1 Metrics catalogue (14 metrics)
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `payments.initiate.count` | counter | `tenant`, `method` (card\|promptpay) | RED rate per method |
+| `payments.initiate.duration_ms` | histogram | `tenant`, `method` | initiate p95 < 1.2 s SLO |
+| `payments.succeeded.count` | counter | `tenant`, `method` | settlement throughput |
+| `payments.failed.count` | counter | `tenant`, `method`, `reason_code` | decline-rate alert (excluding bank-decline codes) |
+| `payments.auto_refunded_stale.count` | counter | `tenant` | guard-rail anomaly (overpaid invoice flagged for auto-refund) |
+| `refunds.initiate.count` | counter | `tenant`, `method`, `partial:bool` | refund volume |
+| `refunds.succeeded.count` | counter | `tenant` | refund → CN throughput |
+| `refunds.failed.count` | counter | `tenant`, `reason_code` | refund-failure forensics |
+| `webhook.receive.count` | counter | `tenant`, `event_type` | per-type ingest rate |
+| `webhook.duplicate_ignored.count` | counter | `tenant`, `event_type` | idempotency guard hit-rate (FR-008) |
+| `webhook.signature_rejected_total` | counter | _(no tenant — pre-verification)_ | abuse / misconfiguration canary |
+| `webhook.api_version_mismatch_total` | counter | _(no tenant)_ | Q5 monitoring — Stripe API version drift detector |
+| `out_of_band_refund_rejected_total` | counter | `tenant`, `processor_env` | FR-011a leading indicator (admin refunded via Stripe Dashboard, not in-app) |
+| `member_invite_to_payment_funnel_dropoff` | counter | `tenant`, `step` | F5.1 promotion KPI (FR-016a) |
+| `payments.stale_pending_count` | gauge | `tenant` | post-critique X1+E3 — pending > 24h zombies |
+
+**Cardinality**: `reason_code` and `event_type` are bounded enums; `tenant` is
+small-cardinality (≤ a few hundred over project lifetime). `step` is enum from
+`{invite_sent, invite_opened, account_created, invoice_viewed, payment_initiated,
+payment_succeeded}`. **Never** label by `payment.id`, `email`, or any high-cardinality
+identifier.
+
+### 21.2 SLO targets
+
+| SLO | Target | Source signal |
+|---|---|---|
+| SLO-F5-001 initiate p95 | < 1.2 s | `payments.initiate.duration_ms` histogram (Stripe RTT included — documented deviation in plan.md) |
+| SLO-F5-002 webhook processing p95 | < 500 ms | webhook span duration |
+| SLO-F5-003 PromptPay QR render p95 | < 2 s | client-side observation (Vercel Speed Insights) |
+| SLO-F5-004 settlement → portal confirmation p95 | < 10 s | distributed trace `webhook_receive → portal_revalidate` |
+| SLO-F5-005 payment-success rate | ≥ 95 % over 1 h excluding bank-decline codes | `payments.succeeded.count` / (`payments.succeeded.count` + `payments.failed.count{reason_code != insufficient_funds, card_declined, generic_decline}`) |
+| SLO-F5-006 webhook idempotency | 100 % zero double-paid / double-credited | T150 30-day soak harness (`scripts/perf/webhook-idempotency-soak.ts`) |
+
+### 21.3 Alert rules (9 alerts)
+
+| Alert | Severity | Threshold | Runbook |
+|---|---|---|---|
+| `webhook_signature_rejected` ≥ 1 / 5 min | **alarm** | possible abuse / misconfig | `docs/runbooks/webhook-signature-rejected.md` (TODO) |
+| `webhook_api_version_mismatch_total` > 0 | **alarm** | Stripe API version drift — Q5 monitoring | `docs/runbooks/api-version-mismatch.md` (TODO) |
+| `payment_cross_tenant_probe` ≥ 1 / 5 min | **alarm** | Constitution Principle I breach attempt | `docs/runbooks/cross-tenant-probe.md` |
+| webhook span p99 > 2 s | **alarm** | Stripe → us latency or DB stall | observe + diagnose; auto-recovers if Stripe transient |
+| webhook backlog > 5 min | **page** | event delivery queue unhealthy | check Vercel function execution + Stripe webhook UI |
+| payment-success rate < 95 % (1 h, ex bank-decline) | **alarm** | feature regression or processor outage | check Stripe status + `payments.failed.count` per `reason_code` |
+| `payments.stale_pending_count` > 5 for any tenant | **alarm** | post-critique X1+E3 — zombie pending | `docs/runbooks/stale-pending-refund-sweep.md` (covers payment+refund both) |
+| `out_of_band_refund_rejected_total` > 0 / day | **alarm** | admin used Stripe Dashboard instead of in-app refund | `docs/runbooks/out-of-band-refund.md` (FR-011a) |
+| `payments.auto_refunded_stale.count` > 0 | **alarm** | overpaid invoice — guard-rail fired | check invoice state + manual reconciliation |
+
+### 21.4 Logging redact rules (additions)
+
+Added to `src/lib/logger.ts` redact list for F5 (T032):
+
+```
+card_number, card_cvc, card[*], stripe_secret_key, stripe_webhook_secret,
+Stripe-Signature, Authorization
+```
+
+Plus full webhook body → redacted to `event_id` + `event_type` + `api_version` +
+`livemode` only. Defense-in-depth PAN-regex scrub for any field that slips through.
+
+### 21.5 Runbooks
+
+- `docs/runbooks/out-of-band-refund.md` — FR-011a admin used Stripe Dashboard instead of in-app refund
+- `docs/runbooks/stale-pending-refund-sweep.md` — pending refund > 24h recovery
+- `docs/runbooks/stale-pending-count.md` — cron-job.org configuration for `payments.stale_pending_count` gauge (T138)
+
+### 21.6 Dashboard — F5 Online Payment (Vercel Analytics)
+
+- **Top row**: payment-success rate (1 h gauge), webhook backlog (line), `stale_pending_count` per tenant (table)
+- **Second row**: initiate p95/p99 by method, webhook p95/p99, settlement → portal p95
+- **Third row**: failure breakdown by `reason_code`, refund volume + success-rate, OOB-refund counter
+- **Fourth row** (security): `webhook_signature_rejected_total`, `webhook_api_version_mismatch_total`, `payment_cross_tenant_probe`
+
+### 21.7 Alert routing
+
+- **alarm** → `#oncall-payments` Slack + on-call email digest
+- **page** → PagerDuty primary on-call rotation
+- **info** (cross-tenant probe at low frequency) → audit log only; alarm at ≥1/5min escalation
