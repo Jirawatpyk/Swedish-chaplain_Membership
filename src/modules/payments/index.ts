@@ -17,19 +17,6 @@ export {
   parsePaymentMethod,
   type PaymentMethod,
 } from './domain/value-objects/payment-method';
-// R2 TD-2 (2026-04-27) — opt-in branded ids. Existing callers keep raw
-// `string` signatures; new code can use these for type-safe argument
-// passing (catches positional swaps at compile time).
-export {
-  asTenantId,
-  asInvoiceId,
-  asMemberId,
-  asUserId,
-  type TenantId,
-  type InvoiceId,
-  type MemberId,
-  type UserId,
-} from './domain/value-objects/branded-tenant-scope-ids';
 export {
   PAYMENT_STATUSES,
   TERMINAL_PAYMENT_STATUSES,
