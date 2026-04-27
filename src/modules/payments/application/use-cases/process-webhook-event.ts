@@ -45,6 +45,7 @@ import { retentionFor } from '../ports/audit-port';
 import { confirmPayment, type ConfirmPaymentOutcome } from './confirm-payment';
 import { failPayment, type FailPaymentOutcome } from './fail-payment';
 import { handleCancelEvent, type HandleCancelEventOutcome } from './handle-cancel-event';
+import { processChargeRefunded } from './process-charge-refunded';
 
 export interface ProcessWebhookEventInput {
   readonly tenantId: string;
@@ -418,67 +419,44 @@ export async function processWebhookEvent(
     }
 
     case 'charge.refunded': {
-      // Architect D-03 LOW (closed 2026-04-24): markProcessed folded
-      // into the same withTx as the audit emissions — atomic commit.
-      // wrap in try/catch so a tx rejection produces an
-      // explicit dispatch_failed err (route → 500 → Stripe retries),
-      // not a fall-through to `return ok(outcome)` with `outcome`
-      // undefined.
-      const refundIds = dataObject.refundIds ?? [];
-      // R5 I3 (2026-04-25): capture the affected invoice id from the
-      // first found refund so the route handler can fire surgical
-      // `revalidatePath('/portal/invoices/<id>')` instead of busting
-      // every invoice's cache via the broad `[invoiceId]` pattern. By
-      // Stripe semantics, all refunds in a single `charge.refunded`
-      // event belong to the SAME charge → same PaymentIntent → same
-      // invoice, so reading the first match is sufficient.
-      let refundedInvoiceId: string | undefined;
-      try {
-        await deps.paymentsRepo.withTx(async (tx) => {
-          for (const refundId of refundIds) {
-            const existing = await deps.refundsRepo.findByProcessorRefundId(
-              tx,
-              tenantId,
-              refundId,
-            );
-            if (existing && refundedInvoiceId === undefined) {
-              refundedInvoiceId = existing.invoiceId;
-            }
-            if (!existing) {
-              await deps.audit.emit(tx, {
-                tenantId,
-                requestId: input.requestId,
-                eventType: 'out_of_band_refund_detected',
-                actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-                summary: `Out-of-band refund detected on charge ${dataObject.id}`,
-                payload: {
-                  processor_refund_id: refundId,
-                  processor_charge_id: dataObject.id,
-                  amount_satang: (dataObject.amountSatang ?? 0n).toString(),
-                  runbook_url: 'docs/runbooks/out-of-band-refund.md',
-                },
-                retentionYears: retentionFor('out_of_band_refund_detected'),
-              });
-            }
-          }
-          // Atomic with the audit writes above.
-          await deps.processorEventsRepo.markProcessed(tx, event.id);
-        });
-      } catch (e) {
+      // T130 (2026-04-27): extracted to `process-charge-refunded.ts` for
+      // symmetry with confirm/fail/cancel branches. Behaviour-preserving:
+      // dispatcher maps the use-case's `dispatch_failed` Result into this
+      // branch's `dispatch_threw` error variant (matches the previous
+      // inline try/catch surface).
+      const refundResult = await processChargeRefunded(
+        {
+          paymentsRepo: deps.paymentsRepo,
+          refundsRepo: deps.refundsRepo,
+          processorEventsRepo: deps.processorEventsRepo,
+          audit: deps.audit,
+        },
+        {
+          tenantId,
+          requestId: input.requestId,
+          eventId: event.id,
+          chargeId: dataObject.id,
+          refundIds: dataObject.refundIds ?? [],
+          amountSatang: dataObject.amountSatang ?? 0n,
+        },
+      );
+      if (!refundResult.ok) {
         return err<ProcessWebhookEventError>({
           code: 'dispatch_failed',
           kind: 'dispatch_threw',
           eventType: event.type,
-          // Stripe error messages can carry partial API key
-          // fragments / internal ids. Use the class name only — caller
-          // logs it into pino + audit downstream where leak risk is real.
-          detail: formatDispatchErrorDetail(e),
+          // Stripe error messages can carry partial API key fragments /
+          // internal ids. Use the class name only — caller logs it into
+          // pino + audit downstream where leak risk is real.
+          detail: formatDispatchErrorDetail(refundResult.error.cause),
         });
       }
       outcome = {
         kind: 'processed',
         dispatched: envelope.type,
-        ...(refundedInvoiceId !== undefined && { invoiceId: refundedInvoiceId }),
+        ...(refundResult.value.invoiceId !== undefined && {
+          invoiceId: refundResult.value.invoiceId,
+        }),
       };
       markedProcessedAtomically = true;
       break;

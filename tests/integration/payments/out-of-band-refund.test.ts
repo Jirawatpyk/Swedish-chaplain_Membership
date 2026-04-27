@@ -68,12 +68,18 @@ describe('T131 out-of-band refund detection (FR-011a)', () => {
     expect(Array.from(result).length).toBe(1);
   });
 
-  it('(b) process-webhook-event source emits out_of_band_refund_detected with runbook_url payload', () => {
+  it('(b) process-charge-refunded use-case emits out_of_band_refund_detected with runbook_url payload', () => {
+    // T130 (2026-04-27): logic extracted from inline `process-webhook-event.ts`
+    // branch into its own use-case for symmetry with confirm/fail/cancel.
+    // This invariant now lives in the dedicated file.
     const path = join(
       process.cwd(),
-      'src/modules/payments/application/use-cases/process-webhook-event.ts',
+      'src/modules/payments/application/use-cases/process-charge-refunded.ts',
     );
-    expect(existsSync(path)).toBe(true);
+    expect(
+      existsSync(path),
+      'process-charge-refunded.ts must exist (T130 extraction)',
+    ).toBe(true);
     const src = readFileSync(path, 'utf-8');
 
     expect(src).toMatch(/['"]out_of_band_refund_detected['"]/);
@@ -81,9 +87,20 @@ describe('T131 out-of-band refund detection (FR-011a)', () => {
     expect(src).toMatch(/docs\/runbooks\/out-of-band-refund\.md/);
     // The branch MUST run only when refund-id is unknown — i.e. inside
     // an `if (!existing)` after a findByProcessorRefundId call. Refactor
-    // guard for the inline charge.refunded branch.
+    // guard for the extracted use-case.
     expect(src).toMatch(/findByProcessorRefundId/);
     expect(src).toMatch(/if\s*\(\s*!existing\s*\)/);
+
+    // Dispatcher is wired correctly to the new use-case.
+    const dispatcherPath = join(
+      process.cwd(),
+      'src/modules/payments/application/use-cases/process-webhook-event.ts',
+    );
+    const dispatcherSrc = readFileSync(dispatcherPath, 'utf-8');
+    expect(
+      dispatcherSrc,
+      'process-webhook-event.ts must call processChargeRefunded for charge.refunded branch',
+    ).toMatch(/processChargeRefunded\s*\(/);
   });
 
   it('(c) referenced runbook file exists at the documented path', () => {
