@@ -46,23 +46,47 @@ export function PaySheetSkeleton({
       className="space-y-4"
     >
       {/* Visible loading hint — reassures the member that the
-          drawer is actively preparing the Stripe Elements form
-          (can take 1-3 s on first open). The shimmer rows alone
-          are mute; a short label reduces perceived wait time. */}
+          drawer is actively preparing the form (can take 1-3 s on
+          first open). The shimmer rows alone are mute; a short label
+          reduces perceived wait time. */}
       <p
         className="text-caption text-muted-foreground"
         data-testid={`${testIdRoot}-label`}
       >
         {t('loading')}
       </p>
-      {/* Card number row */}
-      <Skeleton className="h-12 w-full" />
-      {/* Expiry + CVC (half-width pair) */}
-      <Skeleton className="h-12 w-full" />
-      {/* Zip / country row */}
-      <Skeleton className="h-12 w-full" />
-      {/* Submit button */}
-      <Skeleton className="h-10 w-full" />
+      {variant === 'promptpay' ? (
+        <>
+          {/* H-12 (review 2026-04-27): skeleton shape mirrors the
+              real PromptPay panel layout — 220×220 QR square + two
+              instruction text rows + countdown + warning + refresh
+              button. Previous shape (4 rows like card) caused a CLS
+              spike when the placeholder swapped for the actual QR
+              panel, breaking § 2.2 rule 2 (CLS-0 contract). */}
+          <div className="flex flex-col items-center gap-3">
+            <Skeleton className="aspect-square w-[220px]" />
+            <Skeleton className="h-5 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+          {/* Countdown row */}
+          <Skeleton className="mx-auto h-4 w-24" />
+          {/* Warning microcopy */}
+          <Skeleton className="h-12 w-full" />
+          {/* Refresh button */}
+          <Skeleton className="h-11 w-full" />
+        </>
+      ) : (
+        <>
+          {/* Card number row */}
+          <Skeleton className="h-12 w-full" />
+          {/* Expiry + CVC (half-width pair) */}
+          <Skeleton className="h-12 w-full" />
+          {/* Zip / country row */}
+          <Skeleton className="h-12 w-full" />
+          {/* Submit button */}
+          <Skeleton className="h-10 w-full" />
+        </>
+      )}
     </div>
   );
 }

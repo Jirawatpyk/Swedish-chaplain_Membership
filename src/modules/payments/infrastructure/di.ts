@@ -145,7 +145,11 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
 export function makeProcessWebhookEventDeps(tenantId: string): ProcessWebhookEventDeps {
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
-    refundsRepo: makeUnimplementedRefundsRepo(),
+    // CR-3 (review 2026-04-27): wire real refunds-repo so the
+    // `charge.refunded` dispatcher can `findByProcessorRefundId` —
+    // previous stub threw on every call, causing webhook dispatch_threw
+    // 5xx → Stripe retry storm for 72h on legitimate refund webhooks.
+    refundsRepo: makeDrizzleRefundsRepo(tenantId),
     processorEventsRepo: makeDrizzleProcessorEventsRepo(),
     tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
     processorGateway: stripeGateway,

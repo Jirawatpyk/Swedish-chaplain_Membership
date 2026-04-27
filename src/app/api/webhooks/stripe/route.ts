@@ -631,10 +631,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     return jsonOk(correlationId);
   } catch (e) {
+    // H-4 (review 2026-04-27): only constructor name + bounded message
+    // — Postgres / Stripe SDK stack traces can carry SQL params, lib
+    // paths, and interpolated values. Distributed trace (OTel) provides
+    // call-chain diagnostics; pino does not need to duplicate it.
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
-        stack: e instanceof Error ? e.stack : undefined,
+        err: e instanceof Error ? e.constructor.name : 'unknown',
         eventId: evId,
         tenantId,
         correlationId,

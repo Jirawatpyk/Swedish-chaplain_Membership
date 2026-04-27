@@ -1,13 +1,19 @@
 /**
  * OpenTelemetry metrics (T180, docs/observability.md § 4).
  *
- * Single place where the auth use cases record counters, histograms,
- * and gauges. Implementation:
+ * Single metrics façade for ALL bounded contexts (F1 auth, F3 outbox,
+ * F4 invoicing, F5 payments). Originally scoped to F1 auth only
+ * (hence the historical `METER_NAME='swecham.auth'`); CR-8 review
+ * 2026-04-27 renamed to `swecham.platform` so the meter accurately
+ * reflects scope across F1+F3+F4+F5 instruments. Sub-namespaces
+ * (`auth_*`, `outbox_*`, `invoicing_*`, `payments_*`) are encoded in
+ * each instrument name, not in separate Meters — this keeps a single
+ * scrape pipeline and avoids meter-resolution duplication.
  *
+ * Implementation:
  *   - `@opentelemetry/api` `metrics` API — vendor-neutral; the
  *     underlying SDK is registered by `instrumentation.ts` via
  *     `@vercel/otel`.
- *   - One `Meter` per bounded context (`swecham.auth` for F1).
  *   - Instruments are created lazily and cached. First use from the
  *     Edge runtime is safe because `@opentelemetry/api` is pure JS.
  *
@@ -31,7 +37,7 @@ import {
   type ObservableGauge,
 } from '@opentelemetry/api';
 
-const METER_NAME = 'swecham.auth';
+const METER_NAME = 'swecham.platform';
 
 let cachedMeter: Meter | null = null;
 function meter(): Meter {

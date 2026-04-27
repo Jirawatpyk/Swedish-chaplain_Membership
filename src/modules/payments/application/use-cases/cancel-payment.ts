@@ -146,6 +146,32 @@ export async function cancelPayment(
       settings.processorAccountId,
     );
     if (!cancelResult.ok) {
+      // H-2 (review 2026-04-27): forensic audit on Stripe-side
+      // cancel failure. Without this, an admin reviewing the audit
+      // log after a member-reported failed-cancel sees no trace.
+      // Best-effort emit on `null` tx since we are about to roll the
+      // outer tx back via the err() return — using the held tx would
+      // discard the audit row on rollback.
+      // NOTE (deferred to MEDIUM batch): the Stripe SDK call still
+      // runs INSIDE `withTx` so the row's FOR UPDATE lock blocks
+      // concurrent webhook arrivals for up to 10s. Two-phase split
+      // (lock-release-then-Stripe-then-relock) tracked as a follow-up
+      // — touches state-machine and isn't a minimal review fix.
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_canceled',
+        actorUserId: input.actorUserId,
+        summary: `Payment ${payment.id} cancel attempt failed at Stripe (${cancelResult.error.kind})`,
+        payload: {
+          payment_id: payment.id,
+          invoice_id: payment.invoiceId,
+          actor_type: 'member',
+          outcome: 'stripe_error',
+          processor_error_kind: cancelResult.error.kind,
+        },
+        retentionYears: retentionFor('payment_canceled'),
+      });
       // Stripe gateway error.kind has 3 values (retryable |
       // permanent | idempotency_conflict). Map to the cancel
       // route's binary kind: retryable stays retryable, both

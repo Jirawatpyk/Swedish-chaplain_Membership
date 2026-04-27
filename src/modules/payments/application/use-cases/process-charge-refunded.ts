@@ -135,6 +135,39 @@ export async function processChargeRefunded(
         if (existing && refundedInvoiceId === undefined) {
           refundedInvoiceId = existing.invoiceId;
         }
+        // H-1 (review 2026-04-27): if `issueRefund`'s Phase B
+        // double-faulted, the in-app row stays `pending` and the
+        // webhook is the natural reconciliation point — flip it to
+        // `succeeded` here so the stale-pending sweep cron does not
+        // later mark it `failed` for a refund Stripe already confirmed.
+        // Optimistic-concurrency guard via `expectedCurrentStatus`:
+        // a concurrent writer that already finalised the row to
+        // `succeeded`/`failed` is left alone (idempotent webhook).
+        if (existing && existing.status === 'pending') {
+          await deps.refundsRepo.updateStatus(tx, {
+            refundId: existing.id,
+            tenantId: input.tenantId,
+            nextStatus: 'succeeded',
+            processorRefundId: refundId,
+            completedAt: new Date(),
+            expectedCurrentStatus: 'pending',
+          });
+          await deps.audit.emit(tx, {
+            tenantId: input.tenantId,
+            requestId: input.requestId,
+            eventType: 'refund_succeeded',
+            actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+            summary: `Webhook-driven recovery: pending refund ${existing.id} flipped to succeeded after charge.refunded delivery (Phase B catch-up)`,
+            payload: {
+              refund_id: existing.id,
+              processor_refund_id: refundId,
+              processor_charge_id: input.chargeId,
+              recovery_path: 'webhook_charge_refunded',
+            },
+            retentionYears: retentionFor('refund_succeeded'),
+          });
+          paymentsMetrics.refundSucceededCount(input.tenantId);
+        }
         if (!existing) {
           // Branch (b) — out-of-band refund detected. Audit + runbook url.
           // No F4 credit note created (FR-011a — admin must reconcile via
@@ -169,11 +202,9 @@ export async function processChargeRefunded(
         }
         // Branch (a) — known refund: in-app `issueRefund` already
         // synchronously updated state when Stripe's refunds.create
-        // returned. Webhook is eventual-consistency confirmation; we
-        // intentionally do NOT mutate further here. Future T130a will
-        // extend this branch to flip `pending` → `succeeded` if the
-        // sync path's Phase B catch double-faulted (Postgres outage
-        // recovery).
+        // returned, OR the optional flip just above recovered a
+        // double-faulted Phase B. Either way, this branch is now a
+        // no-op (idempotent webhook).
       }
       // Atomic with the audit writes above (Architect D-03 LOW).
       // Postgres double-fault rolls back BOTH the audits + markProcessed,

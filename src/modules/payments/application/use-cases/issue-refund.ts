@@ -507,8 +507,12 @@ async function issueRefundBody(
     // counter when the row stays pending.
     paymentsMetrics.refundSucceededCount(input.tenantId);
   } catch (phaseBError) {
-    const detail =
-      phaseBError instanceof Error ? phaseBError.message : String(phaseBError);
+    // H-5 (review 2026-04-27): use error constructor name only — raw
+    // Postgres error.message can carry SQL fragments, column values,
+    // or row data into the audit_log payload (data hygiene).
+    // `detail` returned to the caller follows the same scrubbing rule.
+    const detailKind =
+      phaseBError instanceof Error ? phaseBError.constructor.name : 'unknown';
     await finaliseFailedRefund(deps, {
       refundId: prepared.refundId,
       paymentId,
@@ -522,14 +526,14 @@ async function issueRefundBody(
         processor_refund_id: stripeRefund.value.id,
         credit_note_id: cnResult.value.creditNoteId,
         credit_note_number: cnResult.value.creditNoteNumber,
-        phase_b_detail: detail.slice(0, 200),
+        phase_b_error_kind: detailKind,
       },
     }).catch(() => {
       // If even the failure-finalise tx throws, the pending row
       // stays — the T130a stale-pending-refund sweep cron is the
       // last-resort recovery (Phase 9 polish).
     });
-    return err({ code: 'f4_bridge_error', detail });
+    return err({ code: 'f4_bridge_error', detail: detailKind });
   }
 
   return ok({

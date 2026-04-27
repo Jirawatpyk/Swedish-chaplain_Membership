@@ -25,10 +25,27 @@ import type {
   RefundStatus,
 } from '../../application/ports/refunds-repo';
 import { asPaymentId, type PaymentId } from '../../domain/payment';
+import { REFUND_STATUSES } from '../../domain/refund';
 import { refunds, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { logger } from '@/lib/logger';
+
+// H-9 / H-10 (review 2026-04-27): defensive boundary guards mirroring
+// `drizzle-payments-repo.ts`. Out-of-band enum values throw at the
+// mapping seam rather than silently producing an invalid aggregate.
+function assertRefundStatus(s: string, rowId: string): RefundStatus {
+  if ((REFUND_STATUSES as readonly string[]).includes(s)) return s as RefundStatus;
+  throw new Error(`drizzle-refunds-repo: unknown refund status '${s}' on row ${rowId}`);
+}
+
+function toBigintSatang(raw: unknown, rowId: string): bigint {
+  if (typeof raw === 'bigint') return raw;
+  if (typeof raw === 'string' || typeof raw === 'number') return BigInt(raw);
+  throw new Error(
+    `drizzle-refunds-repo: unexpected amount_satang type '${typeof raw}' on row ${rowId}`,
+  );
+}
 
 function toDomain(row: RefundRow): DomainRefundRow {
   return {
@@ -36,8 +53,8 @@ function toDomain(row: RefundRow): DomainRefundRow {
     tenantId: row.tenantId,
     paymentId: asPaymentId(row.paymentId),
     invoiceId: row.invoiceId,
-    amountSatang: BigInt(row.amountSatang as unknown as string),
-    status: row.status as RefundStatus,
+    amountSatang: toBigintSatang(row.amountSatang, row.id),
+    status: assertRefundStatus(row.status, row.id),
     processorRefundId: row.processorRefundId,
   };
 }
@@ -206,7 +223,7 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         id: r.id,
         paymentId: asPaymentId(r.paymentId),
         invoiceId: r.invoiceId,
-        amountSatang: BigInt(r.amountSatang as unknown as string),
+        amountSatang: toBigintSatang(r.amountSatang, r.id),
         initiatedAt: r.initiatedAt,
         correlationId: r.correlationId,
         initiatorUserId: r.initiatorUserId,

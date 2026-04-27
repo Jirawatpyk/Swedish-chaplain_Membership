@@ -9,8 +9,18 @@
  * to type the EXACT document number. This catches wrong-row mistakes
  * (admin clicking void on the wrong invoice in the directory) which
  * is the #1 real-world void error.
+ *
+ * CR-6 (review 2026-04-27): F4 ships this as a dedicated route
+ * (`/void` page) rather than an `<AlertDialog>` modal — converting to
+ * a modal would require routing rework and is a F4 carry-over item
+ * out of F5 scope. We apply the modal-equivalent UX guarantees that
+ * `<AlertDialog>` would otherwise enforce:
+ *   - Cancel button rendered FIRST in tab order (Cancel-as-default).
+ *   - Escape key invokes Cancel (router.push back to detail).
+ *   - Initial focus on the reason textarea so the user starts typing
+ *     instead of landing on the destructive Submit.
  */
-import { useState, useTransition, useCallback } from 'react';
+import { useState, useTransition, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -37,6 +47,20 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
   const [reason, setReason] = useState('');
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
+  const reasonRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // CR-6: focus the reason field on mount + Esc → cancel route.
+  useEffect(() => {
+    reasonRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !pending) {
+        e.preventDefault();
+        router.push(`/admin/invoices/${invoiceId}`);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [invoiceId, pending, router]);
 
   // Typed-phrase = invoice document number (case-insensitive locale
   // compare, mirrors issue-invoice-dialog).
@@ -96,6 +120,7 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
         <Label htmlFor="void-reason">{t('reasonLabel')}</Label>
         <Textarea
           id="void-reason"
+          ref={reasonRef}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={3}
@@ -147,18 +172,10 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <Button
-          type="submit"
-          variant="destructive"
-          disabled={!canSubmit}
-          aria-busy={pending}
-        >
-          {pending && (
-            <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
-          )}
-          {pending ? t('submitting') : t('submit')}
-        </Button>
+      {/* CR-6: Cancel-first DOM order matches AlertDialog default
+        * (safer destructive action). Visual order on desktop is still
+        * Cancel-then-Submit; on mobile they stack naturally. */}
+      <div className="flex flex-row-reverse items-center justify-end gap-2 sm:flex-row sm:justify-start">
         <Button
           type="button"
           variant="ghost"
@@ -166,6 +183,17 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
           disabled={pending}
         >
           {t('cancel')}
+        </Button>
+        <Button
+          type="submit"
+          variant="destructive"
+          disabled={!canSubmit}
+          aria-busy={pending}
+        >
+          {pending && (
+            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+          )}
+          {pending ? t('submitting') : t('submit')}
         </Button>
       </div>
     </form>

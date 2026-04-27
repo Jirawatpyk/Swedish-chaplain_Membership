@@ -1367,6 +1367,7 @@
       },
       "timeline": {
         "title": "Payment activity",
+        "loading": "Loading payment activity",
         "actorSystem": "System (Stripe webhook)",
         "actorAnonymous": "Anonymous",
         "events": {

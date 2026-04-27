@@ -20,23 +20,66 @@ import { and, asc, eq, ne, sql } from 'drizzle-orm';
 import type { PaymentsRepo, RefundActivityDto } from '../../application/ports/payments-repo';
 import {
   asPaymentId,
+  PAYMENT_STATUSES,
   type Payment,
   type PaymentId,
   type PaymentStatus,
   type CardMetadata,
 } from '../../domain/payment';
-import type { PaymentMethod } from '../../domain/value-objects/payment-method';
+import {
+  PAYMENT_METHODS,
+  type PaymentMethod,
+} from '../../domain/value-objects/payment-method';
+import { REFUND_STATUSES, type RefundStatus } from '../../domain/refund';
 import { payments, refunds, type PaymentRow, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
+
+// H-9 (review 2026-04-27): narrow guards before mapping DB enums into
+// Domain. A migration gap, manual SQL patch, or test fixture typo
+// returning an out-of-band value would otherwise silently advance the
+// Payment state machine. Throwing here is intentional — it surfaces
+// the data corruption at read time instead of leaving the aggregate
+// in an unrepresentable state.
+function assertPaymentStatus(s: string, rowId: string): PaymentStatus {
+  if ((PAYMENT_STATUSES as readonly string[]).includes(s)) return s as PaymentStatus;
+  throw new Error(`drizzle-payments-repo: unknown payment status '${s}' on row ${rowId}`);
+}
+
+function assertPaymentMethod(s: string, rowId: string): PaymentMethod {
+  if ((PAYMENT_METHODS as readonly string[]).includes(s)) return s as PaymentMethod;
+  throw new Error(`drizzle-payments-repo: unknown payment method '${s}' on row ${rowId}`);
+}
+
+function assertProcessorEnv(s: string, rowId: string): 'test' | 'live' {
+  if (s === 'test' || s === 'live') return s;
+  throw new Error(`drizzle-payments-repo: unknown processor env '${s}' on row ${rowId}`);
+}
+
+function assertRefundStatus(s: string, rowId: string): RefundStatus {
+  if ((REFUND_STATUSES as readonly string[]).includes(s)) return s as RefundStatus;
+  throw new Error(`drizzle-payments-repo: unknown refund status '${s}' on row ${rowId}`);
+}
+
+// H-10 (review 2026-04-27): explicit runtime check for `bigint` mode.
+// Drizzle's `bigint('mode': 'bigint')` should return native bigint, but
+// pg drivers historically returned strings; the previous double-cast
+// silently truncated values >2^53 if the driver returned `number`.
+function toBigintSatang(raw: unknown, rowId: string): bigint {
+  if (typeof raw === 'bigint') return raw;
+  if (typeof raw === 'string' || typeof raw === 'number') return BigInt(raw);
+  throw new Error(
+    `drizzle-payments-repo: unexpected amount_satang type '${typeof raw}' on row ${rowId}`,
+  );
+}
 
 function rowToRefundActivity(row: RefundRow): RefundActivityDto {
   return {
     refundId: row.id,
     paymentId: row.paymentId,
     invoiceId: row.invoiceId,
-    status: row.status as 'pending' | 'succeeded' | 'failed',
-    amountSatang: BigInt(row.amountSatang as unknown as string),
+    status: assertRefundStatus(row.status, row.id),
+    amountSatang: toBigintSatang(row.amountSatang, row.id),
     reason: row.reason,
     initiatedAt: row.initiatedAt,
     completedAt: row.completedAt,
@@ -52,7 +95,7 @@ function toDomain(row: PaymentRow): Payment {
   //   - method='promptpay' → card MUST be null
   //   - method='card' + all four NULL → pre-webhook pending; card=null
   //   - method='card' + any set → all four MUST be set (DB CHECK guarantees)
-  const method = row.method as PaymentMethod;
+  const method = assertPaymentMethod(row.method, row.id);
   let card: CardMetadata | null = null;
   if (method === 'card') {
     const hasAny =
@@ -86,12 +129,12 @@ function toDomain(row: PaymentRow): Payment {
     invoiceId: row.invoiceId,
     memberId: row.memberId,
     method,
-    status: row.status as PaymentStatus,
-    amountSatang: BigInt(row.amountSatang as unknown as string),
+    status: assertPaymentStatus(row.status, row.id),
+    amountSatang: toBigintSatang(row.amountSatang, row.id),
     currency: 'THB',
     processorPaymentIntentId: row.processorPaymentIntentId,
     processorChargeId: row.processorChargeId,
-    processorEnvironment: row.processorEnvironment as 'test' | 'live',
+    processorEnvironment: assertProcessorEnv(row.processorEnvironment, row.id),
     attemptSeq: row.attemptSeq,
     card,
     failureReasonCode: row.failureReasonCode,
@@ -129,11 +172,23 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       txUnknown,
       paymentIntentId: string,
     ): Promise<Payment | null> {
+      // CR-2 (review 2026-04-27): explicit tenant filter at the
+      // application-layer SQL — Constitution Principle I requires
+      // two-layer isolation (app + db). RLS is defence-in-depth, but
+      // the app must scope by tenantId itself. The factory closes
+      // over tenantId, so the lookup is bounded to the resolved
+      // tenant's payments only — a stray paymentIntentId from another
+      // tenant cannot grab a row even if RLS is mis-bound.
       const tx = txUnknown as TenantTx;
       const [row] = await tx
         .select()
         .from(payments)
-        .where(eq(payments.processorPaymentIntentId, paymentIntentId))
+        .where(
+          and(
+            eq(payments.tenantId, tenantId),
+            eq(payments.processorPaymentIntentId, paymentIntentId),
+          ),
+        )
         .for('update')
         .limit(1);
       return row ? toDomain(row as PaymentRow) : null;

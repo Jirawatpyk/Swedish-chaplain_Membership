@@ -1367,6 +1367,7 @@
       },
       "timeline": {
         "title": "กิจกรรมการชำระเงิน",
+        "loading": "กำลังโหลดกิจกรรมการชำระเงิน",
         "actorSystem": "ระบบ (Stripe webhook)",
         "actorAnonymous": "ไม่ระบุผู้ใช้",
         "events": {

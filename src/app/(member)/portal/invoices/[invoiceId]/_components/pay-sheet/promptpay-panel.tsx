@@ -209,6 +209,28 @@ export function PromptPayPanel({
   }, [onLoadError, qrSvgUrl]);
 
   const { minutes, seconds } = formatCountdown(remaining);
+
+  // H-13 (review 2026-04-27): the visible countdown updates once per
+  // second; routing it through `aria-live="polite"` made screen readers
+  // read every tick ("14:59", "14:58", …). Track threshold crossings
+  // (30s / 10s / 5s / 1s) and only set SR-announce text at those
+  // boundaries so the user is informed about urgency without a
+  // continuous monologue. Visible div becomes `aria-hidden`.
+  const [srAnnouncement, setSrAnnouncement] = useState<string>('');
+  const lastThresholdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (status !== 'pending' || !active) return;
+    const thresholds: ReadonlyArray<number> = [30, 10, 5, 1];
+    const matched = thresholds.find(
+      (n) => remaining <= n && lastThresholdRef.current !== n,
+    );
+    if (matched !== undefined) {
+      lastThresholdRef.current = matched;
+      const fmt = formatCountdown(remaining);
+      setSrAnnouncement(t('countdown', { minutes: fmt.minutes, seconds: fmt.seconds }));
+    }
+  }, [remaining, status, active, t]);
+
   const amountDisplay = useMemo(
     () =>
       currency === 'thb'
@@ -290,14 +312,23 @@ export function PromptPayPanel({
         </p>
       </div>
 
+      {/* H-13: visible counter is `aria-hidden` so SR users do not hear
+        * each per-second tick; threshold-only announcements ride on the
+        * sibling SR-only `<div>` below (FR-028j refined). */}
       <div
-        // FR-028j — non-interrupting countdown announcements.
-        aria-live="polite"
-        aria-atomic="true"
+        aria-hidden="true"
         className="text-center text-caption text-muted-foreground tabular-nums"
         data-testid="pay-sheet-promptpay-countdown"
       >
         {t('countdown', { minutes, seconds })}
+      </div>
+      <div
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+        data-testid="pay-sheet-promptpay-countdown-sr"
+      >
+        {srAnnouncement}
       </div>
 
       {status === 'waiting-confirmation' ? (

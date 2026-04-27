@@ -288,15 +288,29 @@ describe('confirmPayment (T057)', () => {
     );
   });
 
-  it('invariant violation — duplicate succeeded payment on same invoice', async () => {
+  it('invariant violation — duplicate succeeded payment on same invoice → ack pattern (H-3 review 2026-04-27)', async () => {
+    // H-3: previously returned err({code:'invariant_violation_duplicate_succeeded'})
+    // which 5xx-ed the webhook → Stripe retried for 72h. Now mirrors
+    // the illegal_transition ack pattern: markProcessed + forensic
+    // audit + return ok({ kind:'already_succeeded' }) so Stripe sees
+    // 200 and stops retrying on a permanent state mismatch.
     const deps = makeDeps();
     (deps.paymentsRepo.listSiblingStatusesForInvariant as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       ['succeeded'],
     );
     const result = await confirmPayment(deps, INPUT);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe('invariant_violation_duplicate_succeeded');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('already_succeeded');
+    // Forensic audit must fire on null-tx (best-effort outside the
+    // about-to-roll-back tx).
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const invariantAuditCall = auditCalls.find(
+      (c) =>
+        c[1].eventType === 'payment_processor_retrieve_failed' &&
+        c[1].payload?.processor_error_kind === 'invariant_violation_duplicate_succeeded',
+    );
+    expect(invariantAuditCall).toBeDefined();
   });
 
   it('retrievePaymentIntent failure — processor_unavailable', async () => {

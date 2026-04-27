@@ -1367,6 +1367,7 @@
       },
       "timeline": {
         "title": "Betalningshändelser",
+        "loading": "Laddar betalningshändelser",
         "actorSystem": "System (Stripe webhook)",
         "actorAnonymous": "Anonym",
         "events": {

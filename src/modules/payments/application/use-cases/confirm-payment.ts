@@ -399,8 +399,31 @@ async function confirmPaymentBody(
     );
     const invariant = enforceOneSucceededPerInvoice(siblings);
     if (!invariant.ok) {
-      return err<ConfirmPaymentError>({
-        code: 'invariant_violation_duplicate_succeeded',
+      // H-3 (review 2026-04-27): mirror the illegal_transition ack
+      // pattern above — invariant violation is a PERMANENT state
+      // (the duplicate succeeded row already exists). Returning err
+      // would 5xx the webhook → Stripe retries for 72h → repeated
+      // failures with no recovery path. Acknowledge atomically:
+      // markProcessed + forensic audit + return already_succeeded
+      // no-op so Stripe sees 200 and stops retrying.
+      await markProcessed();
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_processor_retrieve_failed',
+        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+        summary: `confirmPayment hit invariant_violation_duplicate_succeeded for invoice ${payment.invoiceId} (acknowledged + no-op to break retry loop)`,
+        payload: {
+          payment_intent_id: input.paymentIntentId,
+          payment_id: payment.id,
+          invoice_id: payment.invoiceId,
+          processor_error_kind: 'invariant_violation_duplicate_succeeded',
+        },
+        retentionYears: retentionFor('payment_processor_retrieve_failed'),
+      });
+      return ok<ConfirmPaymentOutcome>({
+        kind: 'already_succeeded',
+        invoiceId: payment.invoiceId,
       });
     }
 
