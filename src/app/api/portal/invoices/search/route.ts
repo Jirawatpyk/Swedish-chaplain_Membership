@@ -27,6 +27,7 @@ import {
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 
 const MAX_ROWS = 20;
 const MAX_QUERY_LEN = 64;
@@ -48,9 +49,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       {
         status: 429,
         headers: {
-          'Retry-After': String(
-            Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)),
-          ),
+          'Retry-After': String(retryAfterSecondsFromRl(rl)),
         },
       },
     );

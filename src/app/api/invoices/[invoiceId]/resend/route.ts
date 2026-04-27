@@ -16,6 +16,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { resendPdf, makeResendPdfDeps } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 
 const variantSchema = z
   .object({ variant: z.enum(['invoice', 'receipt']).default('invoice') })
@@ -77,7 +78,7 @@ export async function POST(
       {
         status: 429,
         headers: {
-          'Retry-After': String(Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000))),
+          'Retry-After': String(retryAfterSecondsFromRl(rl)),
         },
       },
     );

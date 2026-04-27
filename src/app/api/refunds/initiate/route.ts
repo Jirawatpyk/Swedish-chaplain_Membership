@@ -24,6 +24,7 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { logger } from '@/lib/logger';
 import { randomUUID } from 'node:crypto';
 import {
@@ -142,7 +143,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     300,
   );
   if (!rl.success) {
-    const retryAfterSeconds = Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000));
+    const retryAfterSeconds = retryAfterSecondsFromRl(rl);
     logger.warn(
       { tenantId: tenantCtx.slug, userId: actorUserId, requestId, correlationId, reset: rl.reset },
       'refunds.initiate.rate_limited',

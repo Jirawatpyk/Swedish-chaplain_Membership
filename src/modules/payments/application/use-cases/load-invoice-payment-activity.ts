@@ -97,8 +97,9 @@ export function computeRemainingRefundable(
     })[0];
   if (!succeededPayment) return null;
   const sumSucceededRefunds = activity.refunds
-    .filter((r) => r.status === 'succeeded')
-    .filter((r) => r.paymentId === succeededPayment.id)
+    .filter(
+      (r) => r.status === 'succeeded' && r.paymentId === succeededPayment.id,
+    )
     .reduce((acc, r) => acc + r.amountSatang, 0n);
   const remaining = succeededPayment.amountSatang - sumSucceededRefunds;
   if (remaining <= 0n) return null;

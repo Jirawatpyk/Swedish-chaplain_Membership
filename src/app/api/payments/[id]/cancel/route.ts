@@ -25,6 +25,7 @@ import {
   buildUseCaseErrorTelemetry,
   errorResponse,
 } from '@/lib/payments-route-helpers';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { auditRepo, type ActorRef } from '@/lib/stripe-webhook-deps';
 
 export const runtime = 'nodejs';
@@ -103,7 +104,7 @@ export async function POST(
     300,
   );
   if (!rl.success) {
-    const retryAfterSeconds = Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000));
+    const retryAfterSeconds = retryAfterSecondsFromRl(rl);
     logger.warn(
       { tenantId: tenantCtx.slug, userId: actorUserId, requestId, correlationId, reset: rl.reset },
       'payments.cancel.rate_limited',

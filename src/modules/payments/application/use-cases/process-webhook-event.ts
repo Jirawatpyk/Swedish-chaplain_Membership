@@ -158,6 +158,21 @@ function formatDispatchErrorDetail(e: unknown): string {
   return e instanceof Error ? e.constructor.name : 'unknown';
 }
 
+/**
+ * Pick `invoiceId` off a sub-use-case outcome union member when the
+ * variant carries one. Outcome kinds without an `invoiceId` field
+ * (e.g. `unknown_intent`) yield `undefined` so the dispatcher can
+ * fall back to the broader revalidation path at the route layer.
+ */
+function extractInvoiceId(
+  value:
+    | ConfirmPaymentOutcome
+    | FailPaymentOutcome
+    | HandleCancelEventOutcome,
+): string | undefined {
+  return 'invoiceId' in value ? value.invoiceId : undefined;
+}
+
 export async function processWebhookEvent(
   deps: ProcessWebhookEventDeps,
   input: ProcessWebhookEventInput,
@@ -254,10 +269,7 @@ export async function processWebhookEvent(
       // surgical `revalidatePath('/portal/invoices/<id>')`. Outcome
       // kinds that DON'T carry invoiceId (e.g. `unknown_intent`)
       // produce undefined here — route falls back to broader pattern.
-      const confirmInvoiceId =
-        result.value != null && 'invoiceId' in result.value
-          ? result.value.invoiceId
-          : undefined;
+      const confirmInvoiceId = extractInvoiceId(result.value);
       if (result.value.kind === 'auto_refunded_stale_invoice') {
         // R5 I4 (2026-04-25): `auto_refunded_stale_invoice` is only
         // ever emitted by confirmPayment AFTER it loaded the payment
@@ -344,10 +356,7 @@ export async function processWebhookEvent(
       }
       // R5 canonical fix (2026-04-25): forward `invoiceId` for
       // surgical revalidation in the route handler.
-      const failInvoiceId =
-        result.value != null && 'invoiceId' in result.value
-          ? result.value.invoiceId
-          : undefined;
+      const failInvoiceId = extractInvoiceId(result.value);
       outcome = {
         kind: 'processed',
         dispatched: envelope.type,
@@ -391,10 +400,7 @@ export async function processWebhookEvent(
       }
       /* v8 ignore stop */
       // R5 canonical fix (2026-04-25): forward `invoiceId`.
-      const cancelInvoiceId =
-        result.value != null && 'invoiceId' in result.value
-          ? result.value.invoiceId
-          : undefined;
+      const cancelInvoiceId = extractInvoiceId(result.value);
       outcome = {
         kind: 'processed',
         dispatched: envelope.type,
