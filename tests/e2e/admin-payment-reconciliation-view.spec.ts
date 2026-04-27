@@ -73,24 +73,14 @@ const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
 const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 const PAID_ONLINE_INVOICE_ID = process.env.E2E_PAID_ONLINE_INVOICE_ID;
 
-// D2+D3 (2026-04-26 verify follow-up): seeders for paid-online +
-// manager fixtures are not yet shipped. Until they land, tests skip
-// cleanly in BOTH local + CI. `_isCi` retained (prefixed with _) so
-// re-arming the CI hard-fail later is a one-line uncomment.
-//
-// R2-fix IG-2 (2026-04-26): explicit restore criteria so this is not
-// a permanent skip. Restore the CI hard-fail when ALL of:
-//   1. `pnpm seed:f5-e2e:reconciliation` is wired into the CI seed
-//      pipeline (currently a manual step on dev machines only).
-//   2. The 12 paid-online + 6 manual cohort exists deterministically
-//      so AS1 row-count assertion can replace the testid presence
-//      check (verify-fix IG-1).
-//   3. `e2e-manager@swecham.test` fixture is provisioned in CI env
-//      (already present locally via seed-e2e-user.ts).
-// Tracking: F5 Phase 5 polish backlog — see verify-run notes
-// 2026-04-26 D2/D3 + IG-1/IG-2.
-const _isCi = process.env.CI === 'true' || process.env.CI === '1';
-void _isCi;
+// R2 CRIT-3 (2026-04-27): CI hard-fail re-armed. The seed at
+// `pnpm seed:f5-e2e:reconciliation` produces 1 card + 1 promptpay
+// paid-online row — sufficient for the 4 assertions in this suite
+// (testid presence + per-row shape, not row-count). The
+// `e2e-manager@swecham.test` fixture is provisioned by
+// `seed-e2e-user.ts`. CI now FAILS LOUDLY when env is misconfigured
+// instead of silently skipping a P2 acceptance scenario (US3).
+const isCi = process.env.CI === 'true' || process.env.CI === '1';
 
 async function signInAsRole(
   page: import('@playwright/test').Page,
@@ -105,6 +95,25 @@ async function signInAsRole(
 }
 
 test.describe('admin payment reconciliation view — @payment @e2e (T095, US3)', () => {
+  // R2 CRIT-3 CI gate: every required env var must be set in CI.
+  if (isCi) {
+    if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+      throw new Error(
+        '[T095 CI gate] E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD required in CI — run seed-e2e-user.ts.',
+      );
+    }
+    if (!MANAGER_EMAIL || !MANAGER_PASSWORD) {
+      throw new Error(
+        '[T095 CI gate] E2E_MANAGER_EMAIL + E2E_MANAGER_PASSWORD required in CI — manager fixture provisioned by seed-e2e-user.ts.',
+      );
+    }
+    if (!PAID_ONLINE_INVOICE_ID) {
+      throw new Error(
+        '[T095 CI gate] E2E_PAID_ONLINE_INVOICE_ID required in CI — run `pnpm seed:f5-e2e:reconciliation`.',
+      );
+    }
+  }
+
   test('paid-online filter chip renders + filter applies via URL state', async ({
     page,
   }) => {

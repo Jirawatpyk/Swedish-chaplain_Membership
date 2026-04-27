@@ -89,6 +89,134 @@ export type F5AuditEventType =
   // state acknowledgement" forensic classes.
   | 'payment_acknowledged_terminal_state';
 
+/**
+ * R2 TD-13 (2026-04-27): typed payload shape per event type.
+ *
+ * Each entry pins the JSON-serialisable fields the audit row's `payload`
+ * column carries. The map is intentionally permissive (`Record<string,
+ * unknown>` for low-stakes ops events) so this can be adopted
+ * incrementally without breaking existing emit sites — opt into stricter
+ * typing by importing `F5AuditEventTyped<T>` at a specific call site.
+ *
+ * Why two-tier: the high-traffic financial events (initiated / succeeded /
+ * failed / refunds / probes) carry tax-relevant fields that ops queries
+ * depend on; pinning them stops typo-class drift (`subjet_tenant_id` →
+ * compile error). The webhook-ops events (signature rejected, api
+ * version mismatch, etc.) carry forensic blobs whose shape evolves with
+ * Stripe SDK updates; over-pinning here adds churn without forensic
+ * value.
+ *
+ * Migration plan: tighten one event-type per fix-it batch. Drift
+ * detection: `tests/unit/payments/audit-port-payload-shapes.test.ts`
+ * (post-ship) asserts the pinned shapes match the actual emit calls.
+ */
+export interface F5AuditPayloadByType {
+  payment_initiated: {
+    payment_id: string;
+    invoice_id: string;
+    method: 'card' | 'promptpay';
+    amount_satang: string;
+    processor_payment_intent_id: string;
+    attempt_seq: number;
+  };
+  payment_succeeded: {
+    payment_id: string;
+    invoice_id: string;
+    processor_charge_id: string | null;
+    amount_satang: string;
+    method: 'card' | 'promptpay';
+  };
+  payment_failed: {
+    payment_id: string;
+    invoice_id: string;
+    failure_reason_code: string;
+  };
+  payment_canceled: Record<string, unknown>;
+  payment_method_switched: Record<string, unknown>;
+  payment_auto_refunded_stale_invoice: {
+    payment_id: string;
+    invoice_id: string;
+    refunded_amount_satang: string;
+    cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status';
+    processor_refund_id: string;
+  };
+  payment_auto_refunded_concurrent_manual_mark: Record<string, unknown>;
+  payment_environment_mismatch: Record<string, unknown>;
+  payment_cross_tenant_probe: {
+    acting_tenant_id?: string;
+    subject_tenant_id?: string;
+    probing_actor_id: string;
+    target_entity: string;
+    target_id: string;
+    bridge_outcome?: string;
+    target_owner_member_id?: string;
+  };
+  refund_initiated: {
+    refund_id: string;
+    payment_id: string;
+    invoice_id: string;
+    amount_satang: string;
+    reason: string;
+  };
+  refund_succeeded: {
+    refund_id: string;
+    processor_refund_id: string;
+    processor_charge_id?: string;
+    recovery_path?: 'webhook_charge_refunded' | 'in_app_phase_b';
+  };
+  refund_failed: {
+    refund_id: string;
+    payment_id: string;
+    invoice_id: string;
+    failure_reason_code: string;
+    phase_b_error_kind?: string;
+    processor_refund_id?: string;
+    credit_note_id?: string;
+  };
+  out_of_band_refund_detected: {
+    processor_refund_id: string;
+    processor_charge_id: string;
+    amount_satang: string;
+    runbook_url: string;
+  };
+  webhook_signature_rejected: Record<string, unknown>;
+  webhook_api_version_mismatch: Record<string, unknown>;
+  tenant_payment_settings_updated: Record<string, unknown>;
+  online_payment_toggled: Record<string, unknown>;
+  dispute_created: Record<string, unknown>;
+  webhook_unknown_intent: Record<string, unknown>;
+  webhook_payment_already_canceled: Record<string, unknown>;
+  payment_processor_retrieve_failed: Record<string, unknown>;
+  payment_invoice_not_found: Record<string, unknown>;
+  stale_pending_refund_detected: {
+    refund_id: string;
+    payment_id: string;
+    invoice_id: string;
+    amount_satang: string;
+    age_minutes: number;
+    original_initiator_user_id: string;
+    original_correlation_id: string;
+    runbook_url: string;
+  };
+  payment_acknowledged_terminal_state: Record<string, unknown>;
+}
+
+/**
+ * Typed-emit envelope. Existing call sites stay on the loose
+ * `F5AuditEvent` (payload: Record<string, unknown>); new call sites or
+ * targeted hardening passes can use `F5AuditEventTyped<'payment_initiated'>`
+ * etc. for compile-time field validation.
+ */
+export type F5AuditEventTyped<T extends F5AuditEventType> = {
+  readonly tenantId: string | null;
+  readonly requestId: string | null;
+  readonly eventType: T;
+  readonly actorUserId: string;
+  readonly summary: string;
+  readonly payload: F5AuditPayloadByType[T];
+  readonly retentionYears: 5 | 10;
+};
+
 export interface F5AuditEvent {
   readonly tenantId: string | null;        // NULL for pre-resolution webhook rejects
   readonly requestId: string | null;

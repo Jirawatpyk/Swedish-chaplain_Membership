@@ -143,6 +143,28 @@ export async function confirmPayment(
   );
 }
 
+/**
+ * R2 H-3 (2026-04-27): two-phase split for the stale-invoice auto-refund
+ * branch. The withTx Phase A locks the payment row + reads the invoice +
+ * decides whether the stale-refund path applies — but defers the Stripe
+ * `createRefund` (10s SDK timeout) to OUTSIDE the lock window. Phase B
+ * (a short follow-up withTx) commits markProcessed after Stripe returns.
+ * Idempotency:
+ *   - Stripe idempotencyKey `auto-refund-${paymentId}` returns the same
+ *     refund on retry (Stripe handles replay safety internally).
+ *   - `markProcessedIfPresent` is a no-op when the processor_events row
+ *     is already marked, so a Stripe webhook retry that arrives mid-flight
+ *     finds the event already processed and short-circuits at step 1.
+ *   - The audit emit uses `null` tx (independent commit) — survives a
+ *     Phase-B rollback, gives ops a forensic trail even on a partial
+ *     failure.
+ */
+interface StalePending {
+  readonly payment: import('../../domain/payment').Payment;
+  readonly cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status';
+  readonly invoiceStatus: string | undefined;
+}
+
 async function confirmPaymentBody(
   deps: ConfirmPaymentDeps,
   input: ConfirmPaymentInput,
@@ -154,7 +176,13 @@ async function confirmPaymentBody(
     return err({ code: 'bridge_error', detail: 'tenant_settings_missing' });
   }
 
-  return await deps.paymentsRepo.withTx(async (tx) => {
+  // R2 H-3 — captured by closure inside withTx; if Phase A determines
+  // the stale-refund path applies, set this ref + return ok-stale-pending
+  // sentinel so the surrounding code runs Stripe + Phase B OUTSIDE the
+  // tx.
+  let stalePending: StalePending | null = null;
+
+  const phaseA = await deps.paymentsRepo.withTx(async (tx) => {
     // R4 polish (M1): the `markProcessedIfPresent(deps, input, tx)` triple
     // appears 6× below. Local closure removes the repetition without
     // hiding the contract — `_shared.markProcessedIfPresent` is still
@@ -283,73 +311,18 @@ async function confirmPaymentBody(
         }
       })();
 
-      // R2 H-3 (2026-04-27 review) — KNOWN TRADEOFF: this Stripe call
-      // runs inside `withTx`, holding the payment-row FOR UPDATE lock for
-      // up to 10s (Stripe SDK timeout) on the auto-refund path. The
-      // audit emit at line ~313 already commits via separate-tx (`null`)
-      // to survive a withTx rollback, and Stripe idempotencyKey
-      // (`auto-refund-${payment.id}`) makes the refund itself replay-safe.
-      // The remaining concern is lock-contention against concurrent
-      // cancelPayment / second webhook delivery — bounded but real under
-      // tail latency. A two-phase split (lock+decide → unlock → Stripe
-      // → relock+commit-audit) is tracked as post-ship cleanup; it
-      // requires careful idempotency around `markProcessed` so a
-      // pre-empted retry does not double-emit `payment_auto_refunded_*`.
-      const refund = await deps.processorGateway.createRefund({
-        paymentIntentId: input.paymentIntentId,
-        metadata: {
-          invoiceId: payment.invoiceId,
-          tenantId: input.tenantId,
-          paymentId: payment.id,
-          cause,
-        },
-        idempotencyKey: `auto-refund-${payment.id}`,
-        stripeAccount: settings.processorAccountId,
-      });
-      if (!refund.ok) {
-        return err<ConfirmPaymentError>({
-          code: 'processor_unavailable',
-          reason: refund.error.kind,
-        });
-      }
-
-      // R3 I-6: emit on `null` (best-effort separate-tx commit), NOT on
-      // `tx`. The Stripe `createRefund` above is already non-rollbackable
-      // — if the wrapping `withTx` later rolls back (e.g. invoicing-bridge
-      // failure, DB outage), an audit row written through `tx` would
-      // silently disappear, leaving the refund un-traced in the audit
-      // log. Stripe's idempotencyKey makes the refund itself replay-safe,
-      // but the audit gap is what ops investigators feel. Best-effort
-      // emit through `null` commits independently so the row survives
-      // even if the rest of the dispatch tx aborts.
-      await deps.audit.emit(null, {
-        tenantId: input.tenantId,
-        requestId: input.requestId,
-        eventType: 'payment_auto_refunded_stale_invoice',
-        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-        // `?? 'unknown'` — defensive: invoiceStatus is always defined on this
-        // path (see the `if (invoiceStatus === undefined)` early return above
-        // marked v8-ignore for the same unreachable case).
-        /* v8 ignore next -- defensive nullish coalesce paired with line ~164 */
-        summary: `Auto-refunded payment ${payment.id} — invoice not payable (${invoiceStatus ?? 'unknown'})`,
-        payload: {
-          payment_id: payment.id,
-          invoice_id: payment.invoiceId,
-          refunded_amount_satang: payment.amountSatang.toString(),
-          cause,
-          // Include processor refund id so ops can correlate this
-          // audit row with the Stripe dashboard refund record
-          // (audit 2026-04-25 finding #7).
-          processor_refund_id: refund.value.id,
-        },
-        retentionYears: retentionFor('payment_auto_refunded_stale_invoice'),
-      });
-      // Audit 2026-04-26 round-2 #5b: atomic markProcessed.
-      await markProcessed();
-      // T141 metric: stale-invoice guard-rail fired (alert: > 0 → invoice
-      // overpaid / void-race). Emit AFTER tx work but BEFORE return so
-      // failed-emit isn't silenced by an in-flight error path.
-      paymentsMetrics.autoRefundedStaleCount(input.tenantId);
+      // R2 H-3 (2026-04-27): defer Stripe createRefund to OUTSIDE the
+      // withTx. Capture the decision in `stalePending` and return a
+      // sentinel ok-result; the surrounding code reads `stalePending`,
+      // calls Stripe (idempotency-key safe; no lock held), emits audit
+      // (null tx — independent commit), and runs Phase B for
+      // markProcessed. This keeps the row-FOR UPDATE lock window to
+      // local DB roundtrips only, eliminating the up-to-10s contention
+      // window against concurrent cancelPayment / 2nd webhook delivery.
+      stalePending = { payment, cause, invoiceStatus };
+      // Sentinel return — the kind matches what we'll ultimately
+      // return after Phase B; downstream branches at `if (phaseA.ok)`
+      // ignore this when stalePending is non-null.
       return ok<ConfirmPaymentOutcome>({
         kind: 'auto_refunded_stale_invoice',
         invoiceId: payment.invoiceId,
@@ -556,4 +529,68 @@ async function confirmPaymentBody(
       invoiceId: payment.invoiceId,
     });
   });
+
+  // R2 H-3 — Phase B: stale-invoice auto-refund. Runs OUTSIDE the
+  // Phase-A withTx so the Stripe call (10s SDK timeout) does not hold
+  // the payment-row FOR UPDATE lock. Idempotency: Stripe's
+  // `auto-refund-${paymentId}` key returns the same refund on retry;
+  // `markProcessedIfPresent` is idempotent (no-op when row already
+  // processed); audit emit on `null` tx commits independently so a
+  // Phase-B rollback still leaves a forensic trail.
+  // TS narrows the captured-let to `never` after the closure (it cannot
+  // prove the assignment ran), so re-bind through an unknown cast.
+  const stalePendingFinal = stalePending as StalePending | null;
+  if (stalePendingFinal !== null) {
+    const { payment, cause, invoiceStatus } = stalePendingFinal;
+    const refund = await deps.processorGateway.createRefund({
+      paymentIntentId: input.paymentIntentId,
+      metadata: {
+        invoiceId: payment.invoiceId,
+        tenantId: input.tenantId,
+        paymentId: payment.id,
+        cause,
+      },
+      idempotencyKey: `auto-refund-${payment.id}`,
+      stripeAccount: settings.processorAccountId,
+    });
+    if (!refund.ok) {
+      return err<ConfirmPaymentError>({
+        code: 'processor_unavailable',
+        reason: refund.error.kind,
+      });
+    }
+
+    // Audit on `null` tx — independent commit (R3 I-6 design).
+    await deps.audit.emit(null, {
+      tenantId: input.tenantId,
+      requestId: input.requestId,
+      eventType: 'payment_auto_refunded_stale_invoice',
+      actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+      /* v8 ignore next -- defensive nullish coalesce; invoiceStatus always defined on this path */
+      summary: `Auto-refunded payment ${payment.id} — invoice not payable (${invoiceStatus ?? 'unknown'})`,
+      payload: {
+        payment_id: payment.id,
+        invoice_id: payment.invoiceId,
+        refunded_amount_satang: payment.amountSatang.toString(),
+        cause,
+        processor_refund_id: refund.value.id,
+      },
+      retentionYears: retentionFor('payment_auto_refunded_stale_invoice'),
+    });
+
+    // Phase B — short follow-up withTx for markProcessed only.
+    // `markProcessedIfPresent` is idempotent (no-op when already
+    // marked) so a webhook retry mid-flight finds nothing to do.
+    await deps.paymentsRepo.withTx(async (tx) => {
+      await markProcessedIfPresent(deps, input, tx);
+    });
+
+    paymentsMetrics.autoRefundedStaleCount(input.tenantId);
+    return ok<ConfirmPaymentOutcome>({
+      kind: 'auto_refunded_stale_invoice',
+      invoiceId: payment.invoiceId,
+    });
+  }
+
+  return phaseA;
 }

@@ -43,9 +43,24 @@ function makeRequest(authHeader: string | null): Request {
 }
 
 describe('T139 stale-pending-count cron handler — live Neon', () => {
+  // R2 F-01 (2026-04-27 security review): hard-fail in CI if CRON_SECRET
+  // is unset. The runtime route already fail-closes when CRON_SECRET is
+  // missing in non-development env (line ~55 of route.ts), AND the env
+  // validator at `src/lib/env.ts:162` requires `CRON_SECRET: z.string().min(16)`
+  // which throws at boot in production. This CI gate guarantees the
+  // path is exercised end-to-end every test run rather than silently
+  // skipping when a developer's local `.env.local` lacks the secret.
+  const isCi = process.env.CI === 'true' || process.env.CI === '1';
+  if (!process.env.CRON_SECRET && isCi) {
+    throw new Error(
+      '[T139 CI gate] CRON_SECRET must be set in CI — the env validator requires it in production and this test must exercise the auth lane.',
+    );
+  }
+
   it('(a) rejects request without Bearer token when CRON_SECRET is set', async () => {
     if (!process.env.CRON_SECRET) {
       // Dev-mode lane allows unauthenticated calls — case (a) is vacuous.
+      // CI lane guarded by the throw above.
       return;
     }
     const res = await GET(makeRequest(null) as never);
