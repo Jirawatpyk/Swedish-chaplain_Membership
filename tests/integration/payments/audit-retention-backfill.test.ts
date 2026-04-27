@@ -143,11 +143,9 @@ describe('Audit retention column + F4 tax-document backfill (T135 — Review-Gat
 
     for (const [eventType, years] of entries) {
       expect(
-        years,
+        [5, 10],
         `F5 event_type='${eventType}' has retention_years=${years} — MUST be 5 or 10 per data-model.md § 7.1`,
-      ).toMatch(/^(5|10)$/);
-      // TS narrows to 5 | 10 at the type level; runtime guard:
-      expect([5, 10]).toContain(years);
+      ).toContain(years);
     }
 
     // Spot-check a few canonical mappings against data-model.md § 7.1
