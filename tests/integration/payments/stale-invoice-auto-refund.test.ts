@@ -72,22 +72,34 @@ const MATRIX: BenefitMatrix = {
   partnership: null,
 };
 
+interface PaymentSeed {
+  readonly invoiceId: string;
+  readonly paymentId: PaymentId;
+  readonly paymentIntentId: string;
+}
+
 describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => {
   let tenant: TestTenant;
   let user: TestUser;
   let memberId: string;
-  let invoiceId: string;
-  let paymentId: PaymentId;
-  let paymentIntentId: string;
+  let paidSeed: PaymentSeed;
+  let voidSeed: PaymentSeed;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
 
     memberId = randomUUID();
-    invoiceId = randomUUID();
-    paymentId = asPaymentId(`pmt_${randomUUID().replace(/-/g, '').slice(0, 26)}`);
-    paymentIntentId = `pi_test_stale_${randomUUID().slice(0, 8)}`;
+    paidSeed = {
+      invoiceId: randomUUID(),
+      paymentId: asPaymentId(`pmt_${randomUUID().replace(/-/g, '').slice(0, 26)}`),
+      paymentIntentId: `pi_test_stale_paid_${randomUUID().slice(0, 8)}`,
+    };
+    voidSeed = {
+      invoiceId: randomUUID(),
+      paymentId: asPaymentId(`pmt_${randomUUID().replace(/-/g, '').slice(0, 26)}`),
+      paymentIntentId: `pi_test_stale_void_${randomUUID().slice(0, 8)}`,
+    };
 
     const settings: NewTenantPaymentSettingsRow = {
       tenantId: tenant.ctx.slug,
@@ -151,36 +163,40 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
         documentType: 'invoice',
         fiscalYear: 2026,
       });
-      await tx.insert(invoices).values({
-        tenantId: tenant.ctx.slug,
-        invoiceId,
-        memberId,
-        planYear: 2026,
-        planId: 'stale-plan',
-        draftByUserId: user.userId,
-      });
-      await tx.insert(payments).values({
-        id: paymentId,
-        tenantId: tenant.ctx.slug,
-        invoiceId,
-        memberId,
-        method: 'card',
-        status: 'pending',
-        amountSatang: 5_350_000n,
-        currency: 'THB',
-        processorPaymentIntentId: paymentIntentId,
-        processorChargeId: null,
-        processorEnvironment: 'test',
-        attemptSeq: 1,
-        cardBrand: null,
-        cardLast4: null,
-        cardExpMonth: null,
-        cardExpYear: null,
-        initiatedAt: new Date(),
-        completedAt: null,
-        actorUserId: user.userId,
-        correlationId: 'corr-stale-test',
-      });
+      // Two parallel invoice+payment chains: one will be tested as
+      // status='paid', the other as status='void'.
+      for (const seed of [paidSeed, voidSeed]) {
+        await tx.insert(invoices).values({
+          tenantId: tenant.ctx.slug,
+          invoiceId: seed.invoiceId,
+          memberId,
+          planYear: 2026,
+          planId: 'stale-plan',
+          draftByUserId: user.userId,
+        });
+        await tx.insert(payments).values({
+          id: seed.paymentId,
+          tenantId: tenant.ctx.slug,
+          invoiceId: seed.invoiceId,
+          memberId,
+          method: 'card',
+          status: 'pending',
+          amountSatang: 5_350_000n,
+          currency: 'THB',
+          processorPaymentIntentId: seed.paymentIntentId,
+          processorChargeId: null,
+          processorEnvironment: 'test',
+          attemptSeq: 1,
+          cardBrand: null,
+          cardLast4: null,
+          cardExpMonth: null,
+          cardExpYear: null,
+          initiatedAt: new Date(),
+          completedAt: null,
+          actorUserId: user.userId,
+          correlationId: 'corr-stale-test',
+        });
+      }
     });
   }, 60_000);
 
@@ -188,12 +204,12 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
     await tenant.cleanup().catch((e) => console.error('tenant cleanup:', e));
   });
 
-  it('paid invoice → auto_refunded_stale_invoice + audit row in DB + payment NOT flipped to succeeded', async () => {
+  function makeMocks(seed: PaymentSeed, invoiceStatus: 'paid' | 'void') {
     const processorGateway = {
       createPaymentIntent: vi.fn(),
       retrievePaymentIntent: vi.fn(async () =>
         ok({
-          id: paymentIntentId,
+          id: seed.paymentIntentId,
           status: 'succeeded' as const,
           latestChargeId: 'ch_test_stale',
           livemode: false,
@@ -215,8 +231,8 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
     const invoicingBridge = {
       getInvoiceForPayment: vi.fn(async () =>
         ok({
-          id: invoiceId,
-          status: 'paid' as const,
+          id: seed.invoiceId,
+          status: invoiceStatus,
           totalSatang: 5_350_000n,
           memberId,
           tenantId: tenant.ctx.slug,
@@ -224,8 +240,14 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
       ),
       markPaidFromProcessor: vi.fn(async () => ok(undefined)),
     };
+    return { processorGateway, invoicingBridge };
+  }
 
-    const result = await runInTenant(tenant.ctx, async () =>
+  async function runConfirmPayment(
+    seed: PaymentSeed,
+    mocks: ReturnType<typeof makeMocks>,
+  ) {
+    return runInTenant(tenant.ctx, async () =>
       confirmPayment(
         {
           paymentsRepo: makeDrizzlePaymentsRepo(tenant.ctx.slug),
@@ -245,27 +267,40 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
             findByProcessorAccountId: async () => null,
           },
           processorGateway:
-            processorGateway as unknown as Parameters<typeof confirmPayment>[0]['processorGateway'],
+            mocks.processorGateway as unknown as Parameters<typeof confirmPayment>[0]['processorGateway'],
           invoicingBridge:
-            invoicingBridge as unknown as Parameters<typeof confirmPayment>[0]['invoicingBridge'],
+            mocks.invoicingBridge as unknown as Parameters<typeof confirmPayment>[0]['invoicingBridge'],
           audit: f5AuditAdapter,
           clock: systemClock,
         },
         {
           tenantId: tenant.ctx.slug,
-          paymentIntentId,
+          paymentIntentId: seed.paymentIntentId,
           correlationId: 'corr-stale-test',
           requestId: 'req-stale-test',
           eventCreatedAtUnixSeconds: Math.floor(Date.now() / 1000),
         },
       ),
     );
+  }
+
+  it('paid invoice → auto_refunded_stale_invoice + audit row in DB + payment NOT flipped to succeeded', async () => {
+    const mocks = makeMocks(paidSeed, 'paid');
+    const result = await runConfirmPayment(paidSeed, mocks);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.kind).toBe('auto_refunded_stale_invoice');
-    expect(processorGateway.createRefund).toHaveBeenCalledTimes(1);
-    expect(invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    expect(mocks.processorGateway.createRefund).toHaveBeenCalledTimes(1);
+    expect(mocks.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+
+    // Idempotency key contract: `auto-refund-${payment.id}` so Stripe
+    // retries are deduped server-side (confirm-payment.ts:251).
+    expect(mocks.processorGateway.createRefund).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: `auto-refund-${paidSeed.paymentId}`,
+      }),
+    );
 
     // Audit row landed in the live audit_log table with the correct
     // event type + tenant_id. (Retention years is enforced at write
@@ -289,8 +324,27 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
       .select({ status: payments.status })
       .from(payments)
       .where(
-        and(eq(payments.tenantId, tenant.ctx.slug), eq(payments.id, paymentId)),
+        and(
+          eq(payments.tenantId, tenant.ctx.slug),
+          eq(payments.id, paidSeed.paymentId),
+        ),
       );
     expect(paymentRow[0]?.status).not.toBe('succeeded');
+  }, 30_000);
+
+  it('void invoice → same auto_refunded_stale_invoice path (cause=invoice_voided)', async () => {
+    const mocks = makeMocks(voidSeed, 'void');
+    const result = await runConfirmPayment(voidSeed, mocks);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+    expect(mocks.processorGateway.createRefund).toHaveBeenCalledTimes(1);
+    expect(mocks.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    expect(mocks.processorGateway.createRefund).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: `auto-refund-${voidSeed.paymentId}`,
+      }),
+    );
   }, 30_000);
 });

@@ -29,11 +29,20 @@ import { stubStripeConfirmDecline } from './helpers/stripe-mock';
 const ISSUED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 
 test.describe('PaySheet card decline — insufficient_funds — @payment @f5 @us5', () => {
-  // Same fixture-gating pattern as `payment-card-declined.spec.ts`.
-  test.fixme(
-    !ISSUED_INVOICE_ID,
-    'E2E_ISSUED_INVOICE_ID required (member-fixture seeder)',
-  );
+  // Locally skip when seed is absent; in CI fail hard so a broken seed
+  // pipeline does not silently pass (project memory: "Skip is not pass").
+  const isCi = process.env.CI === 'true' || process.env.CI === '1';
+  if (!ISSUED_INVOICE_ID) {
+    if (isCi) {
+      throw new Error(
+        '[T119 CI gate] E2E_ISSUED_INVOICE_ID must be set in CI — run `pnpm seed:f5-e2e` before Playwright.',
+      );
+    }
+    test.skip(
+      true,
+      'E2E_ISSUED_INVOICE_ID missing from .env.local — run `pnpm tsx scripts/seed-e2e-portal-invoices.ts` and `pnpm seed:f5-e2e`.',
+    );
+  }
 
   test('T119: insufficient_funds surfaces localized reason + retry + persistent toast', async ({
     page,

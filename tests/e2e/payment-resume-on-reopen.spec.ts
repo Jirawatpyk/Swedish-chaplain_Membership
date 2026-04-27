@@ -35,10 +35,18 @@ import { stubStripeConfirmSuccess } from './helpers/stripe-mock';
 const ISSUED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 
 test.describe('PaySheet resume + explicit cancel — @payment @f5 @us5', () => {
-  test.fixme(
-    !ISSUED_INVOICE_ID,
-    'E2E_ISSUED_INVOICE_ID required (member-fixture seeder)',
-  );
+  const isCi = process.env.CI === 'true' || process.env.CI === '1';
+  if (!ISSUED_INVOICE_ID) {
+    if (isCi) {
+      throw new Error(
+        '[T120 CI gate] E2E_ISSUED_INVOICE_ID must be set in CI — run `pnpm seed:f5-e2e` before Playwright.',
+      );
+    }
+    test.skip(
+      true,
+      'E2E_ISSUED_INVOICE_ID missing from .env.local — run `pnpm tsx scripts/seed-e2e-portal-invoices.ts` and `pnpm seed:f5-e2e`.',
+    );
+  }
 
   test('T120a: drawer close+reopen reuses the same PaymentIntent (no duplicate /initiate)', async ({
     page,
@@ -95,8 +103,9 @@ test.describe('PaySheet resume + explicit cancel — @payment @f5 @us5', () => {
       paymentIntentId: 'pi_test_explicit_cancel_e2e',
     });
 
-    // Track POST /api/payments/{id}/cancel — assert it fires with
-    // a body including reason='user_clicked_cancel'.
+    // Track POST /api/payments/{id}/cancel bodies + capture the request
+    // promise so we can deterministically wait on the keepalive POST
+    // instead of a fixed timeout.
     const cancelBodies: string[] = [];
     page.on('request', (req) => {
       if (
@@ -118,28 +127,21 @@ test.describe('PaySheet resume + explicit cancel — @payment @f5 @us5', () => {
       timeout: 10_000,
     });
 
-    // Click drawer-shell close → handleOpenChange(false) →
-    // unmount cleanup fires `firePaymentCancel('user_navigated_away')`.
-    // For explicit cancel via the sheet header X button we use the
-    // legacy close-without-cancel path. The G2 gap (post-audit) wires
-    // the in-drawer Cancel button (ProcessingPanel / 3DS panels) to
-    // `handleExplicitCancel('user_clicked_cancel')`. That's not on
-    // the card-form panel today — so we exercise the equivalent path
-    // via processing/3DS state. For test speed we drive the
-    // ProcessingPanel by stubbing the state machine entry point.
-    //
-    // Simpler approach: navigate away from the page mid-flight. The
-    // <PaySheet> unmount cleanup fires the cancel endpoint with
-    // reason='user_navigated_away'.
+    // Navigate away mid-flight → <PaySheet> unmount cleanup fires the
+    // cancel endpoint with reason='user_navigated_away'. The in-drawer
+    // explicit Cancel button path lives on ProcessingPanel/3DS panels
+    // (not card-form) so navigation is the available trigger here.
+    const cancelRequestPromise = page.waitForRequest(
+      (req) =>
+        /\/api\/payments\/[^/]+\/cancel/.test(req.url()) && req.method() === 'POST',
+      { timeout: 10_000 },
+    );
     await page.goto('/portal');
-    await page.waitForLoadState('networkidle');
-
-    // Wait for the keepalive cancel POST to drain.
-    await page.waitForTimeout(1_000);
+    await cancelRequestPromise;
 
     expect(
-      cancelBodies.some((b) => b.includes('user_navigated_away') || b.includes('user_clicked_cancel')),
-      'Cancel endpoint must be invoked with a member-initiated reason',
+      cancelBodies.some((b) => b.includes('user_navigated_away')),
+      'Cancel endpoint must fire with reason=user_navigated_away on navigate-away',
     ).toBe(true);
 
     // No success toast should be visible after navigation away.

@@ -67,4 +67,13 @@ describe('derivePayStateAnnouncement', () => {
       ),
     ).toBe('T:retry.title: Card declined');
   });
+
+  it('failure with empty reason → still includes title (no thrown error, current shape: trailing colon-space)', () => {
+    // Documents current behavior so a future change to strip the
+    // trailing separator (e.g. when reason is blank) is a deliberate
+    // decision rather than a silent regression.
+    expect(
+      derivePayStateAnnouncement({ kind: 'failure', reason: '' }, t),
+    ).toBe('T:retry.title: ');
+  });
 });

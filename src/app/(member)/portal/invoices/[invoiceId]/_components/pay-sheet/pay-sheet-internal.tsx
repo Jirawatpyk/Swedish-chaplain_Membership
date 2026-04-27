@@ -132,17 +132,14 @@ export type PayState =
   | { readonly kind: 'failure'; readonly reason: string };
 
 /**
- * Pure derivation of the FR-028(j) screen-reader announcement string
- * for the consolidated aria-live region. Extracted so unit tests can
- * cover all 7 payState branches without mounting the full subtree
- * (which requires Stripe SDK + initiate-fetch mocks).
- *
- * Returns `''` for transient pre-interactive kinds — there is nothing
- * worth announcing yet, and an empty live region does not fire AT.
+ * Pure derivation of the screen-reader announcement string for the
+ * consolidated aria-live region. Extracted so unit tests can cover
+ * every branch without mounting the full subtree (which requires
+ * Stripe SDK + initiate-fetch mocks).
  */
 export function derivePayStateAnnouncement(
   payState: PayState,
-  t: TranslateFn,
+  t: TranslateFn<'portal.payment'>,
 ): string {
   switch (payState.kind) {
     case 'idle':
@@ -468,7 +465,10 @@ export function PaySheetInternal({
   // QR clientSecret in hand.
   const promptpayClientSecret =
     promptpayState.kind === 'qr' ? promptpayState.clientSecret : null;
-  const getStripeForPromptPayPoll = useMemo(
+  // Single thunk shared between PromptPay + 3DS poll hooks. `getStripeInstance`
+  // already memoises by publishable key (see stripe-cache.ts) — we only need
+  // a stable reference for the hooks' dep arrays.
+  const getStripe = useMemo(
     () => () => getStripeInstance(publishableKey),
     [publishableKey],
   );
@@ -497,7 +497,7 @@ export function PaySheetInternal({
   useThreeDSecurePoll({
     enabled: promptpayState.kind === 'qr',
     clientSecret: promptpayClientSecret,
-    getStripe: getStripeForPromptPayPoll,
+    getStripe,
     onSucceeded: handlePromptPaySucceeded,
     onFailed: handlePromptPayFailed,
   });
@@ -509,10 +509,6 @@ export function PaySheetInternal({
   // unmount + on any `enabled` / `clientSecret` transition.
   const threeDsClientSecret =
     payState.kind === 'requires-action' ? payState.clientSecret : null;
-  const getStripeForPoll = useMemo(
-    () => () => getStripeInstance(publishableKey),
-    [publishableKey],
-  );
   const handle3dsSucceeded = useCallback(
     (paymentIntentId: string) => {
       setPayState({
@@ -539,7 +535,7 @@ export function PaySheetInternal({
   useThreeDSecurePoll({
     enabled: payState.kind === 'requires-action',
     clientSecret: threeDsClientSecret,
-    getStripe: getStripeForPoll,
+    getStripe,
     onSucceeded: handle3dsSucceeded,
     onFailed: handle3dsFailed,
   });
@@ -746,7 +742,6 @@ export function PaySheetInternal({
         );
       case 'failure':
         return (
-          // FR-028j — failure must be announced to SR via aria-live.
           // `role="alert"` (which InlineAlert sets) is implicitly
           // assertive but `<PaymentFailurePanel>` ALSO pins
           // aria-live="assertive" + aria-atomic for AT compatibility
@@ -782,9 +777,9 @@ export function PaySheetInternal({
   // ConfirmationPanel etc. get the full drawer body.
   const showChrome = showSummary; // same gate as OrderSummary
 
-  // FR-028(j) — single persistent live region. Per-panel aria-live
-  // mounts are unreliable across NVDA/VoiceOver/TalkBack when one
-  // region replaces another mid-announcement.
+  // Single persistent live region — per-panel aria-live mounts are
+  // unreliable across NVDA/VoiceOver/TalkBack when one region replaces
+  // another mid-announcement.
   const announcement = derivePayStateAnnouncement(payState, t);
   return (
     <div className="space-y-4">
