@@ -15,7 +15,11 @@ import type {
 import { canTransition } from '../../domain/policies/payment-status-transitions';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
-import { emitWebhookUnknownIntent, markProcessedIfPresent } from './_shared';
+import {
+  emitTerminalStateAck,
+  emitWebhookUnknownIntent,
+  markProcessedIfPresent,
+} from './_shared';
 
 export interface HandleCancelEventInput {
   readonly tenantId: string;
@@ -110,24 +114,17 @@ export async function handleCancelEvent(
         });
       }
       // R4 I-3: illegal_transition on webhook-side cancel is a PERMANENT
-      // mismatch. Acknowledge atomically + forensic audit + no-op.
-      // (`already_canceled` is the closest no-op kind in the union;
-      // ops dashboards filter on the audit row to spot the anomaly.)
+      // mismatch. H-11 ack via dedicated event.
       await markProcessedIfPresent(deps, input, tx);
-      await deps.audit.emit(null, {
+      await emitTerminalStateAck(deps.audit, {
         tenantId: input.tenantId,
         requestId: input.requestId,
-        eventType: 'payment_processor_retrieve_failed',
-        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-        summary: `handleCancelEvent hit illegal_transition from ${payment.status} (acknowledged + no-op to break retry loop)`,
-        payload: {
-          payment_intent_id: input.paymentIntentId,
-          payment_id: payment.id,
-          from_status: payment.status,
-          to_status: 'canceled',
-          processor_error_kind: 'illegal_transition',
-        },
-        retentionYears: retentionFor('payment_processor_retrieve_failed'),
+        useCaseLabel: 'handleCancelEvent',
+        paymentIntentId: input.paymentIntentId,
+        paymentId: payment.id,
+        fromStatus: payment.status,
+        toStatus: 'canceled',
+        mismatchKind: 'illegal_transition',
       });
       return ok<HandleCancelEventOutcome>({
         kind: 'already_canceled',

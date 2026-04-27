@@ -157,6 +157,55 @@ describe('Audit retention column + F4 tax-document backfill (T135 — Review-Gat
     expect(F5_AUDIT_RETENTION_YEARS['webhook_api_version_mismatch']).toBe(5);
   });
 
+  it('(2b) L-5 — append-only triggers in place: vacuous case (2) is acceptable BECAUSE post-migration drift is impossible', async () => {
+    // L-5 (review 2026-04-27): a synthetic round-trip "insert + flip
+    // + verify" is structurally impossible on `audit_log` because the
+    // table is append-only — `audit_log_no_update` and
+    // `audit_log_no_delete` triggers (migration 0001) reject all
+    // UPDATE / DELETE / TRUNCATE statements at the DB layer with
+    // ERRCODE 42501. This is the GUARANTEE that makes case (2)'s
+    // vacuous result acceptable: post-migration retention drift is
+    // not possible. Any drift would require disabling a named
+    // trigger (a privileged DDL operation that cannot be done from
+    // application code or a normal CI test).
+    //
+    // Instead of trying to insert + flip (which production code is
+    // also forbidden from doing post-migration), assert the three
+    // triggers exist + are enabled. This is the load-bearing
+    // invariant — if the triggers ever drop, case (2) becomes
+    // genuinely insufficient and a stronger seeded-row test is
+    // required.
+    const triggers = await db.execute<{
+      tgname: string;
+      tgenabled: string;
+    }>(sql`
+      SELECT t.tgname, t.tgenabled::text AS tgenabled
+      FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relname = 'audit_log'
+        AND n.nspname = 'public'
+        AND t.tgname IN (
+          'audit_log_no_update',
+          'audit_log_no_delete',
+          'audit_log_no_truncate'
+        )
+      ORDER BY t.tgname
+    `);
+    const rows = Array.from(triggers);
+    expect(rows.length).toBe(3);
+    for (const row of rows) {
+      // Postgres `tgenabled`: 'O' = enabled (origin/locale), 'D' = disabled.
+      // Anything other than 'O' means the trigger has been disabled or
+      // converted to replica/always — none of which is acceptable for
+      // the append-only invariant.
+      expect(
+        row.tgenabled,
+        `audit_log trigger '${row.tgname}' has tgenabled='${row.tgenabled}' — MUST be 'O' (enabled) per security.md T-13`,
+      ).toBe('O');
+    }
+  });
+
   it('(4) CHECK constraint enforces domain — out-of-domain insert is rejected', async () => {
     // Try INSERT retention_years=7 (out of {5, 10}). Postgres MUST throw
     // a check_violation. We catch any error and assert the error message

@@ -40,7 +40,7 @@ import { canTransition } from '../../domain/policies/payment-status-transitions'
 import { enforceOneSucceededPerInvoice } from '../../domain/invariants/one-succeeded-payment-per-invoice';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
-import { markProcessedIfPresent } from './_shared';
+import { markProcessedIfPresent, emitTerminalStateAck } from './_shared';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
@@ -360,29 +360,20 @@ async function confirmPaymentBody(
       }
       // illegal_transition (e.g. partially_refunded → succeeded). R4 I-3:
       // webhook-side this is a PERMANENT mismatch — returning err would
-      // bubble to a 500 → Stripe retries 24h → ON CONFLICT idempotency
-      // hits + processedAt re-check fails the same way every time → row
-      // stays stuck for the entire retry window. Acknowledge atomically:
-      // markProcessed + emit forensic audit (best-effort tx=null so
-      // Stripe sees 200 even if audit fails) + return `already_succeeded`
-      // no-op. Reuses `payment_processor_retrieve_failed` event type
-      // since it's the closest "permanent processor anomaly" bucket; if
-      // ops needs distinction later, add a new event type.
+      // bubble to a 500 → Stripe retries 24h → row stays stuck for the
+      // entire retry window. Acknowledge atomically: markProcessed +
+      // emit forensic audit (H-11 dedicated event type) + return
+      // `already_succeeded` no-op so Stripe sees 200 and stops retrying.
       await markProcessed();
-      await deps.audit.emit(null, {
+      await emitTerminalStateAck(deps.audit, {
         tenantId: input.tenantId,
         requestId: input.requestId,
-        eventType: 'payment_processor_retrieve_failed',
-        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-        summary: `confirmPayment hit illegal_transition from ${payment.status} (acknowledged + no-op to break retry loop)`,
-        payload: {
-          payment_intent_id: input.paymentIntentId,
-          payment_id: payment.id,
-          from_status: payment.status,
-          to_status: 'succeeded',
-          processor_error_kind: 'illegal_transition',
-        },
-        retentionYears: retentionFor('payment_processor_retrieve_failed'),
+        useCaseLabel: 'confirmPayment',
+        paymentIntentId: input.paymentIntentId,
+        paymentId: payment.id,
+        fromStatus: payment.status,
+        toStatus: 'succeeded',
+        mismatchKind: 'illegal_transition',
       });
       return ok<ConfirmPaymentOutcome>({
         kind: 'already_succeeded',
@@ -401,25 +392,21 @@ async function confirmPaymentBody(
     if (!invariant.ok) {
       // H-3 (review 2026-04-27): mirror the illegal_transition ack
       // pattern above — invariant violation is a PERMANENT state
-      // (the duplicate succeeded row already exists). Returning err
-      // would 5xx the webhook → Stripe retries for 72h → repeated
-      // failures with no recovery path. Acknowledge atomically:
-      // markProcessed + forensic audit + return already_succeeded
-      // no-op so Stripe sees 200 and stops retrying.
+      // (duplicate succeeded row already exists). Returning err would
+      // 5xx the webhook → Stripe retries for 72h with no recovery
+      // path. Acknowledge atomically + forensic audit (H-11 dedicated
+      // event type) + return already_succeeded so Stripe sees 200.
       await markProcessed();
-      await deps.audit.emit(null, {
+      await emitTerminalStateAck(deps.audit, {
         tenantId: input.tenantId,
         requestId: input.requestId,
-        eventType: 'payment_processor_retrieve_failed',
-        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-        summary: `confirmPayment hit invariant_violation_duplicate_succeeded for invoice ${payment.invoiceId} (acknowledged + no-op to break retry loop)`,
-        payload: {
-          payment_intent_id: input.paymentIntentId,
-          payment_id: payment.id,
-          invoice_id: payment.invoiceId,
-          processor_error_kind: 'invariant_violation_duplicate_succeeded',
-        },
-        retentionYears: retentionFor('payment_processor_retrieve_failed'),
+        useCaseLabel: 'confirmPayment',
+        paymentIntentId: input.paymentIntentId,
+        paymentId: payment.id,
+        fromStatus: payment.status,
+        toStatus: 'succeeded',
+        mismatchKind: 'invariant_violation_duplicate_succeeded',
+        extraPayload: { invoice_id: payment.invoiceId },
       });
       return ok<ConfirmPaymentOutcome>({
         kind: 'already_succeeded',

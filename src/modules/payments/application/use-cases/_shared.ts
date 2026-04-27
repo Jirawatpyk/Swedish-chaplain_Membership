@@ -90,3 +90,56 @@ export async function emitWebhookUnknownIntent(
     retentionYears: retentionFor('webhook_unknown_intent'),
   });
 }
+
+/**
+ * H-11 / M-10 (review 2026-04-27) — emit the
+ * `payment_acknowledged_terminal_state` forensic audit row for the
+ * 4 webhook ack paths (illegal_transition x3 + invariant_violation x1).
+ * Replaces 4 near-identical inline emit blocks (~80 LOC) and the
+ * historical reuse of `payment_processor_retrieve_failed` (which is
+ * reserved for actual Stripe SDK outages).
+ *
+ * Always emitted on `null` tx so the row survives the caller's
+ * intentional rollback / about-to-finish-okay flow — these acks
+ * commit forensic evidence even if subsequent steps are no-ops.
+ */
+interface IllegalTransitionAckInput {
+  readonly tenantId: string | null;
+  readonly requestId: string | null;
+  readonly useCaseLabel: 'confirmPayment' | 'failPayment' | 'handleCancelEvent';
+  readonly paymentIntentId: string;
+  readonly paymentId: string;
+  readonly fromStatus: string;
+  /** `succeeded` | `failed` | `canceled` for the 3 use-cases */
+  readonly toStatus: string;
+  /** `illegal_transition` | `invariant_violation_duplicate_succeeded` */
+  readonly mismatchKind: 'illegal_transition' | 'invariant_violation_duplicate_succeeded';
+  /** Extra payload fields specific to the call site (e.g. `invoice_id`). */
+  readonly extraPayload?: Readonly<Record<string, unknown>>;
+}
+
+export async function emitTerminalStateAck(
+  audit: AuditPort,
+  input: IllegalTransitionAckInput,
+): Promise<void> {
+  const summary =
+    input.mismatchKind === 'invariant_violation_duplicate_succeeded'
+      ? `${input.useCaseLabel} hit invariant_violation_duplicate_succeeded for payment ${input.paymentId} (acknowledged + no-op to break retry loop)`
+      : `${input.useCaseLabel} hit illegal_transition from ${input.fromStatus} (acknowledged + no-op to break retry loop)`;
+  await audit.emit(null, {
+    tenantId: input.tenantId,
+    requestId: input.requestId,
+    eventType: 'payment_acknowledged_terminal_state',
+    actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+    summary,
+    payload: {
+      payment_intent_id: input.paymentIntentId,
+      payment_id: input.paymentId,
+      from_status: input.fromStatus,
+      to_status: input.toStatus,
+      mismatch_kind: input.mismatchKind,
+      ...(input.extraPayload ?? {}),
+    },
+    retentionYears: retentionFor('payment_acknowledged_terminal_state'),
+  });
+}

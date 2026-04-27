@@ -276,12 +276,15 @@ describe('confirmPayment (T057)', () => {
     expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
     expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
     // Forensic audit on null tx (best-effort) so ops sees the anomaly.
+    // H-11: dedicated event type instead of reusing
+    // payment_processor_retrieve_failed; payload key renamed from
+    // `processor_error_kind` to `mismatch_kind` for clarity.
     expect(deps.audit.emit).toHaveBeenCalledWith(
       null,
       expect.objectContaining({
-        eventType: 'payment_processor_retrieve_failed',
+        eventType: 'payment_acknowledged_terminal_state',
         payload: expect.objectContaining({
-          processor_error_kind: 'illegal_transition',
+          mismatch_kind: 'illegal_transition',
           from_status: 'partially_refunded',
         }),
       }),
@@ -307,8 +310,8 @@ describe('confirmPayment (T057)', () => {
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
     const invariantAuditCall = auditCalls.find(
       (c) =>
-        c[1].eventType === 'payment_processor_retrieve_failed' &&
-        c[1].payload?.processor_error_kind === 'invariant_violation_duplicate_succeeded',
+        c[1].eventType === 'payment_acknowledged_terminal_state' &&
+        c[1].payload?.mismatch_kind === 'invariant_violation_duplicate_succeeded',
     );
     expect(invariantAuditCall).toBeDefined();
   });

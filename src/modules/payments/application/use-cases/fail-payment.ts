@@ -15,7 +15,11 @@ import type {
 import { canTransition } from '../../domain/policies/payment-status-transitions';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
-import { emitWebhookUnknownIntent, markProcessedIfPresent } from './_shared';
+import {
+  emitTerminalStateAck,
+  emitWebhookUnknownIntent,
+  markProcessedIfPresent,
+} from './_shared';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -146,24 +150,17 @@ async function failPaymentBody(
         });
       }
       // R4 I-3: illegal_transition (e.g. succeeded → failed) is a
-      // PERMANENT webhook-side mismatch. Returning err would bubble
-      // to 500 → Stripe retries 24h → stuck-row loop. Acknowledge
-      // atomically + forensic audit + no-op return.
+      // PERMANENT webhook-side mismatch. H-11 ack via dedicated event.
       await markProcessedIfPresent(deps, input, tx);
-      await deps.audit.emit(null, {
+      await emitTerminalStateAck(deps.audit, {
         tenantId: input.tenantId,
         requestId: input.requestId,
-        eventType: 'payment_processor_retrieve_failed',
-        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-        summary: `failPayment hit illegal_transition from ${payment.status} (acknowledged + no-op to break retry loop)`,
-        payload: {
-          payment_intent_id: input.paymentIntentId,
-          payment_id: payment.id,
-          from_status: payment.status,
-          to_status: 'failed',
-          processor_error_kind: 'illegal_transition',
-        },
-        retentionYears: retentionFor('payment_processor_retrieve_failed'),
+        useCaseLabel: 'failPayment',
+        paymentIntentId: input.paymentIntentId,
+        paymentId: payment.id,
+        fromStatus: payment.status,
+        toStatus: 'failed',
+        mismatchKind: 'illegal_transition',
       });
       return ok<FailPaymentOutcome>({
         kind: 'already_terminal',

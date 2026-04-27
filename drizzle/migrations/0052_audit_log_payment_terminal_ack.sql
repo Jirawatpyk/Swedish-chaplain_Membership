@@ -1,0 +1,31 @@
+-- ---------------------------------------------------------------------------
+-- F5 audit_event_type enum extension — H-11 (review 2026-04-27 batch B/C)
+--
+-- Adds `payment_acknowledged_terminal_state` event type emitted by the
+-- `confirmPayment` use-case when:
+--   (a) The state machine signals `illegal_transition` (e.g.
+--       partially_refunded → succeeded webhook replay).
+--   (b) The 1-succeeded-per-invoice invariant fires (duplicate
+--       succeeded row already exists for the invoice).
+--
+-- Both branches now emit this DISTINCT event instead of reusing
+-- `payment_processor_retrieve_failed` (which is for Stripe SDK errors,
+-- not state-machine acknowledgements). Audit-log queries become
+-- unambiguous: `payment_processor_retrieve_failed` = mid-webhook
+-- Stripe outage; `payment_acknowledged_terminal_state` = permanent
+-- state mismatch acknowledged + no-op to break Stripe retry loop.
+--
+-- Retention: 10 years — the row corroborates a permanent payment-
+-- state decision that may need ops + tax-document reconciliation
+-- (Constitution Principle I sub-clause #4).
+--
+-- Pattern: idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` (matches 0046–0050).
+-- Forward-only: enum values cannot be removed.
+--
+-- Keep synced with:
+--   - `auditEventTypeEnum` in `src/modules/auth/infrastructure/db/schema.ts`
+--   - `F5AuditEventType` in `src/modules/payments/application/ports/audit-port.ts`
+--   - `F5_AUDIT_RETENTION_YEARS` in `audit-port.ts`
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'payment_acknowledged_terminal_state'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

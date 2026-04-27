@@ -178,12 +178,13 @@ describe('failPayment (T058)', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.kind).toBe('already_terminal');
+    // H-11: dedicated event type + renamed payload key.
     expect(d.audit.emit).toHaveBeenCalledWith(
       null,
       expect.objectContaining({
-        eventType: 'payment_processor_retrieve_failed',
+        eventType: 'payment_acknowledged_terminal_state',
         payload: expect.objectContaining({
-          processor_error_kind: 'illegal_transition',
+          mismatch_kind: 'illegal_transition',
         }),
       }),
     );
@@ -363,12 +364,13 @@ describe('handleCancelEvent (T060)', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.kind).toBe('already_canceled');
+    // H-11: dedicated event type + renamed payload key.
     expect(d.audit.emit).toHaveBeenCalledWith(
       null,
       expect.objectContaining({
-        eventType: 'payment_processor_retrieve_failed',
+        eventType: 'payment_acknowledged_terminal_state',
         payload: expect.objectContaining({
-          processor_error_kind: 'illegal_transition',
+          mismatch_kind: 'illegal_transition',
         }),
       }),
     );

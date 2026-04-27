@@ -153,6 +153,11 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'payment_invoice_not_found',
   // --- F5 stale-pending-refund sweep added by migration 0050 (T130a) ---
   'stale_pending_refund_detected',
+  // --- F5 confirm-step terminal-state ack added by migration 0052 (H-11
+  //     review 2026-04-27) — emitted on illegal_transition and
+  //     invariant_violation_duplicate_succeeded ack paths instead of
+  //     reusing payment_processor_retrieve_failed. ---
+  'payment_acknowledged_terminal_state',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

@@ -78,7 +78,16 @@ export type F5AuditEventType =
   // succeeded — ops cross-checks via the runbook
   // `docs/runbooks/stale-pending-refund-sweep.md`. 10-year retention
   // because the row touches the F4 credit-note tax-document lineage.
-  | 'stale_pending_refund_detected';
+  | 'stale_pending_refund_detected'
+  // Migration 0052 (H-11 review 2026-04-27) — emitted from
+  // confirmPayment when the state machine acknowledges a permanent
+  // terminal-state mismatch (illegal_transition or duplicate-
+  // succeeded invariant). Replaces the prior reuse of
+  // `payment_processor_retrieve_failed` (which is reserved for
+  // mid-webhook Stripe SDK outages). Distinct event so audit-log
+  // queries unambiguously separate "Stripe blip" from "permanent
+  // state acknowledgement" forensic classes.
+  | 'payment_acknowledged_terminal_state';
 
 export interface F5AuditEvent {
   readonly tenantId: string | null;        // NULL for pre-resolution webhook rejects
@@ -143,6 +152,11 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   webhook_payment_already_canceled: 5,
   payment_processor_retrieve_failed: 5,
   payment_invoice_not_found: 5,
+  // H-11: terminal-state ack — 10y because it documents a permanent
+  // payment-status decision that touches tax-document reconciliation
+  // (Stripe charge already exists; admin may need to manually adjust
+  // F4 invoice state).
+  payment_acknowledged_terminal_state: 10,
 };
 
 /**
