@@ -78,14 +78,31 @@ export interface UpdateTenantPaymentSettingsInput {
   readonly previousProcessorAccountId?: string;
 }
 
-// Audit 2026-04-25 finding #10: hoist cache wrapper factories to module
-// scope so each call reuses the SAME `unstable_cache` instance for a
-// given key. Previous shape rebuilt the wrapper on every getByTenantId
-// call (allocating a fresh closure that Next.js then memoised by key).
-// Equivalent observable behaviour but cheaper allocation profile.
+// Audit 2026-04-25 finding #10 (followed up 2026-04-27 — T148 perf review):
+// hoist cache wrapper factories to module scope AND memoise per-key so each
+// call reuses the SAME `unstable_cache` instance for a given key.
+//
+// Previous shape (pre-2026-04-27): the factory function was at module scope
+// but every invocation `cachedGetByTenantId(tenantId)` allocated a fresh
+// `unstable_cache(...)` wrapper. The audit comment claimed instances were
+// reused but the implementation only hoisted the FUNCTION, not the per-key
+// wrapper. Each `getByTenantId(tenantId)` call paid:
+//   - `unstable_cache(...)` constructor cost (allocates a closure + key array)
+//   - Next.js's internal key-array hashing on every call to find the cached entry
+// On a hot path that fires per-`initiatePayment` AND per-webhook, this is
+// a measurable allocation profile. Real fix: memoise the wrapper PER KEY
+// in a module-scoped Map. Cardinality is bounded by tenant count (≤ a few
+// hundred over project lifetime); no leak risk.
 
-const cachedGetByTenantId = (tenantId: string) =>
-  unstable_cache(
+type CachedReader = () => Promise<TenantPaymentSettings | null>;
+
+const cachedGetByTenantIdMap = new Map<string, CachedReader>();
+const cachedFindByProcessorAccountIdMap = new Map<string, CachedReader>();
+
+function cachedGetByTenantId(tenantId: string): CachedReader {
+  let wrapped = cachedGetByTenantIdMap.get(tenantId);
+  if (wrapped) return wrapped;
+  wrapped = unstable_cache(
     async (): Promise<TenantPaymentSettings | null> => {
       const ctx = asTenantContext(tenantId);
       return runInTenant(ctx, async (tx) => {
@@ -103,9 +120,16 @@ const cachedGetByTenantId = (tenantId: string) =>
       revalidate: 3600,
     },
   );
+  cachedGetByTenantIdMap.set(tenantId, wrapped);
+  return wrapped;
+}
 
-const cachedFindByProcessorAccountId = (processorAccountId: string) =>
-  unstable_cache(
+function cachedFindByProcessorAccountId(
+  processorAccountId: string,
+): CachedReader {
+  let wrapped = cachedFindByProcessorAccountIdMap.get(processorAccountId);
+  if (wrapped) return wrapped;
+  wrapped = unstable_cache(
     async (): Promise<TenantPaymentSettings | null> => {
       // Bypass-RLS read by design: webhook pre-resolution lookup.
       // We don't yet know the tenant — `processor_account_id` IS
@@ -124,6 +148,20 @@ const cachedFindByProcessorAccountId = (processorAccountId: string) =>
       revalidate: 3600,
     },
   );
+  cachedFindByProcessorAccountIdMap.set(processorAccountId, wrapped);
+  return wrapped;
+}
+
+/**
+ * Test-only escape hatch — clears the per-key wrapper memoisation so a
+ * spec that swaps in a fresh fixture between cases doesn't read a stale
+ * closure. Safe in production too (next call rebuilds), but no
+ * production caller invokes it.
+ */
+export function __resetTenantPaymentSettingsRepoCache(): void {
+  cachedGetByTenantIdMap.clear();
+  cachedFindByProcessorAccountIdMap.clear();
+}
 
 export function makeDrizzleTenantPaymentSettingsRepo(): TenantPaymentSettingsRepo {
   return {
