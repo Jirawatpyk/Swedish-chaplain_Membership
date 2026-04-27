@@ -39,7 +39,6 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 const TENANT_SLUG = process.env.TENANT_SLUG ?? 'swecham';
 const E2E_MEMBER_EMAIL = 'e2e-member@swecham.test';
 const E2E_STALE_INVOICE_ID = '00000000-e2e0-4fff-9ffe-000000900099';
-const E2E_STALE_REQUEST_ID = 'h8-e2e-stale-fixture-2026-04-27';
 
 async function main(): Promise<void> {
   if (TENANT_SLUG !== 'swecham') {
@@ -188,7 +187,7 @@ async function main(): Promise<void> {
       ('payment_auto_refunded_stale_invoice'::audit_event_type,
        '00000000-0000-0000-0000-000000000000',
        'H-8 E2E fixture — auto-refund on void invoice for member portal banner test',
-       ${E2E_STALE_REQUEST_ID},
+       'h8-e2e-stale-fixture-2026-04-27',
        ${payload}::jsonb,
        ${ctx.slug},
        10)

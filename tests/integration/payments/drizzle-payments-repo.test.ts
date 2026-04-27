@@ -477,10 +477,34 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     expect(after).not.toBeNull();
     expect(after!.processorRefundId).toBe(probeRefundId);
 
-    // (3) Tenant B repo asking about tenant A's invoice → null (RLS
-    //     defence-in-depth + factory-bound tenant_id WHERE clause).
+    // (3) Tenant B repo asking about tenant A's invoice → null. The
+    //     factory-bound tenantId predicate means this would be null
+    //     even without RLS, so this assertion alone proves only the
+    //     WHERE-clause filter, not isolation. (4) below is the actual
+    //     Constitution Principle I clause-3 cross-tenant test.
     const repoB = makeDrizzlePaymentsRepo(tenantB.ctx.slug);
     const crossTenant = await repoB.findStaleInvoiceAutoRefund(probeInvoiceId);
     expect(crossTenant).toBeNull();
+
+    // (4) Principle I clause 3 — direct RLS probe. Run a raw SELECT
+    //     for tenant A's audit row UNDER TENANT B's RLS context. This
+    //     bypasses the factory-bound `WHERE tenant_id =` filter and
+    //     proves the audit_log RLS policy actively blocks visibility.
+    //     If RLS is misconfigured or accidentally permissive, this
+    //     assertion fails — even if the repo's WHERE clause is right.
+    const rlsProbe = await runInTenant(tenantB.ctx, async (tx) => {
+      const result = await tx.execute(rawSql`
+        SELECT 1 AS hit
+          FROM audit_log
+         WHERE event_type = 'payment_auto_refunded_stale_invoice'
+           AND payload->>'invoice_id' = ${probeInvoiceId}
+         LIMIT 1
+      `);
+      return Array.from(result as unknown as Iterable<unknown>);
+    });
+    expect(
+      rlsProbe.length,
+      'tenant B MUST NOT see tenant A audit_log rows under RLS — Constitution Principle I clause 3',
+    ).toBe(0);
   });
 });

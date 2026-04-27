@@ -316,18 +316,20 @@ export default async function PortalInvoiceDetailPage({
           </dl>
           <p className="mt-3 text-sm text-destructive">{t('void.notPayable')}</p>
           {autoRefund && (
-            // Reassuring-news section — distinct from the destructive
-            // void parent: own `<section>` + `aria-labelledby` so screen
-            // readers announce a separate landmark, info-toned border
-            // (ring/accent) so the member is not double-punished by
-            // stacked red blocks, and `role="status" aria-live="polite"`
-            // so SPA navigations re-announce the refund confirmation.
+            // Reassuring-news block. Outer <section aria-labelledby>
+            // creates a screen-reader landmark separate from the
+            // destructive void parent. INNER <div role="status"> hosts
+            // the live region — split because nesting role="status"
+            // and the section's implicit `region` role on the same
+            // element causes JAWS to drop the landmark from nav lists.
+            // Visual: thick left border (--primary) is dark-mode-safe
+            // even if a tenant's --accent token drifts close to
+            // --destructive — the border guarantees visual separation
+            // from the void block above without relying on bg contrast.
             <section
-              role="status"
-              aria-live="polite"
               aria-labelledby="invoice-auto-refund-heading"
               data-testid="portal-invoice-auto-refund-notice"
-              className="mt-4 rounded-md border border-ring/30 bg-accent/10 p-3"
+              className="mt-4 rounded-md border border-border border-l-4 border-l-primary bg-card p-3"
             >
               <h3
                 id="invoice-auto-refund-heading"
@@ -335,27 +337,29 @@ export default async function PortalInvoiceDetailPage({
               >
                 {t('void.autoRefundHeading')}
               </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t('void.autoRefundBody')}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t('void.autoRefundContact')}
-              </p>
-              {autoRefund.processorRefundId && (
-                <p
-                  className="mt-2 font-mono text-xs text-muted-foreground"
-                  data-testid="portal-invoice-auto-refund-ref"
-                >
-                  {t('void.autoRefundRef', {
-                    // Stripe refund IDs are stable identifiers — full
-                    // value is safe to surface (no PCI scope; no
-                    // member PII). Truncating to last 8 keeps the line
-                    // scannable on mobile + matches what most banks
-                    // ask for in support tickets.
-                    ref: autoRefund.processorRefundId.slice(-8),
-                  })}
+              <div role="status" aria-live="polite">
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t('void.autoRefundBody')}
                 </p>
-              )}
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t('void.autoRefundContact')}
+                </p>
+                {autoRefund.processorRefundId && (
+                  <p
+                    className="mt-2 font-mono text-xs text-muted-foreground"
+                    data-testid="portal-invoice-auto-refund-ref"
+                  >
+                    {t('void.autoRefundRef', {
+                      // Stripe refund IDs are stable identifiers — full
+                      // value is safe to surface (no PCI scope; no
+                      // member PII). Truncating to last 8 keeps the line
+                      // scannable on mobile + matches what most banks
+                      // ask for in support tickets.
+                      ref: autoRefund.processorRefundId.slice(-8),
+                    })}
+                  </p>
+                )}
+              </div>
             </section>
           )}
         </section>
