@@ -232,6 +232,77 @@ test.describe('payment card happy path — @payment @e2e (T046)', () => {
     await expect(downloadReceiptCta).toBeVisible({ timeout: 5_000 });
   });
 
+  test('T129 / US6 AS1+AS2: exactly ONE F4 receipt-email outbox row enqueued per success', async ({
+    page: _page,
+  }) => {
+    // T129 (Phase 8) — F4 receipt-email single-email assertion.
+    //
+    // Spec authority: F5 spec.md US6 AS1 ("a single email (not two)
+    // is sent ... within 1 minute") + AS2 (PromptPay variant).
+    // Per FR-004, F5 MUST reuse F4's existing receipt pipeline — so
+    // for any successful online payment, EXACTLY ONE row must land in
+    // `notifications_outbox` with notification_type='invoice_auto_email'
+    // and context_data.event_type='invoice_paid' for the paid invoice.
+    //
+    // Why fixme: the existing happy-path tests in this file install
+    // `stubStripeConfirmSuccess` which intercepts BOTH the real Stripe
+    // SDK AND `/api/payments/initiate` at window.fetch — the backend
+    // webhook (`confirmPayment`) is therefore never exercised
+    // end-to-end in the current E2E rig, and no `notifications_outbox`
+    // row is ever produced from the UI flow. To honour the AS1
+    // single-email invariant at the E2E layer we need real-Stripe
+    // webhook infra (T115t throwaway-tenant + a deterministic test
+    // webhook delivery). That infra is deferred per tasks.md
+    // ("T115t throwaway-tenant E2E infra deferred to Phase 10+").
+    //
+    // Until then, the SAME invariant is asserted at the integration
+    // layer in `tests/integration/payments/f4-markpaid-integration
+    // .test.ts` (T128) — which exercises the REAL F5 webhook +
+    // F4 bridge against live Neon and asserts:
+    //   - render adapter called exactly ONCE per payment
+    //   - outbox.enqueue called exactly ONCE with
+    //     eventType='invoice_paid' + correct invoiceId
+    //   - paymentNotes contains the rail + intent + charge ids
+    //     (which the F4 dispatcher renders into the email body
+    //      annotation per spec US6 AS1+AS2 wording)
+    // T128 closes the FR-004 contract; T129 stays fixme until the
+    // E2E webhook rig lands.
+    test.fixme(
+      true,
+      'Requires real-Stripe webhook E2E infra (T115t — deferred to Phase 10+). ' +
+        'Single-email invariant covered at integration layer by T128 ' +
+        '(tests/integration/payments/f4-markpaid-integration.test.ts).',
+    );
+
+    // Skeleton of the assertion that will run once the E2E webhook
+    // rig is available — kept compileable + typecheck-clean so the
+    // implementer has a clear target.
+    //
+    // Pseudocode:
+    //   1. Run the same happy-path UI flow as the prior test in this
+    //      describe block, using a real Stripe test key + the throwaway-
+    //      tenant fixture instead of the stub.
+    //   2. Wait for the webhook delivery (poll `notifications_outbox`
+    //      with a 60-second budget per spec US6 AS1).
+    //   3. SELECT * FROM notifications_outbox
+    //        WHERE tenant_id = <fixture tenant>
+    //          AND notification_type = 'invoice_auto_email'
+    //          AND context_data->>'invoice_id' = E2E_ISSUED_INVOICE_ID
+    //          AND context_data->>'event_type' = 'invoice_paid';
+    //      → expect rows.length === 1
+    //   4. Assert subject template (TENANT-CONFIGURED) matches
+    //      F4's `invoice_paid` template (e.g. /Receipt for invoice/i).
+    //   5. Assert the body annotation regex per US6 AS1+AS2:
+    //        AS1 (card):    /Paid online via card ending \*{4}\d{4}/
+    //        AS2 (promptpay): /Paid online via PromptPay/
+    //      We assert against the template render output, NOT the raw
+    //      `paymentNotes` column (FR-004 contract: F4 owns the email
+    //      body; F5 only contributes the `paymentNotes` annotation).
+    //   6. Assert attachment SHA-256 matches `pdfSha256` on the invoice
+    //      row — proves the attachment IS the F4 receipt PDF (not a
+    //      regenerated one) per AS3 byte-identity.
+  });
+
   test('audit chain: payment_initiated → payment_succeeded → invoice_paid exist after payment', async ({
     page,
   }) => {
