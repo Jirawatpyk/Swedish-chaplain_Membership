@@ -56,7 +56,13 @@ const RUN_PERF = process.env.RUN_PERF === '1';
 // Iteration count picked to give a stable p95 estimate without
 // blowing the test wall-clock budget. With both modes timed, total
 // is ~2x ITER * (median latency).
-const ITER = 30;
+//
+// review-20260428-102639.md W4 closure — bumped n=30 → n=100 + 5-warmup
+// discarded per T148/T149 methodology. p95 from n=100 = the 96th-of-100
+// sorted sample (one outlier no longer skews a full slot). PERF_ITER /
+// PERF_WARMUP env overrides allow a quick smoke run with smaller n.
+const ITER = process.env.PERF_ITER ? Number(process.env.PERF_ITER) : 100;
+const WARMUP = process.env.PERF_WARMUP ? Number(process.env.PERF_WARMUP) : 5;
 
 // SLO targets. Pre-T166 the inline path was 5–15 s; we leave a
 // generous ceiling so the benchmark doesn't false-fail on slow
@@ -241,8 +247,16 @@ describe.skipIf(!RUN_PERF)(
     });
 
     it(
-      `recordPayment p95 (asyncReceiptPdf=true) < ${ASYNC_P95_BUDGET_MS}ms over ${ITER} runs`,
+      `recordPayment p95 (asyncReceiptPdf=true) < ${ASYNC_P95_BUDGET_MS}ms over ${ITER} runs (${WARMUP}-warmup discarded)`,
       async () => {
+        // Warmup pass — drives JIT, warms Neon connection pool, primes
+        // ORM caches. These samples are discarded so cold-start does
+        // not contaminate p95.
+        for (let i = 0; i < WARMUP; i += 1) {
+          await timeRecordPayment(tenant, user, true);
+          await timeRecordPayment(tenant, user, false);
+        }
+
         const asyncSamples: number[] = [];
         for (let i = 0; i < ITER; i += 1) {
           asyncSamples.push(await timeRecordPayment(tenant, user, true));
@@ -300,7 +314,9 @@ describe.skipIf(!RUN_PERF)(
         expect(asyncP95).toBeLessThan(syncP95);
       },
       // Generous timeout — 60 paid invoices @ ~5 s each in sync mode.
-      10 * 60_000,
+      // n=100 + 5-warmup × 2 modes × ~5s each ≈ 17.5 min worst-case.
+      // 30 min ceiling gives 70% safety margin.
+      30 * 60_000,
     );
   },
 );

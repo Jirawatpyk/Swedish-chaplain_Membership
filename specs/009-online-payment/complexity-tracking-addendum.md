@@ -98,6 +98,20 @@
 
 ---
 
+## CT-5b (W12 REVERSAL — applied 2026-04-28 evening) — `0062_drop_invoice_pending_check.sql`
+
+**Where**: `drizzle/migrations/0062_drop_invoice_pending_check.sql`
+
+**Reason**: The CHECK constraint added in 0061 (W12 closure) was over-strict. It enforced `receipt_pdf_status='pending' → receipt_document_number_raw IS NOT NULL` for ALL invoices, but combined-mode invoices legitimately have `receipt_document_number_raw=NULL` while transiting `pending` (combined-mode = receipt IS the invoice; no separate sequence). The CHECK cannot reference `tenant_invoice_settings.receipt_numbering_mode` from another table, so SQL-layer scoping to separate-mode is impossible.
+
+**Empirical detection**: `T166-12` perf benchmark at n=100 caught this regression on the first re-run (combined-mode seed rows failed the new CHECK with `PostgresError: new row for relation "invoices" violates check constraint "invoices_pending_has_receipt_doc_num"`).
+
+**Replacement guard**: Application-layer at `render-receipt-pdf.ts:168-177` — when separate-mode worker observes `receiptDocumentNumberRaw=null`, it throws `RenderReceiptInternalError({kind: 'data_corruption'})` which short-circuits the dispatcher retry ladder (S8 closure). Combined-mode is unaffected because the worker takes a different code path (line 165: `let receiptDocNum = loaded.documentNumber`).
+
+**Lesson**: Don't add CHECK constraints that depend on cross-table state. Single-table invariants only.
+
+---
+
 ## CT-6 (W9/W10/W11 closure) — Historical migration drift acknowledgement
 
 **Where**: `drizzle/migrations/0033_*.sql`, `0039_*.sql`, `0055_*.sql`

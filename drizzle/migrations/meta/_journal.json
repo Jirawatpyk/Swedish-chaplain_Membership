@@ -435,6 +435,13 @@
       "when": 1778889600000,
       "tag": "0061_invoice_separate_mode_pending_check",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1778976000000,
+      "tag": "0062_drop_invoice_pending_check",
+      "breakpoints": true
     }
   ]
 }
