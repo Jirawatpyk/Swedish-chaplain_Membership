@@ -243,14 +243,14 @@ describe('R2-CG-2 — worker reads receipt_document_number_raw, never re-allocat
     await tenant.cleanup().catch(() => {});
   });
 
-  it('§87 — tenant_document_sequences.receipt.next_sequence_number stays UNCHANGED across 3 worker retries', async () => {
+  it('R3-I2 §87 — retry-after-failure: tick-0 render throws, tick-1 succeeds, sequence counter UNCHANGED across both', async () => {
     const { invoiceId, receiptDocNumRaw } = await seedSeparateModePendingInvoice(
       tenant,
       user,
       'pending',
     );
 
-    // Capture sequence counter BEFORE worker runs.
+    // Capture sequence counter BEFORE any worker tick.
     const [seqBefore] = await db
       .select()
       .from(tenantDocumentSequences)
@@ -263,24 +263,71 @@ describe('R2-CG-2 — worker reads receipt_document_number_raw, never re-allocat
       );
     expect(seqBefore?.nextSequenceNumber).toBe(8);
 
-    // Run the worker 3 times. The first call renders successfully;
-    // subsequent calls hit the idempotent rendered short-circuit.
-    // None of them should touch the sequence counter.
     const deps = makeRenderReceiptPdfDeps(tenant.ctx.slug);
-    for (let i = 0; i < 3; i += 1) {
-      const r = await runInTenant(tenant.ctx, async () =>
-        renderReceiptPdf(deps, {
-          tenantId: tenant.ctx.slug,
-          invoiceId,
-          fiscalYear: 2026,
-          templateVersion: 1,
-          requestId: `r2-cg2-tick-${i}`,
-        }),
-      );
-      expect(r.ok).toBe(true);
-    }
+    const renderMock = vi.mocked(reactPdfRenderAdapter.render);
+    renderMock.mockClear();
 
-    // Capture sequence counter AFTER. MUST equal `seqBefore`.
+    // R3-I2 — Tick 0: force pdfRender to throw (transient render
+    // failure). The worker's catch block calls applyReceiptPdfFailure
+    // which bumps attempts + sets status='failed'. The pre-allocated
+    // receipt sequence number on the invoice row stays put.
+    renderMock.mockRejectedValueOnce(new Error('tick-0 render exploded'));
+    const r0 = await runInTenant(tenant.ctx, async () =>
+      renderReceiptPdf(deps, {
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        fiscalYear: 2026,
+        templateVersion: 1,
+        requestId: 'r3-i2-tick-0',
+      }),
+    );
+    expect(r0.ok).toBe(false);
+
+    // After tick 0: row should be 'failed' with attempts=1, sequence
+    // counter UNCHANGED (worker never called allocateNext).
+    const [invAfterTick0] = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, tenant.ctx.slug),
+          eq(invoices.invoiceId, invoiceId),
+        ),
+      )
+      .limit(1);
+    expect(invAfterTick0?.receiptPdfStatus).toBe('failed');
+    expect(invAfterTick0?.receiptPdfRenderAttempts).toBe(1);
+
+    const [seqAfterTick0] = await db
+      .select()
+      .from(tenantDocumentSequences)
+      .where(
+        and(
+          eq(tenantDocumentSequences.tenantId, tenant.ctx.slug),
+          eq(tenantDocumentSequences.documentType, 'receipt'),
+          eq(tenantDocumentSequences.fiscalYear, 2026),
+        ),
+      );
+    expect(seqAfterTick0?.nextSequenceNumber).toBe(8);
+
+    // R3-I2 — Tick 1: render succeeds. Worker reads
+    // `loaded.receiptDocumentNumberRaw` (still 'RE-2026-000007') and
+    // does NOT call allocateNext. Sequence counter stays at 8.
+    const r1 = await runInTenant(tenant.ctx, async () =>
+      renderReceiptPdf(deps, {
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        fiscalYear: 2026,
+        templateVersion: 1,
+        requestId: 'r3-i2-tick-1',
+      }),
+    );
+    expect(r1.ok).toBe(true);
+
+    // Final assertion: counter still 8 — proves worker never
+    // touched tenant_document_sequences.receipt across BOTH a
+    // failed tick AND a successful retry tick. This is the §87
+    // no-gaps invariant proof.
     const [seqAfter] = await db
       .select()
       .from(tenantDocumentSequences)
@@ -293,8 +340,8 @@ describe('R2-CG-2 — worker reads receipt_document_number_raw, never re-allocat
       );
     expect(seqAfter?.nextSequenceNumber).toBe(8);
 
-    // The rendered row's blob_key references the receipt doc num
-    // that was pre-allocated, NOT a freshly-allocated one.
+    // The rendered row's receiptDocumentNumberRaw is the original
+    // pre-allocated value (NOT freshly allocated).
     const [invRow] = await db
       .select()
       .from(invoices)
@@ -310,7 +357,18 @@ describe('R2-CG-2 — worker reads receipt_document_number_raw, never re-allocat
   }, 60_000);
 });
 
-describe('R2-IG-3 — applyReceiptPdfFailure rendered-race won by concurrent success', () => {
+// R3-C1 — the original R2-IG-3 integration test covered the IDEMPOTENT
+// EARLY-EXIT (status='rendered' at load time → return ok before render).
+// The genuine race-won-by-success path requires fine-grained mock
+// control of `applyReceiptPdfFailure` (must return kind='race_won')
+// which is unreasonable to engineer at integration level (would need to
+// stub Drizzle internals). The unit test in
+// `tests/unit/invoicing/render-receipt-pdf.test.ts` (R3-C1) covers the
+// genuine race-won catch-block path; the integration here exercises
+// the COMPLEMENTARY idempotent early-exit path. Both code paths
+// produce the same observable outcome (ok + status='rendered' +
+// attempts unchanged) but are structurally distinct.
+describe('R3-C1 idempotent early-exit on already-rendered row', () => {
   let tenant: TestTenant;
   let user: TestUser;
 
@@ -323,25 +381,12 @@ describe('R2-IG-3 — applyReceiptPdfFailure rendered-race won by concurrent suc
     await tenant.cleanup().catch(() => {});
   });
 
-  it('worker A render fails AFTER worker B success — use-case returns ok, row stays rendered, attempts not bumped', async () => {
-    // Seed an invoice that is ALREADY 'rendered' (worker B has won).
+  it('renderReceiptPdf on a row already rendered → ok early-exit at line 127, attempts unchanged', async () => {
     const { invoiceId } = await seedSeparateModePendingInvoice(
       tenant,
       user,
       'rendered',
     );
-
-    // Mock the PDF render adapter to throw — simulates worker A's
-    // render attempt failing AFTER worker B already committed.
-    // Note: the use-case's idempotent guard on line 127 short-circuits
-    // when status='rendered', so the render mock won't actually fire
-    // for this seed shape. To genuinely exercise the C2 race-won
-    // path, we must bypass the guard — which is what happens when
-    // worker A loaded the row when status='pending', then between
-    // load and the failure-write, worker B flipped status to
-    // 'rendered'. The integration shape here approximates this by
-    // asserting the idempotent path returns ok (the OBSERVABLE
-    // outcome is identical).
     const deps = makeRenderReceiptPdfDeps(tenant.ctx.slug);
     const r = await runInTenant(tenant.ctx, async () =>
       renderReceiptPdf(deps, {
@@ -349,7 +394,7 @@ describe('R2-IG-3 — applyReceiptPdfFailure rendered-race won by concurrent suc
         invoiceId,
         fiscalYear: 2026,
         templateVersion: 1,
-        requestId: 'r2-ig-3-race',
+        requestId: 'r3-c1-idempotent',
       }),
     );
 
@@ -366,7 +411,7 @@ describe('R2-IG-3 — applyReceiptPdfFailure rendered-race won by concurrent suc
       )
       .limit(1);
     expect(invRow?.receiptPdfStatus).toBe('rendered');
-    // attempts NOT bumped — race-won path returns ok without retry burn.
+    // attempts NOT bumped — idempotent early-exit returns ok without retry burn.
     expect(invRow?.receiptPdfRenderAttempts).toBe(0);
     expect(invRow?.receiptPdfLastError).toBeNull();
   }, 60_000);

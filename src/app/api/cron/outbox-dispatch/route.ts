@@ -578,8 +578,32 @@ async function dispatchOne(
             .where(eq(notificationsOutbox.id, row.id));
           return 'skipped';
         }
+        // R3-I1 — distinguish 'pending' (legitimate wait) from 'failed'
+        // (terminal). When the reconcile cron exhausts max-retries the
+        // invoice's `receipt_pdf_status` stays at 'failed' forever; if
+        // we treated 'failed' as "still rendering" the email row would
+        // skip-loop every minute indefinitely, never bumping `attempts`,
+        // never reaching `permanently_failed`. Split the branches so a
+        // 'failed' receipt drains the email row via the normal max-
+        // retries → permanent-fail ladder (operator gets a single page
+        // instead of a forever-stuck queue).
+        if (invRow.receipt_pdf_status === 'failed') {
+          await tx
+            .update(notificationsOutbox)
+            .set({
+              attempts: row.attempts + 1,
+              nextRetryAt: new Date(now.getTime() + 60_000),
+              lastError:
+                'receipt_pdf_gate_skip:pdf_render_failed — receipt PDF is in terminal failed state; email cannot ship',
+              updatedAt: now,
+            })
+            .where(eq(notificationsOutbox.id, row.id));
+          return 'skipped';
+        }
         if (invRow.receipt_pdf_status !== 'rendered') {
-          // Legitimate wait — receipt still rendering; do NOT burn an attempt.
+          // Legitimate wait — receipt still rendering ('pending'); do
+          // NOT burn an attempt. Worker will flip to 'rendered' on
+          // success and the next dispatcher tick releases the gate.
           await tx
             .update(notificationsOutbox)
             .set({

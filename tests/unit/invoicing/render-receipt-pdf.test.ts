@@ -273,4 +273,76 @@ describe('renderReceiptPdf — async worker callback', () => {
     if (!r.ok) expect(r.error.code).toBe('blob_upload_failed');
     expect(deps.invoiceRepo.applyReceiptPdfFailure).toHaveBeenCalledTimes(1);
   });
+
+  // R3-C1 — race-won-by-success path (genuinely exercises C-NEW-1 fix).
+  // Scenario: worker A loaded the row when status='pending', started
+  // rendering, then encountered a transient failure (pdfRender throw).
+  // Between A's load + A's failure-write, worker B finished + flipped
+  // the row to 'rendered'. When A's catch block calls
+  // applyReceiptPdfFailure, the impl detects status='rendered' and
+  // returns kind='race_won_by_success' instead of overwriting the
+  // healthy row. The use-case maps this to ok() so the dispatcher does
+  // NOT bump attempts or schedule a retry — worker A's failure was
+  // benign, worker B already produced a valid receipt PDF.
+  it('R3-C1 race_won_by_success: render throws + applyReceiptPdfFailure returns race-won → use-case returns ok (NOT err)', async () => {
+    const pendingInvoice = makePaidPendingInvoice();
+    const renderedInvoice = {
+      ...pendingInvoice,
+      receiptPdfStatus: 'rendered' as const,
+    } as Invoice;
+    const deps = makeDeps(pendingInvoice, makeSettings());
+    // Force the render path to throw (simulates worker A's render error).
+    (deps.pdfRender.render as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('worker A render exploded'),
+    );
+    // Override applyReceiptPdfFailure to return race-won (simulates
+    // the implementation detecting status='rendered' under the
+    // ne(status,'rendered') guard's zero-row update + re-fetch path).
+    (
+      deps.invoiceRepo.applyReceiptPdfFailure as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
+      kind: 'race_won_by_success' as const,
+      invoice: renderedInvoice,
+    });
+
+    const r = await renderReceiptPdf(deps, input);
+
+    // ok() — race-won is treated as success (NOT err).
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.receiptPdfStatus).toBe('rendered');
+    }
+    // applyReceiptPdfFailure WAS called — proves we entered the catch
+    // block (NOT the idempotent guard's early-exit). This is the
+    // SECOND code path through the use-case for "already rendered" —
+    // distinct from the line-127 guard which exits BEFORE rendering.
+    expect(deps.invoiceRepo.applyReceiptPdfFailure).toHaveBeenCalledTimes(1);
+  });
+
+  // R3-C1 sibling: same code path but applyReceiptPdfFailure returns
+  // kind='failed' (the normal failure path). Use-case must STILL
+  // return err — only race-won maps to ok.
+  it('R3-C1 normal failure: render throws + applyReceiptPdfFailure returns failed → use-case returns err (NOT ok)', async () => {
+    const pendingInvoice = makePaidPendingInvoice();
+    const deps = makeDeps(pendingInvoice, makeSettings());
+    (deps.pdfRender.render as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('render exploded'),
+    );
+    // Default applyReceiptPdfFailure mock already returns kind='failed'
+    // (set in makeDeps) — explicit here for clarity.
+    (
+      deps.invoiceRepo.applyReceiptPdfFailure as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
+      kind: 'failed' as const,
+      invoice: { ...pendingInvoice, receiptPdfStatus: 'failed' } as Invoice,
+    });
+
+    const r = await renderReceiptPdf(deps, input);
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('render_failed');
+    }
+    expect(deps.invoiceRepo.applyReceiptPdfFailure).toHaveBeenCalledTimes(1);
+  });
 });
