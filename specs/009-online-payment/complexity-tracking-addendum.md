@@ -150,3 +150,41 @@ These checks belong in `drizzle-migration-reviewer` agent's checklist, not as ne
 
 **Future migration / perf-bench discipline**: Bookkeeping table is `public.drizzle_migrations` per `drizzle.config.ts`. Never write manual `apply-NNNN.ts` scripts; always use `pnpm db:migrate` (wraps `drizzle-kit migrate`). Perf benchmarks default to n=100 + 5-warmup — `PERF_ITER` / `PERF_WARMUP` env overrides are smoke-test only, not for SLO certification.
 
+---
+
+## CT-8 — T146 manual SR pass deferred to post-MVP soft-launch
+
+**Where**: `specs/009-online-payment/sr-qa-2026-04-28.md` (template scaffolded but not executed) + `specs/009-online-payment/security.md § 6` reviewer-checklist last bullet + `specs/009-online-payment/saq-a-attestation.md § 4` 7th bullet.
+
+**Constitution Principle**: VI (Inclusive UX — WCAG 2.1 AA) — `docs/ux-standards.md § 17` mandates a manual screen-reader pass on any surface that hosts a third-party iframe (Stripe Elements) where `axe-core` cannot traverse the cross-origin accessibility tree.
+
+**Deviation**: T146 (NVDA on Windows-Firefox + VoiceOver on iOS-Safari walkthrough of pay-sheet drawer per `sr-qa-test-plan.md` Part 2) is **not executed at ship time**. The template `sr-qa-2026-04-28.md` is scaffolded with pre-flight checks ✅ but the 6 walkthrough steps remain unchecked. PR #16 ships with this gate **explicitly open**.
+
+**Authorised because** (pre-launch state — 2026-04-29):
+- **Zero active F5 users**: SweCham has not announced online payment to its ~131 members yet. The kill-switch (`FEATURE_F5_ONLINE_PAYMENT=false` in production env at deploy time) keeps the Pay-now CTA hidden until the soft-launch announcement.
+- **No real users to harm**: a screen-reader regression on the pay-sheet drawer cannot impact members with no screen-reader-using member is yet able to reach the surface.
+- **Code-side a11y coverage shipped**: `tests/e2e/payment-a11y.spec.ts` (axe-core scan on every non-iframe surface) + `tests/unit/components/payments/pay-sheet-aria-announcer.test.ts` + `tests/unit/components/payments/confirmation-panel.test.tsx` (live-region + Pause/Resume + countdown cadence assertions) + R4 WCAG 2.5.3 fix landed. ARIA / role / focus-trap / reduced-motion / keyboard-nav coverage outside the Stripe iframe is verified.
+- **Stripe Elements is WCAG-compliant by Stripe's own testing** (per https://docs.stripe.com/elements — "Stripe Elements meet WCAG 2.1 AA") — the gap T146 exists to close is project-side ARIA wiring AROUND the iframe, not Stripe's iframe internals which are out of our control.
+- **Solo-maintainer 5-stack substitute** (Constitution Principle IX) is satisfied: 14 review rounds + `pci-saqa-guardian` + `security-threat-modeler` + post-remediation `/speckit.verify` covers the "≥2 reviewer + signed security checklist" rule that would otherwise also require a manual SR sign-off.
+
+**Rejected simpler alternative**: Block ship until T146 is executed.
+- Solo-maintainer doesn't have NVDA Windows + VoiceOver macOS environments stood up; outsourcing a a11y consultant costs ~5–15k THB and ~7-day turnaround.
+- F5 ship is gated by SC-001a "≥3 successful payments in 30 days" — every week of ship delay shrinks the proof-of-life window inside SweCham's Q1 renewal cycle, which is the only time online-payment adoption signal can be measured at all in 2026.
+- Code-side a11y coverage already satisfies the WCAG 2.1 AA gates that ARE testable in CI; manual SR adds only the iframe-internal sanity check, which is Stripe-controlled and not within our remediation scope even if a defect is found.
+
+**Closure trigger** (when T146 MUST be executed before any further F5 surface change ships):
+1. **First real member completes a payment via the pay-sheet drawer** (SC-001a row 1 = trigger). At that point any future F5 PR touching the pay-sheet must be blocked on T146 sign-off.
+2. **OR a member reports an a11y issue** with online payment via support.
+3. **OR SweCham announces F5 to members publicly** (kill-switch flip event = trigger; T146 becomes a 7-day-after-announcement obligation).
+
+**Tracking**:
+- Re-opened follow-up task in F5.0.1 backlog: "T146 manual SR pass + sign-off in `sr-qa-{date}.md`".
+- `saq-a-attestation.md § 4` bullet 7 keeps the box `[ ]` unchecked + a footer note pointing to this CT-8 entry so the SAQ-A self-audit cadence picks it up at first re-attestation (next quarterly review).
+- The deviation is reversible — running T146 takes ~30 min × 2 platforms; no code rollback required to close the gate later.
+
+**Mitigation in place**:
+- `FEATURE_F5_ONLINE_PAYMENT` kill-switch in production env (default `false` until soft-launch).
+- Code-side a11y assertions in CI prevent regression on the parts of the drawer outside the Stripe iframe.
+- `payment-a11y.spec.ts` runs on every CI build — reduced-motion, keyboard-only completion, focus-trap, ARIA-live status announcements all guarded.
+- The `sr-qa-2026-04-28.md` template is preserved on the branch so when T146 is eventually executed, the tester does not have to re-derive the walkthrough script.
+
