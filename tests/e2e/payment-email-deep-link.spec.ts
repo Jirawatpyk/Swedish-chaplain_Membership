@@ -149,6 +149,13 @@ test.describe('@us-f5 @fr-027 pay-online email deep-link — click-through', () 
   test('signed-out: click CTA → sign-in page retains returnUrl → after sign-in lands on invoice detail with ?pay=1 + utm_* intact', async ({
     page,
   }) => {
+    // mobile-safari headless executes argon2-verify + 302 + RSC nav
+    // roundtrip slower than chromium; the default 30s test budget is
+    // tight when nested behind a 25s waitForURL plus form fill +
+    // navigation overhead. Raise to 60s so a clean machine doesn't
+    // flake without the test ever hitting a real assertion failure.
+    test.setTimeout(60_000);
+
     // 1. Compose CTA href the same way the email build does — use
     //    page.context()'s baseURL so the returnUrl exactly matches
     //    middleware-side normalization.
@@ -180,15 +187,33 @@ test.describe('@us-f5 @fr-027 pay-online email deep-link — click-through', () 
     //    server reads `returnTo` from the form action.
     const email = process.env.E2E_MEMBER_EMAIL!;
     const password = process.env.E2E_MEMBER_PASSWORD!;
-    await page.getByLabel(/email/i).fill(email);
-    await page.getByLabel(/password/i).fill(password);
+    const emailField = page.getByLabel(/email/i);
+    const passwordField = page.getByLabel(/password/i);
+    // Wait for the inputs to be both attached + interactive. On
+    // mobile-safari, `.fill()` issued before React hydration completes
+    // updates the DOM value but the synthetic onChange never fires —
+    // form-submit then sees empty controlled state and surfaces
+    // "Invalid email". `waitFor({ state: 'visible' })` blocks until
+    // the form is hydrated and the inputs are wired up.
+    await emailField.waitFor({ state: 'visible' });
+    await emailField.click();
+    await emailField.fill('');
+    await emailField.pressSequentially(email, { delay: 10 });
+    await passwordField.click();
+    await passwordField.fill('');
+    await passwordField.pressSequentially(password, { delay: 10 });
     await page.getByRole('button', { name: /sign in/i }).click();
 
     // 5. After sign-in, URL must settle on the invoice detail page
-    //    with ?pay=1 + utm_* preserved.
+    //    with ?pay=1 + utm_* preserved. Sign-in roundtrip = argon2
+    //    verify (~150ms server) + 302 redirect + RSC navigation;
+    //    mobile-safari headless is consistently slower than chromium
+    //    so 15s is a flaky tight bound — give the URL wait 25s and
+    //    raise the test-wide budget (`test.setTimeout` above) so the
+    //    overall walk-through (form fill + click + wait) fits inside.
     await page.waitForURL(
       new RegExp(`/portal/invoices/${SEEDED_INVOICE_ID}\\?pay=1`),
-      { timeout: 15_000 },
+      { timeout: 25_000 },
     );
     const finalUrl = new URL(page.url());
     expect(finalUrl.pathname).toBe(`/portal/invoices/${SEEDED_INVOICE_ID}`);

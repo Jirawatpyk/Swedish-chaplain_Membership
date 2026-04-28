@@ -84,7 +84,12 @@ test.describe('F5 payment surfaces a11y @a11y @payment @e2e (T144)', () => {
       state: 'visible',
       timeout: 15_000,
     });
-    await page.waitForLoadState('networkidle');
+    // Stripe Elements iframe holds a long-poll request open, which
+    // prevents `networkidle` from ever firing inside the drawer test
+    // budget. Both selectors above prove the drawer + card-form DOM
+    // is mounted; `domcontentloaded` is sufficient before axe-core
+    // sweeps the (scoped) drawer subtree.
+    await page.waitForLoadState('domcontentloaded');
 
     const results = await new AxeBuilder({ page })
       // Scope axe to the drawer so the underlying invoice page's a11y
