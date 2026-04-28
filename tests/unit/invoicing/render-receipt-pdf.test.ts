@@ -156,11 +156,12 @@ function makeDeps(
           ? ({ ...invoice, receiptPdfStatus: 'rendered' } as Invoice)
           : (null as unknown as Invoice),
       ),
-      applyReceiptPdfFailure: vi.fn(async () =>
-        invoice
+      applyReceiptPdfFailure: vi.fn(async () => ({
+        kind: 'failed' as const,
+        invoice: invoice
           ? ({ ...invoice, receiptPdfStatus: 'failed' } as Invoice)
           : (null as unknown as Invoice),
-      ),
+      })),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),

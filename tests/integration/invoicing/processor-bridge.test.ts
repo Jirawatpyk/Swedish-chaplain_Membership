@@ -169,6 +169,13 @@ async function seedInvoice(
       paymentRecordedByUserId: status === 'paid' ? user.userId : null,
       paymentDate: status === 'paid' ? '2026-04-20' : null,
       paidAt: status === 'paid' ? new Date('2026-04-20T03:00:00Z') : null,
+      // T166 migration 0056 — `invoices_paid_has_receipt_status` CHECK
+      // constraint requires `receipt_pdf_status` to be NOT NULL on
+      // every `paid` row. Pre-T166 fixtures predated this constraint.
+      // Seed with 'rendered' (matches the migration's backfill of
+      // existing paid rows) so the INSERT passes the CHECK + downstream
+      // tests don't accidentally exercise the async pipeline.
+      receiptPdfStatus: status === 'paid' ? 'rendered' : null,
     });
     await tx.insert(invoiceLines).values({
       tenantId: tenant.ctx.slug,

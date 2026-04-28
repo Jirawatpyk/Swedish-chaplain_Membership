@@ -246,14 +246,35 @@ export async function renderReceiptPdf(
       // Mark the row failed (separate tx — outer one already rolled
       // back). The reconciliation cron (T166-11) re-enqueues up to 3
       // attempts before raising `pdf_render_permanently_failed`.
+      //
+      // R2-C-NEW-1 — applyReceiptPdfFailure returns a discriminated
+      // outcome. When `kind='race_won_by_success'`, a concurrent
+      // worker (worker B) had already flipped the row to 'rendered'
+      // between our render attempt + this failure write. Treat that
+      // as a SUCCESS and return ok(invoice) so the dispatcher does
+      // NOT bump attempts or schedule a retry — the row is already
+      // good. Without this branch, every successful concurrent
+      // resolution would burn an extra retry slot + emit a bogus
+      // 'render_failed' err.
       try {
-        await deps.invoiceRepo.withTx(async (tx) =>
+        const failureOutcome = await deps.invoiceRepo.withTx(async (tx) =>
           deps.invoiceRepo.applyReceiptPdfFailure(tx, {
             tenantId: input.tenantId,
             invoiceId,
             errorMessage: e.error.reason,
           }),
         );
+        if (failureOutcome.kind === 'race_won_by_success') {
+          logger.info(
+            {
+              tenantId: input.tenantId,
+              invoiceId,
+              originalErrorReason: e.error.reason,
+            },
+            'renderReceiptPdf: failure write lost the race to a concurrent success; treating as ok',
+          );
+          return ok(failureOutcome.invoice);
+        }
       } catch (markErr) {
         logger.error(
           {

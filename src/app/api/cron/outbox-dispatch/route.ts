@@ -555,16 +555,31 @@ async function dispatchOne(
           ),
         );
         // R1-I1 — fail CLOSED, not OPEN. If we cannot prove
-        // status === 'rendered', we MUST hold the email. The previous
-        // shape `if (invRow && status !== 'rendered')` let the gate
-        // fall through when invRow was undefined (RLS-hidden row,
-        // deleted invoice, or tx race), shipping a "your receipt is
-        // ready" email pointing at a non-existent attachment. Now:
-        //   - row visible + rendered → fall through to dispatch
-        //   - any other case → push back + skip (no attempts bump)
-        const renderedConfirmed =
-          invRow !== undefined && invRow.receipt_pdf_status === 'rendered';
-        if (!renderedConfirmed) {
+        // status === 'rendered', we MUST hold the email.
+        //
+        // R2-I-2 — distinguish two skip reasons:
+        //   (a) invRow VISIBLE + status='pending'/'failed' → legitimate
+        //       wait; push back 60s + DO NOT bump attempts (preserves
+        //       retry budget for after the worker finishes).
+        //   (b) invRow UNDEFINED → pathological (invoice hard-deleted
+        //       or RLS-mismatch). Push back AND bump attempts so the
+        //       row exits via the standard max-retries → permanent_fail
+        //       ladder instead of skip-looping forever.
+        if (invRow === undefined) {
+          await tx
+            .update(notificationsOutbox)
+            .set({
+              attempts: row.attempts + 1,
+              nextRetryAt: new Date(now.getTime() + 60_000),
+              lastError:
+                'receipt_pdf_gate_skip:invoice_not_visible — invoice row missing under tenant RLS scope (deleted or tenant_id mismatch)',
+              updatedAt: now,
+            })
+            .where(eq(notificationsOutbox.id, row.id));
+          return 'skipped';
+        }
+        if (invRow.receipt_pdf_status !== 'rendered') {
+          // Legitimate wait — receipt still rendering; do NOT burn an attempt.
           await tx
             .update(notificationsOutbox)
             .set({
@@ -574,14 +589,18 @@ async function dispatchOne(
             .where(eq(notificationsOutbox.id, row.id));
           return 'skipped';
         }
+        // status === 'rendered' → fall through to dispatch.
       } else {
         // Defensive: gate flag set but no invoice_id / tenant_id —
-        // malformed context, hold the row rather than silently
-        // shipping. Permanent-fail it after the standard retry ladder.
+        // malformed context_data. Bump attempts so it exits via
+        // permanent-fail (would otherwise skip-loop forever).
         await tx
           .update(notificationsOutbox)
           .set({
+            attempts: row.attempts + 1,
             nextRetryAt: new Date(now.getTime() + 60_000),
+            lastError:
+              'receipt_pdf_gate_skip:malformed_context — depends_on_receipt_pdf set but invoice_id/tenant_id missing',
             updatedAt: now,
           })
           .where(eq(notificationsOutbox.id, row.id));

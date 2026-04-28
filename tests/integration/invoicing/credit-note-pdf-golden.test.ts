@@ -96,6 +96,7 @@ async function seedPaidInvoice(
       planId,
       draftByUserId: user.userId,
       status: 'paid',
+      receiptPdfStatus: 'rendered',
       fiscalYear: 2026,
       sequenceNumber: 1,
       documentNumber: ORIGINAL_DOC_NUMBER,

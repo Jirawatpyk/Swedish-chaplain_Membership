@@ -302,12 +302,14 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
     expect(callArg.receiptPdf.receiptDocumentNumberRaw).toBe('RE-2026-000007');
   });
 
-  // R1-CG-1 — atomicity: enqueue throw must roll the whole thing back.
-  // The opaqueTx mock returns control to the test via the withTx
-  // callback's exception bubble — recordPayment surfaces a typed
-  // error, the audit emit MUST NOT have been called, and applyPayment's
-  // returned row MUST NOT be observed by the caller (the use-case's
-  // Result is err).
+  // R1-CG-1 + R2-CG-1 — atomicity: enqueue throw must roll the whole
+  // thing back. The opaqueTx mock returns control to the test via the
+  // withTx callback's exception bubble — recordPayment surfaces a
+  // typed error, the audit emit MUST NOT have been called, AND
+  // applyPayment MUST have been called exactly once (proving the
+  // tx reached the WRITE phase that gets rolled back, not just an
+  // early-bail before any write happened — without this assertion the
+  // test would pass even if the use-case bailed before `applyPayment`).
   it('rolls back the entire tx when receiptPdfRenderEnqueue throws', async () => {
     const draft = makeIssuedInvoice();
     const deps = makeAsyncDeps(draft, makeSettings());
@@ -327,5 +329,11 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
     // success path) MUST NOT have been called.
     expect(thrown).toBe(enqueueErr);
     expect(deps.audit.emit).not.toHaveBeenCalled();
+    // R2-CG-1 — applyPayment was reached (proves the WRITE happened
+    // and was rolled back, not that we bailed early).
+    expect(deps.invoiceRepo.applyPayment).toHaveBeenCalledTimes(1);
+    // R2-CG-1 — enqueue was reached too (proves we got past
+    // applyPayment to the throw point).
+    expect(deps.receiptPdfRenderEnqueue!.enqueue).toHaveBeenCalledTimes(1);
   });
 });

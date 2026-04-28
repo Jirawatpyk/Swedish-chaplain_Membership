@@ -663,7 +663,10 @@ export function makeDrizzleInvoiceRepo(
         )
         .limit(1);
       if (!row) {
-        throw new InvoiceApplyConflictError('applyPayment');
+        // R2-I-NEW-1 — kind='applyReceiptPdf' (NOT 'applyPayment') so
+        // alerting + log filters can route this distinct receipt-PDF
+        // write conflict separately from payment state conflicts.
+        throw new InvoiceApplyConflictError('applyReceiptPdf');
       }
       const lineRows = await tx
         .select()
@@ -686,18 +689,12 @@ export function makeDrizzleInvoiceRepo(
      * coordinates re-enqueue carefully — the attempt counter ALWAYS
      * advances on each call.
      */
-    async applyReceiptPdfFailure(txUnknown, input): Promise<Invoice> {
+    async applyReceiptPdfFailure(txUnknown, input) {
       const tx = txUnknown as TenantTx;
-      // R1-C2 — DO NOT roll a healthy `rendered` row back to `failed`.
-      // At-least-once outbox delivery + the reconcile cron's separate
-      // re-enqueue path mean a slow worker A's failure write can race
-      // with a fast worker B's success write. Without this guard,
-      // worker A would corrupt the row by overwriting `rendered →
-      // failed`, breaking the member-portal download + emitting a
-      // bogus permanent-failure page. The `ne` predicate makes the
-      // failure write conditional + non-destructive: if status is
-      // already 'rendered', the UPDATE matches zero rows and we
-      // log + skip the conflict (instead of throwing).
+      // R1-C2 + R2-C-NEW-1 — DO NOT roll a healthy `rendered` row
+      // back to `failed`, AND surface the race-won outcome to the
+      // caller via a discriminated return so the use-case treats it
+      // as a success Result (no spurious attempts++).
       const [updated] = await tx
         .update(invoices)
         .set({
@@ -715,9 +712,8 @@ export function makeDrizzleInvoiceRepo(
         )
         .returning();
       if (!updated) {
-        // Either the row vanished (tenant_id scoping mismatch) or it
-        // already moved to `rendered` between this worker's failure
-        // detection and the failure write. Re-fetch to distinguish.
+        // UPDATE matched zero rows — either the row vanished or it's
+        // already 'rendered'. Re-fetch to distinguish.
         const [existing] = await tx
           .select()
           .from(invoices)
@@ -729,10 +725,13 @@ export function makeDrizzleInvoiceRepo(
           )
           .limit(1);
         if (!existing) {
-          throw new InvoiceApplyConflictError('applyPayment');
+          // R2-I-NEW-1 — kind='applyReceiptPdfFailure' so this is
+          // distinguishable from a payment-flip conflict in alerts.
+          throw new InvoiceApplyConflictError('applyReceiptPdfFailure');
         }
-        // Row is rendered — return it as-is. The failure was a
-        // benign race; the success write has already landed.
+        // Row is rendered — race won by the success write. Return
+        // the rendered Invoice with kind='race_won_by_success' so
+        // the caller (renderReceiptPdf catch block) maps it to ok().
         const lineRowsExisting = await tx
           .select()
           .from(invoiceLines)
@@ -743,10 +742,23 @@ export function makeDrizzleInvoiceRepo(
             ),
           )
           .orderBy(asc(invoiceLines.position));
-        return rowsToInvoice(
-          existing as InvoiceRow,
-          lineRowsExisting.map(rowToLine),
-        );
+        // R2-N-2 — defensive: if the rendered row somehow has partial
+        // PDF state (e.g. operator manual UPDATE during incident),
+        // rowsToInvoice's buildPdfOrNull throws. Catch + treat as
+        // failed to avoid an untyped throw that crashes the dispatcher.
+        let invoice: Invoice;
+        try {
+          invoice = rowsToInvoice(
+            existing as InvoiceRow,
+            lineRowsExisting.map(rowToLine),
+          );
+        } catch {
+          // Partial state — fall through to the failed-row write path
+          // by re-throwing the conflict; the dispatcher will retry +
+          // reconcile cron will surface permanently_failed if it sticks.
+          throw new InvoiceApplyConflictError('applyReceiptPdfFailure');
+        }
+        return { kind: 'race_won_by_success' as const, invoice };
       }
       const lineRows = await tx
         .select()
@@ -758,7 +770,10 @@ export function makeDrizzleInvoiceRepo(
           ),
         )
         .orderBy(asc(invoiceLines.position));
-      return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
+      return {
+        kind: 'failed' as const,
+        invoice: rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine)),
+      };
     },
 
     async applyDraftUpdate(txUnknown, input): Promise<void> {

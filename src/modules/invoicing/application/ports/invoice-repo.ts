@@ -194,6 +194,16 @@ export interface InvoiceRepo {
    * `receipt_pdf_status='failed'` + increments `render_attempts` +
    * stores `last_error`. Caller (worker / cron) is expected to
    * re-enqueue the outbox row after this write commits.
+   *
+   * R2-C-NEW-1 — discriminated return surfaces the rendered-race-won
+   * outcome so the caller (`renderReceiptPdf` catch block) can convert
+   * what looked like a failure into a success Result without bumping
+   * the dispatcher's attempts counter unnecessarily. The `ne(status,
+   * 'rendered')` guard inside the implementation prevents a worker B
+   * success from being clobbered by a worker A failure write — when
+   * that happens, this method re-fetches and returns
+   * `{ kind: 'race_won_by_success', invoice }` so the caller treats
+   * the operation as already-succeeded.
    */
   applyReceiptPdfFailure(
     tx: unknown,
@@ -202,7 +212,10 @@ export interface InvoiceRepo {
       readonly invoiceId: InvoiceId;
       readonly errorMessage: string;
     },
-  ): Promise<Invoice>;
+  ): Promise<
+    | { readonly kind: 'failed'; readonly invoice: Invoice }
+    | { readonly kind: 'race_won_by_success'; readonly invoice: Invoice }
+  >;
 
   /**
    * Partial field update on a DRAFT invoice. Only caller-supplied fields

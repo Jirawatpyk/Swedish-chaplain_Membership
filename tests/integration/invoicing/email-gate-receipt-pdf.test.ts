@@ -298,4 +298,51 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
       .limit(1);
     expect(rowAfterTick2?.status).toBe('sent');
   }, 90_000);
+
+  // R2-IG-1 — fail-closed path with deleted invoice.
+  // When the invoice row is hard-deleted (or RLS-hidden) between the
+  // outbox enqueue and the dispatcher tick, the gate now BUMPS
+  // attempts (R2-I-2 fix) so the row exits via the standard
+  // permanent-fail ladder instead of skip-looping forever.
+  it('R2-I-2 — invoice missing under tenant RLS scope → bump attempts + push back (does NOT loop forever)', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
+
+    // Delete the invoice row to simulate hard-delete / RLS-hide.
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .delete(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, tenant.ctx.slug),
+            eq(invoiceLines.invoiceId, invoiceId),
+          ),
+        );
+      await tx
+        .delete(invoices)
+        .where(
+          and(
+            eq(invoices.tenantId, tenant.ctx.slug),
+            eq(invoices.invoiceId, invoiceId),
+          ),
+        );
+    });
+
+    const req = new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+      headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+    });
+    const resp = await outboxDispatch(req);
+    expect(resp.status).toBe(200);
+
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('pending');
+    // attempts BUMPED — pathological skip path, NOT legitimate wait.
+    expect(rowAfter?.attempts).toBe(1);
+    // last_error captures the diagnostic.
+    expect(rowAfter?.lastError).toContain('invoice_not_visible');
+  }, 60_000);
 });

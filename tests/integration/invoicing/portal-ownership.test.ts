@@ -418,6 +418,8 @@ describe('F4 US3 — portal ownership (T069)', () => {
           dueDate: '2026-05-15',
           paidAt: row.status === 'paid' ? new Date('2026-04-18T00:00:00Z') : null,
           paymentMethod: row.status === 'paid' ? 'bank_transfer' : null,
+          // T166 — paid rows MUST have receipt_pdf_status NOT NULL.
+          receiptPdfStatus: row.status === 'paid' ? 'rendered' : null,
           subtotalSatang: subtotal,
           vatRateSnapshot: '0.0700',
           vatSatang: vat,
@@ -504,6 +506,7 @@ describe('F4 US3 — portal ownership (T069)', () => {
         planId: 'alpha-plan',
         draftByUserId: adminUser.userId,
         status: 'paid',
+        receiptPdfStatus: 'rendered',
         fiscalYear: 2026,
         sequenceNumber: 99,
         documentNumber: 'E-2026-000099',
