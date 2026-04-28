@@ -30,6 +30,7 @@ import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
+import type { ReceiptPdfRenderEnqueuePort } from '../ports/receipt-pdf-render-enqueue-port';
 import {
   asInvoiceId,
   type Invoice,
@@ -120,6 +121,21 @@ export interface RecordPaymentDeps {
   readonly outbox: EmailOutboxPort;
   readonly memberIdentity: MemberIdentityPort;
   readonly currentTemplateVersion: number;
+  /**
+   * T166-03 — Async receipt PDF render enqueue port. Required when
+   * `asyncReceiptPdf=true`; never invoked when the flag is false.
+   * Optional in the type so existing callers + tests don't break.
+   */
+  readonly receiptPdfRenderEnqueue?: ReceiptPdfRenderEnqueuePort;
+  /**
+   * T166-03 — When `true`, skip the synchronous `renderAndUploadPdf`
+   * call inside the webhook tx; commit the invoice as `paid` with
+   * `receipt_pdf_status='pending'` and enqueue a `receipt_pdf_render`
+   * outbox row instead. Default `false` keeps the inline path (back-
+   * compat for admin manual mark-paid + the F5 R7 round-2 ship path).
+   * Composition root reads `env.features.f5AsyncReceiptPdf`.
+   */
+  readonly asyncReceiptPdf?: boolean;
 }
 
 export async function recordPayment(
@@ -234,32 +250,42 @@ export async function recordPayment(
     // Throws via `RecordPaymentInternalError` on either failure so
     // `withTx` rolls back — the receipt sequence increment is NOT
     // consumed (separate-mode) and the invoice stays `issued`.
+    //
+    // T166-03 (Phase 9 polish): when `deps.asyncReceiptPdf=true`,
+    // skip the synchronous render+upload entirely. The invoice
+    // commits as `paid` with `receipt_pdf_status='pending'`; a
+    // `receipt_pdf_render` outbox row enqueued below drives async
+    // render via the F4 dispatcher. Sequential numbering stays atomic
+    // with the `paid` flip (Thai Revenue Code §86/§87 invariant).
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
-    const rendered = await renderAndUploadPdf(
-      { pdfRender: deps.pdfRender, blob: deps.blob },
-      {
-        renderInput: {
-          kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
-          templateVersion: deps.currentTemplateVersion,
-          // Separate-mode receipt MUST use its own document number (the
-          // one just allocated); combined-mode reuses the invoice
-          // number because the document IS the same physical page
-          // (one combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
-          documentNumber: combinedMode ? loaded.documentNumber : receiptDocNum,
-          issueDate: loaded.issueDate,
-          dueDate: loaded.dueDate,
-          tenant: loaded.tenantIdentitySnapshot,
-          member: loaded.memberIdentitySnapshot,
-          lines: loaded.lines,
-          subtotal: loaded.subtotal,
-          vatRate: loaded.vatRate,
-          vat: loaded.vat,
-          total: loaded.total,
-        },
-        blobKey: receiptBlobKey,
-      },
-      (code, reason) => new RecordPaymentInternalError({ code, reason }),
-    );
+    const rendered =
+      deps.asyncReceiptPdf
+        ? null
+        : await renderAndUploadPdf(
+            { pdfRender: deps.pdfRender, blob: deps.blob },
+            {
+              renderInput: {
+                kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
+                templateVersion: deps.currentTemplateVersion,
+                // Separate-mode receipt MUST use its own document number (the
+                // one just allocated); combined-mode reuses the invoice
+                // number because the document IS the same physical page
+                // (one combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
+                documentNumber: combinedMode ? loaded.documentNumber : receiptDocNum,
+                issueDate: loaded.issueDate,
+                dueDate: loaded.dueDate,
+                tenant: loaded.tenantIdentitySnapshot,
+                member: loaded.memberIdentitySnapshot,
+                lines: loaded.lines,
+                subtotal: loaded.subtotal,
+                vatRate: loaded.vatRate,
+                vat: loaded.vat,
+                total: loaded.total,
+              },
+              blobKey: receiptBlobKey,
+            },
+            (code, reason) => new RecordPaymentInternalError({ code, reason }),
+          );
 
     // Atomic issued→paid UPDATE with payment fields + receipt PDF
     // metadata. The repo throws `applyPayment: no row updated` when
@@ -278,12 +304,37 @@ export async function recordPayment(
         // R7-W5 — persist admin-entered payment date on the invoice
         // row (separate from paidAt = server-side mark-paid ts).
         paymentDate: input.paymentDate,
-        receiptPdf: {
-          blobKey: receiptBlobKey,
-          sha256: rendered.sha256,
-          templateVersion: deps.currentTemplateVersion,
-        },
+        receiptPdf:
+          rendered !== null
+            ? {
+                kind: 'rendered',
+                blobKey: receiptBlobKey,
+                sha256: rendered.sha256,
+                templateVersion: deps.currentTemplateVersion,
+              }
+            : { kind: 'pending' },
       });
+
+      // T166-03 — async path: enqueue render task NOW (inside the same
+      // tx as the `paid` flip, so the dispatcher cannot pick up a row
+      // that hasn't committed yet). Worker fills blob_key + sha256 +
+      // status='rendered' later via `applyReceiptPdf`.
+      if (deps.asyncReceiptPdf && deps.receiptPdfRenderEnqueue) {
+        await deps.receiptPdfRenderEnqueue.enqueue(tx, {
+          tenantId: input.tenantId,
+          invoiceId,
+          fiscalYear: loaded.fiscalYear,
+          templateVersion: deps.currentTemplateVersion,
+          // Render tasks aren't emails — dispatcher routes by
+          // notification_type, NOT to_email. The column is NOT NULL on
+          // the table so we pass through the member's primary contact
+          // email (best-effort breadcrumb for ops correlation) or a
+          // system sentinel when the snapshot is incomplete.
+          recipientEmail:
+            loaded.memberIdentitySnapshot.primary_contact_email ??
+            'system:async-render@swecham.test',
+        });
+      }
     } catch (e) {
       if (e instanceof InvoiceApplyConflictError && e.kind === 'applyPayment') {
         throw new RecordPaymentInternalError({ code: 'concurrent_state_change' });
@@ -320,7 +371,10 @@ export async function recordPayment(
         payment_date: input.paymentDate,
         recorded_by_user_id: input.actorUserId,
         receipt_document_number: receiptDocNumRaw,
-        receipt_pdf_sha256: rendered.sha256,
+        // T166-03: sha256 is null when async render is in flight; the
+        // worker emits a separate `receipt_rendered` audit event
+        // carrying the sha256 once the bytes land.
+        receipt_pdf_sha256: rendered ? rendered.sha256 : null,
       },
     });
 
@@ -355,6 +409,11 @@ export async function recordPayment(
         invoiceId,
         pdfBlobKey: receiptBlobKey,
         pdfTemplateVersion: deps.currentTemplateVersion,
+        // T166-09 — when async PDF is on, the receipt blob doesn't
+        // exist yet at email-enqueue time. The dispatcher gates the
+        // send on `invoices.receipt_pdf_status='rendered'` to avoid
+        // shipping a dead Blob link.
+        dependsOnReceiptPdf: deps.asyncReceiptPdf === true,
       });
     } else if (
       settings.autoEmailEnabled &&

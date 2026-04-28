@@ -161,6 +161,13 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   // --- F5 chargeback path added by migration 0053 (R2 C-1 — 2026-04-27).
   //     Emitted by processWebhookEvent on `charge.dispute.created`. ---
   'dispute_created',
+  // --- T166 async receipt PDF added by migration 0057 (F5 Phase 9 polish). ---
+  //     `receipt_rendered` fires from the worker once bytes land + status
+  //     flips to 'rendered' (10y retention, tax-doc-touching).
+  //     `pdf_render_permanently_failed` fires from reconcile cron when a
+  //     row exhausts its retry budget (5y retention, ops event).
+  'receipt_rendered',
+  'pdf_render_permanently_failed',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [
@@ -178,6 +185,11 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   // all F4 auto-email variants; the notification dispatcher routes
   // them via `context_data.event_type`. ---
   'invoice_auto_email',
+  // --- T166 migration 0058: async receipt PDF render task. Not an
+  // email — the dispatcher routes this to `renderReceiptPdf` use-case
+  // under `runInTenant(payload.tenantId)`. Worker idempotency lives
+  // in the use-case (`receipt_pdf_status='pending'` guard). ---
+  'receipt_pdf_render',
 ]);
 
 export const outboxStatusEnum = pgEnum('outbox_status', [

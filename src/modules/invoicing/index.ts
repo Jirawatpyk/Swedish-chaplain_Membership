@@ -160,6 +160,15 @@ export {
   type RecordPaymentError,
 } from './application/use-cases/record-payment';
 
+// T166-05 — async receipt PDF worker callback. Routed by the F4
+// outbox dispatcher when a `receipt_pdf_render` row commits.
+export {
+  renderReceiptPdf,
+  type RenderReceiptPdfInput,
+  type RenderReceiptPdfError,
+  type RenderReceiptPdfDeps,
+} from './application/use-cases/render-receipt-pdf';
+
 export {
   issueCreditNote,
   issueCreditNoteSchema,
@@ -298,6 +307,7 @@ export {
   makeDeleteInvoiceDraftDeps,
   makeGetInvoiceDeps,
   makeRecordPaymentDeps,
+  makeRenderReceiptPdfDeps,
   makeVoidInvoiceDeps,
   makeIssueCreditNoteDeps,
   makeGetCreditNoteDeps,

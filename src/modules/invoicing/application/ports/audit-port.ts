@@ -32,7 +32,22 @@ export type F4AuditEventType =
   | 'credit_note_cross_tenant_probe'
   | 'tenant_invoice_settings_cross_tenant_probe'
   | 'pdf_render_failed'
-  | 'auto_email_delivery_failed';
+  | 'auto_email_delivery_failed'
+  /**
+   * T166-08 — emitted by the async render-receipt-pdf worker once
+   * blob bytes land + status flips to `'rendered'`. Carries the
+   * sha256 (audit retention 10y per tax-doc invariant). Distinct
+   * from `invoice_paid` (which fires inside the webhook tx with
+   * sha256=null on the async path) so reviewers can correlate the
+   * paid event with the eventually-consistent render result.
+   */
+  | 'receipt_rendered'
+  /**
+   * T166-11 — emitted by the reconciliation cron when a render row
+   * exhausts its retry budget (3 attempts). Pages on-call per
+   * `docs/runbooks/receipt-pdf-permanently-failed.md`.
+   */
+  | 'pdf_render_permanently_failed';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -68,6 +83,10 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   tenant_invoice_settings_cross_tenant_probe: 5,
   pdf_render_failed: 5,
   auto_email_delivery_failed: 5,
+  // T166: tax-doc-touching (receipt sha256 lands on this row); 10y.
+  receipt_rendered: 10,
+  // T166: ops/reliability event; 5y.
+  pdf_render_permanently_failed: 5,
 };
 
 /** Single-source helper — call at every F4 emit site. */

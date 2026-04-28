@@ -130,11 +130,66 @@ export interface InvoiceRepo {
       readonly paymentRecordedByUserId: string;
       /** R7-W5 — admin-entered payment date (`YYYY-MM-DD`). */
       readonly paymentDate: string;
-      readonly receiptPdf: {
-        readonly blobKey: string;
-        readonly sha256: Sha256Hex;
-        readonly templateVersion: number;
-      };
+      /**
+       * Receipt PDF state at the moment of the issued→paid transition.
+       *
+       * - `kind: 'rendered'` — sync path (T166 flag off, or admin
+       *   manual mark-paid). Caller has already rendered the PDF +
+       *   uploaded to Blob; pass through the blob key + sha256 +
+       *   template version. `receipt_pdf_status` lands as `'rendered'`.
+       * - `kind: 'pending'` — async path (T166-03 flag on). PDF render
+       *   moves to the `receipt_pdf_render` outbox worker; this
+       *   transition only stamps `receipt_pdf_status='pending'`.
+       *   Worker fills blob key + sha256 + template version later via
+       *   `applyReceiptPdf` (T166-05).
+       *
+       * Discriminated union (not just nullable receipt fields) so the
+       * compiler enforces the invariant: a 'rendered' write must
+       * carry the bytes; a 'pending' write must NOT.
+       */
+      readonly receiptPdf:
+        | {
+            readonly kind: 'rendered';
+            readonly blobKey: string;
+            readonly sha256: Sha256Hex;
+            readonly templateVersion: number;
+          }
+        | { readonly kind: 'pending' };
+    },
+  ): Promise<Invoice>;
+
+  /**
+   * T166-05 — Async receipt PDF worker callback. Flips
+   * `receipt_pdf_status` from 'pending' → 'rendered' atomically with
+   * the blob_key + sha256 + template_version write. Idempotent: a
+   * second call with status already 'rendered' is a no-op (return the
+   * row unchanged). On a row in 'failed' state, this method clears
+   * the failure marker and rotates back to 'rendered' so the
+   * reconciliation cron retry path lands here too.
+   */
+  applyReceiptPdf(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly invoiceId: InvoiceId;
+      readonly blobKey: string;
+      readonly sha256: Sha256Hex;
+      readonly templateVersion: number;
+    },
+  ): Promise<Invoice>;
+
+  /**
+   * T166-11 — Reconciliation cron callback. Flips
+   * `receipt_pdf_status='failed'` + increments `render_attempts` +
+   * stores `last_error`. Caller (worker / cron) is expected to
+   * re-enqueue the outbox row after this write commits.
+   */
+  applyReceiptPdfFailure(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly invoiceId: InvoiceId;
+      readonly errorMessage: string;
     },
   ): Promise<Invoice>;
 

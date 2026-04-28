@@ -1527,6 +1527,9 @@
         "a11y": {
           "optimisticPaid": "Payment received. Invoice marked as paid."
         },
+        "pdf": {
+          "preparing": "Your tax receipt is being prepared. The PDF will be ready in a moment — please retry shortly."
+        },
         "title": "Invoice",
         "subtitle": "Read-only view — download the PDF for the official tax document.",
         "linesHeading": "Line items",

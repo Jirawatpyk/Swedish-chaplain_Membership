@@ -30,6 +30,18 @@ export default defineConfig({
     // F3: members + contacts schema (005-members-contacts)
     './src/modules/members/infrastructure/db/schema-members.ts',
     './src/modules/members/infrastructure/db/schema-contacts.ts',
+    // F4: invoices + receipts + credit notes (007-invoices-receipts).
+    // Staff-review R2 R022 (2026-04-28) — was missing here, causing
+    // `drizzle-kit generate` to issue spurious DROP TABLE statements
+    // for F4 tables it could not see.
+    './src/modules/invoicing/infrastructure/db/schema-invoices.ts',
+    './src/modules/invoicing/infrastructure/db/schema-invoice-lines.ts',
+    './src/modules/invoicing/infrastructure/db/schema-credit-notes.ts',
+    './src/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings.ts',
+    './src/modules/invoicing/infrastructure/db/schema-tenant-document-sequences.ts',
+    // F5: payments + refunds + processor events (009-online-payment).
+    // Same R022 fix — drizzle-kit must see F5 tables to manage them.
+    './src/modules/payments/infrastructure/schema.ts',
   ],
   out: './drizzle/migrations',
   dialect: 'postgresql',

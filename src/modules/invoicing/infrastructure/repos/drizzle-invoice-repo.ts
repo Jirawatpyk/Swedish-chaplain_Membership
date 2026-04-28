@@ -5,7 +5,7 @@
  * role via `runInTenant(ctx, fn)` so RLS policies enforce tenant
  * scoping even on paths that forget an explicit WHERE filter.
  */
-import { and, asc, desc, eq, gt, sql, ilike } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ne, sql, ilike } from 'drizzle-orm';
 import type { InvoiceRepo } from '../../application/ports/invoice-repo';
 import {
   asInvoiceId,
@@ -194,6 +194,11 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
       row.invoiceId,
       'receiptPdf',
     ),
+    // T166 — async receipt PDF state. NULL on non-paid rows (CHECK
+    // constraint enforces); pending|rendered|failed otherwise.
+    receiptPdfStatus: row.receiptPdfStatus ?? null,
+    receiptPdfRenderAttempts: row.receiptPdfRenderAttempts ?? 0,
+    receiptPdfLastError: row.receiptPdfLastError ?? null,
 
     lines,
     createdAt: row.createdAt.toISOString(),
@@ -549,10 +554,12 @@ export function makeDrizzleInvoiceRepo(
     async applyPayment(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
       // Single atomic UPDATE: issued → paid + payment fields + receipt
-      // PDF metadata. Status/payment/pdf columns are intentionally NOT
-      // guarded by the invoices immutability trigger, so no split
-      // write is needed. The WHERE `status='issued'` guard below
-      // prevents double-apply on concurrent state-change races.
+      // PDF metadata (sync) or status='pending' marker (async, T166).
+      // Status/payment/pdf columns are intentionally NOT guarded by
+      // the invoices immutability trigger, so no split write is
+      // needed. The WHERE `status='issued'` guard below prevents
+      // double-apply on concurrent state-change races.
+      const isRendered = input.receiptPdf.kind === 'rendered';
       const [updated] = await tx
         .update(invoices)
         .set({
@@ -568,9 +575,15 @@ export function makeDrizzleInvoiceRepo(
           // F4 final-review C1: write RECEIPT columns, NOT invoice
           // columns. The invoice PDF's blobKey+sha256 stays frozen at
           // its issue-time values for audit integrity.
-          receiptPdfBlobKey: input.receiptPdf.blobKey,
-          receiptPdfSha256: input.receiptPdf.sha256,
-          receiptPdfTemplateVersion: input.receiptPdf.templateVersion,
+          // T166: sync path stamps blob_key+sha256 + status='rendered';
+          // async path leaves blob fields NULL + status='pending' (the
+          // worker fills them later via applyReceiptPdf).
+          receiptPdfBlobKey: isRendered ? input.receiptPdf.blobKey : null,
+          receiptPdfSha256: isRendered ? input.receiptPdf.sha256 : null,
+          receiptPdfTemplateVersion: isRendered
+            ? input.receiptPdf.templateVersion
+            : null,
+          receiptPdfStatus: isRendered ? 'rendered' : 'pending',
           updatedAt: sql`now()`,
         })
         .where(
@@ -583,6 +596,106 @@ export function makeDrizzleInvoiceRepo(
         .returning();
       if (!updated) throw new InvoiceApplyConflictError('applyPayment');
 
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, input.tenantId),
+            eq(invoiceLines.invoiceId, input.invoiceId),
+          ),
+        )
+        .orderBy(asc(invoiceLines.position));
+      return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
+    },
+
+    /**
+     * T166-05 — async receipt PDF worker callback. Idempotent:
+     *   - status='pending' → flip to 'rendered' + write blob fields
+     *   - status='rendered' → no-op (return existing row unchanged)
+     *   - status='failed'  → also flip to 'rendered' (reconciliation
+     *     retry path) + clear `receipt_pdf_last_error`
+     * The WHERE clause excludes `status='rendered'` from the UPDATE so
+     * a duplicate worker call with stale bytes cannot overwrite a
+     * successful render. We then re-fetch the row to return it.
+     */
+    async applyReceiptPdf(txUnknown, input): Promise<Invoice> {
+      const tx = txUnknown as TenantTx;
+      await tx
+        .update(invoices)
+        .set({
+          receiptPdfBlobKey: input.blobKey,
+          receiptPdfSha256: input.sha256,
+          receiptPdfTemplateVersion: input.templateVersion,
+          receiptPdfStatus: 'rendered',
+          receiptPdfLastError: null,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            // Idempotent re-arm: rendered rows skip the UPDATE so we
+            // don't churn updated_at on every duplicate worker run.
+            ne(invoices.receiptPdfStatus, 'rendered'),
+          ),
+        );
+      // Re-fetch via the public read path so callers always receive a
+      // domain Invoice (not the raw row).
+      const [row] = await tx
+        .select()
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        )
+        .limit(1);
+      if (!row) {
+        throw new InvoiceApplyConflictError('applyPayment');
+      }
+      const lineRows = await tx
+        .select()
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, input.tenantId),
+            eq(invoiceLines.invoiceId, input.invoiceId),
+          ),
+        )
+        .orderBy(asc(invoiceLines.position));
+      return rowsToInvoice(row as InvoiceRow, lineRows.map(rowToLine));
+    },
+
+    /**
+     * T166-11 — Reconciliation cron callback. Flips status='failed' +
+     * increments attempt counter + stores error message. Caller
+     * (worker) re-enqueues the outbox row after this commits so the
+     * cron's next pass picks it back up. Idempotent only if caller
+     * coordinates re-enqueue carefully — the attempt counter ALWAYS
+     * advances on each call.
+     */
+    async applyReceiptPdfFailure(txUnknown, input): Promise<Invoice> {
+      const tx = txUnknown as TenantTx;
+      const [updated] = await tx
+        .update(invoices)
+        .set({
+          receiptPdfStatus: 'failed',
+          receiptPdfRenderAttempts: sql`${invoices.receiptPdfRenderAttempts} + 1`,
+          receiptPdfLastError: input.errorMessage.slice(0, 1000),
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        )
+        .returning();
+      if (!updated) {
+        throw new InvoiceApplyConflictError('applyPayment');
+      }
       const lineRows = await tx
         .select()
         .from(invoiceLines)

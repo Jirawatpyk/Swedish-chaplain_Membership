@@ -29,6 +29,7 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       readonly documentNumber?: string;
       readonly voidReason?: string;
       readonly expectedPdfSha256?: string;
+      readonly dependsOnReceiptPdf?: boolean;
     },
   ): Promise<void> {
     // T107 — `null` tx = "enqueue standalone" (used by resend-pdf,
@@ -51,6 +52,11 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
       // verification (void two-phase commit protection). Dispatcher
       // compares against sha256(prefetchedBytes) before attaching.
       expected_pdf_sha256: input.expectedPdfSha256 ?? null,
+      // T166-09 — gates the email dispatch on
+      // `invoices.receipt_pdf_status='rendered'`. The dispatcher
+      // re-queues the row (without bumping attempts) when the gate is
+      // set + the underlying invoice's receipt is still 'pending'.
+      depends_on_receipt_pdf: input.dependsOnReceiptPdf ?? false,
     };
     // R7-S2 — use caller-supplied locale (member's primary-contact
     // preferred_locale when known). Defaults to 'en' for callers

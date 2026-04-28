@@ -8,6 +8,7 @@
  * subtotal/vat/total satang, etc.) are locked by the
  * `invoices_enforce_immutability` trigger once `status != 'draft'`.
  */
+import { sql } from 'drizzle-orm';
 import {
   pgTable,
   text,
@@ -32,6 +33,13 @@ export const invoiceStatusEnum = pgEnum('invoice_status', [
   'void',
   'credited',
   'partially_credited',
+]);
+
+// T166 — async receipt PDF state machine. Migration 0056.
+export const receiptPdfStatusEnum = pgEnum('receipt_pdf_status_t', [
+  'pending',
+  'rendered',
+  'failed',
 ]);
 
 export const invoices = pgTable(
@@ -60,9 +68,15 @@ export const invoices = pgTable(
     vatRateSnapshot: numeric('vat_rate_snapshot', { precision: 5, scale: 4 }),
     vatSatang: bigint('vat_satang', { mode: 'bigint' }),
     totalSatang: bigint('total_satang', { mode: 'bigint' }),
+    // Staff-review R2 R022 (2026-04-28): use raw SQL `0` instead of
+    // BigInt literal `0n` because drizzle-kit 0.30.x cannot
+    // JSON.serialize BigInt defaults when generating snapshots
+    // (TypeError: Do not know how to serialize a BigInt). The DB
+    // column is still `BIGINT NOT NULL DEFAULT 0` either way; only the
+    // TS-side default representation changes.
     creditedTotalSatang: bigint('credited_total_satang', { mode: 'bigint' })
       .notNull()
-      .default(0n),
+      .default(sql`0`),
 
     proRatePolicySnapshot: text('pro_rate_policy_snapshot'),
     netDaysSnapshot: smallint('net_days_snapshot'),
@@ -87,13 +101,21 @@ export const invoices = pgTable(
     pdfBlobKey: text('pdf_blob_key'),
     pdfSha256: char('pdf_sha256', { length: 64 }),
     pdfTemplateVersion: smallint('pdf_template_version'),
-    // Receipt PDF — written by applyPayment, separate from invoice PDF
-    // so the invoice's audit hash stays intact after payment (F4 final-
-    // review C1). Permanently null for combined-mode tenants where the
-    // receipt IS the invoice.
+    // Receipt PDF — written by applyPayment (sync) or render-receipt-pdf
+    // worker (async, T166), separate from invoice PDF so the invoice's
+    // audit hash stays intact after payment (F4 final-review C1).
+    // Permanently null for combined-mode tenants where the receipt IS
+    // the invoice.
     receiptPdfBlobKey: text('receipt_pdf_blob_key'),
     receiptPdfSha256: char('receipt_pdf_sha256', { length: 64 }),
     receiptPdfTemplateVersion: smallint('receipt_pdf_template_version'),
+    // T166 — async receipt PDF state. NULL for non-paid rows; one of
+    // 'pending'|'rendered'|'failed' for paid rows. CHECK constraint
+    // `invoices_paid_has_receipt_status` enforces invariant. See
+    // migration 0056 + plan.md § Phase 9 sub-plan T166 for lifecycle.
+    receiptPdfStatus: receiptPdfStatusEnum('receipt_pdf_status'),
+    receiptPdfRenderAttempts: integer('receipt_pdf_render_attempts').notNull().default(0),
+    receiptPdfLastError: text('receipt_pdf_last_error'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

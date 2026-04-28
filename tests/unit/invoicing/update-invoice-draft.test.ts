@@ -77,6 +77,8 @@ function makeDeps(draft: Invoice | null): TestDeps {
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
+      applyReceiptPdf: vi.fn(),
+      applyReceiptPdfFailure: vi.fn(),
     },
     audit: { emit: vi.fn(async () => {}) },
     _tx: tx,
@@ -222,3 +224,4 @@ describe('updateInvoiceDraft', () => {
     );
   });
 });
+

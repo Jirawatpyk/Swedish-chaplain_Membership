@@ -1527,6 +1527,9 @@
         "a11y": {
           "optimisticPaid": "Betalningen mottagen. Fakturan markerad som betald."
         },
+        "pdf": {
+          "preparing": "Ditt skattekvitto förbereds. PDF-filen är klar inom kort — försök igen om en stund."
+        },
         "title": "Faktura",
         "subtitle": "Skrivskyddad vy — ladda ner PDF för det officiella skattedokumentet.",
         "linesHeading": "Rader",

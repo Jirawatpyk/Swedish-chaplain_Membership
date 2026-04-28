@@ -220,6 +220,16 @@ const schema = z.object({
   // dark; flip to TRUE in Vercel env after Rolling Release gate.
   FEATURE_F5_ONLINE_PAYMENT: booleanFromString.default(false),
 
+  // T166 (Phase 9 polish — async receipt PDF). When TRUE,
+  // `record-payment.ts` H+I steps skip the synchronous PDF render +
+  // upload and instead enqueue a `receipt_pdf_render` outbox row for
+  // async dispatch. Webhook p95 drops from ~5–15 s to ~1–3 s. Default
+  // FALSE keeps the inline path while the async pipeline soaks in
+  // production. Flip to TRUE per `docs/runbooks/receipt-pdf-async-rollback.md`.
+  // Kept dual-path for 2 releases per Constitution Principle VIII
+  // reliability — kill-switch must always revert without code deploy.
+  FEATURE_F5_ASYNC_RECEIPT_PDF: booleanFromString.default(false),
+
   // PG-2 DPA gate — FR-036 cancellation emails CAN include the VOID-
   // stamped invoice PDF as an email attachment. Shipping the PDF
   // bytes (which contain member tax ID + legal name + address) to
@@ -387,6 +397,7 @@ export const env = {
     f4Invoicing: raw.FEATURE_F4_INVOICING,
     f4VoidAttachment: raw.FEATURE_F4_VOID_ATTACHMENT,
     f5OnlinePayment: raw.FEATURE_F5_ONLINE_PAYMENT,
+    f5AsyncReceiptPdf: raw.FEATURE_F5_ASYNC_RECEIPT_PDF,
   },
 
   // F4 Invoicing

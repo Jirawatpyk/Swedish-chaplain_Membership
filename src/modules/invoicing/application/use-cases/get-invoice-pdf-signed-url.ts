@@ -29,7 +29,14 @@ export interface GetInvoicePdfSignedUrlInput {
 export type GetInvoicePdfSignedUrlError =
   | { code: 'invoice_not_found' }
   | { code: 'forbidden' }
-  | { code: 'blob_missing'; key: string };
+  | { code: 'blob_missing'; key: string }
+  // T166-10 — async receipt PDF render in flight. Member-scope only:
+  // a paid invoice is being post-processed by the worker (status
+  // !=='rendered'). Route layer maps this to HTTP 425 Too Early +
+  // Retry-After: 30. Admin/manager continue to receive the invoice
+  // variant byte stream as before (they can preview before receipt
+  // stamping completes).
+  | { code: 'receipt_pdf_pending'; retryAfterSeconds: number };
 
 export interface GetInvoicePdfSignedUrlDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -84,6 +91,24 @@ export async function getInvoicePdfSignedUrl(
 
   // Drafts have no PDF yet — refuse.
   if (!invoice.pdf) return err({ code: 'forbidden' });
+
+  // T166-10 — async receipt-PDF gate (member-scope). When the
+  // record-payment use-case ran with `asyncReceiptPdf=true`, the
+  // invoice flips to `paid` synchronously but the receipt-stamped
+  // PDF is rendered by the cron worker (out-of-band). Until the
+  // worker completes, expose 425 Too Early + Retry-After to the
+  // member's portal page so it can render a polite "preparing…"
+  // state with `aria-busy="true"`. Admin/manager keep the existing
+  // byte stream — they can re-issue/preview without waiting for
+  // the receipt stamp.
+  if (
+    input.actorRole === 'member' &&
+    invoice.status === 'paid' &&
+    invoice.receiptPdfStatus !== null &&
+    invoice.receiptPdfStatus !== 'rendered'
+  ) {
+    return err({ code: 'receipt_pdf_pending', retryAfterSeconds: 30 });
+  }
 
   // TODO(F4-R3-E4): when auto-rerender on Blob-miss lands, wrap this
   // branch in try/catch on the signed-URL issuance (or a HEAD probe

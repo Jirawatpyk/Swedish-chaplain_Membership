@@ -764,7 +764,7 @@ Every span carries `tenant.id`, `invoice.id`, `payment.id`, `payment.method`,
 `Stripe-Signature` header value is ever attributed** — those are in pino's
 redact list (see § 21.4).
 
-### 21.1 Metrics catalogue (15 metrics)
+### 21.1 Metrics catalogue (18 metrics — T166 added 3)
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
@@ -783,6 +783,9 @@ redact list (see § 21.4).
 | `out_of_band_refund_rejected_total` | counter | `tenant`, `processor_env` | FR-011a leading indicator (admin refunded via Stripe Dashboard, not in-app) |
 | `member_invite_to_payment_funnel_dropoff` | counter | `tenant`, `step` | F5.1 promotion KPI (FR-016a) |
 | `payments.stale_pending_count` | gauge | `tenant` | post-critique X1+E3 — pending > 24h zombies |
+| `receipt_pdf_render_duration_ms` | histogram | `tenant`, `outcome` (rendered\|failed) | T166 async receipt render — worker p95 budget |
+| `receipt_pdf_render_failures_total` | counter | `tenant`, `cause` (render_failed\|blob_upload_failed\|invalid_state\|invoice_not_found\|settings_missing) | T166 — render-pipeline forensics by failure cause |
+| `receipt_pdf_pending_count` | gauge | `tenant` | T166 — paid invoices stuck in `receipt_pdf_status='pending'` (sampled by reconciliation cron) |
 
 **Cardinality**: `reason_code` and `event_type` are bounded enums; `tenant` is
 small-cardinality (≤ a few hundred over project lifetime). `step` is enum from
@@ -802,7 +805,7 @@ identifier.
 | SLO-F5-005 payment-success rate | ≥ 95 % over 1 h excluding bank-decline codes | `payments.succeeded.count` / (`payments.succeeded.count` + `payments.failed.count{reason_code != insufficient_funds, card_declined, generic_decline}`) |
 | SLO-F5-006 webhook idempotency | 100 % zero double-paid / double-credited | T150 30-day soak harness (`scripts/perf/webhook-idempotency-soak.ts`) |
 
-### 21.3 Alert rules (9 alerts)
+### 21.3 Alert rules (10 alerts — T166 added `pdf_render_permanently_failed`)
 
 | Alert | Severity | Threshold | Runbook |
 |---|---|---|---|
@@ -815,6 +818,7 @@ identifier.
 | `payments.stale_pending_count` > 5 for any tenant | **alarm** | post-critique X1+E3 — zombie pending | `docs/runbooks/stale-pending-refund-sweep.md` (covers payment+refund both) |
 | `out_of_band_refund_rejected_total` > 0 / day | **alarm** | admin used Stripe Dashboard instead of in-app refund | `docs/runbooks/out-of-band-refund.md` (FR-011a) |
 | `payments.auto_refunded_stale.count` > 0 | **alarm** | overpaid invoice — guard-rail fired | check invoice state + manual reconciliation |
+| `pdf_render_permanently_failed` ≥ 1 (any tenant) | **page** | T166 receipt PDF worker exhausted 3 attempts — invoice `paid` with no receipt PDF available to member | `docs/runbooks/receipt-pdf-permanently-failed.md` |
 
 ### 21.4 Logging redact rules (additions)
 
@@ -833,6 +837,8 @@ Plus full webhook body → redacted to `event_id` + `event_type` + `api_version`
 - `docs/runbooks/out-of-band-refund.md` — FR-011a admin used Stripe Dashboard instead of in-app refund
 - `docs/runbooks/stale-pending-refund-sweep.md` — pending refund > 24h recovery
 - `docs/runbooks/stale-pending-count.md` — cron-job.org configuration for `payments.stale_pending_count` gauge (T138)
+- `docs/runbooks/receipt-pdf-permanently-failed.md` — T166 receipt PDF worker exhausted 3 attempts (page on-call)
+- `docs/runbooks/receipt-pdf-async-rollback.md` — T166 async receipt PDF kill-switch flip (`FEATURE_F5_ASYNC_RECEIPT_PDF=false`)
 
 ### 21.6 Dashboard — F5 Online Payment (Vercel Analytics)
 

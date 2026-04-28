@@ -261,24 +261,54 @@ export default async function PortalInvoiceDetailPage({
                   className="min-h-11 px-3"
                 />
               ) : null}
-              <a
-                data-pay-focus-target="download-pdf"
-                href={`/api/portal/invoices/${invoice.invoiceId}/pdf`}
-                aria-label={`${
-                  invoice.status === 'void'
-                    ? t('void.downloadVoidedPdf')
-                    : tList('actions.download')
-                } — ${documentNumber}`}
-                className={cn(
-                  buttonVariants({ variant: 'default', size: 'sm' }),
-                  'min-h-11 px-4',
-                )}
-                download
-              >
-                {invoice.status === 'void'
-                  ? t('void.downloadVoidedPdf')
-                  : tList('actions.download')}
-              </a>
+              {(() => {
+                // T166-10 — async receipt PDF gate. When the receipt is
+                // still being rendered by the cron worker (status !==
+                // 'rendered'), surface a polite "preparing…" affordance
+                // instead of a download link. `aria-busy="true"` +
+                // `role="status"` makes assistive tech announce the
+                // transition without stealing focus.
+                const receiptPending =
+                  invoice.status === 'paid' &&
+                  invoice.receiptPdfStatus !== null &&
+                  invoice.receiptPdfStatus !== 'rendered';
+                if (receiptPending) {
+                  return (
+                    <span
+                      role="status"
+                      aria-live="polite"
+                      aria-busy="true"
+                      data-pay-focus-target="download-pdf"
+                      className={cn(
+                        buttonVariants({ variant: 'outline', size: 'sm' }),
+                        'min-h-11 px-4 cursor-progress',
+                      )}
+                    >
+                      {t('pdf.preparing')}
+                    </span>
+                  );
+                }
+                return (
+                  <a
+                    data-pay-focus-target="download-pdf"
+                    href={`/api/portal/invoices/${invoice.invoiceId}/pdf`}
+                    aria-label={`${
+                      invoice.status === 'void'
+                        ? t('void.downloadVoidedPdf')
+                        : tList('actions.download')
+                    } — ${documentNumber}`}
+                    className={cn(
+                      buttonVariants({ variant: 'default', size: 'sm' }),
+                      'min-h-11 px-4',
+                    )}
+                    download
+                  >
+                    {invoice.status === 'void'
+                      ? t('void.downloadVoidedPdf')
+                      : tList('actions.download')}
+                  </a>
+                );
+              })()}
             </>
           ) : null
         }

@@ -66,6 +66,10 @@ import {
 } from '@/modules/invoicing/infrastructure/email/invoice-auto-email';
 import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 /* eslint-enable no-restricted-imports */
+import { renderReceiptPdf, makeRenderReceiptPdfDeps } from '@/modules/invoicing';
+import { runInTenant } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
+import { sql as sqlTag } from 'drizzle-orm';
 
 // Spec FR-012c: "≥ 5 attempts with exponential backoff 60s / 5m / 30m / 3h / 12h".
 const RETRY_BACKOFF_SECONDS = [60, 300, 1_800, 10_800, 43_200] as const;
@@ -235,6 +239,155 @@ function isInvoiceAutoEmailEventType(v: unknown): v is InvoiceAutoEmailEventType
 type DispatchOutcome = 'sent' | 'retried' | 'permanent' | 'skipped';
 
 /**
+ * T166-07 — Async receipt PDF render dispatcher branch.
+ *
+ * Routes a `notification_type='receipt_pdf_render'` outbox row to
+ * the F4 `renderReceiptPdf` use-case, scoped to the row's tenant via
+ * `runInTenant(payload.tenantId)` (Constitution Principle I clause 3
+ * — tenant isolation MUST be applied before any per-tenant data
+ * touches RLS).
+ *
+ * Status flips:
+ *   - success → status='sent'
+ *   - retryable failure (render or upload) → attempts++, exponential
+ *     backoff per FR-012c
+ *   - attempts >= MAX_ATTEMPTS → status='permanently_failed' + audit
+ *     `pdf_render_permanently_failed` (pages on-call per
+ *     `docs/runbooks/receipt-pdf-permanently-failed.md`)
+ *
+ * Idempotency: the use-case's own pending→rendered guard makes
+ * duplicate worker runs no-ops (returns ok). At-least-once delivery
+ * semantics are preserved.
+ */
+async function dispatchReceiptPdfRender(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  row: NotificationsOutboxRow,
+  requestId: string,
+  now: Date,
+): Promise<DispatchOutcome> {
+  if (!row.tenantId) {
+    // Defensive: tenant_id is required for RLS scoping. A NULL
+    // tenant_id `receipt_pdf_render` row is malformed; permanent-fail.
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'permanently_failed' as const,
+        attempts: row.attempts + 1,
+        lastError: 'missing tenant_id',
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    outboxMetrics.permanentFailure(row.notificationType, 'no_template_handler');
+    return 'permanent';
+  }
+
+  const ctx = row.contextData as Record<string, unknown>;
+  const invoiceId = typeof ctx.invoice_id === 'string' ? ctx.invoice_id : '';
+  const fiscalYear = typeof ctx.fiscal_year === 'number' ? ctx.fiscal_year : 0;
+  const templateVersion =
+    typeof ctx.template_version === 'number' ? ctx.template_version : 0;
+
+  if (!invoiceId || !fiscalYear || !templateVersion) {
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'permanently_failed' as const,
+        attempts: row.attempts + 1,
+        lastError: 'malformed context_data',
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    outboxMetrics.permanentFailure(row.notificationType, 'no_template_handler');
+    return 'permanent';
+  }
+
+  // Run the worker under the row's tenant context. The use-case
+  // opens its OWN tx (use-case's `withTx`) — distinct from this
+  // dispatcher tx — so a render failure doesn't roll back the
+  // dispatcher's outbox status update.
+  const tenantCtx = asTenantContext(row.tenantId);
+  const result = await runInTenant(tenantCtx, async () => {
+    return renderReceiptPdf(makeRenderReceiptPdfDeps(row.tenantId!), {
+      tenantId: row.tenantId!,
+      invoiceId,
+      fiscalYear,
+      templateVersion,
+      requestId,
+    });
+  });
+
+  if (result.ok) {
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'sent' as const,
+        // No `sentMessageId` for render rows — they aren't emails. The
+        // `updatedAt` + `status='sent'` pair is the canonical "row
+        // complete" marker used by the existing dispatcher.
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    return 'sent';
+  }
+
+  // Failure path: bump attempts + decide retry vs permanent.
+  const nextAttempt = row.attempts + 1;
+  const isPermanent = nextAttempt >= MAX_ATTEMPTS;
+  const reason =
+    'reason' in result.error
+      ? (result.error as { reason?: string }).reason ?? result.error.code
+      : result.error.code;
+
+  if (isPermanent) {
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'permanently_failed' as const,
+        attempts: nextAttempt,
+        lastError: String(reason).slice(0, 500),
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    await tx.insert(auditLog).values({
+      eventType: 'pdf_render_permanently_failed',
+      actorUserId: 'system:cron',
+      summary: `receipt_pdf_render row ${row.id} permanently failed (${reason})`,
+      requestId,
+      tenantId: row.tenantId,
+      payload: {
+        outbox_row_id: row.id,
+        invoice_id: invoiceId,
+        attempts: nextAttempt,
+        reason,
+      },
+    });
+    // Use `max_retries` for the bounded enum — the underlying reason
+    // is preserved in `last_error` on the outbox row + the audit
+    // `pdf_render_permanently_failed` payload above for forensics.
+    outboxMetrics.permanentFailure(row.notificationType, 'max_retries');
+    return 'permanent';
+  }
+
+  // Retryable failure: exponential backoff per FR-012c.
+  const backoffSeconds =
+    RETRY_BACKOFF_SECONDS[Math.min(nextAttempt - 1, RETRY_BACKOFF_SECONDS.length - 1)] ?? 60;
+  const nextRetryAt = new Date(now.getTime() + backoffSeconds * 1000);
+  await tx
+    .update(notificationsOutbox)
+    .set({
+      attempts: nextAttempt,
+      nextRetryAt,
+      lastError: String(reason).slice(0, 500),
+      updatedAt: now,
+    })
+    .where(eq(notificationsOutbox.id, row.id));
+  // No `retry` metric — the existing outboxMetrics surface only
+  // tracks permanent failures + stuck rows. Render-attempt counters
+  // live in the audit log payload (see T166-14 observability docs).
+  return 'retried';
+}
+
+/**
  * Process one outbox row inside its own db.transaction(). Re-selects
  * the row with FOR UPDATE SKIP LOCKED so only one cron tick ever sends
  * a given row, even when Vercel Cron overlaps ticks at high load.
@@ -368,6 +521,54 @@ async function dispatchOne(
       .limit(1);
 
     if (!row) return 'skipped';
+
+    // T166-07 — async receipt PDF render branch. The dispatcher
+    // routes `receipt_pdf_render` rows to the F4 `renderReceiptPdf`
+    // use-case INSIDE `runInTenant(payload.tenantId)` so RLS scoping
+    // applies (Constitution Principle I clause 3). Render task is
+    // NOT an email — skip the buildPayload/Resend pipeline entirely.
+    if (row.notificationType === 'receipt_pdf_render') {
+      return await dispatchReceiptPdfRender(tx, row, requestId, now);
+    }
+
+    // T166-09 — async receipt PDF gate for `invoice_paid` emails.
+    // When `record-payment` runs under `asyncReceiptPdf=true`, the
+    // email row commits inside the same tx as the `paid` flip + a
+    // `receipt_pdf_status='pending'` invoice. The PDF bytes don't
+    // exist yet; the link in the email would 404. Gate the send on
+    // `receipt_pdf_status='rendered'` and re-queue (without bumping
+    // attempts) when still pending — the next cron tick re-evaluates
+    // after the worker uploads.
+    if (
+      row.notificationType === 'invoice_auto_email' &&
+      (row.contextData as Record<string, unknown>).depends_on_receipt_pdf === true
+    ) {
+      const ctx = row.contextData as Record<string, unknown>;
+      const invoiceId = typeof ctx.invoice_id === 'string' ? ctx.invoice_id : null;
+      if (invoiceId && row.tenantId) {
+        const tenantCtx = asTenantContext(row.tenantId);
+        const [invRow] = await runInTenant(tenantCtx, async () =>
+          tx.execute<{ receipt_pdf_status: string | null }>(
+            sqlTag`SELECT receipt_pdf_status FROM invoices
+                   WHERE tenant_id = ${row.tenantId} AND invoice_id = ${invoiceId}
+                   LIMIT 1`,
+          ),
+        );
+        if (invRow && invRow.receipt_pdf_status !== 'rendered') {
+          // Push next_retry_at out so the cron doesn't tight-loop on
+          // gated rows. 60s aligns with the dispatcher's minute-cron
+          // cadence — one retry per cron tick is sufficient.
+          await tx
+            .update(notificationsOutbox)
+            .set({
+              nextRetryAt: new Date(now.getTime() + 60_000),
+              updatedAt: now,
+            })
+            .where(eq(notificationsOutbox.id, row.id));
+          return 'skipped';
+        }
+      }
+    }
 
     // R17-02 — integrity violation detected during prefetch: do NOT
     // ship a link-only fallback (the link points at the same Blob key

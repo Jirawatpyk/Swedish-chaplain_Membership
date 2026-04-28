@@ -53,6 +53,19 @@ export async function GET(
       },
       'GET /api/portal/invoices/[id]/pdf failed',
     );
+    // T166-10 — async receipt PDF still rendering. 425 Too Early +
+    // Retry-After (seconds) tells the portal page (and any well-
+    // behaved client) to back off and re-poll. RFC 9110 §15.5.21
+    // pairs naturally with Retry-After (RFC 9110 §10.2.3).
+    if (result.error.code === 'receipt_pdf_pending') {
+      return NextResponse.json(
+        { error: { code: 'receipt_pdf_pending' } },
+        {
+          status: 425,
+          headers: { 'Retry-After': String(result.error.retryAfterSeconds) },
+        },
+      );
+    }
     const status =
       result.error.code === 'invoice_not_found'
         ? 404

@@ -172,6 +172,8 @@ function makeDeps(
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
+      applyReceiptPdf: vi.fn(),
+      applyReceiptPdfFailure: vi.fn(),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
@@ -456,3 +458,4 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     expect(deps.memberIdentity.markRegistrationFeePaid).not.toHaveBeenCalled();
   });
 });
+

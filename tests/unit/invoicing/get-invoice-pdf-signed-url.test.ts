@@ -113,6 +113,8 @@ function makeDeps(invoice: Invoice | null) {
         applyCreditNoteRollup: vi.fn(),
         applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
+      applyReceiptPdf: vi.fn(),
+      applyReceiptPdfFailure: vi.fn(),
       },
       blob: { signDownloadUrl: blob.signDownloadUrl } as unknown as Parameters<
         typeof getInvoicePdfSignedUrl
@@ -206,3 +208,4 @@ describe('getInvoicePdfSignedUrl — byte-identical admin↔portal (C1)', () => 
     expect(audit).toHaveBeenCalledTimes(1);
   });
 });
+

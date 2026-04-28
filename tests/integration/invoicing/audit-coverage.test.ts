@@ -83,6 +83,9 @@ const MVP_AUDIT_TYPES_EMITTED: ReadonlyArray<F4AuditEventType> = [
   'tenant_invoice_settings_cross_tenant_probe',
   'pdf_render_failed',
   'auto_email_delivery_failed',
+  // T166 async receipt PDF (2026-04-28).
+  'receipt_rendered',
+  'pdf_render_permanently_failed',
 ] as const;
 
 const CORPORATE_MATRIX: BenefitMatrix = {
@@ -241,8 +244,10 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'tenant_invoice_settings_cross_tenant_probe',
       'pdf_render_failed',
       'auto_email_delivery_failed',
+      'receipt_rendered',
+      'pdf_render_permanently_failed',
     ] as const;
-    expect(allF4Types).toHaveLength(18);
+    expect(allF4Types).toHaveLength(20);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -579,6 +584,19 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         status: 'deferred',
         where:
           'R3-E4 auto-rerender path (post-MVP Blob outage recovery — not yet exercised)',
+      },
+      // T166 — async receipt PDF pipeline events.
+      receipt_rendered: {
+        status: 'deferred',
+        where:
+          'T166-05 render-receipt-pdf use-case unit tests (worker-driven; integration coverage lands with T166-06)',
+        since: '2026-04-28',
+      },
+      pdf_render_permanently_failed: {
+        status: 'deferred',
+        where:
+          'T166-11 reconciliation cron — fires after 3 retry attempts; integration coverage lands with the cron handler',
+        since: '2026-04-28',
       },
     };
 

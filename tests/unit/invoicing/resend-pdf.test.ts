@@ -167,6 +167,8 @@ function makeDeps(
     applyCreditNoteRollup: vi.fn(),
     applyInvoicePdfRegeneration: vi.fn(),
     applyVoid: vi.fn(),
+      applyReceiptPdf: vi.fn(),
+      applyReceiptPdfFailure: vi.fn(),
   } as unknown as import('@/modules/invoicing/application/ports/invoice-repo').InvoiceRepo;
   const creditNoteRepo = {
     insertCreditNote: vi.fn(),
@@ -387,3 +389,4 @@ describe('resendPdf', () => {
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
   });
 });
+

@@ -79,6 +79,17 @@ export interface EmailOutboxPort {
        * makes sha pinning redundant).
        */
       readonly expectedPdfSha256?: string;
+      /**
+       * T166-09 — when `true`, the email dispatcher MUST skip the row
+       * (returning to queue without bumping `attempts`) until
+       * `invoices.receipt_pdf_status='rendered'`. Set by `recordPayment`
+       * on the async path (T166-03 flag on) so the receipt-email row
+       * commits inside the same tx as the `paid` flip + `pending`
+       * receipt status, but waits for the worker to upload the PDF
+       * bytes before sending. Optional — F4-only callers (issue, void,
+       * resend, credit-note) leave it `false`/undefined.
+       */
+      readonly dependsOnReceiptPdf?: boolean;
     },
   ): Promise<void>;
 }
