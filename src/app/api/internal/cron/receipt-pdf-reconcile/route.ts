@@ -69,7 +69,6 @@ import { db, runInTenant } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { env } from '@/lib/env';
 import { asTenantContext } from '@/modules/tenants';
 // Cross-module deep imports — documented escape hatch for cross-
 // tenant ops surface (mirrors `sweep-stale-pending-refunds` pattern).
@@ -90,18 +89,21 @@ const MAX_RENDER_ATTEMPTS = 3;
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
-  const authHeader = request.headers.get('authorization');
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    if (!verifyCronBearer(authHeader, expected)) {
-      logger.warn({ requestId }, 'cron.receipt_pdf_reconcile.unauthorized');
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-  } else if (!env.isDevelopment) {
-    logger.error(
-      { requestId },
-      'cron.receipt_pdf_reconcile.no_secret_configured',
+  // R1-S2 — auth strictness mirrors outbox-dispatch: require
+  // CRON_SECRET (≥16 chars) in ALL environments, no dev bypass. The
+  // earlier dev-bypass branch was inconsistent with the rest of the
+  // cron surface and meant a misconfigured prod could fall back to
+  // the dev-mode "open" path if env reading hiccuped.
+  const secret = process.env.CRON_SECRET;
+  if (!secret || secret.length < 16) {
+    logger.error({ requestId }, 'cron.receipt_pdf_reconcile.secret_misconfigured');
+    return NextResponse.json(
+      { error: 'server_misconfiguration' },
+      { status: 500 },
     );
+  }
+  if (!verifyCronBearer(request.headers.get('authorization'), secret)) {
+    logger.warn({ requestId }, 'cron.receipt_pdf_reconcile.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
@@ -196,25 +198,29 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           'cron.receipt_pdf_reconcile.re_enqueued',
         );
       } else {
-        // Out of budget — emit permanent-failure audit (idempotent:
-        // skip if we've already alerted for this invoice). Dedupe
-        // by `payload->>'invoice_id'` so subsequent 5-min ticks
-        // don't re-page on-call for the same exhausted row.
-        const existing = await db
-          .select({ id: auditLog.id })
-          .from(auditLog)
-          .where(
-            and(
-              eq(auditLog.tenantId, row.tenantId),
-              eq(auditLog.eventType, 'pdf_render_permanently_failed'),
-              sql`${auditLog.payload}->>'invoice_id' = ${row.invoiceId}`,
-            ),
-          )
-          .limit(1);
-        const alreadyHas = existing.length > 0;
+        // R1-I2 — Dedupe + emit MUST run inside runInTenant so RLS on
+        // audit_log resolves to the row's tenant. Reading audit_log
+        // OUTSIDE runInTenant left `app.current_tenant` unset, which
+        // (with FORCE RLS on audit_log) returned zero rows for every
+        // dedupe check → we re-emitted `pdf_render_permanently_failed`
+        // every 5 minutes, double-paging on-call. Both reads + writes
+        // now share the same tenant context.
+        const isFreshAlert = await runInTenant(
+          asTenantContext(row.tenantId),
+          async () => {
+            const existing = await db
+              .select({ id: auditLog.id })
+              .from(auditLog)
+              .where(
+                and(
+                  eq(auditLog.tenantId, row.tenantId),
+                  eq(auditLog.eventType, 'pdf_render_permanently_failed'),
+                  sql`${auditLog.payload}->>'invoice_id' = ${row.invoiceId}`,
+                ),
+              )
+              .limit(1);
+            if (existing.length > 0) return false;
 
-        if (!alreadyHas) {
-          await runInTenant(asTenantContext(row.tenantId), async () => {
             await f4AuditAdapter.emit(null, {
               tenantId: row.tenantId,
               requestId,
@@ -229,7 +235,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
                 source: 'cron.receipt_pdf_reconcile',
               },
             });
-          });
+            return true;
+          },
+        );
+
+        if (isFreshAlert) {
           permanentlyFailed += 1;
           logger.error(
             {

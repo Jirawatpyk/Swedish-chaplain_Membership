@@ -312,7 +312,18 @@ export async function recordPayment(
                 sha256: rendered.sha256,
                 templateVersion: deps.currentTemplateVersion,
               }
-            : { kind: 'pending' },
+            : {
+                kind: 'pending',
+                // T166 R1-C1 — persist the pre-allocated receipt doc
+                // number so the worker reads it back instead of
+                // re-allocating (which would burn fresh §87 sequence
+                // numbers on every retry, leaving gaps in
+                // tenant_document_sequences.receipt). NULL for
+                // combined-mode (worker reuses invoice doc num).
+                receiptDocumentNumberRaw: combinedMode
+                  ? null
+                  : receiptDocNumRaw,
+              },
       });
 
       // T166-03 — async path: enqueue render task NOW (inside the same
@@ -375,6 +386,11 @@ export async function recordPayment(
         // worker emits a separate `receipt_rendered` audit event
         // carrying the sha256 once the bytes land.
         receipt_pdf_sha256: rendered ? rendered.sha256 : null,
+        // R1-S3 — forensic flag so audit consumers can distinguish
+        // "sha256 is intentionally null because async path took over"
+        // from "sha256 is null because of a bug". Pairs with the
+        // separate `receipt_rendered` audit row that lands later.
+        receipt_pdf_async: deps.asyncReceiptPdf === true,
       },
     });
 

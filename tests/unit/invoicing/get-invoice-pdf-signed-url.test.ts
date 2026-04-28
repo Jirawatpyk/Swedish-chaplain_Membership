@@ -209,3 +209,67 @@ describe('getInvoicePdfSignedUrl — byte-identical admin↔portal (C1)', () => 
   });
 });
 
+// R1-CG-3 — async receipt PDF gate (T166-10).
+// Member sees 425 Too Early when paid+pending; admin/manager unaffected.
+describe('getInvoicePdfSignedUrl — T166 receipt_pdf_pending gate', () => {
+  function makePaidPendingInvoice(): Invoice {
+    return {
+      ...makeIssuedInvoice(),
+      status: 'paid',
+      paidAt: '2026-04-21T00:00:00Z',
+      receiptPdfStatus: 'pending',
+    } as Invoice;
+  }
+
+  it('member role + paid + receipt_pdf_status=pending → receipt_pdf_pending err with 30s retry', async () => {
+    const invoice = makePaidPendingInvoice();
+    const { deps, blob } = makeDeps(invoice);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      actorRole: 'member',
+      actorMemberId: invoice.memberId,
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('receipt_pdf_pending');
+      if (result.error.code === 'receipt_pdf_pending') {
+        expect(result.error.retryAfterSeconds).toBe(30);
+      }
+    }
+    // No blob URL signed when gated.
+    expect(blob.callsKeys).toEqual([]);
+  });
+
+  it('admin role is NOT gated — paid+pending still returns the signed URL', async () => {
+    const invoice = makePaidPendingInvoice();
+    const { deps, blob } = makeDeps(invoice);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'admin-u',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    expect(blob.callsKeys.length).toBe(1);
+  });
+
+  it('member + paid + status=rendered → falls through to normal path (no 425)', async () => {
+    const invoice = {
+      ...makePaidPendingInvoice(),
+      receiptPdfStatus: 'rendered' as const,
+    } as Invoice;
+    const { deps, blob } = makeDeps(invoice);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      actorRole: 'member',
+      actorMemberId: invoice.memberId,
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    expect(blob.callsKeys.length).toBe(1);
+  });
+});
+

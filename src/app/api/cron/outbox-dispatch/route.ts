@@ -554,10 +554,17 @@ async function dispatchOne(
                    LIMIT 1`,
           ),
         );
-        if (invRow && invRow.receipt_pdf_status !== 'rendered') {
-          // Push next_retry_at out so the cron doesn't tight-loop on
-          // gated rows. 60s aligns with the dispatcher's minute-cron
-          // cadence — one retry per cron tick is sufficient.
+        // R1-I1 — fail CLOSED, not OPEN. If we cannot prove
+        // status === 'rendered', we MUST hold the email. The previous
+        // shape `if (invRow && status !== 'rendered')` let the gate
+        // fall through when invRow was undefined (RLS-hidden row,
+        // deleted invoice, or tx race), shipping a "your receipt is
+        // ready" email pointing at a non-existent attachment. Now:
+        //   - row visible + rendered → fall through to dispatch
+        //   - any other case → push back + skip (no attempts bump)
+        const renderedConfirmed =
+          invRow !== undefined && invRow.receipt_pdf_status === 'rendered';
+        if (!renderedConfirmed) {
           await tx
             .update(notificationsOutbox)
             .set({
@@ -567,6 +574,18 @@ async function dispatchOne(
             .where(eq(notificationsOutbox.id, row.id));
           return 'skipped';
         }
+      } else {
+        // Defensive: gate flag set but no invoice_id / tenant_id —
+        // malformed context, hold the row rather than silently
+        // shipping. Permanent-fail it after the standard retry ladder.
+        await tx
+          .update(notificationsOutbox)
+          .set({
+            nextRetryAt: new Date(now.getTime() + 60_000),
+            updatedAt: now,
+          })
+          .where(eq(notificationsOutbox.id, row.id));
+        return 'skipped';
       }
     }
 
@@ -908,6 +927,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   ];
   if (!env.features.f4Invoicing) {
     baseReadyFilters.push(ne(notificationsOutbox.notificationType, 'invoice_auto_email'));
+  }
+  // R1-I3 — kill-switch parity for the T166 async render branch.
+  // When `FEATURE_F5_ASYNC_RECEIPT_PDF` is off, the dispatcher must
+  // also stop picking up `receipt_pdf_render` rows. Without this
+  // filter, flipping the flag false (rollback path) wouldn't stop
+  // the worker — the dispatcher would keep invoking `renderReceiptPdf`
+  // on rows that were enqueued before the flip, defeating the
+  // kill-switch's purpose. The rows themselves remain in the outbox
+  // for manual recovery (see runbook receipt-pdf-async-rollback.md).
+  if (!env.features.f5AsyncReceiptPdf) {
+    baseReadyFilters.push(
+      ne(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+    );
   }
 
   // Lock-less candidate pick. Real per-row lock happens inside dispatchOne.

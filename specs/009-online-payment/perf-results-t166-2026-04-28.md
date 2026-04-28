@@ -4,9 +4,9 @@
 
 | Mode | median ms | p95 ms |
 |---|---|---|
-| asyncReceiptPdf=true (T166 default) | 899 | 918 |
-| asyncReceiptPdf=false (legacy) | 1288 | 1688 |
+| asyncReceiptPdf=true (T166 default) | 814 | 859 |
+| asyncReceiptPdf=false (legacy) | 1190 | 1657 |
 
-**Improvement (p95)**: 45.6 %
+**Improvement (p95)**: 48.2 %
 
 Source: `tests/perf/webhook-async-pdf-benchmark.test.ts`

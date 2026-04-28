@@ -231,6 +231,9 @@ describe('async receipt PDF dispatcher — T166-06/07', () => {
   let user: TestUser;
 
   beforeAll(async () => {
+    // R1-I3 — `FEATURE_F5_ASYNC_RECEIPT_PDF=true` is set globally in
+    // tests/integration-setup.ts so the dispatcher's kill-switch
+    // filter doesn't skip the `receipt_pdf_render` rows we seed.
     user = await createActiveTestUser('admin');
     const pair = await createTwoTestTenants();
     tenantA = pair.a;

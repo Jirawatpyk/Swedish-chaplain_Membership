@@ -116,6 +116,13 @@ export const invoices = pgTable(
     receiptPdfStatus: receiptPdfStatusEnum('receipt_pdf_status'),
     receiptPdfRenderAttempts: integer('receipt_pdf_render_attempts').notNull().default(0),
     receiptPdfLastError: text('receipt_pdf_last_error'),
+    // T166 R1-C1 — pre-allocated receipt document number for the
+    // separate-mode async render path. Persisted at `recordPayment`
+    // time (under the same tx as the `paid` flip) so the worker reads
+    // this back instead of re-allocating from
+    // `tenant_document_sequences.receipt` — preventing §87 gap when the
+    // worker retries. NULL for combined-mode + pre-T166 + non-paid rows.
+    receiptDocumentNumberRaw: text('receipt_document_number_raw'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

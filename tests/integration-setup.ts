@@ -13,6 +13,15 @@ import { beforeAll } from 'vitest';
 // src/lib/env.ts is imported transitively (top-level executes first).
 process.env['STRIPE_API_VERSION'] = '2024-06-20';
 
+// R1-I3 — enable T166 async receipt PDF flag for integration tests
+// covering the dispatcher's `receipt_pdf_render` branch + reconcile
+// cron + email gate. Default in env.ts is `false` (1-release safety
+// margin), but the integration tests assume the worker pipeline is
+// live. Tests that specifically validate the kill-switch off-state
+// can override via `process.env['FEATURE_F5_ASYNC_RECEIPT_PDF']='false'
+// + vi.resetModules()` (mirrors `feature-flag-kill-switch.test.ts`).
+process.env['FEATURE_F5_ASYNC_RECEIPT_PDF'] = 'true';
+
 beforeAll(() => {
   const dbUrl =
     process.env.DATABASE_URL_UNPOOLED ??

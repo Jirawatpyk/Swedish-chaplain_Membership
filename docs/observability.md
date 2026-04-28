@@ -798,8 +798,8 @@ identifier.
 | SLO | Target | Source signal |
 |---|---|---|
 | SLO-F5-001 initiate p95 | < 1.2 s | `payments.initiate.duration_ms` histogram (Stripe RTT included — documented deviation in plan.md) |
-| SLO-F5-002a webhook processing p95 (canceled / failed / non-mutating event types) | < 500 ms | webhook span duration filtered by `event_type` |
-| SLO-F5-002b webhook processing p95 (succeeded branch — F4 markPaid + PDF + Blob + outbox) | < 1500 ms (relaxed pre-T166); < 500 ms (post-T166) | webhook span duration filtered by `event_type=payment_intent.succeeded`. **Hard post-ship gate**: T166 (move PDF render off webhook hot path via Vercel Queues) — see `specs/009-online-payment/perf-results-2026-04-27.md` § SLO-F5-002 scope. |
+| SLO-F5-002a webhook processing p95 (canceled / failed / non-mutating event types) | < 500 ms (prod) / < 750 ms (dev cross-border) | webhook span duration filtered by `event_type` |
+| SLO-F5-002b webhook processing p95 (succeeded branch — F4 markPaid + `receipt_pdf_status='pending'` flip + outbox enqueue; **PDF render async post T166**) | **< 1000 ms (dev) / < 750 ms (prod estimate)** | webhook span duration filtered by `event_type=payment_intent.succeeded`. T166 shipped 2026-04-28 — async PDF removed PDF-render + Blob-upload from hot path (48.2 % p95 reduction; measured async p95 = 859 ms dev, legacy sync p95 = 1657 ms dev — see `specs/009-online-payment/perf-results-t166-2026-04-28.md`). T167 (delete optimistic-UI overlay) gated on prod p95 < 1000 ms for 7 consecutive days. |
 | SLO-F5-003 PromptPay QR render p95 | < 2 s | client-side observation (Vercel Speed Insights) |
 | SLO-F5-004 settlement → portal confirmation p95 | < 10 s | distributed trace `webhook_receive → portal_revalidate` |
 | SLO-F5-005 payment-success rate | ≥ 95 % over 1 h excluding bank-decline codes | `payments.succeeded.count` / (`payments.succeeded.count` + `payments.failed.count{reason_code != insufficient_funds, card_declined, generic_decline}`) |

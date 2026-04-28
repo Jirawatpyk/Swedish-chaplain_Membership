@@ -85,10 +85,19 @@ test.describe('payment PromptPay happy path — @payment @e2e (T087)', () => {
     await expect(qr).toBeVisible({ timeout: 2_000 });
     await expect(qr).toHaveAttribute('alt', /.+/);
 
-    // Countdown visible and inside aria-live polite region
+    // Countdown is visible to sighted users but `aria-hidden` so screen
+    // readers do not hear every per-second tick (H-13 refactor). The
+    // polite SR announcement rides on the sibling `*-countdown-sr`
+    // sr-only div which carries `aria-live="polite"` for threshold-only
+    // announcements (FR-028j refined). Staff-review R2 (2026-04-28):
+    // updated to match the H-13 component design.
     const countdown = page.getByTestId('pay-sheet-promptpay-countdown');
     await expect(countdown).toBeVisible();
-    await expect(countdown).toHaveAttribute('aria-live', 'polite');
+    await expect(countdown).toHaveAttribute('aria-hidden', 'true');
+
+    const countdownSr = page.getByTestId('pay-sheet-promptpay-countdown-sr');
+    await expect(countdownSr).toHaveAttribute('aria-live', 'polite');
+    await expect(countdownSr).toHaveAttribute('aria-atomic', 'true');
 
     // Anti-fraud warning microcopy (spec § Edge Cases P7)
     const warning = page.getByTestId('pay-sheet-promptpay-warning');

@@ -45,7 +45,6 @@ import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
-import type { SequenceAllocatorPort } from '../ports/sequence-allocator-port';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { TxAbort } from '../lib/tx-abort';
@@ -86,7 +85,6 @@ const SYSTEM_ACTOR_ID = 'system:f4-async-render';
 export interface RenderReceiptPdfDeps {
   readonly invoiceRepo: InvoiceRepo;
   readonly tenantSettingsRepo: TenantSettingsRepo;
-  readonly sequenceAllocator: SequenceAllocatorPort;
   readonly pdfRender: PdfRenderPort;
   readonly blob: BlobStoragePort;
   readonly audit: AuditPort;
@@ -152,26 +150,37 @@ export async function renderReceiptPdf(
       }
 
       // Combined-mode: receipt IS the invoice; reuse the invoice
-      // document number. Separate-mode: re-allocate a receipt sequence
-      // number (the worker re-runs through the same allocator under
-      // advisory lock, so §86/§87 invariant holds).
+      // document number.
+      //
+      // Separate-mode: read the pre-allocated receipt doc number from
+      // the invoice row. record-payment.ts allocated it inside the
+      // same tx as the `paid` flip (atomic with sequential numbering),
+      // and persisted it on `invoices.receipt_document_number_raw` so
+      // the worker can pick it up here without re-allocating.
+      //
+      // Re-allocating in the worker (the original T166-05 shape) is a
+      // §87 NO-GAPS violation: every retry burns a fresh receipt
+      // sequence number, leaving the prior allocations as gaps in
+      // `tenant_document_sequences.receipt`. R1-C1 review fix.
       const combinedMode = settings.receiptNumberingMode === 'combined';
       let receiptDocNum = loaded.documentNumber;
       if (!combinedMode) {
-        const seq = await deps.sequenceAllocator.allocateNext(tx, {
-          tenantId: input.tenantId,
-          documentType: 'receipt',
-          fiscalYear: loaded.fiscalYear,
-        });
-        const docResult = DocumentNumber.of(
-          settings.receiptNumberPrefix ?? 'RE',
-          loaded.fiscalYear,
-          seq,
-        );
+        if (!loaded.receiptDocumentNumberRaw) {
+          // Defensive guard. record-payment.ts MUST have stamped this
+          // when running under `asyncReceiptPdf=true` + separate-mode.
+          // Treat as a permanent state corruption — surface it to the
+          // reconcile cron as `render_failed` so on-call investigates.
+          throw new RenderReceiptInternalError({
+            kind: 'pdf_render_failed',
+            reason:
+              'separate_mode_receipt_doc_num_missing — invoice row has no receipt_document_number_raw; record-payment did not persist it (pre-T166 row?)',
+          });
+        }
+        const docResult = DocumentNumber.parse(loaded.receiptDocumentNumberRaw);
         if (!docResult.ok) {
           throw new RenderReceiptInternalError({
             kind: 'pdf_render_failed',
-            reason: 'document_number_overflow',
+            reason: `receipt_doc_num_parse_failed: ${loaded.receiptDocumentNumberRaw}`,
           });
         }
         receiptDocNum = docResult.value;

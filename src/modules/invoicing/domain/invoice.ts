@@ -171,6 +171,14 @@ export interface Invoice {
   readonly receiptPdfStatus: 'pending' | 'rendered' | 'failed' | null;
   readonly receiptPdfRenderAttempts: number;
   readonly receiptPdfLastError: string | null;
+  /**
+   * T166 R1-C1 — pre-allocated receipt doc number for separate-mode
+   * async render. NULL for combined-mode, pre-T166 paid rows, and any
+   * non-paid invoice. The render worker reads THIS field instead of
+   * calling `sequenceAllocator.allocateNext` (which would create a §87
+   * gap on every retry).
+   */
+  readonly receiptDocumentNumberRaw: string | null;
 
   readonly lines: readonly InvoiceLine[];
 

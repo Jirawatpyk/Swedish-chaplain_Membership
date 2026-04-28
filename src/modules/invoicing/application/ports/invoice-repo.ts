@@ -154,7 +154,18 @@ export interface InvoiceRepo {
             readonly sha256: Sha256Hex;
             readonly templateVersion: number;
           }
-        | { readonly kind: 'pending' };
+        | {
+            readonly kind: 'pending';
+            /**
+             * T166 R1-C1 — pre-allocated receipt document number for
+             * separate-mode tenants. The render worker MUST read this
+             * field back (instead of calling `allocateNext` again) so
+             * retries don't burn fresh sequence numbers and leave §87
+             * gaps. `null` for combined-mode (worker reuses the
+             * invoice document number).
+             */
+            readonly receiptDocumentNumberRaw: string | null;
+          };
     },
   ): Promise<Invoice>;
 

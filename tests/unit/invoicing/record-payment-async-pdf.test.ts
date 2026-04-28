@@ -99,6 +99,7 @@ function makeIssuedInvoice(): Invoice {
     receiptPdfStatus: null,
     receiptPdfRenderAttempts: 0,
     receiptPdfLastError: null,
+    receiptDocumentNumberRaw: null,
     lines: [line],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',
@@ -207,7 +208,12 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
     const applyPaymentCalls = (deps.invoiceRepo.applyPayment as ReturnType<typeof vi.fn>).mock.calls;
     expect(applyPaymentCalls.length).toBe(1);
     const callArg = applyPaymentCalls[0]![1];
-    expect(callArg.receiptPdf).toEqual({ kind: 'pending' });
+    // R1-C1 — combined-mode default fixture → receiptDocumentNumberRaw:null.
+    // Separate-mode case is exercised via a dedicated test below.
+    expect(callArg.receiptPdf).toEqual({
+      kind: 'pending',
+      receiptDocumentNumberRaw: null,
+    });
   });
 
   it('pdfRender.render is NOT invoked on the async branch', async () => {
@@ -265,5 +271,61 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
     expect(inlineDeps.blob.uploadPdf).toHaveBeenCalledTimes(1);
     // Enqueue MUST NOT fire on the inline path.
     expect(inlineDeps.receiptPdfRenderEnqueue!.enqueue).not.toHaveBeenCalled();
+  });
+
+  // R1-C1 — separate-mode async path: receipt sequence allocator IS
+  // called inside record-payment (atomically with the paid flip), and
+  // the allocated raw doc num is persisted on the invoice row via
+  // applyPayment so the worker reads it back instead of re-allocating
+  // (which would create §87 gaps on every retry).
+  it('separate-mode async: pre-allocates receipt seq + persists receiptDocumentNumberRaw on applyPayment', async () => {
+    const draft = makeIssuedInvoice();
+    const deps = makeAsyncDeps(
+      draft,
+      makeSettings({
+        receiptNumberingMode: 'separate',
+        receiptNumberPrefix: 'RE',
+      }),
+    );
+    // Allocator returns sequence 7 — the test asserts that 7 is the
+    // value that lands on the row (NOT some later value from a
+    // worker re-allocation).
+    (deps.sequenceAllocator.allocateNext as ReturnType<typeof vi.fn>).mockResolvedValueOnce(7);
+
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+
+    expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledTimes(1);
+    const callArg = (deps.invoiceRepo.applyPayment as ReturnType<typeof vi.fn>)
+      .mock.calls[0]![1];
+    expect(callArg.receiptPdf.kind).toBe('pending');
+    expect(callArg.receiptPdf.receiptDocumentNumberRaw).toBe('RE-2026-000007');
+  });
+
+  // R1-CG-1 — atomicity: enqueue throw must roll the whole thing back.
+  // The opaqueTx mock returns control to the test via the withTx
+  // callback's exception bubble — recordPayment surfaces a typed
+  // error, the audit emit MUST NOT have been called, and applyPayment's
+  // returned row MUST NOT be observed by the caller (the use-case's
+  // Result is err).
+  it('rolls back the entire tx when receiptPdfRenderEnqueue throws', async () => {
+    const draft = makeIssuedInvoice();
+    const deps = makeAsyncDeps(draft, makeSettings());
+    const enqueueErr = new Error('outbox insert failed (simulated)');
+    (deps.receiptPdfRenderEnqueue!.enqueue as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(enqueueErr);
+
+    let thrown: unknown = null;
+    try {
+      await recordPayment(deps, input);
+    } catch (e) {
+      thrown = e;
+    }
+    // The error propagates out of recordPayment (not swallowed) so the
+    // outer transaction handler observes the failure and Postgres
+    // rolls back. The audit emit (which fires AFTER the enqueue
+    // success path) MUST NOT have been called.
+    expect(thrown).toBe(enqueueErr);
+    expect(deps.audit.emit).not.toHaveBeenCalled();
   });
 });

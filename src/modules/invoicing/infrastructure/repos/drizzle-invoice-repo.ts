@@ -199,6 +199,7 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     receiptPdfStatus: row.receiptPdfStatus ?? null,
     receiptPdfRenderAttempts: row.receiptPdfRenderAttempts ?? 0,
     receiptPdfLastError: row.receiptPdfLastError ?? null,
+    receiptDocumentNumberRaw: row.receiptDocumentNumberRaw ?? null,
 
     lines,
     createdAt: row.createdAt.toISOString(),
@@ -584,6 +585,15 @@ export function makeDrizzleInvoiceRepo(
             ? input.receiptPdf.templateVersion
             : null,
           receiptPdfStatus: isRendered ? 'rendered' : 'pending',
+          // T166 R1-C1 — persist pre-allocated receipt doc number on
+          // the row when async + separate-mode. Worker reads it back
+          // via `findByIdInTx` instead of re-allocating (which would
+          // create a §87 sequence gap on every retry). Sync 'rendered'
+          // path leaves this NULL — the doc num is already baked into
+          // the rendered PDF bytes + audit row, no need to duplicate.
+          receiptDocumentNumberRaw: isRendered
+            ? null
+            : input.receiptPdf.receiptDocumentNumberRaw,
           updatedAt: sql`now()`,
         })
         .where(
@@ -678,6 +688,16 @@ export function makeDrizzleInvoiceRepo(
      */
     async applyReceiptPdfFailure(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
+      // R1-C2 — DO NOT roll a healthy `rendered` row back to `failed`.
+      // At-least-once outbox delivery + the reconcile cron's separate
+      // re-enqueue path mean a slow worker A's failure write can race
+      // with a fast worker B's success write. Without this guard,
+      // worker A would corrupt the row by overwriting `rendered →
+      // failed`, breaking the member-portal download + emitting a
+      // bogus permanent-failure page. The `ne` predicate makes the
+      // failure write conditional + non-destructive: if status is
+      // already 'rendered', the UPDATE matches zero rows and we
+      // log + skip the conflict (instead of throwing).
       const [updated] = await tx
         .update(invoices)
         .set({
@@ -690,11 +710,43 @@ export function makeDrizzleInvoiceRepo(
           and(
             eq(invoices.tenantId, input.tenantId),
             eq(invoices.invoiceId, input.invoiceId),
+            ne(invoices.receiptPdfStatus, 'rendered'),
           ),
         )
         .returning();
       if (!updated) {
-        throw new InvoiceApplyConflictError('applyPayment');
+        // Either the row vanished (tenant_id scoping mismatch) or it
+        // already moved to `rendered` between this worker's failure
+        // detection and the failure write. Re-fetch to distinguish.
+        const [existing] = await tx
+          .select()
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, input.tenantId),
+              eq(invoices.invoiceId, input.invoiceId),
+            ),
+          )
+          .limit(1);
+        if (!existing) {
+          throw new InvoiceApplyConflictError('applyPayment');
+        }
+        // Row is rendered — return it as-is. The failure was a
+        // benign race; the success write has already landed.
+        const lineRowsExisting = await tx
+          .select()
+          .from(invoiceLines)
+          .where(
+            and(
+              eq(invoiceLines.tenantId, input.tenantId),
+              eq(invoiceLines.invoiceId, input.invoiceId),
+            ),
+          )
+          .orderBy(asc(invoiceLines.position));
+        return rowsToInvoice(
+          existing as InvoiceRow,
+          lineRowsExisting.map(rowToLine),
+        );
       }
       const lineRows = await tx
         .select()

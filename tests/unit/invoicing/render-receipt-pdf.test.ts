@@ -96,6 +96,7 @@ function makePaidPendingInvoice(overrides: Partial<Invoice> = {}): Invoice {
     receiptPdfStatus: 'pending',
     receiptPdfRenderAttempts: 0,
     receiptPdfLastError: null,
+    receiptDocumentNumberRaw: null,
     lines: [line],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-05-18T10:00:00Z',
@@ -165,9 +166,6 @@ function makeDeps(
       getForIssue: vi.fn(async () => settings),
       upsert: vi.fn(),
       withTx: vi.fn(async (_t, fn) => fn({})),
-    },
-    sequenceAllocator: {
-      allocateNext: vi.fn(async () => 1),
     },
     pdfRender: {
       render: vi.fn(async () => ({

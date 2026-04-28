@@ -249,8 +249,15 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
     expect(rowAfterTick1?.status).toBe('pending');
     // attempts MUST NOT be bumped — gate skip ≠ retry burn.
     expect(rowAfterTick1?.attempts).toBe(0);
-    // next_retry_at pushed into the future (dispatcher's 60s back-off).
-    expect(rowAfterTick1?.nextRetryAt!.getTime()).toBeGreaterThan(Date.now());
+    // R1-IG-2 — assert the back-off is the dispatcher's 60s ladder,
+    // not a 1ms accidental push (which would tight-loop the cron).
+    // Lower bound 30s gives clock-skew headroom; upper bound 90s
+    // catches a runaway delay (e.g. an hour) that would defeat the
+    // member-facing UX of "email arrives within ~1 cron tick of the
+    // PDF being ready".
+    const pushedDelta = rowAfterTick1!.nextRetryAt!.getTime() - Date.now();
+    expect(pushedDelta).toBeGreaterThan(30_000);
+    expect(pushedDelta).toBeLessThan(90_000);
 
     // Flip the invoice's receipt_pdf_status to 'rendered' — simulates
     // the worker completing its render+upload + applyReceiptPdf.

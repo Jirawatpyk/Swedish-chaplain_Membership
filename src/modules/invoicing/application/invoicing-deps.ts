@@ -299,7 +299,6 @@ export function makeRenderReceiptPdfDeps(
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
-    sequenceAllocator: postgresSequenceAllocator,
     pdfRender: reactPdfRenderAdapter,
     blob: vercelBlobAdapter,
     audit: f4AuditAdapter,
