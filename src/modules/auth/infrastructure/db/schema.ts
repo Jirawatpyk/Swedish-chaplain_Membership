@@ -120,6 +120,54 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'auto_email_delivery_failed',
   // --- Hybrid A+B duplicate-email handling — added by migration 0032 ---
   'contact_linked_to_user',
+  // --- F5 online-payment events (16) — added by migration 0040 ---
+  'payment_initiated',
+  'payment_succeeded',
+  'payment_failed',
+  'payment_canceled',
+  'payment_method_switched',
+  'payment_auto_refunded_stale_invoice',
+  'payment_auto_refunded_concurrent_manual_mark',
+  'payment_environment_mismatch',
+  'payment_cross_tenant_probe',
+  'refund_initiated',
+  'refund_succeeded',
+  'refund_failed',
+  'out_of_band_refund_detected',
+  'webhook_signature_rejected',
+  'webhook_api_version_mismatch',
+  'tenant_payment_settings_updated',
+  'online_payment_toggled',
+  // --- F5 rate-limit event types added by migration 0043 ---
+  'payment_initiate_rate_limited',
+  'payment_cancel_rate_limited',
+  // --- F5 webhook ops-visibility event types added by migration 0046 ---
+  // (audit 2026-04-25 findings #10 + #13)
+  'webhook_unknown_intent',
+  'webhook_payment_already_canceled',
+  // --- F5 confirm-step retrieve-failure trail added by migration 0047 ---
+  //     (Review I-14 — F5 Phase 3 R3 closeout)
+  'payment_processor_retrieve_failed',
+  // --- F5 confirm-step invoice_not_found trail added by migration 0048 ---
+  //     (Review S5 — F5 Phase 3 R2 closeout)
+  'payment_invoice_not_found',
+  // --- F5 stale-pending-refund sweep added by migration 0050 (T130a) ---
+  'stale_pending_refund_detected',
+  // --- F5 confirm-step terminal-state ack added by migration 0052 (H-11
+  //     review 2026-04-27) — emitted on illegal_transition and
+  //     invariant_violation_duplicate_succeeded ack paths instead of
+  //     reusing payment_processor_retrieve_failed. ---
+  'payment_acknowledged_terminal_state',
+  // --- F5 chargeback path added by migration 0053 (R2 C-1 — 2026-04-27).
+  //     Emitted by processWebhookEvent on `charge.dispute.created`. ---
+  'dispute_created',
+  // --- T166 async receipt PDF added by migration 0057 (F5 Phase 9 polish). ---
+  //     `receipt_rendered` fires from the worker once bytes land + status
+  //     flips to 'rendered' (10y retention, tax-doc-touching).
+  //     `pdf_render_permanently_failed` fires from reconcile cron when a
+  //     row exhausts its retry budget (5y retention, ops event).
+  'receipt_rendered',
+  'pdf_render_permanently_failed',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [
@@ -137,6 +185,11 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   // all F4 auto-email variants; the notification dispatcher routes
   // them via `context_data.event_type`. ---
   'invoice_auto_email',
+  // --- T166 migration 0058: async receipt PDF render task. Not an
+  // email — the dispatcher routes this to `renderReceiptPdf` use-case
+  // under `runInTenant(payload.tenantId)`. Worker idempotency lives
+  // in the use-case (`receipt_pdf_status='pending'` guard). ---
+  'receipt_pdf_render',
 ]);
 
 export const outboxStatusEnum = pgEnum('outbox_status', [

@@ -33,6 +33,29 @@ export const AUDIT_EVENT_TYPES = [
   'concurrent_sessions_revoked',
   'manager_denied_write',
   'invitation_redemption_failed',
+  // --- F5 webhook + rate-limit event types consumed by auditRepo directly
+  // via route handlers (`src/app/api/webhooks/stripe/route.ts` +
+  // `src/app/api/payments/{initiate,[id]/cancel}/route.ts`). Tenant-
+  // scoped payment lifecycle events (payment_initiated / payment_succeeded
+  // etc.) do NOT go through this repo — they use the F5 AuditPort
+  // (`@/modules/payments/application/ports/audit-port`) with `retention_years`
+  // per data-model.md § 7.1. These 5 routes-level events are registered
+  // here so the route can append without an `unknown` cast, fulfilling
+  // Backend F-02 + PCI F-03 + Threat F-09 review findings.
+  'webhook_signature_rejected',
+  'payment_environment_mismatch',
+  'webhook_api_version_mismatch',
+  'payment_initiate_rate_limited',
+  'payment_cancel_rate_limited',
+  // --- Webhook ops-visibility events added by migration 0046
+  //     (audit 2026-04-25 findings #10 + #13).
+  'webhook_unknown_intent',
+  'webhook_payment_already_canceled',
+  // --- Migration 0047 (Review I-14) — confirmPayment retrievePaymentIntent
+  //     failure trail. Operational only.
+  'payment_processor_retrieve_failed',
+  // --- Migration 0048 (Review S5) — confirmPayment invoice_not_found trail.
+  'payment_invoice_not_found',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -44,7 +67,19 @@ export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
  *   - 'system:bootstrap' — the bootstrap admin seed script (T080)
  *   - 'system:cron'      — scheduled jobs (T160 lockout-cleanup)
  */
-export type ActorRef = UserId | 'anonymous' | 'system:bootstrap' | 'system:cron';
+/**
+ * `'system:webhook'` added 2026-04-25 (audit finding #2): Stripe
+ * webhook reject paths (signature/env/api-version mismatches) need a
+ * dedicated sentinel — `'system:cron'` lumps them with scheduled-job
+ * actors, polluting audit dashboards. Use `'system:webhook'` for any
+ * non-cron synchronous-event-handler context (Stripe, Resend, etc.).
+ */
+export type ActorRef =
+  | UserId
+  | 'anonymous'
+  | 'system:bootstrap'
+  | 'system:cron'
+  | 'system:webhook';
 
 export interface AuditEvent {
   readonly id: AuditEventId;

@@ -13,7 +13,11 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  InlineAlert,
+  InlineAlertDescription,
+  InlineAlertTitle,
+} from '@/components/ui/inline-alert';
 
 export interface PriorYearLockBannerProps {
   readonly planYear: number;
@@ -27,9 +31,9 @@ export function PriorYearLockBanner({
   const t = useTranslations('admin.plans.priorYearLock');
 
   return (
-    <Alert className="border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950">
-      <AlertTitle>{t('banner', { year: planYear })}</AlertTitle>
-      <AlertDescription className="mt-2 space-y-2">
+    <InlineAlert tone="warning">
+      <InlineAlertTitle>{t('banner', { year: planYear })}</InlineAlertTitle>
+      <InlineAlertDescription className="mt-2 space-y-2">
         <p>{t('explanation')}</p>
         <Link
           href={`/admin/plans/clone?from=${planYear}&to=${currentYear}`}
@@ -37,7 +41,7 @@ export function PriorYearLockBanner({
         >
           {t('cloneCta', { currentYear })}
         </Link>
-      </AlertDescription>
-    </Alert>
+      </InlineAlertDescription>
+    </InlineAlert>
   );
 }

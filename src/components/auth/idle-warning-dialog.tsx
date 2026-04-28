@@ -138,6 +138,40 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     setOpen(false);
   }, [forceSignOut]);
 
+  // F5 / 009-online-payment amendment (FR-028c):
+  // the PaySheet drawer dispatches `swecham:pause-idle-timer` while
+  // Stripe payment flows (card submit, 3DS challenge) hold the user's
+  // attention without page-level activity. We freeze the idle clock on
+  // pause and thaw it on resume, preserving the elapsed-before-pause
+  // offset so a user who was already 20 min idle before opening the
+  // drawer still only has 9 min left after close.
+  //
+  // Freeze strategy: when paused, bump `lastActivityRef` forward by the
+  // time each poll tick would have accumulated. The simplest, accurate
+  // implementation is to track a `pausedAt` timestamp and, on resume,
+  // shift `lastActivityRef` forward by `(Date.now() - pausedAt)`.
+  const pausedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    const onPause = () => {
+      if (pausedAtRef.current === null) {
+        pausedAtRef.current = Date.now();
+      }
+    };
+    const onResume = () => {
+      if (pausedAtRef.current !== null) {
+        const frozenFor = Date.now() - pausedAtRef.current;
+        lastActivityRef.current += frozenFor;
+        pausedAtRef.current = null;
+      }
+    };
+    window.addEventListener('swecham:pause-idle-timer', onPause);
+    window.addEventListener('swecham:resume-idle-timer', onResume);
+    return () => {
+      window.removeEventListener('swecham:pause-idle-timer', onPause);
+      window.removeEventListener('swecham:resume-idle-timer', onResume);
+    };
+  }, []);
+
   // Activity tracker — reset the "last activity" timestamp on any
   // pointer/key event. We do NOT reset it while the modal is open;
   // otherwise the modal would bounce off the first mouse move the user
@@ -162,6 +196,8 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   useEffect(() => {
     if (open) return;
     const interval = window.setInterval(() => {
+      // Freeze while paused by the PaySheet drawer (FR-028c).
+      if (pausedAtRef.current !== null) return;
       const idleFor = Date.now() - lastActivityRef.current;
       if (idleFor >= WARNING_AFTER_MS) {
         setOpen(true);

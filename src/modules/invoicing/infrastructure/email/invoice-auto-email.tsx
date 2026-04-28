@@ -1,5 +1,13 @@
+/** @jsxImportSource react */
 /**
  * T108 — F4 auto-email builder (React Email migration).
+ *
+ * Note on the pragma above: the JSX-runtime override is REQUIRED for
+ * Playwright E2E tests that import this module. Playwright 1.59's babel
+ * transform hardcodes its own stub jsx-runtime (returns {__pw_type, type,
+ * props, key} non-React shells); without the override, render(element)
+ * fails with "Objects are not valid as a React child". Vitest/Next.js/
+ * tsc are unaffected — they already default to React's jsx-runtime.
  *
  * Rendered by the shared outbox dispatcher (`/api/cron/outbox-dispatch`)
  * when a `notifications_outbox` row with
@@ -27,16 +35,39 @@
  * gain an `await`. The React Email pipeline inlines styles via
  * `juice` for cross-client compat + emits a Gmail-safe preview line.
  */
+import * as React from 'react';
 import { render } from '@react-email/components';
 import { InvoiceIssuedEmail } from './templates/invoice-issued';
 import { InvoicePaidEmail } from './templates/invoice-paid';
 import { InvoiceVoidedEmail } from './templates/invoice-voided';
 import { CreditNoteEmail } from './templates/credit-note';
 import {
+  PAY_ONLINE_CTA,
   resolveCopy,
   type InvoiceAutoEmailEventType,
   type InvoiceAutoEmailLocale,
 } from './templates/copy';
+
+/**
+ * F5 FR-027 — UTM attribution query params on the "Pay online" deep link.
+ * Pinned here so every email emitted across tenants shares a single
+ * attribution signature; changes go through an explicit PR (analytics
+ * funnel continuity).
+ */
+const PAY_ONLINE_UTM =
+  'utm_source=invoice_email&utm_medium=email&utm_campaign=f5_pay_online';
+
+/**
+ * F5 FR-027 — compose the pay-online deep link. Exported for test
+ * parity with the caller; the builder uses this internally.
+ */
+export function buildPayOnlineUrl(
+  portalBaseUrl: string,
+  invoiceId: string,
+): string {
+  const trimmed = portalBaseUrl.replace(/\/+$/, '');
+  return `${trimmed}/portal/invoices/${invoiceId}?pay=1&${PAY_ONLINE_UTM}`;
+}
 
 export type {
   InvoiceAutoEmailEventType,
@@ -69,6 +100,20 @@ export interface InvoiceAutoEmailInput {
    * the append-only audit log (that path uses void_reason_sha256).
    */
   readonly voidReason?: string;
+  /**
+   * F5 FR-027 — when `true` AND `payOnlineUrl` is provided, the
+   * `invoice_issued` / `invoice_pdf_resent` email renders an additional
+   * visually-primary "Pay online" CTA above the PDF-download button.
+   * Ignored for all other event types. Caller (outbox dispatcher) MUST
+   * resolve this from `tenant_payment_settings.online_payment_enabled`.
+   */
+  readonly tenantOnlinePaymentEnabled?: boolean;
+  /**
+   * F5 FR-027 — fully composed pay-online deep link. Use
+   * `buildPayOnlineUrl(portalBaseUrl, invoiceId)` to compose; kept as a
+   * string prop so this module doesn't need to know about env resolution.
+   */
+  readonly payOnlineUrl?: string;
 }
 
 export interface BuiltPayload {
@@ -94,6 +139,10 @@ export async function buildInvoiceAutoEmail(
     body: copy.body,
     ctaLabel: copy.cta,
     downloadUrl: input.downloadUrl,
+    tenantOnlinePaymentEnabled: input.tenantOnlinePaymentEnabled === true,
+    ...(typeof input.payOnlineUrl === 'string' && input.payOnlineUrl.length > 0
+      ? { payOnlineUrl: input.payOnlineUrl }
+      : {}),
   });
 
   // React Email's `render()` inlines CSS + returns Gmail-safe HTML.
@@ -113,6 +162,10 @@ interface TemplateProps {
   readonly body: string;
   readonly ctaLabel: string;
   readonly downloadUrl: string;
+  /** F5 FR-027 — only consumed by `InvoiceIssuedEmail`. */
+  readonly tenantOnlinePaymentEnabled?: boolean;
+  /** F5 FR-027 — only consumed by `InvoiceIssuedEmail`. */
+  readonly payOnlineUrl?: string;
 }
 
 function pickTemplate(
@@ -121,15 +174,57 @@ function pickTemplate(
 ): React.ReactElement {
   switch (eventType) {
     case 'invoice_issued':
-    case 'invoice_pdf_resent':
-      return <InvoiceIssuedEmail {...props} />;
+    case 'invoice_pdf_resent': {
+      // F5 FR-027 — thread the pay-online CTA into the issued-invoice
+      // template. Other templates don't receive these props.
+      const payOnlineCtaLabel = PAY_ONLINE_CTA[props.locale];
+      return (
+        <InvoiceIssuedEmail
+          locale={props.locale}
+          subject={props.subject}
+          body={props.body}
+          ctaLabel={props.ctaLabel}
+          downloadUrl={props.downloadUrl}
+          tenantOnlinePaymentEnabled={props.tenantOnlinePaymentEnabled === true}
+          payOnlineCtaLabel={payOnlineCtaLabel}
+          {...(typeof props.payOnlineUrl === 'string' &&
+          props.payOnlineUrl.length > 0
+            ? { payOnlineUrl: props.payOnlineUrl }
+            : {})}
+        />
+      );
+    }
     case 'invoice_paid':
     case 'receipt_pdf_resent':
-      return <InvoicePaidEmail {...props} />;
+      return (
+        <InvoicePaidEmail
+          locale={props.locale}
+          subject={props.subject}
+          body={props.body}
+          ctaLabel={props.ctaLabel}
+          downloadUrl={props.downloadUrl}
+        />
+      );
     case 'invoice_voided':
-      return <InvoiceVoidedEmail {...props} />;
+      return (
+        <InvoiceVoidedEmail
+          locale={props.locale}
+          subject={props.subject}
+          body={props.body}
+          ctaLabel={props.ctaLabel}
+          downloadUrl={props.downloadUrl}
+        />
+      );
     case 'credit_note_issued':
     case 'credit_note_pdf_resent':
-      return <CreditNoteEmail {...props} />;
+      return (
+        <CreditNoteEmail
+          locale={props.locale}
+          subject={props.subject}
+          body={props.body}
+          ctaLabel={props.ctaLabel}
+          downloadUrl={props.downloadUrl}
+        />
+      );
   }
 }

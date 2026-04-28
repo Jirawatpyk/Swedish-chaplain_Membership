@@ -100,7 +100,14 @@ function minimalInvoice(overrides: Record<string, unknown> = {}): unknown {
   };
 }
 
-describe('contract: GET /api/members/[memberId]/invoices', () => {
+// 30 s describe-level timeout (default 10 s) — the FIRST `it()` here pays
+// the full route-module compile + import cost. Standalone runs land in
+// ~2-3 s, but under `pnpm test:coverage` (V8 istanbul transform + worker-
+// pool contention) the cold-cache import can exceed 10 s and flake the
+// whole suite. Subsequent tests reuse the cached module so the budget
+// covers them comfortably. Mirrors the same fix applied to
+// `tests/contract/invite-with-member.test.ts`.
+describe('contract: GET /api/members/[memberId]/invoices', { timeout: 30_000 }, () => {
   afterEach(() => vi.clearAllMocks());
 
   it('401 when unauthenticated (requireAdminContext returns response)', async () => {

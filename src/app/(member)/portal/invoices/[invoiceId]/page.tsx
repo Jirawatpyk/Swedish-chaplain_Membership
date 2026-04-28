@@ -47,7 +47,22 @@ import {
 // eslint-disable-next-line no-restricted-imports
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
 import { asInvoiceId } from '@/modules/invoicing';
+// F5 G4 — presentation-only settings read (FR-016/FR-030 render-gate).
+// Same escape-hatch pattern as the CN repo above; the Application-
+// layer read-only loader is a Phase-9 consolidation candidate once
+// the admin-settings use-case lands. The repo does its own RLS-
+// scoped read under `runInTenant`, so this is safe tenant-wise.
+// eslint-disable-next-line no-restricted-imports
+import { makeDrizzleTenantPaymentSettingsRepo } from '@/modules/payments/infrastructure/repos/drizzle-tenant-payment-settings-repo';
+// H-8 (review 2026-04-27): query audit_log for the auto-refund signal
+// to drive the member-facing refund banner. Same escape-hatch pattern
+// as tenant-payment-settings + CN repo above; the repo is RLS-scoped
+// + read-only. Application-layer use-case is a Phase-10 consolidation
+// candidate.
+// eslint-disable-next-line no-restricted-imports
+import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -78,6 +93,9 @@ import {
   type InvoiceStatusIconName,
 } from '../_utils/format';
 import { ResendInvoiceButton } from '../_components/resend-invoice-button';
+import { PayNowButton } from './_components/pay-sheet/pay-now-button';
+import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
+import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
 
 const STATUS_ICON_MAP: Record<InvoiceStatusIconName, LucideIcon> = {
   CheckCircle2,
@@ -156,10 +174,49 @@ export default async function PortalInvoiceDetailPage({
     ? 'overdue'
     : invoice.status;
 
+  // R5 round-7: pre-render BOTH badge variants on the server so the
+  // <OptimisticPaidOverlay> client component can swap between them
+  // without having to re-derive the rendered output. Function children
+  // are not allowed across the server→client boundary, so we pass the
+  // pre-rendered JSX as `whenUnpaid` / `whenPaid` props.
+  const renderStatusBadge = (status: typeof displayStatus | 'paid') => {
+    const Icon = STATUS_ICON_MAP[statusIconName(status)];
+    return (
+      <Badge
+        variant={statusBadgeVariant(status)}
+        className="inline-flex items-center gap-1"
+      >
+        <Icon className="size-3.5" aria-hidden="true" />
+        {tStatus(status)}
+      </Badge>
+    );
+  };
+
   const documentNumber = invoice.documentNumber?.raw ?? '—';
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;
+
+  // F5 G4 T081 — load tenant payment settings to drive the Pay-now
+  // render-gate (FR-016 / FR-030). The repo is read-only + RLS-scoped;
+  // a null/error branch collapses to the disabled-card empty state
+  // rather than erroring the page. Feature-flag gating
+  // (`FEATURE_F5_ONLINE_PAYMENT`) is defense-in-depth with the
+  // middleware-layer 503 behavior.
+  const paymentSettings = env.features.f5OnlinePayment
+    ? await makeDrizzleTenantPaymentSettingsRepo()
+        .getByTenantId(tenantCtx.slug)
+        .catch(() => null)
+    : null;
+
+  const canPayOnline =
+    env.features.f5OnlinePayment &&
+    invoice.status === 'issued' &&
+    paymentSettings !== null &&
+    paymentSettings.onlinePaymentEnabled &&
+    paymentSettings.enabledMethods.length > 0 &&
+    paymentSettings.processorAccountId.length > 0 &&
+    paymentSettings.processorPublishableKey.length > 0;
 
   // G-1 — load any credit notes attached to this invoice so the
   // member sees + can download them. Best-effort: a repo failure
@@ -170,22 +227,25 @@ export default async function PortalInvoiceDetailPage({
     .findByOriginalInvoice(asInvoiceId(invoice.invoiceId), tenantCtx.slug)
     .catch(() => [] as never[]);
 
+  // Graceful-degrade: a repo failure hides the refund line, not the void banner.
+  const autoRefund =
+    invoice.status === 'void'
+      ? await makeDrizzlePaymentsRepo(tenantCtx.slug)
+          .findStaleInvoiceAutoRefund(invoice.invoiceId)
+          .catch(() => null)
+      : null;
+
   return (
     <DetailContainer>
       <PageHeader
         title={`${t('title')} ${documentNumber}`}
-        badge={(() => {
-          const Icon = STATUS_ICON_MAP[statusIconName(displayStatus)];
-          return (
-            <Badge
-              variant={statusBadgeVariant(displayStatus)}
-              className="inline-flex items-center gap-1"
-            >
-              <Icon className="size-3.5" aria-hidden="true" />
-              {tStatus(displayStatus)}
-            </Badge>
-          );
-        })()}
+        badge={
+          <OptimisticPaidOverlay
+            invoiceId={invoice.invoiceId}
+            whenUnpaid={renderStatusBadge(displayStatus)}
+            whenPaid={renderStatusBadge('paid')}
+          />
+        }
         actions={
           invoice.pdf ? (
             <>
@@ -201,23 +261,54 @@ export default async function PortalInvoiceDetailPage({
                   className="min-h-11 px-3"
                 />
               ) : null}
-              <a
-                href={`/api/portal/invoices/${invoice.invoiceId}/pdf`}
-                aria-label={`${
-                  invoice.status === 'void'
-                    ? t('void.downloadVoidedPdf')
-                    : tList('actions.download')
-                } — ${documentNumber}`}
-                className={cn(
-                  buttonVariants({ variant: 'default', size: 'sm' }),
-                  'min-h-11 px-4',
-                )}
-                download
-              >
-                {invoice.status === 'void'
-                  ? t('void.downloadVoidedPdf')
-                  : tList('actions.download')}
-              </a>
+              {(() => {
+                // T166-10 — async receipt PDF gate. When the receipt is
+                // still being rendered by the cron worker (status !==
+                // 'rendered'), surface a polite "preparing…" affordance
+                // instead of a download link. `aria-busy="true"` +
+                // `role="status"` makes assistive tech announce the
+                // transition without stealing focus.
+                const receiptPending =
+                  invoice.status === 'paid' &&
+                  invoice.receiptPdfStatus !== null &&
+                  invoice.receiptPdfStatus !== 'rendered';
+                if (receiptPending) {
+                  return (
+                    <span
+                      role="status"
+                      aria-live="polite"
+                      aria-busy="true"
+                      data-pay-focus-target="download-pdf"
+                      className={cn(
+                        buttonVariants({ variant: 'outline', size: 'sm' }),
+                        'min-h-11 px-4 cursor-progress',
+                      )}
+                    >
+                      {t('pdf.preparing')}
+                    </span>
+                  );
+                }
+                return (
+                  <a
+                    data-pay-focus-target="download-pdf"
+                    href={`/api/portal/invoices/${invoice.invoiceId}/pdf`}
+                    aria-label={`${
+                      invoice.status === 'void'
+                        ? t('void.downloadVoidedPdf')
+                        : tList('actions.download')
+                    } — ${documentNumber}`}
+                    className={cn(
+                      buttonVariants({ variant: 'default', size: 'sm' }),
+                      'min-h-11 px-4',
+                    )}
+                    download
+                  >
+                    {invoice.status === 'void'
+                      ? t('void.downloadVoidedPdf')
+                      : tList('actions.download')}
+                  </a>
+                );
+              })()}
             </>
           ) : null
         }
@@ -254,6 +345,53 @@ export default async function PortalInvoiceDetailPage({
             ) : null}
           </dl>
           <p className="mt-3 text-sm text-destructive">{t('void.notPayable')}</p>
+          {autoRefund && (
+            // Reassuring-news block. Outer <section aria-labelledby>
+            // creates a screen-reader landmark separate from the
+            // destructive void parent. INNER <div role="status"> hosts
+            // the live region — split because nesting role="status"
+            // and the section's implicit `region` role on the same
+            // element causes JAWS to drop the landmark from nav lists.
+            // Visual: thick left border (--primary) is dark-mode-safe
+            // even if a tenant's --accent token drifts close to
+            // --destructive — the border guarantees visual separation
+            // from the void block above without relying on bg contrast.
+            <section
+              aria-labelledby="invoice-auto-refund-heading"
+              data-testid="portal-invoice-auto-refund-notice"
+              className="mt-4 rounded-md border border-border border-l-4 border-l-primary bg-card p-3"
+            >
+              <h3
+                id="invoice-auto-refund-heading"
+                className="text-sm font-medium text-foreground"
+              >
+                {t('void.autoRefundHeading')}
+              </h3>
+              <div role="status" aria-live="polite">
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t('void.autoRefundBody')}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t('void.autoRefundContact')}
+                </p>
+                {autoRefund.processorRefundId && (
+                  <p
+                    className="mt-2 font-mono text-xs text-muted-foreground"
+                    data-testid="portal-invoice-auto-refund-ref"
+                  >
+                    {t('void.autoRefundRef', {
+                      // Stripe refund IDs are stable identifiers — full
+                      // value is safe to surface (no PCI scope; no
+                      // member PII). Truncating to last 8 keeps the line
+                      // scannable on mobile + matches what most banks
+                      // ask for in support tickets.
+                      ref: autoRefund.processorRefundId.slice(-8),
+                    })}
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
         </section>
       )}
 
@@ -394,6 +532,50 @@ export default async function PortalInvoiceDetailPage({
           </dl>
         </CardContent>
       </Card>
+
+      {/* F5 G4 T081 — online payment entry point. Only surfaced for
+        * 'issued' invoices; other states (paid / void / credited)
+        * render nothing here since there is nothing for the member
+        * to pay.
+        *
+        * R5 round-7 (2026-04-26): wrapped in <OptimisticPaidOverlay>
+        * so the Pay-now button hides INSTANTLY once PaySheet
+        * dispatches the optimistic-paid event — without waiting for
+        * the server-side invoice.status flip. Prevents the
+        * "ConfirmationPanel up + Pay-now button STILL rendered"
+        * UX glitch.
+        */}
+      {/*
+       * R7 (2026-04-26): NO <OptimisticPaidOverlay> wrapper around
+       * <PayNowButton> — wrapping unmounts the Radix Sheet portal
+       * (rooted at PayNowButton's subtree) the instant the optimistic
+       * CustomEvent fires, killing <ConfirmationPanel> mid-render.
+       * Visibility instead flips via the page-level `router.refresh()`
+       * in PaySheet's settled effect; the drawer's own auto-close
+       * covers the brief gap so no "Paid badge + Pay button" glitch.
+       * The badge above CAN still use the overlay — it mounts only a
+       * static <Badge>, no portal children.
+       */}
+      {invoice.status === 'issued' ? (
+        canPayOnline && paymentSettings ? (
+          <PayNowButton
+            invoice={{
+              id: invoice.invoiceId,
+              invoiceNumber: documentNumber,
+              amountDue: total !== null ? Number(total) : 0,
+              currency: 'THB',
+              status: invoice.status,
+            }}
+            enabledMethods={paymentSettings.enabledMethods}
+            tenantPublishableKey={paymentSettings.processorPublishableKey}
+          />
+        ) : (
+          <OnlinePaymentDisabledCard
+            invoiceNumber={documentNumber}
+            tenantContactEmail={null}
+          />
+        )
+      ) : null}
 
       {portalCreditNotes.length > 0 && (
         <Card>

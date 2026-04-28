@@ -35,10 +35,24 @@ export interface EnableUserDeps {
 
 export { defaultEnableUserDeps };
 
+/**
+ * Reserved UUID range for non-human system actors seeded by migration
+ * 0041+ (e.g. `00000000-0000-0000-0000-0000000f5001` Stripe-webhook).
+ * Admin endpoints must treat these as not-found so (a) the existence of
+ * system rows is not enumerable via 404-vs-403 timing and (b) a flip to
+ * `status=active` can't produce misleading `account_reenabled` audit
+ * entries. `gen_random_uuid()` never produces this shape (the v4 UUID
+ * variant/version bits would collide).
+ */
+const RESERVED_SYSTEM_ACTOR_PREFIX = '00000000-0000-0000-0000-0000000';
+
 export async function enableUser(
   input: EnableUserInput,
   deps: EnableUserDeps = defaultEnableUserDeps,
 ): Promise<Result<EnableUserSuccess, EnableUserError>> {
+  if (input.targetUserId.startsWith(RESERVED_SYSTEM_ACTOR_PREFIX)) {
+    return err({ code: 'not-found' });
+  }
   const target = await deps.users.findById(input.targetUserId);
   if (!target) return err({ code: 'not-found' });
   if (target.status !== 'disabled') return err({ code: 'not-disabled' });

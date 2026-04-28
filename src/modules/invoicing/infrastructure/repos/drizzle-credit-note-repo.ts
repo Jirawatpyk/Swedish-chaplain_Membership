@@ -89,6 +89,8 @@ function rowToCreditNote(
       sha256: sha.value,
       templateVersion: row.pdfTemplateVersion,
     },
+    // F5 extension — NULL for F4-manual CNs; non-NULL = refund-origin
+    sourceRefundId: row.sourceRefundId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -182,6 +184,9 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
           pdfBlobKey: input.pdf.blobKey,
           pdfSha256: input.pdf.sha256,
           pdfTemplateVersion: input.pdf.templateVersion,
+          ...(input.sourceRefundId !== undefined
+            ? { sourceRefundId: input.sourceRefundId }
+            : {}),
         })
         .returning();
       if (!inserted) {

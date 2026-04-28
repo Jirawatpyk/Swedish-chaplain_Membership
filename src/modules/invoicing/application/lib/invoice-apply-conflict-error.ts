@@ -11,21 +11,21 @@
  * Placing it under Application keeps Principle III clean (infra
  * depends on a higher-level abstraction, not the other way round).
  */
+export type InvoiceApplyConflictKind =
+  | 'applyIssue'
+  | 'applyPayment'
+  | 'applyDraftUpdate'
+  | 'applyCreditNoteRollup'
+  | 'applyVoid'
+  // R2-I-NEW-1 — distinct kinds for T166 receipt-PDF write paths so
+  // log/alert can tell a payment-flip conflict apart from a receipt-
+  // render conflict (different runbooks, different on-call response).
+  | 'applyReceiptPdf'
+  | 'applyReceiptPdfFailure';
+
 export class InvoiceApplyConflictError extends Error {
-  readonly kind:
-    | 'applyIssue'
-    | 'applyPayment'
-    | 'applyDraftUpdate'
-    | 'applyCreditNoteRollup'
-    | 'applyVoid';
-  constructor(
-    kind:
-      | 'applyIssue'
-      | 'applyPayment'
-      | 'applyDraftUpdate'
-      | 'applyCreditNoteRollup'
-      | 'applyVoid',
-  ) {
+  readonly kind: InvoiceApplyConflictKind;
+  constructor(kind: InvoiceApplyConflictKind) {
     super(`${kind}: no row updated (concurrent state change)`);
     this.name = 'InvoiceApplyConflictError';
     this.kind = kind;

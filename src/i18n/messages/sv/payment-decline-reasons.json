@@ -1,0 +1,23 @@
+{
+  "card_declined": "Kortet nekades. Prova ett annat kort eller kontakta din bank.",
+  "insufficient_funds": "Otillräckligt saldo. Använd ett annat kort.",
+  "expired_card": "Kortet har gått ut. Använd ett annat kort.",
+  "incorrect_cvc": "Felaktig CVC-kod. Ange CVC-koden igen.",
+  "processing_error": "Betalningen kunde inte behandlas. Försök igen om en stund.",
+  "incorrect_number": "Felaktigt kortnummer. Ange kortuppgifterna igen.",
+  "lost_card": "Kortet är anmält som förlorat. Använd ett annat kort.",
+  "stolen_card": "Kortet är anmält som stulet. Använd ett annat kort.",
+  "pickup_card": "Kortet kan inte användas för denna transaktion. Kontakta din bank.",
+  "restricted_card": "Kortet kan inte användas för denna transaktion. Använd ett annat kort.",
+  "security_violation": "Betalningen blockerades av säkerhetsskäl. Kontakta din bank.",
+  "service_not_allowed": "Kortet stöder inte den här typen av transaktion. Använd ett annat kort.",
+  "transaction_not_allowed": "Kortet tillåter inte denna transaktion. Kontakta din bank eller använd ett annat kort.",
+  "try_again_later": "Betalningstjänsten är tillfälligt otillgänglig. Försök igen om en stund.",
+  "withdrawal_count_limit_exceeded": "Daglig kortgräns uppnådd. Prova ett annat kort eller försök igen imorgon.",
+  "currency_not_supported": "Kortet stöder inte thailändska baht (THB). Använd ett annat kort.",
+  "do_not_honor": "Kortet nekades av banken. Kontakta din bank.",
+  "fraudulent": "Betalningen blockerades. Kontakta din bank om du tror att detta är ett fel.",
+  "generic_decline": "Kortet nekades. Prova ett annat kort eller kontakta din bank.",
+  "invalid_account": "Kortkontot är ogiltigt. Använd ett annat kort.",
+  "_fallback": "Betalningen kunde inte genomföras. Prova ett annat kort eller kontakta din bank."
+}

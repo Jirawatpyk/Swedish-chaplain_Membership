@@ -33,9 +33,10 @@
  * event emission (FR-012c parity for unrenderable rows).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { and, count, eq, lt, lte, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { verifyCronBearer } from '@/lib/cron-auth';
 /* eslint-disable no-restricted-imports --
  * Cron job: direct UPDATE on `notifications_outbox` + auditLog — this
  * is the operational drain path, not a user flow. Same escape hatch
@@ -64,7 +65,12 @@ import {
   type InvoiceAutoEmailEventType,
 } from '@/modules/invoicing/infrastructure/email/invoice-auto-email';
 import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
+import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 /* eslint-enable no-restricted-imports */
+import { renderReceiptPdf, makeRenderReceiptPdfDeps } from '@/modules/invoicing';
+import { runInTenant } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
+import { sql as sqlTag } from 'drizzle-orm';
 
 // Spec FR-012c: "≥ 5 attempts with exponential backoff 60s / 5m / 30m / 3h / 12h".
 const RETRY_BACKOFF_SECONDS = [60, 300, 1_800, 10_800, 43_200] as const;
@@ -234,6 +240,194 @@ function isInvoiceAutoEmailEventType(v: unknown): v is InvoiceAutoEmailEventType
 type DispatchOutcome = 'sent' | 'retried' | 'permanent' | 'skipped';
 
 /**
+ * T166-07 — Async receipt PDF render dispatcher branch.
+ *
+ * Routes a `notification_type='receipt_pdf_render'` outbox row to
+ * the F4 `renderReceiptPdf` use-case, scoped to the row's tenant via
+ * `runInTenant(payload.tenantId)` (Constitution Principle I clause 3
+ * — tenant isolation MUST be applied before any per-tenant data
+ * touches RLS).
+ *
+ * Status flips:
+ *   - success → status='sent'
+ *   - retryable failure (render or upload) → attempts++, exponential
+ *     backoff per FR-012c
+ *   - attempts >= MAX_ATTEMPTS → status='permanently_failed' + audit
+ *     `pdf_render_permanently_failed` (pages on-call per
+ *     `docs/runbooks/receipt-pdf-permanently-failed.md`)
+ *
+ * Idempotency: the use-case's own pending→rendered guard makes
+ * duplicate worker runs no-ops (returns ok). At-least-once delivery
+ * semantics are preserved.
+ */
+async function dispatchReceiptPdfRender(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  row: NotificationsOutboxRow,
+  requestId: string,
+  now: Date,
+): Promise<DispatchOutcome> {
+  if (!row.tenantId) {
+    // Defensive: tenant_id is required for RLS scoping. A NULL
+    // tenant_id `receipt_pdf_render` row is malformed; permanent-fail.
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'permanently_failed' as const,
+        attempts: row.attempts + 1,
+        lastError: 'missing tenant_id',
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    outboxMetrics.permanentFailure(row.notificationType, 'no_template_handler');
+    return 'permanent';
+  }
+
+  const ctx = row.contextData as Record<string, unknown>;
+  const invoiceId = typeof ctx.invoice_id === 'string' ? ctx.invoice_id : '';
+  const fiscalYear = typeof ctx.fiscal_year === 'number' ? ctx.fiscal_year : 0;
+  const templateVersion =
+    typeof ctx.template_version === 'number' ? ctx.template_version : 0;
+
+  if (!invoiceId || !fiscalYear || !templateVersion) {
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'permanently_failed' as const,
+        attempts: row.attempts + 1,
+        lastError: 'malformed context_data',
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    outboxMetrics.permanentFailure(row.notificationType, 'no_template_handler');
+    return 'permanent';
+  }
+
+  // Run the worker under the row's tenant context. The use-case
+  // opens its OWN tx (use-case's `withTx`) — distinct from this
+  // dispatcher tx — so a render failure doesn't roll back the
+  // dispatcher's outbox status update.
+  //
+  // review-20260428-102639.md S9 closure — defense-in-depth on
+  // tenantId shape before passing to RLS context. The DB column is
+  // already non-NULL TEXT, but a malformed value (e.g. data
+  // corruption / row tampering / future migration regression) would
+  // bind an attacker-controllable string into `app.current_tenant`.
+  // Slug regex matches the tenant-creation contract (lowercase
+  // alphanumeric + hyphen, 1-64 chars).
+  if (!row.tenantId || !/^[a-z0-9-]{1,64}$/.test(row.tenantId)) {
+    logger.error(
+      {
+        requestId,
+        outboxRowId: row.id,
+        tenantIdLen: row.tenantId?.length ?? 0,
+      },
+      'cron.outbox_dispatch.invalid_tenant_id',
+    );
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'permanently_failed' as const,
+        attempts: row.attempts + 1,
+        lastError: 'invalid_tenant_id',
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    outboxMetrics.permanentFailure(row.notificationType, 'no_template_handler');
+    return 'permanent';
+  }
+  const tenantCtx = asTenantContext(row.tenantId);
+  const result = await runInTenant(tenantCtx, async () => {
+    return renderReceiptPdf(makeRenderReceiptPdfDeps(row.tenantId!), {
+      tenantId: row.tenantId!,
+      invoiceId,
+      fiscalYear,
+      templateVersion,
+      requestId,
+    });
+  });
+
+  if (result.ok) {
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'sent' as const,
+        // No `sentMessageId` for render rows — they aren't emails. The
+        // `updatedAt` + `status='sent'` pair is the canonical "row
+        // complete" marker used by the existing dispatcher.
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    return 'sent';
+  }
+
+  // Failure path: bump attempts + decide retry vs permanent.
+  const nextAttempt = row.attempts + 1;
+  // review-20260428-102639.md S8 closure — `data_corruption` is
+  // deterministic (missing/unparseable receipt_document_number_raw);
+  // retry will produce identical failure. Short-circuit to permanent.
+  const isDataCorruption = result.error.code === 'data_corruption';
+  const isPermanent = isDataCorruption || nextAttempt >= MAX_ATTEMPTS;
+  const reason =
+    'reason' in result.error
+      ? (result.error as { reason?: string }).reason ?? result.error.code
+      : result.error.code;
+
+  if (isPermanent) {
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'permanently_failed' as const,
+        attempts: nextAttempt,
+        lastError: String(reason).slice(0, 500),
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    // review-20260428-102639.md H3 closure — emit via f4AuditAdapter
+    // so retention_years is enforced explicitly by adapter logic
+    // (f4RetentionFor) instead of relying on the DB-level DEFAULT 5.
+    // Pre-fix used `tx.insert(auditLog)` directly which bypassed the
+    // T135 retention enforcement and would silently regress if the
+    // retention map ever changed.
+    await f4AuditAdapter.emit(tx, {
+      eventType: 'pdf_render_permanently_failed',
+      actorUserId: 'system:cron',
+      summary: `receipt_pdf_render row ${row.id} permanently failed (${reason})`,
+      requestId,
+      tenantId: row.tenantId,
+      payload: {
+        outbox_row_id: row.id,
+        invoice_id: invoiceId,
+        attempts: nextAttempt,
+        reason,
+      },
+    } as Parameters<typeof f4AuditAdapter.emit>[1]);
+    // Use `max_retries` for the bounded enum — the underlying reason
+    // is preserved in `last_error` on the outbox row + the audit
+    // `pdf_render_permanently_failed` payload above for forensics.
+    outboxMetrics.permanentFailure(row.notificationType, 'max_retries');
+    return 'permanent';
+  }
+
+  // Retryable failure: exponential backoff per FR-012c.
+  const backoffSeconds =
+    RETRY_BACKOFF_SECONDS[Math.min(nextAttempt - 1, RETRY_BACKOFF_SECONDS.length - 1)] ?? 60;
+  const nextRetryAt = new Date(now.getTime() + backoffSeconds * 1000);
+  await tx
+    .update(notificationsOutbox)
+    .set({
+      attempts: nextAttempt,
+      nextRetryAt,
+      lastError: String(reason).slice(0, 500),
+      updatedAt: now,
+    })
+    .where(eq(notificationsOutbox.id, row.id));
+  // No `retry` metric — the existing outboxMetrics surface only
+  // tracks permanent failures + stuck rows. Render-attempt counters
+  // live in the audit log payload (see T166-14 observability docs).
+  return 'retried';
+}
+
+/**
  * Process one outbox row inside its own db.transaction(). Re-selects
  * the row with FOR UPDATE SKIP LOCKED so only one cron tick ever sends
  * a given row, even when Vercel Cron overlaps ticks at high load.
@@ -367,6 +561,116 @@ async function dispatchOne(
       .limit(1);
 
     if (!row) return 'skipped';
+
+    // T166-07 — async receipt PDF render branch. The dispatcher
+    // routes `receipt_pdf_render` rows to the F4 `renderReceiptPdf`
+    // use-case INSIDE `runInTenant(payload.tenantId)` so RLS scoping
+    // applies (Constitution Principle I clause 3). Render task is
+    // NOT an email — skip the buildPayload/Resend pipeline entirely.
+    if (row.notificationType === 'receipt_pdf_render') {
+      return await dispatchReceiptPdfRender(tx, row, requestId, now);
+    }
+
+    // T166-09 — async receipt PDF gate for `invoice_paid` emails.
+    // When `record-payment` runs under `asyncReceiptPdf=true`, the
+    // email row commits inside the same tx as the `paid` flip + a
+    // `receipt_pdf_status='pending'` invoice. The PDF bytes don't
+    // exist yet; the link in the email would 404. Gate the send on
+    // `receipt_pdf_status='rendered'` and re-queue (without bumping
+    // attempts) when still pending — the next cron tick re-evaluates
+    // after the worker uploads.
+    if (
+      row.notificationType === 'invoice_auto_email' &&
+      (row.contextData as Record<string, unknown>).depends_on_receipt_pdf === true
+    ) {
+      const ctx = row.contextData as Record<string, unknown>;
+      const invoiceId = typeof ctx.invoice_id === 'string' ? ctx.invoice_id : null;
+      if (invoiceId && row.tenantId) {
+        const tenantCtx = asTenantContext(row.tenantId);
+        const [invRow] = await runInTenant(tenantCtx, async () =>
+          tx.execute<{ receipt_pdf_status: string | null }>(
+            sqlTag`SELECT receipt_pdf_status FROM invoices
+                   WHERE tenant_id = ${row.tenantId} AND invoice_id = ${invoiceId}
+                   LIMIT 1`,
+          ),
+        );
+        // R1-I1 — fail CLOSED, not OPEN. If we cannot prove
+        // status === 'rendered', we MUST hold the email.
+        //
+        // R2-I-2 — distinguish two skip reasons:
+        //   (a) invRow VISIBLE + status='pending'/'failed' → legitimate
+        //       wait; push back 60s + DO NOT bump attempts (preserves
+        //       retry budget for after the worker finishes).
+        //   (b) invRow UNDEFINED → pathological (invoice hard-deleted
+        //       or RLS-mismatch). Push back AND bump attempts so the
+        //       row exits via the standard max-retries → permanent_fail
+        //       ladder instead of skip-looping forever.
+        if (invRow === undefined) {
+          await tx
+            .update(notificationsOutbox)
+            .set({
+              attempts: row.attempts + 1,
+              nextRetryAt: new Date(now.getTime() + 60_000),
+              lastError:
+                'receipt_pdf_gate_skip:invoice_not_visible — invoice row missing under tenant RLS scope (deleted or tenant_id mismatch)',
+              updatedAt: now,
+            })
+            .where(eq(notificationsOutbox.id, row.id));
+          return 'skipped';
+        }
+        // R3-I1 — distinguish 'pending' (legitimate wait) from 'failed'
+        // (terminal). When the reconcile cron exhausts max-retries the
+        // invoice's `receipt_pdf_status` stays at 'failed' forever; if
+        // we treated 'failed' as "still rendering" the email row would
+        // skip-loop every minute indefinitely, never bumping `attempts`,
+        // never reaching `permanently_failed`. Split the branches so a
+        // 'failed' receipt drains the email row via the normal max-
+        // retries → permanent-fail ladder (operator gets a single page
+        // instead of a forever-stuck queue).
+        if (invRow.receipt_pdf_status === 'failed') {
+          await tx
+            .update(notificationsOutbox)
+            .set({
+              attempts: row.attempts + 1,
+              nextRetryAt: new Date(now.getTime() + 60_000),
+              lastError:
+                'receipt_pdf_gate_skip:pdf_render_failed — receipt PDF is in terminal failed state; email cannot ship',
+              updatedAt: now,
+            })
+            .where(eq(notificationsOutbox.id, row.id));
+          return 'skipped';
+        }
+        if (invRow.receipt_pdf_status !== 'rendered') {
+          // Legitimate wait — receipt still rendering ('pending'); do
+          // NOT burn an attempt. Worker will flip to 'rendered' on
+          // success and the next dispatcher tick releases the gate.
+          await tx
+            .update(notificationsOutbox)
+            .set({
+              nextRetryAt: new Date(now.getTime() + 60_000),
+              updatedAt: now,
+            })
+            .where(eq(notificationsOutbox.id, row.id));
+          return 'skipped';
+        }
+        // status === 'rendered' → fall through to dispatch.
+      } else {
+        // Defensive: gate flag set but no invoice_id / tenant_id —
+        // malformed context_data. Bump attempts so it exits via
+        // permanent-fail (would otherwise skip-loop forever).
+        await tx
+          .update(notificationsOutbox)
+          .set({
+            attempts: row.attempts + 1,
+            nextRetryAt: new Date(now.getTime() + 60_000),
+            lastError:
+              'receipt_pdf_gate_skip:malformed_context — depends_on_receipt_pdf set but invoice_id/tenant_id missing',
+            updatedAt: now,
+          })
+          .where(eq(notificationsOutbox.id, row.id));
+        return 'skipped';
+      }
+    }
 
     // R17-02 — integrity violation detected during prefetch: do NOT
     // ship a link-only fallback (the link points at the same Blob key
@@ -668,12 +972,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // immutable after boot. If the env var IS unset (impossible in
   // prod), the comparison to `Bearer undefined` still triggers 401
   // for any caller — no dev fallback, no unauthenticated drain.
-  const authHeader = request.headers.get('authorization');
-  // T-F4-01 — constant-time comparison to defeat timing side-channel
-  // on `CRON_SECRET` enumeration. Length-check first (timingSafeEqual
-  // throws on length mismatch), then constant-time byte-compare. Null
-  // / missing header is treated as a length-mismatch → unauthorized.
-  //
   // R15-04 — explicit misconfiguration guard replaces the old `?? ''`
   // fallback. `src/lib/env.ts` validates `CRON_SECRET` as
   // `z.string().min(16)` at boot, so the app refuses to start on miss.
@@ -691,16 +989,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       { status: 500 },
     );
   }
-  const expectedAuth = `Bearer ${secret}`;
-  const received = authHeader ?? '';
-  let authOk = false;
-  if (received.length === expectedAuth.length) {
-    authOk = timingSafeEqual(
-      Buffer.from(received, 'utf8'),
-      Buffer.from(expectedAuth, 'utf8'),
-    );
-  }
-  if (!authOk) {
+  if (!verifyCronBearer(request.headers.get('authorization'), secret)) {
     logger.warn({ requestId }, 'cron.outbox_dispatch.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
@@ -721,6 +1010,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   ];
   if (!env.features.f4Invoicing) {
     baseReadyFilters.push(ne(notificationsOutbox.notificationType, 'invoice_auto_email'));
+  }
+  // R1-I3 — kill-switch parity for the T166 async render branch.
+  // When `FEATURE_F5_ASYNC_RECEIPT_PDF` is off, the dispatcher must
+  // also stop picking up `receipt_pdf_render` rows. Without this
+  // filter, flipping the flag false (rollback path) wouldn't stop
+  // the worker — the dispatcher would keep invoking `renderReceiptPdf`
+  // on rows that were enqueued before the flip, defeating the
+  // kill-switch's purpose. The rows themselves remain in the outbox
+  // for manual recovery (see runbook receipt-pdf-async-rollback.md).
+  if (!env.features.f5AsyncReceiptPdf) {
+    baseReadyFilters.push(
+      ne(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+    );
   }
 
   // Lock-less candidate pick. Real per-row lock happens inside dispatchOne.

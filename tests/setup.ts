@@ -44,6 +44,12 @@ for (const [key, value] of Object.entries(TEST_PLACEHOLDERS)) {
   }
 }
 
+// Pin STRIPE_API_VERSION for unit/contract tests to match the
+// fixture `PINNED_API_VERSION` in tests/contract/payments/*.
+// Production .env.local may track a different pinned version;
+// tests own their own fixture contract (Group B convention).
+process.env['STRIPE_API_VERSION'] = '2024-06-20';
+
 import { beforeAll, afterEach, afterAll, vi } from 'vitest';
 
 // Fixed clock for deterministic TTL tests. Individual tests can override

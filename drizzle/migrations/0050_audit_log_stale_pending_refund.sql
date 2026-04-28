@@ -1,0 +1,26 @@
+-- ---------------------------------------------------------------------------
+-- F5 audit_event_type enum extension (T130a — Phase 9 polish)
+--
+-- Adds the `stale_pending_refund_detected` event type emitted by the
+-- `sweepStalePendingRefunds` use-case (cron at
+-- `/api/cron/sweep-stale-pending-refunds`). Recovery sweep handles
+-- the Postgres double-fault scenario in `issueRefund` where Phase B
+-- AND Phase B's failure-finalise tx both throw, leaving a `pending`
+-- refund row that permanently blocks future refunds via the
+-- `refund_in_progress` guard.
+--
+-- Retention: 10 years — the row touches the F4 credit-note tax-
+-- document lineage (the swept refund may have already produced a
+-- successful Stripe refund + F4 CN that needs ops reconciliation
+-- per the runbook `docs/runbooks/stale-pending-refund-sweep.md`).
+--
+-- Pattern: idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` (matches 0046–0049).
+-- Forward-only: enum values cannot be removed.
+--
+-- Keep synced with:
+--   - `auditEventTypeEnum` in `src/modules/auth/infrastructure/db/schema.ts`
+--   - `F5AuditEventType` in `src/modules/payments/application/ports/audit-port.ts`
+--   - `F5_AUDIT_RETENTION_YEARS` in `audit-port.ts`
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'stale_pending_refund_detected'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

@@ -232,6 +232,223 @@
       "when": 1777248000000,
       "tag": "0032_audit_contact_linked_to_user",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1777334400000,
+      "tag": "0033_create_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1777334401000,
+      "tag": "0034_create_refunds",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1777334402000,
+      "tag": "0035_create_tenant_payment_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1777334403000,
+      "tag": "0036_create_processor_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1777334404000,
+      "tag": "0037_seed_swecham_payment_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1777334405000,
+      "tag": "0038_credit_notes_add_source_refund_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1777334406000,
+      "tag": "0039_audit_log_add_retention_years",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1777334407000,
+      "tag": "0040_audit_log_f5_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1777334408000,
+      "tag": "0041_seed_system_actors",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1777334409000,
+      "tag": "0042_relax_payment_card_metadata_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1777334410000,
+      "tag": "0043_audit_log_rate_limit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1777420800000,
+      "tag": "0044_fix_card_metadata_check_canceled_failed",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1777507200000,
+      "tag": "0045_invoice_snapshot_email_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1777593600000,
+      "tag": "0046_audit_log_webhook_unknown_state_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1777680000000,
+      "tag": "0047_audit_log_processor_retrieve_failed",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1777766400000,
+      "tag": "0048_audit_log_invoice_not_found",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1777852800000,
+      "tag": "0049_audit_log_payment_method_switched",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1777939200000,
+      "tag": "0050_audit_log_stale_pending_refund",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1778025600000,
+      "tag": "0051_audit_log_f4_retention_rebackfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1778112000000,
+      "tag": "0052_audit_log_payment_terminal_ack",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1778198400000,
+      "tag": "0053_audit_log_dispute_created",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1778284800000,
+      "tag": "0054_payments_pi_partial_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1778371200000,
+      "tag": "0055_audit_log_retention_default_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1778457600000,
+      "tag": "0056_async_receipt_pdf",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1778544000000,
+      "tag": "0057_audit_log_receipt_rendered",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1778630400000,
+      "tag": "0058_notification_type_receipt_pdf_render",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1778716800000,
+      "tag": "0059_invoice_receipt_doc_num",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1778803200000,
+      "tag": "0060_invoice_receipt_doc_num_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1778889600000,
+      "tag": "0061_invoice_separate_mode_pending_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1778976000000,
+      "tag": "0062_drop_invoice_pending_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1779062400000,
+      "tag": "0063_audit_log_extend_retention_default_trigger",
+      "breakpoints": true
     }
   ]
 }

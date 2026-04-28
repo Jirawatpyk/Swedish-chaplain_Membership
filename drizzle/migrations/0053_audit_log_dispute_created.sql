@@ -1,0 +1,22 @@
+-- ---------------------------------------------------------------------------
+-- F5 audit_event_type enum extension — Round 2 review C-1 (2026-04-27)
+--
+-- Adds `dispute_created` event type emitted by `processWebhookEvent` when
+-- Stripe delivers a `charge.dispute.created` webhook (chargeback path).
+-- Without this enum value, the audit emit at process-webhook-event.ts:530
+-- would throw `invalid input value for enum audit_event_type` and fail the
+-- webhook handler with a 500, triggering Stripe's 72-hour retry storm.
+--
+-- Retention: 10 years — disputes are tax/legal evidentiary records
+-- (Thai RD §87/3 + GDPR Art. 6(1)(c)).
+--
+-- Pattern: idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` (matches 0046–0052).
+-- Forward-only: enum values cannot be removed.
+--
+-- Keep synced with:
+--   - `auditEventTypeEnum` in `src/modules/auth/infrastructure/db/schema.ts`
+--   - `F5AuditEventType` in `src/modules/payments/application/ports/audit-port.ts`
+--   - `F5_AUDIT_RETENTION_YEARS` in `audit-port.ts`
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'dispute_created'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

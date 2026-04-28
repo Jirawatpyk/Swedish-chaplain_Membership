@@ -5,7 +5,11 @@
  * slug, and a structured payload. Reuses the F1/F2/F3 audit infrastructure.
  */
 import { sql } from 'drizzle-orm';
-import type { AuditPort, F4AuditEvent } from '../../application/ports/audit-port';
+import {
+  f4RetentionFor,
+  type AuditPort,
+  type F4AuditEvent,
+} from '../../application/ports/audit-port';
 import { db, type TenantTx } from '@/lib/db';
 import { invoicingMetrics } from '@/lib/metrics';
 
@@ -20,17 +24,25 @@ export const f4AuditAdapter: AuditPort = {
     const tx = (txUnknown as TenantTx | null) ?? db;
 
     const requestId = event.requestId ?? 'no-request-id';
+    // T135 fix (2026-04-27): MUST set retention_years explicitly per F4
+    // event-type mapping (data-model 009 § 7.2). Migration 0039 backfilled
+    // EXISTING rows once; without this column on every new INSERT, post-
+    // migration F4 emissions land at DB DEFAULT 5 — a silent compliance
+    // regression for tax-document event types (Thai RD §87/3 statutory
+    // 10y minimum). Caught by `tests/integration/payments/audit-retention-backfill.test.ts`.
+    const retentionYears = f4RetentionFor(event.eventType);
 
     await tx.execute(sql`
       INSERT INTO audit_log
-        (event_type, actor_user_id, summary, request_id, payload, tenant_id)
+        (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
       VALUES
         (${event.eventType}::audit_event_type,
          ${event.actorUserId},
          ${event.summary},
          ${requestId},
          ${JSON.stringify(event.payload)}::jsonb,
-         ${event.tenantId})
+         ${event.tenantId},
+         ${retentionYears})
     `);
 
     // T113 — cross-tenant-probe counter (alert: any non-zero rate

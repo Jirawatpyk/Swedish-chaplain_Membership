@@ -183,6 +183,7 @@ export function InvoiceMoreMenu({
           <DropdownMenuItem
             disabled={pendingVariant !== null || recentlySent.receipt}
             onClick={() => handleResend('receipt')}
+            data-testid="resend-receipt-trigger"
             aria-label={t('actions.resendReceiptAria', {
               number: documentNumber,
             })}

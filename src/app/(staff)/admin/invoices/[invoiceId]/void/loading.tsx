@@ -31,9 +31,12 @@ export default async function Loading() {
               <SkeletonBlock className="h-3 w-48" />
               <SkeletonBlock className="h-9 w-full" />
             </div>
-            <div className="flex gap-2">
-              <SkeletonBlock className="h-9 w-32" />
+            {/* R2 F-5: mirror the real VoidConfirmDialog button row.
+                `flex-row-reverse` on mobile so destructive Submit
+                renders on the right; sm: reverts to row order. */}
+            <div className="flex flex-row-reverse items-center justify-end gap-2 sm:flex-row sm:justify-start">
               <SkeletonBlock className="h-9 w-24" />
+              <SkeletonBlock className="h-9 w-32" />
             </div>
           </CardContent>
         </Card>

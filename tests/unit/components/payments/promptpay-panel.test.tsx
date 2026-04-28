@@ -1,0 +1,255 @@
+/**
+ * Unit tests for <PromptPayPanel> + `formatCountdown`.
+ *
+ * Coverage:
+ *   - `formatCountdown` clamps negatives, floors non-integers,
+ *     pads MM/SS with leading zeros, handles large values
+ *   - 3 status states: pending / expired / waiting-confirmation
+ *   - QR `<img>` onError debounces transient failures via internal
+ *     retry counter; escalates to `onLoadError` only after limit
+ *   - Refresh CTA wires `onRefresh`
+ *   - Currency fallback when `currency !== 'thb'`
+ */
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
+
+import {
+  PromptPayPanel,
+  formatCountdown,
+  MAX_QR_LOAD_RETRIES,
+  type PromptPayPanelProps,
+} from '@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/promptpay-panel';
+
+// GAP-2: metrics module mocked so emission can be asserted.
+const metricsMocks = vi.hoisted(() => ({
+  initiateDurationMs: vi.fn(),
+  qrLoadRetriesExhausted: vi.fn(),
+  crossMethodCancelDurationMs: vi.fn(),
+}));
+vi.mock('@/lib/metrics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/metrics')>();
+  return {
+    ...actual,
+    paymentsMetrics: metricsMocks,
+  };
+});
+
+const messages = {
+  portal: {
+    payment: {
+      promptpay: {
+        qrAlt: 'PromptPay QR code',
+        instructions: 'Scan with any Thai bank app',
+        amount: 'Amount: {amount}',
+        warning: 'Only scan the QR code shown above; do NOT transfer manually.',
+        countdown: 'Expires in {minutes}:{seconds}',
+        refresh: 'Refresh QR',
+        expired: 'QR code expired',
+        expiredBody: 'Generate a new QR to continue.',
+        waiting: 'Waiting for payment confirmation…',
+        loadFailed: "Couldn't load PromptPay QR.",
+      },
+    },
+  },
+};
+
+function renderWithIntl(props: PromptPayPanelProps) {
+  return render(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <PromptPayPanel {...props} />
+    </NextIntlClientProvider>,
+  );
+}
+
+const baseProps: PromptPayPanelProps = {
+  qrSvgUrl: 'https://qr.stripe.com/v1/test.svg',
+  amountSatang: 5_350_000,
+  currency: 'thb',
+  expirySeconds: 900,
+  onRefresh: () => undefined,
+};
+
+// ---------------------------------------------------------------------------
+// formatCountdown — pure helper
+// ---------------------------------------------------------------------------
+
+describe('formatCountdown', () => {
+  it('clamps negative values to 00:00', () => {
+    expect(formatCountdown(-5)).toEqual({ minutes: '00', seconds: '00' });
+  });
+
+  it('floors non-integer seconds to integer', () => {
+    // 65.7 → floor → 65 → 01:05
+    expect(formatCountdown(65.7)).toEqual({ minutes: '01', seconds: '05' });
+  });
+
+  it('zero-pads minutes and seconds (single-digit)', () => {
+    expect(formatCountdown(7)).toEqual({ minutes: '00', seconds: '07' });
+    expect(formatCountdown(60)).toEqual({ minutes: '01', seconds: '00' });
+  });
+
+  it('handles 15-minute window precisely', () => {
+    expect(formatCountdown(900)).toEqual({ minutes: '15', seconds: '00' });
+  });
+
+  it('handles values larger than 99 minutes without truncation', () => {
+    // 7200s = 120:00 — no MM cap by design
+    expect(formatCountdown(7200)).toEqual({ minutes: '120', seconds: '00' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// <PromptPayPanel> — render branches
+// ---------------------------------------------------------------------------
+
+describe('<PromptPayPanel> — pending status', () => {
+  it('renders QR image with non-empty alt + instructions + warning + Refresh CTA', () => {
+    renderWithIntl({ ...baseProps, status: 'pending' });
+    const qr = screen.getByTestId('pay-sheet-promptpay-qr');
+    expect(qr).not.toBeNull();
+    expect(qr.getAttribute('alt')).toBe('PromptPay QR code');
+    expect(screen.getByText('Scan with any Thai bank app')).not.toBeNull();
+    expect(screen.getByTestId('pay-sheet-promptpay-warning')).not.toBeNull();
+    expect(screen.getByTestId('pay-sheet-promptpay-refresh')).not.toBeNull();
+  });
+
+  it('countdown region carries aria-live="polite" on the sr-only sibling + visible 15:00 text', () => {
+    renderWithIntl({ ...baseProps, status: 'pending', expirySeconds: 900 });
+    // H-13 + R2 F-4: visible counter is `aria-hidden="true"` so SR
+    // users don't hear each per-second tick. The aria-live="polite"
+    // belongs to the persistent sr-only sibling that fires only at
+    // threshold boundaries.
+    const visibleCountdown = screen.getByTestId('pay-sheet-promptpay-countdown');
+    expect(visibleCountdown.getAttribute('aria-hidden')).toBe('true');
+    expect(visibleCountdown.textContent).toContain('15:00');
+    const srCountdown = screen.getByTestId('pay-sheet-promptpay-countdown-sr');
+    expect(srCountdown.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('Refresh CTA fires onRefresh', () => {
+    const onRefresh = vi.fn();
+    renderWithIntl({ ...baseProps, status: 'pending', onRefresh });
+    fireEvent.click(screen.getByTestId('pay-sheet-promptpay-refresh'));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders amount in THB locale when currency=thb', () => {
+    renderWithIntl({ ...baseProps, status: 'pending', amountSatang: 5_350_000 });
+    // formatSatangThb on 5_350_000 satang = THB 53,500.00 — exact format
+    // is locale-dependent; assert presence of the THB digits.
+    const amountNode = screen.getByText(/Amount:/);
+    expect(amountNode.textContent).toMatch(/53,?500/);
+  });
+
+  it('falls back to raw amount + uppercase currency when currency!==thb', () => {
+    renderWithIntl({
+      ...baseProps,
+      status: 'pending',
+      currency: 'usd',
+      amountSatang: 12345,
+    });
+    const amountNode = screen.getByText(/Amount:/);
+    expect(amountNode.textContent).toContain('12345 USD');
+  });
+
+  it('debounces transient QR <img> errors — first MAX_QR_LOAD_RETRIES errors do NOT escalate', () => {
+    metricsMocks.qrLoadRetriesExhausted.mockClear();
+    const onLoadError = vi.fn();
+    renderWithIntl({ ...baseProps, status: 'pending', onLoadError });
+    const qr = screen.getByTestId('pay-sheet-promptpay-qr');
+    // Each error within the retry budget triggers an internal retry,
+    // not an escalation to the parent.
+    for (let i = 0; i < MAX_QR_LOAD_RETRIES; i += 1) {
+      fireEvent.error(qr);
+    }
+    expect(onLoadError).not.toHaveBeenCalled();
+    // GAP-2: A-07 metric MUST NOT fire while still in the retry budget
+    expect(metricsMocks.qrLoadRetriesExhausted).not.toHaveBeenCalled();
+    // The (MAX+1)th error escalates.
+    fireEvent.error(qr);
+    expect(onLoadError).toHaveBeenCalledTimes(1);
+    // GAP-2: A-07 metric fires exactly once on retry-budget exhaustion
+    expect(metricsMocks.qrLoadRetriesExhausted).toHaveBeenCalledTimes(1);
+  });
+
+  it('QR <img> src includes a cache-bust query param after a retry to force browser reload', () => {
+    renderWithIntl({ ...baseProps, status: 'pending' });
+    const qr = screen.getByTestId('pay-sheet-promptpay-qr') as HTMLImageElement;
+    const originalSrc = qr.getAttribute('src');
+    expect(originalSrc).toBe('https://qr.stripe.com/v1/test.svg');
+    fireEvent.error(qr);
+    const retriedSrc = (
+      screen.getByTestId('pay-sheet-promptpay-qr') as HTMLImageElement
+    ).getAttribute('src');
+    expect(retriedSrc).toContain('https://qr.stripe.com/v1/test.svg');
+    expect(retriedSrc).toMatch(/retry=\d+/);
+  });
+});
+
+describe('<PromptPayPanel> — expired status', () => {
+  it('renders expired panel with role=alert + aria-live=assertive', () => {
+    renderWithIntl({ ...baseProps, status: 'expired' });
+    const expired = screen.getByTestId('pay-sheet-promptpay-expired');
+    expect(expired).not.toBeNull();
+    expect(expired.getAttribute('role')).toBe('alert');
+    expect(expired.getAttribute('aria-live')).toBe('assertive');
+    expect(screen.queryByTestId('pay-sheet-promptpay-qr')).toBeNull();
+  });
+
+  it('Refresh CTA fires onRefresh from expired panel', () => {
+    const onRefresh = vi.fn();
+    renderWithIntl({ ...baseProps, status: 'expired', onRefresh });
+    fireEvent.click(screen.getByTestId('pay-sheet-promptpay-refresh'));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('<PromptPayPanel> — waiting-confirmation status', () => {
+  it('renders waiting indicator alongside QR', () => {
+    renderWithIntl({ ...baseProps, status: 'waiting-confirmation' });
+    expect(screen.getByTestId('pay-sheet-promptpay-qr')).not.toBeNull();
+    expect(screen.getByTestId('pay-sheet-promptpay-waiting')).not.toBeNull();
+    // R2 F-4: the "Waiting for payment confirmation…" string now
+    // appears in TWO places — the visible (aria-hidden) indicator
+    // AND the persistent sr-only live region (avoids the NVDA
+    // freshly-mounted-region bug). Use getAllByText so both are
+    // accepted; the visual indicator carries the test-id assertion
+    // above.
+    expect(screen.getAllByText('Waiting for payment confirmation…').length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('<PromptPayPanel> — countdown effect lifecycle', () => {
+  it('countdown ticks down with setInterval', () => {
+    vi.useFakeTimers();
+    try {
+      renderWithIntl({ ...baseProps, status: 'pending', expirySeconds: 5 });
+      const countdown = screen.getByTestId('pay-sheet-promptpay-countdown');
+      expect(countdown.textContent).toContain('00:05');
+      act(() => {
+        vi.advanceTimersByTime(2_000);
+      });
+      expect(countdown.textContent).toContain('00:03');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('automatically transitions to expired panel when countdown reaches 0', () => {
+    vi.useFakeTimers();
+    try {
+      renderWithIntl({ ...baseProps, status: 'pending', expirySeconds: 2 });
+      expect(screen.getByTestId('pay-sheet-promptpay-qr')).not.toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(2_500);
+      });
+      expect(screen.getByTestId('pay-sheet-promptpay-expired')).not.toBeNull();
+      expect(
+        screen.queryByTestId('pay-sheet-promptpay-qr'),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

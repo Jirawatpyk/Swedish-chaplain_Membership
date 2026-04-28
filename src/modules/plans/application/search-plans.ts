@@ -108,6 +108,19 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     url: '/admin/invoices/new',
     requires: 'admin',
   },
+  // F5 Phase 6 (T118) — refund flow browse-mode shortcut. Admin-only.
+  // Lands on the invoices list pre-filtered to paid + partially-
+  // credited invoices (the same filter the F5 reconciliation chip
+  // uses) for admins who want to scan the list. A *direct* fuzzy-
+  // search variant that auto-opens the refund dialog without leaving
+  // the keyboard ships as the `refundableInvoices` palette group —
+  // see `/api/plans/search` route + `PaletteRefundableInvoiceEntity`.
+  {
+    id: 'refund.issue',
+    label: 'palette.actions.issueRefund',
+    url: '/admin/invoices?paidOnly=1',
+    requires: 'admin',
+  },
 ];
 
 const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
@@ -145,6 +158,16 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.invoices',
     label: 'palette.navigate.invoicesList',
     url: '/admin/invoices',
+    requires: 'read',
+  },
+  {
+    // Verify-fix S1 (2026-04-26): F5 Phase 5 paid-online reconciliation
+    // jump-point. Smart-chamber-features § MVP #4 — high-frequency
+    // monthly-reconciliation step. Available to admin + manager (both
+    // roles see the timeline read-only on /admin/invoices).
+    id: 'nav.invoicesPaidOnline',
+    label: 'palette.navigate.invoicesPaidOnline',
+    url: '/admin/invoices?paidOnline=1',
     requires: 'read',
   },
   {

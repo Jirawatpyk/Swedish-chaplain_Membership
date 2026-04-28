@@ -5,7 +5,7 @@
  * Actions list is role-filtered: manager sees only read-category actions;
  * admin sees everything; member → 403.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok } from '@/lib/result';
 
@@ -27,6 +27,18 @@ vi.mock('@/modules/plans/application/search-plans', () => ({
 // has its own dedicated tests.
 vi.mock('@/modules/members', async () => ({
   directorySearch: async () => ok({ items: [], nextCursor: null }),
+}));
+// F5 Phase 6 (T118a) — route augments the response with refundable-
+// invoice fuzzy search for admin role. Contract test stubs these to
+// empty OK so the new branch doesn't reach live infra; the dedicated
+// `palette.refundableInvoices` group has its own tests downstream.
+vi.mock('@/modules/invoicing', async () => ({
+  listInvoicesPaged: async () => ok({ rows: [], total: 0 }),
+  makeListInvoicesDeps: () => ({}),
+}));
+vi.mock('@/modules/payments', async () => ({
+  loadInvoicePaymentActivity: async () => ok({ payments: [], refunds: [] }),
+  makeLoadInvoicePaymentActivityDeps: () => ({}),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
@@ -57,8 +69,17 @@ function makeRequest(q: string = '', extra: string = ''): NextRequest {
 }
 
 describe('contract: GET /api/plans/search (T064)', () => {
+  beforeEach(() => {
+    // resetModules() clears the dynamic-import cache for `@/app/api/plans/search/route`
+    // so each `await import(...)` rebinds to the freshly-reset mocks below.
+    // Without it, a prior test file's resolved-once mocks can leak into this suite
+    // (observed: test #1 timeout + test #2 wrong role under full-suite parallelism).
+    vi.resetModules();
+  });
   afterEach(() => {
-    vi.clearAllMocks();
+    // resetAllMocks (vs clearAllMocks) also resets implementations, not just call history,
+    // so the next test's `mockResolvedValueOnce` is the only resolution the mock returns.
+    vi.resetAllMocks();
   });
 
   it('200 — returns { results: { plans, actions, navigate } } envelope', async () => {

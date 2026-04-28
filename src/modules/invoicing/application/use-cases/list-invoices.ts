@@ -64,6 +64,7 @@ export const listInvoicesPagedSchema = z.object({
   memberId: z.string().uuid().optional(),
   search: z.string().optional(),
   includeDrafts: z.boolean().default(false),
+  paidOnlineOnly: z.boolean().optional(),
 });
 
 export type ListInvoicesPagedInput = z.infer<typeof listInvoicesPagedSchema>;
@@ -85,6 +86,7 @@ export async function listInvoicesPaged(
     memberId: input.memberId,
     search: input.search,
     includeDrafts: input.includeDrafts,
+    paidOnlineOnly: input.paidOnlineOnly,
   });
   return ok({ rows, total });
 }

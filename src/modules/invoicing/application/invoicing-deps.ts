@@ -8,6 +8,7 @@
  * context (invoice repo); stateless adapters are module-level constants.
  */
 import { randomUUID } from 'node:crypto';
+import { env } from '@/lib/env';
 import { systemClock } from './ports/clock-port';
 import { makeDrizzleInvoiceRepo } from '../infrastructure/repos/drizzle-invoice-repo';
 import { makeDrizzleCreditNoteRepo } from '../infrastructure/repos/drizzle-credit-note-repo';
@@ -16,6 +17,7 @@ import { postgresSequenceAllocator } from '../infrastructure/adapters/postgres-s
 import { reactPdfRenderAdapter } from '../infrastructure/adapters/react-pdf-render-adapter';
 import { vercelBlobAdapter } from '../infrastructure/adapters/vercel-blob-adapter';
 import { resendEmailOutboxAdapter } from '../infrastructure/adapters/resend-email-outbox-adapter';
+import { receiptPdfRenderEnqueueAdapter } from '../infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { f4AuditAdapter } from '../infrastructure/adapters/audit-adapter';
@@ -31,6 +33,7 @@ import type { PreviewInvoiceDraftDeps } from './use-cases/preview-invoice-draft'
 import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
 import type { GetInvoiceDeps } from './use-cases/get-invoice';
 import type { RecordPaymentDeps } from './use-cases/record-payment';
+import type { RenderReceiptPdfDeps } from './use-cases/render-receipt-pdf';
 import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
 import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
 import type { VoidInvoiceDeps } from './use-cases/void-invoice';
@@ -256,9 +259,20 @@ export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
   };
 }
 
-export function makeRecordPaymentDeps(tenantId: string): RecordPaymentDeps {
+/**
+ * @param tenantId - tenant slug the deps are bound to.
+ * @param externalTx - optional caller-owned Drizzle tx handle. When
+ *   supplied, the invoice repo's `withTx` executes inline against this
+ *   tx instead of opening its own. Used by the F5 → F4 invoicing-bridge
+ *   to keep the payment-row update and the invoice `issued → paid` flip
+ *   in a SINGLE transaction (Reliability D-03, Group E2b).
+ */
+export function makeRecordPaymentDeps(
+  tenantId: string,
+  externalTx?: unknown,
+): RecordPaymentDeps {
   return {
-    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId, externalTx),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: reactPdfRenderAdapter,
@@ -268,5 +282,26 @@ export function makeRecordPaymentDeps(tenantId: string): RecordPaymentDeps {
     outbox: resendEmailOutboxAdapter,
     memberIdentity: memberIdentityAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+    receiptPdfRenderEnqueue: receiptPdfRenderEnqueueAdapter,
+    asyncReceiptPdf: env.features.f5AsyncReceiptPdf,
+  };
+}
+
+/**
+ * T166-05 — composition root for the async render-receipt-pdf
+ * worker. Reuses the same infra adapters as `recordPayment` since the
+ * render path is identical — only the trigger differs (worker vs
+ * webhook).
+ */
+export function makeRenderReceiptPdfDeps(
+  tenantId: string,
+): RenderReceiptPdfDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    tenantSettingsRepo: drizzleTenantSettingsRepo,
+    pdfRender: reactPdfRenderAdapter,
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+    clock: systemClock,
   };
 }

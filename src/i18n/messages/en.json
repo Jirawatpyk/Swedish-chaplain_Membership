@@ -1076,7 +1076,8 @@
           "dueDate": "Due",
           "total": "Total",
           "actions": "Actions",
-          "member": "Member"
+          "member": "Member",
+          "method": "Method"
         },
         "statuses": {
           "draft": "Draft",
@@ -1296,6 +1297,108 @@
           "codeFallback": "Error code: {code}"
         }
       }
+    },
+    "refund": {
+      "title": "Issue refund",
+      "button": {
+        "label": "Issue refund",
+        "ariaLabel": "Issue a refund for this invoice"
+      },
+      "dialog": {
+        "title": "Issue refund?",
+        "description": "Refund all or part of this payment. The matching credit note will be issued and emailed to the member.",
+        "cancel": "Cancel",
+        "confirm": "Issue refund",
+        "processing": "Processing refund…"
+      },
+      "form": {
+        "amount": {
+          "label": "Refund amount (THB)",
+          "placeholder": "0.00",
+          "maximumHelp": "Maximum refundable: {amount} THB",
+          "ariaDescribed": "Enter the refund amount in Thai Baht. The amount will be deducted from the original payment."
+        },
+        "reason": {
+          "label": "Reason",
+          "placeholder": "Brief reason for this refund…",
+          "charCount": "{count} / 500"
+        },
+        "typedPhrase": {
+          "label": "Type {phrase} to confirm a full refund",
+          "placeholder": "{phrase}",
+          "help": "Full refunds require typed confirmation to prevent accidental processing.",
+          "mismatch": "Phrase does not match. Type exactly: {phrase}"
+        }
+      },
+      "success": {
+        "toast": "Refund processed — credit note {number} issued and emailed to member"
+      },
+      "error": {
+        "payment_not_found": "Payment not found.",
+        "payment_not_refundable": "This payment cannot be refunded in its current state.",
+        "refund_exceeds_remaining": "Refund amount exceeds the remaining refundable balance ({remaining} THB).",
+        "refund_in_progress": "Another refund is in progress for this payment. Please retry shortly.",
+        "processor_unavailable": "Payment processor temporarily unavailable. Please retry.",
+        "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",
+        "internal_error": "An unexpected error occurred. Please try again."
+      },
+      "cmdk": {
+        "label": "Issue refund",
+        "hint": "Search paid invoices to refund"
+      }
+    },
+    "email": {
+      "refundConfirmation": {
+        "subject": "Refund processed for invoice {invoiceNumber}",
+        "bodyLine": "Refund of THB {amount} processed on {date}. Credit note {creditNoteNumber} is attached."
+      }
+    },
+    "paymentReconciliation": {
+      "title": "Payment reconciliation",
+      "filterChip": {
+        "label": "Paid online",
+        "ariaLabel": "Filter to invoices paid online",
+        "tooltip": "Show only invoices settled via card or PromptPay"
+      },
+      "methodBadge": {
+        "card": "Card",
+        "promptpay": "PromptPay",
+        "manual": "Manual"
+      },
+      "timeline": {
+        "title": "Payment activity",
+        "loading": "Loading payment activity",
+        "actorSystem": "System (Stripe webhook)",
+        "actorAnonymous": "Anonymous",
+        "events": {
+          "payment_initiated": "Payment initiated",
+          "payment_succeeded": "Payment succeeded",
+          "payment_failed": "Payment failed",
+          "payment_canceled": "Payment canceled",
+          "invoice_paid": "Invoice marked paid",
+          "refund_initiated": "Refund initiated",
+          "refund_succeeded": "Refund completed",
+          "refund_failed": "Refund failed"
+        },
+        "chargeId": {
+          "label": "Charge id",
+          "copyAction": "Copy charge id",
+          "copySuccess": "Charge id copied to clipboard",
+          "copySuccessAnnouncement": "Copied",
+          "copyFailed": "Could not copy — please copy manually"
+        },
+        "testModeBadge": "Test mode",
+        "viewInStripe": "View in Stripe",
+        "viewInStripeAria": "Open this charge in the Stripe dashboard (opens in a new tab)",
+        "empty": {
+          "title": "No online payment activity",
+          "body": "Online payments via card or PromptPay will appear here once a member completes one. Manually-recorded payments are shown in the Payment details section above.",
+          "recordManualLink": "Record a payment manually"
+        }
+      }
+    },
+    "paymentSettings": {
+      "title": "Payment settings"
     }
   },
   "palette": {
@@ -1307,14 +1410,16 @@
       "plans": "Plans",
       "actions": "Actions",
       "navigate": "Navigate",
-      "members": "Members"
+      "members": "Members",
+      "refundableInvoices": "Refund a paid invoice"
     },
     "actions": {
       "newPlan": "Create new plan",
       "cloneYear": "Clone year",
       "viewAuditLog": "View audit log",
       "newMember": "Create new member",
-      "newInvoice": "Create new invoice"
+      "newInvoice": "Create new invoice",
+      "issueRefund": "Issue refund — find paid invoice"
     },
     "navigate": {
       "plansList": "Plans list",
@@ -1323,6 +1428,7 @@
       "dashboard": "Dashboard",
       "membersList": "Members list",
       "invoicesList": "Invoices list",
+      "invoicesPaidOnline": "Invoices: paid online (reconciliation)",
       "creditNotesList": "Credit notes list"
     }
   },
@@ -1418,6 +1524,12 @@
         "contactAdmin": "Contact your chamber admin"
       },
       "detail": {
+        "a11y": {
+          "optimisticPaid": "Payment received. Invoice marked as paid."
+        },
+        "pdf": {
+          "preparing": "Your tax receipt is being prepared. The PDF will be ready in a moment — please retry shortly."
+        },
         "title": "Invoice",
         "subtitle": "Read-only view — download the PDF for the official tax document.",
         "linesHeading": "Line items",
@@ -1450,7 +1562,11 @@
           "voidedAt": "Voided on",
           "reasonLabel": "Reason",
           "notPayable": "This invoice is no longer payable. You do not need to take any action.",
-          "downloadVoidedPdf": "Download voided invoice (VOID-stamped)"
+          "downloadVoidedPdf": "Download voided invoice (VOID-stamped)",
+          "autoRefundHeading": "Your payment has been refunded",
+          "autoRefundBody": "We've returned your payment because this invoice was voided. The refund will appear on your card or bank statement within 5–10 business days.",
+          "autoRefundContact": "If you don't see the refund after 10 business days, please contact your chamber administrator with the reference below.",
+          "autoRefundRef": "Refund reference: {ref}"
         }
       }
     },
@@ -1560,6 +1676,124 @@
         "th": "ไทย (Thai)",
         "sv": "Svenska (Swedish)"
       }
+    },
+    "payment": {
+      "payNow": "Pay now",
+      "payAmount": "Pay {amount}",
+      "drawer": {
+        "title": "Pay invoice",
+        "subtitle": "{invoiceNumber}",
+        "close": "Close payment drawer"
+      },
+      "summary": {
+        "heading": "Order summary",
+        "invoiceLabel": "Invoice",
+        "amountLabel": "Amount due",
+        "itemsLabel": "Items",
+        "itemSingle": "1 item",
+        "itemPlural": "{count} items"
+      },
+      "security": {
+        "stripeBadge": "Secured by Stripe",
+        "encrypted": "Encrypted · PCI-DSS compliant",
+        "cards": "We accept Visa, Mastercard, American Express, JCB",
+        "privacyDisclosure": "Your payment is processed by <stripeLink>Stripe</stripeLink>. Your email address is shared with Stripe to initiate the transfer."
+      },
+      "methods": {
+        "card": "Card",
+        "promptpay": "PromptPay",
+        "cardAriaLabel": "Card — switch payment method",
+        "promptpayAriaLabel": "PromptPay — switch payment method",
+        "cardPlaceholder": "Preparing secure payment form…",
+        "promptpayPlaceholder": "PromptPay is coming soon."
+      },
+      "success": {
+        "title": "Payment received",
+        "summaryCard": "Paid {amount} by card on {dateTime}",
+        "summaryPromptPay": "Paid {amount} via PromptPay on {dateTime}",
+        "downloadReceipt": "Download receipt",
+        "close": "Close",
+        "autoCloseCountdown": "Closing in {seconds} s",
+        "pauseAutoClose": "Pause",
+        "resumeAutoClose": "Resume",
+        "autoClosePaused": "Auto-close paused",
+        "toast": "Payment received. Receipt emailed to you."
+      },
+      "processing": {
+        "title": "Processing payment…",
+        "body": "Don't close this window — we're confirming your payment with the bank.",
+        "cancel": "Cancel payment"
+      },
+      "threeDSecure": {
+        "title": "Verifying with your bank…",
+        "body": "Follow the prompts from your bank in the window above. This can take up to a minute.",
+        "cancel": "Cancel payment"
+      },
+      "retry": {
+        "title": "Payment failed",
+        "body": "{reason} Please try again or choose a different payment method.",
+        "cta": "Try again",
+        "alternativeMethod": "Use another method",
+        "genericReason": "Payment could not be completed.",
+        "reason3dsTimeout": "Bank verification timed out.",
+        "reasonRateLimited": "Too many attempts. Please wait a moment and try again.",
+        "reasonRateLimitedWithSeconds": "Too many attempts. Please wait {seconds} seconds and try again.",
+        "reasonAuth": "Your session expired. Please sign in again.",
+        "reasonServer": "Our payment service is temporarily unavailable.",
+        "reasonNetwork": "Network error. Check your connection and try again.",
+        "reasonCardDeclined": "Your card was declined.",
+        "reasonIncorrectCvc": "Your card's security code is incorrect.",
+        "reasonExpiredCard": "Your card has expired.",
+        "reasonInsufficientFunds": "Your card has insufficient funds.",
+        "reasonProcessingError": "An error occurred while processing your card. Please try again."
+      },
+      "disabled": {
+        "title": "Online payment unavailable",
+        "body": "Online card and PromptPay payments are not available for this invoice. Please contact the chamber administrator for bank-transfer instructions.",
+        "contactAdminCta": "Contact administrator",
+        "contactAdminCtaAria": "Contact administrator about invoice {invoiceNumber}",
+        "noContactEmail": "No administrator email is configured yet. Please contact the chamber office directly.",
+        "mailSubject": "Bank-transfer instructions for invoice {invoiceNumber}"
+      },
+      "qrExpiring": {
+        "title": "QR expiring soon",
+        "body": "Your PromptPay QR will expire in 2 minutes. Refresh to get a fresh code if you need more time.",
+        "action": "Refresh QR"
+      },
+      "promptpay": {
+        "qrAlt": "PromptPay QR code",
+        "instructions": "Scan with any Thai bank app",
+        "amount": "Amount: {amount}",
+        "warning": "Only scan the QR code shown above; do NOT transfer manually to any other account.",
+        "countdown": "Expires in {minutes}:{seconds}",
+        "refresh": "Refresh QR",
+        "expired": "QR code expired",
+        "expiredBody": "This QR is no longer valid. Generate a new one to continue.",
+        "waiting": "Waiting for payment confirmation…",
+        "loadFailed": "We couldn't generate a PromptPay QR. Refresh and try again."
+      },
+      "hardCap": {
+        "title": "Are you still here?",
+        "body": "The payment drawer has been open for 30 minutes. Click Continue to keep your payment session active, otherwise this attempt will be canceled automatically.",
+        "continue": "Continue payment",
+        "autoCancelCountdown": "Cancelling in {seconds} s"
+      },
+      "qrExpired": "QR code expired. Generate a new one to continue.",
+      "skeleton": {
+        "loading": "Loading secure payment form"
+      },
+      "error": {
+        "elementLoadFailed": "We couldn't load the payment form. Refresh and try again."
+      },
+      "cmdkPay": {
+        "group": "Payments",
+        "title": "Pay invoice",
+        "description": "Search an issued invoice to pay online",
+        "placeholder": "Search your invoices…",
+        "label": "Pay invoice {invoiceNumber} · {amount}",
+        "emptyHint": "No issued invoices to pay",
+        "allPaidHint": "No pending invoices — you're all paid up ✨"
+      }
     }
   },
   "audit": {
@@ -1598,5 +1832,13 @@
   },
   "shared": {
     "loaded": "Loaded"
+  },
+  "email": {
+    "invoiceIssued": {
+      "payOnlineCta": "Pay online now"
+    },
+    "refundConfirmation": {
+      "subject": "Refund confirmation"
+    }
   }
 }

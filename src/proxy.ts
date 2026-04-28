@@ -3,6 +3,15 @@ import { env } from '@/lib/env';
 import { checkCsrf } from '@/lib/csrf';
 import { REQUEST_ID_HEADER, requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger';
+
+/**
+ * Staff-review R2 R023 (2026-04-28) — per-request nonce header forwarded
+ * to server components so they can attach `nonce={nonce}` to any inline
+ * `<script>` they render. Next.js 16 picks this up automatically for its
+ * own bootstrap scripts when the header is present.
+ */
+export const NONCE_HEADER = 'x-nonce';
 
 /**
  * F2 tenant header — forwarded to route handlers + server components so
@@ -49,43 +58,110 @@ export const TENANT_SLUG_HEADER = 'x-tenant-slug';
 
 const HSTS_VALUE = 'max-age=63072000; includeSubDomains; preload';
 
-// script-src: `'unsafe-inline'` is kept because Next.js inlines small
-// bootstrap scripts for hydration. In DEV we ALSO add `'unsafe-eval'`
-// because React DevTools + HMR + the error-overlay stack reconstruction
-// all call `eval()` under the hood — with strict CSP the browser blocks
-// them and the dev overlay shows a console error. Production has eval
-// disabled (React production bundles never call it).
+// script-src — nonce-based (CSP Level 3) per staff-review R2 R023.
 //
-// A future hardening pass (tracked as an F1 ship-gate follow-up)
-// should switch the prod policy to nonce-based script-src and drop
-// unsafe-inline too.
-function buildCsp(isDevelopment: boolean): string {
-  const scriptSrc = isDevelopment
-    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-    : "script-src 'self' 'unsafe-inline'";
+// Production: `'nonce-${nonce}'` + `'strict-dynamic'`. The nonce is fresh
+// per request (16 bytes base64). `'unsafe-inline'` is kept ONLY as a
+// fallback for legacy browsers — CSP Level 3 spec says modern browsers
+// ignore `'unsafe-inline'` when a `'nonce-*'` source is present, so this
+// is a defense-in-depth posture. PCI DSS 6.4.1 best practice met because
+// inline scripts without the nonce are blocked on every browser shipped
+// in the past 5 years (Chrome 59+, FF 49+, Safari 15.4+).
+//
+// Development: `'unsafe-inline'` + `'unsafe-eval'` is kept because React
+// DevTools + Turbopack HMR + error-overlay stack reconstruction all call
+// `eval()` under the hood. Production React bundles never call eval, so
+// dropping `'unsafe-eval'` in prod is safe.
+/**
+ * F5 — Stripe origins are allowed in CSP application-wide.
+ *
+ * History: route-scoped allowlist was tried first (only enabled on
+ * `/portal/invoices/...` + `/admin/invoices/...`) but **breaks under
+ * Next.js SPA navigation**. CSP is an HTTP header applied at the
+ * initial document load; client-side route changes via `<Link>` do
+ * NOT re-evaluate CSP, so a user landing first on `/portal/dashboard`
+ * (Stripe-disallowed CSP) and then SPA-navigating to an invoice
+ * detail keeps the dashboard's CSP — Stripe.js is blocked.
+ *
+ * The "scoping" benefit was minimal anyway: Stripe.js is not an XSS
+ * vector (it loads an iframe sandbox). Keeping it global matches
+ * Stripe's official documentation and how every other Stripe-using
+ * app is configured. Webhook route (`/api/webhooks/stripe`) is
+ * server-only and does not exercise these directives.
+ */
+
+/**
+ * Generate a 16-byte cryptographically-strong nonce, base64-encoded.
+ * Web Crypto is available in both Edge and Node runtimes (Next.js 16+).
+ */
+function generateNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  // base64-encode without using Node Buffer so this works on Edge too.
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin);
+}
+
+export function buildCsp(isDevelopment: boolean, nonce: string): string {
+  const scriptSrcParts = isDevelopment
+    ? [
+        "'self'",
+        "'unsafe-inline'",
+        "'unsafe-eval'",
+        'https://js.stripe.com',
+      ]
+    : [
+        "'self'",
+        `'nonce-${nonce}'`,
+        // 'strict-dynamic' lets nonce'd scripts load further scripts
+        // without each carrying a nonce — required for Next.js's
+        // hydration bootstrap. Modern browsers prefer this over the
+        // host allowlist for nonce'd scripts.
+        "'strict-dynamic'",
+        // Fallback for legacy browsers without CSP3 nonce support.
+        // CSP3-aware browsers ignore `'unsafe-inline'` when a `'nonce-*'`
+        // source is present (per W3C CSP Level 3 § 6.7.2).
+        "'unsafe-inline'",
+        // Stripe must remain in script-src as an explicit host since
+        // 'strict-dynamic' is in play (the nonce'd loader fetches
+        // Stripe.js — strict-dynamic propagates trust, but Stripe's
+        // documented integration relies on the host allowlist as
+        // backwards-compatible defense).
+        'https://js.stripe.com',
+      ];
+  const frameSrcParts = [
+    "'self'",
+    'https://js.stripe.com',
+    'https://hooks.stripe.com',
+  ];
   // Dev needs ws:// for HMR socket; prod only allows https:.
-  const connectSrc = isDevelopment
-    ? "connect-src 'self' https: ws: wss:"
-    : "connect-src 'self' https:";
+  const connectSrcParts = [
+    "'self'",
+    ...(isDevelopment ? ['https:', 'ws:', 'wss:'] : ['https:']),
+    'https://api.stripe.com',
+  ];
 
   return [
     "default-src 'self'",
-    scriptSrc,
+    `script-src ${scriptSrcParts.join(' ')}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "font-src 'self' data:",
-    connectSrc,
+    `connect-src ${connectSrcParts.join(' ')}`,
+    `frame-src ${frameSrcParts.join(' ')}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
   ].join('; ');
 }
 
-const CSP_VALUE = buildCsp(env.isDevelopment);
-
-function applySecurityHeaders(response: NextResponse): NextResponse {
+function applySecurityHeaders(response: NextResponse, nonce: string): NextResponse {
   response.headers.set('Strict-Transport-Security', HSTS_VALUE);
-  response.headers.set('Content-Security-Policy', CSP_VALUE);
+  response.headers.set(
+    'Content-Security-Policy',
+    buildCsp(env.isDevelopment, nonce),
+  );
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -93,61 +169,88 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
+/**
+ * Retry window for all kill-switch 503s. Mirrored as `Retry-After` header
+ * AND `retryAfterSeconds` body field so route handlers + member-portal
+ * error boundaries can render a countdown without parsing headers (some
+ * fetch wrappers strip them).
+ */
+const KILL_SWITCH_RETRY_AFTER_SECONDS = 300;
+
+/**
+ * Canonical machine-readable body schema for every 503 kill-switch /
+ * read-only block. Phase 3+ route handlers and portal error boundaries
+ * branch on `error` (code) to pick the right toast + i18n key, and use
+ * `retryAfterSeconds` / `supportUrl` to shape the CTA.
+ *
+ * `message` is EN-only and is a safety fallback — the caller SHOULD
+ * translate `error` via an i18n key instead of rendering `message`
+ * verbatim (proxy runs before locale detection; no translation
+ * available here).
+ */
+function build503(
+  errorCode: string,
+  message: string,
+  pathname: string,
+  requestId: string,
+  nonce: string,
+): NextResponse {
+  const response = NextResponse.json(
+    {
+      error: errorCode,
+      message,
+      retryAfterSeconds: KILL_SWITCH_RETRY_AFTER_SECONDS,
+      supportUrl: '/admin/support',
+    },
+    { status: 503 },
+  );
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  response.headers.set('Retry-After', String(KILL_SWITCH_RETRY_AFTER_SECONDS));
+  return applySecurityHeaders(response, nonce);
+}
+
 export function proxy(request: NextRequest): NextResponse {
   const { method, nextUrl } = request;
   const requestId = requestIdFromHeaders(request.headers);
+  const nonce = generateNonce();
   const isStateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
   // 1. READ_ONLY_MODE — block all writes with 503 (used for rollback /
   //    scheduled maintenance per .env.local README).
   if (env.flags.readOnlyMode && isStateChanging) {
-    const response = NextResponse.json(
-      {
-        error: 'read-only-mode',
-        message: 'The system is currently in read-only mode for maintenance.',
-      },
-      { status: 503 },
+    return build503(
+      'read-only-mode',
+      'The system is currently in read-only mode for maintenance.',
+      nextUrl.pathname,
+      requestId,
+      nonce,
     );
-    response.headers.set(REQUEST_ID_HEADER, requestId);
-    response.headers.set('Retry-After', '300');
-    return applySecurityHeaders(response);
   }
 
-  // 1b. FEATURE_F3_MEMBERS kill-switch (T036) — when false, every member /
-  //     portal route returns 503 read_only_mode without a code deploy.
-  //     Applies to BOTH reads and writes on the F3 surfaces because the
-  //     whole feature is disabled, not just mutations.
+  // 1b. FEATURE_F3_MEMBERS kill-switch (T036). Applies to BOTH reads and
+  //     writes on the F3 surfaces because the whole feature is disabled.
   const isF3Path =
     nextUrl.pathname.startsWith('/api/members') ||
     nextUrl.pathname.startsWith('/api/portal');
   if (!env.features.f3Members && isF3Path) {
-    const response = NextResponse.json(
-      {
-        error: 'read_only_mode',
-        message: 'Member directory is temporarily unavailable.',
-      },
-      { status: 503 },
+    return build503(
+      'read_only_mode',
+      'Member directory is temporarily unavailable.',
+      nextUrl.pathname,
+      requestId,
+      nonce,
     );
-    response.headers.set(REQUEST_ID_HEADER, requestId);
-    response.headers.set('Retry-After', '300');
-    return applySecurityHeaders(response);
   }
 
-  // 1c. FEATURE_F4_INVOICING kill-switch (T020) — when false, every
-  //     invoicing route returns 503 read_only_mode. Applies to BOTH
-  //     reads and writes on F4 surfaces. Member-portal /api/portal/invoices
-  //     is a dedicated sub-path (added in US3) and is gated here too; the
-  //     F3 /api/portal guard above only triggers when F3 itself is off.
+  // 1c. FEATURE_F4_INVOICING kill-switch (T020). Applies to BOTH reads
+  //     and writes on F4 surfaces.
   //
-  //     R7-B4 fix — the cron dispatcher is a SHARED route
+  //     R7-B4 — the cron dispatcher is a SHARED route
   //     (`/api/cron/outbox-dispatch`) serving F1 + F4 rows. Blanket-
-  //     blocking it here would stop F1 emails too. The kill-switch for
-  //     F4 outbox rows lives INSIDE the dispatcher query which filters
-  //     `notification_type != 'invoice_auto_email'` when f4Invoicing is
-  //     false (see src/app/api/cron/outbox-dispatch/route.ts). The
-  //     previous `/api/cron/auto-email-dispatch` reference was a
-  //     path-mismatch that gave the kill-switch no actual containment
-  //     power over in-flight invoice email dispatch.
+  //     blocking it here would stop F1 emails too. The F4-row filter
+  //     lives INSIDE the dispatcher query which drops
+  //     `notification_type == 'invoice_auto_email'` when f4Invoicing is
+  //     false (see src/app/api/cron/outbox-dispatch/route.ts).
   const isF4Path =
     nextUrl.pathname.startsWith('/api/invoices') ||
     nextUrl.pathname.startsWith('/api/credit-notes') ||
@@ -158,16 +261,36 @@ export function proxy(request: NextRequest): NextResponse {
     // so "invoicing disabled" is uniform across every F4-bearing route.
     /^\/api\/members\/[^/]+\/invoices(?:\/|$)/.test(nextUrl.pathname);
   if (!env.features.f4Invoicing && isF4Path) {
-    const response = NextResponse.json(
-      {
-        error: 'read_only_mode',
-        message: 'Invoicing is temporarily unavailable.',
-      },
-      { status: 503 },
+    return build503(
+      'read_only_mode',
+      'Invoicing is temporarily unavailable.',
+      nextUrl.pathname,
+      requestId,
+      nonce,
     );
-    response.headers.set(REQUEST_ID_HEADER, requestId);
-    response.headers.set('Retry-After', '300');
-    return applySecurityHeaders(response);
+  }
+
+  // 1d. FEATURE_F5_ONLINE_PAYMENT kill-switch. Covers webhook + API
+  //     routes AND the member-facing /pay page + admin refund page.
+  //     Default OFF (dark ship); flip ON in Vercel env after Rolling
+  //     Release gate. Distinct error code `feature_disabled` separates
+  //     "not yet activated" from F3/F4's `read_only_mode` maintenance
+  //     semantics so Phase 3 UI can pick the right microcopy.
+  const isF5Path =
+    nextUrl.pathname.startsWith('/api/payments') ||
+    nextUrl.pathname.startsWith('/api/refunds') ||
+    nextUrl.pathname.startsWith('/api/webhooks/stripe') ||
+    nextUrl.pathname.startsWith('/api/tenant-payment-settings') ||
+    /^\/portal\/invoices\/[^/]+\/pay(?:\/|$)/.test(nextUrl.pathname) ||
+    /^\/admin\/invoices\/[^/]+\/refund(?:\/|$)/.test(nextUrl.pathname);
+  if (!env.features.f5OnlinePayment && isF5Path) {
+    return build503(
+      'feature_disabled',
+      'Online payment is temporarily unavailable.',
+      nextUrl.pathname,
+      requestId,
+      nonce,
+    );
   }
 
   // 2. CSRF Origin allow-list for /api/* state-changing requests
@@ -181,7 +304,7 @@ export function proxy(request: NextRequest): NextResponse {
       { status: 403 },
     );
     response.headers.set(REQUEST_ID_HEADER, requestId);
-    return applySecurityHeaders(response);
+    return applySecurityHeaders(response, nonce);
   }
 
   // 3. Pass-through with security headers + request ID + x-pathname
@@ -193,6 +316,11 @@ export function proxy(request: NextRequest): NextResponse {
   const forwardedHeaders = new Headers(request.headers);
   forwardedHeaders.set('x-pathname', nextUrl.pathname + nextUrl.search);
   forwardedHeaders.set(REQUEST_ID_HEADER, requestId);
+  // R023: forward the per-request nonce so server components can read it
+  // via `headers()` and attach `nonce={nonce}` to any inline <script>
+  // they render. Next.js 16 also reads `x-nonce` automatically for its
+  // own hydration bootstrap scripts.
+  forwardedHeaders.set(NONCE_HEADER, nonce);
 
   // F2: resolve tenant once in the proxy so every downstream consumer
   // (route handlers, server components, logs) sees the same slug. In F2
@@ -204,11 +332,21 @@ export function proxy(request: NextRequest): NextResponse {
   try {
     const tenant = resolveTenantFromRequest(request);
     forwardedHeaders.set(TENANT_SLUG_HEADER, tenant.slug);
-  } catch {
-    // Intentionally silent — resolver would have already failed at boot
-    // if env.TENANT_SLUG was malformed; this catch guards against a
-    // future F10 resolver that throws for unauthenticated requests on
-    // tenant-unknown routes (landing page, public docs, etc.).
+  } catch (error) {
+    // Resolver would have already failed at boot if env.TENANT_SLUG was
+    // malformed; this catch guards against a future F10 resolver that
+    // throws for unauthenticated requests on tenant-unknown routes
+    // (landing page, public docs, etc.). Structured pino log — runs
+    // through REDACT_PATHS so any error message containing session /
+    // token data stays out of the log stream.
+    logger.warn(
+      {
+        pathname: nextUrl.pathname,
+        requestId,
+        err: error instanceof Error ? error.message : String(error),
+      },
+      '[proxy] tenant resolver failed; header omitted',
+    );
   }
 
   const response = NextResponse.next({
@@ -217,7 +355,7 @@ export function proxy(request: NextRequest): NextResponse {
     },
   });
   response.headers.set(REQUEST_ID_HEADER, requestId);
-  return applySecurityHeaders(response);
+  return applySecurityHeaders(response, nonce);
 }
 
 /**

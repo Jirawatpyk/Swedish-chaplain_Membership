@@ -12,10 +12,11 @@
 import { useCallback, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SearchIcon, XIcon } from 'lucide-react';
+import { SearchIcon, XIcon, CheckIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { FilterBar } from '@/components/ui/filter-bar';
+import { cn } from '@/lib/utils';
 import {
   Select,
   SelectContent,
@@ -23,6 +24,11 @@ import {
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 const DEBOUNCE_MS = 300;
 
@@ -45,8 +51,10 @@ export function InvoiceFilters() {
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const tReconciliation = useTranslations('admin.paymentReconciliation.filterChip');
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
+  const paidOnlineActive = searchParams.get('paidOnline') === '1';
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -72,7 +80,12 @@ export function InvoiceFilters() {
     }, DEBOUNCE_MS);
   };
 
-  const hasAnyFilter = currentQ !== '' || currentStatus !== 'all';
+  const hasAnyFilter =
+    currentQ !== '' || currentStatus !== 'all' || paidOnlineActive;
+
+  const togglePaidOnline = () => {
+    pushUrl({ paidOnline: paidOnlineActive ? null : '1' });
+  };
 
   return (
     <FilterBar>
@@ -120,11 +133,50 @@ export function InvoiceFilters() {
           ))}
         </SelectContent>
       </Select>
+      {/* R3-fix N7 (2026-04-26): the staff admin layout already
+          mounts `<TooltipProvider>` at the shell level — a local
+          provider here would remount on every searchParam change
+          (router.replace fires on every filter edit). The shell
+          provider is sufficient.
+          R3-fix N6 (2026-04-26, Base UI Tooltip touch behaviour):
+          Base UI `Tooltip` opens on hover/focus only (per Tooltip
+          design philosophy — tooltips are supplementary, not
+          primary info). Sighted touch users do NOT see the popup
+          on tap (taps toggle the filter, the primary action). The
+          `aria-label` on the trigger carries the scope information
+          for SR + voice-control users; the visible chip label
+          ("Paid online") is sufficient for sighted touch users
+          since the filter result speaks for itself once toggled.
+          Accepted Base UI limitation. */}
+      <Tooltip>
+        <TooltipTrigger
+          render={(triggerProps) => (
+            <Button
+              {...triggerProps}
+              type="button"
+              variant={paidOnlineActive ? 'default' : 'outline'}
+              size="sm"
+              onClick={togglePaidOnline}
+              data-testid="paid-online-filter-chip"
+              aria-pressed={paidOnlineActive}
+              aria-label={tReconciliation('ariaLabel')}
+              className={cn('gap-1', paidOnlineActive && 'shadow-sm')}
+            >
+              {paidOnlineActive && (
+                <CheckIcon className="size-3.5" aria-hidden="true" />
+              )}
+              {tReconciliation('label')}
+            </Button>
+          )}
+        />
+        <TooltipContent>{tReconciliation('tooltip')}</TooltipContent>
+      </Tooltip>
       {hasAnyFilter && (
         <Button
           variant="ghost"
+          size="sm"
           onClick={() =>
-            pushUrl({ q: null, status: null })
+            pushUrl({ q: null, status: null, paidOnline: null })
           }
           aria-label={t('filters.clearAll')}
         >

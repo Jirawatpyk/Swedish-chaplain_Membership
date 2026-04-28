@@ -51,6 +51,51 @@ async function main(): Promise<void> {
       if (row.tgtype & 0x20) events.push('TRUNCATE');
       console.log(`  ${row.tgname} (${events.join(', ')})`);
     }
+
+    // R3 M-2 (2026-04-28): canary checks for recent migrations.
+    // If the schema is out of sync (e.g. `db:sync-bookkeeping` was
+    // run before the actual migrations applied), the canaries below
+    // exit non-zero so the operator can detect it BEFORE running
+    // `db:migrate` (which would otherwise skip them silently).
+    console.log('\nCanary checks:');
+    type CanaryRow = { hit: number };
+    const canaries: ReadonlyArray<{ name: string; query: string }> = [
+      {
+        name: 'payments.processor_environment column (mig 0033)',
+        query: `SELECT 1 AS hit FROM information_schema.columns WHERE table_name = 'payments' AND column_name = 'processor_environment'`,
+      },
+      {
+        name: 'payments_processor_payment_intent_id_uniq partial index (mig 0054)',
+        query: `SELECT 1 AS hit FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'payments_processor_payment_intent_id_uniq' AND indexdef LIKE '%WHERE%status%'`,
+      },
+      {
+        name: 'audit_log.retention_years column (mig 0039)',
+        query: `SELECT 1 AS hit FROM information_schema.columns WHERE table_name = 'audit_log' AND column_name = 'retention_years'`,
+      },
+      {
+        name: "audit_event_type enum has 'dispute_created' (mig 0053)",
+        query: `SELECT 1 AS hit FROM pg_enum WHERE enumtypid = (SELECT oid FROM pg_type WHERE typname = 'audit_event_type') AND enumlabel = 'dispute_created'`,
+      },
+      {
+        name: 'audit_log_retention_default_for_f4_tax_docs trigger (mig 0055)',
+        query: `SELECT 1 AS hit FROM information_schema.triggers WHERE event_object_table = 'audit_log' AND trigger_name = 'audit_log_retention_default_for_f4_tax_docs'`,
+      },
+    ];
+    let failures = 0;
+    for (const canary of canaries) {
+      const rows = await sql.unsafe<CanaryRow[]>(canary.query);
+      const present = rows.length > 0;
+      console.log(`  ${present ? '✓' : '✗'} ${canary.name}`);
+      if (!present) failures += 1;
+    }
+    if (failures > 0) {
+      console.error(
+        `\n✗ ${failures} canary check(s) failed — schema is NOT in sync with the journal.\n` +
+          `  → Run \`pnpm db:migrate\` BEFORE \`pnpm db:sync-bookkeeping\`.`,
+      );
+      process.exit(1);
+    }
+    console.log(`\n✓ All ${canaries.length} canaries present — schema in sync.`);
   } finally {
     await sql.end();
   }

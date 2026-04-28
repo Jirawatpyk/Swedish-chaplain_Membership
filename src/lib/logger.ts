@@ -32,10 +32,10 @@ import { env } from './env';
  */
 
 /**
- * Paths that pino MUST redact before writing any log line. Exported so
- * `tests/unit/lib/logger-redaction.test.ts` can import the canonical
- * list (instead of maintaining a stale copy-paste) — R3 review found
- * the previous local copy had drifted to omit 22 paths.
+ * Paths that pino MUST redact before writing any log line. Exported
+ * so `tests/unit/lib/logger-redaction.test.ts` can import the
+ * canonical list — a local copy in tests is prone to drift (the
+ * test list has been observed to fall behind the production list).
  *
  * Pino's `*` wildcard matches exactly ONE intermediate key. Use
  * `*.field` for depth-1 and `*.*.field` for depth-2 when a field
@@ -122,9 +122,9 @@ export const REDACT_PATHS = [
   // both top-level and nested contexts (see security.md § 4 PDPA/GDPR
   // Cat-B classification). Never leak this to logs even if a caller
   // accidentally passes the full audit event object to `logger.info`.
-  // `*.*.recipient_email` (R3 hardening) covers depth-2 in case a
-  // future caller logs `{ event: { payload: { recipient_email } } }`
-  // — pino's `*` matches exactly ONE intermediate key.
+  // `*.*.recipient_email` covers depth-2 in case a caller logs
+  // `{ event: { payload: { recipient_email } } }` — pino's `*`
+  // matches exactly ONE intermediate key.
   'recipient_email',
   '*.recipient_email',
   '*.*.recipient_email',
@@ -139,7 +139,218 @@ export const REDACT_PATHS = [
   '*.payment_reference',
   'paymentReference',
   '*.paymentReference',
+  // --- F5 payment PCI / Stripe secrets (T032, security.md § 6) ---
+  // Under PCI DSS SAQ-A, cardholder data (PAN, CVV, track) MUST NEVER
+  // touch the Chamber-OS server. If Stripe.js ever leaks these into a
+  // payload + a caller logs the payload, redaction here is the final
+  // line of defence. The `card` wildcard covers the shape returned by
+  // Stripe.js (`{card: {number, cvc, exp_month, exp_year}}`) where the
+  // whole sub-object is redacted en bloc — safer than trying to
+  // enumerate every field variant.
+  'card_number',
+  '*.card_number',
+  'cardNumber',
+  '*.cardNumber',
+  'card_cvc',
+  '*.card_cvc',
+  'cardCvc',
+  '*.cardCvc',
+  // PCI guardian Finding 2 — CVV variants emitted by browsers / older
+  // Stripe.js / issuer-facing APIs / Stripe webhook bodies. Logging
+  // these is a PCI Req 3.2.1 violation.
+  'cvv',
+  '*.cvv',
+  'cvv2',
+  '*.cvv2',
+  'csc',
+  '*.csc',
+  'cid',
+  '*.cid',
+  'security_code',
+  '*.security_code',
+  'card_security_code',
+  '*.card_security_code',
+  'cvc_check',
+  '*.cvc_check',
+  '*.*.cvc_check',
+  'card',
+  '*.card',
+  'card.*',
+  '*.card.*',
+  // Group E1 (2026-04-24) — `client_secret` is the single most
+  // dangerous PCI-adjacent value Stripe returns: it authorises a
+  // browser to confirm a PaymentIntent. Redact both camelCase
+  // (port-shape) and snake_case (raw Stripe SDK response shape).
+  'clientSecret',
+  '*.clientSecret',
+  'client_secret',
+  '*.client_secret',
+  // Card-network metadata that can enable fingerprint-linking of
+  // cardholders across tenants (PCI DSS Req 3.2). `card.*` already
+  // catches nested values, but Stripe sometimes returns these as
+  // top-level keys on charge / payment_method_details shapes.
+  'fingerprint',
+  '*.fingerprint',
+  'iin',
+  '*.iin',
+  // Stripe's `payment_method_details.card.*` shape from Charge
+  // objects. Covers `brand`, `last4`, `exp_month`, `exp_year`,
+  // `fingerprint`, `network` — any nested field under this sub-
+  // object is redacted en bloc.
+  'payment_method_details',
+  '*.payment_method_details',
+  'payment_method_details.card',
+  '*.payment_method_details.card',
+  'payment_method_details.card.*',
+  '*.payment_method_details.card.*',
+  'paymentMethodDetails',
+  '*.paymentMethodDetails',
+  // Raw webhook request body — contains the entire Stripe event
+  // payload (card metadata, clientSecret on some event types, PII).
+  // Callers needing to forensically inspect a webhook body should
+  // use the `processor_events.payload_sha256` column + Stripe
+  // Dashboard, not a log dump.
+  'rawBody',
+  '*.rawBody',
+  'raw_body',
+  '*.raw_body',
+  // Stripe secrets — these live in env vars per Constitution Principle
+  // IV; if they ever appear in a log object it's a bug worth redacting.
+  'stripe_secret_key',
+  '*.stripe_secret_key',
+  'stripeSecretKey',
+  '*.stripeSecretKey',
+  'STRIPE_SECRET_KEY',
+  'stripe_webhook_secret',
+  '*.stripe_webhook_secret',
+  'stripeWebhookSecret',
+  '*.stripeWebhookSecret',
+  'STRIPE_WEBHOOK_SECRET',
+  // Stripe-Signature header — carries an HMAC proving the webhook was
+  // Stripe-issued. Logging it would let an attacker replay events with
+  // a valid signature. Redact both the hyphenated HTTP casing and the
+  // camelCase object-property variant.
+  'Stripe-Signature',
+  '*.Stripe-Signature',
+  'stripe-signature',
+  '*.stripe-signature',
+  'stripeSignature',
+  '*.stripeSignature',
+  // HTTP header casing variants. Node normalises incoming headers
+  // to lowercase but a caller who logs a custom Headers object or
+  // upper-cases a key during manipulation could hit either shape.
+  'STRIPE-SIGNATURE',
+  '*.STRIPE-SIGNATURE',
+  'StripeSignature',
+  '*.StripeSignature',
+  // Defence-in-depth for the F5 gateway error `reason` field. The
+  // route handler explicitly logs only the bounded
+  // `processorErrorKind` discriminator, but if a caller,
+  // middleware, or error boundary ever serialises the gateway
+  // error directly into a pino object, redaction here prevents
+  // the raw Stripe SDK message (which may carry account ids /
+  // key prefixes / forbidden detail) from reaching the log sink.
+  // Coverage matrix — every observable serialization shape:
+  //   - `{processorReason: ...}`              (route-side camelCase)
+  //   - `{reason: ...}`                       (top-level spread of gateway error)
+  //   - `{error: {reason: ...}}`              (gateway error nested under `error`)
+  //   - `{result: {error: {reason: ...}}}`    (full Result<T,E> envelope)
+  //   - `{<anyKey>: {error: {reason: ...}}}`  (depth-2 wildcard)
+  // R2 F-02 (2026-04-27 security review): the bare `reason` and
+  // `*.reason` paths are intentionally broad. The reviewer suggested
+  // narrowing them, but the existing logger-redact.test.ts asserts
+  // that top-level `reason: 'sk_live_FORBIDDEN_DETAIL'` IS redacted
+  // (Stripe SDK errors spread into the log without nesting in some
+  // call paths). Erring on the side of over-redaction is correct for
+  // a PCI SAQ-A-scoped logger. Operational `reason` fields that are
+  // genuinely safe to display should be renamed to a non-`reason` key
+  // (e.g. `dispatchFailureKind` already used in the webhook route).
+  'processorReason',
+  '*.processorReason',
+  'reason',
+  '*.reason',
+  'error.reason',
+  '*.error.reason',
+  'result.error.reason',
+  '*.result.error.reason',
+  // review-20260428-102639.md S1 closure — defense-in-depth: F4 + F5
+  // worker / cron paths carry `memberIdentitySnapshot` (member name +
+  // address + email PII) in scan rows. Never logged today, but path-
+  // based redaction means a future contributor logging the row
+  // accidentally cannot leak PII.
+  'memberIdentitySnapshot',
+  '*.memberIdentitySnapshot',
+  'member_identity_snapshot',
+  '*.member_identity_snapshot',
 ];
+
+/**
+ * F5 / T032 — defence-in-depth PAN (Primary Account Number) value-
+ * pattern redaction. Path-based `REDACT_PATHS` only fires when the
+ * caller uses the expected field name; a caller that logs an entire
+ * Stripe event body or a free-form note CAN still surface a bare PAN.
+ *
+ * Pattern covers (ranges + length gates — pci-saqa-guardian Finding 1
+ * + R1 remediation):
+ *   - `3[47]\d{13}`      — Amex (15 digits)
+ *   - `4\d{12,18}`       — Visa (13 / 16 / 19 digits)
+ *   - `5[1-5]\d{14}`     — MasterCard legacy (16 digits)
+ *   - `2[2-7]\d{14}`     — MasterCard 2-series (16 digits)
+ *   - `6011\d{12,15}`    — Discover (16 / 19 digits)
+ *   - `65\d{14}`         — Discover prefix-65 (16 digits)
+ *   - `62\d{14,17}`      — UnionPay (16 / 19 digits) — Thai market relevance
+ *   - `35\d{14,17}`      — JCB (16 / 19 digits)
+ *   - `36\d{12}`         — Diners (14 digits)
+ *
+ * Anchored ^/$ so English prose ("error: 4242… declined") is NOT
+ * redacted based on substring matches. Callers that log prose with
+ * an embedded PAN are responsible for their own field hygiene.
+ */
+export const PAN_REGEX =
+  /^(?:3[47]\d{13}|4\d{12}(?:\d{3}|\d{6})?|5[1-5]\d{14}|2[2-7]\d{14}|6011\d{12}(?:\d{3})?|65\d{14}|62\d{14}(?:\d{3})?|35\d{14}(?:\d{3})?|36\d{12})$/;
+
+/**
+ * Pattern for normalising pretty-printed PANs before testing. A PAN
+ * with spaces or hyphens (`"4242 4242 4242 4242"`, `"4242-4242-..."`)
+ * would evade the anchored digit-only regex without this step. We
+ * normalise ONLY if the raw value matches a conservative
+ * "digits-and-separators-of-PAN-shape" gate (short, 12-23 chars,
+ * digits+spaces+hyphens only) so we don't strip delimiters from
+ * unrelated strings.
+ */
+const PAN_PRETTY_SHAPE = /^\d[\d\s-]{11,22}\d$/;
+
+function normaliseForPanTest(input: string): string {
+  if (!PAN_PRETTY_SHAPE.test(input)) return input;
+  return input.replace(/[\s-]/g, '');
+}
+
+/**
+ * Recursively replaces any string value matching `PAN_REGEX` (after
+ * space/hyphen normalisation) with `[REDACTED]`. Object-valued inputs
+ * are cloned depth-first so the caller's original log object is NEVER
+ * mutated (pino's `formatters.log` hook docs require callers avoid
+ * mutating input). Depth-bounded at 9 levels (audit payloads nest at
+ * most 4; 9 is generous + cycle-safe).
+ */
+export function redactPanValues(input: unknown, depth = 0): unknown {
+  if (depth > 9) return input;
+  if (typeof input === 'string') {
+    const normalised = normaliseForPanTest(input);
+    return PAN_REGEX.test(normalised) ? '[REDACTED]' : input;
+  }
+  if (Array.isArray(input)) {
+    return input.map((v) => redactPanValues(v, depth + 1));
+  }
+  if (input !== null && typeof input === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(input)) {
+      out[k] = redactPanValues(v, depth + 1);
+    }
+    return out;
+  }
+  return input;
+}
 
 const baseOptions: LoggerOptions = {
   level: env.log.level,
@@ -157,6 +368,14 @@ const baseOptions: LoggerOptions = {
   formatters: {
     level(label) {
       return { level: label };
+    },
+    // T032 — final pass to redact bare PAN values that the path-based
+    // `REDACT_PATHS` above cannot catch (e.g. a PAN appearing inside a
+    // free-form `message` string or an unexpected field name). Runs
+    // after pino's own redaction step, so `[REDACTED]` bindings are
+    // already in place; this only reaches real string values.
+    log(object) {
+      return redactPanValues(object) as Record<string, unknown>;
     },
   },
 };

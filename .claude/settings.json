@@ -5,6 +5,10 @@
     "feature-dev@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "github@claude-plugins-official": true,
-    "claude-code-setup@claude-plugins-official": true
+    "claude-code-setup@claude-plugins-official": true,
+    "neon@claude-plugins-official": true,
+    "stripe@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "atomic-agents@claude-plugins-official": true
   }
 }

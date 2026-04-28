@@ -158,6 +158,8 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
+      applyReceiptPdf: vi.fn(),
+      applyReceiptPdfFailure: vi.fn(),
     },
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
@@ -395,3 +397,4 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     );
   });
 });
+

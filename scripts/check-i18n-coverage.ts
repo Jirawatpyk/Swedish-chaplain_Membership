@@ -69,6 +69,58 @@ function flatten(prefix: string, value: unknown, out: Set<string>): void {
   }
 }
 
+/**
+ * T040 — F5 sub-folder catalogue validation. The top-20 Stripe
+ * decline-reason catalogue lives under `messages/{locale}/payment-
+ * decline-reasons.json` (separate files per locale — the main
+ * `{locale}.json` loader doesn't include it because it's loaded
+ * lazily on error rendering only). This helper asserts the key set
+ * is identical across the 3 locales; any drift (missing / extra
+ * keys) fails release-branch builds and warns elsewhere.
+ */
+async function loadSubCatalogue(
+  locale: Locale,
+  file: string,
+): Promise<Record<string, unknown>> {
+  const path = resolve(MESSAGES_DIR, locale, file);
+  const raw = await readFile(path, 'utf8');
+  return JSON.parse(raw) as Record<string, unknown>;
+}
+
+async function checkSubCatalogueKeyParity(
+  file: string,
+  label: string,
+  issues: string[],
+): Promise<void> {
+  const sets: Record<Locale, Set<string>> = {
+    en: new Set(),
+    th: new Set(),
+    sv: new Set(),
+  };
+  for (const locale of LOCALES) {
+    try {
+      const data = await loadSubCatalogue(locale, file);
+      for (const key of Object.keys(data)) sets[locale].add(key);
+    } catch (err) {
+      issues.push(`${label}: ${locale}/${file} failed to load (${(err as Error).message})`);
+      return;
+    }
+  }
+  for (const key of sets.en) {
+    if (!sets.th.has(key)) issues.push(`${label}: th/${file} missing key ${key}`);
+    if (!sets.sv.has(key)) issues.push(`${label}: sv/${file} missing key ${key}`);
+  }
+  for (const locale of ['th', 'sv'] as const) {
+    for (const key of sets[locale]) {
+      if (!sets.en.has(key)) {
+        console.warn(
+          `[check:i18n] ${label}: ${locale}/${file} has key not in en/${file}: ${key}`,
+        );
+      }
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const sets: Record<Locale, Set<string>> = {
     en: new Set(),
@@ -113,8 +165,17 @@ async function main(): Promise<void> {
     }
   }
 
+  // T040 — F5 decline-reason sub-catalogue key-set parity
+  await checkSubCatalogueKeyParity(
+    'payment-decline-reasons.json',
+    'F5 decline-reasons',
+    issues,
+  );
+
   if (issues.length === 0) {
-    console.log(`[check:i18n] OK — ${enKeys.size} keys present in all 3 locales`);
+    console.log(
+      `[check:i18n] OK — ${enKeys.size} keys present in all 3 locales (+ F5 decline-reasons parity verified)`,
+    );
     return;
   }
 

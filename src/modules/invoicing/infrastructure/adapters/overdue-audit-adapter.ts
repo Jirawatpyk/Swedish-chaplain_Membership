@@ -38,16 +38,19 @@ export const overdueAuditAdapter: OverdueAuditPort = {
       // index is partial, so Postgres requires the predicate to
       // disambiguate from a hypothetical non-partial sibling). RETURNING
       // lets us distinguish "new row" from "duplicate swallowed".
+      // T135 fix (2026-04-27): set retention_years=5 explicitly per F4
+      // mapping (data-model 009 § 7.2 — operational, not tax-document).
       const rows = await db.execute<{ inserted: number }>(sql`
         INSERT INTO audit_log
-          (event_type, actor_user_id, summary, request_id, payload, tenant_id)
+          (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
         VALUES
           ('invoice_overdue_detected'::audit_event_type,
            ${event.actorUserId},
            ${summary},
            ${requestId},
            ${JSON.stringify(payload)}::jsonb,
-           ${event.tenantId})
+           ${event.tenantId},
+           5)
         ON CONFLICT (
           tenant_id,
           (payload->>'invoice_id'),

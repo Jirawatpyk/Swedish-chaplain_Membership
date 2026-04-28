@@ -1,0 +1,30 @@
+-- ---------------------------------------------------------------------------
+-- F5 audit_event_type enum extension (Phase 4 staff-review R-01 closeout)
+--
+-- Adds 1 audit event type for cross-method-switch forensic clarity.
+--
+-- `payment_method_switched`: emitted from initiatePayment when an
+-- existing pending PaymentIntent for one method (e.g. card) is canceled
+-- because the member switched tabs to a different method (e.g. PromptPay)
+-- and a fresh PI must be created for the new rail.
+--
+-- Distinct from `payment_canceled` which carries different semantics
+-- (user-abandon / sweep-cron / explicit cancel). Distinguishing these
+-- makes audit-log queries unambiguous when reconstructing payment
+-- attempt history (Constitution Principle I sub-clause #4 — audit).
+--
+-- Pattern: idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` (matches
+-- 0046–0048). Forward-only: enum values cannot be removed.
+--
+-- Retention: 10 years (touches a tax-document-adjacent record because
+-- the canceled Payment row's attempt_seq is referenced by the credit-
+-- note sequencing if a refund is later issued).
+--
+-- Keep synced with `auditEventTypeEnum` in
+-- `src/modules/auth/infrastructure/db/schema.ts`, `F5AuditEventType` in
+-- `src/modules/payments/application/ports/audit-port.ts`, and
+-- `F5_AUDIT_RETENTION_YEARS` in
+-- `src/modules/payments/infrastructure/audit/drizzle-payments-audit.ts`.
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'payment_method_switched'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

@@ -24,7 +24,23 @@ declare global {
 
 function createPgClient() {
   return postgres(env.database.url, {
-    max: env.isProduction ? 10 : 2,
+    // Pool size:
+    //   prod : 10 — Vercel function instances are short-lived; 10 keeps
+    //          headroom for concurrent webhook bursts.
+    //   dev  : 8  — Stripe CLI forwards 3-4 webhooks per payment in
+    //          quick succession (payment_intent.created → succeeded
+    //          → charge.succeeded → charge.updated). Some dispatches
+    //          (`confirmPayment`) make 2-3 separate DB calls that
+    //          each acquire a connection (own withTx + F4 bridge calls
+    //          via the global `db` instance). Pool size 2 caused
+    //          connection-queue deadlocks — handlers waited 30 s for
+    //          a connection that another concurrent handler held →
+    //          Stripe CLI timed out → user saw "stuck on payment form"
+    //          (audit 2026-04-25 follow-up).
+    //
+    // `DATABASE_POOL_MAX` env var overrides both defaults so Vercel
+    // can tune for sustained webhook bursts without a code change.
+    max: env.database.poolMax ?? (env.isProduction ? 10 : 8),
     idle_timeout: 20,
     connect_timeout: 3,
     // Apply statement timeout per-connection (5 seconds, milliseconds)

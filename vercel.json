@@ -4,7 +4,14 @@
     {
       "path": "/api/cron/outbox-purge",
       "schedule": "15 20 * * *"
+    },
+    {
+      "path": "/api/cron/sweep-stale-pending-refunds",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/internal/cron/receipt-pdf-reconcile",
+      "schedule": "30 3 * * *"
     }
   ]
 }
-

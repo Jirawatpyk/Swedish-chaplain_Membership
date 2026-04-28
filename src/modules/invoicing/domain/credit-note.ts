@@ -86,6 +86,15 @@ export interface CreditNote {
     readonly templateVersion: number;
   };
 
+  /**
+   * F5 extension (migration 0038, column `source_refund_id`). When
+   * non-null, this CN was created by the F5 refund flow and points to
+   * the F5 `refunds.id` row that produced it. NULL for F4-manual CNs
+   * issued via the admin UI. Admin listings use this to distinguish
+   * "auto-generated refund CN" from "admin-issued CN" in the timeline.
+   */
+  readonly sourceRefundId: string | null;
+
   readonly createdAt: string;
   readonly updatedAt: string;
 }

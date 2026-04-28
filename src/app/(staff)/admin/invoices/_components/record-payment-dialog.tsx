@@ -34,7 +34,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { PaymentForm } from './payment-form';
 
 type Props = {
@@ -50,9 +50,23 @@ export function RecordPaymentDialog({ invoiceId, documentNumber, issueDate }: Pr
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger className={buttonVariants({ variant: 'default' })}>
-        {tDetail('actions.pay')}
-      </DialogTrigger>
+      {/* H-14 (review 2026-04-27): compose via Base-UI `render` prop
+        * so the trigger inherits the Button primitive's focus-ring +
+        * cursor + disabled-state guarantees instead of using raw
+        * `buttonVariants()`. The `id="record-payment"` stays so the
+        * empty-state CTA in payment-timeline.tsx
+        * (`href="#record-payment"`) scrolls + focuses the trigger. */}
+      <DialogTrigger
+        render={
+          <Button
+            variant="default"
+            data-testid="record-payment-trigger"
+            id="record-payment"
+          >
+            {tDetail('actions.pay')}
+          </Button>
+        }
+      />
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('title')}</DialogTitle>

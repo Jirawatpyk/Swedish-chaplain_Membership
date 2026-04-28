@@ -47,6 +47,13 @@ export type InvoicesTableRow = {
   readonly creditNoteCount: number;
   /** G-2 — cumulative credited amount in satang (stringified bigint). */
   readonly creditedTotalSatang: string;
+  /**
+   * F5 Phase 5 (T096) — succeeded online payment method, or null when
+   * the invoice has no F5 succeeded payment. Surfaces as a Method-column
+   * badge ONLY when `showMethodColumn` is true on the table (currently
+   * the `?paidOnline=1` admin reconciliation view).
+   */
+  readonly onlinePaymentMethod: 'card' | 'promptpay' | null;
 };
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
@@ -95,10 +102,46 @@ function formatSatang(satang: string): string {
 
 const headCls = 'text-xs uppercase tracking-wide text-muted-foreground';
 
-export function InvoicesTable({ rows }: { rows: readonly InvoicesTableRow[] }) {
+function MethodBadge({ method }: { method: 'card' | 'promptpay' }) {
+  const t = useTranslations('admin.paymentReconciliation.methodBadge');
+  const tCol = useTranslations('admin.invoices.list.columns');
+  return (
+    <Badge
+      variant="secondary"
+      data-testid={`method-badge-${method}`}
+      className="font-normal"
+      // S3 verify-fix (2026-04-26): SR users hearing only "Card" without
+      // column context get an ambiguous label. The aria-label adds the
+      // column name so readers row-by-row get "Method: Card" / "Method: PromptPay".
+      aria-label={`${tCol('method')}: ${t(method)}`}
+    >
+      {t(method)}
+    </Badge>
+  );
+}
+
+export function InvoicesTable({
+  rows,
+  showMethodColumn = false,
+}: {
+  rows: readonly InvoicesTableRow[];
+  /**
+   * F5 Phase 5 (T096) — render the Method column when active. Driven by
+   * the `?paidOnline=1` admin reconciliation filter; hidden by default
+   * to keep the standard list compact (95% of rows would carry no badge).
+   */
+  showMethodColumn?: boolean;
+}) {
   const t = useTranslations('admin.invoices.list');
   return (
-    <div className="overflow-x-auto">
+    // Verify-fix U-I4 (2026-04-26): inset shadow on the right edge gives
+    // mobile users a visual cue that the table scrolls horizontally
+    // (8 cols when the Method column is on; 7 otherwise). Without the
+    // cue the overflow was invisible and admins missed columns to the
+    // right. R2-fix Q1 (2026-04-26): dual-tone shadow so the cue is
+    // visible in both light AND dark mode (the rgba(0,0,0,0.08) ink
+    // disappeared on `bg-card` dark surfaces).
+    <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
       <Table>
         <TableHeader>
           <TableRow>
@@ -111,6 +154,15 @@ export function InvoicesTable({ rows }: { rows: readonly InvoicesTableRow[] }) {
             <TableHead scope="col" className={headCls}>
               {t('columns.status')}
             </TableHead>
+            {showMethodColumn && (
+              <TableHead
+                scope="col"
+                className={headCls}
+                data-testid="column-header-method"
+              >
+                {t('columns.method')}
+              </TableHead>
+            )}
             <TableHead scope="col" className={headCls}>
               {t('columns.issueDate')}
             </TableHead>
@@ -174,6 +226,15 @@ export function InvoicesTable({ rows }: { rows: readonly InvoicesTableRow[] }) {
                   )}
                 </div>
               </TableCell>
+              {showMethodColumn && (
+                <TableCell className="align-middle">
+                  {r.onlinePaymentMethod ? (
+                    <MethodBadge method={r.onlinePaymentMethod} />
+                  ) : (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+              )}
               <TableCell className="align-middle">{r.issueDate ?? '—'}</TableCell>
               <TableCell className="align-middle">{r.dueDate ?? '—'}</TableCell>
               <TableCell className="align-middle text-right tabular-nums">

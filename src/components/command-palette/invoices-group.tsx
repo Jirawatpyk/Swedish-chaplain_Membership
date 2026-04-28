@@ -26,7 +26,19 @@ export function InvoicesGroup(_props: InvoicesGroupProps) {
 export type InvoicesPaletteEntry = {
   readonly key: string;
   readonly url: string;
-  /** i18n key under `admin.commandPalette.invoices.*`. */
+  /**
+   * i18n key under `admin.commandPalette.invoices.*` — note this
+   * namespace is RESERVED for the future client-side palette consumer
+   * (the registry below is not wired yet; the live palette pulls
+   * navigate entries from the server-side `STATIC_NAVIGATE_ENTRIES`
+   * in `src/modules/plans/application/search-plans.ts`, which uses
+   * the `palette.navigate.*` namespace instead).
+   *
+   * R2-fix Q6 (2026-04-26): clarified the namespace doc to prevent
+   * the bare key string ("paidOnline") from being rendered if a future
+   * consumer wires this registry without first creating the matching
+   * `admin.commandPalette.invoices.*` i18n keys.
+   */
   readonly labelKey: string;
 };
 
@@ -48,6 +60,16 @@ export const INVOICES_PALETTE_ENTRIES: readonly InvoicesPaletteEntry[] = [
     key: 'invoices.new',
     url: '/admin/invoices/new',
     labelKey: 'new',
+  },
+  // Verify-fix S1 (2026-04-26): F5 Phase 5 admin reconciliation jump-
+  // point. Smart-chamber-features § MVP #4 (command palette) — the
+  // "filter to paid-online invoices" action is a high-frequency
+  // monthly-reconciliation step worth surfacing here so admins don't
+  // need to hunt the chip in the filter bar.
+  {
+    key: 'invoices.paidOnline',
+    url: '/admin/invoices?paidOnline=1',
+    labelKey: 'paidOnline',
   },
 ];
 

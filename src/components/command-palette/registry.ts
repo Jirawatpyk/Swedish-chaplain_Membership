@@ -61,6 +61,23 @@ export type PaletteMemberEntity = {
   readonly url: string;
 };
 
+// --- Refundable-invoice entity (F5 Phase 6 / T118 fuzzy-search) -------------
+//
+// Admin-only command-palette group that fuzzy-searches paid-online invoices
+// with remaining refundable balance > 0. Selection navigates to
+// `/admin/invoices/[id]?refund=1` — `RefundDialog` (T113) auto-opens on
+// the `?refund=1` query param so the admin lands directly in the refund
+// flow without leaving the keyboard.
+
+export type PaletteRefundableInvoiceEntity = {
+  readonly invoice_id: string;
+  readonly invoice_number: string;
+  readonly member_company_name: string;
+  /** Total satang formatted as a major-unit string (e.g. "53500.00 THB"). */
+  readonly total_display: string;
+  readonly url: string;
+};
+
 // --- Server-response contract ------------------------------------------------
 
 /**
@@ -75,6 +92,7 @@ export type PaletteSearchResponse = {
   readonly results: {
     readonly plans: ReadonlyArray<PalettePlanEntity>;
     readonly members: ReadonlyArray<PaletteMemberEntity>;
+    readonly refundableInvoices: ReadonlyArray<PaletteRefundableInvoiceEntity>;
     readonly actions: ReadonlyArray<{
       readonly id: string;
       readonly label: string;

@@ -1,0 +1,30 @@
+-- ---------------------------------------------------------------------------
+-- F5 audit_event_type enum extension (Review S5 — F5 Phase 3 R2 closeout)
+--
+-- Adds 1 ops-visibility audit event type so a Stripe webhook arriving for
+-- an invoice that does not exist in the local DB leaves a forensic trail.
+--
+-- Failure modes that surface this:
+--   - cross-tenant event mis-route (Stripe Connect collision)
+--   - data-migration gap (invoice deleted but PI still active)
+--   - Stripe test-mode artefact replayed against a clean DB
+--
+--   - `payment_invoice_not_found`: emitted from confirmPayment step 2
+--     when invoicingBridge.getInvoiceForPayment returns `not_found`. The
+--     use-case folds markProcessed atomically + returns
+--     ok({kind:'invoice_not_found'}); the audit row gives ops the
+--     forensic trail without 5xx-ing Stripe.
+--
+-- Pattern: idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` (matches 0046+0047).
+-- Forward-only: enum values cannot be removed.
+--
+-- Retention: 5 years (ops only — no tax-document touch).
+--
+-- Keep synced with `auditEventTypeEnum` in
+-- `src/modules/auth/infrastructure/db/schema.ts`, `F5AuditEventType` in
+-- `src/modules/payments/application/ports/audit-port.ts`, and
+-- `F5_AUDIT_RETENTION_YEARS` in
+-- `src/modules/payments/infrastructure/audit/drizzle-payments-audit.ts`.
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'payment_invoice_not_found'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

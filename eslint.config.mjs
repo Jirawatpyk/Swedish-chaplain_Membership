@@ -38,6 +38,14 @@ const applicationForbiddenImports = [
   "drizzle-orm/*",
   "postgres",
   "@react-email/components",
+  // F5 — PCI/Principle III guard. Application use-cases MUST talk to
+  // Stripe through an Infrastructure port (`StripeClient` in
+  // `src/modules/payments/infrastructure/stripe/stripe-client.ts`), never
+  // by importing the SDK directly. Preserves mockability + keeps SAQ-A
+  // scope enforcement at Infrastructure.
+  "stripe",
+  "@stripe/stripe-js",
+  "@stripe/react-stripe-js",
 ];
 
 /**
@@ -58,6 +66,23 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    // Project-wide convention — args/vars/destructured fields prefixed
+    // with `_` are intentional placeholders (factory signature symmetry,
+    // skeleton functions, kept-for-API-stability params). Recognised by
+    // every TS project using @typescript-eslint by default.
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          destructuredArrayIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
+  {
     files: ["src/modules/**/domain/**/*.ts", "src/modules/**/domain/**/*.tsx"],
     rules: {
       "no-restricted-imports": [
@@ -71,7 +96,7 @@ const eslintConfig = defineConfig([
           })),
           patterns: [
             {
-              group: ["next/*", "drizzle-orm/*"],
+              group: ["next/*", "drizzle-orm/*", "stripe/*", "@stripe/*"],
               message: "Domain layer must not import framework subpaths.",
             },
           ],
@@ -95,6 +120,17 @@ const eslintConfig = defineConfig([
               "Use Infrastructure adapters via dependency injection.",
           })),
           patterns: [
+            {
+              // F5 subpath guard — `stripe/types`, `stripe/resources/*`, and
+              // `@stripe/*/internal` deep imports slip past the bare-name
+              // `paths:` list. Application MUST mock/inject via Infrastructure
+              // port; ANY Stripe subpath coupling breaks that boundary.
+              group: ["stripe/*", "@stripe/*"],
+              message:
+                "Application layer must not import Stripe SDK subpaths. " +
+                "Go through the Infrastructure port (StripeClient) — " +
+                "Constitution Principle III + PCI DSS Principle IV.",
+            },
             {
               // Path C hardening — B1-class regression guard.
               // Round 3 staff review found 4 Application files importing
@@ -153,6 +189,7 @@ const eslintConfig = defineConfig([
       "src/modules/tenants/**",
       "src/modules/members/**",
       "src/modules/invoicing/**",
+      "src/modules/payments/**",
       // `src/lib/**` is the shared composition adapter layer.
       // Files here provide the glue between module internals and
       // Next.js route handlers (cookies, session lookup, db client,
@@ -241,6 +278,23 @@ const eslintConfig = defineConfig([
               ],
               message:
                 "Cross-module import must go through the invoicing public barrel (`@/modules/invoicing`). " +
+                "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
+            {
+              // F5 — payments module public-barrel boundary (T030).
+              group: [
+                "@/modules/payments/domain/**",
+                "@/modules/payments/application/**",
+                "@/modules/payments/infrastructure/**",
+                "./modules/payments/domain/**",
+                "./modules/payments/application/**",
+                "./modules/payments/infrastructure/**",
+                "../modules/payments/domain/**",
+                "../modules/payments/application/**",
+                "../modules/payments/infrastructure/**",
+              ],
+              message:
+                "Cross-module import must go through the payments public barrel (`@/modules/payments`). " +
                 "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
             },
           ],

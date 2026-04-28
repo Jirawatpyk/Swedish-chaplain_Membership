@@ -140,6 +140,7 @@ function creditNoteFixture(): CreditNote {
     tenantIdentitySnapshot: tenantSnap(),
     memberIdentitySnapshot: memberSnap(),
     pdf: { blobKey: 'blob:cn-key', sha256: sha(), templateVersion: 1 },
+    sourceRefundId: null,
     createdAt: '2026-04-21T00:00:00Z',
     updatedAt: '2026-04-21T00:00:00Z',
   };
@@ -166,6 +167,8 @@ function makeDeps(
     applyCreditNoteRollup: vi.fn(),
     applyInvoicePdfRegeneration: vi.fn(),
     applyVoid: vi.fn(),
+      applyReceiptPdf: vi.fn(),
+      applyReceiptPdfFailure: vi.fn(),
   } as unknown as import('@/modules/invoicing/application/ports/invoice-repo').InvoiceRepo;
   const creditNoteRepo = {
     insertCreditNote: vi.fn(),
@@ -386,3 +389,4 @@ describe('resendPdf', () => {
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
   });
 });
+

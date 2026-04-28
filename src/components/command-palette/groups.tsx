@@ -72,6 +72,32 @@ export function PaletteGroups({ results, onAfterNavigate }: GroupsProps) {
         </CommandGroup>
       )}
 
+      {results.refundableInvoices.length > 0 && (
+        <CommandGroup heading={t('groups.refundableInvoices')}>
+          {results.refundableInvoices.map((inv) => (
+            <CommandItem
+              key={`refundable-invoice-${inv.invoice_id}`}
+              // Fuzzy match: invoice number + member company name. The
+              // `total_display` is intentionally NOT in the match string —
+              // admins searching "53,500" should hit by amount via the
+              // member's company name (rare) rather than via decimal
+              // matching, which conflicts with invoice-number digits.
+              value={`refundable-invoice ${inv.invoice_number} ${inv.member_company_name}`}
+              onSelect={() => handleNavigate(inv.url)}
+              data-testid="refundable-invoice-cmdk-item"
+            >
+              <span className="font-mono">{inv.invoice_number}</span>
+              <span className="ml-2 truncate text-muted-foreground">
+                {inv.member_company_name}
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {inv.total_display}
+              </span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      )}
+
       {results.actions.length > 0 && (
         <CommandGroup heading={t('groups.actions')}>
           {results.actions.map((action) => (

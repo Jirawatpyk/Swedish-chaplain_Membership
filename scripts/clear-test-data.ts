@@ -136,6 +136,27 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // 2. Test-tenant data: members, contacts, plans, invoice_settings,
   //    tokens, outbox. Scoped by tenant_id LIKE 'test-%'. Order matters:
   //    child tables first, then parents.
+  // F5 payments cascade — refunds → payments → invoices. Without this,
+  // `payments_invoice_tenant_fk` blocks invoice DELETE on any tenant
+  // that ran an F5 integration test. Must precede the invoicing cascade.
+  //
+  // R2-fix R-I2 (2026-04-26): NOTE — `processor_events` is intentionally
+  // NOT in this cascade. It carries `tenant_id` but the `processor_events_no_delete`
+  // RLS policy (migration 0036) uses `USING (false)` so the chamber_app
+  // role (which this script runs as) cannot DELETE rows under any
+  // condition. Test rows accumulate as accepted append-only pollution,
+  // matching the `audit_log` posture explained at the bottom of the
+  // file. Documented here so future maintainers don't waste time
+  // chasing a "missed cascade".
+  await db.execute(
+    sql`DELETE FROM refunds WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM payments WHERE tenant_id LIKE 'test-%'`,
+  );
+  await db.execute(
+    sql`DELETE FROM tenant_payment_settings WHERE tenant_id LIKE 'test-%'`,
+  );
   // F4 invoicing cascade — credit_notes → invoice_lines → invoices.
   // invoices.draft_by_user_id / paid_by_user_id / voided_by_user_id
   // reference users(id) with ON DELETE restrict to preserve tax audit
@@ -193,9 +214,57 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // Purge ANY invoice (and its dependent rows) referencing a test user
   // regardless of tenant_id. Scope is tightly bounded: only rows
   // referencing test-*@swecham.test users are touched.
+  //
+  // F5 cascade: payments + refunds reference invoices via
+  // `payments_invoice_tenant_fk`. Must purge BEFORE the invoice
+  // cascade or the DELETE blocks with "violates FK constraint".
+  await db.execute(
+    sql`DELETE FROM refunds
+        WHERE payment_id IN (
+          SELECT id FROM payments
+          WHERE invoice_id IN (
+            SELECT invoice_id FROM invoices
+            WHERE draft_by_user_id IN (
+              SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+            )
+            OR payment_recorded_by_user_id IN (
+              SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+            )
+            OR voided_by_user_id IN (
+              SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+            )
+          )
+        )`,
+  );
+  await db.execute(
+    sql`DELETE FROM payments
+        WHERE invoice_id IN (
+          SELECT invoice_id FROM invoices
+          WHERE draft_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+          OR payment_recorded_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+          OR voided_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+        )`,
+  );
+  // R2-fix C2 (2026-04-26): also purge credit_notes whose
+  // `issued_by_user_id` directly references a test user. The previous
+  // pattern only chased `original_invoice_id → invoices.*_user_id`
+  // chains, so a CN issued by a test user against an invoice whose
+  // tenant_id doesn't match `test-%` (e.g. partial prior cleanup,
+  // cross-tenant stale data) would block the final `DELETE FROM
+  // users` with a `credit_notes_issued_by_user_id_fkey` violation
+  // (FK is RESTRICT). This `OR` extension covers that orphan path.
   await db.execute(
     sql`DELETE FROM credit_notes
-        WHERE original_invoice_id IN (
+        WHERE issued_by_user_id IN (
+          SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+        )
+        OR original_invoice_id IN (
           SELECT invoice_id FROM invoices
           WHERE draft_by_user_id IN (
             SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'

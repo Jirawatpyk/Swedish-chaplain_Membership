@@ -30,6 +30,7 @@ import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
+import type { ReceiptPdfRenderEnqueuePort } from '../ports/receipt-pdf-render-enqueue-port';
 import {
   asInvoiceId,
   type Invoice,
@@ -66,6 +67,22 @@ export const recordPaymentSchema = z.object({
   // from "first successful apply" on retries. Tracked in
   // `specs/007-invoices-receipts/tasks.md § Phase 10`.
   idempotencyKey: z.string().min(1).max(200).optional(),
+  /**
+   * F5 hook (T128a, formalised 2026-04-27 verify-driven): when `true`,
+   * the auto-email outbox enqueue at the tail is skipped. Does NOT
+   * affect status transition, audit emission, PDF render+upload, or
+   * any other side-effect — only the receipt-email dispatcher row.
+   *
+   * Set by F5 `confirmPayment` when the tenant's
+   * `tenant_payment_settings.auto_email_on_payment = false`. F4
+   * admin-initiated `recordPayment` calls leave this undefined → the
+   * existing `tenant_invoice_settings.autoEmailEnabled` gate continues
+   * to govern as before. F4 behaviour for non-F5 callers is unchanged.
+   *
+   * Constitution Principle IV (PCI DSS): no card data flows through
+   * this flag — pure boolean toggle, audit-trail unaffected.
+   */
+  suppressReceiptEmail: z.boolean().optional(),
 });
 
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
@@ -104,6 +121,21 @@ export interface RecordPaymentDeps {
   readonly outbox: EmailOutboxPort;
   readonly memberIdentity: MemberIdentityPort;
   readonly currentTemplateVersion: number;
+  /**
+   * T166-03 — Async receipt PDF render enqueue port. Required when
+   * `asyncReceiptPdf=true`; never invoked when the flag is false.
+   * Optional in the type so existing callers + tests don't break.
+   */
+  readonly receiptPdfRenderEnqueue?: ReceiptPdfRenderEnqueuePort;
+  /**
+   * T166-03 — When `true`, skip the synchronous `renderAndUploadPdf`
+   * call inside the webhook tx; commit the invoice as `paid` with
+   * `receipt_pdf_status='pending'` and enqueue a `receipt_pdf_render`
+   * outbox row instead. Default `false` keeps the inline path (back-
+   * compat for admin manual mark-paid + the F5 R7 round-2 ship path).
+   * Composition root reads `env.features.f5AsyncReceiptPdf`.
+   */
+  readonly asyncReceiptPdf?: boolean;
 }
 
 export async function recordPayment(
@@ -218,32 +250,42 @@ export async function recordPayment(
     // Throws via `RecordPaymentInternalError` on either failure so
     // `withTx` rolls back — the receipt sequence increment is NOT
     // consumed (separate-mode) and the invoice stays `issued`.
+    //
+    // T166-03 (Phase 9 polish): when `deps.asyncReceiptPdf=true`,
+    // skip the synchronous render+upload entirely. The invoice
+    // commits as `paid` with `receipt_pdf_status='pending'`; a
+    // `receipt_pdf_render` outbox row enqueued below drives async
+    // render via the F4 dispatcher. Sequential numbering stays atomic
+    // with the `paid` flip (Thai Revenue Code §86/§87 invariant).
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
-    const rendered = await renderAndUploadPdf(
-      { pdfRender: deps.pdfRender, blob: deps.blob },
-      {
-        renderInput: {
-          kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
-          templateVersion: deps.currentTemplateVersion,
-          // Separate-mode receipt MUST use its own document number (the
-          // one just allocated); combined-mode reuses the invoice
-          // number because the document IS the same physical page
-          // (one combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
-          documentNumber: combinedMode ? loaded.documentNumber : receiptDocNum,
-          issueDate: loaded.issueDate,
-          dueDate: loaded.dueDate,
-          tenant: loaded.tenantIdentitySnapshot,
-          member: loaded.memberIdentitySnapshot,
-          lines: loaded.lines,
-          subtotal: loaded.subtotal,
-          vatRate: loaded.vatRate,
-          vat: loaded.vat,
-          total: loaded.total,
-        },
-        blobKey: receiptBlobKey,
-      },
-      (code, reason) => new RecordPaymentInternalError({ code, reason }),
-    );
+    const rendered =
+      deps.asyncReceiptPdf
+        ? null
+        : await renderAndUploadPdf(
+            { pdfRender: deps.pdfRender, blob: deps.blob },
+            {
+              renderInput: {
+                kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
+                templateVersion: deps.currentTemplateVersion,
+                // Separate-mode receipt MUST use its own document number (the
+                // one just allocated); combined-mode reuses the invoice
+                // number because the document IS the same physical page
+                // (one combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
+                documentNumber: combinedMode ? loaded.documentNumber : receiptDocNum,
+                issueDate: loaded.issueDate,
+                dueDate: loaded.dueDate,
+                tenant: loaded.tenantIdentitySnapshot,
+                member: loaded.memberIdentitySnapshot,
+                lines: loaded.lines,
+                subtotal: loaded.subtotal,
+                vatRate: loaded.vatRate,
+                vat: loaded.vat,
+                total: loaded.total,
+              },
+              blobKey: receiptBlobKey,
+            },
+            (code, reason) => new RecordPaymentInternalError({ code, reason }),
+          );
 
     // Atomic issued→paid UPDATE with payment fields + receipt PDF
     // metadata. The repo throws `applyPayment: no row updated` when
@@ -262,12 +304,48 @@ export async function recordPayment(
         // R7-W5 — persist admin-entered payment date on the invoice
         // row (separate from paidAt = server-side mark-paid ts).
         paymentDate: input.paymentDate,
-        receiptPdf: {
-          blobKey: receiptBlobKey,
-          sha256: rendered.sha256,
-          templateVersion: deps.currentTemplateVersion,
-        },
+        receiptPdf:
+          rendered !== null
+            ? {
+                kind: 'rendered',
+                blobKey: receiptBlobKey,
+                sha256: rendered.sha256,
+                templateVersion: deps.currentTemplateVersion,
+              }
+            : {
+                kind: 'pending',
+                // T166 R1-C1 — persist the pre-allocated receipt doc
+                // number so the worker reads it back instead of
+                // re-allocating (which would burn fresh §87 sequence
+                // numbers on every retry, leaving gaps in
+                // tenant_document_sequences.receipt). NULL for
+                // combined-mode (worker reuses invoice doc num).
+                receiptDocumentNumberRaw: combinedMode
+                  ? null
+                  : receiptDocNumRaw,
+              },
       });
+
+      // T166-03 — async path: enqueue render task NOW (inside the same
+      // tx as the `paid` flip, so the dispatcher cannot pick up a row
+      // that hasn't committed yet). Worker fills blob_key + sha256 +
+      // status='rendered' later via `applyReceiptPdf`.
+      if (deps.asyncReceiptPdf && deps.receiptPdfRenderEnqueue) {
+        await deps.receiptPdfRenderEnqueue.enqueue(tx, {
+          tenantId: input.tenantId,
+          invoiceId,
+          fiscalYear: loaded.fiscalYear,
+          templateVersion: deps.currentTemplateVersion,
+          // Render tasks aren't emails — dispatcher routes by
+          // notification_type, NOT to_email. The column is NOT NULL on
+          // the table so we pass through the member's primary contact
+          // email (best-effort breadcrumb for ops correlation) or a
+          // system sentinel when the snapshot is incomplete.
+          recipientEmail:
+            loaded.memberIdentitySnapshot.primary_contact_email ??
+            'system:async-render@swecham.test',
+        });
+      }
     } catch (e) {
       if (e instanceof InvoiceApplyConflictError && e.kind === 'applyPayment') {
         throw new RecordPaymentInternalError({ code: 'concurrent_state_change' });
@@ -304,19 +382,87 @@ export async function recordPayment(
         payment_date: input.paymentDate,
         recorded_by_user_id: input.actorUserId,
         receipt_document_number: receiptDocNumRaw,
-        receipt_pdf_sha256: rendered.sha256,
+        // T166-03: sha256 is null when async render is in flight; the
+        // worker emits a separate `receipt_rendered` audit event
+        // carrying the sha256 once the bytes land.
+        receipt_pdf_sha256: rendered ? rendered.sha256 : null,
+        // R1-S3 — forensic flag so audit consumers can distinguish
+        // "sha256 is intentionally null because async path took over"
+        // from "sha256 is null because of a bug". Pairs with the
+        // separate `receipt_rendered` audit row that lands later.
+        receipt_pdf_async: deps.asyncReceiptPdf === true,
       },
     });
 
-    if (settings.autoEmailEnabled) {
+    // Defensive guard (T082 empirical 2026-04-24): the Domain type
+    // `MemberIdentitySnapshot.primary_contact_email` is declared
+    // non-nullable, and `issue-invoice` always snapshots it from the
+    // validated primary contact — so in normal production flow this
+    // branch is always truthy. The `?? null` fallback only triggers
+    // on legacy invoice rows whose snapshot was seeded/migrated
+    // before the field was tightened. We skip-with-warn rather than
+    // throwing because: (a) the payment itself has already settled
+    // on Stripe, (b) the invoice row transitions to `paid` via the
+    // applyPayment above, (c) a failure here would cause Stripe to
+    // retry the webhook indefinitely and potentially double-enqueue
+    // on a future fix, and (d) admins can resend the receipt email
+    // manually from /admin/invoices once ops investigates.
+    const recipientEmail =
+      loaded.memberIdentitySnapshot.primary_contact_email ?? null;
+    // T128a: F5 caller may suppress the receipt-email enqueue when the
+    // tenant has disabled `auto_email_on_payment`. Status flip + audit +
+    // outbox-skip log row still run — only the dispatcher enqueue is
+    // gated. Spec.md:433: "MAY suppress" (optional override).
+    if (
+      settings.autoEmailEnabled &&
+      recipientEmail &&
+      !input.suppressReceiptEmail
+    ) {
       await deps.outbox.enqueue(tx, {
         tenantId: input.tenantId,
         eventType: 'invoice_paid',
-        recipientEmail: loaded.memberIdentitySnapshot.primary_contact_email,
+        recipientEmail,
         invoiceId,
         pdfBlobKey: receiptBlobKey,
         pdfTemplateVersion: deps.currentTemplateVersion,
+        // T166-09 — when async PDF is on, the receipt blob doesn't
+        // exist yet at email-enqueue time. The dispatcher gates the
+        // send on `invoices.receipt_pdf_status='rendered'` to avoid
+        // shipping a dead Blob link.
+        dependsOnReceiptPdf: deps.asyncReceiptPdf === true,
       });
+    } else if (
+      settings.autoEmailEnabled &&
+      recipientEmail &&
+      input.suppressReceiptEmail
+    ) {
+      // T128a observability: explicit log when F5 suppressed an email
+      // that F4 would otherwise have enqueued. Helps ops correlate
+      // "no receipt email" complaints with the tenant's setting state.
+      logger.info(
+        {
+          tenantId: input.tenantId,
+          invoiceId,
+          memberId: loaded.memberId,
+          documentNumber: loaded.documentNumber?.raw,
+          reason: 'tenant_auto_email_on_payment_disabled',
+        },
+        'recordPayment: receipt-email outbox enqueue suppressed by F5 caller',
+      );
+    } else if (settings.autoEmailEnabled && !recipientEmail) {
+      // Skip-with-warn: snapshot is missing the required field. This
+      // is a Domain-invariant violation upstream (likely a legacy or
+      // manually-patched invoice row). Observability surface so ops
+      // can detect + backfill the bad row.
+      logger.warn(
+        {
+          tenantId: input.tenantId,
+          invoiceId,
+          memberId: loaded.memberId,
+          documentNumber: loaded.documentNumber?.raw,
+        },
+        'recordPayment: invoice snapshot missing primary_contact_email — auto-email receipt skipped',
+      );
     }
 
     // Spec § 398 — "registration fee once per member lifecycle". If

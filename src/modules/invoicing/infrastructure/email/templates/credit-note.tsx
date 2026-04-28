@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 /**
  * T108 — `credit_note_issued` + `credit_note_pdf_resent` template.
  *

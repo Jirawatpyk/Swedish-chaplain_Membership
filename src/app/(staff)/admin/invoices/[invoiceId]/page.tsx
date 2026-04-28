@@ -1,6 +1,7 @@
 /**
  * T056 — /admin/invoices/[invoiceId] detail page.
  */
+import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -65,6 +66,11 @@ import { IssueInvoiceDialog } from '../_components/issue-invoice-dialog';
 import { RecordPaymentDialog } from '../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
+import { PaymentTimeline } from './_components/payment-timeline';
+import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
+import { RefundDialog } from './_components/refund-dialog';
+import { computeRemainingRefundable } from '@/modules/payments';
+import { getInvoicePaymentActivity } from './_lib/cached-payment-activity';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -248,6 +254,34 @@ export default async function InvoiceDetailPage({
 
   const breadcrumbLabel = invoice.documentNumber?.raw ?? t('draftTitle');
 
+  // Load payment activity at page level so the Refund action button
+  // can be rendered conditionally on succeeded-payment + remaining-
+  // refundable presence. Shares the React `cache()`-deduplicated
+  // loader with the Suspense'd PaymentTimeline panel below — one
+  // DB roundtrip per request, not two.
+  let refundButtonProps: {
+    paymentId: string;
+    remainingRefundableSatang: bigint;
+  } | null = null;
+  if (
+    isAdmin &&
+    (invoice.status === 'paid' || invoice.status === 'partially_credited')
+  ) {
+    const activity = await getInvoicePaymentActivity(
+      tenantCtx.slug,
+      invoiceId,
+    );
+    if (activity.ok) {
+      const remaining = computeRemainingRefundable(activity.value);
+      if (remaining) {
+        refundButtonProps = {
+          paymentId: remaining.paymentId,
+          remainingRefundableSatang: remaining.remainingSatang,
+        };
+      }
+    }
+  }
+
   return (
     <DetailContainer>
       <PlanBreadcrumbLabel segment={invoiceId} label={breadcrumbLabel} />
@@ -316,6 +350,7 @@ export default async function InvoiceDetailPage({
               <Link
                 href={`/admin/invoices/${invoice.invoiceId}/void`}
                 className={buttonVariants({ variant: 'destructive-outline' })}
+                data-testid="void-invoice-trigger"
               >
                 {t('actions.void')}
               </Link>
@@ -329,6 +364,43 @@ export default async function InvoiceDetailPage({
                   {t('actions.issueCreditNote')}
                 </Link>
               )}
+            {/* F5 Phase 6 (T112) — Refund online payment. Only appears
+                when the invoice was paid via Stripe (i.e. there is a
+                succeeded F5 payment with remaining refundable balance
+                > 0). Sits next to the F4 manual credit-note CTA so
+                admins see both options on paid invoices. */}
+            {refundButtonProps && (
+              // C1: wrap in <Suspense> because
+              // RefundDialog reads useSearchParams() — without a
+              // Suspense boundary Next.js bails the entire page out
+              // to CSR, losing SSR + streaming.
+              <Suspense
+                fallback={
+                  /* R2 F-3 (2026-04-27): invisible-but-present
+                   * placeholder reserves the button's layout space so
+                   * the surrounding grid does not shift while the
+                   * dialog hydrates. `aria-hidden` keeps it out of AT
+                   * during the brief flash. */
+                  <div
+                    aria-hidden="true"
+                    className="h-9 w-32 opacity-0"
+                  />
+                }
+              >
+                <RefundDialog
+                  paymentId={refundButtonProps.paymentId}
+                  invoiceId={invoice.invoiceId}
+                  memberCompanyName={memberDisplayName}
+                  remainingRefundableSatang={
+                    refundButtonProps.remainingRefundableSatang
+                  }
+                  currencyCode={
+                    (invoice.tenantIdentitySnapshot as { currency_code?: string } | null)
+                      ?.currency_code ?? 'THB'
+                  }
+                />
+              </Suspense>
+            )}
             {/* Secondary actions (Download PDF, Resend invoice, Resend
                 receipt) collapse into one "⋯" icon dropdown so the
                 action row exposes only primary/destructive CTAs as
@@ -671,6 +743,31 @@ export default async function InvoiceDetailPage({
           </section>
         </CardContent>
       </Card>
+      {/* F5 Phase 5 (T097–T099) — payment activity timeline. Renders
+          for both admin + manager (read-only); mutating refund/void/
+          record-payment actions are gated above by `isAdmin`. The
+          panel hides behind its own empty state when the invoice has
+          no F5 payment + the F4 record-payment flow has not been used
+          either, so non-paid drafts/issued invoices show a clean card. */}
+      {!isDraft && (
+        <div className="mt-4">
+          {/* Suspense + extracted PaymentTimelineSkeleton primitive
+              (R3-fix S4 2026-04-26). Shape fidelity + shimmer
+              behaviour documented inside the component file. */}
+          <Suspense fallback={<PaymentTimelineSkeleton />}>
+            <PaymentTimeline
+              invoice={{
+                invoiceId: invoice.invoiceId,
+                status: invoice.status,
+                paidAt: invoice.paidAt,
+                paymentRecordedByUserId: invoice.paymentRecordedByUserId,
+              }}
+              tenantId={tenantCtx.slug}
+              isAdmin={isAdmin}
+            />
+          </Suspense>
+        </div>
+      )}
     </DetailContainer>
   );
 }

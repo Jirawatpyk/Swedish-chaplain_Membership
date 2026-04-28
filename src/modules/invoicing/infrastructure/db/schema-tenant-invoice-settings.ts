@@ -31,9 +31,15 @@ export const tenantInvoiceSettings = pgTable(
     tenantId: text('tenant_id').primaryKey(),
 
     vatRate: numeric('vat_rate', { precision: 5, scale: 4 }).notNull(),
+    // Staff-review R2 R022 (2026-04-28): use raw SQL `0` instead of
+    // BigInt literal `0n` because drizzle-kit 0.30.x cannot
+    // JSON.serialize BigInt defaults when generating snapshots
+    // (TypeError: Do not know how to serialize a BigInt). The DB
+    // column is still `BIGINT NOT NULL DEFAULT 0` either way; only the
+    // TS-side default representation changes.
     registrationFeeSatang: bigint('registration_fee_satang', { mode: 'bigint' })
       .notNull()
-      .default(0n),
+      .default(sql`0`),
     // R7 consolidation (migration 0026) — tenant currency migrated
     // from F2 `tenant_fee_config.currency_code`. ISO 4217, 3 upper-
     // case letters enforced at DB level + at Application validation.

@@ -159,6 +159,27 @@ export interface Invoice {
     readonly templateVersion: number;
   } | null;
 
+  /**
+   * T166 — async receipt PDF state machine. NULL on draft/issued/void/
+   * credited rows; one of `'pending' | 'rendered' | 'failed'` on `paid`
+   * rows. CHECK constraint `invoices_paid_has_receipt_status`
+   * (migration 0056) enforces this. The `inline` (synchronous render)
+   * path always lands rows in `'rendered'`; the async path (T166-03
+   * flag on) lands rows in `'pending'` and the worker (T166-05) flips
+   * to `'rendered'` once bytes upload.
+   */
+  readonly receiptPdfStatus: 'pending' | 'rendered' | 'failed' | null;
+  readonly receiptPdfRenderAttempts: number;
+  readonly receiptPdfLastError: string | null;
+  /**
+   * T166 R1-C1 — pre-allocated receipt doc number for separate-mode
+   * async render. NULL for combined-mode, pre-T166 paid rows, and any
+   * non-paid invoice. The render worker reads THIS field instead of
+   * calling `sequenceAllocator.allocateNext` (which would create a §87
+   * gap on every retry).
+   */
+  readonly receiptDocumentNumberRaw: string | null;
+
   readonly lines: readonly InvoiceLine[];
 
   readonly createdAt: string;

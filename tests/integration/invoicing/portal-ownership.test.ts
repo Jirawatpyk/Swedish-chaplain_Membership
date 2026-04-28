@@ -392,7 +392,13 @@ describe('F4 US3 — portal ownership (T069)', () => {
     // metadata all NOT NULL. Use placeholder PDF identifiers since this
     // suite never streams the blob.
     const tenantSnap = { legal_name_en: 'Alpha', legal_name_th: 'อัลฟา', tax_id: '0000000000000', address: 'BKK' };
-    const memberSnap = { company_name: 'Delta Co', tax_id: null, address: null };
+    const memberSnap = {
+      legal_name: 'Delta Co',
+      tax_id: null,
+      address: 'Bangkok',
+      primary_contact_name: 'Delta Contact',
+      primary_contact_email: 'test@example.com',
+    };
     await runInTenant(tenantA.ctx, async (tx) => {
       for (const [idx, row] of seeded.entries()) {
         const subtotal = (row.total * 100n) / 107n;
@@ -412,6 +418,8 @@ describe('F4 US3 — portal ownership (T069)', () => {
           dueDate: '2026-05-15',
           paidAt: row.status === 'paid' ? new Date('2026-04-18T00:00:00Z') : null,
           paymentMethod: row.status === 'paid' ? 'bank_transfer' : null,
+          // T166 — paid rows MUST have receipt_pdf_status NOT NULL.
+          receiptPdfStatus: row.status === 'paid' ? 'rendered' : null,
           subtotalSatang: subtotal,
           vatRateSnapshot: '0.0700',
           vatSatang: vat,
@@ -498,6 +506,7 @@ describe('F4 US3 — portal ownership (T069)', () => {
         planId: 'alpha-plan',
         draftByUserId: adminUser.userId,
         status: 'paid',
+        receiptPdfStatus: 'rendered',
         fiscalYear: 2026,
         sequenceNumber: 99,
         documentNumber: 'E-2026-000099',
@@ -512,7 +521,13 @@ describe('F4 US3 — portal ownership (T069)', () => {
         proRatePolicySnapshot: 'none',
         netDaysSnapshot: 30,
         tenantIdentitySnapshot: { legal_name_en: 'Alpha', legal_name_th: 'อัลฟา', tax_id: '0', address: 'BKK' },
-        memberIdentitySnapshot: { company_name: 'Echo Co', tax_id: null, address: null },
+        memberIdentitySnapshot: {
+          legal_name: 'Echo Co',
+          tax_id: null,
+          address: 'Bangkok',
+          primary_contact_name: 'Echo Contact',
+          primary_contact_email: 'test@example.com',
+        },
         pdfBlobKey: echoBlobKey,
         pdfSha256: 'b'.repeat(64),
         pdfTemplateVersion: 1,

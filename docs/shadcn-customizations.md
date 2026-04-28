@@ -133,6 +133,33 @@ None of the three primitives sets `overflow-x` at the root (FR-015). Wide
 tables must be absorbed by the shadcn `<Table>`'s `overflow-x-auto` wrapper,
 not by the container itself.
 
+## Design-system tier-1 primitives (009 side-quest)
+
+Introduced alongside F5 to close six P0 gaps from `docs/design-system-audit.md`.
+None replace shadcn upstream — they extend the primitive surface so payment,
+invoice, and member state-machine screens share a canonical visual + a11y
+contract.
+
+| File                                       | Purpose                                                                     | Notes |
+| ------------------------------------------ | --------------------------------------------------------------------------- | ----- |
+| `src/components/ui/status-badge.tsx`       | Semantic status pill: 5 tones × 2 emphases (subtle surface / solid fill)    | Always pair color with text/icon (WCAG 1.4.1). `data-tone` for tests. |
+| `src/components/ui/status-dot.tsx`         | 8px semantic disc for dense surfaces                                        | `aria-label` required (no text companion). Optional `pulse` for live signals. |
+| `src/components/ui/inline-alert.tsx`       | Compact in-form / in-card alert (vs. card-style `<Alert>`)                  | `role="alert"` default; override to `role="status"` for non-urgent info. |
+| `src/components/ui/progress.tsx`           | WAI-ARIA progressbar; determinate + indeterminate (skeleton-shimmer)        | Tones reuse semantic tokens. Degrades under prefers-reduced-motion. |
+| `src/components/ui/progress-bar.tsx`       | Labeled wrapper over Progress with numeric readout                          | `formatValue` lets caller render locale-aware strings (Intl stays at consumer). |
+| `src/components/ui/stepper.tsx`            | Multi-step flow indicator (complete / current / upcoming)                   | `role="list"` + `aria-current="step"`. Horizontal + vertical. |
+| `src/components/ui/live-region.tsx`        | Visually-hidden ARIA live region for inline async feedback                  | For non-toast announcements (polling, step transitions). sonner handles toasts separately. |
+
+Semantic color tokens feeding the above live in `src/app/globals.css` under
+the `:root` + `.dark` blocks: `--success`, `--warning`, `--info` (plus
+`-foreground` and `-surface` pairs for each). WCAG contrast audited at
+authoring time (≥4.5:1 fg-on-surface, light + dark).
+
+Canonical flows that compose these primitives (destructive confirm,
+bulk action, wizard, unsaved-changes, import/export) are documented in
+`docs/ux-patterns.md`. Land those patterns before re-inventing the same
+flow in a feature branch.
+
 ## Tailwind v4 `@source` hygiene (branch-006)
 
 `src/app/globals.css` carries two `@source not` directives:

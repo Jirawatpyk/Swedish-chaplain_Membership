@@ -63,6 +63,12 @@ export interface InvoiceRepo {
    * Offset-based page + total count for numbered pagination (admin
    * directory). Uses the same filter shape as `list` but runs a parallel
    * COUNT(*) query so UI can render "Showing X–Y of Z" + page numbers.
+   *
+   * `paidOnlineOnly` (F5 US3 reconciliation) restricts to invoices with
+   * at least one succeeded F5 payment row (method ∈ {card, promptpay}).
+   * Implementation MUST use an EXISTS subquery — `invoices.payment_method`
+   * itself is `'other'` for online payments per the F5↔F4 bridge (T012),
+   * so a direct LIKE/equality filter on `payment_method` is impossible.
    */
   listPaged(
     tenantId: string,
@@ -74,6 +80,7 @@ export interface InvoiceRepo {
       readonly memberId?: string | undefined;
       readonly search?: string | undefined;
       readonly includeDrafts?: boolean | undefined;
+      readonly paidOnlineOnly?: boolean | undefined;
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 
@@ -123,13 +130,92 @@ export interface InvoiceRepo {
       readonly paymentRecordedByUserId: string;
       /** R7-W5 — admin-entered payment date (`YYYY-MM-DD`). */
       readonly paymentDate: string;
-      readonly receiptPdf: {
-        readonly blobKey: string;
-        readonly sha256: Sha256Hex;
-        readonly templateVersion: number;
-      };
+      /**
+       * Receipt PDF state at the moment of the issued→paid transition.
+       *
+       * - `kind: 'rendered'` — sync path (T166 flag off, or admin
+       *   manual mark-paid). Caller has already rendered the PDF +
+       *   uploaded to Blob; pass through the blob key + sha256 +
+       *   template version. `receipt_pdf_status` lands as `'rendered'`.
+       * - `kind: 'pending'` — async path (T166-03 flag on). PDF render
+       *   moves to the `receipt_pdf_render` outbox worker; this
+       *   transition only stamps `receipt_pdf_status='pending'`.
+       *   Worker fills blob key + sha256 + template version later via
+       *   `applyReceiptPdf` (T166-05).
+       *
+       * Discriminated union (not just nullable receipt fields) so the
+       * compiler enforces the invariant: a 'rendered' write must
+       * carry the bytes; a 'pending' write must NOT.
+       */
+      readonly receiptPdf:
+        | {
+            readonly kind: 'rendered';
+            readonly blobKey: string;
+            readonly sha256: Sha256Hex;
+            readonly templateVersion: number;
+          }
+        | {
+            readonly kind: 'pending';
+            /**
+             * T166 R1-C1 — pre-allocated receipt document number for
+             * separate-mode tenants. The render worker MUST read this
+             * field back (instead of calling `allocateNext` again) so
+             * retries don't burn fresh sequence numbers and leave §87
+             * gaps. `null` for combined-mode (worker reuses the
+             * invoice document number).
+             */
+            readonly receiptDocumentNumberRaw: string | null;
+          };
     },
   ): Promise<Invoice>;
+
+  /**
+   * T166-05 — Async receipt PDF worker callback. Flips
+   * `receipt_pdf_status` from 'pending' → 'rendered' atomically with
+   * the blob_key + sha256 + template_version write. Idempotent: a
+   * second call with status already 'rendered' is a no-op (return the
+   * row unchanged). On a row in 'failed' state, this method clears
+   * the failure marker and rotates back to 'rendered' so the
+   * reconciliation cron retry path lands here too.
+   */
+  applyReceiptPdf(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly invoiceId: InvoiceId;
+      readonly blobKey: string;
+      readonly sha256: Sha256Hex;
+      readonly templateVersion: number;
+    },
+  ): Promise<Invoice>;
+
+  /**
+   * T166-11 — Reconciliation cron callback. Flips
+   * `receipt_pdf_status='failed'` + increments `render_attempts` +
+   * stores `last_error`. Caller (worker / cron) is expected to
+   * re-enqueue the outbox row after this write commits.
+   *
+   * R2-C-NEW-1 — discriminated return surfaces the rendered-race-won
+   * outcome so the caller (`renderReceiptPdf` catch block) can convert
+   * what looked like a failure into a success Result without bumping
+   * the dispatcher's attempts counter unnecessarily. The `ne(status,
+   * 'rendered')` guard inside the implementation prevents a worker B
+   * success from being clobbered by a worker A failure write — when
+   * that happens, this method re-fetches and returns
+   * `{ kind: 'race_won_by_success', invoice }` so the caller treats
+   * the operation as already-succeeded.
+   */
+  applyReceiptPdfFailure(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly invoiceId: InvoiceId;
+      readonly errorMessage: string;
+    },
+  ): Promise<
+    | { readonly kind: 'failed'; readonly invoice: Invoice }
+    | { readonly kind: 'race_won_by_success'; readonly invoice: Invoice }
+  >;
 
   /**
    * Partial field update on a DRAFT invoice. Only caller-supplied fields

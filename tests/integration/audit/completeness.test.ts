@@ -55,13 +55,23 @@ describe('integration: audit completeness — all 17 event types writable', () =
     },
   );
 
-  it('the full event-type list has exactly 17 entries', () => {
+  it('the full event-type list has exactly 26 entries', () => {
     // Regression guard against accidental removal or duplication.
-    // Pass 5: bumped from 16 → 17 after splitting
-    // `password_reset_failed` out of the `invitation_redemption_failed`
-    // overload (see drizzle/migrations/0002_*).
-    expect(AUDIT_EVENT_TYPES.length).toBe(17);
-    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(17);
+    // Pass 5: 16 → 17 after splitting `password_reset_failed` out of
+    //         `invitation_redemption_failed` (migration 0002).
+    // F5:    17 → 22 after the routes-level webhook + rate-limit
+    //         events were registered for the auditRepo path
+    //         (webhook_signature_rejected, payment_environment_mismatch,
+    //          webhook_api_version_mismatch,
+    //          payment_initiate_rate_limited, payment_cancel_rate_limited).
+    // F5 audit closeout: 22 → 24 after migration 0046 added
+    //         `webhook_unknown_intent` + `webhook_payment_already_canceled`.
+    // F5 review I-14: 24 → 25 after migration 0047 added
+    //         `payment_processor_retrieve_failed`.
+    // F5 review S5: 25 → 26 after migration 0048 added
+    //         `payment_invoice_not_found`.
+    expect(AUDIT_EVENT_TYPES.length).toBe(26);
+    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(26);
   });
 });
 

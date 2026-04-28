@@ -32,7 +32,67 @@ export type F4AuditEventType =
   | 'credit_note_cross_tenant_probe'
   | 'tenant_invoice_settings_cross_tenant_probe'
   | 'pdf_render_failed'
-  | 'auto_email_delivery_failed';
+  | 'auto_email_delivery_failed'
+  /**
+   * T166-08 — emitted by the async render-receipt-pdf worker once
+   * blob bytes land + status flips to `'rendered'`. Carries the
+   * sha256 (audit retention 10y per tax-doc invariant). Distinct
+   * from `invoice_paid` (which fires inside the webhook tx with
+   * sha256=null on the async path) so reviewers can correlate the
+   * paid event with the eventually-consistent render result.
+   */
+  | 'receipt_rendered'
+  /**
+   * T166-11 — emitted by the reconciliation cron when a render row
+   * exhausts its retry budget (3 attempts). Pages on-call per
+   * `docs/runbooks/receipt-pdf-permanently-failed.md`.
+   */
+  | 'pdf_render_permanently_failed';
+
+/**
+ * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
+ *
+ * 10y: tax-document-touching events — Thai RD §87/3 + §86/10 statutory
+ *      minimum. F9 GDPR purge MUST NOT delete before this window.
+ *  5y: operational / probe / config events — Constitution Principle VIII
+ *      financial-record retention.
+ *
+ * **Critical**: this map mirrors `drizzle/migrations/0039_audit_log_add_retention_years.sql`
+ * § 3 backfill UPDATE for go-forward writes. Migration backfill only runs
+ * once at apply time; new rows after that get DEFAULT 5 unless the emitter
+ * sets the column explicitly. Without this mapping the F4 audit emitter
+ * silently downgrades tax-document audit retention — caught by T135
+ * (`audit-retention-backfill.test.ts`).
+ */
+export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
+  invoice_draft_created: 5,
+  invoice_draft_updated: 5,
+  invoice_draft_deleted: 5,
+  invoice_issued: 10,
+  invoice_paid: 10,
+  invoice_voided: 10,
+  invoice_overdue_detected: 5,
+  credit_note_issued: 10,
+  tenant_invoice_settings_updated: 5,
+  invoice_pdf_resent: 10,
+  receipt_pdf_resent: 10,
+  credit_note_pdf_resent: 10,
+  invoice_pdf_regenerated: 10,
+  invoice_cross_tenant_probe: 5,
+  credit_note_cross_tenant_probe: 5,
+  tenant_invoice_settings_cross_tenant_probe: 5,
+  pdf_render_failed: 5,
+  auto_email_delivery_failed: 5,
+  // T166: tax-doc-touching (receipt sha256 lands on this row); 10y.
+  receipt_rendered: 10,
+  // T166: ops/reliability event; 5y.
+  pdf_render_permanently_failed: 5,
+};
+
+/** Single-source helper — call at every F4 emit site. */
+export function f4RetentionFor(eventType: F4AuditEventType): 5 | 10 {
+  return F4_AUDIT_RETENTION_YEARS[eventType];
+}
 
 /**
  * F4 event types that MUST appear in the F3 member timeline

@@ -1,0 +1,38 @@
+-- ---------------------------------------------------------------------------
+-- F5 audit_event_type enum extension (audit 2026-04-25 findings #10 + #13)
+--
+-- Adds 2 webhook ops-visibility audit event types so the no-op outcomes
+-- of `failPayment` / `handleCancelEvent` leave a forensic trail in the
+-- append-only `audit_log` table (previously silent `ok({ kind: '...' })`
+-- returns — invisible to ops dashboards).
+--
+-- Both events fire from webhook-driven paths (`processWebhookEvent`
+-- dispatch) so the actor is `SYSTEM_ACTOR_STRIPE_WEBHOOK`.
+--
+--   - `webhook_unknown_intent`: Stripe webhook arrives for a
+--     `payment_intent.payment_failed` event whose `payment_intent.id`
+--     does not match any row in our `payments` table. Helps detect
+--     mis-routed webhooks (multi-account collisions, replay from old
+--     test fixtures, account-id drift after Stripe Connect re-link).
+--
+--   - `webhook_payment_already_canceled`: Stripe webhook arrives for a
+--     `payment_intent.canceled` event for a payment that was already
+--     canceled by an earlier T059 member-initiated cancel OR an earlier
+--     webhook delivery. Idempotent no-op — but the duplicate signal is
+--     useful for ops to spot Stripe-side retry behaviour.
+--
+-- Pattern: one idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` per enum
+-- value so re-running is a no-op (matches migrations 0040 + 0043).
+-- Forward-only: enum values cannot be removed.
+--
+-- Retention: both carry 5-year retention (ops event, not tax document)
+-- per data-model.md § 7.1 mapping.
+--
+-- Keep synced with `auditEventTypeEnum` in
+-- `src/modules/auth/infrastructure/db/schema.ts`, the F1
+-- `AUDIT_EVENT_TYPES` union in `src/modules/auth/domain/audit-event.ts`,
+-- and `F5AuditEventType` in `src/modules/payments/application/ports/audit-port.ts`.
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'webhook_unknown_intent'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'webhook_payment_already_canceled'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

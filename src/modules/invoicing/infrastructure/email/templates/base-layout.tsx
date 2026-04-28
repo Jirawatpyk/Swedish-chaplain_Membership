@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 /**
  * T108 — shared F4 auto-email layout (@react-email/components).
  *
@@ -45,6 +46,14 @@ export interface BaseEmailLayoutProps {
   readonly ctaHref: string;
   /** Footer brand line — tenant-hardcoded for now (F1 STD); future MTA replaces via prop. */
   readonly footerBrand?: string;
+  /**
+   * F5 FR-027 — optional "Pay online" primary CTA rendered ABOVE the
+   * standard download button. Both `primaryCtaLabel` and `primaryCtaHref`
+   * MUST be provided together; omitting either renders the layout with a
+   * single CTA (pre-F5 behaviour preserved).
+   */
+  readonly primaryCtaLabel?: string;
+  readonly primaryCtaHref?: string;
 }
 
 const FOOTER_BRAND_DEFAULT = 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)';
@@ -82,6 +91,24 @@ const BUTTON_STYLE: React.CSSProperties = {
   fontWeight: 500,
 };
 
+/**
+ * F5 FR-027 — "Pay online" primary button style. Deliberately visually
+ * distinct from the download CTA: coloured primary (SweCham blue-black
+ * `#0b5394` ≈ shadcn `--primary` token analog; keep inline-literal —
+ * email clients don't resolve CSS variables). Meets WCAG 2.1 AA contrast
+ * ≥ 4.5:1 on `#ffffff` body (≈ 7.6:1).
+ */
+const PRIMARY_BUTTON_STYLE: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '12px 24px',
+  backgroundColor: '#0b5394',
+  color: '#ffffff',
+  textDecoration: 'none',
+  borderRadius: '6px',
+  fontSize: '15px',
+  fontWeight: 600,
+};
+
 const LINK_FALLBACK_STYLE: React.CSSProperties = {
   fontSize: '12px',
   color: '#666',
@@ -104,6 +131,11 @@ const FOOTER_STYLE: React.CSSProperties = {
  * through here.
  */
 export function BaseEmailLayout(props: BaseEmailLayoutProps) {
+  const hasPrimaryCta =
+    typeof props.primaryCtaLabel === 'string' &&
+    props.primaryCtaLabel.length > 0 &&
+    typeof props.primaryCtaHref === 'string' &&
+    props.primaryCtaHref.length > 0;
   return (
     <Html lang={props.locale}>
       <Head />
@@ -116,6 +148,16 @@ export function BaseEmailLayout(props: BaseEmailLayoutProps) {
           <Section>
             <Text style={BODY_STYLE}>{props.bodyContent}</Text>
           </Section>
+          {hasPrimaryCta ? (
+            <Section style={{ margin: '0 0 16px' }} data-testid="pay-online-cta">
+              <Button
+                href={props.primaryCtaHref as string}
+                style={PRIMARY_BUTTON_STYLE}
+              >
+                {props.primaryCtaLabel}
+              </Button>
+            </Section>
+          ) : null}
           <Section style={{ margin: '0 0 24px' }}>
             <Button href={props.ctaHref} style={BUTTON_STYLE}>
               {props.ctaLabel}

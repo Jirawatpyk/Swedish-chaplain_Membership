@@ -42,6 +42,10 @@ function makeStub(): Invoice {
     autoEmailOnIssue: null,
     pdf: null,
     receiptPdf: null,
+    receiptPdfStatus: null,
+    receiptPdfRenderAttempts: 0,
+    receiptPdfLastError: null,
+    receiptDocumentNumberRaw: null,
     lines: [],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',
@@ -67,6 +71,8 @@ describe('getInvoice', () => {
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
+      applyReceiptPdf: vi.fn(),
+      applyReceiptPdfFailure: vi.fn(),
       },
     };
     const r = await getInvoice(deps, { tenantId: 't', invoiceId: 'i' });
@@ -91,6 +97,8 @@ describe('getInvoice', () => {
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
+      applyReceiptPdf: vi.fn(),
+      applyReceiptPdfFailure: vi.fn(),
       },
     };
     const r = await getInvoice(deps, { tenantId: 't', invoiceId: 'missing' });
@@ -122,6 +130,8 @@ describe('getInvoice', () => {
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
+      applyReceiptPdf: vi.fn(),
+      applyReceiptPdfFailure: vi.fn(),
       },
       audit: { emit: auditEmit },
     };
@@ -173,6 +183,8 @@ describe('getInvoice', () => {
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
+      applyReceiptPdf: vi.fn(),
+      applyReceiptPdfFailure: vi.fn(),
       },
       audit: { emit: auditEmit },
     };
@@ -190,3 +202,4 @@ describe('getInvoice', () => {
     expect(auditEmit).not.toHaveBeenCalled();
   });
 });
+
