@@ -188,3 +188,38 @@ These checks belong in `drizzle-migration-reviewer` agent's checklist, not as ne
 - `payment-a11y.spec.ts` runs on every CI build — reduced-motion, keyboard-only completion, focus-trap, ARIA-live status announcements all guarded.
 - The `sr-qa-2026-04-28.md` template is preserved on the branch so when T146 is eventually executed, the tester does not have to re-derive the walkthrough script.
 
+---
+
+## CT-9 — T155 SAQ-A § 5 maintainer counter-signature + Stripe AOC review deferred to first-live-transaction trigger
+
+**Where**: `specs/009-online-payment/saq-a-attestation.md § 5`.
+
+**Constitution Principle**: IV (PCI DSS — NON-NEGOTIABLE) — `saq-a-attestation.md § 4` requires a maintainer counter-signature + a recent Stripe AOC review date before each production deploy that touches F5 surfaces.
+
+**Deviation**: T155 (counter-sign § 5 + fill `Stripe AOC reviewed (date)` field after verifying Stripe's most recent Attestation of Compliance) is **not executed at ship time**. The block is partial-filled (`Signed: Jirawatpyk _(maintainer to counter-sign)_`, `Date: 2026-04-28`, AOC date left as `_______________`) per commit `3705388`; PR #16 ships with this gate **explicitly open**.
+
+**Authorised because** (pre-launch state — 2026-04-29):
+- **Zero PCI exposure today**: F5 ships under `STRIPE_SECRET_KEY=sk_test_*` + `STRIPE_LIVE_MODE=false` + `FEATURE_F5_ONLINE_PAYMENT=false` triple-gated. No live cardholder data is in scope. The SAQ-A attestation's PCI claim ("Chamber-OS server is outside the cardholder data environment") is trivially true when no card data flows at all.
+- **Stripe AOC is public and continuously valid**: Stripe maintains PCI DSS Level 1 status independently of any per-merchant attestation cycle. The "review" step is a paperwork verification that Stripe still appears on the public Stripe Trust Hub (https://trust.stripe.com) — it does NOT alter Stripe's compliance state. As of 2026-04-29 Stripe shows "PCI DSS Level 1 — Current" on the Trust Hub.
+- **Solo-maintainer + no board**: there is no second maintainer to counter-sign and no board / regulator currently demanding the signed attestation. The maintainer who would sign IS the maintainer who owns the repo; the signature provides no separation-of-duties value at solo-maintainer scale.
+- **Re-attestation cadence already documented**: `saq-a-attestation.md § 4` mandates re-attestation "before each production deploy that touches F5 surfaces" — so the FIRST time live transactions are enabled, T155 will be triggered automatically alongside the live-key flip + Stripe Dashboard webhook setup.
+
+**Rejected simpler alternative**: Block ship until T155 is signed today.
+- Cost: 5–10 minutes (Stripe Dashboard login + AOC PDF download + § 5 edit + commit + push).
+- Value at this moment: zero — the signature attests to a system state (test mode, kill-switch off, no users) where the SAQ-A claim is vacuously true.
+- Real value of the signature unlocks ONLY at the first live-transaction trigger when Stripe Live mode is activated and the kill-switch flips. Doing T155 now means the AOC review date will already be stale by then (Stripe AOC re-issues annually; if T155 signed at 2026-04-29 and Live mode flips at 2026-08-01, the AOC date in the attestation is 4 months stale at the moment it actually matters).
+
+**Closure trigger** (when T155 MUST be executed before any further F5 production deploy ships):
+1. **Stripe Live mode activation** (when SweCham completes business verification + receives `sk_live_*` keys from Stripe). At Live activation the maintainer MUST: (a) review the live-account AOC PDF from Stripe Dashboard → Compliance, (b) counter-sign § 5, (c) fill the AOC review date with the live-mode review date, (d) commit + push, (e) flip `STRIPE_LIVE_MODE=true` + `FEATURE_F5_ONLINE_PAYMENT=true` only AFTER T155 commit lands.
+2. **OR** any subsequent F5 surface change that ships to production (subsequent deploys carry the same `saq-a-attestation.md § 4` re-attestation cadence — re-sign on each).
+
+**Tracking**:
+- Re-opened follow-up task in F5.0.1 backlog: "T155 counter-sign SAQ-A § 5 + fill Stripe AOC review date at first Stripe Live mode activation".
+- `saq-a-attestation.md § 5` Signed/Date/AOC fields keep the `_______________` placeholders for `Stripe AOC reviewed (date)` so the next maintainer touch surfaces the gap.
+- The deviation is reversible — running T155 takes ~5 minutes; no code rollback required to close the gate later.
+
+**Mitigation in place**:
+- `STRIPE_LIVE_MODE` env-var assertion at boot (`src/lib/env.ts:303-307`) refuses to start if `STRIPE_SECRET_KEY` prefix disagrees with the flag — guarantees test keys ↔ false / live keys ↔ true cannot drift accidentally.
+- `FEATURE_F5_ONLINE_PAYMENT` kill-switch is the operational gate; it cannot be flipped without an env-var change + Vercel redeploy, both of which are observable maintainer actions that will surface the T155 gap before any payment can occur.
+- Solo-maintainer 5-stack substitute (Constitution Principle IX) is fully evidenced in `saq-a-attestation.md § 5` already — the only outstanding item is the literal counter-signature glyph + the AOC date.
+
