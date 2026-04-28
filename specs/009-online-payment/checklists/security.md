@@ -61,7 +61,7 @@
 
 ## Reviewer Sign-Off
 
-- [x] CHK030 Is the security reviewer checklist (security.md § 6) phrased as 12 binary YES/NO assertions, each tied to a verifiable artifact (test, scan, log audit, attestation)? [Measurability, security.md § 6]
+- [x] CHK030 Is the security reviewer checklist (security.md § 6) phrased as 14 binary YES/NO assertions, each tied to a verifiable artifact (test, scan, log audit, attestation)? Count grew from the initial 12 (post-2026-04-23 amendments added: T-15 + T-16 coverage, manual SR pass evidence, solo-maintainer substitute stack). [Measurability, security.md § 6]
 
 ## Notes
 
@@ -82,13 +82,10 @@
 - Constitution v1.4.0 Principle I 5 sub-clauses (CHK005) fully addressed: app-layer compile-time enforcement, db-layer RLS+FORCE, cross-tenant integration test as Review-Gate blocker, audit emission, super-admin deferred to F13.
 - Webhook security (CHK010–CHK014) covers signature-verify-before-body-parse + 4 named failure modes + idempotency primitive + secret rotation procedure.
 - RBAC matrix (CHK015) explicit per endpoint × role; admin-impersonate-pay OUT OF SCOPE per FR-018 R2-E6 amendment.
-- OWASP Top 10 coverage (CHK021): plan.md § I covers A01, A02, A03, A04, A05, A07, A08, A09, A10 = **9 of 10**. **A06 (Vulnerable & Outdated Components) is indirectly covered** via saq-a-attestation.md § 6.2 (Renovate/Dependabot + Stripe SDK pin + STRIPE_API_VERSION quarterly review). Optional-improvement: add explicit "A06" line to plan § I for completeness — non-blocking, cosmetic.
+- OWASP Top 10 coverage (CHK021): plan.md § I covers all **10 of 10** categories — A01, A02, A03, A04, A05, A06, A07, A08, A09, A10. The A06 (Vulnerable & Outdated Components) line was added to `plan.md:170` post-2026-04-23 audit, replacing the original "9 of 10" gap with full coverage: Stripe SDK pinned (`stripe@^22`) + Renovate/Dependabot + quarterly Stripe API version review per saq-a-attestation.md § 6.2; CI fails on `pnpm audit` HIGH/CRITICAL findings.
 
 **No blocking gaps found**. Ready for Review Gate per Constitution Principle I.
 
-### Optional improvement (non-blocking)
+## Re-audit 2026-04-29 (full code-side walk)
 
-Consider appending one A06 line to `plan.md` § Constitution Check I.OWASP after A05:
-> **A06 Vulnerable & Outdated Components** — Stripe SDK pinned (`stripe@^22`) + Renovate/Dependabot + quarterly Stripe API version review per saq-a-attestation.md § 6.2; CI fails on `pnpm audit` HIGH/CRITICAL findings.
-
-This is a 1-line addition that closes the semantic gap; defer to `/speckit.tasks` if not bundled into next critique remediation.
+Re-audit at HEAD (`5708434` + working-tree edits) confirmed **30 / 30 PASS** with 2 stale-wording fixes applied inline above (CHK030 12→14; CHK021 audit-summary now reflects 10/10 OWASP). See `specs/009-online-payment/reviews/full-re-audit-20260428-190738.md` for per-item evidence trail.

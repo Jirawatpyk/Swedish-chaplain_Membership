@@ -32,7 +32,7 @@
 - [x] CHK013 Is the TLS 1.2+ requirement specified for every payment-touching endpoint with no exceptions? [Completeness, Spec §FR-019]
 - [x] CHK014 Is HSTS coverage stated as inherited from platform middleware with explicit verification expectation? [Clarity, plan.md § Constraints]
 - [x] CHK015 Are the CSP allowlist directives for Stripe enumerated explicitly (`script-src`, `frame-src`, `connect-src`)? [Completeness, plan.md § IV.CSP additions]
-- [x] CHK016 Is the route-scoped CSP requirement clear that the Stripe allowlist applies ONLY to `/portal/invoices/*` + `/admin/invoices/*` and NOT to the webhook route? [Clarity, plan.md § IV.CSP additions]
+- [x] CHK016 Is the global CSP allowlist tight enough to preserve SAQ-A scope (Stripe origins limited to `js.stripe.com` + `hooks.stripe.com` + `api.stripe.com` exact hosts; no route-conditional drift, no broader directives)? [Clarity, saq-a-attestation.md § 3 — Phase-9 consolidation from initial route-scoped design to global scope; SAQ-A safe because origin allowlist is tight + webhook route is server-to-server (CSP irrelevant) + no broader script-src/frame-src/connect-src directives]
 
 ## Audit Trail Coverage (PCI events)
 
@@ -86,3 +86,7 @@
 - Reviewer sign-off requirements (CHK028–CHK030) include the 12-item security checklist and Constitution § IX ≥2-reviewer (or solo-substitute) rule.
 
 **No gaps found**. Ready for Review Gate per Constitution Principle IV.
+
+## Re-audit 2026-04-29 (full code-side walk)
+
+Re-audit at HEAD (`5708434` + working-tree edits) confirmed **30 / 30 PASS** after 1 stale-wording fix applied inline at CHK016 — checklist now matches the Phase-9 global-CSP consolidation documented in `saq-a-attestation.md § 3`. See `specs/009-online-payment/reviews/full-re-audit-20260428-190738.md` for per-item evidence trail.

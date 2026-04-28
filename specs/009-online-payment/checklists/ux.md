@@ -90,3 +90,7 @@
 - F5 acceptance criteria checklist (CHK030) mirrors `docs/ux-standards.md` § 15 with 17 items.
 
 **No gaps found**. Ready for Review Gate per `docs/ux-standards.md` § 17 + Constitution Principle VI.
+
+## Re-audit 2026-04-29 (full code-side walk)
+
+Re-audit at HEAD (`5708434` + working-tree edits) confirmed **30 / 30 PASS** with no drift. Verified pay-sheet directory (10 components incl. `card-form.tsx`, `confirmation-panel.tsx`, `method-tabs.tsx`, `promptpay-panel.tsx`, `pay-sheet-internal.tsx`, `hard-cap-prompt.tsx`), refund-dialog directory (`index.tsx` + `refund-form.tsx` + `typed-phrase-confirm.tsx`), decline-reasons i18n × 3 locales, locale truncation pattern, reduced-motion matrix all intact. See `specs/009-online-payment/reviews/full-re-audit-20260428-190738.md`.

@@ -30,12 +30,12 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
 describe('R2-IG-2 — receipt_pdf_render dispatcher kill-switch', () => {
   let tenant: TestTenant;
-  let user: TestUser;
+  let _user: TestUser;
   // Snapshot the original env value so we can restore in afterEach.
   const originalFlag = process.env['FEATURE_F5_ASYNC_RECEIPT_PDF'];
 
   beforeAll(async () => {
-    user = await createActiveTestUser('admin');
+    _user = await createActiveTestUser('admin');
     tenant = await createTestTenant();
   }, 90_000);
 

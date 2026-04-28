@@ -92,13 +92,25 @@ async function stubInitiateEndpoint(page: Page): Promise<void> {
       body: JSON.stringify({
         payment: { id: 'pay_test_layout' },
         stripe: {
-          clientSecret: 'pi_test_layout_secret_test',
+          // Stripe SDK validates secret length; stub uses ≥24-char tail to satisfy regex.
+          clientSecret: 'pi_3OXTestLayout00000000_secret_test000000000000000000000000',
           publishableKey: 'pk_test_layout',
           paymentIntentId: 'pi_test_layout',
           promptpayQrSvgUrl: null,
         },
         correlationId: 'test-correlation-layout',
       }),
+    });
+  });
+  // PaySheet calls `/cancel` on close (FR-028 cancel-on-close). The stub
+  // payment id `pay_test_layout` does not exist in the DB, so the real
+  // route returns 400. Layout-only viewport assertions don't care about
+  // server state, so short-circuit with 200 to keep the console clean.
+  await page.route('**/api/payments/pay_test_layout/cancel', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, kind: 'canceled-by-user' }),
     });
   });
 }
@@ -200,15 +212,23 @@ test.describe('PaySheet viewport + mobile layout — @payment @a11y @f5', () => 
             preset.height,
           );
         } else {
-          // Right-drawer on ≥ 640 px: capped at 480 px, not full-height.
+          // Right-drawer on ≥ 640 px: capped at 480 px width, full-height.
+          // FR-028h was revised 2026-04-24 (see pay-sheet/index.tsx:401-409):
+          // drawer is now pinned top-to-bottom (100vh) on BOTH mobile and
+          // desktop — Stripe Dashboard / Linear side-panel pattern. The
+          // payment flow transitions between states (card → 3DS →
+          // confirmation) with different natural heights; auto-height
+          // would cause the drawer to jump. Full-viewport height gives a
+          // stable container with a sticky header + scrollable body.
+          // Only width differs between mobile (full) and desktop (≤480 px).
           expect(
             box!.width,
             'desktop drawer width ≤ 480 px (sm:max-w-[480px])',
           ).toBeLessThanOrEqual(480);
           expect(
             box!.height,
-            'desktop drawer height < viewport (sm:h-auto, not full-screen)',
-          ).toBeLessThan(preset.height);
+            'desktop drawer height spans full viewport (revised FR-028h: 100vh on both viewports)',
+          ).toBe(preset.height);
         }
       });
 

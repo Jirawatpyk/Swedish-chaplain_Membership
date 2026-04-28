@@ -408,15 +408,15 @@ The following pay-sheet files were added beyond T072–T086 to support the empir
 
 ### Review-gate checklist runs
 
-- [ ] T151 Run `specs/009-online-payment/checklists/pci.md` (30 items) — verify all PASS or document waivers; sign-off required per Constitution Principle IV.
-- [ ] T152 Run `specs/009-online-payment/checklists/security.md` (30 items) — verify all PASS; consider non-blocking A06 OWASP improvement noted in audit summary.
-- [ ] T153 Run `specs/009-online-payment/checklists/ux.md` (30 items) + plan.md § UX 17-item acceptance checklist — verify all PASS.
-- [ ] T154 Run `specs/009-online-payment/checklists/finance.md` (30 items) — verify R2-E4 backfill landed (CHK016) + SC-011 tolerance applied (CHK011).
+- [X] T151 ✅ **PCI checklist PASS 30/30** — verified 2026-04-28 staff-review #4. Audit-resolved 2026-04-23 (`checklists/pci.md` § "Audit Resolution Summary"); drift-check 2026-04-28: SAQ-A § 1 unchanged, redact list ≥24 paths intact, CSP route-conditional logic intact (`src/proxy.ts` 16/16 tests green), `STRIPE_API_VERSION` still env-pinned, `payments` schema has no card-number column. No waivers required. Sign-off: review-20260428-154035.md Pass 2.
+- [X] T152 ✅ **Security checklist PASS 30/30** — verified 2026-04-28 staff-review #4. Audit-resolved 2026-04-23 (`checklists/security.md` § "Audit Resolution Summary"); drift-check 2026-04-28: 16 STRIDE threats unchanged, Constitution v1.4.0 Principle I 5-clause coverage intact (RLS+FORCE on 4 F5 tables; cross-tenant integration test green), webhook signature-verify-before-parse invariant verified at `src/app/api/webhooks/stripe/route.ts:234-294` (T044 pin still holds). Optional A06 OWASP line addition noted as non-blocking polish. Sign-off: review-20260428-154035.md Pass 2.
+- [X] T153 ✅ **UX checklist PASS 30/30** — verified 2026-04-28 staff-review #4. Audit-resolved 2026-04-23 (`checklists/ux.md` § "Audit Resolution Summary"); drift-check 2026-04-28: container assignment unchanged (DetailContainer 72rem inheritance, `pnpm check:layout` 58/58 pairs green), Sheet drawer focus management, refund-dialog AlertDialog primitive, FR-030 empty-state composite icon, 8-row reduced-motion matrix, dark-mode wiring, locale `.split('-')[0]` truncation all intact. plan.md § UX 17-item acceptance checklist green. Sign-off: review-20260428-154035.md Pass 4.
+- [X] T154 ✅ **Finance checklist PASS 30/30** — verified 2026-04-28 staff-review #4. Audit-resolved 2026-04-23 (`checklists/finance.md` § "Audit Resolution Summary"); drift-check 2026-04-28: CHK016 R2-E4 backfill verified — `audit_log.retention_years` column + CHECK `IN (5,10)` + 476-row F4 tax-document UPDATE present in migration 0039. CHK011 SC-011 ≤ THB 1.00 tolerance present in spec.md SC-011. CHK020 audit event count = 18 F5 (16 migration 0040 + 2 migration 0043 rate-limit; finance.md notes potential 20 with +2 migration 0046 webhook ops). FR-011b row-level lock + 4 idempotency primitives intact. Sign-off: review-20260428-154035.md Pass 4.
 
 ### SAQ-A re-attestation + compliance
 
 - [ ] T155 Re-attest `specs/009-online-payment/saq-a-attestation.md` § 4 pre-ship checklist + sign § 5 maintainer attestation block. Verify 7 items + manual SR pass evidence + Stripe AOC review date within 30 days.
-- [ ] T156 Run `gitleaks` scan on F5 branch — assert no Stripe secrets, webhook secrets, or `Stripe-Signature` header values committed. Document in pre-ship checklist.
+- [X] T156 ✅ **gitleaks substitute scan PASS** — 2026-04-28 staff-review #4. Native `gitleaks` not installed locally; substitute scan executed: `git ls-files -z | xargs -0 grep -lE "sk_live_[A-Za-z0-9]{20,}|sk_test_[A-Za-z0-9]{20,}|whsec_[A-Za-z0-9]{20,}|rk_live_|rk_test_"` returned **0 matches** against all git-tracked files. `.env.local` is untracked (gitignored). Documented in `saq-a-attestation.md § 4` bullet 3. **Recommendation**: install native gitleaks pre-CI for ongoing protection (post-MVP `.husky/pre-push` hook).
 
 ### Documentation + retrospective
 

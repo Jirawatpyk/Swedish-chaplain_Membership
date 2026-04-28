@@ -87,3 +87,7 @@
 - **CHK011** — original assertion "Is SC-011 quantified with a tolerance threshold (≤ THB 1.00 per month per post-critique P8)?" was originally going to FAIL because SC-011 still read "zero THB" (P8 was deferred-to-tasks in Round 2 critique). **Resolved inline 2026-04-23** by editing spec.md SC-011 to include explicit ≤ THB 1.00 tolerance with FX-rounding rationale + postmortem trigger documentation. Now PASS.
 
 **No remaining gaps**. Ready for Review Gate per Constitution Principle VIII + Thai tax compliance.
+
+## Re-audit 2026-04-29 (full code-side walk)
+
+Re-audit at HEAD (`5708434` + working-tree edits) confirmed **30 / 30 PASS** with no drift. Verified retention map per-event (`payment_initiated: 5`, `payment_succeeded: 10`, etc. in `audit-port.ts`), R2-E4 backfill 6 F4 tax-doc types in `migration 0039`, `credit_notes.source_refund_id` FK + partial idx in `migration 0038`, `currency='THB'` CHECK + `amount_satang BIGINT` in `data-model.md`, `issueCreditNoteFromRefund` use-case present, idempotency-key formats `inv-{invoice_id}-attempt-{seq}` + `rfnd-{payment_id}-{seq}` documented in `plan.md § Reliability`. See `specs/009-online-payment/reviews/full-re-audit-20260428-190738.md`.
