@@ -741,7 +741,7 @@ Target: ≤1500 ms p95 for full issue tx; ≤800 ms p95 for PDF render alone.
 **Status**: REVIEW-READY (2026-04-27). Branch `009-online-payment`.
 **Source authority**: `specs/009-online-payment/plan.md` § VII Performance & Observability.
 
-F5 wires distributed traces, 14 OTel metrics, and 9 alert rules across the Stripe
+F5 wires distributed traces, 15 OTel metrics, and 9 alert rules across the Stripe
 payment lifecycle. The full critical-path span tree:
 
 ```
@@ -764,7 +764,7 @@ Every span carries `tenant.id`, `invoice.id`, `payment.id`, `payment.method`,
 `Stripe-Signature` header value is ever attributed** — those are in pino's
 redact list (see § 21.4).
 
-### 21.1 Metrics catalogue (14 metrics)
+### 21.1 Metrics catalogue (15 metrics)
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
@@ -795,7 +795,8 @@ identifier.
 | SLO | Target | Source signal |
 |---|---|---|
 | SLO-F5-001 initiate p95 | < 1.2 s | `payments.initiate.duration_ms` histogram (Stripe RTT included — documented deviation in plan.md) |
-| SLO-F5-002 webhook processing p95 | < 500 ms | webhook span duration |
+| SLO-F5-002a webhook processing p95 (canceled / failed / non-mutating event types) | < 500 ms | webhook span duration filtered by `event_type` |
+| SLO-F5-002b webhook processing p95 (succeeded branch — F4 markPaid + PDF + Blob + outbox) | < 1500 ms (relaxed pre-T166); < 500 ms (post-T166) | webhook span duration filtered by `event_type=payment_intent.succeeded`. **Hard post-ship gate**: T166 (move PDF render off webhook hot path via Vercel Queues) — see `specs/009-online-payment/perf-results-2026-04-27.md` § SLO-F5-002 scope. |
 | SLO-F5-003 PromptPay QR render p95 | < 2 s | client-side observation (Vercel Speed Insights) |
 | SLO-F5-004 settlement → portal confirmation p95 | < 10 s | distributed trace `webhook_receive → portal_revalidate` |
 | SLO-F5-005 payment-success rate | ≥ 95 % over 1 h excluding bank-decline codes | `payments.succeeded.count` / (`payments.succeeded.count` + `payments.failed.count{reason_code != insufficient_funds, card_declined, generic_decline}`) |

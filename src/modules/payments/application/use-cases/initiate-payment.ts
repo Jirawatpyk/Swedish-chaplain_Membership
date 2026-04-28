@@ -218,6 +218,7 @@ export async function initiatePayment(
         paymentsMetrics.initiateDurationMs(
           input.method,
           deps.clock.nowMs() - initiateStartMs,
+          input.tenantId,
         );
         span.end();
       }

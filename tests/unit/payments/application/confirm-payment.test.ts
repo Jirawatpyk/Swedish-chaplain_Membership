@@ -123,7 +123,12 @@ describe('confirmPayment (T057)', () => {
     expect(result.value.kind).toBe('processed');
     expect(deps.invoicingBridge.markPaidFromProcessor).toHaveBeenCalledTimes(1);
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
-    expect(auditCalls.some((c) => c[1].eventType === 'payment_succeeded')).toBe(true);
+    const succeededCall = auditCalls.find((c) => c[1].eventType === 'payment_succeeded');
+    expect(succeededCall).toBeDefined();
+    // Staff-review R2 R005 (2026-04-28): pin retention so a regression on
+    // `F5_AUDIT_RETENTION_YEARS['payment_succeeded']` (10y — tax-document
+    // adjacent per Thai RD §87/3) does not pass green silently at unit layer.
+    expect(succeededCall?.[1].retentionYears).toBe(10);
   });
 
   // R2 CRIT-1 (2026-04-27): pins audit-chain ordering across F5+F4 for

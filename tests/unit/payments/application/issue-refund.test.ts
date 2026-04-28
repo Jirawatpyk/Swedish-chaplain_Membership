@@ -354,9 +354,17 @@ describe('issueRefund (T108) — happy paths', () => {
     const stripeCall = asMock(deps.processorGateway.createRefund).mock.calls[0]?.[0] as { idempotencyKey: string };
     expect(stripeCall.idempotencyKey).toBe(`rfnd-${PAYMENT_ID}-1`);
     // refund_initiated + refund_succeeded audit emitted.
-    const eventTypes = asMock(deps.audit.emit).mock.calls.map((c) => c[1].eventType);
+    const auditCalls = asMock(deps.audit.emit).mock.calls;
+    const eventTypes = auditCalls.map((c) => c[1].eventType);
     expect(eventTypes).toContain('refund_initiated');
     expect(eventTypes).toContain('refund_succeeded');
+    // Staff-review R2 R005 (2026-04-28): both refund events are
+    // tax-document-adjacent (each triggers F4 credit-note issuance) →
+    // 10y retention per F5_AUDIT_RETENTION_YEARS.
+    const initiated = auditCalls.find((c) => c[1].eventType === 'refund_initiated');
+    const succeeded = auditCalls.find((c) => c[1].eventType === 'refund_succeeded');
+    expect(initiated?.[1].retentionYears).toBe(10);
+    expect(succeeded?.[1].retentionYears).toBe(10);
   });
 
   it('AS2 — PromptPay refund happy path uses same flow as card', async () => {

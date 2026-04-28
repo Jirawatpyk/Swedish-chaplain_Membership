@@ -4,6 +4,7 @@
  * Coverage policy: 100% branch (security-critical recovery path).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as fc from 'fast-check';
 import { sweepStalePendingRefunds } from '@/modules/payments';
 import type {
   SweepStalePendingRefundsDeps,
@@ -212,6 +213,27 @@ describe('sweepStalePendingRefunds (T130a)', () => {
       expect(r.error.cause).toMatch(/olderThanHours/);
     }
     expect(asMock(deps.refundsRepo.listPendingOlderThan)).not.toHaveBeenCalled();
+  });
+
+  // Staff-review R2 R019 (2026-04-28): property-based probe on the full
+  // negative + zero domain so a future relaxation (e.g. `< 0` instead of
+  // `<= 0`) cannot land silently. Excludes Infinity / NaN since the use-case
+  // narrows to the `number ≤ 0` case at the boundary; explicit positive-but-
+  // unsafe edge cases stay covered by the existing `multi-row` test.
+  it('property: every olderThanHours ≤ 0 → sweep_failed (no listPending call)', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ max: 0 }), async (hours) => {
+        const deps = makeDeps();
+        const r = await sweepStalePendingRefunds(deps, {
+          ...baseInput,
+          olderThanHours: hours,
+        });
+        expect(r.ok).toBe(false);
+        if (!r.ok) expect(r.error.code).toBe('sweep_failed');
+        expect(asMock(deps.refundsRepo.listPendingOlderThan)).not.toHaveBeenCalled();
+      }),
+      { numRuns: 30 },
+    );
   });
 
   it('outer tx throw → sweep_failed with cause (constructor.name only — R3 H3-3)', async () => {

@@ -66,13 +66,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // typed builder is more verbose for one-off cross-tenant aggregates.
   let rows: StaleRow[];
   try {
-    const result = await db.execute<StaleRow>(sql`
-      SELECT tenant_id, COUNT(*)::int AS count
-      FROM payments
-      WHERE status = 'pending'
-        AND initiated_at < now() - (${STALE_HOURS} || ' hours')::interval
-      GROUP BY tenant_id
-    `);
+    // Staff-review R2 R017 (2026-04-28): cap query wall-clock at 10s so a
+    // pathological full-table GROUP BY (tenant count growth) fails fast
+    // rather than holding a Vercel function slot until the platform's
+    // 30s wall-clock limit. SET LOCAL is tx-scoped — wrapping the
+    // execute in a transaction so the timeout binds to this query only.
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
+      return await tx.execute<StaleRow>(sql`
+        SELECT tenant_id, COUNT(*)::int AS count
+        FROM payments
+        WHERE status = 'pending'
+          AND initiated_at < now() - (${STALE_HOURS} || ' hours')::interval
+        GROUP BY tenant_id
+      `);
+    });
     rows = Array.from(result);
   } catch (e) {
     logger.error(

@@ -29,7 +29,6 @@ import type { HandleCancelEventDeps } from '../application/use-cases/handle-canc
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
 import type { LoadInvoicePaymentActivityDeps } from '../application/use-cases/load-invoice-payment-activity';
 import type { IssueRefundDeps } from '../application/use-cases/issue-refund';
-import type { RefundsRepo } from '../application/ports/refunds-repo';
 
 import { systemClock } from '../application/ports/clock-port';
 import { asPaymentId, type PaymentId } from '../domain/payment';
@@ -49,39 +48,6 @@ import { invoicingBridge } from './invoicing-bridge';
 export { stripeWebhookVerifier };
 import { f5AuditAdapter } from './audit/drizzle-payments-audit';
 import { paymentsLogger } from './logger/payments-logger';
-
-// ---------------------------------------------------------------------------
-// RefundsRepo — RESIDUAL STUB.
-//
-// T109 wired the real `DrizzleRefundsRepo` and `makeIssueRefundDeps`
-// (line ~256 below) consumes it. This stub is now retained ONLY for
-// `processWebhookEvent`'s `charge.refunded` branch, which has not
-// yet been routed end-to-end through the real repo (separate F5
-// webhook gap, tracked outside Phase 6).
-//
-// A production `charge.refunded` event reaching this stub throws a
-// loud, well-marked error (logged → Stripe webhook retry kicks in
-// on its own schedule), which is the intended fail-loud behaviour
-// until the webhook branch is migrated.
-// ---------------------------------------------------------------------------
-function makeUnimplementedRefundsRepo(): RefundsRepo {
-  const unimplemented = (method: string): never => {
-    throw new Error(
-      `[F5] RefundsRepo.${method} is reachable only via ` +
-        `processWebhookEvent's charge.refunded branch (not yet wired to ` +
-        `the real DrizzleRefundsRepo — separate F5 webhook gap). ` +
-        `Admin-initiated refund flow already uses the real adapter via ` +
-        `makeIssueRefundDeps.`,
-    );
-  };
-  return {
-    insert: () => unimplemented('insert'),
-    updateStatus: () => unimplemented('updateStatus'),
-    findByProcessorRefundId: () => unimplemented('findByProcessorRefundId'),
-    getRefundContextForUpdate: () => unimplemented('getRefundContextForUpdate'),
-    listPendingOlderThan: () => unimplemented('listPendingOlderThan'),
-  };
-}
 
 /**
  * Generate a fresh F5 Refund ID of the form `rfnd_<hex>` (mirrors
@@ -246,12 +212,10 @@ export function makeLoadInvoicePaymentActivityDeps(
 // ---------------------------------------------------------------------------
 // T108 (Phase 6) — issueRefund composition.
 //
-// T109 wired the real `makeDrizzleRefundsRepo`; the
-// `makeUnimplementedRefundsRepo` stub is retained ONLY for paths
-// that haven't been routed yet (e.g. `processWebhookEvent`'s
-// charge.refunded branch — F5 webhook gap, separate task) so a
-// production crash on those paths is a loud, well-marked error
-// instead of a silent NPE.
+// CR-3 (review 2026-04-27) wired the real `makeDrizzleRefundsRepo` into
+// `makeProcessWebhookEventDeps` for the `charge.refunded` branch, closing
+// the last residual stub path. Staff-review R2 R007 (2026-04-28) deleted
+// the legacy `makeUnimplementedRefundsRepo` stub.
 // ---------------------------------------------------------------------------
 export function makeIssueRefundDeps(tenantId: string): IssueRefundDeps {
   return {
@@ -297,9 +261,8 @@ export function makeSweepStalePendingRefundsDeps(
 }
 
 // --- Internal test hooks (NOT re-exported from the public barrel) ----------
-/** @internal — test-only: unit tests for the DI module assert this stub is in place. */
+/** @internal — test-only: ID generators exposed for unit-test injection. */
 export const __internal = {
-  makeUnimplementedRefundsRepo,
   generatePaymentId,
   generateRefundId,
 };

@@ -197,12 +197,24 @@ describe('initiatePayment (T055)', () => {
     expect(deps.audit.emit).toHaveBeenCalledTimes(1);
     const auditCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(auditCall?.[1].eventType).toBe('payment_initiated');
+    // Staff-review R2 R005 (2026-04-28): pin retentionYears at the unit
+    // boundary so a regression on `F5_AUDIT_RETENTION_YEARS['payment_initiated']`
+    // (Thai RD §87/3 + GDPR Art.6(1)(c) — 10y for tax-document-adjacent
+    // events) does not pass green silently.
+    expect(auditCall?.[1].retentionYears).toBe(10);
+    // Staff-review R2 R014 (2026-04-28): pin idempotency-key shape
+    // `inv-{invoiceId}-attempt-{n}` at the unit layer; integration mock
+    // already asserts the exact concrete value.
+    const stripeCall = (deps.processorGateway.createPaymentIntent as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(stripeCall?.[0]?.idempotencyKey).toMatch(/^inv-.+-attempt-\d+$/);
     // GAP-2: A-07 metric MUST be emitted on the success path with
     // the bounded `method` label.
     expect(metricsMocks.initiateDurationMs).toHaveBeenCalledTimes(1);
     expect(metricsMocks.initiateDurationMs).toHaveBeenCalledWith(
       'card',
       expect.any(Number),
+      // Staff-review R2 R018 (2026-04-28): tenant label now threaded.
+      expect.any(String),
     );
   });
 
@@ -217,6 +229,8 @@ describe('initiatePayment (T055)', () => {
     expect(metricsMocks.initiateDurationMs).toHaveBeenCalledWith(
       'card',
       expect.any(Number),
+      // Staff-review R2 R018 (2026-04-28): tenant label now threaded.
+      expect.any(String),
     );
   });
 

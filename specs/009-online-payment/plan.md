@@ -686,3 +686,87 @@ The following deviations survived the Constitution Check and are justified below
 | **F5 consumes F4 via F4 barrel extensions landing on F5's branch** — Principle III normally keeps modules additively extended on their own branches | Clarification: the dependency is unidirectional `payments → invoicing`. F4 does NOT depend on F5. But the three new exports (`markPaidFromProcessor`, `issueCreditNoteFromRefund`, `getInvoiceForPayment`) land on F5's branch — they do not exist in the shipped F4 PR #12. Same pattern as F4 extending F3's `@/modules/members` barrel with `getMemberIdentityForInvoicing` inside F4's branch. | Re-open F4 to pre-export F5's needs: ships unused code in F4; creates hindsight bias ("F5 needs what, exactly?") in a merged feature. Best to land the exports alongside the one module that consumes them. |
 | **Solo-maintainer substitute for Review Gate** — Principle IX default is ≥2 human reviewers with one signing the security checklist | Applies only if a second human reviewer is unavailable for this PR. The substitute stack is mandated above (Principle IX bullet): 5-stack automated review (`/speckit.review`, `/speckit.staff-review`, `pci-saqa-guardian`, `security-threat-modeler`, and `/speckit.verify` post-remediation). Documented in Complexity Tracking per Principle IX v1.3.0 solo-maintainer clause. | Block the PR: project is solo-maintained by design; blocking would pause the phases-plan indefinitely. |
 | **Migration numbering +1 shift (0032→0033 … 0038→0040 +new 0041)** — plan originally reserved `drizzle/migrations/0032_…` onward for F5 | Migration 0032 was taken by an F3 hotfix (`0032_audit_contact_linked_to_user.sql`) landed between plan.md draft and F5 Phase 2 start. All F5 migrations renumbered +1 to avoid collision. New migration 0041 (`seed_system_actors.sql`) added post-review to anchor the `uuid REFERENCES users(id)` FK for webhook-initiated writes. Zero-behavior-change renumber — file contents match data-model.md intent; only tags in `meta/_journal.json` differ from plan prose. | Amend 0032 slot by forcing F5 migrations to share a number with an applied F3 migration: breaks drizzle-kit invariants + blocks migrate on envs where F3 already ran. |
+| **T166 — Async receipt PDF via `notifications_outbox` extension instead of Vercel Queues** — Principle X (Simplicity) prefers platform-native primitives when available; Vercel Queues is GA per session knowledge update | F4 already operates a `notifications_outbox` + cron dispatcher (`docs/runbooks/outbox-dispatch.md`) for invoice email. Adding a `receipt_pdf_render` notification type reuses retry semantics, observability, and the kill-switch surface that ops already knows. Webhook p95 hits the < 500 ms target without onboarding a second async-job system mid-feature. The decision is reversible — Vercel Queues stays a future migration target if F5 volume justifies sub-second worker latency over the cron's 60s polling cycle. | Vercel Queues: requires Vercel CLI install + new consumer function on Fluid Compute + new observability surface + new runbook. Earns ~30-50s receipt-arrival improvement (cron polling vs queue-pop) at the cost of doubling the async-job mental model during F5 stabilization. Not worth it for MVP volume. Re-evaluate at F11 SaaS Billing scale-up. |
+
+---
+
+## Phase 9 sub-plan — T166 Async Receipt PDF (post-ship polish)
+
+**Status**: PLANNED (logged in `tasks.md` Phase 9 Optional improvements; not yet implemented).
+**Architect approval**: chamber-os-architect agent design 2026-04-28 — recorded in agent-memory `project_t166_async_receipt_pdf.md`. Decision: Option B (`notifications_outbox` extension) over Option A (Vercel Queues). See Complexity Tracking row above for the Simplicity-deviation rationale.
+
+### Problem
+
+Webhook `payment_intent.succeeded` p95 observed ~5–15 s in dev because `record-payment.ts` H+I steps render the F4 receipt PDF + upload to Vercel Blob inside the `markPaid` `withTx`. Plan's § Performance Goals target is **< 500 ms**. The slow path forced the optimistic-UI overlay (`_components/optimistic-paid.ts` + `optimistic-paid-overlay.tsx`, ~250 LOC) to mask the gap on the member-facing surface.
+
+### Goal
+
+- Webhook p95 ≤ 1–3 s (PDF bytes leave the synchronous tx; sequential numbering stays atomic with the `paid` flip per Thai Revenue Code §86/§87).
+- Receipt eventually rendered + emailed within ≤ 60 s of webhook ack (governed by F4 outbox cron).
+- Optimistic-UI layer becomes redundant once production p95 < 1 s for 7 consecutive days → delete in follow-up T167 PR.
+- No regression to tax-document compliance, audit trail completeness, or PCI SAQ-A scope.
+
+### Hard constraints (preserved)
+
+1. **Sequential numbering atomicity** — receipt-document sequence allocation MUST commit atomically with `invoices.status='paid'`. Allocator stays inside the webhook tx behind the existing advisory lock (§87 no-gaps invariant).
+2. **DB invariant relaxation** — current CHECK `invoices_paid_has_receipt_snapshot` moves from "paid implies blob_key+sha256+version" to "paid implies receipt_pdf_status set".
+3. **PCI SAQ-A** (Principle IV NON-NEGOTIABLE) — render path touches invoice + member identity snapshots only; no card data on the path. Unchanged.
+4. **Tenant isolation** (Principle I) — async worker MUST execute under `runInTenant(payload.tenantId, …)`. Cross-tenant integration test added (Review-Gate blocker).
+5. **TDD** (Principle II) — every new use-case + worker handler authored test-first.
+6. **Receipt email arrival ≤ 1 minute (US6 acceptance)** — outbox dispatcher gates the `invoice_paid` email row on `receipt_pdf_status='rendered'` via a new `dependsOnReceiptPdf` flag.
+7. **Audit chain ordering** — `payment_succeeded` → `invoice_paid` ordering preserved. New `receipt_rendered` audit event fires from the worker carrying the sha256.
+
+### Implementation phases (10 sub-tasks)
+
+| # | Task | Complexity |
+|---|------|------------|
+| T166-01 | Migration 0050 — relax CHECK + add `receipt_pdf_status` enum + retry/error columns | M |
+| T166-02 | Split `record-payment.ts` H+I — commit `paid` with `pending` + enqueue `receipt_pdf_render` outbox row | M |
+| T166-03 | NEW `application/use-cases/render-receipt-pdf.ts` — idempotent guard + blob upload + audit emit | M |
+| T166-04 | Extend outbox dispatcher with `receipt_pdf_render` handler under `runInTenant` | S |
+| T166-05 | Email dispatcher gating — `dependsOnReceiptPdf=true` flag | S |
+| T166-06 | Portal download endpoint — handle `pending` with `425 Too Early` + Retry-After | S |
+| T166-07 | New audit event type `receipt_rendered` + retention 10y + migration 0051 | S |
+| T166-08 | Reconciliation cron `*/5 * * * *` for `failed` rows — 3-attempt budget | S |
+| T166-09 | Tests — webhook latency benchmark + retry behaviour + cross-tenant isolation | L |
+| T166-10 | Kill-switch `FEATURE_F5_ASYNC_RECEIPT_PDF` — flip back to inline if needed | S |
+
+**Critical path**: T166-01 → T166-02 → T166-03 (~half-day blocker chain). Remaining phases parallelizable. Total estimate: 1.5–2 working days.
+
+### Constitution Check (T166-specific)
+
+| Principle | Compliance | Notes |
+|-----------|------------|-------|
+| I — Tenant isolation | ✅ via `runInTenant(payload.tenantId)` + cross-tenant integration test | Review-Gate blocker preserved |
+| II — TDD | ✅ Each use-case + handler authored test-first | Happy + 2 failure modes per surface |
+| III — Clean Architecture | ✅ Use-case in application/; outbox handler in infrastructure/ | No cross-module reach-in |
+| IV — PCI SAQ-A | ✅ No card data on the path | Unchanged scope |
+| V — i18n | ✅ "Receipt being prepared…" in EN/TH/SV | 1 new key |
+| VI — Inclusive UX | ✅ Portal download `pending` → 425 + `aria-busy` until rendered | Polite live region |
+| VII — Perf & Observability | ✅ webhook p95 < 1 s + 3 new metrics | 1 new alert (permanent-fail > 0) |
+| VIII — Reliability | ✅ Reconciliation cron + retry budget + idempotent guard + DB CHECK | Eventual consistency proven |
+| IX — Code Quality | ✅ Net delta after T167 deletion: −250 LOC overlay + ~150 LOC worker = −100 LOC overall | No solo-maintainer substitute change |
+| X — Simplicity | ⚠️ Documented deviation — see Complexity Tracking row above | Approved; reversible |
+
+### Risk register
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| PDF render fails permanently → orphan `paid` row with no PDF | Low | High (tax compliance) | Reconciliation cron + 3-retry budget + page on `pdf_render_permanently_failed` + admin "regenerate receipt" CTA |
+| Email fired before PDF ready | Medium | Medium | `dependsOnReceiptPdf` flag enforced at dispatch time |
+| Async race vs Thai §86/§87 sequential numbering | None | Critical | Sequential allocation stays in webhook tx; only bytes go async |
+| Worker can't access tenant data (RLS bypass) | None | High | `runInTenant(payload.tenantId)`; cross-tenant integration test |
+| Migration 0050 breaks existing `paid` rows w/ NULL receipt_pdf | None | Critical | Backfill: `UPDATE invoices SET receipt_pdf_status='rendered' WHERE status='paid' AND receipt_pdf_blob_key IS NOT NULL;` runs in same migration |
+| Kill-switch needed if production breaks | Medium | Medium | `FEATURE_F5_ASYNC_RECEIPT_PDF=false` reverts to inline; kept 2 releases |
+| Outbox cron polling latency > 60 s | Medium | Low | If unacceptable, T167 follow-up promotes to Vercel Queues |
+
+### Decision: optimistic-UI overlay deletion timing
+
+**Defer to T167 follow-up PR.** Rationale:
+- Production-prove webhook p95 < 1 s for 7 consecutive days before deleting the safety-net layer.
+- Deleting in the same PR couples a perf migration with a UX simplification; rollback complexity multiplies.
+- Optimistic UI is well-tested (109 unit + 6 store-unit + 3 integration tests) — keeping it during the metric-confirmation window is low cost.
+
+### Phase artifacts (deferred)
+
+This sub-plan does NOT yet generate `research.md`, `data-model.md`, or `contracts/` updates because T166 reuses existing F4 outbox infrastructure + extends in-place schema. The `/speckit.tasks` step that follows will materialize a TDD-ordered T166-01 … T166-10 task list inside `tasks.md` Phase 9 (alongside the existing umbrella T166 entry, which the new sub-tasks supersede with phase-level granularity).

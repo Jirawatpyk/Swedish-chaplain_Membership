@@ -334,6 +334,17 @@ describe('CR-5 cross-tenant probe — payment_cross_tenant_probe audit emission 
     // (would let an actor enumerate cross-tenant tenant slugs via audit
     // exports). Naming was clarified to `target_id` for this reason.
     expect(payload.victim_tenant_id).toBeUndefined();
+    // Staff-review R2 R021 (2026-04-28): cross-tenant probe is a forensic
+    // record — pin retention_years explicitly per
+    // `F5_AUDIT_RETENTION_YEARS['payment_cross_tenant_probe'] = 5`. A
+    // future change to the retention map must visibly break this test.
+    // Probe row read via raw SQL since the Drizzle audit_log model does
+    // not currently surface the `retention_years` column on the SELECT.
+    const retentionRow = await db.execute<{ retention_years: number }>(sql`
+      SELECT retention_years FROM audit_log WHERE id = ${probeRow.id}
+    `);
+    const [first] = Array.from(retentionRow);
+    expect(first?.retention_years).toBe(5);
 
     // (3) RLS: the probe audit row is INVISIBLE to tenant A.
     const probeRowsA = await runInTenant(tenantA.ctx, (tx) =>

@@ -1,8 +1,8 @@
 # F5 — PCI DSS SAQ-A Self-Assessment Attestation
 
 **Branch**: `009-online-payment`
-**Date**: 2026-04-23 (initial draft) — re-attest before each production deploy that touches F5 surfaces
-**Standard**: PCI DSS SAQ A v4.0 (the most current version as of 2026-04-23 — confirm against `https://www.pcisecuritystandards.org/document_library/` at attestation time)
+**Date**: 2026-04-28 (refreshed for Phase 9 staff-review R2 — supersedes 2026-04-23 initial draft) — re-attest before each production deploy that touches F5 surfaces
+**Standard**: PCI DSS SAQ A v4.0 (the most current version as of 2026-04-28 — confirm against `https://www.pcisecuritystandards.org/document_library/` at attestation time)
 **Scope**: SweCham (and any future Chamber-OS tenant) using F5 Online Payment via Stripe Elements + Stripe-hosted PromptPay
 
 ---
@@ -41,9 +41,17 @@ If any of the above is "No", **SAQ-A does NOT apply** and we MUST escalate to SA
 - **Defense-in-depth**: PAN regex pattern matched + redacted before log emission
 
 ### CSP
-- **File**: `src/app/middleware.ts`
-- **Allowlist**: `script-src 'self' https://js.stripe.com`; `frame-src https://js.stripe.com https://hooks.stripe.com`; `connect-src 'self' https://api.stripe.com`
-- **Scope**: applied only on `/portal/invoices/*` + `/admin/invoices/*` routes; webhook + other routes do NOT include the Stripe allowlist
+- **File**: `src/proxy.ts` (function `buildCsp(isDevelopment, nonce)` + `generateNonce()`; applied globally via `applySecurityHeaders` in `proxyHandler`)
+- **Production allowlist** (post staff-review R2 R023 — nonce-based CSP Level 3):
+  - `script-src 'self' 'nonce-{per-request-16-byte-base64}' 'strict-dynamic' 'unsafe-inline' https://js.stripe.com`
+  - `frame-src 'self' https://js.stripe.com https://hooks.stripe.com`
+  - `connect-src 'self' https: https://api.stripe.com`
+  - The per-request nonce is generated via `crypto.getRandomValues(16 bytes)` → base64 in `proxy.ts:generateNonce()` and forwarded to server components via the `x-nonce` request header (Next.js 16 picks this up automatically for its hydration bootstrap scripts).
+  - **CSP Level 3 contract**: when both `'nonce-*'` and `'unsafe-inline'` are declared, modern browsers (Chrome 59+, FF 49+, Safari 15.4+) ignore `'unsafe-inline'` per W3C CSP3 § 6.7.2. The retained `'unsafe-inline'` is a legacy-browser fallback only — PCI DSS 6.4.1 best practice is met for every browser shipped in the past 5 years.
+  - Test contract: `tests/unit/proxy/csp-stripe.test.ts` § "R023 nonce-based CSP (production)" pins the production shape.
+- **Development allowlist**: `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com` — `'unsafe-eval'` is kept dev-only because React DevTools + Turbopack HMR + the error-overlay all require it. Production React bundles never call `eval()`.
+- **Scope**: applied **globally** to every response via `applySecurityHeaders(response, nonce)` — Stripe allowlist entries are tight (specific `https://js.stripe.com` / `https://hooks.stripe.com` / `https://api.stripe.com` hosts only) so a global CSP is safe for SAQ-A. Webhook endpoint (`/api/webhooks/stripe`) is server-to-server (no browser script execution) — CSP is irrelevant there but the global header is harmless. **Note**: original design (initial 2026-04-23 draft) routed CSP through `src/app/middleware.ts` with per-route scoping; implementation consolidated to `src/proxy.ts` global scope during Phase 9 to simplify the security surface — no SAQ-A scope change.
+- **Hardening track**: ✅ Closed by staff-review R2 R023 (2026-04-28) via nonce + strict-dynamic. Future hardening (CSP reporting endpoint, drop the legacy `'unsafe-inline'` fallback once browser-share telemetry confirms < 0.1 % of clients lack CSP3 support) tracked in `post-ship-tasks.md`.
 
 ---
 

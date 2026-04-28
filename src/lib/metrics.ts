@@ -474,12 +474,21 @@ export const paymentsMetrics = {
    * p95 < 1500 ms — alert if exceeded for 5 min. Labelled by `method`
    * so card vs PromptPay can be analysed separately.
    */
-  initiateDurationMs(method: 'card' | 'promptpay', ms: number): void {
+  initiateDurationMs(
+    method: 'card' | 'promptpay',
+    ms: number,
+    tenantId?: string,
+  ): void {
+    // Staff-review R2 R018 (2026-04-28): added optional `tenantId` label
+    // so cross-tenant performance attribution is possible per the
+    // catalogue spec at docs/observability.md § 21.1. Tenant cardinality
+    // is bounded (≤ a few hundred over project lifetime — already
+    // documented as safe in § 21.1 cardinality note).
     histogram(
       'payments_initiate_duration_ms',
       'POST /api/payments/initiate end-to-end latency, p95 target 1500ms',
       'ms',
-    ).record(ms, { method });
+    ).record(ms, tenantId !== undefined ? { method, tenant: tenantId } : { method });
   },
 
   /**

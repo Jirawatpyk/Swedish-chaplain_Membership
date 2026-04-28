@@ -484,27 +484,48 @@ async function confirmPaymentBody(
     // (audit 2026-04-25 finding #8). InvoicingBridgePort.markPaidFrom
     // Processor.settlementDate is contractually `YYYY-MM-DD Asia/Bangkok`.
     const settlementDate = bangkokLocalDate(completedAt.toISOString());
-    const bridgeResult = await deps.invoicingBridge.markPaidFromProcessor(
+    // Staff-review R2 R010 (2026-04-28): emit the trace's terminal
+    // `receipt_email_enqueued` hop as a named child span. F4's
+    // `markPaidFromProcessor` is the call that transitively enqueues the
+    // outbox row — wrapping it gives ops a measurable timing for the
+    // final hop of `portal_click → ... → f4_markpaid → receipt_email_enqueued`.
+    const bridgeResult = await paymentsTracer().startActiveSpan(
+      'receipt_email_enqueued',
       {
-        tenantId: input.tenantId,
-        invoiceId: payment.invoiceId,
-        requestId: input.requestId,
-        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-        method: payment.method === 'card' ? 'stripe_card' : 'stripe_promptpay',
-        paymentIntentId: input.paymentIntentId,
-        chargeId: intent.latestChargeId,
-        settlementDate,
-        // T128a: tenant override of receipt-on-payment auto-email.
-        // Default-on (column DEFAULT true). When the admin disables
-        // it, F4 still flips the invoice + writes audit + renders
-        // PDF — only the dispatcher enqueue is skipped. See spec.md
-        // § US3 auto-email toggle + FR-015 ("MAY suppress").
-        // M-3 (review 2026-04-27): replaced hardcoded line number
-        // with section reference so the comment doesn't rot when the
-        // spec is reformatted.
-        suppressReceiptEmail: !settings.autoEmailOnPayment,
+        attributes: {
+          'payments.tenant_id': input.tenantId,
+          'payments.payment_intent_id': input.paymentIntentId,
+          'payments.suppress_receipt_email': !settings.autoEmailOnPayment,
+        },
       },
-      tx,
+      async (childSpan) => {
+        try {
+          return await deps.invoicingBridge.markPaidFromProcessor(
+            {
+              tenantId: input.tenantId,
+              invoiceId: payment.invoiceId,
+              requestId: input.requestId,
+              actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+              method: payment.method === 'card' ? 'stripe_card' : 'stripe_promptpay',
+              paymentIntentId: input.paymentIntentId,
+              chargeId: intent.latestChargeId,
+              settlementDate,
+              // T128a: tenant override of receipt-on-payment auto-email.
+              // Default-on (column DEFAULT true). When the admin disables
+              // it, F4 still flips the invoice + writes audit + renders
+              // PDF — only the dispatcher enqueue is skipped. See spec.md
+              // § US3 auto-email toggle + FR-015 ("MAY suppress").
+              // M-3 (review 2026-04-27): replaced hardcoded line number
+              // with section reference so the comment doesn't rot when the
+              // spec is reformatted.
+              suppressReceiptEmail: !settings.autoEmailOnPayment,
+            },
+            tx,
+          );
+        } finally {
+          childSpan.end();
+        }
+      },
     );
     if (!bridgeResult.ok) {
       return err<ConfirmPaymentError>({

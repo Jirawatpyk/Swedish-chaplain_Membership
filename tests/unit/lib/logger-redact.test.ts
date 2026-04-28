@@ -126,6 +126,31 @@ describe('F5 logger path-based redaction (T032)', () => {
     expect(out).not.toContain('sk_live_TOP_LEVEL_FORBIDDEN_DETAIL');
     expect(out).toContain('[REDACTED]');
   });
+
+  // Staff-review R2 R024 (2026-04-28): negative assertion that a
+  // synthetic Stripe webhook payload — the most common shape that
+  // could leak `client_secret` or raw event body via stripe-webhook
+  // logging — never surfaces those fields in a log line. Defense-in-
+  // depth on Constitution Principle IV (NON-NEGOTIABLE).
+  it('redacts Stripe webhook synthetic payload — clientSecret + rawBody never appear', () => {
+    const synthetic = {
+      requestId: 'req-r024',
+      stripeEventId: 'evt_test_r024',
+      eventType: 'payment_intent.succeeded',
+      // Fields that MUST be redacted away from any stripe-webhook
+      // log line per `specs/009-online-payment/saq-a-attestation.md § 2`.
+      clientSecret: 'pi_test_r024_secret_HIGHLY_SENSITIVE',
+      client_secret: 'pi_test_r024_secret_HIGHLY_SENSITIVE_snake',
+      rawBody: '{"object":"event","data":{"object":{"object":"payment_intent","id":"pi_test_r024"}}}',
+      raw_body: '{"object":"event","duplicate":true}',
+      'Stripe-Signature': 't=1714348800,v1=ABCDEF1234567890',
+    };
+    const out = captureLog(synthetic);
+    expect(out).not.toContain('HIGHLY_SENSITIVE');
+    expect(out).not.toContain('"object":"event"');
+    expect(out).not.toContain('t=1714348800');
+    expect(out).toContain('[REDACTED]');
+  });
 });
 
 describe('F5 PAN_REGEX value-pattern (T032 defence-in-depth, post-PCI-guardian Findings 1+R1)', () => {

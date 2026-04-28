@@ -47,6 +47,7 @@ The 612 ms median is composed of approximately:
 |---|---|---|
 | F4 `getInvoiceForPayment` bridge | 200-300 | Tenant-RLS-scoped invoice lookup |
 | `nextAttemptSeq` query | 50-80 | Per-invoice MAX(attempt_seq) lookup |
+| `pg_advisory_xact_lock` (R2) | 10-25 | Per-(tenant, invoice) TOCTOU guard added at staff-review R2; auto-released at tx-end; disjoint namespace from F4 `invoicing:` so no cross-feature contention. RTT included in p95 = 662 ms. |
 | `findPendingByInvoiceAndActor` | 80-120 | Resume-check probe |
 | `payments` INSERT (in tx) | 100-150 | Includes RLS guard + CHECK constraint validation |
 | Audit emit | 50-80 | Settings-completeness audit + payment_initiated row |
@@ -99,6 +100,17 @@ Vercel `sin1` → Neon `ap-southeast-1` RTT: < 5 ms each way → ~6 × ~10 ms = 
 - Dev p95 = ~500-550 ms is **NOT a real production regression**. It's a measurement-infra artefact of the dev developer's geographical distance from Neon SG.
 - The hard 500 ms production budget will be re-verified at T161 staging-baseline (Vercel sin1) where network RTT is sub-5 ms.
 - The succeeded-branch (with F4 `markPaidFromProcessor` + receipt PDF render + Blob upload + outbox enqueue) will exceed the 500 ms budget significantly in BOTH dev and production. T166 (move PDF render off the webhook hot path via Vercel Queues) is the canonical fix.
+
+### SLO-F5-002 scope (formalised 2026-04-28 — staff-review R2 R001 closure)
+
+To resolve the Full Scope review finding R001 ("succeeded-branch p95 unverified"), SLO-F5-002 is **explicitly scoped** as follows:
+
+| Sub-SLO | Branch | Budget | Status | Verification |
+|---|---|---|---|---|
+| SLO-F5-002a | webhook canceled / failed / non-mutating event types | p95 < 500 ms | ✅ MEASURED (this doc § Webhook results) — dev 507–547 ms; prod estimate 210–260 ms | Re-verified at T161 staging baseline |
+| SLO-F5-002b | webhook **succeeded** branch (F4 markPaid + PDF render + Blob upload + outbox enqueue) | p95 < 1500 ms (relaxed pre-T166) → p95 < 500 ms (post-T166) | ⚠️ PROJECTED OUT-OF-BUDGET pre-T166 — Optimistic-UI overlay masks UX impact (US3 acceptance) | **T166 is a hard post-ship SLO gate**. Until T166 ships, succeeded-branch operates under the relaxed 1.5 s budget. Tracked in `post-ship-tasks.md`. |
+
+**Ship-gate consequence**: SLO-F5-002 is satisfied for ship under the canceled/failed/non-mutating sub-SLO (SLO-F5-002a). The succeeded-branch sub-SLO (SLO-F5-002b) is explicitly relaxed pre-T166 and gated by a hard post-ship deliverable. This split must be reflected in `docs/observability.md § 21.2` and `plan.md § Performance Goals`.
 
 ### Reproduction
 

@@ -116,17 +116,40 @@ describe('T131 out-of-band refund detection (FR-011a)', () => {
   });
 
   it('(e) live invariant: any out_of_band_refund_detected audit row has retention=10 and no F4 CN at the same request_id', async () => {
-    // Sample any existing OOB audit rows in the DB. If none exist (clean
-    // dev fixture), the test is vacuous-true. The point is to lock down
-    // the cross-table invariant: an OOB audit MUST NOT coincide with an
-    // F4 credit_note row at the same correlation context.
-    const auditRows = await db.execute<AuditRow>(sql`
-      SELECT id::text AS id, request_id, retention_years, payload
-      FROM audit_log
-      WHERE event_type = 'out_of_band_refund_detected'
-      LIMIT 50
+    // Staff-review R2 R020 (2026-04-28): seed exactly 1 OOB audit row
+    // before the SELECT so the invariant body is guaranteed to execute
+    // at least once — the previous "vacuous-true on clean fixture"
+    // shape masked regression on retention + runbook_url + CN-absence
+    // invariants. Cleaned up after assertions complete.
+    const seededRowId = `oob-r020-seed-${Date.now()}`;
+    await db.execute(sql`
+      INSERT INTO audit_log (id, tenant_id, actor_user_id, event_type, retention_years, payload, request_id)
+      VALUES (
+        ${seededRowId},
+        NULL,
+        'system:staff-review-r020-seed',
+        'out_of_band_refund_detected',
+        10,
+        ${JSON.stringify({
+          runbook_url: 'docs/runbooks/out-of-band-refund.md',
+          processor_refund_id: `re_test_seed_${Date.now()}`,
+        })}::jsonb,
+        ${seededRowId}
+      )
+      ON CONFLICT (id) DO NOTHING
     `);
-    const rows = Array.from(auditRows);
+
+    try {
+      // Sample existing OOB audit rows in the DB — guaranteed ≥ 1
+      // (the seeded row above). The invariant body MUST execute.
+      const auditRows = await db.execute<AuditRow>(sql`
+        SELECT id::text AS id, request_id, retention_years, payload
+        FROM audit_log
+        WHERE event_type = 'out_of_band_refund_detected'
+        LIMIT 50
+      `);
+      const rows = Array.from(auditRows);
+      expect(rows.length, 'R020 seed must have produced ≥ 1 row').toBeGreaterThan(0);
 
     for (const row of rows) {
       // Each OOB row carries 10y retention.
@@ -159,6 +182,11 @@ describe('T131 out-of-band refund detection (FR-011a)', () => {
           `OOB audit for refund_id=${processorRefundId} has ${cnRow?.cn_count} matching F4 credit notes — MUST be 0 (FR-011a)`,
         ).toBe(0);
       }
+    }
+    } finally {
+      // Always clean up the R020 seed row so this integration test
+      // remains hermetic across reruns.
+      await db.execute(sql`DELETE FROM audit_log WHERE id = ${seededRowId}`);
     }
   });
 });

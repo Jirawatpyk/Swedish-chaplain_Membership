@@ -227,7 +227,11 @@ describe('processWebhookEvent (T056)', () => {
     if (!result.ok) return;
     expect(result.value.kind).toBe('processed');
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
-    expect(auditCalls.some((c) => c[1].eventType === 'payment_failed')).toBe(true);
+    const failedCall = auditCalls.find((c) => c[1].eventType === 'payment_failed');
+    expect(failedCall).toBeDefined();
+    // Staff-review R2 R005 (2026-04-28): payment_failed is tax-document
+    // adjacent (locks failure into the financial record) → 10y retention.
+    expect(failedCall?.[1].retentionYears).toBe(10);
   });
 
   it('payment_intent.canceled — dispatches handleCancelEvent', async () => {

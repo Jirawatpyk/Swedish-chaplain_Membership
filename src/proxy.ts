@@ -6,6 +6,14 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
 /**
+ * Staff-review R2 R023 (2026-04-28) — per-request nonce header forwarded
+ * to server components so they can attach `nonce={nonce}` to any inline
+ * `<script>` they render. Next.js 16 picks this up automatically for its
+ * own bootstrap scripts when the header is present.
+ */
+export const NONCE_HEADER = 'x-nonce';
+
+/**
  * F2 tenant header — forwarded to route handlers + server components so
  * they can assert/log the active tenant without re-running the resolver
  * on every request. Route handlers still call `resolveTenantFromRequest`
@@ -50,16 +58,20 @@ export const TENANT_SLUG_HEADER = 'x-tenant-slug';
 
 const HSTS_VALUE = 'max-age=63072000; includeSubDomains; preload';
 
-// script-src: `'unsafe-inline'` is kept because Next.js inlines small
-// bootstrap scripts for hydration. In DEV we ALSO add `'unsafe-eval'`
-// because React DevTools + HMR + the error-overlay stack reconstruction
-// all call `eval()` under the hood — with strict CSP the browser blocks
-// them and the dev overlay shows a console error. Production has eval
-// disabled (React production bundles never call it).
+// script-src — nonce-based (CSP Level 3) per staff-review R2 R023.
 //
-// A future hardening pass (tracked as an F1 ship-gate follow-up)
-// should switch the prod policy to nonce-based script-src and drop
-// unsafe-inline too.
+// Production: `'nonce-${nonce}'` + `'strict-dynamic'`. The nonce is fresh
+// per request (16 bytes base64). `'unsafe-inline'` is kept ONLY as a
+// fallback for legacy browsers — CSP Level 3 spec says modern browsers
+// ignore `'unsafe-inline'` when a `'nonce-*'` source is present, so this
+// is a defense-in-depth posture. PCI DSS 6.4.1 best practice met because
+// inline scripts without the nonce are blocked on every browser shipped
+// in the past 5 years (Chrome 59+, FF 49+, Safari 15.4+).
+//
+// Development: `'unsafe-inline'` + `'unsafe-eval'` is kept because React
+// DevTools + Turbopack HMR + error-overlay stack reconstruction all call
+// `eval()` under the hood. Production React bundles never call eval, so
+// dropping `'unsafe-eval'` in prod is safe.
 /**
  * F5 — Stripe origins are allowed in CSP application-wide.
  *
@@ -78,13 +90,46 @@ const HSTS_VALUE = 'max-age=63072000; includeSubDomains; preload';
  * server-only and does not exercise these directives.
  */
 
-export function buildCsp(isDevelopment: boolean): string {
-  const scriptSrcParts = [
-    "'self'",
-    "'unsafe-inline'",
-    ...(isDevelopment ? ["'unsafe-eval'"] : []),
-    'https://js.stripe.com',
-  ];
+/**
+ * Generate a 16-byte cryptographically-strong nonce, base64-encoded.
+ * Web Crypto is available in both Edge and Node runtimes (Next.js 16+).
+ */
+function generateNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  // base64-encode without using Node Buffer so this works on Edge too.
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin);
+}
+
+export function buildCsp(isDevelopment: boolean, nonce: string): string {
+  const scriptSrcParts = isDevelopment
+    ? [
+        "'self'",
+        "'unsafe-inline'",
+        "'unsafe-eval'",
+        'https://js.stripe.com',
+      ]
+    : [
+        "'self'",
+        `'nonce-${nonce}'`,
+        // 'strict-dynamic' lets nonce'd scripts load further scripts
+        // without each carrying a nonce — required for Next.js's
+        // hydration bootstrap. Modern browsers prefer this over the
+        // host allowlist for nonce'd scripts.
+        "'strict-dynamic'",
+        // Fallback for legacy browsers without CSP3 nonce support.
+        // CSP3-aware browsers ignore `'unsafe-inline'` when a `'nonce-*'`
+        // source is present (per W3C CSP Level 3 § 6.7.2).
+        "'unsafe-inline'",
+        // Stripe must remain in script-src as an explicit host since
+        // 'strict-dynamic' is in play (the nonce'd loader fetches
+        // Stripe.js — strict-dynamic propagates trust, but Stripe's
+        // documented integration relies on the host allowlist as
+        // backwards-compatible defense).
+        'https://js.stripe.com',
+      ];
   const frameSrcParts = [
     "'self'",
     'https://js.stripe.com',
@@ -111,11 +156,11 @@ export function buildCsp(isDevelopment: boolean): string {
   ].join('; ');
 }
 
-function applySecurityHeaders(response: NextResponse): NextResponse {
+function applySecurityHeaders(response: NextResponse, nonce: string): NextResponse {
   response.headers.set('Strict-Transport-Security', HSTS_VALUE);
   response.headers.set(
     'Content-Security-Policy',
-    buildCsp(env.isDevelopment),
+    buildCsp(env.isDevelopment, nonce),
   );
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('X-Content-Type-Options', 'nosniff');
@@ -148,6 +193,7 @@ function build503(
   message: string,
   pathname: string,
   requestId: string,
+  nonce: string,
 ): NextResponse {
   const response = NextResponse.json(
     {
@@ -160,12 +206,13 @@ function build503(
   );
   response.headers.set(REQUEST_ID_HEADER, requestId);
   response.headers.set('Retry-After', String(KILL_SWITCH_RETRY_AFTER_SECONDS));
-  return applySecurityHeaders(response);
+  return applySecurityHeaders(response, nonce);
 }
 
 export function proxy(request: NextRequest): NextResponse {
   const { method, nextUrl } = request;
   const requestId = requestIdFromHeaders(request.headers);
+  const nonce = generateNonce();
   const isStateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
   // 1. READ_ONLY_MODE — block all writes with 503 (used for rollback /
@@ -176,6 +223,7 @@ export function proxy(request: NextRequest): NextResponse {
       'The system is currently in read-only mode for maintenance.',
       nextUrl.pathname,
       requestId,
+      nonce,
     );
   }
 
@@ -190,6 +238,7 @@ export function proxy(request: NextRequest): NextResponse {
       'Member directory is temporarily unavailable.',
       nextUrl.pathname,
       requestId,
+      nonce,
     );
   }
 
@@ -217,6 +266,7 @@ export function proxy(request: NextRequest): NextResponse {
       'Invoicing is temporarily unavailable.',
       nextUrl.pathname,
       requestId,
+      nonce,
     );
   }
 
@@ -239,6 +289,7 @@ export function proxy(request: NextRequest): NextResponse {
       'Online payment is temporarily unavailable.',
       nextUrl.pathname,
       requestId,
+      nonce,
     );
   }
 
@@ -253,7 +304,7 @@ export function proxy(request: NextRequest): NextResponse {
       { status: 403 },
     );
     response.headers.set(REQUEST_ID_HEADER, requestId);
-    return applySecurityHeaders(response);
+    return applySecurityHeaders(response, nonce);
   }
 
   // 3. Pass-through with security headers + request ID + x-pathname
@@ -265,6 +316,11 @@ export function proxy(request: NextRequest): NextResponse {
   const forwardedHeaders = new Headers(request.headers);
   forwardedHeaders.set('x-pathname', nextUrl.pathname + nextUrl.search);
   forwardedHeaders.set(REQUEST_ID_HEADER, requestId);
+  // R023: forward the per-request nonce so server components can read it
+  // via `headers()` and attach `nonce={nonce}` to any inline <script>
+  // they render. Next.js 16 also reads `x-nonce` automatically for its
+  // own hydration bootstrap scripts.
+  forwardedHeaders.set(NONCE_HEADER, nonce);
 
   // F2: resolve tenant once in the proxy so every downstream consumer
   // (route handlers, server components, logs) sees the same slug. In F2
@@ -299,7 +355,7 @@ export function proxy(request: NextRequest): NextResponse {
     },
   });
   response.headers.set(REQUEST_ID_HEADER, requestId);
-  return applySecurityHeaders(response);
+  return applySecurityHeaders(response, nonce);
 }
 
 /**

@@ -341,6 +341,18 @@ describe('T136 concurrent initiatePayment for same invoice (R2-E2)', () => {
       `expected exactly 1 createPaymentIntent call, got ${counts.createPaymentIntent}`,
     ).toBe(1);
 
+    // Staff-review R2 R012 (2026-04-28): proves the test produced real
+    // overlap (not a false-green where both calls took the create-path
+    // sequentially). The second caller MUST hit the resume path via
+    // retrievePaymentIntent — if `setTimeout(250)` ever fails to engineer
+    // overlap on a slow CI runner, this assertion will catch the
+    // regression instead of letting the timing-sensitive test pass
+    // vacuously.
+    expect(
+      counts.retrievePaymentIntent,
+      `expected ≥ 1 retrievePaymentIntent call (proving the resume path was hit), got ${counts.retrievePaymentIntent}`,
+    ).toBeGreaterThanOrEqual(1);
+
     // (d) Exactly ONE payment_initiated audit row.
     const auditRows = await db
       .select()

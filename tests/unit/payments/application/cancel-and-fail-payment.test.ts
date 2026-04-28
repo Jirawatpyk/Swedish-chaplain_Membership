@@ -183,6 +183,9 @@ describe('failPayment (T058)', () => {
       null,
       expect.objectContaining({
         eventType: 'payment_acknowledged_terminal_state',
+        // Staff-review R2 R005 (2026-04-28): H-11 — 10y because the event
+        // records a permanent payment-status decision touching tax-doc reconciliation.
+        retentionYears: 10,
         payload: expect.objectContaining({
           mismatch_kind: 'illegal_transition',
           // T-B (review 2026-04-27): pin from_status for parity with
@@ -258,6 +261,11 @@ describe('cancelPayment (T059)', () => {
     if (r.ok) return;
     expect(r.error.code).toBe('payment_not_found');
     expect(d.audit.emit).toHaveBeenCalled();
+    // Staff-review R2 R005 (2026-04-28): cross-tenant probe is forensic
+    // — 5y retention per F5_AUDIT_RETENTION_YEARS['payment_cross_tenant_probe'].
+    const auditCall = (d.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(auditCall?.[1].eventType).toBe('payment_cross_tenant_probe');
+    expect(auditCall?.[1].retentionYears).toBe(5);
   });
 
   it('ownership mismatch — forbidden_payment + probe audit', async () => {
@@ -373,6 +381,9 @@ describe('handleCancelEvent (T060)', () => {
       null,
       expect.objectContaining({
         eventType: 'payment_acknowledged_terminal_state',
+        // Staff-review R2 R005 (2026-04-28): H-11 — 10y because the event
+        // records a permanent payment-status decision touching tax-doc reconciliation.
+        retentionYears: 10,
         payload: expect.objectContaining({
           mismatch_kind: 'illegal_transition',
           // T-B (review 2026-04-27): pin from_status for parity with
