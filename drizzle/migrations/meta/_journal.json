@@ -442,6 +442,13 @@
       "when": 1778976000000,
       "tag": "0062_drop_invoice_pending_check",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1779062400000,
+      "tag": "0063_audit_log_extend_retention_default_trigger",
+      "breakpoints": true
     }
   ]
 }

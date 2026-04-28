@@ -39,6 +39,7 @@ import {
   type F5AuditEventType,
 } from '@/modules/payments/application/ports/audit-port';
 
+// Original 6 types backfilled by migration 0039 (R2-E4 Review-Gate).
 const F4_TAX_DOCUMENT_EVENT_TYPES = [
   'invoice_issued',
   'invoice_paid',
@@ -46,6 +47,26 @@ const F4_TAX_DOCUMENT_EVENT_TYPES = [
   'credit_note_issued',
   'invoice_pdf_resent',
   'invoice_pdf_regenerated',
+] as const;
+
+// Additional 3 types covered by migration 0063 (2026-04-29 staff-review #4
+// A3.1 + A3.2 closure). These are tagged 10y in F4_AUDIT_RETENTION_YEARS
+// (`receipt_pdf_resent`, `credit_note_pdf_resent`, `receipt_rendered`) but
+// were absent from migration 0055 trigger and migration 0039 backfill.
+// Migration 0063 extends the BEFORE-INSERT trigger + idempotently
+// backfills any existing rows of these types still at retention=5.
+const F4_TAX_DOCUMENT_EVENT_TYPES_PHASE_10 = [
+  'receipt_pdf_resent',
+  'credit_note_pdf_resent',
+  'receipt_rendered',
+] as const;
+
+// Combined assertion set — every F4 type in either tier MUST land at 10y
+// regardless of whether it goes through the application adapter or a
+// raw-SQL insert path (test seed / dev-apply / psql).
+const F4_TAX_DOCUMENT_EVENT_TYPES_ALL = [
+  ...F4_TAX_DOCUMENT_EVENT_TYPES,
+  ...F4_TAX_DOCUMENT_EVENT_TYPES_PHASE_10,
 ] as const;
 
 interface ColumnRow extends Record<string, unknown> {
@@ -104,7 +125,14 @@ describe('Audit retention column + F4 tax-document backfill (T135 — Review-Gat
   });
 
   it('(2) F4 tax-document event types are 10-year — vacuous-true if fixture has no rows', async () => {
-    const eventTypeList = F4_TAX_DOCUMENT_EVENT_TYPES.map((t) => `'${t}'`).join(', ');
+    // Asserts ALL 9 F4 tax-document event types: the original 6 backfilled by
+    // migration 0039 PLUS the 3 added by migration 0063 (`receipt_pdf_resent`,
+    // `credit_note_pdf_resent`, `receipt_rendered`). Any of these landing at
+    // retention=5 = compliance regression (Thai RD §87/3 + §86/10 + GDPR
+    // Art. 6(1)(c)). Migration 0055 trigger + 0063 extension = the data-layer
+    // guarantee that raw-SQL inserts (test seeds, dev-apply scripts, psql)
+    // cannot bypass the 10y default for any of these 9 types.
+    const eventTypeList = F4_TAX_DOCUMENT_EVENT_TYPES_ALL.map((t) => `'${t}'`).join(', ');
     const result = await db.execute<RetentionRow>(sql`
       SELECT event_type::text AS event_type,
              retention_years,
@@ -132,6 +160,30 @@ describe('Audit retention column + F4 tax-document backfill (T135 — Review-Gat
         row.retention_years,
         `F4 event_type='${row.event_type}' has ${row.row_count} rows with retention_years=${row.retention_years} — MUST be 10 per RD §87/3 (data-model.md § 7.2)`,
       ).toBe(10);
+    }
+  });
+
+  it('(2c) Migration 0063 trigger covers all 3 phase-10 F4 tax-document event types', async () => {
+    // Defense-in-depth assertion: the BEFORE-INSERT trigger function
+    // `audit_log_default_retention_for_f4_tax_docs` (migration 0055 +
+    // extended in 0063) MUST list all 9 F4 tax-document event types so
+    // raw-SQL inserts cannot bypass the 10y default. This guards
+    // against the same regression class as the original R2-E4 finding —
+    // adapter-bypassing insert paths silently downgrading retention.
+    const fnDef = await db.execute<{ prosrc: string }>(sql`
+      SELECT prosrc::text AS prosrc
+      FROM pg_proc
+      WHERE proname = 'audit_log_default_retention_for_f4_tax_docs'
+    `);
+    const fnRows = Array.from(fnDef);
+    expect(fnRows.length, 'trigger function must exist post migration 0055/0063').toBe(1);
+    const src = String(fnRows[0]!.prosrc);
+
+    for (const eventType of F4_TAX_DOCUMENT_EVENT_TYPES_ALL) {
+      expect(
+        src,
+        `trigger function MUST cover '${eventType}' so raw-SQL inserts default to retention=10 (migration 0063 extends the original 6-type list from 0055)`,
+      ).toContain(`'${eventType}'`);
     }
   });
 

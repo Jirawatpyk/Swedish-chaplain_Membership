@@ -128,8 +128,12 @@ async function auditReject(
   } catch (e) {
     // Audit write is best-effort on the reject path — never 500 a
     // webhook request because the audit row failed to persist.
+    // H-4 (review 2026-04-27 — extended 2026-04-29 staff-review #4 A5.1
+    // closure): use constructor name only, never `e.message`. Audit-log
+    // writes go through Postgres; `e.message` on a Postgres failure can
+    // carry SQL params, table names, or interpolated values.
     logger.error(
-      { err: e instanceof Error ? e.message : String(e), eventType, reason, requestId },
+      { err: e instanceof Error ? e.constructor.name : 'unknown', eventType, reason, requestId },
       'stripe-webhook.audit_reject_failed',
     );
   }
@@ -156,9 +160,13 @@ async function insertRejectedProcessorEvent(input: {
   try {
     await insertRejectedProcessorEventImpl(input);
   } catch (e) {
+    // H-4 (extended 2026-04-29 A5.1): Postgres INSERT failure here can
+    // carry SQL params (event id, account id, payload sha) in
+    // `e.message`. Use constructor name only; OTel trace covers
+    // call-chain diagnostics.
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: e instanceof Error ? e.constructor.name : 'unknown',
         eventId: input.eventId,
         outcome: input.outcome,
       },
@@ -255,8 +263,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     rawBody = await request.text();
   } catch (e) {
+    // H-4 (extended 2026-04-29 A5.1): body-read failures are platform-
+    // level (network / fetch abort). `e.message` is generally safe but
+    // we apply the H-4 rule uniformly — constructor name + OTel trace
+    // is sufficient diagnostic + matches the pattern across this
+    // route's catch sites.
     logger.error(
-      { err: e instanceof Error ? e.message : String(e), requestId, correlationId },
+      { err: e instanceof Error ? e.constructor.name : 'unknown', requestId, correlationId },
       'stripe-webhook.body_read_failed',
     );
     return jsonUnauthorized('bad_signature', correlationId);
@@ -369,9 +382,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     tenantId = await resolveTenantByProcessorAccountId(evAccount);
   } catch (e) {
+    // H-4 (extended 2026-04-29 A5.1): tenant resolve runs a Postgres
+    // SELECT against `tenant_payment_settings`. `e.message` on a PG
+    // failure can carry the looked-up account_id + table name. Use
+    // constructor name only; OTel trace owns the call-chain diagnostic
+    // surface.
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: e instanceof Error ? e.constructor.name : 'unknown',
         eventId: evId,
         correlationId,
       },
