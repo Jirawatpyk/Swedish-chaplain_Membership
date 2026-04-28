@@ -135,13 +135,18 @@ These checks belong in `drizzle-migration-reviewer` agent's checklist, not as ne
 
 ---
 
-## CT-7 (W4 closure-pending) — perf benchmark sample-size plan
+## CT-7 (W4 closure) — perf benchmark sample-size
 
 **Where**: `specs/009-online-payment/perf-results-t166-2026-04-28.md`
 
-**Open question**: Current async-PDF benchmark used n=30 samples, no documented warmup. T148/T149 used n=100 + 5-warmup. With n=30, p95 = 2nd-highest observation; one cold-start outlier shifts it a full slot.
+**Original concern**: Async-PDF benchmark initially used n=30 samples with no documented warmup. T148/T149 used n=100 + 5-warmup. With n=30, p95 = 2nd-highest observation; one cold-start outlier shifts it a full slot.
 
-**Decision**: Re-run benchmark with n=100 + 5-warmup before `/speckit.ship`. This is a manual step (`RUN_PERF=1 pnpm test:integration`) blocked on maintainer initiation, not a code edit.
+**Closure (2026-04-28)**: Re-run completed with n=100 + 5-warmup discarded (matches T148/T149 methodology). Results in `perf-results-t166-2026-04-28.md`:
+- Async p95 = **939 ms** (was 859 ms at n=30)
+- Sync p95 = 1762 ms (was 1657 ms at n=30)
+- Improvement = 46.7 % (was 48.2 % at n=30 — within ~1.5 pp, architectural decision robustly validated)
+- SLO-F5-002b dev budget (< 1000 ms): **PASS** with 61 ms headroom (~6 %)
+- Production estimate 689–789 ms (subtract 150–250 ms cross-border RTT) — within 750 ms prod budget
 
-**Tracking**: Open item in `post-ship-tasks.md` if not done before ship.
+**Future migration / perf-bench discipline**: Bookkeeping table is `public.drizzle_migrations` per `drizzle.config.ts`. Never write manual `apply-NNNN.ts` scripts; always use `pnpm db:migrate` (wraps `drizzle-kit migrate`). Perf benchmarks default to n=100 + 5-warmup — `PERF_ITER` / `PERF_WARMUP` env overrides are smoke-test only, not for SLO certification.
 

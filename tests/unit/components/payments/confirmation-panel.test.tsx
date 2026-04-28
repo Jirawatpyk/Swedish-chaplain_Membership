@@ -26,12 +26,16 @@ import {
   ConfirmationPanel,
 } from '@/app/(member)/portal/invoices/[invoiceId]/_components/pay-sheet/confirmation-panel';
 
+// review-20260428-102639.md W15 closure — `last4` removed from
+// ConfirmationPanelProps and from i18n template. Mock copies the
+// real production strings (see src/i18n/messages/en.json) so tests
+// don't drift again on future copy edits.
 const messages = {
   portal: {
     payment: {
       success: {
         title: 'Payment received',
-        summaryCard: 'Paid {amount} via card ending {last4} on {dateTime}',
+        summaryCard: 'Paid {amount} by card on {dateTime}',
         summaryPromptPay: 'Paid {amount} via PromptPay on {dateTime}',
         downloadReceipt: 'Download receipt',
         close: 'Close',
@@ -45,42 +49,18 @@ const messages = {
   },
 };
 
-// Test-overrides type: allow `last4: undefined` explicitly so tests
-// can simulate "no last4 supplied". `exactOptionalPropertyTypes: true`
-// rejects this on `Partial<ConfirmationPanelProps>` (an optional field
-// must be omitted, not set to undefined), so we widen the override
-// type with `| undefined` for the optional fields here only.
-type ConfirmationPanelOverrides = Omit<
-  Partial<React.ComponentProps<typeof ConfirmationPanel>>,
-  'last4'
-> & {
-  last4?: string | undefined;
-};
-
-function renderPanel(overrides: ConfirmationPanelOverrides = {}) {
-  // Build defaults, then merge overrides while DELETING any keys that
-  // were explicitly set to `undefined` so the resulting props object
-  // satisfies `exactOptionalPropertyTypes: true` at the JSX boundary.
-  const merged: Record<string, unknown> = {
+function renderPanel(
+  overrides: Partial<React.ComponentProps<typeof ConfirmationPanel>> = {},
+) {
+  const props: React.ComponentProps<typeof ConfirmationPanel> = {
     method: 'card',
     amount: 'THB 12,000.00',
-    last4: '4242',
     dateTime: '2026-04-23 14:30',
     receiptUrl: 'https://example.com/receipt.pdf',
     onClose: vi.fn(),
     onDownload: vi.fn(),
     ...overrides,
   };
-  for (const key of Object.keys(overrides) as Array<keyof typeof overrides>) {
-    if (overrides[key] === undefined) {
-      delete merged[key as string];
-    }
-  }
-  // Omit last4 if promptpay (exactOptionalPropertyTypes).
-  if (merged['method'] === 'promptpay') {
-    delete merged['last4'];
-  }
-  const props = merged as unknown as React.ComponentProps<typeof ConfirmationPanel>;
   render(
     <NextIntlClientProvider locale="en" messages={messages}>
       <ConfirmationPanel {...props} />
@@ -100,13 +80,11 @@ describe('<ConfirmationPanel>', () => {
   });
 
   it('renders checkmark icon + title + card summary variant', () => {
-    renderPanel({ method: 'card', last4: '4242' });
+    renderPanel({ method: 'card' });
     expect(screen.getByTestId('pay-sheet-confirmation-icon')).toBeTruthy();
     expect(screen.getByText('Payment received')).toBeTruthy();
     expect(
-      screen.getByText(
-        'Paid THB 12,000.00 via card ending ****4242 on 2026-04-23 14:30',
-      ),
+      screen.getByText('Paid THB 12,000.00 by card on 2026-04-23 14:30'),
     ).toBeTruthy();
   });
 
@@ -143,7 +121,7 @@ describe('<ConfirmationPanel>', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('dual-node aria-live: visible tick is aria-hidden; SR announces at remaining ∈ [3, 1] (R3 — multi-threshold matches HardCapPrompt 30/10/5/1)', async () => {
+  it('dual-node aria-live: visible tick is aria-hidden; SR announces at remaining ∈ [5, 3, 1] (S10 — multi-threshold matches HardCapPrompt 30/10/5/1)', async () => {
     renderPanel();
     const visible = screen.getByTestId('pay-sheet-confirmation-countdown');
     const sr = screen.getByTestId('pay-sheet-confirmation-countdown-sr');
@@ -151,22 +129,26 @@ describe('<ConfirmationPanel>', () => {
     expect(visible.getAttribute('aria-hidden')).toBe('true');
     expect(sr.getAttribute('aria-live')).toBe('polite');
     expect(sr.getAttribute('aria-atomic')).toBe('true');
-    // R3 cadence: silent pre-3s; fires at remaining=3; silent at 2;
-    // fires again at 1 (final warning before dismissal). Two threshold
-    // announcements total — still well below HardCapPrompt's 4 — but
-    // guarantees SR users hear at least one cue + a "1 second" warning.
-    expect(sr.textContent).toBe('');
-    // Tick 2s → remaining=3 → SR fires (first threshold).
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2000);
-    });
-    expect(sr.textContent).toContain('3');
-    // Tick to remaining=2 → SR silent (between thresholds).
+    // S10 cadence (review-20260428-102639.md S10 closure): fires at
+    // remaining ∈ [5, 3, 1]. AUTO_CLOSE_SECONDS=5 so the opening cue
+    // fires synchronously on first render (initial remaining=5).
+    expect(sr.textContent).toContain('5');
+    // Tick to remaining=4 → SR silent (between thresholds).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
     expect(sr.textContent).toBe('');
-    // Tick to remaining=1 → SR fires final warning (R3 cadence change).
+    // Tick to remaining=3 → SR fires (mid-window check).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(sr.textContent).toContain('3');
+    // Tick to remaining=2 → SR silent.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(sr.textContent).toBe('');
+    // Tick to remaining=1 → SR fires final warning.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
@@ -252,38 +234,15 @@ describe('<ConfirmationPanel>', () => {
     expect(link.getAttribute('href')).toBe('https://example.com/receipt.pdf');
   });
 
-  // -- last4 mask polish (commit 675abe7) -----------------------------------
-  describe('last4 mask (commit 675abe7)', () => {
-    it('renders `****1234` when a real 4-digit last4 is supplied', () => {
-      renderPanel({ method: 'card', last4: '1234' });
-      expect(
-        screen.getByText(
-          'Paid THB 12,000.00 via card ending ****1234 on 2026-04-23 14:30',
-        ),
-      ).toBeTruthy();
-    });
-
-    it('renders a plain `****` when last4 is missing (no 8-asterisk bug)', () => {
-      renderPanel({ method: 'card', last4: undefined });
-      // MUST NOT render "********" (8 stars) — that was the pre-675abe7
-      // bug where the i18n template + prop default double-masked.
-      const text = screen.getByText(/via card ending/).textContent ?? '';
-      expect(text).toMatch(/via card ending \*\*\*\* on/);
-      expect(text).not.toMatch(/\*{5,}/);
-    });
-
-    it('falls back to `****` when last4 is not exactly 4 digits (defensive)', () => {
-      renderPanel({ method: 'card', last4: '12' });
-      const text = screen.getByText(/via card ending/).textContent ?? '';
-      expect(text).toMatch(/via card ending \*\*\*\* on/);
-    });
-
-    it('falls back to `****` when last4 is non-digit (defensive)', () => {
-      renderPanel({ method: 'card', last4: 'abcd' });
-      const text = screen.getByText(/via card ending/).textContent ?? '';
-      expect(text).toMatch(/via card ending \*\*\*\* on/);
-    });
-  });
+  // -- last4 mask polish (commit 675abe7) — REMOVED 2026-04-28 -------------
+  //
+  // The `last4` prop and `{last4}` i18n placeholder were both removed by
+  // review-20260428-102639.md W15 closure. Stripe `confirmPayment` does
+  // not return the card object on the happy path, and the extra
+  // `expand=payment_method` round-trip costs latency for what is
+  // informational copy only. The 4 tests previously here (****1234 /
+  // missing / non-4-digit / non-digit) are obsolete — there is no
+  // last4 string to mask anymore.
 
   // -- Option A layout (commit 675abe7) -------------------------------------
   describe('button layout (Option A — full-width primary + text-link close)', () => {

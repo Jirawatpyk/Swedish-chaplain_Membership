@@ -118,6 +118,11 @@ async function seedInvoice(
       paymentRecordedByUserId: status === 'paid' ? user.userId : null,
       paymentDate: status === 'paid' ? '2026-02-01' : null,
       paidAt: status === 'paid' ? new Date('2026-02-01T03:00:00Z') : null,
+      // T166 — migration 0056 CHECK `invoices_paid_has_receipt_status`
+      // requires paid invoices to carry a non-null receipt_pdf_status.
+      // Seed as 'rendered' (the steady-state for paid + receipt-emailed
+      // rows) so void-on-paid tests don't trip the constraint.
+      receiptPdfStatus: status === 'paid' ? 'rendered' : null,
       voidedAt: status === 'void' ? new Date('2026-03-01T03:00:00Z') : null,
       voidReason: status === 'void' ? 'seed void' : null,
       voidedByUserId: status === 'void' ? user.userId : null,

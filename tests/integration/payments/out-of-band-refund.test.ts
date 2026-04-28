@@ -121,20 +121,28 @@ describe('T131 out-of-band refund detection (FR-011a)', () => {
     // at least once — the previous "vacuous-true on clean fixture"
     // shape masked regression on retention + runbook_url + CN-absence
     // invariants. Cleaned up after assertions complete.
-    const seededRowId = `oob-r020-seed-${Date.now()}`;
+    //
+    // R3 follow-up (2026-04-28): `audit_log.id` and `audit_log.request_id`
+    // are both `uuid` columns, so the prior `oob-r020-seed-${Date.now()}`
+    // string failed Postgres' uuid parse. Use proper UUIDs and keep the
+    // human breadcrumb in the audit payload + actor_user_id only.
+    const { randomUUID } = await import('node:crypto');
+    const seededRowId = randomUUID();
+    const seededRequestId = randomUUID();
     await db.execute(sql`
-      INSERT INTO audit_log (id, tenant_id, actor_user_id, event_type, retention_years, payload, request_id)
+      INSERT INTO audit_log (id, tenant_id, actor_user_id, event_type, summary, retention_years, payload, request_id)
       VALUES (
-        ${seededRowId},
+        ${seededRowId}::uuid,
         NULL,
         'system:staff-review-r020-seed',
         'out_of_band_refund_detected',
+        'R020 staff-review seed — out-of-band refund detection invariant probe',
         10,
         ${JSON.stringify({
           runbook_url: 'docs/runbooks/out-of-band-refund.md',
           processor_refund_id: `re_test_seed_${Date.now()}`,
         })}::jsonb,
-        ${seededRowId}
+        ${seededRequestId}::uuid
       )
       ON CONFLICT (id) DO NOTHING
     `);
@@ -184,9 +192,18 @@ describe('T131 out-of-band refund detection (FR-011a)', () => {
       }
     }
     } finally {
-      // Always clean up the R020 seed row so this integration test
-      // remains hermetic across reruns.
-      await db.execute(sql`DELETE FROM audit_log WHERE id = ${seededRowId}`);
+      // R3 follow-up (2026-04-28): `audit_log` is append-only —
+      // security.md T-13 trigger denies DELETE by the app role. Best-
+      // effort cleanup with `try { ... } catch {}`; leaked seed rows
+      // are harmless because the invariant body asserts retention=10
+      // + runbook_url on EVERY OOB row, so accumulated test seeds all
+      // satisfy the same invariant on rerun (no false negative).
+      await db
+        .execute(sql`DELETE FROM audit_log WHERE id = ${seededRowId}::uuid`)
+        .catch(() => {
+          // Append-only DELETE denied — expected. The seed row will be
+          // swept by F9 audit-purge once retention=10 elapses.
+        });
     }
   });
 });

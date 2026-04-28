@@ -621,6 +621,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'tenant_invoice_settings_cross_tenant_probe',
       'pdf_render_failed',
       'auto_email_delivery_failed',
+      // T166 async receipt PDF (added 2026-04-28).
+      'receipt_rendered',
+      'pdf_render_permanently_failed',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a
@@ -694,10 +697,11 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     const deferredCount = Object.values(coverage).filter(
       (c) => c.status === 'deferred',
     ).length;
-    expect(coveredCount + deferredCount).toBe(18);
-    // Behavioral coverage target: 17/18. Remaining 1 is a post-MVP
-    // deferral (Blob-outage auto-rerender path — not routinely
-    // exercisable without simulated Blob 404s).
+    expect(coveredCount + deferredCount).toBe(20);
+    // Behavioral coverage target: 17/20. Remaining 3 are post-MVP
+    // deferrals: invoice_pdf_regenerated (Blob-outage auto-rerender),
+    // receipt_rendered + pdf_render_permanently_failed (T166 async
+    // receipt-PDF worker — integration coverage lands with T166-06).
     expect(coveredCount).toBeGreaterThanOrEqual(17);
   });
 });

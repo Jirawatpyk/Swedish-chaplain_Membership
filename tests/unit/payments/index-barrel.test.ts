@@ -117,13 +117,15 @@ describe('payments barrel — public API contract', () => {
     );
 
     // ConfirmPaymentDeps shape (audit 2026-04-25 finding #4:
-    // +processorEventsRepo for atomic markProcessed)
+    // +processorEventsRepo for atomic markProcessed; review-20260428-102639.md
+    // H2 closure: +logger for Phase B stale-refund warn)
     const confirmDeps = mod.makeConfirmPaymentDeps('test-tenant');
     expect(Object.keys(confirmDeps).sort()).toEqual(
       [
         'audit',
         'clock',
         'invoicingBridge',
+        'logger',
         'paymentsRepo',
         'processorEventsRepo',
         'processorGateway',

@@ -48,7 +48,7 @@
  *     `paymentsRepo` + REAL F5 audit adapter on live Neon.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
 import { db, runInTenant } from '@/lib/db';
@@ -71,6 +71,7 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
+import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -454,13 +455,23 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
   }
 
   /**
-   * Strict spec: F5 settlement → exactly ONE F4 receipt render +
-   * ONE outbox enqueue + invoice flips to 'paid'.
+   * Strict spec: F5 settlement → invoice flips to 'paid' + receipt PDF
+   * render task enqueued (T166 async pipeline) + invoice_paid email
+   * enqueued exactly once.
+   *
+   * T166 async-default (integration-setup.ts:23 sets
+   * FEATURE_F5_ASYNC_RECEIPT_PDF=true) means `recordPayment` SKIPS the
+   * inline render+upload — instead it sets `invoices.receipt_pdf_status
+   * = 'pending'` and enqueues a `receipt_pdf_render` outbox row that
+   * the dispatcher hands off to the worker. The renderSpy is therefore
+   * NOT invoked during the webhook hot path; SC-003 byte-identity is
+   * still preserved because the worker uses the SAME deterministic
+   * render adapter — just on a different schedule.
    *
    * Per-`it` reset: the spies are module-singleton mocks so a prior
    * test's invocations would otherwise leak into the next assertion.
    */
-  it('card payment — bridge invoked once, receipt rendered once, outbox enqueued once', async () => {
+  it('card payment — invoice flips to paid + async receipt-render enqueued + invoice_paid email enqueued once', async () => {
     renderSpy.mockClear();
     enqueueSpy.mockClear();
 
@@ -469,36 +480,52 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
     if (!result.ok) return;
     expect(result.value.kind).toBe('processed');
 
-    // Receipt PDF rendered exactly ONCE — no F5-side bypass render +
-    // no double F4 dispatch.
-    expect(renderSpy).toHaveBeenCalledTimes(1);
-    const renderArg = renderSpy.mock.calls[0]?.[0] as {
-      kind: string;
-      templateVersion: number;
-    };
-    expect(renderArg.kind).toMatch(/^receipt_(separate|combined)$/);
-    expect(typeof renderArg.templateVersion).toBe('number');
+    // T166 async path — inline render does NOT fire on the webhook
+    // hot path. The worker reads the row off `notifications_outbox`
+    // later. SC-003 byte-identity is still preserved because the
+    // worker calls the same render adapter.
+    expect(renderSpy).not.toHaveBeenCalled();
 
-    // Outbox enqueue called exactly ONCE — proves AS1 single-email
-    // invariant (no duplicate to the primary billing contact).
+    // invoice_paid email enqueue called exactly ONCE — proves AS1
+    // single-email invariant (no duplicate to the primary billing
+    // contact). The email payload carries `dependsOnReceiptPdf=true`
+    // so the dispatcher gates send on receipt_pdf_status='rendered'.
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
     const enqueueArg = enqueueSpy.mock.calls[0]?.[1] as {
       eventType: string;
       invoiceId?: string;
       pdfBlobKey: string;
       recipientEmail: string;
+      dependsOnReceiptPdf?: boolean;
     };
     expect(enqueueArg.eventType).toBe('invoice_paid');
     expect(enqueueArg.invoiceId).toBe(cardSeed.invoiceId);
     expect(enqueueArg.pdfBlobKey).toContain(cardSeed.invoiceId);
     expect(enqueueArg.recipientEmail).toBe('t128-card@example.com');
+    expect(enqueueArg.dependsOnReceiptPdf).toBe(true);
 
-    // Invoice row flipped to 'paid' + carries the F5 rail + intent +
-    // charge ids in paymentNotes (proves the bridge threaded
-    // method/paymentIntentId/chargeId through to F4's recordPayment).
+    // Async receipt-render outbox row landed — exactly one
+    // `receipt_pdf_render` row for this invoice.
+    const renderRows = await db
+      .select({ id: notificationsOutbox.id })
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+          sql`${notificationsOutbox.contextData}->>'invoice_id' = ${cardSeed.invoiceId}`,
+        ),
+      );
+    expect(renderRows).toHaveLength(1);
+
+    // Invoice row flipped to 'paid' + receipt_pdf_status='pending'
+    // (T166 async path) + carries the F5 rail + intent + charge ids
+    // in paymentNotes (proves the bridge threaded method/paymentIntent
+    // Id/chargeId through to F4's recordPayment).
     const [row] = await db
       .select({
         status: invoices.status,
+        receiptPdfStatus: invoices.receiptPdfStatus,
         paymentNotes: invoices.paymentNotes,
         paymentReference: invoices.paymentReference,
         paymentDate: invoices.paymentDate,
@@ -512,6 +539,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
         ),
       );
     expect(row?.status).toBe('paid');
+    expect(row?.receiptPdfStatus).toBe('pending');
     expect(row?.paymentMethod).toBe('other'); // F4 enum doesn't carry stripe rails
     expect(row?.paymentNotes).toContain('Stripe card');
     expect(row?.paymentNotes).toContain(cardSeed.paymentIntentId);
@@ -521,7 +549,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
     expect(row?.paymentDate).toBe('2026-04-10');
   }, 60_000);
 
-  it('promptpay payment — same exactly-once invariants, PromptPay rail in notes', async () => {
+  it('promptpay payment — same async invariants, PromptPay rail in notes', async () => {
     renderSpy.mockClear();
     enqueueSpy.mockClear();
 
@@ -530,20 +558,37 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
     if (!result.ok) return;
     expect(result.value.kind).toBe('processed');
 
-    expect(renderSpy).toHaveBeenCalledTimes(1);
+    // T166 async path — inline render skipped on webhook hot path.
+    expect(renderSpy).not.toHaveBeenCalled();
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
     const enqueueArg = enqueueSpy.mock.calls[0]?.[1] as {
       eventType: string;
       invoiceId?: string;
       recipientEmail: string;
+      dependsOnReceiptPdf?: boolean;
     };
     expect(enqueueArg.eventType).toBe('invoice_paid');
     expect(enqueueArg.invoiceId).toBe(promptpaySeed.invoiceId);
     expect(enqueueArg.recipientEmail).toBe('t128-promptpay@example.com');
+    expect(enqueueArg.dependsOnReceiptPdf).toBe(true);
+
+    // Async receipt-render outbox row landed for promptpay too.
+    const renderRows = await db
+      .select({ id: notificationsOutbox.id })
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+          sql`${notificationsOutbox.contextData}->>'invoice_id' = ${promptpaySeed.invoiceId}`,
+        ),
+      );
+    expect(renderRows).toHaveLength(1);
 
     const [row] = await db
       .select({
         status: invoices.status,
+        receiptPdfStatus: invoices.receiptPdfStatus,
         paymentNotes: invoices.paymentNotes,
         paymentDate: invoices.paymentDate,
       })
@@ -555,6 +600,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
         ),
       );
     expect(row?.status).toBe('paid');
+    expect(row?.receiptPdfStatus).toBe('pending');
     expect(row?.paymentNotes).toContain('Stripe PromptPay');
     expect(row?.paymentNotes).toContain(promptpaySeed.paymentIntentId);
     expect(row?.paymentNotes).toContain(promptpaySeed.chargeId);
@@ -606,7 +652,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
    * status flip to `paid`, audit emit, PDF render+upload,
    * registration-fee flip. The suppression is dispatcher-only.
    */
-  it('T128a — autoEmailOnPayment=false → outbox NOT enqueued + invoice still flips paid', async () => {
+  it('T128a — autoEmailOnPayment=false → invoice_paid email NOT enqueued + receipt-render task STILL enqueued + invoice still flips paid', async () => {
     renderSpy.mockClear();
     enqueueSpy.mockClear();
 
@@ -617,15 +663,27 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
     if (!result.ok) return;
     expect(result.value.kind).toBe('processed');
 
-    // Receipt PDF render STILL fires — the F5 settlement flow is
-    // identical except for the dispatcher enqueue. Storing the PDF
-    // means admins can later resend manually from /admin/invoices.
-    expect(renderSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+    // T166 async path — inline render is always skipped on the webhook
+    // hot path (regardless of suppression). The receipt PDF still
+    // renders later via the worker, so admins can resend it manually
+    // from /admin/invoices.
+    expect(renderSpy).not.toHaveBeenCalled();
+    const renderRows = await db
+      .select({ id: notificationsOutbox.id })
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+          sql`${notificationsOutbox.contextData}->>'invoice_id' = ${suppressedSeed.invoiceId}`,
+        ),
+      );
+    expect(renderRows).toHaveLength(1);
 
-    // Outbox enqueue MUST NOT fire — this is the FR-015 invariant.
+    // invoice_paid email enqueue MUST NOT fire — FR-015 invariant.
     expect(
       enqueueSpy,
-      'auto_email_on_payment=false → enqueue MUST be skipped',
+      'auto_email_on_payment=false → invoice_paid email enqueue MUST be skipped',
     ).not.toHaveBeenCalled();
 
     // Invoice MUST still flip to 'paid' — the suppression governs
@@ -648,54 +706,46 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
   }, 60_000);
 
   /**
-   * SC-003 reuse — the F5 path supplies the SAME render-input shape as
-   * a manual F4 mark-paid would. Both seeds share an identical invoice
-   * shape (subtotals, lines, identity snapshots) — so the captured
-   * render inputs across the card + promptpay invocations must agree
-   * field-for-field on the F4-render-deterministic keys (kind,
-   * templateVersion, totals, lines, vatRate). F4's render is
-   * deterministic by SC-003, hence the receipts are byte-identical to
-   * what a manual `recordPayment` against the same invoice shape would
-   * produce.
+   * SC-003 reuse (T166-rewrite) — the F5 settlement path enqueues an
+   * async `receipt_pdf_render` task instead of rendering inline. The
+   * worker (covered by render-receipt-pdf.test.ts) calls the same
+   * deterministic `pdfRender.render(...)` adapter F4 always used —
+   * SC-003 byte-identity is preserved because the worker reads the
+   * same invoice snapshot that a manual mark-paid would. This test
+   * proves the enqueued render-task carries ONLY F4-deterministic
+   * keys (tenantId, invoiceId, fiscalYear, templateVersion) and NO
+   * F5-specific surface (paymentIntentId, chargeId, method) — any
+   * leak would break SC-003 by widening the render-input contract.
    */
-  it('SC-003 reuse — render input shape identical to manual-mark equivalent', async () => {
-    // Two captured `renderInput` arguments from the prior tests.
-    expect(renderSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+  it('SC-003 reuse — receipt_pdf_render outbox payload carries no F5-specific keys', async () => {
+    // Pull all receipt_pdf_render rows enqueued by the prior tests
+    // in this suite. We assert on the CARD seed's row (the first
+    // test) — same proof applies to promptpay + suppressed.
+    const [row] = await db
+      .select({
+        notificationType: notificationsOutbox.notificationType,
+        tenantId: notificationsOutbox.tenantId,
+        contextData: notificationsOutbox.contextData,
+      })
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+          sql`${notificationsOutbox.contextData}->>'invoice_id' = ${cardSeed.invoiceId}`,
+        ),
+      );
+    expect(row).toBeDefined();
 
-    // Re-run a fresh card payment + capture render input alongside.
-    // We also fetch the prior promptpay invocation (kept on the spy
-    // since the prior `it` only `mockClear`-ed before its own run,
-    // so the latest call is the promptpay render).
-    const promptpayRender = renderSpy.mock.calls.at(-1)?.[0] as Record<
-      string,
-      unknown
-    >;
-
-    // The render input MUST NOT carry any F5-specific fields. F4
-    // signs the receipt PDF off pure invoice snapshot data — the F5
-    // intent/charge ids live in `invoices.payment_notes` (a column,
-    // not a render input).
-    expect(promptpayRender).toBeDefined();
-    expect(Object.keys(promptpayRender as object)).toEqual(
-      expect.arrayContaining([
-        'kind',
-        'templateVersion',
-        'documentNumber',
-        'issueDate',
-        'dueDate',
-        'tenant',
-        'member',
-        'lines',
-        'subtotal',
-        'vatRate',
-        'vat',
-        'total',
-      ]),
-    );
-    // The render-input shape MUST NOT have leaked F5 surface keys —
-    // any of these would prove a bypass and break F4 SC-003.
-    expect(promptpayRender).not.toHaveProperty('paymentIntentId');
-    expect(promptpayRender).not.toHaveProperty('chargeId');
-    expect(promptpayRender).not.toHaveProperty('method');
+    // F4-deterministic keys only — must include the worker contract
+    // surface (snake_case per receipt-pdf-render-enqueue-adapter.ts)
+    // AND must NOT leak any F5 field.
+    const td = (row?.contextData ?? {}) as Record<string, unknown>;
+    expect(td).toHaveProperty('invoice_id');
+    expect(td).toHaveProperty('fiscal_year');
+    expect(td).toHaveProperty('template_version');
+    expect(td).not.toHaveProperty('paymentIntentId');
+    expect(td).not.toHaveProperty('chargeId');
+    expect(td).not.toHaveProperty('method');
   }, 30_000);
 });
