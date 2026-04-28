@@ -179,17 +179,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         // running under the right tenant slot keeps the audit
         // chain consistent).
         //
-        // R4-I1 — flip invoice's `receipt_pdf_status` from 'failed'
-        // back to 'pending' atomically with the outbox INSERT so the
-        // F4 email gate (in `/api/cron/outbox-dispatch`) reads
-        // 'pending' (legitimate-wait, no attempts bump) instead of
-        // 'failed' (terminal, bump attempts) during the window
-        // between this reconcile tick and the worker's actual
-        // success write. Without this flip there's a race where the
-        // email gate would burn retry budget unnecessarily on a
-        // recoverable invoice.
-        await runInTenant(asTenantContext(row.tenantId), async () => {
-          await db
+        // R4-I1 + R5-C1 — both writes (status flip + outbox INSERT)
+        // MUST commit atomically. The `runInTenant` callback receives
+        // a `tx` handle (it's `db.transaction(async (tx) => …)`
+        // internally) — we MUST thread that tx through both writes
+        // so they share one Postgres transaction. Earlier shape used
+        // bare `db.update(...)` + `enqueue(null, ...)` which both
+        // auto-commit independently: a crash between the two writes
+        // would leave invoice flipped to 'pending' with NO outbox
+        // row, and the next reconcile tick wouldn't pick it up
+        // (filter is `WHERE status='failed'`) — silent data loss.
+        await runInTenant(asTenantContext(row.tenantId), async (tx) => {
+          await tx
             .update(invoices)
             .set({
               receiptPdfStatus: 'pending',
@@ -203,7 +204,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
                 eq(invoices.receiptPdfStatus, 'failed'),
               ),
             );
-          await receiptPdfRenderEnqueueAdapter.enqueue(null, {
+          await receiptPdfRenderEnqueueAdapter.enqueue(tx, {
             tenantId: row.tenantId,
             invoiceId: row.invoiceId,
             fiscalYear,

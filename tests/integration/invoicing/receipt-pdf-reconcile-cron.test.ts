@@ -15,7 +15,7 @@
  * ran outside the tenant context; on a project that enforces RLS on
  * audit_log it returned zero rows every tick → re-page every 5 min.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
@@ -192,7 +192,14 @@ describe('R1-CG-2 — receipt PDF reconcile cron', () => {
   }, 90_000);
 
   afterAll(async () => {
+    vi.restoreAllMocks();
     await tenant.cleanup().catch(() => {});
+  });
+
+  // R4-I2 pattern — restore spies after each test so a crash mid-run
+  // doesn't leak the mocked enqueue into subsequent tests.
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('attempts<3 → re-enqueues a fresh receipt_pdf_render outbox row under tenant context', async () => {
@@ -276,4 +283,92 @@ describe('R1-CG-2 — receipt PDF reconcile cron', () => {
     );
     expect(matched.length).toBe(1);
   }, 90_000);
+
+  // R5-C1 — atomicity regression. Reconcile re-enqueue path does TWO
+  // writes (status flip 'failed'→'pending' + outbox INSERT). Both
+  // MUST commit/rollback as a single Postgres tx via the `tx` handle
+  // threaded through `runInTenant`. Pre-R5-C1 fix used bare `db`
+  // for both writes — auto-commit independently → if outbox INSERT
+  // throws, status flip stays committed → next reconcile filter
+  // (`WHERE status='failed'`) misses the orphaned 'pending' row →
+  // silent data loss.
+  //
+  // This test patches the enqueue adapter to throw on the next call.
+  // Then asserts the invoice's `receipt_pdf_status` STAYED at
+  // 'failed' (rolled back), not 'pending'.
+  it('R5-C1 atomicity — enqueue throw rolls back the status flip (no orphan pending)', async () => {
+    const { invoiceId } = await seedFailedInvoice(tenant, user, 1);
+
+    // R4-I2 pattern — vi.spyOn restored automatically by afterEach.
+    const { receiptPdfRenderEnqueueAdapter } = await import(
+      '@/modules/invoicing/infrastructure/adapters/receipt-pdf-render-enqueue-adapter'
+    );
+    vi.spyOn(
+      receiptPdfRenderEnqueueAdapter,
+      'enqueue',
+    ).mockImplementationOnce(async () => {
+      throw new Error('R5-C1 simulated outbox INSERT failure');
+    });
+
+    // The cron handler catches per-row exceptions → still returns 200.
+    const resp = await callCron();
+    expect(resp.status).toBe(200);
+
+    // The invoice's receipt_pdf_status MUST still be 'failed' (the
+    // status flip was rolled back when enqueue threw inside the same
+    // Postgres tx). Pre-R5-C1 fix this would have been 'pending'.
+    const [invRow] = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, tenant.ctx.slug),
+          eq(invoices.invoiceId, invoiceId),
+        ),
+      )
+      .limit(1);
+    expect(invRow?.receiptPdfStatus).toBe('failed');
+  }, 60_000);
+
+  // R5-C1 sibling — happy path verification: both writes succeed
+  // together → status='pending', outbox row inserted, both visible.
+  it('R5-C1 atomicity — happy path: both writes commit together', async () => {
+    const { invoiceId } = await seedFailedInvoice(tenant, user, 1);
+
+    const resp = await callCron();
+    expect(resp.status).toBe(200);
+    const body = (await resp.json()) as { reEnqueued: number };
+    expect(body.reEnqueued).toBeGreaterThanOrEqual(1);
+
+    const [invRow] = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, tenant.ctx.slug),
+          eq(invoices.invoiceId, invoiceId),
+        ),
+      )
+      .limit(1);
+    // Status flipped to 'pending' (worker will pick up next).
+    expect(invRow?.receiptPdfStatus).toBe('pending');
+    // last_error cleared.
+    expect(invRow?.receiptPdfLastError).toBeNull();
+
+    const outboxRows = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+        ),
+      );
+    const matchedOutbox = outboxRows.filter(
+      (r) =>
+        (r.contextData as { invoice_id?: string }).invoice_id === invoiceId &&
+        r.status === 'pending',
+    );
+    expect(matchedOutbox.length).toBeGreaterThanOrEqual(1);
+  }, 60_000);
 });
