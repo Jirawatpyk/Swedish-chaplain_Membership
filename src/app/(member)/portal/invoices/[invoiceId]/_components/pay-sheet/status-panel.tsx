@@ -27,7 +27,14 @@ export type StatusPanelKind = 'processing' | 'three-d-secure';
 
 export interface StatusPanelProps {
   readonly kind: StatusPanelKind;
-  readonly onCancel: () => void;
+  /**
+   * review-20260428-102639.md W14 closure — `onCancel` is now optional.
+   * Omitted for `kind='processing'` because Stripe is finalising funds
+   * capture; clicking Cancel would not actually reverse the charge and
+   * misleads the user. Retained for `kind='three-d-secure'` where the
+   * user is mid-challenge and abandon is genuinely possible.
+   */
+  readonly onCancel?: () => void;
 }
 
 interface KindConfig {
@@ -63,16 +70,18 @@ export function StatusPanel({ kind, onCancel }: StatusPanelProps) {
       <p className="text-caption text-muted-foreground">{t('body')}</p>
       {/* Visual progress shimmer — not interactive. */}
       <Skeleton className="h-2 w-full" />
-      <Button
-        type="button"
-        variant="ghost"
-        onClick={onCancel}
-        // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px on mobile (G-Review #7).
-        className="min-h-[44px] w-full"
-        data-testid={cfg.cancelTestId}
-      >
-        {t('cancel')}
-      </Button>
+      {onCancel ? (
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onCancel}
+          // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px on mobile (G-Review #7).
+          className="min-h-[44px] w-full"
+          data-testid={cfg.cancelTestId}
+        >
+          {t('cancel')}
+        </Button>
+      ) : null}
     </div>
   );
 }

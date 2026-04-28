@@ -199,9 +199,10 @@ describe('initiatePayment (T055)', () => {
     expect(auditCall?.[1].eventType).toBe('payment_initiated');
     // Staff-review R2 R005 (2026-04-28): pin retentionYears at the unit
     // boundary so a regression on `F5_AUDIT_RETENTION_YEARS['payment_initiated']`
-    // (Thai RD §87/3 + GDPR Art.6(1)(c) — 10y for tax-document-adjacent
-    // events) does not pass green silently.
-    expect(auditCall?.[1].retentionYears).toBe(10);
+    // does not pass green silently. review-20260428-102639.md W7 closure
+    // realigned to 5y (pre-settlement ops) — only `payment_succeeded`
+    // remains at 10y as the settlement-record event.
+    expect(auditCall?.[1].retentionYears).toBe(5);
     // Staff-review R2 R014 (2026-04-28): pin idempotency-key shape
     // `inv-{invoiceId}-attempt-{n}` at the unit layer; integration mock
     // already asserts the exact concrete value.

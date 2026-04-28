@@ -273,6 +273,15 @@ export const REDACT_PATHS = [
   '*.error.reason',
   'result.error.reason',
   '*.result.error.reason',
+  // review-20260428-102639.md S1 closure — defense-in-depth: F4 + F5
+  // worker / cron paths carry `memberIdentitySnapshot` (member name +
+  // address + email PII) in scan rows. Never logged today, but path-
+  // based redaction means a future contributor logging the row
+  // accidentally cannot leak PII.
+  'memberIdentitySnapshot',
+  '*.memberIdentitySnapshot',
+  'member_identity_snapshot',
+  '*.member_identity_snapshot',
 ];
 
 /**

@@ -804,8 +804,9 @@ identifier.
 | SLO-F5-004 settlement → portal confirmation p95 | < 10 s | distributed trace `webhook_receive → portal_revalidate` |
 | SLO-F5-005 payment-success rate | ≥ 95 % over 1 h excluding bank-decline codes | `payments.succeeded.count` / (`payments.succeeded.count` + `payments.failed.count{reason_code != insufficient_funds, card_declined, generic_decline}`) |
 | SLO-F5-006 webhook idempotency | 100 % zero double-paid / double-credited | T150 30-day soak harness (`scripts/perf/webhook-idempotency-soak.ts`) |
+| SLO-F5-007 receipt email delivery time-to-first-attempt p95 (post T166 async) | ≤ 60 s post-webhook-ack | distributed trace `payment_intent.succeeded webhook_receive → receipt_email_outbox_dispatched` (added 2026-04-28 per review-20260428-102639.md S3 closure). Outbox cron cadence 5 min in dev / 1 min in prod; 60 s p95 budget assumes prod cadence + worker first-attempt success on the happy path. `pdf_render_permanently_failed` page (§ 21.3 below) is the alert on the failure tail. |
 
-### 21.3 Alert rules (10 alerts — T166 added `pdf_render_permanently_failed`)
+### 21.3 Alert rules (11 alerts — T166 added `pdf_render_permanently_failed`; review-20260428-102639.md added `slo_f5_002b_breach`)
 
 | Alert | Severity | Threshold | Runbook |
 |---|---|---|---|
@@ -819,6 +820,19 @@ identifier.
 | `out_of_band_refund_rejected_total` > 0 / day | **alarm** | admin used Stripe Dashboard instead of in-app refund | `docs/runbooks/out-of-band-refund.md` (FR-011a) |
 | `payments.auto_refunded_stale.count` > 0 | **alarm** | overpaid invoice — guard-rail fired | check invoice state + manual reconciliation |
 | `pdf_render_permanently_failed` ≥ 1 (any tenant) | **page** | T166 receipt PDF worker exhausted 3 attempts — invoice `paid` with no receipt PDF available to member | `docs/runbooks/receipt-pdf-permanently-failed.md` |
+| `slo_f5_002b_breach` — webhook span p95 (succeeded) > 1000 ms sustained 30 min | **alarm** | post-T166 async-PDF SLO regression — implies the F4 markPaid + outbox-enqueue tail is creeping back into the hot path, OR Neon/Vercel network latency degraded. Block T167 (optimistic-UI overlay deletion) — the gate condition is "prod p95 < 1000 ms for 7 consecutive days"; sustained breach resets the 7-day timer. | Dashboard panel: `webhook_span_duration_ms{event_type="payment_intent.succeeded"}`. Query: `histogram_quantile(0.95, rate(webhook_span_duration_ms_bucket{event_type="payment_intent.succeeded"}[30m]))`. Triage: check Vercel function timing breakdown + Neon connection pool wait + receipt outbox enqueue duration. Rollback: re-enable `FEATURE_F5_ASYNC_RECEIPT_PDF=true` if the breach correlates with the kill-switch flipping to false. |
+
+**T167 gate**: SLO-F5-002b prod p95 < 1000 ms for 7 consecutive days unblocks T167 (delete optimistic-UI overlay) per `tasks.md` line ~444. Maintainer query (manual eyeball at the end of each 7-day window):
+
+```promql
+max_over_time(
+  histogram_quantile(0.95,
+    rate(webhook_span_duration_ms_bucket{event_type="payment_intent.succeeded",env="prod"}[24h])
+  )[7d:1h]
+) < 1000
+```
+
+If the 7-day rolling max is < 1000 ms, the gate clears. If `slo_f5_002b_breach` fires anywhere in the window, the timer resets to day 0.
 
 ### 21.4 Logging redact rules (additions)
 

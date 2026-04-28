@@ -1696,7 +1696,8 @@
       "security": {
         "stripeBadge": "ปลอดภัยด้วย Stripe",
         "encrypted": "เข้ารหัส · รองรับ PCI-DSS",
-        "cards": "รองรับ Visa, Mastercard, American Express, JCB"
+        "cards": "รองรับ Visa, Mastercard, American Express, JCB",
+        "privacyDisclosure": "การชำระเงินของคุณดำเนินการโดย <stripeLink>Stripe</stripeLink> อีเมลของคุณจะถูกส่งให้ Stripe เพื่อเริ่มต้นรายการชำระเงิน"
       },
       "methods": {
         "card": "บัตรเครดิต",
@@ -1708,7 +1709,7 @@
       },
       "success": {
         "title": "ชำระเงินสำเร็จ",
-        "summaryCard": "ชำระ {amount} ด้วยบัตรลงท้าย {last4} เมื่อ {dateTime}",
+        "summaryCard": "ชำระ {amount} ด้วยบัตรเครดิตเมื่อ {dateTime}",
         "summaryPromptPay": "ชำระ {amount} ด้วย PromptPay เมื่อ {dateTime}",
         "downloadReceipt": "ดาวน์โหลดใบเสร็จ",
         "close": "ปิด",

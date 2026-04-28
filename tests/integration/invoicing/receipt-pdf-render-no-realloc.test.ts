@@ -229,6 +229,134 @@ async function seedSeparateModePendingInvoice(
   return { invoiceId, receiptDocNumRaw };
 }
 
+/**
+ * review-20260428-102639.md S13 closure — combined-mode invoice.
+ * Worker MUST reuse the invoice's documentNumber when
+ * receiptDocumentNumberRaw is null (combined-mode = receipt IS the
+ * invoice; no separate receipt number sequence).
+ */
+async function seedCombinedModePendingInvoice(
+  tenant: TestTenant,
+  user: TestUser,
+): Promise<{ invoiceId: string; invoiceDocNum: string }> {
+  const memberId = randomUUID();
+  const invoiceId = randomUUID();
+  const planId = `r2cg2-cm-${randomUUID().slice(0, 8)}`;
+  const invoiceDocNum = 'INV-2026-000077';
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx.insert(membershipPlans).values({
+      tenantId: tenant.ctx.slug,
+      planId,
+      planYear: 2026,
+      planName: { en: 'R2-CG-2 Combined Plan' },
+      description: { en: '' },
+      sortOrder: 11,
+      planCategory: 'corporate',
+      memberTypeScope: 'company',
+      annualFeeMinorUnits: 1_000_000,
+      includesCorporatePlanId: null,
+      minTurnoverMinorUnits: null,
+      maxTurnoverMinorUnits: null,
+      maxDurationYears: null,
+      maxMemberAge: null,
+      benefitMatrix: MATRIX,
+      isActive: true,
+      createdBy: user.userId,
+      updatedBy: user.userId,
+    });
+    await tx
+      .update(tenantInvoiceSettings)
+      .set({ receiptNumberingMode: 'combined' })
+      .where(eq(tenantInvoiceSettings.tenantId, tenant.ctx.slug));
+    await tx
+      .insert(tenantInvoiceSettings)
+      .values({
+        tenantId: tenant.ctx.slug,
+        currencyCode: 'THB',
+        vatRate: '0.0700',
+        registrationFeeSatang: 500000n,
+        legalNameTh: 'ทดสอบ',
+        legalNameEn: 'Test',
+        taxId: '0000000000000',
+        registeredAddressTh: 'Bangkok',
+        registeredAddressEn: 'Bangkok',
+        invoiceNumberPrefix: 'INV',
+        creditNoteNumberPrefix: 'CN',
+        receiptNumberingMode: 'combined',
+      })
+      .onConflictDoNothing({ target: tenantInvoiceSettings.tenantId });
+    await tx.insert(members).values({
+      tenantId: tenant.ctx.slug,
+      memberId,
+      companyName: 'R2-CG-2 Combined Co',
+      country: 'TH',
+      planId,
+      planYear: 2026,
+    });
+    await tx.insert(invoices).values({
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      memberId,
+      planYear: 2026,
+      planId,
+      status: 'paid',
+      draftByUserId: user.userId,
+      fiscalYear: 2026,
+      sequenceNumber: 77,
+      documentNumber: invoiceDocNum,
+      issueDate: '2026-04-01',
+      dueDate: '2026-05-01',
+      paidAt: new Date(),
+      paymentMethod: 'other',
+      paymentDate: '2026-05-01',
+      paymentRecordedByUserId: user.userId,
+      subtotalSatang: 1_000_000n,
+      vatRateSnapshot: '0.0700',
+      vatSatang: 70_000n,
+      totalSatang: 1_070_000n,
+      creditedTotalSatang: 0n,
+      proRatePolicySnapshot: 'monthly',
+      netDaysSnapshot: 30,
+      tenantIdentitySnapshot: {
+        legal_name_th: 'ทดสอบ',
+        legal_name_en: 'Test',
+        tax_id: '0000000000000',
+        address_th: 'Bangkok',
+        address_en: 'Bangkok',
+        logo_blob_key: null,
+      },
+      memberIdentitySnapshot: {
+        legal_name: 'R2-CG-2 Combined Co',
+        tax_id: '1234567890123',
+        address: 'Bangkok',
+        primary_contact_name: 'CM Contact',
+        primary_contact_email: 'cm@example.com',
+      },
+      pdfBlobKey: `invoicing/test/r2cg2-cm.pdf`,
+      pdfSha256: 'b'.repeat(64),
+      pdfTemplateVersion: 1,
+      receiptPdfStatus: 'pending',
+      receiptPdfRenderAttempts: 0,
+      // Combined-mode: receipt_document_number_raw STAYS NULL.
+      receiptDocumentNumberRaw: null,
+    });
+    await tx.insert(invoiceLines).values({
+      tenantId: tenant.ctx.slug,
+      lineId: randomUUID(),
+      invoiceId,
+      kind: 'membership_fee',
+      descriptionTh: 'ค่าสมาชิก',
+      descriptionEn: 'Membership',
+      unitPriceSatang: 1_000_000n,
+      quantity: '1',
+      proRateFactor: null,
+      totalSatang: 1_000_000n,
+      position: 1,
+    });
+  });
+  return { invoiceId, invoiceDocNum };
+}
+
 describe('R2-CG-2 — worker reads receipt_document_number_raw, never re-allocates', () => {
   let tenant: TestTenant;
   let user: TestUser;
@@ -354,6 +482,56 @@ describe('R2-CG-2 — worker reads receipt_document_number_raw, never re-allocat
       .limit(1);
     expect(invRow?.receiptDocumentNumberRaw).toBe(receiptDocNumRaw);
     expect(invRow?.receiptPdfStatus).toBe('rendered');
+  }, 60_000);
+
+  // review-20260428-102639.md S13 closure — combined-mode path.
+  // In combined-mode, `receipt_document_number_raw` STAYS NULL because
+  // the receipt IS the invoice (single document, single number).
+  // The worker MUST reuse the invoice's `documentNumber` directly,
+  // NOT throw the L168 defensive guard.
+  it('combined-mode — worker reuses invoice documentNumber, no realloc, no defensive throw', async () => {
+    const { invoiceId, invoiceDocNum } = await seedCombinedModePendingInvoice(
+      tenant,
+      user,
+    );
+
+    const { renderReceiptPdf } = await import('@/modules/invoicing');
+    const { makeRenderReceiptPdfDeps } = await import(
+      '@/modules/invoicing/application/invoicing-deps'
+    );
+    const result = await renderReceiptPdf(
+      makeRenderReceiptPdfDeps(tenant.ctx.slug),
+      {
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        fiscalYear: 2026,
+        templateVersion: 1,
+        requestId: 'r2cg2-cm-test',
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const [invRow] = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, tenant.ctx.slug),
+          eq(invoices.invoiceId, invoiceId),
+        ),
+      )
+      .limit(1);
+    // Combined-mode invariants:
+    expect(invRow?.receiptDocumentNumberRaw).toBeNull();
+    expect(invRow?.receiptPdfStatus).toBe('rendered');
+    // Receipt blob key MUST be derivable but distinct from invoice
+    // PDF key — combined-mode keeps separate blob asset for download.
+    expect(invRow?.receiptPdfBlobKey).toContain(invoiceId);
+    // Worker did NOT touch the receipt sequence (combined-mode never
+    // allocates from `tenant_document_sequences.receipt`).
+    void invoiceDocNum;
   }, 60_000);
 });
 

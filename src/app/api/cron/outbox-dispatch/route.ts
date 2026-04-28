@@ -65,6 +65,7 @@ import {
   type InvoiceAutoEmailEventType,
 } from '@/modules/invoicing/infrastructure/email/invoice-auto-email';
 import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
+import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 /* eslint-enable no-restricted-imports */
 import { renderReceiptPdf, makeRenderReceiptPdfDeps } from '@/modules/invoicing';
 import { runInTenant } from '@/lib/db';
@@ -305,6 +306,35 @@ async function dispatchReceiptPdfRender(
   // opens its OWN tx (use-case's `withTx`) — distinct from this
   // dispatcher tx — so a render failure doesn't roll back the
   // dispatcher's outbox status update.
+  //
+  // review-20260428-102639.md S9 closure — defense-in-depth on
+  // tenantId shape before passing to RLS context. The DB column is
+  // already non-NULL TEXT, but a malformed value (e.g. data
+  // corruption / row tampering / future migration regression) would
+  // bind an attacker-controllable string into `app.current_tenant`.
+  // Slug regex matches the tenant-creation contract (lowercase
+  // alphanumeric + hyphen, 1-64 chars).
+  if (!row.tenantId || !/^[a-z0-9-]{1,64}$/.test(row.tenantId)) {
+    logger.error(
+      {
+        requestId,
+        outboxRowId: row.id,
+        tenantIdLen: row.tenantId?.length ?? 0,
+      },
+      'cron.outbox_dispatch.invalid_tenant_id',
+    );
+    await tx
+      .update(notificationsOutbox)
+      .set({
+        status: 'permanently_failed' as const,
+        attempts: row.attempts + 1,
+        lastError: 'invalid_tenant_id',
+        updatedAt: now,
+      })
+      .where(eq(notificationsOutbox.id, row.id));
+    outboxMetrics.permanentFailure(row.notificationType, 'no_template_handler');
+    return 'permanent';
+  }
   const tenantCtx = asTenantContext(row.tenantId);
   const result = await runInTenant(tenantCtx, async () => {
     return renderReceiptPdf(makeRenderReceiptPdfDeps(row.tenantId!), {
@@ -332,7 +362,11 @@ async function dispatchReceiptPdfRender(
 
   // Failure path: bump attempts + decide retry vs permanent.
   const nextAttempt = row.attempts + 1;
-  const isPermanent = nextAttempt >= MAX_ATTEMPTS;
+  // review-20260428-102639.md S8 closure — `data_corruption` is
+  // deterministic (missing/unparseable receipt_document_number_raw);
+  // retry will produce identical failure. Short-circuit to permanent.
+  const isDataCorruption = result.error.code === 'data_corruption';
+  const isPermanent = isDataCorruption || nextAttempt >= MAX_ATTEMPTS;
   const reason =
     'reason' in result.error
       ? (result.error as { reason?: string }).reason ?? result.error.code
@@ -348,7 +382,13 @@ async function dispatchReceiptPdfRender(
         updatedAt: now,
       })
       .where(eq(notificationsOutbox.id, row.id));
-    await tx.insert(auditLog).values({
+    // review-20260428-102639.md H3 closure — emit via f4AuditAdapter
+    // so retention_years is enforced explicitly by adapter logic
+    // (f4RetentionFor) instead of relying on the DB-level DEFAULT 5.
+    // Pre-fix used `tx.insert(auditLog)` directly which bypassed the
+    // T135 retention enforcement and would silently regress if the
+    // retention map ever changed.
+    await f4AuditAdapter.emit(tx, {
       eventType: 'pdf_render_permanently_failed',
       actorUserId: 'system:cron',
       summary: `receipt_pdf_render row ${row.id} permanently failed (${reason})`,
@@ -360,7 +400,7 @@ async function dispatchReceiptPdfRender(
         attempts: nextAttempt,
         reason,
       },
-    });
+    } as Parameters<typeof f4AuditAdapter.emit>[1]);
     // Use `max_retries` for the bounded enum — the underlying reason
     // is preserved in `last_error` on the outbox row + the audit
     // `pdf_render_permanently_failed` payload above for forensics.

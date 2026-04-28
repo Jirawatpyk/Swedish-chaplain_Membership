@@ -51,6 +51,11 @@ function makeDeps(): ProcessChargeRefundedDeps {
     audit: {
       emit: vi.fn(async () => undefined),
     } as unknown as ProcessChargeRefundedDeps['audit'],
+    // review-20260428-102639.md W5 closure — clock now required.
+    clock: {
+      nowMs: () => 1_700_000_000_000,
+      nowIso: () => '2023-11-14T22:13:20.000Z',
+    },
   };
 }
 

@@ -142,6 +142,11 @@ export function makeConfirmPaymentDeps(tenantId: string): ConfirmPaymentDeps {
     // Audit 2026-04-25 finding #4: pass processorEventsRepo so the
     // dispatch tx can fold markProcessed in atomically.
     processorEventsRepo: makeDrizzleProcessorEventsRepo(),
+    // review-20260428-102639.md H2 closure — structured logger for
+    // Phase B catch on stale-refund path.
+    logger: {
+      warn: (msg, ctx) => paymentsLogger.warn(msg, ctx),
+    },
   };
 }
 

@@ -53,6 +53,27 @@ If any of the above is "No", **SAQ-A does NOT apply** and we MUST escalate to SA
 - **Scope**: applied **globally** to every response via `applySecurityHeaders(response, nonce)` — Stripe allowlist entries are tight (specific `https://js.stripe.com` / `https://hooks.stripe.com` / `https://api.stripe.com` hosts only) so a global CSP is safe for SAQ-A. Webhook endpoint (`/api/webhooks/stripe`) is server-to-server (no browser script execution) — CSP is irrelevant there but the global header is harmless. **Note**: original design (initial 2026-04-23 draft) routed CSP through `src/app/middleware.ts` with per-route scoping; implementation consolidated to `src/proxy.ts` global scope during Phase 9 to simplify the security surface — no SAQ-A scope change.
 - **Hardening track**: ✅ Closed by staff-review R2 R023 (2026-04-28) via nonce + strict-dynamic. Future hardening (CSP reporting endpoint, drop the legacy `'unsafe-inline'` fallback once browser-share telemetry confirms < 0.1 % of clients lack CSP3 support) tracked in `post-ship-tasks.md`.
 
+### Async receipt PDF render path (T166 — added 2026-04-28)
+
+The post-T166 receipt-PDF render path is fully outside SAQ-A scope. Evidence:
+
+- **Worker input**: `src/modules/invoicing/application/use-cases/render-receipt-pdf.ts` accepts only `tenantId`, `invoiceId`, `fiscalYear`, `templateVersion`, `requestId`, `actorUserId`. Zero card / Stripe charge metadata flows into the worker.
+- **Outbox payload**: `src/modules/invoicing/infrastructure/adapters/receipt-pdf-render-enqueue-adapter.ts` writes only `invoice_id`, `fiscal_year`, `template_version`, `recipient_email` to `notifications_outbox.context_data`. No Stripe IDs, no payment-method tokens.
+- **Logging**: render-receipt-pdf.ts and the reconcile cron emit only `tenantId`, `invoiceId`, `attempts`, `reason` (`reason` is in `REDACT_PATHS` defense-in-depth).
+- **PDF body**: composed from invoice + member identity snapshots + tax-document line items. No Stripe metadata embedded.
+- **Reconcile cron**: `src/app/api/internal/cron/receipt-pdf-reconcile/route.ts` is `runtime: 'nodejs'` + CRON_SECRET-gated; reads only invoice identifiers. No client-side surface; CSP unaffected.
+- **Audit emit**: `pdf_render_permanently_failed` events go through `f4AuditAdapter.emit(...)` so retention is enforced (5y operational); payload contains identifiers + `reason` (redacted) only.
+
+**Conclusion**: T166 reduces SAQ-A risk surface by shortening the time the webhook handler spends in a post-payment state where an exception could produce a logged stack trace containing payment context. SAQ-A scope is **preserved**, not expanded.
+
+### Cross-border PII transfer (added 2026-04-28 — review-20260428-102639.md H4)
+
+For completeness alongside the SAQ-A scope statement above, F5 PromptPay-path data flow:
+
+- **Member email** (`actorEmail`) is transmitted to Stripe via `payment_method_data.billing_details.email` for every PromptPay PaymentIntent. Stripe processes this in Ireland/US infrastructure.
+- **PCI scope**: email is NOT cardholder data per PCI DSS glossary → no SAQ-A implication.
+- **PDPA / GDPR scope**: this IS personal data and constitutes a cross-border transfer. Lawful basis is documented in `data-transfers.md` (Stripe DPA + auto-SCC for EU subjects; PDPA §28 contract-performance basis under §24 — email is necessary to initiate the PaymentIntent for the member's invoice). Privacy disclosure surfaced at point of payment via `SecurityFooter` privacy-disclosure microcopy (post-fix — review H4/W1 closure).
+
 ---
 
 ## 3. SAQ-A questionnaire (v4.0 distilled)

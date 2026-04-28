@@ -487,6 +487,8 @@ async function processWebhookEventBody(
           refundsRepo: deps.refundsRepo,
           processorEventsRepo: deps.processorEventsRepo,
           audit: deps.audit,
+          // review-20260428-102639.md W5 closure — clock is now required.
+          clock: deps.clock,
         },
         {
           tenantId,

@@ -71,10 +71,24 @@ export type RenderReceiptPdfError =
   | { readonly code: 'settings_missing' }
   | { readonly code: 'render_failed'; readonly reason: string }
   | { readonly code: 'blob_upload_failed'; readonly reason: string }
-  | { readonly code: 'document_number_overflow' };
+  | { readonly code: 'document_number_overflow' }
+  /**
+   * review-20260428-102639.md S8 closure — surfaced when the worker
+   * detects deterministic data corruption (missing or unparseable
+   * `receipt_document_number_raw`). Dispatcher MUST treat this as a
+   * permanent failure (skip retry ladder; emit
+   * `pdf_render_permanently_failed` immediately).
+   */
+  | { readonly code: 'data_corruption'; readonly reason: string };
 
+// review-20260428-102639.md S8 closure — `data_corruption` short-
+// circuits the dispatcher's retry ladder for deterministic data
+// failures (missing receipt_document_number_raw, parse error).
+// Retrying these wastes the 3-attempt budget on a deterministic
+// no-op and produces a misleading `pdf_render_permanently_failed`
+// page when the actual cause is data integrity.
 class RenderReceiptInternalError extends TxAbort<{
-  readonly kind: 'pdf_render_failed' | 'blob_upload_failed';
+  readonly kind: 'pdf_render_failed' | 'blob_upload_failed' | 'data_corruption';
   readonly reason: string;
 }> {
   override readonly name = 'RenderReceiptInternalError';
@@ -171,7 +185,7 @@ export async function renderReceiptPdf(
           // Treat as a permanent state corruption — surface it to the
           // reconcile cron as `render_failed` so on-call investigates.
           throw new RenderReceiptInternalError({
-            kind: 'pdf_render_failed',
+            kind: 'data_corruption',
             reason:
               'separate_mode_receipt_doc_num_missing — invoice row has no receipt_document_number_raw; record-payment did not persist it (pre-T166 row?)',
           });
@@ -179,7 +193,7 @@ export async function renderReceiptPdf(
         const docResult = DocumentNumber.parse(loaded.receiptDocumentNumberRaw);
         if (!docResult.ok) {
           throw new RenderReceiptInternalError({
-            kind: 'pdf_render_failed',
+            kind: 'data_corruption',
             reason: `receipt_doc_num_parse_failed: ${loaded.receiptDocumentNumberRaw}`,
           });
         }
@@ -285,13 +299,13 @@ export async function renderReceiptPdf(
           'renderReceiptPdf: failed to mark row as failed (suppressed)',
         );
       }
-      return err({
-        code:
-          e.error.kind === 'pdf_render_failed'
-            ? ('render_failed' as const)
-            : ('blob_upload_failed' as const),
-        reason: e.error.reason,
-      });
+      const code: RenderReceiptPdfError['code'] =
+        e.error.kind === 'pdf_render_failed'
+          ? 'render_failed'
+          : e.error.kind === 'blob_upload_failed'
+            ? 'blob_upload_failed'
+            : 'data_corruption';
+      return err({ code, reason: e.error.reason } as RenderReceiptPdfError);
     }
     throw e;
   }

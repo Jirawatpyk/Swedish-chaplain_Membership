@@ -523,6 +523,16 @@ export function PaySheet({
                   // 2026-04-26 — user reported "ขึ้น Paid ทั้งที่
                   // ยังไม่ได้จ่าย").
                   if (outcome === 'success') {
+                    // review-20260428-102639.md H1 closure — flip the
+                    // ref SYNCHRONOUSLY alongside the setState. The
+                    // ref-sync useEffect is async (commits next render
+                    // tick); if the user navigates away in the same
+                    // tick (true unmount), cleanup reads stale `false`
+                    // → fires firePaymentCancel('user_navigated_away')
+                    // for an already-succeeded PI → spurious
+                    // payment_canceled audit row immediately after
+                    // payment_succeeded for the same paymentId.
+                    paymentSettledRef.current = true;
                     setPaymentSettled(true);
                   }
                 }}

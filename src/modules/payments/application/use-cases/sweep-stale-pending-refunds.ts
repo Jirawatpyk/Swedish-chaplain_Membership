@@ -84,8 +84,15 @@ export async function sweepStalePendingRefunds(
   input: SweepStalePendingRefundsInput,
 ): Promise<Result<SweepStalePendingRefundsOutput, SweepStalePendingRefundsError>> {
   const olderThanHours = input.olderThanHours ?? 24;
-  if (olderThanHours <= 0) {
-    return err({ code: 'sweep_failed', cause: 'olderThanHours must be > 0' });
+  // review-20260428-102639.md S5 closure — upper bound prevents
+  // pathological queries (e.g. `olderThanHours=8760` listing every
+  // pending refund ever) that risk Vercel function timeout.
+  const MAX_OLDER_THAN_HOURS = 720; // 30 days
+  if (olderThanHours <= 0 || olderThanHours > MAX_OLDER_THAN_HOURS) {
+    return err({
+      code: 'sweep_failed',
+      cause: `olderThanHours must be 1–${MAX_OLDER_THAN_HOURS}`,
+    });
   }
   const nowMs = deps.clock.nowMs();
   const cutoffMs = nowMs - olderThanHours * 60 * 60 * 1000;

@@ -20,6 +20,13 @@
  * on this. Records the measured numbers into a dated perf-results
  * markdown file under specs/ for the Phase 11 review trail.
  *
+ * NOTE (review-20260428-102639.md B2): Full benchmark is gated by
+ * RUN_PERF=1 because n=30 × 2 modes seeds and tears down ~60 paid
+ * invoices per run. A regular-CI 5-iteration smoke variant is
+ * tracked as post-ship S11 — until then, this file enforces the
+ * SLO-F5-002b dev budget (< 1000 ms) when run, and the maintainer
+ * triggers it manually before any /speckit.ship gate.
+ *
  * Run locally:
  *   RUN_PERF=1 pnpm test:integration \
  *     tests/integration/perf/webhook-async-pdf-benchmark.test.ts
@@ -54,10 +61,13 @@ const ITER = 30;
 // SLO targets. Pre-T166 the inline path was 5–15 s; we leave a
 // generous ceiling so the benchmark doesn't false-fail on slow
 // shared CI hosts. The post-T166 ceiling tracks the hot-path SLO
-// in observability.md § 21.2 (SLO-F5-002b post-T166: < 500 ms,
-// relaxed to 1500 ms here for end-to-end including audit + outbox
-// enqueue tail).
+// in observability.md § 21.2 (SLO-F5-002b post-T166: < 1000 ms
+// dev / < 750 ms prod). The 1500 ms upper bound here is the
+// CI-safety wall (used to avoid false-fail on cold shared hosts);
+// the SLO-aligned assertion `ASYNC_P95_SLO_BUDGET_MS` is the real
+// gate (see review-20260428-102639.md B2 closure).
 const ASYNC_P95_BUDGET_MS = 1500;
+const ASYNC_P95_SLO_BUDGET_MS = 1000;
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -282,6 +292,10 @@ describe.skipIf(!RUN_PERF)(
         // path is being deleted; failing the bench on it would block
         // CI for no operational benefit).
         expect(asyncP95).toBeLessThan(ASYNC_P95_BUDGET_MS);
+        // SLO-F5-002b dev budget — the real gate. Post-T166 budget is
+        // 1000 ms dev / 750 ms prod; we assert the dev value here so
+        // CI catches a regression before it hits staging.
+        expect(asyncP95).toBeLessThan(ASYNC_P95_SLO_BUDGET_MS);
         // Sanity: async should be materially faster than sync.
         expect(asyncP95).toBeLessThan(syncP95);
       },

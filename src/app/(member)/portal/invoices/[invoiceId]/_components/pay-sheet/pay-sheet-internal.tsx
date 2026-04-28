@@ -721,7 +721,13 @@ export function PaySheetInternal({
           />
         );
       case 'processing':
-        return <StatusPanel kind="processing" onCancel={handleCancel} />;
+        // review-20260428-102639.md W14 closure — `processing` means
+        // the charge is essentially committed (Stripe is finalizing
+        // funds capture). Showing a "Cancel" button gives the user
+        // false hope of a no-cost abandon. Pass `onCancel={undefined}`
+        // so StatusPanel renders without the cancel CTA — only the
+        // 3DS / requires-action state retains the cancel option.
+        return <StatusPanel kind="processing" />;
       case 'requires-action':
         return <StatusPanel kind="three-d-secure" onCancel={handleCancel} />;
       case 'success':

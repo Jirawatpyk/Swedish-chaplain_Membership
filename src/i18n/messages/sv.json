@@ -1696,7 +1696,8 @@
       "security": {
         "stripeBadge": "Säkrat av Stripe",
         "encrypted": "Krypterat · PCI-DSS-kompatibelt",
-        "cards": "Vi accepterar Visa, Mastercard, American Express, JCB"
+        "cards": "Vi accepterar Visa, Mastercard, American Express, JCB",
+        "privacyDisclosure": "Din betalning hanteras av <stripeLink>Stripe</stripeLink>. Din e-postadress delas med Stripe för att initiera överföringen."
       },
       "methods": {
         "card": "Kort",
@@ -1708,7 +1709,7 @@
       },
       "success": {
         "title": "Betalningen mottagen",
-        "summaryCard": "Betalt {amount} med kort som slutar på {last4} den {dateTime}",
+        "summaryCard": "Betalt {amount} med kort den {dateTime}",
         "summaryPromptPay": "Betalt {amount} via PromptPay den {dateTime}",
         "downloadReceipt": "Ladda ner kvitto",
         "close": "Stäng",

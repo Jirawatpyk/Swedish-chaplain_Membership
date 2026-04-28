@@ -28,6 +28,27 @@ export function SecurityFooter() {
         <span>{t('stripeBadge')}</span>
       </div>
       <p className="text-caption text-muted-foreground">{t('cards')}</p>
+      {/*
+       * review-20260428-102639.md W1 closure — PDPA §23 / GDPR Art. 13
+       * disclosure at point of collection. PromptPay sends member email
+       * to Stripe (Ireland/US infrastructure); see `data-transfers.md
+       * § 2`. Visible on every pay-sheet open so the disclosure is
+       * contemporaneous with consent (not buried in a privacy policy).
+       */}
+      <p className="text-caption text-muted-foreground">
+        {t.rich('privacyDisclosure', {
+          stripeLink: (chunks) => (
+            <a
+              href="https://stripe.com/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-foreground"
+            >
+              {chunks}
+            </a>
+          ),
+        })}
+      </p>
     </footer>
   );
 }

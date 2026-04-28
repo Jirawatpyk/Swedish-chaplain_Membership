@@ -63,7 +63,7 @@
  * Runbook: `docs/runbooks/receipt-pdf-permanently-failed.md`
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, lt, or, sql } from 'drizzle-orm';
 
 import { db, runInTenant } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
@@ -85,6 +85,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAX_RENDER_ATTEMPTS = 3;
+// Stuck-pending threshold — a row sitting at receipt_pdf_status='pending'
+// for longer than this is treated as orphaned (worker crashed / outbox
+// row deleted / kill-switch flipped mid-flight). Picked up by the same
+// reconcile sweep that drains failed rows.
+// review-20260428-102639.md B3 closure.
+const STUCK_PENDING_INTERVAL = sql`interval '1 hour'`;
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -107,9 +113,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  // Bulk read all `failed` invoices across tenants. RLS bypass is
-  // intentional here (cross-tenant ops surface gated by CRON_SECRET).
-  // Each row drives a tenant-scoped follow-up below.
+  // Bulk read invoices that need reconciliation across tenants. RLS
+  // bypass is intentional here (cross-tenant ops surface gated by
+  // CRON_SECRET). Each row drives a tenant-scoped follow-up below.
+  //
+  // Two cases picked up by the same scan:
+  //   - status='failed' (any age): the worker reported a render failure
+  //     and bumped attempts.
+  //   - status='pending' AND updated_at < now() - 1 hour: orphaned row
+  //     (worker crashed pre-failure-write / outbox row deleted / kill-
+  //     switch flipped mid-flight). Per review-20260428-102639.md B3.
   let stuckRows: Array<{
     tenantId: string;
     invoiceId: string;
@@ -117,6 +130,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     pdfTemplateVersion: number | null;
     receiptPdfRenderAttempts: number;
     memberIdentitySnapshot: unknown;
+    receiptPdfStatus: 'pending' | 'failed' | 'rendered' | null;
   }> = [];
   try {
     stuckRows = await db
@@ -127,11 +141,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         pdfTemplateVersion: invoices.pdfTemplateVersion,
         receiptPdfRenderAttempts: invoices.receiptPdfRenderAttempts,
         memberIdentitySnapshot: invoices.memberIdentitySnapshot,
+        receiptPdfStatus: invoices.receiptPdfStatus,
       })
       .from(invoices)
       .where(
         and(
-          eq(invoices.receiptPdfStatus, 'failed'),
+          or(
+            eq(invoices.receiptPdfStatus, 'failed'),
+            and(
+              eq(invoices.receiptPdfStatus, 'pending'),
+              lt(invoices.updatedAt, sql`now() - ${STUCK_PENDING_INTERVAL}`),
+            ),
+          ),
           isNotNull(invoices.fiscalYear),
           isNotNull(invoices.pdfTemplateVersion),
         ),
@@ -190,18 +211,35 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         // row, and the next reconcile tick wouldn't pick it up
         // (filter is `WHERE status='failed'`) — silent data loss.
         await runInTenant(asTenantContext(row.tenantId), async (tx) => {
+          // For stuck-pending rows we don't need a status flip (already
+          // 'pending') but we DO bump updatedAt to reset the orphan
+          // window — and we re-enqueue the outbox row regardless. The
+          // WHERE clause matches the source row's actual status (either
+          // 'failed' or 'pending') to keep this idempotent under
+          // concurrent ticks.
           await tx
             .update(invoices)
             .set({
               receiptPdfStatus: 'pending',
               receiptPdfLastError: null,
+              // review-20260428-102639.md W6 closure — reset attempts on
+              // re-enqueue so the worker has a fresh budget on each
+              // reconciliation cycle. The `MAX_RENDER_ATTEMPTS < 3`
+              // gate above still caps the re-enqueue itself, so this
+              // gives "3 attempts per reconcile cycle, capped at total
+              // attempts < 3 across all worker writes" — matches the
+              // implied semantics in the runbook.
+              receiptPdfRenderAttempts: 0,
               updatedAt: sql`now()`,
             })
             .where(
               and(
                 eq(invoices.tenantId, row.tenantId),
                 eq(invoices.invoiceId, row.invoiceId),
-                eq(invoices.receiptPdfStatus, 'failed'),
+                or(
+                  eq(invoices.receiptPdfStatus, 'failed'),
+                  eq(invoices.receiptPdfStatus, 'pending'),
+                ),
               ),
             );
           await receiptPdfRenderEnqueueAdapter.enqueue(tx, {

@@ -82,8 +82,10 @@ export type ConfirmPaymentOutcome =
     }
   | { readonly kind: 'invoice_not_found'; readonly invoiceId: string };
 
+// review-20260428-102639.md S7 closure — `invoice_not_found` removed
+// from this union: code path emits `ok({kind:'invoice_not_found'})`,
+// not `err`. The dead variant misled exhaustive-switch tests.
 export type ConfirmPaymentError =
-  | { readonly code: 'invoice_not_found' }
   | { readonly code: 'illegal_transition'; readonly from: string }
   | { readonly code: 'invariant_violation_duplicate_succeeded' }
   | { readonly code: 'processor_unavailable'; readonly reason: string }
@@ -102,6 +104,15 @@ export interface ConfirmPaymentDeps {
    * + markProcessed commit atomically (audit 2026-04-25 finding #4).
    */
   readonly processorEventsRepo?: ProcessorEventsRepo;
+  /**
+   * Optional structured logger. When wired, Phase B catch on the
+   * stale-refund path emits a `confirm_payment.stale_refund_phase_b_mark_failed`
+   * warn so ops has a forensic trail before Stripe retries.
+   * review-20260428-102639.md H2 closure.
+   */
+  readonly logger?: {
+    warn: (msg: string, ctx: Record<string, unknown>) => void;
+  };
 }
 
 export async function confirmPayment(
@@ -639,7 +650,15 @@ async function confirmPaymentBody(
       });
     } catch (phaseBErr) {
       // Best-effort log — this is a known race window (R3 H3-2).
-      // Recovery is automatic via Stripe retry idempotency.
+      // Recovery is automatic via Stripe retry idempotency. Per
+      // review-20260428-102639.md H2, structured-log this so ops
+      // has a forensic trail before the retry rather than silence.
+      deps.logger?.warn('confirm_payment.stale_refund_phase_b_mark_failed', {
+        tenantId: input.tenantId,
+        paymentId: payment.id,
+        errKind: phaseBErr instanceof Error ? phaseBErr.constructor.name : 'unknown',
+        recovery: 'awaiting_stripe_retry_idempotency',
+      });
       void phaseBErr;
     }
 

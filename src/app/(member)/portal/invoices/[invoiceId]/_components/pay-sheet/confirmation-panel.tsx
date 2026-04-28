@@ -34,8 +34,6 @@ export interface ConfirmationPanelProps {
   readonly method: 'card' | 'promptpay';
   /** Formatted amount (caller applies locale). e.g. "THB 12,000.00". */
   readonly amount: string;
-  /** Last-4 digits when method === 'card'; ignored for promptpay. */
-  readonly last4?: string;
   /** Localized datetime string (caller formats with `intl` per locale). */
   readonly dateTime: string;
   /** Short-lived signed URL to the F4 receipt PDF. */
@@ -54,7 +52,6 @@ export interface ConfirmationPanelProps {
 export function ConfirmationPanel({
   method,
   amount,
-  last4,
   dateTime,
   receiptUrl,
   onClose,
@@ -112,26 +109,26 @@ export function ConfirmationPanel({
     setPaused(false);
   };
 
-  // `last4Display`: when the backend supplies the actual last 4
-  // digits we show them verbatim prefixed with the masked-pan prefix
-  // (Stripe SAQ-A convention: "****4242"). Without a real value we
-  // show just the mask so the copy stays truthful — never render
-  // `********` (8 asterisks) which implies 8-digit padding.
-  const last4Display =
-    last4 && /^\d{4}$/.test(last4) ? `****${last4}` : '****';
+  // review-20260428-102639.md W15 closure — `last4` removed.
+  // Stripe `confirmPayment` does not return the card object on the
+  // happy path; fetching it requires either an `expand=payment_method`
+  // round-trip or a separate retrieve call. SAQ-A scope considers
+  // last4 non-sensitive but the extra call adds latency for what is
+  // informational copy only (the user just typed the card seconds
+  // ago). Removed from i18n templates across EN/TH/SV.
   const summary =
     method === 'card'
-      ? t('summaryCard', {
-          amount,
-          last4: last4Display,
-          dateTime,
-        })
+      ? t('summaryCard', { amount, dateTime })
       : t('summaryPromptPay', { amount, dateTime });
 
   // R4 polish: extracted from JSX to avoid a 3-arm nested ternary inside
   // the SR live-region. Visible countdown stays inline because it has
   // a trivial 2-arm shape.
-  const SR_THRESHOLD_SECONDS = [3, 1] as const;
+  // review-20260428-102639.md S10 closure — added 5s threshold for
+  // parity with HardCapPrompt + PromptPay countdown. Two announcements
+  // in the 5s window left a silent gap at the start; SR users now get
+  // an opening cue, mid-window check, and final-second confirmation.
+  const SR_THRESHOLD_SECONDS = [5, 3, 1] as const;
   const srMessage = paused
     ? t('autoClosePaused')
     : (SR_THRESHOLD_SECONDS as readonly number[]).includes(remaining)

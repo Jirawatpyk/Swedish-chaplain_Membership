@@ -229,9 +229,10 @@ describe('processWebhookEvent (T056)', () => {
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
     const failedCall = auditCalls.find((c) => c[1].eventType === 'payment_failed');
     expect(failedCall).toBeDefined();
-    // Staff-review R2 R005 (2026-04-28): payment_failed is tax-document
-    // adjacent (locks failure into the financial record) → 10y retention.
-    expect(failedCall?.[1].retentionYears).toBe(10);
+    // review-20260428-102639.md W7 closure — payment_failed realigned
+    // to 5y (pre-settlement ops). Only payment_succeeded carries the
+    // tax-document settlement marker (10y).
+    expect(failedCall?.[1].retentionYears).toBe(5);
   });
 
   it('payment_intent.canceled — dispatches handleCancelEvent', async () => {

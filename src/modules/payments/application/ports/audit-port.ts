@@ -241,13 +241,18 @@ export interface F5AuditPayloadByType {
   webhook_signature_rejected: Record<string, unknown>;
   webhook_api_version_mismatch: Record<string, unknown>;
   /**
-   * NOTE: emitted by the admin tenant-payment-settings UPDATE surface
-   * (Phase 9 polish, not yet wired). When that ships, tighten this to
-   * `{ before_keys: string[]; after_keys: string[]; actor_user_id: string; ... }`
-   * — never include the actual values (PCI scope: secret-key fields
-   * MUST NOT travel through audit log).
+   * Emitted by the admin tenant-payment-settings UPDATE surface.
+   * review-20260428-102639.md S12 closure — tightened from
+   * `Record<string, unknown>` to keys-only shape. Values MUST NEVER
+   * appear in the audit log — secret-key fields would be a PCI SAQ-A
+   * scope violation.
    */
-  tenant_payment_settings_updated: Record<string, unknown>;
+  tenant_payment_settings_updated: {
+    readonly actor_user_id: string;
+    readonly changed_fields: ReadonlyArray<string>;
+    readonly before_keys: ReadonlyArray<string>;
+    readonly after_keys: ReadonlyArray<string>;
+  };
   online_payment_toggled: Record<string, unknown>;
   dispute_created: Record<string, unknown>;
   webhook_unknown_intent: Record<string, unknown>;
@@ -315,11 +320,16 @@ export interface AuditPort {
  *   10y — events that create or modify a tax-document-adjacent record.
  *    5y — operational / probe / environment / config events.
  */
+// review-20260428-102639.md W7 closure — retention map aligned with
+// data-model.md § 7.1 DPO recommendation. Pre-settlement ops events
+// (initiated / failed / canceled) → 5y; settlement record (succeeded)
+// → 10y because it documents the financial settlement that may be
+// referenced for tax-document reconciliation disputes.
 export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
-  payment_initiated: 10,
+  payment_initiated: 5,
   payment_succeeded: 10,
-  payment_failed: 10,
-  payment_canceled: 10,
+  payment_failed: 5,
+  payment_canceled: 5,
   payment_method_switched: 10,
   payment_auto_refunded_stale_invoice: 10,
   payment_auto_refunded_concurrent_manual_mark: 10,

@@ -16,7 +16,7 @@
  * audit_log it returned zero rows every tick → re-page every 5 min.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 
@@ -174,6 +174,36 @@ async function seedFailedInvoice(
   return { invoiceId };
 }
 
+/**
+ * review-20260428-102639.md B3 closure — seed an orphaned `pending`
+ * invoice. updatedAt is forced to >1 hour in the past so the cron's
+ * stuck-pending sweep query (`status='pending' AND updatedAt < now() -
+ * interval '1 hour'`) picks it up.
+ */
+async function seedStuckPendingInvoice(
+  tenant: TestTenant,
+  user: TestUser,
+  attempts: number,
+): Promise<{ invoiceId: string }> {
+  const result = await seedFailedInvoice(tenant, user, attempts);
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx
+      .update(invoices)
+      .set({
+        receiptPdfStatus: 'pending',
+        receiptPdfLastError: null,
+        updatedAt: sql`now() - interval '2 hours'`,
+      })
+      .where(
+        and(
+          eq(invoices.tenantId, tenant.ctx.slug),
+          eq(invoices.invoiceId, result.invoiceId),
+        ),
+      );
+  });
+  return result;
+}
+
 async function callCron(): Promise<Response> {
   const req = new NextRequest(
     'http://localhost/api/internal/cron/receipt-pdf-reconcile',
@@ -217,8 +247,11 @@ describe('R1-CG-2 — receipt PDF reconcile cron', () => {
 
     const resp = await callCron();
     expect(resp.status).toBe(200);
-    const body = (await resp.json()) as { reEnqueued: number };
-    expect(body.reEnqueued).toBeGreaterThanOrEqual(1);
+    // review-20260428-102639.md W13 closure — `body.reEnqueued` is a
+    // global cross-tenant count and can be inflated by test-suite
+    // leftovers. Assert exact match on this invoice's outbox rows
+    // instead.
+    await resp.json();
 
     const after = await db
       .select()
@@ -230,13 +263,13 @@ describe('R1-CG-2 — receipt PDF reconcile cron', () => {
           eq(notificationsOutbox.status, 'pending'),
         ),
       );
-    // At least one new pending row landed for our invoice.
+    // Exactly one new pending row should land for our invoice.
     const matchedNew = after.filter(
       (r) =>
         (r.contextData as { invoice_id?: string }).invoice_id === invoiceId &&
         !before.some((b) => b.id === r.id),
     );
-    expect(matchedNew.length).toBeGreaterThanOrEqual(1);
+    expect(matchedNew.length).toBe(1);
   }, 60_000);
 
   it('attempts>=3 → emits pdf_render_permanently_failed audit (does NOT re-enqueue)', async () => {
@@ -370,5 +403,81 @@ describe('R1-CG-2 — receipt PDF reconcile cron', () => {
         r.status === 'pending',
     );
     expect(matchedOutbox.length).toBeGreaterThanOrEqual(1);
+  }, 60_000);
+
+  // review-20260428-102639.md B3 closure — orphan-pending sweep.
+  it('stuck-pending sweep — pending row >1h old is re-enqueued (orphan recovery)', async () => {
+    const { invoiceId } = await seedStuckPendingInvoice(tenant, user, 0);
+
+    const resp = await callCron();
+    expect(resp.status).toBe(200);
+
+    const outboxRows = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+        ),
+      );
+    const matchedOutbox = outboxRows.filter(
+      (r) =>
+        (r.contextData as { invoice_id?: string }).invoice_id === invoiceId &&
+        r.status === 'pending',
+    );
+    // Exactly one fresh outbox row should be enqueued for this invoice.
+    expect(matchedOutbox.length).toBe(1);
+
+    const [invRow] = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, tenant.ctx.slug),
+          eq(invoices.invoiceId, invoiceId),
+        ),
+      )
+      .limit(1);
+    // Status remains 'pending' but updatedAt is bumped (orphan window
+    // resets) so a second cron tick within 1h won't pick it up again.
+    expect(invRow?.receiptPdfStatus).toBe('pending');
+  }, 60_000);
+
+  it('stuck-pending sweep — pending row <1h old is NOT picked up', async () => {
+    // Seed a pending row with updatedAt ~now (no orphan); should not
+    // be touched by the cron (mirrors normal in-flight worker state).
+    const { invoiceId } = await seedFailedInvoice(tenant, user, 0);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({
+          receiptPdfStatus: 'pending',
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, tenant.ctx.slug),
+            eq(invoices.invoiceId, invoiceId),
+          ),
+        );
+    });
+
+    await callCron();
+
+    const outboxRows = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.tenantId, tenant.ctx.slug),
+          eq(notificationsOutbox.notificationType, 'receipt_pdf_render'),
+        ),
+      );
+    const matchedOutbox = outboxRows.filter(
+      (r) =>
+        (r.contextData as { invoice_id?: string }).invoice_id === invoiceId,
+    );
+    expect(matchedOutbox.length).toBe(0);
   }, 60_000);
 });

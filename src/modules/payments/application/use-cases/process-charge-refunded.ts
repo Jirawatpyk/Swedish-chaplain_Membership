@@ -113,8 +113,13 @@ export interface ProcessChargeRefundedDeps {
    * R3 M-2 rel (2026-04-28): added so tests can deterministically
    * control `completedAt` instead of relying on real wall-clock.
    * Aligns with the rest of the F5 use-case Deps shape.
+   *
+   * review-20260428-102639.md W5 closure — required (was optional).
+   * Optional permitted Application-layer wall-clock leak; required
+   * forces composition root + tests to thread a ClockPort, preserving
+   * Constitution Principle III determinism.
    */
-  readonly clock?: ClockPort;
+  readonly clock: ClockPort;
 }
 
 export async function processChargeRefunded(
@@ -156,7 +161,7 @@ export async function processChargeRefunded(
             tenantId: input.tenantId,
             nextStatus: 'succeeded',
             processorRefundId: refundId,
-            completedAt: deps.clock ? new Date(deps.clock.nowMs()) : new Date(),
+            completedAt: new Date(deps.clock.nowMs()),
             expectedCurrentStatus: 'pending',
           });
           await deps.audit.emit(tx, {
