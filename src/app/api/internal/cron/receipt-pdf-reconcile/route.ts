@@ -178,7 +178,31 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         // depth: the adapter doesn't filter by tenant_id, but
         // running under the right tenant slot keeps the audit
         // chain consistent).
+        //
+        // R4-I1 — flip invoice's `receipt_pdf_status` from 'failed'
+        // back to 'pending' atomically with the outbox INSERT so the
+        // F4 email gate (in `/api/cron/outbox-dispatch`) reads
+        // 'pending' (legitimate-wait, no attempts bump) instead of
+        // 'failed' (terminal, bump attempts) during the window
+        // between this reconcile tick and the worker's actual
+        // success write. Without this flip there's a race where the
+        // email gate would burn retry budget unnecessarily on a
+        // recoverable invoice.
         await runInTenant(asTenantContext(row.tenantId), async () => {
+          await db
+            .update(invoices)
+            .set({
+              receiptPdfStatus: 'pending',
+              receiptPdfLastError: null,
+              updatedAt: sql`now()`,
+            })
+            .where(
+              and(
+                eq(invoices.tenantId, row.tenantId),
+                eq(invoices.invoiceId, row.invoiceId),
+                eq(invoices.receiptPdfStatus, 'failed'),
+              ),
+            );
           await receiptPdfRenderEnqueueAdapter.enqueue(null, {
             tenantId: row.tenantId,
             invoiceId: row.invoiceId,

@@ -22,7 +22,7 @@
  * mistake) — the unit test wouldn't catch this; only the live-DB
  * read of the post-throw state can.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
@@ -165,8 +165,6 @@ async function seedIssuedInvoice(
 describe('R3-S1 — record-payment rollback observed on live Neon', () => {
   let tenant: TestTenant;
   let user: TestUser;
-  // Snapshot the original enqueue impl so we can restore between tests.
-  const originalEnqueue = receiptPdfRenderEnqueueAdapter.enqueue;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -174,19 +172,33 @@ describe('R3-S1 — record-payment rollback observed on live Neon', () => {
   }, 90_000);
 
   afterAll(async () => {
-    receiptPdfRenderEnqueueAdapter.enqueue = originalEnqueue;
+    // R4-I2 — defensive cleanup. afterEach restoreAll handles the
+    // common case; this catches any straggler if a test crashed
+    // before the per-test cleanup ran.
+    vi.restoreAllMocks();
     await tenant.cleanup().catch(() => {});
+  });
+
+  // R4-I2 — restore the spy after each test so a crash mid-test
+  // doesn't leak the mocked enqueue into subsequent integration tests
+  // (singleFork worker shares module state).
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('enqueue throws → recordPayment rejects + invoice stays issued + no invoice_paid audit committed', async () => {
     const { invoiceId } = await seedIssuedInvoice(tenant, user);
 
-    // Replace the enqueue adapter's `enqueue` impl with a thrower
-    // (the F4 composition root reads `receiptPdfRenderEnqueueAdapter`
-    // by reference, so this in-place patch works for this test scope).
-    receiptPdfRenderEnqueueAdapter.enqueue = vi.fn(async () => {
-      throw new Error('R3-S1 simulated outbox insert failure');
-    });
+    // R4-I2 — `vi.spyOn` replaces in-place mutation. The spy is
+    // tracked by Vitest's mock registry and restored automatically
+    // by `vi.restoreAllMocks()` in afterEach/afterAll, so a crash
+    // before the test's manual cleanup can't leak the mocked impl
+    // to subsequent tests in the same singleFork worker.
+    vi.spyOn(receiptPdfRenderEnqueueAdapter, 'enqueue').mockImplementation(
+      async () => {
+        throw new Error('R3-S1 simulated outbox insert failure');
+      },
+    );
 
     let thrown: unknown = null;
     try {

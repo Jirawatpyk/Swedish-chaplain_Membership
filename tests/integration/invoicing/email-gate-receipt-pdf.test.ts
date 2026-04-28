@@ -345,4 +345,49 @@ describe('T166-09 — invoice_paid email gate on receipt_pdf_status', () => {
     // last_error captures the diagnostic.
     expect(rowAfter?.lastError).toContain('invoice_not_visible');
   }, 60_000);
+
+  // R4-CG1 — receipt_pdf_status='failed' branch (R3-I1 fix).
+  // When the receipt PDF render is in a TERMINAL failed state (after
+  // reconcile cron exhausted attempts), the email gate must NOT
+  // skip-loop forever waiting for a 'rendered' that will never arrive.
+  // Instead it bumps attempts so the email row exits via the standard
+  // permanent-fail ladder (one page on-call, not a forever-stuck queue).
+  it('R3-I1 — receipt_pdf_status=failed bumps attempts (NOT legitimate wait)', async () => {
+    const { invoiceId } = await seedPaidPendingInvoice(tenant, user);
+    // Flip the seeded row from 'pending' to 'failed' to simulate the
+    // post-exhaustion terminal state.
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({
+          receiptPdfStatus: 'failed',
+          receiptPdfRenderAttempts: 3,
+          receiptPdfLastError: 'simulated render failure',
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, tenant.ctx.slug),
+            eq(invoices.invoiceId, invoiceId),
+          ),
+        );
+    });
+    const outboxId = await enqueueInvoicePaidEmailRow(tenant, invoiceId, true);
+
+    const req = new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+      headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+    });
+    const resp = await outboxDispatch(req);
+    expect(resp.status).toBe(200);
+
+    const [rowAfter] = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(eq(notificationsOutbox.id, outboxId))
+      .limit(1);
+    expect(rowAfter?.status).toBe('pending');
+    // attempts BUMPED — terminal failed state must drain the email
+    // queue, not skip-loop forever.
+    expect(rowAfter?.attempts).toBe(1);
+    expect(rowAfter?.lastError).toContain('pdf_render_failed');
+  }, 60_000);
 });
