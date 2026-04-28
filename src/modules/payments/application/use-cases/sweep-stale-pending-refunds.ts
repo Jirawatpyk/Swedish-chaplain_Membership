@@ -105,9 +105,13 @@ export async function sweepStalePendingRefunds(
       deps.refundsRepo.listPendingOlderThan(tx, input.tenantId, cutoff),
     );
   } catch (cause) {
+    // R3 H3-3 (2026-04-28): use constructor.name only — Postgres
+    // errors can carry SQL fragments / column names / partial values
+    // in `.message` per project log-redact contract. Same hygiene
+    // pattern as the row-skip catch below.
     return err({
       code: 'sweep_failed',
-      cause: cause instanceof Error ? cause.message : String(cause),
+      cause: cause instanceof Error ? cause.constructor.name : 'unknown',
     });
   }
 

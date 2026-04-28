@@ -66,6 +66,7 @@ export async function handleCancelEvent(
     const payment = await deps.paymentsRepo.lockForUpdateByPaymentIntentId(
       tx,
       input.paymentIntentId,
+      input.tenantId,
     );
     if (!payment) {
       // Best-effort audit emit (tx=null) so audit-table outage cannot

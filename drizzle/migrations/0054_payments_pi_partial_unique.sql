@@ -18,12 +18,13 @@
 -- tenantId. Stripe idempotency key `inv-{invoiceId}-attempt-{n}` is
 -- unchanged. This migration only narrows the DB index predicate.
 --
--- Postgres 16 supports DROP INDEX CONCURRENTLY + CREATE INDEX
--- CONCURRENTLY, so this migration runs without blocking writes on
--- live Neon. Wrapped in a single transaction is NOT possible with
--- CONCURRENTLY — Drizzle migrate must run this without an outer
--- transaction (use `--no-transaction` flag if needed by tooling, or
--- apply via the project's dev-apply-migration.ts script).
+-- R3 C-1 (2026-04-28): runs INSIDE drizzle-kit's implicit transaction
+-- (`pnpm db:migrate` wraps each migration). DROP + CREATE INDEX
+-- without CONCURRENTLY acquires a brief AccessExclusiveLock on the
+-- `payments` table for the duration of the build. Acceptable for
+-- the F5 single-tenant MVP — `payments` is small at deploy time.
+-- For larger tables in future modules, use a separate out-of-band
+-- migration with CONCURRENTLY (cannot run inside a transaction).
 -- ---------------------------------------------------------------------------
 
 DROP INDEX IF EXISTS "payments_processor_payment_intent_id_uniq";

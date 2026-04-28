@@ -284,7 +284,7 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
     );
   }
 
-  it('paid invoice → auto_refunded_stale_invoice + audit row in DB + payment NOT flipped to succeeded', async () => {
+  it('paid invoice → auto_refunded + concurrent_manual_mark audit row in DB + payment NOT flipped to succeeded (R3 CRIT-A)', async () => {
     const mocks = makeMocks(paidSeed, 'paid');
     const result = await runConfirmPayment(paidSeed, mocks);
 
@@ -306,13 +306,16 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
     // event type + tenant_id. (Retention years is enforced at write
     // time via RETENTION_YEARS map in audit-port — not a persisted
     // column on audit_log; see drizzle-payments-audit.ts.)
+    // R3 CRIT-A (2026-04-28): cause=`invoice_already_paid` →
+    // event type `payment_auto_refunded_concurrent_manual_mark` per
+    // spec.md edge case (admin-marks-paid-mid-flight race).
     const rows = await db
       .select()
       .from(auditLog)
       .where(
         and(
           eq(auditLog.tenantId, tenant.ctx.slug),
-          eq(auditLog.eventType, 'payment_auto_refunded_stale_invoice'),
+          eq(auditLog.eventType, 'payment_auto_refunded_concurrent_manual_mark'),
         ),
       );
     expect(rows.length).toBeGreaterThanOrEqual(1);

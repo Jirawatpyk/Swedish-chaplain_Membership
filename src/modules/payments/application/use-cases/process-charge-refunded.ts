@@ -48,6 +48,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import type {
   AuditPort,
+  ClockPort,
   PaymentsRepo,
   ProcessorEventsRepo,
   RefundsRepo,
@@ -108,6 +109,12 @@ export interface ProcessChargeRefundedDeps {
   readonly refundsRepo: RefundsRepo;
   readonly processorEventsRepo: ProcessorEventsRepo;
   readonly audit: AuditPort;
+  /**
+   * R3 M-2 rel (2026-04-28): added so tests can deterministically
+   * control `completedAt` instead of relying on real wall-clock.
+   * Aligns with the rest of the F5 use-case Deps shape.
+   */
+  readonly clock?: ClockPort;
 }
 
 export async function processChargeRefunded(
@@ -149,7 +156,7 @@ export async function processChargeRefunded(
             tenantId: input.tenantId,
             nextStatus: 'succeeded',
             processorRefundId: refundId,
-            completedAt: new Date(),
+            completedAt: deps.clock ? new Date(deps.clock.nowMs()) : new Date(),
             expectedCurrentStatus: 'pending',
           });
           await deps.audit.emit(tx, {
@@ -159,6 +166,7 @@ export async function processChargeRefunded(
             actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
             summary: `Webhook-driven recovery: pending refund ${existing.id} flipped to succeeded after charge.refunded delivery (Phase B catch-up)`,
             payload: {
+              path: 'webhook_recovery',
               refund_id: existing.id,
               processor_refund_id: refundId,
               processor_charge_id: input.chargeId,

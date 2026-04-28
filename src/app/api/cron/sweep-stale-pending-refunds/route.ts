@@ -97,8 +97,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .from(tenantPaymentSettings)
       .where(eq(tenantPaymentSettings.onlinePaymentEnabled, true));
   } catch (e) {
+    // R3 M-4 rel (2026-04-28): constructor.name only — Postgres
+    // errors can carry SQL fragments / column names in `.message`.
     logger.error(
-      { requestId, err: e instanceof Error ? e.message : String(e) },
+      { requestId, errKind: e instanceof Error ? e.constructor.name : 'unknown' },
       'cron.sweep_stale_pending_refunds.tenant_list_failed',
     );
     return NextResponse.json({ error: 'tenant_list_failed' }, { status: 500 });
@@ -143,7 +145,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     } catch (e) {
       tenantsErrored += 1;
       logger.error(
-        { requestId, tenantId, err: e instanceof Error ? e.message : String(e) },
+        { requestId, tenantId, errKind: e instanceof Error ? e.constructor.name : 'unknown' },
         'cron.sweep_stale_pending_refunds.tenant_threw',
       );
     }

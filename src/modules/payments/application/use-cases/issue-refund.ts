@@ -496,6 +496,7 @@ async function issueRefundBody(
         actorUserId: input.actorUserId,
         summary: `Refund ${prepared.refundId} succeeded — credit note ${cnResult.value.creditNoteNumber} issued for ${input.amountSatang.toString()} satang`,
         payload: {
+          path: 'admin_initiated',
           refund_id: prepared.refundId,
           payment_id: paymentId,
           invoice_id: prepared.payment.invoiceId,

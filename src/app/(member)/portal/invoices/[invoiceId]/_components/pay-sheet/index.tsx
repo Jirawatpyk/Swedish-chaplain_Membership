@@ -329,9 +329,18 @@ export function PaySheet({
   // remaining edge case (browser tab abruptly closed, etc).
   useEffect(() => {
     return () => {
+      // R3 UX H-3 (2026-04-28): noted that this fires on EVERY page
+      // navigation away from invoice detail, including post-failure
+      // close paths. `firePaymentCancel` short-circuits if cache is
+      // null or settled. For non-cacheable + non-settled (e.g. failed)
+      // payments, the server-side `cancel-payment` use-case rejects
+      // at the `canTransition('canceled')` gate without making a
+      // Stripe API call — so no audit noise / no Stripe waste. The
+      // 4xx response is also harmless (keepalive: true; no client
+      // is awaiting it). Acceptable as-is.
       firePaymentCancel('user_navigated_away');
     };
-     
+
   }, []);
 
   const handleOpenChange = (next: boolean) => {

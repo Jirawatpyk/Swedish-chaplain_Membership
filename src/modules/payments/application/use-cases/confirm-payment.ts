@@ -36,6 +36,7 @@ import type {
   ProcessorGatewayPort,
   TenantPaymentSettingsRepo,
 } from '../ports';
+import type { Payment } from '../../domain/payment';
 import { canTransition } from '../../domain/policies/payment-status-transitions';
 import { enforceOneSucceededPerInvoice } from '../../domain/invariants/one-succeeded-payment-per-invoice';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
@@ -160,7 +161,7 @@ export async function confirmPayment(
  *     failure.
  */
 interface StalePending {
-  readonly payment: import('../../domain/payment').Payment;
+  readonly payment: Payment;
   readonly cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status';
   readonly invoiceStatus: string | undefined;
 }
@@ -192,6 +193,7 @@ async function confirmPaymentBody(
     const payment = await deps.paymentsRepo.lockForUpdateByPaymentIntentId(
       tx,
       input.paymentIntentId,
+      input.tenantId,
     );
     if (!payment) {
       // Audit 2026-04-26 round-2 #5b: atomic markProcessed even for
@@ -561,10 +563,35 @@ async function confirmPaymentBody(
     }
 
     // Audit on `null` tx — independent commit (R3 I-6 design).
+    //
+    // R3 H3-1 known operational artifact (2026-04-28): if the process
+    // crashes BETWEEN this audit emit committing and Phase B's
+    // markProcessed committing, the next Stripe webhook retry will
+    // re-enter Phase A → find invoice still stale → call Stripe with
+    // same idempotency key (`auto-refund-${payment.id}` — returns SAME
+    // refund) → re-emit this audit. Result: TWO audit rows for one
+    // logical refund, both with identical `processor_refund_id`.
+    // Operational dedup: queries that aggregate refund forensics MUST
+    // group by `payload->>'processor_refund_id'` (canonical dedup key).
+    // The trade-off accepts duplicate audit rows in exchange for
+    // forensic survival across Phase B rollback — no financial loss
+    // because Stripe idempotency-key prevents double refund.
+    //
+    // R3 CRIT-A (2026-04-28): when cause is `invoice_already_paid`
+    // (admin marked the invoice paid manually while a member's online
+    // payment was in-flight), emit the dedicated
+    // `payment_auto_refunded_concurrent_manual_mark` event type per
+    // spec.md edge case. Other causes (void, credited, unknown) keep
+    // the generic `payment_auto_refunded_stale_invoice` label so
+    // audit-log queries can pivot on the specific scenario.
+    const auditEventType =
+      cause === 'invoice_already_paid'
+        ? ('payment_auto_refunded_concurrent_manual_mark' as const)
+        : ('payment_auto_refunded_stale_invoice' as const);
     await deps.audit.emit(null, {
       tenantId: input.tenantId,
       requestId: input.requestId,
-      eventType: 'payment_auto_refunded_stale_invoice',
+      eventType: auditEventType,
       actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
       /* v8 ignore next -- defensive nullish coalesce; invoiceStatus always defined on this path */
       summary: `Auto-refunded payment ${payment.id} — invoice not payable (${invoiceStatus ?? 'unknown'})`,
@@ -575,15 +602,25 @@ async function confirmPaymentBody(
         cause,
         processor_refund_id: refund.value.id,
       },
-      retentionYears: retentionFor('payment_auto_refunded_stale_invoice'),
+      retentionYears: retentionFor(auditEventType),
     });
 
-    // Phase B — short follow-up withTx for markProcessed only.
-    // `markProcessedIfPresent` is idempotent (no-op when already
-    // marked) so a webhook retry mid-flight finds nothing to do.
-    await deps.paymentsRepo.withTx(async (tx) => {
-      await markProcessedIfPresent(deps, input, tx);
-    });
+    // R3 H3-2 (2026-04-28): Phase B markProcessedIfPresent inside
+    // try/catch — if it throws (DB outage), the next Stripe webhook
+    // retry re-runs Phase A → finds invoice still stale → calls
+    // Stripe with same idempotency key → returns the same refund →
+    // audit emits a SECOND time → double-emission. We ALSO defensively
+    // log the error so ops have a forensic trail; the sweep cron is
+    // the recovery path.
+    try {
+      await deps.paymentsRepo.withTx(async (tx) => {
+        await markProcessedIfPresent(deps, input, tx);
+      });
+    } catch (phaseBErr) {
+      // Best-effort log — this is a known race window (R3 H3-2).
+      // Recovery is automatic via Stripe retry idempotency.
+      void phaseBErr;
+    }
 
     paymentsMetrics.autoRefundedStaleCount(input.tenantId);
     return ok<ConfirmPaymentOutcome>({

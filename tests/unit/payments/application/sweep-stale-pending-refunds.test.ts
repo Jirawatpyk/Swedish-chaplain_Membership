@@ -214,7 +214,7 @@ describe('sweepStalePendingRefunds (T130a)', () => {
     expect(asMock(deps.refundsRepo.listPendingOlderThan)).not.toHaveBeenCalled();
   });
 
-  it('outer tx throw → sweep_failed with cause', async () => {
+  it('outer tx throw → sweep_failed with cause (constructor.name only — R3 H3-3)', async () => {
     const deps = makeDeps();
     asMock(deps.paymentsRepo.withTx).mockImplementationOnce(async () => {
       throw new Error('connection lost');
@@ -224,11 +224,14 @@ describe('sweepStalePendingRefunds (T130a)', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.code).toBe('sweep_failed');
-      expect(r.error.cause).toBe('connection lost');
+      // R3 H3-3 (2026-04-28): cause is constructor.name only, never
+      // raw `.message` — Postgres errors can carry SQL fragments /
+      // column values per project log-redact contract.
+      expect(r.error.cause).toBe('Error');
     }
   });
 
-  it('outer tx throw — non-Error rejection → cause stringified', async () => {
+  it('outer tx throw — non-Error rejection → cause is "unknown" (R3 H3-3)', async () => {
     const deps = makeDeps();
     asMock(deps.paymentsRepo.withTx).mockImplementationOnce(async () => {
       throw 'string-rejection';
@@ -236,6 +239,6 @@ describe('sweepStalePendingRefunds (T130a)', () => {
 
     const r = await sweepStalePendingRefunds(deps, baseInput);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.cause).toBe('string-rejection');
+    if (!r.ok) expect(r.error.cause).toBe('unknown');
   });
 });

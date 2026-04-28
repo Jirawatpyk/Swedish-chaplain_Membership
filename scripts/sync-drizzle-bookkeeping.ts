@@ -99,6 +99,13 @@ async function main(): Promise<void> {
 
     let inserted = 0;
     let alreadyOk = 0;
+    let tamperWarnings = 0;
+    // R3 F-15 (2026-04-28): track entries already recorded by a hash
+    // that matches the CURRENT file content vs. by a hash that does
+    // NOT match. The latter signals a migration .sql file was modified
+    // after recording — drift that drizzle-kit would never catch since
+    // the recorded hash is treated as source-of-truth. Surfaces a warn
+    // (never auto-fixes — operator must investigate via git diff).
     for (const entry of entries) {
       const sqlPath = join(MIGRATIONS_DIR, `${entry.tag}.sql`);
       let raw: string;
@@ -113,12 +120,31 @@ async function main(): Promise<void> {
         alreadyOk += 1;
         continue;
       }
+      // Hash does not match. Two sub-cases:
+      //   (a) genuinely new migration → INSERT
+      //   (b) file modified after recording → warn (and still INSERT
+      //       the new hash so future runs settle on it).
+      const recordedAny = await client<{ hash: string }[]>`
+        SELECT hash FROM drizzle.__drizzle_migrations WHERE created_at = ${entry.when}
+      `;
+      if (recordedAny.length > 0) {
+        console.warn(
+          `  ⚠ ${entry.tag}: TAMPER DETECTED — file content hash differs from previously-recorded hash. ` +
+            `Run \`git diff drizzle/migrations/${entry.tag}.sql\` to investigate. New hash will be recorded.`,
+        );
+        tamperWarnings += 1;
+      }
       await client`
         INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
         VALUES (${hash}, ${entry.when})
       `;
       inserted += 1;
       console.log(`  ▸ ${entry.tag} — recorded (idx=${entry.idx})`);
+    }
+    if (tamperWarnings > 0) {
+      console.warn(
+        `\n⚠ ${tamperWarnings} tamper warning(s) — review the listed migrations.`,
+      );
     }
 
     console.log(

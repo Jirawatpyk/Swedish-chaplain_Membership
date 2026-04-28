@@ -1524,6 +1524,9 @@
         "contactAdmin": "Contact your chamber admin"
       },
       "detail": {
+        "a11y": {
+          "optimisticPaid": "Payment received. Invoice marked as paid."
+        },
         "title": "Invoice",
         "subtitle": "Read-only view — download the PDF for the official tax document.",
         "linesHeading": "Line items",

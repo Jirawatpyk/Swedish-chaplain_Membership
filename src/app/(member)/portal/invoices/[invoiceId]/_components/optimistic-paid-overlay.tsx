@@ -20,8 +20,10 @@
  */
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 
 import { useOptimisticPaid } from './optimistic-paid';
+import { LiveRegion } from '@/components/ui/live-region';
 
 export interface OptimisticPaidOverlayProps {
   readonly invoiceId: string;
@@ -35,22 +37,28 @@ export function OptimisticPaidOverlay({
   whenPaid,
 }: OptimisticPaidOverlayProps) {
   const router = useRouter();
+  const t = useTranslations('portal.invoices.detail.a11y');
   // Stable callback so `useOptimisticPaid`'s subscribe identity stays
   // fixed across renders. An inline arrow would re-subscribe (and
   // re-create the BroadcastChannel) on every parent re-render.
   const onCrossTabPaid = useCallback(() => router.refresh(), [router]);
   const optimisticallyPaid = useOptimisticPaid(invoiceId, { onCrossTabPaid });
 
-  // `display:contents` so the wrapper drops out of the box tree —
-  // children render as direct children of the parent (preserves any
-  // `w-full` block layout on the wrapped node). aria-live + aria-atomic
-  // are still announced by AT on a `display:contents` element per
-  // WAI-ARIA spec, satisfying WCAG 2.1 SC 4.1.3 Status Messages on
-  // the badge swap.
+  // R3 UX H-1 (2026-04-28): visual swap uses `display:contents`
+  // (zero box-tree footprint), but `display:contents` aria-live
+  // regions are NOT reliably announced by JAWS Browse mode and
+  // VoiceOver-iOS (no presentation node in the AT tree). Pair with
+  // a sibling `<LiveRegion>` that has a real DOM node so AT picks
+  // up the badge transition.
   return (
-    <span aria-live="polite" aria-atomic="true" className="contents">
-      {optimisticallyPaid ? whenPaid : whenUnpaid}
-    </span>
+    <>
+      <span className="contents">
+        {optimisticallyPaid ? whenPaid : whenUnpaid}
+      </span>
+      <LiveRegion politeness="polite">
+        {optimisticallyPaid ? t('optimisticPaid') : ''}
+      </LiveRegion>
+    </>
   );
 }
 

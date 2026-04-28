@@ -120,6 +120,7 @@ async function failPaymentBody(
     const payment = await deps.paymentsRepo.lockForUpdateByPaymentIntentId(
       tx,
       input.paymentIntentId,
+      input.tenantId,
     );
     if (!payment) {
       // Ops-visibility audit (audit 2026-04-25 finding #10).

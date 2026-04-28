@@ -160,11 +160,13 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
       // pg_advisory_xact_lock(bigint) auto-releases at tx end.
-      // hashtextextended is deterministic; using `${tenantId}:${invoiceId}`
-      // produces a per-(tenant,invoice) lock channel without colliding
-      // with unrelated advisory locks elsewhere in the schema.
+      // hashtextextended is deterministic; using
+      // `payments:{tenantId}:{invoiceId}` namespace prefix (R3 M-3 rel
+      // 2026-04-28) produces a per-(tenant,invoice) lock channel
+      // without colliding with future advisory locks (e.g. F4's
+      // `invoicing:` prefix, post-MVP `members:` etc.).
       await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended(${tenantIdArg} || ':' || ${invoiceId}, 0))`,
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('payments:' || ${tenantIdArg} || ':' || ${invoiceId}, 0))`,
       );
     },
 
@@ -186,21 +188,27 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
     async lockForUpdateByPaymentIntentId(
       txUnknown,
       paymentIntentId: string,
+      tenantIdArg: string,
     ): Promise<Payment | null> {
-      // CR-2 (review 2026-04-27): explicit tenant filter at the
-      // application-layer SQL — Constitution Principle I requires
-      // two-layer isolation (app + db). RLS is defence-in-depth, but
-      // the app must scope by tenantId itself. The factory closes
-      // over tenantId, so the lookup is bounded to the resolved
-      // tenant's payments only — a stray paymentIntentId from another
-      // tenant cannot grab a row even if RLS is mis-bound.
+      // CR-2 + R3 M-4 (2026-04-27/28): explicit `tenantId` parameter on
+      // the port (was factory-closure-bound only). Constitution
+      // Principle I requires two-layer isolation; making the contract
+      // explicit at the type level surfaces the requirement to all
+      // implementers (mocks, future repos). At runtime the factory
+      // closure `tenantId` is also asserted equal to the arg as a
+      // defence-in-depth check.
+      if (tenantIdArg !== tenantId) {
+        throw new Error(
+          `drizzle-payments-repo.lockForUpdateByPaymentIntentId: tenantId arg ('${tenantIdArg}') does not match factory tenantId — RLS context drift`,
+        );
+      }
       const tx = txUnknown as TenantTx;
       const [row] = await tx
         .select()
         .from(payments)
         .where(
           and(
-            eq(payments.tenantId, tenantId),
+            eq(payments.tenantId, tenantIdArg),
             eq(payments.processorPaymentIntentId, paymentIntentId),
           ),
         )
@@ -331,7 +339,11 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
             ne(payments.id, excludePaymentId),
           ),
         );
-      return rows.map((r) => r.status as PaymentStatus);
+      // R3 M-3 (2026-04-28): assertPaymentStatus on every status read
+      // — consistent with the H-9 boundary-guard design at line ~39.
+      // A corrupted status string would otherwise pass directly to
+      // `enforceOneSucceededPerInvoice` without detection.
+      return rows.map((r) => assertPaymentStatus(r.status, 'sibling'));
     },
 
     async nextAttemptSeq(

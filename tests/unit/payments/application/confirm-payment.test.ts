@@ -183,7 +183,7 @@ describe('confirmPayment (T057)', () => {
     expect(result.value.kind).toBe('invoice_not_found');
   });
 
-  it('stale invoice (paid) — auto_refunded_stale_invoice + audit', async () => {
+  it('stale invoice (paid) — auto_refunded + concurrent_manual_mark audit (R3 CRIT-A)', async () => {
     const deps = makeDeps();
     (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       ok({
@@ -200,8 +200,12 @@ describe('confirmPayment (T057)', () => {
     expect(result.value.kind).toBe('auto_refunded_stale_invoice');
     expect(deps.processorGateway.createRefund).toHaveBeenCalled();
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    // R3 CRIT-A (2026-04-28): cause=`invoice_already_paid` →
+    // `payment_auto_refunded_concurrent_manual_mark` per spec edge case.
     expect(
-      auditCalls.some((c) => c[1].eventType === 'payment_auto_refunded_stale_invoice'),
+      auditCalls.some(
+        (c) => c[1].eventType === 'payment_auto_refunded_concurrent_manual_mark',
+      ),
     ).toBe(true);
     expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
   });

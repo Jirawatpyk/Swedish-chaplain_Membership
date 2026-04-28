@@ -31,6 +31,7 @@
     "db:sync-bookkeeping": "node --env-file=.env.local --import tsx scripts/sync-drizzle-bookkeeping.ts",
     "db:sync-bookkeeping:prod": "node --env-file=.env.production --import tsx scripts/sync-drizzle-bookkeeping.ts",
     "db:verify": "node --env-file=.env.local --import tsx scripts/verify-schema.ts",
+    "db:verify:prod": "node --env-file=.env.production --import tsx scripts/verify-schema.ts",
     "db:seed-admin": "node --env-file=.env.local --import tsx scripts/seed-bootstrap-admin.ts",
     "seed:f5-e2e": "node --env-file=.env.local --import tsx scripts/seed-f5-e2e-payment-settings.ts",
     "seed:f5-e2e:reconciliation": "node --env-file=.env.local --import tsx scripts/seed-f5-e2e-reconciliation.ts",

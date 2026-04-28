@@ -188,8 +188,15 @@ export interface F5AuditPayloadByType {
    *       row that was stuck `pending`; payload carries Stripe ids +
    *       recovery_path discriminator.
    */
+  /**
+   * R3 TD-2 (2026-04-28): explicit `path` discriminator on both arms
+   * so TS narrowing is robust against future field additions. Without
+   * the discriminator, TS narrows by `'recovery_path' in payload`
+   * (presence-based) which breaks if any optional field overlaps.
+   */
   refund_succeeded:
     | {
+        path: 'admin_initiated';
         refund_id: string;
         payment_id: string;
         invoice_id: string;
@@ -201,6 +208,7 @@ export interface F5AuditPayloadByType {
         invoice_next_status: 'partially_credited' | 'credited';
       }
     | {
+        path: 'webhook_recovery';
         refund_id: string;
         processor_refund_id: string;
         processor_charge_id: string;
@@ -258,22 +266,6 @@ export interface F5AuditPayloadByType {
   };
   payment_acknowledged_terminal_state: Record<string, unknown>;
 }
-
-/**
- * Typed-emit envelope. Existing call sites stay on the loose
- * `F5AuditEvent` (payload: Record<string, unknown>); new call sites or
- * targeted hardening passes can use `F5AuditEventTyped<'payment_initiated'>`
- * etc. for compile-time field validation.
- */
-export type F5AuditEventTyped<T extends F5AuditEventType> = {
-  readonly tenantId: string | null;
-  readonly requestId: string | null;
-  readonly eventType: T;
-  readonly actorUserId: string;
-  readonly summary: string;
-  readonly payload: F5AuditPayloadByType[T];
-  readonly retentionYears: 5 | 10;
-};
 
 /**
  * R2 TD-13 (2026-04-27 → F5.1-B 2026-04-28): F5AuditEvent is now a

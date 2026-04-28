@@ -204,7 +204,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     expect(inserted.card).toBeNull();
 
     const locked = await repo.withTx(async (tx) =>
-      repo.lockForUpdateByPaymentIntentId(tx, pi),
+      repo.lockForUpdateByPaymentIntentId(tx, pi, tenantA.ctx.slug),
     );
     expect(locked?.id).toBe(paymentId);
     expect(locked?.method).toBe('promptpay');
@@ -412,7 +412,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
 
     // Confirm persistence + NULL card metadata survives.
     const reloaded = await repo.withTx((tx) =>
-      repo.lockForUpdateByPaymentIntentId(tx, pi),
+      repo.lockForUpdateByPaymentIntentId(tx, pi, tenantA.ctx.slug),
     );
     expect(reloaded?.status).toBe('canceled');
     expect(reloaded?.card).toBeNull();

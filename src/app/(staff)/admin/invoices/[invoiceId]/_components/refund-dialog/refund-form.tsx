@@ -309,11 +309,22 @@ export function RefundForm({
           data-testid="refund-form-reason"
           {...register('reason')}
         />
+        {/* Visual counter — sighted users see live updates per keystroke. */}
         <p
           id={reasonHelpId}
           className="text-xs text-muted-foreground"
+          aria-hidden="true"
         >
           {tForm('reason.charCount', { count: reasonValue.length })}
+        </p>
+        {/* R3 UX H-2 (2026-04-28): SR-only threshold announcer.
+            Fires only at 450/490/500 chars to avoid per-keystroke
+            audio flood. Mirrors the SR_THRESHOLDS pattern from
+            hard-cap-prompt.tsx. */}
+        <p className="sr-only" aria-live="polite" aria-atomic="true">
+          {[450, 490, 500].includes(reasonValue.length)
+            ? tForm('reason.charCount', { count: reasonValue.length })
+            : ''}
         </p>
       </div>
 

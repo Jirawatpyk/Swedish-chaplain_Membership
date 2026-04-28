@@ -25,8 +25,21 @@ export interface PaymentsRepo {
   /** `SELECT … FOR UPDATE` by id; returns null when row missing. */
   lockForUpdate(tx: unknown, paymentId: PaymentId, tenantId: string): Promise<Payment | null>;
 
-  /** `SELECT … FOR UPDATE` by Stripe PaymentIntent id; tenant-scoped via RLS. */
-  lockForUpdateByPaymentIntentId(tx: unknown, paymentIntentId: string): Promise<Payment | null>;
+  /**
+   * `SELECT … FOR UPDATE` by Stripe PaymentIntent id, tenant-scoped.
+   *
+   * R3 M-4 (2026-04-28): added explicit `tenantId` parameter so the
+   * port contract surfaces Constitution Principle I sub-clause #1
+   * (application-layer tenant scoping) at the type level. The
+   * factory implementation already applied this filter via closure
+   * (CR-2 fix), but the port was silent — a future mock adhering only
+   * to the type signature could omit it.
+   */
+  lockForUpdateByPaymentIntentId(
+    tx: unknown,
+    paymentIntentId: string,
+    tenantId: string,
+  ): Promise<Payment | null>;
 
   /** Insert a new pending payment row. */
   insert(
