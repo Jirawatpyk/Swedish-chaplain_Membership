@@ -79,6 +79,27 @@ export const members = pgTable(
     status: memberStatusEnum('status').notNull().default('active'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
 
+    // F7 — per-broadcast complaint-rate auto-halt flag (Clarifications Q14 /
+    // SC-005 (b)). When `true`, member submissions fail FR-002 precondition
+    // `k` with `broadcast_member_halted_pending_review`. Cleared by admin
+    // action via the F3 barrel `setMemberHalt` use-case (emits
+    // `broadcast_member_dispatch_resumed` audit). Manager role denied —
+    // admin-only same as approve/reject/cancel per FR-014.
+    broadcastsHaltedUntilAdminReview: boolean('broadcasts_halted_until_admin_review')
+      .notNull()
+      .default(false),
+
+    // F7 — GDPR Art. 7 demonstrable-consent timestamp (Clarifications Q15).
+    // Populated when member dismisses the one-time portal acknowledgement
+    // banner ("Your tier includes marketing broadcasts...; you may
+    // unsubscribe at any time"). Emits `member_acknowledged_broadcasts_terms`
+    // audit on first set. NOT a precondition for receiving broadcasts —
+    // lawful basis remains contract performance per PDPA §24 + GDPR
+    // Art. 6(1)(b). Indefinite retention while member row exists.
+    broadcastsAcknowledgedAt: timestamp('broadcasts_acknowledged_at', {
+      withTimezone: true,
+    }),
+
     // Audit metadata
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -106,6 +127,14 @@ export const members = pgTable(
       table.tenantId,
       sql`${table.lastActivityAt} DESC NULLS LAST`,
     ),
+    // F7 Q14 — fast list of halted members (admin queue red banner)
+    index('members_tenant_broadcasts_halted_idx')
+      .on(table.tenantId)
+      .where(sql`broadcasts_halted_until_admin_review = true`),
+    // F7 Q15 — banner-eligible members (members who haven't acknowledged yet)
+    index('members_tenant_broadcasts_unack_idx')
+      .on(table.tenantId, table.memberId)
+      .where(sql`broadcasts_acknowledged_at IS NULL`),
     // Note: pg_trgm GIN index on company_name is added via raw SQL in the
     // migration (drizzle-kit cannot emit `USING GIN (col gin_trgm_ops)`).
   ],

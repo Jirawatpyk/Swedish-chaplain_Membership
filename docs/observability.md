@@ -866,3 +866,175 @@ Plus full webhook body → redacted to `event_id` + `event_type` + `api_version`
 - **alarm** → `#oncall-payments` Slack + on-call email digest
 - **page** → PagerDuty primary on-call rotation
 - **info** (cross-tenant probe at low frequency) → audit log only; alarm at ≥1/5min escalation
+
+---
+
+## 22. F7 Email Broadcast — metrics catalogue (T033)
+
+**Status**: SPEC — emit sites land Phase 3+ (T036+). Branch `010-email-broadcast`.
+**Source authority**: `specs/010-email-broadcast/plan.md` § Performance & Capacity deep-dive + § Observability.
+
+F7 wires distributed traces, 16 OTel metrics, and 11 alert rules across the
+broadcast lifecycle. The full critical-path span tree:
+
+```
+member_compose_page_load
+  └─ portal_broadcasts_quota
+       └─ broadcasts_repo_count_for_member_quota   (DB — derived view)
+
+member_submit_button_click
+  └─ api_broadcasts_submit
+       └─ html_sanitiser                           (DOMPurify — Application layer)
+            └─ resolve_segment_recipients          (joins members + contacts; suppression filter deferred)
+                 └─ broadcasts_repo_insert         (DB — submitted row + reservation derived)
+                      └─ audit_broadcast_submitted (DB — same tx)
+                           └─ admin_notification_enqueue (Resend transactional, async)
+
+admin_approve_send_now_button
+  └─ api_admin_broadcasts_approve
+       └─ broadcasts_repo_lock_for_update         (DB — SELECT FOR UPDATE)
+            └─ resend_create_audience              (external — Resend Broadcasts API)
+                 └─ resend_add_contacts            (external — paginated)
+                      └─ resend_create_broadcast   (external)
+                           └─ resend_send_broadcast (external — fires dispatch)
+                                └─ broadcasts_repo_update_to_sending  (DB)
+                                     └─ audit_broadcast_send_started + audit_broadcast_approved
+
+asynchronous webhook delivery (Resend → app):
+  webhook_receive
+    └─ webhook_verify                              (Svix HMAC-SHA256, raw-body, pre-parse)
+         └─ broadcast_deliveries_upsert            (DB — idempotency guard via UNIQUE resend_event_id)
+              └─ runInTenant                        (re-bind from pre-tenant bypass context)
+                   └─ delivered | bounced | complained | soft_bounced
+                        └─ marketing_unsubscribes_upsert (FR-027 cascade on bounce/complaint)
+                             └─ audit_broadcast_suppression_applied (DB)
+
+scheduled-dispatch cron (cron-job.org → /api/cron/broadcasts/dispatch-scheduled):
+  cron_dispatch_scheduled
+    └─ broadcasts_repo_lock_due                    (SELECT FOR UPDATE SKIP LOCKED + advisory_xact_lock)
+         └─ approve-send (per row, batched 10/run, 4-min runtime budget)
+
+public unsubscribe page (/unsubscribe/[token]):
+  unsubscribe_page_load
+    └─ verify_unsubscribe_token                    (HMAC-SHA256 verify)
+         └─ runInTenant                             (re-bind from pre-tenant bypass context)
+              └─ marketing_unsubscribes_upsert      (DB — idempotent)
+                   └─ audit_broadcast_unsubscribed
+```
+
+Every span carries `tenant.id`, `broadcast.id`, `actor.role`,
+`segment.type` attributes. **No raw HTML body, raw rejection reason text,
+recipient email addresses (when used as keys), `Svix-Signature` header
+value, or unsubscribe-token plaintext is ever attributed** — those are in
+pino's redact list (see § 22.4).
+
+### 22.1 Metrics catalogue (16 metrics)
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `broadcasts.draft.count` | counter | `tenant`, `actor_role` (member_self_service\|admin_proxy\|system) | Compose-funnel top-of-funnel signal |
+| `broadcasts.submit.count` | counter | `tenant`, `actor_role` | Submission throughput |
+| `broadcasts.submit.duration_ms` | histogram | `tenant`, `actor_role` | submit p95 < 1.2 s SLO (sanitiser + segment resolve dominant) |
+| `broadcasts.submit.precondition_blocked.count` | counter | `tenant`, `precondition` (a–k from FR-002) | Submission-funnel drop-off (quota exhausted, halted, plan no-eblast, etc.) |
+| `broadcasts.approve_send_now.duration_ms` | histogram | `tenant` | approve & send-now p95 < 1.5 s (Resend RTT dominant) |
+| `broadcasts.failed_to_dispatch.count` | counter | `tenant`, `failure_reason` (resend_5xx\|resend_429\|resend_403\|app_error\|timeout) | Dispatch-failure forensics |
+| `broadcasts.dispatch_failure_rate` | gauge | `tenant` | Computed: `failed_to_dispatch / send_started` over 1h rolling window; > 10 % alert |
+| `broadcasts.cron.dispatched.count` | counter | `tenant` | Scheduled-send cron throughput |
+| `broadcasts.cron.skipped.count` | counter | `tenant`, `reason` (kill_switch\|advisory_lock_held\|no_due_rows) | Cron tick observability |
+| `broadcasts.webhook.receive.count` | counter | `tenant`, `event_type` (delivered\|bounced\|complained\|sent\|delivery_delayed) | Per-event ingest rate |
+| `broadcasts.webhook.duration_ms` | histogram | `tenant` | webhook handler p95 < 250 ms |
+| `broadcasts.webhook_signature_rejected_total` | counter | _(no tenant — pre-verification)_ | Abuse / misconfig canary |
+| `broadcasts.bounce_rate_per_broadcast` | gauge | `tenant`, `broadcast_id` | Per-broadcast bounce rate; > 2 % warn, > 5 % page |
+| `broadcasts.complaint_rate_per_broadcast` | gauge | `tenant`, `broadcast_id` | Per-broadcast complaint rate; ≥ 0.1 % warn, ≥ 0.5 % page, > 5 % Q14 SC-005 (b) auto-halt |
+| `broadcasts.queue_pending` | gauge | `tenant` | `submitted` + `approved-with-scheduled` count; > 8000 warn |
+| `broadcasts.stuck_sending_count` | gauge | `tenant` | `status='sending'` for > 24 h count; ≥ 1 alarm |
+
+**Cardinality**: `precondition`, `failure_reason`, `reason`, `event_type`
+are bounded enums; `tenant` is small-cardinality (≤ a few hundred over
+project lifetime). `broadcast_id` on per-broadcast gauges is bounded by
+the recipient cap × broadcast count per tenant per quota year (10/year/member
+× ~131 members ≈ 1310 ids/year). **Never** label by `recipient_email_lower`,
+`member_id`, or any high-cardinality identifier.
+
+### 22.2 SLO targets (per SC-010 / Q6)
+
+| SLO | Target | Source signal |
+|---|---|---|
+| SLO-F7-001 compose page TTFB p95 | < 600 ms | Vercel Speed Insights `/portal/broadcasts/new` |
+| SLO-F7-002 submit endpoint p95 | < 1.2 s | `broadcasts.submit.duration_ms` (sanitiser + segment resolve included; documented Constitution VII deviation in plan.md) |
+| SLO-F7-003 admin queue list p95 | < 500 ms @ 1 k pending | Vercel Speed Insights `/admin/broadcasts` |
+| SLO-F7-004 admin approve & send-now p95 | < 1.5 s | `broadcasts.approve_send_now.duration_ms` (Resend RTT dominant) |
+| SLO-F7-005 webhook handler p95 | < 250 ms | `broadcasts.webhook.duration_ms` |
+| SLO-F7-006 public unsubscribe page TTFB p95 | < 400 ms | Vercel Speed Insights `/unsubscribe/[token]` |
+| SLO-F7-007 admin time-to-decision median | ≤ 24 h (FR-013 amber); p95 ≤ 48 h (red) | `GET /api/admin/broadcasts/sla-stats` rolling 30-day computation; SC-002 |
+| SLO-F7-008 webhook idempotency | 100 % zero double-processed events | UNIQUE `(tenant_id, resend_event_id)` index (migration 0065) |
+| SLO-F7-009 dispatch failure rate | < 1 % over 1 h excluding Resend service incidents | `broadcasts.dispatch_failure_rate` gauge |
+| SLO-F7-010 sender reputation | Per-broadcast bounce < 2 %, complaint < 0.1 % steady-state | `bounce_rate_per_broadcast` + `complaint_rate_per_broadcast` |
+
+### 22.3 Alert rules (11 alerts)
+
+| Alert | Severity | Threshold | Runbook |
+|---|---|---|---|
+| `broadcasts.webhook_signature_rejected_total` ≥ 5 / 5 min | **page** | possible abuse / misconfig (PDPA-relevant) | `docs/runbooks/broadcasts-webhook-attack.md` |
+| `broadcast_cross_tenant_probe` ≥ 1 / 5 min | **page** | Constitution Principle I clause 3 breach attempt | `docs/runbooks/breach-notification.md` |
+| `broadcasts.dispatch_failure_rate` > 10 % / 1 h | **page** | Resend incident or app bug | `docs/runbooks/broadcasts-dispatch-failure.md` |
+| `broadcasts.stuck_sending_count` ≥ 1 (≥ 24 h) | **alarm** | webhook event lost or Resend resource missing | `docs/runbooks/broadcasts-stuck-sending.md` |
+| `broadcasts.bounce_rate_per_broadcast` > 2 % | **alarm** | List quality issue; pre-cursor to reputation incident | `docs/runbooks/broadcast-deliverability-incident.md` |
+| `broadcasts.bounce_rate_per_broadcast` > 5 % | **page** | Sender reputation at immediate risk | `docs/runbooks/broadcast-deliverability-incident.md` |
+| `broadcasts.complaint_rate_per_broadcast` ≥ 0.5 % | **page** | Q14 SC-005 (b) trigger imminent | `docs/runbooks/broadcast-deliverability-incident.md` |
+| `broadcast_complaint_rate_per_broadcast_breach` event ≥ 1 / 24 h | **page** | Q14 auto-halt fired; admin clear-halt required | `docs/runbooks/broadcasts-halt-clear.md` |
+| `broadcasts.queue_pending` > 8000 | **alarm** | FR-013 SLA breach risk | `docs/runbooks/broadcasts-queue-overflow.md` |
+| Any F7 surface p95 budget breach (any of the 6 SLOs above) | **alarm** | UX degradation; investigate per-surface | `docs/runbooks/broadcasts-perf-regression.md` |
+| `broadcasts.cron.skipped.count{reason="advisory_lock_held"}` > 5 / 5 min | **alarm** | Concurrent cron ticks holding the dispatch lock — possible Vercel function instance retention bug | `docs/runbooks/broadcasts-dispatch-failure.md` |
+
+### 22.4 Logging redact rules (additions)
+
+Added to `src/lib/logger.ts` redact list for F7 (Phase 3+ T031 wiring):
+
+```
+resend_broadcasts_api_key, resend_broadcasts_webhook_secret,
+unsubscribe_token_secret, Svix-Signature, Svix-Id, Svix-Timestamp,
+recipient_email_lower (when keyed log; allowed in error_message field
+  only as part of structured payload, with last 2 chars + domain visible),
+body_html (raw — sanitised version may be logged in trace context only,
+  capped at 1024 chars), rejection_reason (raw — sha256 only logged)
+```
+
+Plus full webhook body → redacted to `resend_event_id` + `event_type` +
+`broadcast_id` + `recipient_member_id` + `bounce_type` only.
+Defence-in-depth: any field containing `@` regex match → masked except
+last 2 chars before `@` + domain.
+
+### 22.5 Sample rates
+
+Per perf.md CHK049:
+- **Production**: 10 % trace sampling for spans
+- **Staging / dev**: 100 % trace sampling
+- All metrics: 100 % aggregation (counters / histograms / gauges fully exported regardless of trace sampling)
+
+### 22.6 Runbooks
+
+- `docs/runbooks/broadcast-deliverability-incident.md` — bounce/complaint spike + Q14 SC-005 (b) auto-halt
+- `docs/runbooks/broadcast-cancel-too-late.md` — recipient already received but admin needs follow-up
+- `docs/runbooks/breach-notification.md` — cross-cutting PDPA §37 24h + GDPR Art. 33 72h workflow
+- `docs/runbooks/credential-compromise.md` — cross-cutting F1+F4+F5+F7 secret-rotation procedure
+- `docs/runbooks/broadcasts-stuck-sending.md` — 24h stuck-`sending` reconciliation
+- `docs/runbooks/broadcasts-dispatch-failure.md` — `dispatch_failure_rate` > 10 %
+- `docs/runbooks/broadcasts-webhook-attack.md` — webhook signature rejection spike
+- `docs/runbooks/broadcasts-perf-regression.md` — p95 budget breach
+- `docs/runbooks/broadcasts-queue-overflow.md` — `queue_pending` > 8000
+- `docs/runbooks/broadcasts-halt-clear.md` — Q14 admin clear-halt walkthrough
+- `docs/runbooks/cron-jobs.md` — cron-job.org configuration (F5 + F7 shared)
+
+### 22.7 Dashboard — F7 Email Broadcast (Vercel Analytics)
+
+- **Top row**: queue_pending (line), median_time_to_decision rolling 30d (gauge), dispatch_failure_rate (line)
+- **Second row**: submit p95/p99, approve_send_now p95/p99, webhook p95
+- **Third row**: per-broadcast bounce + complaint rate heatmap, suppression-list growth, halted-members count
+- **Fourth row** (security): `webhook_signature_rejected_total`, `broadcast_cross_tenant_probe`, `unsubscribe_token_invalid`
+
+### 22.8 Alert routing
+
+- **alarm** → `#oncall-platform` Slack + on-call email digest
+- **page** → PagerDuty primary on-call rotation
+- **info** (cross-tenant probe at low frequency) → audit log only; alarm at ≥ 1 / 5 min escalation

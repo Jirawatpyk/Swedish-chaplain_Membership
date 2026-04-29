@@ -47,6 +47,11 @@ const TENANT_SCOPED_TABLES = [
   'refunds',
   'tenant_payment_settings',
   'processor_events',
+  // F7 (T021 — 010-email-broadcast)
+  'broadcasts',
+  'broadcast_deliveries',
+  'marketing_unsubscribes',
+  'broadcast_segment_definitions',
 ];
 
 describe('RLS coverage — every tenant-scoped table', () => {

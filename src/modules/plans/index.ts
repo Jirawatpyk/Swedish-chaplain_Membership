@@ -264,3 +264,15 @@ export {
 // layer use cases; sibling modules MUST NOT call INSERT/UPDATE on
 // this handle.
 export { membershipPlans } from './infrastructure/db/schema';
+
+// ===========================================================================
+// F7 Batch C extension (T030) — getPlanForMember use-case for F7 bridges
+// ===========================================================================
+
+export {
+  getPlanForMember,
+  type GetPlanForMemberDeps,
+  type MemberPlanSummary,
+  type MemberPlanIdentityLookup,
+  type PlanLookupError,
+} from './application/get-plan-for-member';

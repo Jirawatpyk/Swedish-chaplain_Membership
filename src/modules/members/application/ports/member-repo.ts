@@ -202,6 +202,87 @@ export interface MemberRepo {
     >
   >;
 
+  // ===========================================================================
+  // F7 Batch C extensions (T029) — segment resolution + halt/ack flags
+  // ===========================================================================
+
+  /**
+   * F7 segment resolution. Returns members matching the segment with
+   * their PRIMARY contact joined. Excludes:
+   *   - members with `broadcastsHaltedUntilAdminReview = true` (Q14)
+   *   - members with NULL primary-contact email (caller emits
+   *     `member_missing_primary_contact` audit per FR-015c)
+   *
+   * Hard cap: 5,000 returned rows (FR-016a). Caller is responsible for
+   * suppression filter (`marketing_unsubscribes`) at F7 dispatch boundary
+   * — NOT applied here per Q8 + FR-015c separation of concerns.
+   *
+   * For `event_attendees_last_90d` segment: F6 stub-port returns `[]`
+   * until F6 ships (FR-015a). This repo method does NOT handle that
+   * segment — F7's resolver delegates to `EventAttendeesRepository`
+   * stub instead.
+   */
+  findMembersBySegmentForBroadcast(
+    ctx: TenantContext,
+    params: {
+      readonly segmentType: 'all_members' | 'tier';
+      readonly tierCodes?: readonly string[];
+    },
+  ): Promise<Result<readonly F7MemberRecipient[], RepoError>>;
+
+  /**
+   * F7 — list members with `broadcasts_halted_until_admin_review = true`.
+   * Powers Q14 admin queue red banner (T121, Phase 3+).
+   */
+  findMembersHaltedForBroadcast(
+    ctx: TenantContext,
+  ): Promise<Result<readonly F7MemberHaltSummary[], RepoError>>;
+
+  /**
+   * F7 — set/clear `members.broadcasts_halted_until_admin_review` flag
+   * (Q14). Atomic; caller emits `broadcast_member_halted_pending_review`
+   * (when set true) or `broadcast_member_dispatch_resumed` (when set
+   * false) audit event in same tx.
+   */
+  updateBroadcastsHaltedInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+    halted: boolean,
+  ): Promise<Result<{ affected: number }, RepoError>>;
+
+  /**
+   * F7 — set `members.broadcasts_acknowledged_at = now()` (Q15 GDPR
+   * Art. 7 banner ack). Idempotent on already-acknowledged members
+   * (returns `repo.conflict` with reason `already_acknowledged` so
+   * caller can short-circuit audit emit).
+   */
+  updateBroadcastsAcknowledgedAtInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+    timestamp: Date,
+  ): Promise<Result<{ affected: number; previouslyNull: boolean }, RepoError>>;
+
+  /**
+   * F7 — get a member's primary contact email. Returns `null` if the
+   * member has no primary contact OR the email is empty. Used by
+   * FR-002 precondition `j` reply-to derivation.
+   */
+  findPrimaryContactEmailInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+  ): Promise<Result<string | null, RepoError>>;
+
+  /**
+   * F7 — reverse lookup: find a member whose primary contact email
+   * matches the given lowercase email string. Returns `null` if no
+   * match. Used by FR-015d resolution branch 1 (custom-recipient
+   * tenant-graph validation).
+   */
+  findMemberByPrimaryContactEmailInTx(
+    tx: TenantTx,
+    emailLower: string,
+  ): Promise<Result<F7MemberRecipient | null, RepoError>>;
+
   /**
    * Offset-based directory search with total count — powers numbered
    * pagination on `/admin/members`. Two queries in one transaction:
@@ -219,3 +300,36 @@ export interface MemberRepo {
     >
   >;
 }
+
+// ---------------------------------------------------------------------------
+// F7 Batch C — projection types for segment + halt/ack queries
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal member projection returned by F7 segment resolution. NOT the
+ * full F3 Member aggregate — F7 only needs identity + primary contact
+ * email + tier code + halt flag for dispatch + filter purposes.
+ *
+ * Tier code is read from F2 `membership_plans.plan_category` (no
+ * dedicated `tier_code` column on F2 plans schema as of F2 ship). If
+ * F2 evolves a dedicated `tier_code` column (F2.1+), this projection
+ * updates accordingly.
+ */
+export type F7MemberRecipient = {
+  readonly memberId: string;
+  readonly displayName: string;
+  readonly primaryContactEmail: string | null;
+  readonly tierCode: string | null;
+  readonly broadcastsHaltedUntilAdminReview: boolean;
+};
+
+/**
+ * Summary row for the Q14 admin halt-state banner. Includes timing
+ * metadata so the banner can show "halted since X days ago".
+ */
+export type F7MemberHaltSummary = {
+  readonly memberId: string;
+  readonly displayName: string;
+  /** Timestamp from `members.updated_at` at the time of halt. */
+  readonly haltedSinceAt: Date;
+};

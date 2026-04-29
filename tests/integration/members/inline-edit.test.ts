@@ -59,6 +59,13 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
       updateFieldsInTx: vi.fn().mockResolvedValue(ok({ ...stubMember, notes: 'updated' })),
       searchDirectory: vi.fn(),
       searchDirectoryWithCount: vi.fn(),
+      // F7 Batch C extensions (T029) — interface compliance stubs.
+      findMembersBySegmentForBroadcast: vi.fn(),
+      findMembersHaltedForBroadcast: vi.fn(),
+      updateBroadcastsHaltedInTx: vi.fn(),
+      updateBroadcastsAcknowledgedAtInTx: vi.fn(),
+      findPrimaryContactEmailInTx: vi.fn(),
+      findMemberByPrimaryContactEmailInTx: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),
