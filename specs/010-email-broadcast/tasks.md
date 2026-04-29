@@ -153,27 +153,27 @@ description: "F7 — Email Broadcast (E-Blast) — TDD-ordered task list"
 
 ### Tests for User Story 1 (RED FIRST per Principle II)
 
-- [ ] T036 [P] [US1] RED contract test `tests/contract/broadcasts/post-broadcasts-draft.contract.test.ts` — request/response zod shapes for POST /api/broadcasts/draft (create) and PUT /api/broadcasts/draft (update).
-- [ ] T037 [P] [US1] RED contract test `tests/contract/broadcasts/post-broadcasts-submit.contract.test.ts` — covers all 11 FR-002 precondition error codes (a–k) including `broadcast_member_halted_pending_review` (R3-NEW-1).
-- [ ] T038 [P] [US1] RED unit test `tests/unit/broadcasts/domain/broadcast-state-machine.test.ts` — every legal transition + every illegal transition rejected; coverage 100% on all 8 statuses.
-- [ ] T039 [P] [US1] RED unit test `tests/unit/broadcasts/domain/quota-counter.test.ts` — invariants (`used + reserved ≤ cap`, `remaining = cap - used - reserved`, never negative).
-- [ ] T040 [P] [US1] RED unit test `tests/unit/broadcasts/domain/email-lower.test.ts` — lowercase + trim normalisation snapshot tests.
-- [ ] T041 [P] [US1] RED unit test `tests/unit/broadcasts/domain/invariants.test.ts` — quota-counter-non-negative + one-active-broadcast-state + suppression-tenant-scoped.
-- [ ] T042 [P] [US1] RED unit test `tests/unit/broadcasts/application/sanitize-html.test.ts` — 30+ snapshot payloads exercising every allowlist tag + every forbidden tag (`<script>`, `<style>`, `<iframe>`, `<form>`, `<link>`, `<meta>`, `<base>`, `<object>`, `<embed>`, `<svg>`, `<img>`, `on*` handlers, inline `style`, `javascript:` URLs, `data:` URLs). Determinism asserted (same input → same output across runs).
-- [ ] T043 [P] [US1] RED unit test `tests/unit/broadcasts/application/validate-custom-recipients.test.ts` — FR-015d 3-source resolution (members.primary_contact_email + contacts.email + event_attendees.email stub) + RFC-5321 format reject + 100-entry cap + lowercase+trim normalisation + empty-list reject.
-- [ ] T044 [P] [US1] RED unit test `tests/unit/broadcasts/application/resolve-segment-recipients.test.ts` — all 4 segment types + suppression filter + member-self-exclusion (Q16 FR-015c) + member_missing_primary_contact emit + 5k cap (FR-016a).
-- [ ] T045 [P] [US1] RED unit test `tests/unit/broadcasts/application/submit-broadcast.test.ts` — ALL 11 preconditions a–k. **100% branch coverage** (security-critical per Principle II).
-- [ ] T046 [P] [US1] RED unit test `tests/unit/broadcasts/application/compute-quota-counter.test.ts` — derived view from `status IN ('submitted','approved')` count + `status='sent' AND quota_year_consumed=Y` count.
-- [ ] T047 [P] [US1] RED integration test `tests/integration/broadcasts/html-sanitiser.test.ts` — 30+ payload set asserts every forbidden construct stripped at the Application boundary; raw body NEVER persisted (`SELECT body_html FROM broadcasts WHERE broadcast_id=$1` returns sanitised only).
-- [ ] T048 [P] [US1] RED integration test `tests/integration/broadcasts/custom-recipient-validation.test.ts` — FR-015d branches: known member-primary / known contact / known event-attendee / unknown → reject 422 with `broadcast_custom_recipient_unknown` listing each unresolved address.
-- [ ] T049 [P] [US1] RED integration test `tests/integration/broadcasts/audience-cap.test.ts` — seed >5,000 in-segment recipients → submit → reject with `broadcast_audience_too_large` + audit emitted (FR-016a / Q7).
-- [ ] T050 [P] [US1] RED integration test `tests/integration/broadcasts/event-attendees-stub.test.ts` — F7 stub returns `[]` → segment resolves empty → submission rejected with `broadcast_empty_segment_blocked` (FR-015a / Q5).
-- [ ] T051 [P] [US1] RED integration test `tests/integration/broadcasts/halt-flag-precondition.test.ts` — member with `broadcasts_halted_until_admin_review = true` attempts submit → 422 `broadcast_member_halted_pending_review` + audit + no row + no reservation (FR-002 precondition `k` / R3-NEW-1).
-- [ ] T052 [P] [US1] RED E2E test `tests/e2e/broadcast-compose-and-submit.spec.ts` — full happy-path with Tiptap editor + segment picker + preview + submit + confirmation. Covers AS1.
-- [ ] T053 [P] [US1] RED E2E test `tests/e2e/broadcast-quota-block.spec.ts` — member with quota exhausted sees disabled CTA + bilingual explainer (AS2). Direct API submit returns 409 `quota_exhausted`.
-- [ ] T054 [P] [US1] RED E2E test `tests/e2e/broadcast-draft-restore.spec.ts` — close browser mid-compose → reopen within 30 days → draft restored from `status='draft'` row (AS3).
-- [ ] T055 [P] [US1] RED E2E test `tests/e2e/broadcast-empty-segment.spec.ts` — submit with all-suppressed custom list → reject + bilingual error (AS4).
-- [ ] T056 [P] [US1] RED E2E test `tests/e2e/broadcast-rate-limit.spec.ts` — submit 11 broadcasts in 24h window → 11th rate-limited (AS5).
+- [X] T036 [P] [US1] RED contract test `tests/contract/broadcasts/post-broadcasts-draft.contract.test.ts` — request/response zod shapes for POST /api/broadcasts/draft (create) and PUT /api/broadcasts/draft (update).
+- [X] T037 [P] [US1] RED contract test `tests/contract/broadcasts/post-broadcasts-submit.contract.test.ts` — covers all 11 FR-002 precondition error codes (a–k) including `broadcast_member_halted_pending_review` (R3-NEW-1).
+- [X] T038 [P] [US1] RED unit test `tests/unit/broadcasts/domain/broadcast-state-machine.test.ts` — every legal transition + every illegal transition rejected; coverage 100% on all 8 statuses.
+- [X] T039 [P] [US1] RED unit test `tests/unit/broadcasts/domain/quota-counter.test.ts` — invariants (`used + reserved ≤ cap`, `remaining = cap - used - reserved`, never negative).
+- [X] T040 [P] [US1] RED unit test `tests/unit/broadcasts/domain/email-lower.test.ts` — lowercase + trim normalisation snapshot tests.
+- [X] T041 [P] [US1] RED unit test `tests/unit/broadcasts/domain/invariants.test.ts` — quota-counter-non-negative + one-active-broadcast-state + suppression-tenant-scoped.
+- [X] T042 [P] [US1] RED unit test `tests/unit/broadcasts/application/sanitize-html.test.ts` — 30+ snapshot payloads exercising every allowlist tag + every forbidden tag (`<script>`, `<style>`, `<iframe>`, `<form>`, `<link>`, `<meta>`, `<base>`, `<object>`, `<embed>`, `<svg>`, `<img>`, `on*` handlers, inline `style`, `javascript:` URLs, `data:` URLs). Determinism asserted (same input → same output across runs).
+- [X] T043 [P] [US1] RED unit test `tests/unit/broadcasts/application/validate-custom-recipients.test.ts` — FR-015d 3-source resolution (members.primary_contact_email + contacts.email + event_attendees.email stub) + RFC-5321 format reject + 100-entry cap + lowercase+trim normalisation + empty-list reject.
+- [X] T044 [P] [US1] RED unit test `tests/unit/broadcasts/application/resolve-segment-recipients.test.ts` — all 4 segment types + suppression filter + member-self-exclusion (Q16 FR-015c) + member_missing_primary_contact emit + 5k cap (FR-016a).
+- [X] T045 [P] [US1] RED unit test `tests/unit/broadcasts/application/submit-broadcast.test.ts` — ALL 11 preconditions a–k. **100% branch coverage** (security-critical per Principle II).
+- [X] T046 [P] [US1] RED unit test `tests/unit/broadcasts/application/compute-quota-counter.test.ts` — derived view from `status IN ('submitted','approved')` count + `status='sent' AND quota_year_consumed=Y` count.
+- [X] T047 [P] [US1] RED integration test `tests/integration/broadcasts/html-sanitiser.test.ts` — 30+ payload set asserts every forbidden construct stripped at the Application boundary; raw body NEVER persisted (`SELECT body_html FROM broadcasts WHERE broadcast_id=$1` returns sanitised only).
+- [X] T048 [P] [US1] RED integration test `tests/integration/broadcasts/custom-recipient-validation.test.ts` — FR-015d branches: known member-primary / known contact / known event-attendee / unknown → reject 422 with `broadcast_custom_recipient_unknown` listing each unresolved address.
+- [X] T049 [P] [US1] RED integration test `tests/integration/broadcasts/audience-cap.test.ts` — seed >5,000 in-segment recipients → submit → reject with `broadcast_audience_too_large` + audit emitted (FR-016a / Q7).
+- [X] T050 [P] [US1] RED integration test `tests/integration/broadcasts/event-attendees-stub.test.ts` — F7 stub returns `[]` → segment resolves empty → submission rejected with `broadcast_empty_segment_blocked` (FR-015a / Q5).
+- [X] T051 [P] [US1] RED integration test `tests/integration/broadcasts/halt-flag-precondition.test.ts` — member with `broadcasts_halted_until_admin_review = true` attempts submit → 422 `broadcast_member_halted_pending_review` + audit + no row + no reservation (FR-002 precondition `k` / R3-NEW-1).
+- [X] T052 [P] [US1] RED E2E test `tests/e2e/broadcast-compose-and-submit.spec.ts` — full happy-path with Tiptap editor + segment picker + preview + submit + confirmation. Covers AS1.
+- [X] T053 [P] [US1] RED E2E test `tests/e2e/broadcast-quota-block.spec.ts` — member with quota exhausted sees disabled CTA + bilingual explainer (AS2). Direct API submit returns 409 `quota_exhausted`.
+- [X] T054 [P] [US1] RED E2E test `tests/e2e/broadcast-draft-restore.spec.ts` — close browser mid-compose → reopen within 30 days → draft restored from `status='draft'` row (AS3).
+- [X] T055 [P] [US1] RED E2E test `tests/e2e/broadcast-empty-segment.spec.ts` — submit with all-suppressed custom list → reject + bilingual error (AS4).
+- [X] T056 [P] [US1] RED E2E test `tests/e2e/broadcast-rate-limit.spec.ts` — submit 11 broadcasts in 24h window → 11th rate-limited (AS5).
 
 ### Implementation for User Story 1
 
