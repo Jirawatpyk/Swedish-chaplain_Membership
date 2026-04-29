@@ -242,6 +242,43 @@ const schema = z.object({
   // partial), but ships a download LINK instead of an attachment.
   // Flip to TRUE in Vercel env once the DPA amendment is signed.
   FEATURE_F4_VOID_ATTACHMENT: booleanFromString.default(false),
+
+  // --- F7 Email Broadcast (Resend Broadcasts API) ---------------------------
+  // Resend Broadcasts API key — separate Resend product surface from the
+  // F1+F4 transactional API. Hosted on the same Resend account; uses a
+  // distinct webhook endpoint (`/api/webhooks/resend-broadcasts`) and
+  // separate suppression list. May equal `RESEND_API_KEY` if the same
+  // account hosts both products, but is kept as a distinct env var for
+  // independent rotation. SECRET — redacted in logs.
+  RESEND_BROADCASTS_API_KEY: z
+    .string()
+    .min(10)
+    .refine((v) => v.startsWith('re_'), 'expected "re_" prefix')
+    .describe('SECRET — do not log'),
+
+  // Svix HMAC-SHA256 webhook signing secret for the Broadcasts webhook
+  // endpoint at `/api/webhooks/resend-broadcasts`. Distinct from
+  // `RESEND_WEBHOOK_SIGNING_SECRET` (F1 transactional) — each Resend
+  // product issues its own webhook secret. ≥32 bytes of entropy.
+  // SECRET — redacted in logs.
+  RESEND_BROADCASTS_WEBHOOK_SECRET: z.string().min(32).describe('SECRET — do not log'),
+
+  // HMAC secret used to sign one-click unsubscribe tokens. ≥32 bytes of
+  // entropy. MUST be distinct from `AUTH_COOKIE_SIGNING_SECRET` (per
+  // research.md § 4) so token rotation does not invalidate user sessions.
+  // Tokens are valid forever (FR-030 idempotency — replays are safe).
+  // Generate with: openssl rand -base64 48
+  // SECRET — redacted in logs.
+  UNSUBSCRIBE_TOKEN_SECRET: z.string().min(32).describe('SECRET — do not log'),
+
+  // Kill-switch for F7 Email Broadcast. When FALSE every
+  // `/api/broadcasts/**` and `/api/admin/broadcasts/**` route returns
+  // 503 `feature_disabled` via the kill-switch helper (T031). Default
+  // FALSE — F7 ships dark; flip to TRUE in Vercel env after the F7
+  // release gate. Mid-flight broadcasts (status `submitted`/`approved`)
+  // remain visible to admins for completion/rejection per FR-002 +
+  // Spec § Edge Cases L341.
+  FEATURE_F7_BROADCASTS: booleanFromString.default(false),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -391,13 +428,14 @@ export const env = {
     xHeaderEnabled: raw.E2E_X_TENANT_HEADER_ENABLED,
   },
 
-  // F3 + F4 + F5 feature flags
+  // F3 + F4 + F5 + F7 feature flags
   features: {
     f3Members: raw.FEATURE_F3_MEMBERS,
     f4Invoicing: raw.FEATURE_F4_INVOICING,
     f4VoidAttachment: raw.FEATURE_F4_VOID_ATTACHMENT,
     f5OnlinePayment: raw.FEATURE_F5_ONLINE_PAYMENT,
     f5AsyncReceiptPdf: raw.FEATURE_F5_ASYNC_RECEIPT_PDF,
+    f7Broadcasts: raw.FEATURE_F7_BROADCASTS,
   },
 
   // F4 Invoicing
@@ -416,6 +454,17 @@ export const env = {
     apiVersion: raw.STRIPE_API_VERSION,
     accountIdSwecham: raw.STRIPE_ACCOUNT_ID_SWECHAM,
     liveMode: raw.STRIPE_LIVE_MODE,
+  },
+
+  // F7 Email Broadcast (Resend Broadcasts API surface — distinct from
+  // F1+F4 transactional `resend.*`). Webhook + unsubscribe-token
+  // secrets are kept here so the F7 module can read them via a single
+  // namespaced accessor (`env.broadcasts.*`) without coupling to the
+  // transactional Resend block.
+  broadcasts: {
+    apiKey: raw.RESEND_BROADCASTS_API_KEY,
+    webhookSecret: raw.RESEND_BROADCASTS_WEBHOOK_SECRET,
+    unsubscribeTokenSecret: raw.UNSUBSCRIBE_TOKEN_SECRET,
   },
 } as const;
 

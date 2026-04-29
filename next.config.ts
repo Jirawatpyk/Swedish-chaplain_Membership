@@ -1,10 +1,29 @@
 import type { NextConfig } from 'next';
+import bundleAnalyzer from '@next/bundle-analyzer';
 import createNextIntlPlugin from 'next-intl/plugin';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
+
+// F7 — bundle-budget enforcement (perf.md CHK038). Wrapper is a no-op
+// when `ANALYZE !== 'true'`; the production build path is unaffected.
+//
+// Caveat: `@next/bundle-analyzer` is a webpack plugin. The current
+// `pnpm build:analyse` script keeps `--turbopack` for parity with
+// `pnpm build`, so the wrapper will not emit HTML reports while
+// Turbopack is the active bundler. To actually generate the
+// `<distDir>/analyze/{client,edge,nodejs}.html` artefacts, run with
+// the webpack bundler explicitly:
+//
+//   ANALYZE=true pnpm next build           # no --turbopack flag
+//
+// Tracked for follow-up at Phase 3 polish (T117+) when
+// virtualization budgets need empirical verification.
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === 'true',
+});
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -40,4 +59,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withNextIntl(nextConfig);
+export default withBundleAnalyzer(withNextIntl(nextConfig));
