@@ -7,6 +7,7 @@ import { MemberCommandPaletteRoot } from '@/components/shell/member-command-pale
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
 import { requireSession } from '@/lib/auth-session';
+import { MarketingAcknowledgementBanner } from './_components/marketing-acknowledgement-banner';
 
 /**
  * Member shell layout (T144 / T024).
@@ -48,6 +49,10 @@ export default async function MemberLayout({ children }: { children: ReactNode }
         </div>
       </header>
       <main className="flex-1" id="main-content">
+        {/* F7 Q15 — GDPR Art. 7 demonstrable consent banner.
+            Server component returns null when ineligible (member already
+            acknowledged, plan has no eblast quota, or feature flag off). */}
+        <MarketingAcknowledgementBanner />
         {children}
       </main>
       {/* T165 — Idle warning modal fires at 29 min of inactivity. */}

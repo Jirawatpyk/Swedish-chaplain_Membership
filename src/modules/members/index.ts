@@ -309,3 +309,63 @@ export type {
 // RateLimitPort removed — rate limiting is a transport-layer concern
 // and lives in the route handler via the F1 UpstashRateLimiter singleton
 // exposed through the auth barrel (round-2 review C-1 / IMPORTANT I-8).
+
+// ===========================================================================
+// F7 Batch C extensions (T029) — F3 use-cases consumed by F7 bridges
+// ===========================================================================
+
+export {
+  getMembersBySegment,
+  type GetMembersBySegmentDeps,
+  type GetMembersBySegmentInput,
+} from './application/use-cases/get-members-by-segment';
+
+export {
+  getMemberPrimaryContact,
+  type GetMemberPrimaryContactDeps,
+} from './application/use-cases/get-member-primary-contact';
+
+export {
+  lookupContactEmailInTenant,
+  type ContactEmailLookupResult,
+  type LookupContactEmailInTenantDeps,
+} from './application/use-cases/lookup-contact-email-in-tenant';
+
+export {
+  lookupMemberPrimaryContactEmailInTenant,
+  type LookupMemberPrimaryContactEmailInTenantDeps,
+} from './application/use-cases/lookup-member-primary-contact-email-in-tenant';
+
+export {
+  getMembersHaltedInTenant,
+  type GetMembersHaltedInTenantDeps,
+} from './application/use-cases/get-members-halted-in-tenant';
+
+export {
+  setMemberHalt,
+  type MemberHaltError,
+  type SetMemberHaltDeps,
+  type SetMemberHaltMeta,
+} from './application/use-cases/set-member-halt';
+
+export {
+  markBroadcastsAcknowledged,
+  type MarkAckError,
+  type MarkAckResult,
+  type MarkBroadcastsAcknowledgedDeps,
+} from './application/use-cases/mark-broadcasts-acknowledged';
+
+// F7 projection types — exported for F7-side bridge adapter consumption.
+export type {
+  F7MemberRecipient,
+  F7MemberHaltSummary,
+} from './application/ports/member-repo';
+
+// F7 bridge — concrete `MemberRepo` + `ContactRepo` instances for F7's
+// `members-bridge.ts` composition root. F7 invokes the F3 use-cases
+// above through these repos. Tenant scoping is applied inside the
+// repo's `runInTenant` calls.
+export { drizzleMemberRepo } from './infrastructure/db/drizzle-member-repo';
+export { drizzleContactRepo } from './infrastructure/db/drizzle-contact-repo';
+export type { MemberRepo, RepoError } from './application/ports/member-repo';
+export type { ContactRepo } from './application/ports/contact-repo';

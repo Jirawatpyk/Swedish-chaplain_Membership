@@ -48,6 +48,15 @@ export type F3AuditEventType =
   | 'member_portal_invite_queued'
   | 'contact_linked_to_user';
 
+// F7 cross-module event types (`broadcast_member_dispatch_resumed` +
+// `member_acknowledged_broadcasts_terms`) are NOT in this union —
+// emission is the responsibility of F7's own audit-port + adapter
+// (Phase 3+). F3 use-cases for setMemberHalt + markBroadcastsAcknowledged
+// mutate the flag column only; F7's caller emits the audit. This keeps
+// the DB-level `audit_event_type` enum consistent (no F7-specific values
+// in F3's adapter writes) and the F7 → F3 dependency direction clean
+// per Constitution Principle III.
+
 /**
  * Exhaustiveness guard for switch statements over `F3AuditEventType`.
  * The compiler infers `never` at the `default:` branch only when every

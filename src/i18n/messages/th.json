@@ -1298,6 +1298,179 @@
         }
       }
     },
+    "broadcasts": {
+      "queue": {
+        "title": "คิวตรวจสอบ E-Blast",
+        "subtitle": "ตรวจสอบและอนุมัติ E-Blast ที่สมาชิกส่งมา",
+        "empty": "เมื่อสมาชิกส่ง E-Blast จะปรากฏที่นี่ให้คุณตรวจสอบ",
+        "emptyTitle": "ไม่มีรายการรอตรวจสอบ",
+        "totalPending": "{count} รายการรอตรวจ",
+        "tableAria": "คิวตรวจสอบ E-Blast",
+        "ageBadge": {
+          "aging": "รอ {hours} ชม.",
+          "overdue": "{hours} ชม. — เกินกำหนด"
+        },
+        "bulk": {
+          "selectAria": "เลือก E-Blast",
+          "selected": "เลือกแล้ว {count} รายการ",
+          "approveSelected": "อนุมัติและส่งรายการที่เลือก",
+          "clear": "ล้างที่เลือก",
+          "successAll": "อนุมัติ E-Blast ที่เลือกทั้งหมดสำเร็จ",
+          "failureAll": "อนุมัติเป็นกลุ่มไม่สำเร็จ ลองใหม่หรืออนุมัติทีละรายการ",
+          "partial": "สำเร็จ {ok} รายการ ล้มเหลว {fail} รายการ"
+        },
+        "filters": {
+          "formAriaLabel": "ตัวกรองคิวตรวจสอบ E-Blast",
+          "statusLabel": "สถานะ",
+          "statusAll": "ทั้งหมด",
+          "memberLabel": "สมาชิก",
+          "memberAll": "สมาชิกทั้งหมด",
+          "fromDate": "จาก",
+          "toDate": "ถึง",
+          "apply": "กรอง",
+          "reset": "ล้าง"
+        },
+        "columns": {
+          "submittedAt": "ส่งเมื่อ",
+          "member": "สมาชิก",
+          "subject": "หัวข้อ",
+          "segment": "ผู้รับ",
+          "recipientCount": "จำนวนผู้รับ",
+          "status": "สถานะ",
+          "actions": "การดำเนินการ"
+        },
+        "status": {
+          "draft": "ฉบับร่าง",
+          "submitted": "รอตรวจสอบ",
+          "approved": "อนุมัติแล้ว",
+          "sending": "กำลังส่ง",
+          "sent": "ส่งแล้ว",
+          "rejected": "ปฏิเสธ",
+          "cancelled": "ยกเลิก",
+          "failed_to_dispatch": "ส่งไม่สำเร็จ"
+        },
+        "actorRole": {
+          "member_self_service": "สมาชิก",
+          "admin_proxy": "ผู้ดูแล (ส่งแทน)",
+          "system": "ระบบ"
+        },
+        "pagination": {
+          "previous": "ก่อนหน้า",
+          "next": "ถัดไป"
+        },
+        "slaBanner": {
+          "targetSla": "เป้าหมายการตรวจสอบ: 48 ชั่วโมง",
+          "medianRolling30d": "เวลาตรวจสอบเฉลี่ย (30 วันล่าสุด): {hours} ชม.",
+          "p95Rolling30d": "p95: {hours} ชม.",
+          "withinBudget": "อยู่ในเกณฑ์ SLA",
+          "breachWarning": "เกิน SLA — ทบทวนกำลังคนของทีมตรวจสอบ"
+        },
+        "proxySubmitButton": "ส่งแทนสมาชิก"
+      },
+      "review": {
+        "title": "ตรวจสอบ E-Blast",
+        "subtitle": "ดูเนื้อหา + อนุมัติ ปฏิเสธ หรือยกเลิก",
+        "bodyRenderFailedTitle": "ไม่สามารถแสดงเนื้อหาอย่างปลอดภัย",
+        "bodyRenderFailedHint": "ระบบทำความสะอาด HTML ไม่สำเร็จ ปุ่มอนุมัติถูกระงับ กรุณาติดต่อทีมปฏิบัติการ",
+        "fields": {
+          "subject": "หัวข้อ",
+          "body": "ข้อความ",
+          "segment": "ผู้รับ",
+          "recipientCount": "จำนวนผู้รับโดยประมาณ",
+          "submittedBy": "ส่งโดย",
+          "submittedAt": "ส่งเมื่อ",
+          "scheduledFor": "นัดส่ง",
+          "actorRole": "บทบาทผู้ส่ง"
+        },
+        "audit": {
+          "title": "ไทม์ไลน์ลำดับการดำเนินการ",
+          "drafted": "สร้างฉบับร่าง",
+          "submitted": "ส่งตรวจสอบ",
+          "approved": "อนุมัติ",
+          "rejected": "ปฏิเสธ",
+          "cancelled": "ยกเลิก",
+          "sendStarted": "เริ่มส่ง",
+          "sent": "ส่งสำเร็จ",
+          "failedToDispatch": "ส่งไม่สำเร็จ",
+          "actorBy": "โดย {actor}",
+          "actorSystem": "ระบบ",
+          "actorUnknown": "ผู้ใช้ที่ไม่ทราบ"
+        }
+      },
+      "approveDialog": {
+        "title": "อนุมัติ E-Blast นี้?",
+        "description": "เลือกส่งทันทีหรือนัดส่งภายหลัง ผู้รับจะเห็นแบรนด์ของหอการค้าเป็นผู้ส่ง",
+        "decision": {
+          "sendNow": "อนุมัติและส่งทันที",
+          "schedule": "อนุมัติและนัดส่ง"
+        },
+        "scheduleLabel": "ส่งเวลา",
+        "scheduleHelp": "อย่างน้อย 5 นาทีจากเวลาปัจจุบัน",
+        "confirm": "อนุมัติ",
+        "cancel": "ยกเลิก"
+      },
+      "rejectDialog": {
+        "title": "ปฏิเสธ E-Blast นี้?",
+        "description": "ระบุเหตุผล — สมาชิกจะเห็นข้อความนี้ในอีเมลแจ้งเตือนตรงตามที่กรอก",
+        "reasonLabel": "เหตุผลในการปฏิเสธ",
+        "reasonPlaceholder": "อธิบายเหตุผลที่ E-Blast นี้ไม่สามารถดำเนินการได้…",
+        "reasonHelp": "1–2,000 ตัวอักษร ส่งให้สมาชิกตรงตามที่กรอก",
+        "confirm": "ปฏิเสธ",
+        "cancel": "ยกเลิก",
+        "errors": {
+          "reasonRequired": "กรุณากรอกเหตุผล",
+          "reasonTooLong": "เหตุผลต้องไม่เกิน 2,000 ตัวอักษร"
+        }
+      },
+      "cancelDialog": {
+        "title": "ยกเลิก E-Blast นี้?",
+        "description": "การยกเลิกจะคืนโควตาที่จองไว้ของสมาชิก กรุณากรอกเหตุผลสำหรับ audit log + อีเมลแจ้งสมาชิก",
+        "reasonLabel": "เหตุผลในการยกเลิก",
+        "reasonPlaceholder": "เหตุผลที่ยกเลิก…",
+        "reasonHelp": "1–500 ตัวอักษร",
+        "confirm": "ยกเลิก E-Blast",
+        "cancel": "ไม่ยกเลิก"
+      },
+      "proxySubmitDialog": {
+        "title": "ส่งแทนสมาชิก",
+        "description": "เขียน E-Blast ที่จะถูกส่งเข้าคิวตรวจสอบโดยใช้โควตาของสมาชิกที่ส่งแทน",
+        "memberLabel": "สมาชิก",
+        "memberPlaceholder": "ค้นหาด้วยชื่อบริษัท…",
+        "subjectLabel": "หัวข้อ",
+        "bodyLabel": "ข้อความ",
+        "segmentLabel": "ผู้รับ",
+        "confirm": "ส่ง",
+        "cancel": "ยกเลิก"
+      },
+      "haltBanner": {
+        "title": "{count, plural, =1 {สมาชิก 1 รายถูกพักการส่ง} other {สมาชิก # รายถูกพักการส่ง}}",
+        "body": "พักอัตโนมัติเนื่องจากเกินเกณฑ์ความถี่ในการรายงานสแปม กรุณาตรวจสอบและคลายล็อกหากเหมาะสม",
+        "clearAction": "ตรวจสอบและคลายล็อก",
+        "haltedSince": "ถูกพักตั้งแต่ {date}",
+        "readOnlyNote": "บทบาทผู้จัดการ — อ่านอย่างเดียว"
+      },
+      "clearHaltDialog": {
+        "title": "คลายล็อกการส่งของสมาชิก?",
+        "body": "พิมพ์ชื่อบริษัทของสมาชิกเพื่อยืนยัน การคลายล็อกจะเปิดให้สมาชิกส่ง E-Blast ใหม่ได้อีกครั้ง",
+        "phraseLabel": "พิมพ์ {phrase} เพื่อยืนยัน",
+        "phraseError": "ข้อความไม่ตรงกัน",
+        "confirm": "คลายล็อก",
+        "cancel": "ยกเลิก"
+      },
+      "managerReadonlyBanner": {
+        "title": "โหมดอ่านอย่างเดียว",
+        "body": "บทบาท Manager: คุณสามารถดูคิวและรายละเอียด E-Blast ได้ แต่อนุมัติ ปฏิเสธ หรือยกเลิกไม่ได้"
+      },
+      "toast": {
+        "approved": "อนุมัติ E-Blast แล้ว",
+        "rejected": "ปฏิเสธ E-Blast แล้ว แจ้งสมาชิกเรียบร้อย",
+        "cancelled": "ยกเลิก E-Blast แล้ว",
+        "proxySubmitted": "ส่งเข้าคิวตรวจสอบแล้ว",
+        "clearHalted": "คลายล็อกแล้ว สมาชิกส่ง E-Blast ใหม่ได้",
+        "concurrentRace": "ผู้ดูแลคนอื่นดำเนินการก่อนหน้านี้แล้ว กำลังรีเฟรช…",
+        "error": "ดำเนินการไม่สำเร็จ กรุณาลองใหม่"
+      }
+    },
     "refund": {
       "title": "คืนเงิน",
       "button": {
@@ -1419,7 +1592,9 @@
       "viewAuditLog": "ดูประวัติการตรวจสอบ",
       "newMember": "สร้างสมาชิกใหม่",
       "newInvoice": "สร้างใบแจ้งหนี้ใหม่",
-      "issueRefund": "คืนเงิน — ค้นหาใบแจ้งหนี้ที่ชำระแล้ว"
+      "issueRefund": "คืนเงิน — ค้นหาใบแจ้งหนี้ที่ชำระแล้ว",
+      "reviewBroadcasts": "ตรวจสอบคิว E-Blast",
+      "broadcastsHalted": "สมาชิกที่ถูกระงับ — ตรวจสอบ E-Blast"
     },
     "navigate": {
       "plansList": "รายการแพ็กเกจ",
@@ -1429,7 +1604,8 @@
       "membersList": "รายการสมาชิก",
       "invoicesList": "รายการใบแจ้งหนี้",
       "invoicesPaidOnline": "ใบแจ้งหนี้: ชำระออนไลน์ (กระทบยอด)",
-      "creditNotesList": "รายการใบลดหนี้"
+      "creditNotesList": "รายการใบลดหนี้",
+      "broadcastsQueue": "คิวตรวจสอบ E-Blast"
     }
   },
   "nav": {
@@ -1594,6 +1770,152 @@
         },
         "reason": {
           "heading": "เหตุผล"
+        }
+      }
+    },
+    "broadcasts": {
+      "compose": {
+        "title": "เขียน E-Blast",
+        "subtitle": "ส่งข้อความไปยังสมาชิกของหอการค้า",
+        "fields": {
+          "subject": "หัวข้อ",
+          "subjectPlaceholder": "ระบุหัวข้อ (ไม่เกิน 200 ตัวอักษร)",
+          "bodyLabel": "ข้อความ",
+          "bodyPlaceholder": "พิมพ์ข้อความของคุณ — รูปแบบจะถูกเก็บไว้",
+          "segmentLabel": "ผู้รับ",
+          "customListLabel": "รายชื่ออีเมลกำหนดเอง",
+          "customListHelp": "ใส่อีเมลหนึ่งรายการต่อหนึ่งบรรทัด สูงสุด 100 รายการ ทุกอีเมลต้องอยู่ในไดเรกทอรีของคุณ",
+          "schedulePicker": "ตั้งเวลาส่ง",
+          "scheduleHelp": "เว้นว่างไว้เพื่อส่งทันทีหลังตรวจสอบ",
+          "previewLabel": "ตัวอย่าง",
+          "previewLoading": "กำลังโหลดตัวอย่าง…",
+          "previewUnavailable": "ดูตัวอย่างไม่ได้ชั่วคราว",
+          "previewUnavailableHint": "รีเฟรชหน้าเพื่อลองใหม่ — แบบร่างของคุณยังอยู่ครบ",
+          "subjectCounter": "{count} / {max} ตัวอักษร",
+          "linkUrlLabel": "URL ของลิงก์",
+          "linkConfirm": "ตั้งค่าลิงก์",
+          "linkCancel": "ยกเลิก",
+          "tierCodesPlaceholder": "premium, large",
+          "tierCodesHelp": "รหัสระดับ คั่นด้วยเครื่องหมายจุลภาค",
+          "customListPlaceholder": "alice@example.com\nbob@example.com"
+        },
+        "segmentOption": {
+          "all_members": "สมาชิกทั้งหมด",
+          "tier": "เฉพาะระดับสมาชิก",
+          "event_attendees_last_90d": "ผู้เข้าร่วมงาน (90 วันล่าสุด)",
+          "custom": "รายชื่ออีเมลกำหนดเอง"
+        },
+        "comingSoon": "(เร็ว ๆ นี้)",
+        "tierLabel": "รหัสระดับ",
+        "editor": {
+          "aria": {
+            "toolbar": "แถบเครื่องมือจัดรูปแบบ",
+            "bold": "ตัวหนา (Ctrl+B)",
+            "italic": "ตัวเอียง (Ctrl+I)",
+            "underline": "ขีดเส้นใต้ (Ctrl+U)",
+            "bulletList": "รายการแบบจุด",
+            "orderedList": "รายการแบบลำดับ",
+            "link": "แทรกลิงก์",
+            "clearLink": "ลบลิงก์"
+          },
+          "announcements": {
+            "boldOn": "เปิดตัวหนา",
+            "boldOff": "ปิดตัวหนา",
+            "italicOn": "เปิดตัวเอียง",
+            "italicOff": "ปิดตัวเอียง",
+            "underlineOn": "เปิดขีดเส้นใต้",
+            "underlineOff": "ปิดขีดเส้นใต้",
+            "bulletListOn": "เปิดรายการแบบจุด",
+            "bulletListOff": "ปิดรายการแบบจุด",
+            "orderedListOn": "เปิดรายการแบบลำดับ",
+            "orderedListOff": "ปิดรายการแบบลำดับ",
+            "linkSet": "เพิ่มลิงก์แล้ว",
+            "linkCleared": "ลบลิงก์แล้ว"
+          }
+        },
+        "toast": {
+          "drafted": "บันทึกฉบับร่างแล้ว",
+          "submitted": "ส่งให้ผู้ดูแลตรวจสอบแล้ว",
+          "submittedSlaHint": "เป้าหมายตรวจสอบโดยผู้ดูแล: 48 ชั่วโมง",
+          "sanitiserStripped": "รูปแบบที่ไม่รองรับถูกลบออกอัตโนมัติ",
+          "savingDraft": "กำลังบันทึกฉบับร่าง…",
+          "submitting": "กำลังส่ง…",
+          "takingLonger": "ใช้เวลานานกว่าที่คาด กรุณารอสักครู่"
+        },
+        "button": {
+          "saveDraft": "บันทึกฉบับร่าง",
+          "submit": "ส่งเพื่อตรวจสอบ",
+          "deleteDraft": "ลบฉบับร่าง"
+        },
+        "errors": {
+          "broadcast_quota_blocked": "โควตา E-Blast ของปีนี้ถูกใช้หมดแล้ว",
+          "broadcast_not_in_plan": "แพ็กเกจของคุณยังไม่รวมสิทธิ์ส่ง E-Blast",
+          "broadcast_subject_too_long": "หัวข้อต้องมีไม่เกิน 200 ตัวอักษร",
+          "broadcast_subject_empty": "กรุณากรอกหัวข้อ",
+          "broadcast_body_too_large": "เนื้อหามีขนาดเกิน 200 KB",
+          "broadcast_body_unsafe_html": "เนื้อหามีรูปแบบที่ระบบไม่รองรับ กรุณาลดความซับซ้อน",
+          "broadcast_empty_segment_blocked": "ไม่พบผู้รับที่ตรงกับเงื่อนไข",
+          "broadcast_audience_too_large": "จำนวนผู้รับเกินขีดจำกัด 5,000 ราย",
+          "broadcast_custom_recipient_unknown": "อีเมลในรายการกำหนดเองบางรายการไม่อยู่ในไดเรกทอรี",
+          "broadcast_custom_recipient_invalid_format": "อีเมลบางรายการรูปแบบไม่ถูกต้อง",
+          "broadcast_member_missing_primary_contact_email": "โปรไฟล์ของคุณยังไม่มีอีเมลผู้ติดต่อหลัก",
+          "broadcast_member_halted_pending_review": "สิทธิ์การส่ง E-Blast ของคุณถูกพักไว้รออดมินตรวจสอบ",
+          "broadcast_rate_limit_exceeded": "ส่งบ่อยเกินไป กรุณาลองใหม่ภายหลัง",
+          "broadcast_immutable_after_submit": "E-Blast นี้ถูกส่งแล้วและแก้ไขไม่ได้",
+          "broadcast_not_found": "ไม่พบ E-Blast",
+          "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่"
+        },
+        "delete": {
+          "title": "ลบฉบับร่างนี้?",
+          "body": "ฉบับร่างจะถูกลบถาวรและไม่สามารถกู้คืนได้",
+          "confirm": "ลบ",
+          "cancel": "แก้ไขต่อ"
+        }
+      },
+      "quota": {
+        "headerLabel": "โควตา E-Blast ({year})",
+        "planLabel": "แพ็กเกจ: {plan}",
+        "used": "ใช้ไป",
+        "reserved": "จองไว้",
+        "remaining": "คงเหลือ",
+        "cap": "เพดานแพ็กเกจ",
+        "exhausted": "โควตา E-Blast ของปี {year} ถูกใช้หมดแล้ว",
+        "progressLabel": "โควตา E-Blast ที่ใช้ไป",
+        "fetchError": "ไม่สามารถโหลดโควตาได้",
+        "retry": "ลองใหม่"
+      },
+      "banner": {
+        "acknowledgement": {
+          "title": "ความยินยอมการสื่อสารทางการตลาด",
+          "body": "การส่ง E-Blast เป็นการยืนยันว่าผู้รับยินยอมรับข้อมูลข่าวสารจากหอการค้า ผู้รับสามารถถอนความยินยอมรายบุคคลได้ตลอดเวลา",
+          "acknowledge": "ฉันรับทราบ",
+          "remindLater": "เตือนภายหลัง",
+          "closeLabel": "ปิดแบนเนอร์"
+        }
+      },
+      "list": {
+        "title": "E-Blast ของฉัน",
+        "subtitle": "ติดตามสถานะและผลการส่ง E-Blast ทั้งหมดที่คุณส่ง",
+        "empty": "ส่งอีเมลถึงสมาชิกหอการค้าครั้งแรก — กดเพียงคลิกเดียว",
+        "emptyTitle": "ยังไม่มี E-Blast",
+        "emptyCta": "เขียน E-Blast ฉบับแรก",
+        "quotaExhaustedTooltip": "โควตา E-Blast ของปี {year} ถูกใช้หมดแล้ว — รีเซ็ตในวันที่ 1 มกราคมปีถัดไป",
+        "columns": {
+          "subject": "หัวข้อ",
+          "status": "สถานะ",
+          "submittedAt": "ส่งเมื่อ",
+          "sentAt": "ส่งสำเร็จ",
+          "audience": "ผู้รับ"
+        },
+        "status": {
+          "draft": "ฉบับร่าง",
+          "submitted": "รอตรวจสอบ",
+          "approved": "อนุมัติแล้ว",
+          "sending": "กำลังส่ง",
+          "sent": "ส่งแล้ว",
+          "rejected": "ปฏิเสธ",
+          "cancelled": "ยกเลิก",
+          "failed_to_dispatch": "ส่งไม่สำเร็จ"
         }
       }
     },
@@ -1839,6 +2161,28 @@
     },
     "refundConfirmation": {
       "subject": "ยืนยันการคืนเงิน"
+    },
+    "broadcastApproved": {
+      "subject": "E-Blast ของคุณได้รับการอนุมัติแล้ว",
+      "greeting": "สวัสดีคุณ {name},",
+      "body": "E-Blast \"{subject}\" ของคุณได้รับการอนุมัติและจะส่ง{scheduleHint}",
+      "scheduleNow": "ในไม่ช้า",
+      "scheduleAt": "ในวันที่ {when}",
+      "footer": "คุณจะเห็นผลการส่งในหน้าสิทธิประโยชน์เมื่อ E-Blast ส่งเสร็จ"
+    },
+    "broadcastRejected": {
+      "subject": "E-Blast ของคุณไม่ได้รับการอนุมัติ",
+      "greeting": "สวัสดีคุณ {name},",
+      "body": "E-Blast \"{subject}\" ของคุณไม่ได้รับการอนุมัติ",
+      "reasonHeading": "เหตุผลจากผู้ดูแลหอการค้า:",
+      "footer": "โควตาที่จองไว้ได้รับการคืนแล้ว คุณสามารถส่ง E-Blast ฉบับใหม่ได้"
+    },
+    "broadcastCancelled": {
+      "subject": "E-Blast ของคุณถูกยกเลิก",
+      "greeting": "สวัสดีคุณ {name},",
+      "body": "E-Blast \"{subject}\" ของคุณถูกยกเลิก",
+      "reasonHeading": "หมายเหตุการยกเลิก:",
+      "footer": "โควตาที่จองไว้ได้รับการคืนแล้ว"
     }
   }
 }

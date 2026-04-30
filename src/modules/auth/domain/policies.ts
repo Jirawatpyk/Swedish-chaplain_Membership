@@ -70,6 +70,14 @@ export type Action = 'read' | 'write' | 'delete' | 'admin' | 'clone';
  *   - 'refund'              — admin-initiated refund issuance (admin only;
  *                             manager + member denied — refunds touch real
  *                             money + an append-only F4 credit note)
+ *
+ * F7 resource ids (added by 010-email-broadcast Phase 3 US1):
+ *   - 'broadcast'           — admin queue + member compose surface
+ *                             (admin RW, member RW on own; manager denied
+ *                             writes per Q12 — manager has read-only on
+ *                             the admin queue surface)
+ *   - 'broadcast:own'       — member's own broadcast drafts + submissions
+ *                             (member RW; admin RW; manager denied)
  */
 export type Resource =
   | 'auth:self'
@@ -88,6 +96,8 @@ export type Resource =
   | 'credit_note'
   | 'tenant_invoice_settings'
   | 'refund'
+  | 'broadcast'
+  | 'broadcast:own'
   | (string & {});
 
 /** Self-service resource id — actions on the actor's OWN account. */
@@ -138,6 +148,12 @@ export function canAccess(role: Role, resource: Resource, action: Action): boole
   if (role === 'member') {
     if (resource === 'members:own' || resource === 'contacts:own') {
       return action === 'read' || action === 'write';
+    }
+    if (resource === 'broadcast:own') {
+      // F7: members compose, submit, and read their own broadcasts.
+      return (
+        action === 'read' || action === 'write' || action === 'delete'
+      );
     }
     if (resource.startsWith('member:')) {
       return action === 'read';

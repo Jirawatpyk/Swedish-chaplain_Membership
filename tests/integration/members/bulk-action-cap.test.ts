@@ -34,6 +34,14 @@ function stubDeps(): BulkActionDeps {
       updateFieldsInTx: vi.fn(),
       searchDirectory: vi.fn(),
       searchDirectoryWithCount: vi.fn(),
+      // F7 Batch C extensions (T029) — required by MemberRepo interface;
+      // bulk-action does not exercise these paths so vi.fn() stubs suffice.
+      findMembersBySegmentForBroadcast: vi.fn(),
+      findMembersHaltedForBroadcast: vi.fn(),
+      updateBroadcastsHaltedInTx: vi.fn(),
+      updateBroadcastsAcknowledgedAtInTx: vi.fn(),
+      findPrimaryContactEmailInTx: vi.fn(),
+      findMemberByPrimaryContactEmailInTx: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

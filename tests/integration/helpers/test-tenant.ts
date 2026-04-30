@@ -47,6 +47,12 @@ import {
   tenantPaymentSettings,
   processorEvents,
 } from '@/modules/payments/infrastructure/schema';
+import {
+  broadcasts,
+  broadcastDeliveries,
+  marketingUnsubscribes,
+  broadcastSegmentDefinitions,
+} from '@/modules/broadcasts/infrastructure/schema';
 
 export interface TestTenant {
   readonly ctx: TenantContext;
@@ -95,6 +101,29 @@ export async function createTestTenant(
     // block below for CN cleanup — payments.refunds.creditNoteId back-ref
     // must be cleared before F4 deletes the CN row). processorEvents has
     // no outbound FK; tenantPaymentSettings is keyed by tenant_id only.
+    // F7 cleanup — delete in FK order: deliveries → broadcasts (logical FK,
+    // composite PK on broadcasts so no SQL FK constraint); marketing
+    // unsubscribes + segment definitions are independent. broadcasts has
+    // append-only triggers on broadcast_deliveries — DELETE on the
+    // child table fires `broadcast_deliveries_no_delete` trigger which
+    // RAISES. Disable the trigger inside the cleanup tx to allow test
+    // rows to be wiped.
+    await db.execute(sql`
+      ALTER TABLE broadcast_deliveries DISABLE TRIGGER broadcast_deliveries_no_delete
+    `);
+    await db
+      .delete(broadcastDeliveries)
+      .where(eq(broadcastDeliveries.tenantId, slug));
+    await db.execute(sql`
+      ALTER TABLE broadcast_deliveries ENABLE TRIGGER broadcast_deliveries_no_delete
+    `);
+    await db.delete(broadcasts).where(eq(broadcasts.tenantId, slug));
+    await db
+      .delete(marketingUnsubscribes)
+      .where(eq(marketingUnsubscribes.tenantId, slug));
+    await db
+      .delete(broadcastSegmentDefinitions)
+      .where(eq(broadcastSegmentDefinitions.tenantId, slug));
     await db.delete(refunds).where(eq(refunds.tenantId, slug));
     await db.delete(payments).where(eq(payments.tenantId, slug));
     await db.delete(processorEvents).where(eq(processorEvents.tenantId, slug));

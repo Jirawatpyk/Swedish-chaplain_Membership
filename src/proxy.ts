@@ -293,6 +293,30 @@ export function proxy(request: NextRequest): NextResponse {
     );
   }
 
+  // 1e. FEATURE_F7_BROADCASTS kill-switch (T031). Covers compose +
+  //     submit + draft + quota API surfaces AND the public unsubscribe
+  //     page (US5 / US4 future) + Resend webhook (US4). Default OFF
+  //     (dark ship); flip ON in Vercel env after Phase 5 ship gate.
+  //     Distinct error code `feature_disabled` separates "not yet
+  //     activated" from F3/F4's `read_only_mode` maintenance semantics.
+  const isF7Path =
+    nextUrl.pathname.startsWith('/api/broadcasts') ||
+    nextUrl.pathname.startsWith('/api/admin/broadcasts') ||
+    nextUrl.pathname.startsWith('/api/webhooks/resend-broadcasts') ||
+    /^\/unsubscribe(?:\/|$)/.test(nextUrl.pathname) ||
+    /^\/portal\/broadcasts(?:\/|$)/.test(nextUrl.pathname) ||
+    /^\/admin\/broadcasts(?:\/|$)/.test(nextUrl.pathname) ||
+    /^\/portal\/benefits\/e-blasts(?:\/|$)/.test(nextUrl.pathname);
+  if (!env.features.f7Broadcasts && isF7Path) {
+    return build503(
+      'feature_disabled',
+      'Email broadcasts are temporarily unavailable.',
+      nextUrl.pathname,
+      requestId,
+      nonce,
+    );
+  }
+
   // 2. CSRF Origin allow-list for /api/* state-changing requests
   const csrfDecision = checkCsrf(method, nextUrl.pathname, request.headers.get('origin'));
   if (csrfDecision.action === 'reject') {

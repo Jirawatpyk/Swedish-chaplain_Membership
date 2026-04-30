@@ -42,6 +42,9 @@ export default defineConfig({
     // F5: payments + refunds + processor events (009-online-payment).
     // Same R022 fix — drizzle-kit must see F5 tables to manage them.
     './src/modules/payments/infrastructure/schema.ts',
+    // F7: broadcasts + deliveries + suppressions + segment defs (010-email-broadcast).
+    // Same R022 discipline — keep drizzle-kit aware of every F-stack module.
+    './src/modules/broadcasts/infrastructure/schema.ts',
   ],
   out: './drizzle/migrations',
   dialect: 'postgresql',

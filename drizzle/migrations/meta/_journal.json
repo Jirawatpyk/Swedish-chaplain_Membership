@@ -449,6 +449,97 @@
       "when": 1779062400000,
       "tag": "0063_audit_log_extend_retention_default_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1779148800000,
+      "tag": "0064_create_broadcasts",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1779148801000,
+      "tag": "0065_create_broadcast_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1779148802000,
+      "tag": "0066_create_marketing_unsubscribes",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1779148803000,
+      "tag": "0067_create_broadcast_segment_definitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1779148804000,
+      "tag": "0068_seed_default_segment_definitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1779148805000,
+      "tag": "0069_audit_log_extend_retention_default_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1779148806000,
+      "tag": "0070_alter_members_add_broadcasts_halted_until_admin_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1779148807000,
+      "tag": "0071_alter_members_add_broadcasts_acknowledged_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1779148808000,
+      "tag": "0072_audit_log_f7_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1779148809000,
+      "tag": "0073_notification_type_f7_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1779235200000,
+      "tag": "0074_alter_broadcasts_plan_id_snapshot_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1779235260000,
+      "tag": "0075_alter_broadcasts_immutability_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1779321600000,
+      "tag": "0076_audit_log_f7_audience_drift",
+      "breakpoints": true
     }
   ]
 }

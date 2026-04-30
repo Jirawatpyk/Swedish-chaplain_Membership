@@ -664,4 +664,203 @@ export const drizzleMemberRepo: MemberRepo = {
       return err(unexpected(e));
     }
   },
+
+  // ===========================================================================
+  // F7 Batch C extensions (T029) — segment resolution + halt/ack flag I/O
+  // ===========================================================================
+
+  async findMembersBySegmentForBroadcast(ctx, params) {
+    try {
+      const rows = await runInTenant(ctx, async (tx) => {
+        // Tier filter via raw SQL to bypass Drizzle's narrow `inArray`
+        // type constraint on the `planCategory` enum (only 'corporate' /
+        // 'partnership' literals are accepted; F7's `tierCodes` is
+        // unconstrained string[] from the F2 plan benefit-matrix). The
+        // raw fragment uses parameterised binds so SQL injection is not
+        // a concern even though the input is unconstrained.
+        const tierCodesArr = params.tierCodes ?? [];
+        const tierFilter =
+          params.segmentType === 'tier' && tierCodesArr.length > 0
+            ? sql`${membershipPlans.planCategory}::text = ANY(ARRAY[${sql.join(
+                tierCodesArr.map((c) => sql`${c}`),
+                sql`, `,
+              )}]::text[])`
+            : undefined;
+        return tx
+          .select({
+            memberId: members.memberId,
+            companyName: members.companyName,
+            primaryEmail: contacts.email,
+            planCategory: membershipPlans.planCategory,
+            broadcastsHaltedUntilAdminReview:
+              members.broadcastsHaltedUntilAdminReview,
+          })
+          .from(members)
+          .leftJoin(
+            contacts,
+            and(
+              eq(contacts.memberId, members.memberId),
+              eq(contacts.isPrimary, true),
+              sql`${contacts.removedAt} IS NULL`,
+            ),
+          )
+          .leftJoin(
+            membershipPlans,
+            and(
+              eq(membershipPlans.tenantId, members.tenantId),
+              eq(membershipPlans.planId, members.planId),
+              eq(membershipPlans.planYear, members.planYear),
+            ),
+          )
+          .where(
+            tierFilter
+              ? and(
+                  eq(members.broadcastsHaltedUntilAdminReview, false),
+                  tierFilter,
+                )
+              : eq(members.broadcastsHaltedUntilAdminReview, false),
+          )
+          .limit(5000);
+      });
+
+      return ok(
+        rows.map((r) => ({
+          memberId: r.memberId,
+          displayName: r.companyName,
+          primaryContactEmail: r.primaryEmail,
+          tierCode: r.planCategory,
+          broadcastsHaltedUntilAdminReview: r.broadcastsHaltedUntilAdminReview,
+        })),
+      );
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async findMembersHaltedForBroadcast(ctx) {
+    try {
+      const rows = await runInTenant(ctx, async (tx) =>
+        tx
+          .select({
+            memberId: members.memberId,
+            companyName: members.companyName,
+            updatedAt: members.updatedAt,
+          })
+          .from(members)
+          .where(eq(members.broadcastsHaltedUntilAdminReview, true)),
+      );
+      return ok(
+        rows.map((r) => ({
+          memberId: r.memberId,
+          displayName: r.companyName,
+          haltedSinceAt: r.updatedAt,
+        })),
+      );
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async updateBroadcastsHaltedInTx(tx, memberId, halted) {
+    try {
+      const result = await tx
+        .update(members)
+        .set({
+          broadcastsHaltedUntilAdminReview: halted,
+          updatedAt: new Date(),
+        })
+        .where(eq(members.memberId, memberId))
+        .returning({ memberId: members.memberId });
+      return ok({ affected: result.length });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async updateBroadcastsAcknowledgedAtInTx(tx, memberId, timestamp) {
+    try {
+      const beforeRows = await tx
+        .select({ ackAt: members.broadcastsAcknowledgedAt })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      const previouslyNull =
+        beforeRows.length === 1 && beforeRows[0]!.ackAt === null;
+      const result = await tx
+        .update(members)
+        .set({
+          broadcastsAcknowledgedAt: timestamp,
+          updatedAt: new Date(),
+        })
+        .where(eq(members.memberId, memberId))
+        .returning({ memberId: members.memberId });
+      return ok({ affected: result.length, previouslyNull });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async findPrimaryContactEmailInTx(tx, memberId) {
+    try {
+      const rows = await tx
+        .select({ email: contacts.email })
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.memberId, memberId),
+            eq(contacts.isPrimary, true),
+            sql`${contacts.removedAt} IS NULL`,
+          ),
+        )
+        .limit(1);
+      const row = rows[0];
+      return ok(row ? row.email : null);
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async findMemberByPrimaryContactEmailInTx(tx, emailLower) {
+    try {
+      const rows = await tx
+        .select({
+          memberId: members.memberId,
+          companyName: members.companyName,
+          email: contacts.email,
+          planCategory: membershipPlans.planCategory,
+          broadcastsHaltedUntilAdminReview:
+            members.broadcastsHaltedUntilAdminReview,
+        })
+        .from(members)
+        .innerJoin(
+          contacts,
+          and(
+            eq(contacts.memberId, members.memberId),
+            eq(contacts.isPrimary, true),
+            sql`${contacts.removedAt} IS NULL`,
+            sql`lower(${contacts.email}) = ${emailLower}`,
+          ),
+        )
+        .leftJoin(
+          membershipPlans,
+          and(
+            eq(membershipPlans.tenantId, members.tenantId),
+            eq(membershipPlans.planId, members.planId),
+            eq(membershipPlans.planYear, members.planYear),
+          ),
+        )
+        .limit(1);
+      const row = rows[0];
+      if (!row) return ok(null);
+      return ok({
+        memberId: row.memberId,
+        displayName: row.companyName,
+        primaryContactEmail: row.email,
+        tierCode: row.planCategory,
+        broadcastsHaltedUntilAdminReview: row.broadcastsHaltedUntilAdminReview,
+      });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
 };

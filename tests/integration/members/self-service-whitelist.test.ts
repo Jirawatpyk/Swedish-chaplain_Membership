@@ -87,6 +87,14 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     updateFieldsInTx: async () => ok(baseMember),
     searchDirectory: async () => ok({ items: [], nextCursor: null }),
     searchDirectoryWithCount: async () => ok({ items: [], total: 0 }),
+    // F7 Batch C extensions (T029) — interface compliance stubs.
+    findMembersBySegmentForBroadcast: async () => ok([]),
+    findMembersHaltedForBroadcast: async () => ok([]),
+    updateBroadcastsHaltedInTx: async () => ok({ affected: 0 }),
+    updateBroadcastsAcknowledgedAtInTx: async () =>
+      ok({ affected: 0, previouslyNull: true }),
+    findPrimaryContactEmailInTx: async () => ok(null),
+    findMemberByPrimaryContactEmailInTx: async () => ok(null),
   };
 
   const contactRepo: ContactRepo = {

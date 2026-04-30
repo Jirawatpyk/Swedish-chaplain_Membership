@@ -1,0 +1,369 @@
+'use client';
+
+/**
+ * T081 — Compose form orchestrator.
+ *
+ * Owns the full compose form state via `react-hook-form` + zod resolver.
+ * Wires Tiptap-loader (dynamic-imported), segment-picker, custom-list-input,
+ * schedule-picker, preview-pane, submit-button, and quota-display.
+ *
+ * Submit handler:
+ *   - POST /api/broadcasts/submit (compose-and-submit in one call)
+ *   - 200 → toast.success + redirect to detail page
+ *   - 422 → toast.error with bilingual error message (mapped via
+ *     portal.broadcasts.compose.errors.<code>)
+ *   - 429 → toast.error retry-later
+ *   - 4xx/5xx → toast.error generic
+ *
+ * `useDeferredValue(bodyHtml)` keeps the editor responsive while the
+ * preview pane re-renders.
+ */
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
+import { z } from 'zod';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
+import { SegmentPicker, type SegmentPickerValue } from './segment-picker';
+import { CustomListInput, parseLines } from './custom-list-input';
+import { SchedulePicker } from './schedule-picker';
+import { PreviewPane } from './preview-pane';
+import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
+import { SubmitButton } from './submit-button';
+
+const TiptapEditor = loadTiptapEditor<{
+  initialHtml: string;
+  onChange: (html: string) => void;
+  disabled?: boolean;
+  labelledById?: string;
+}>(() => import('./tiptap-editor'));
+
+const SubmitSchema = z.object({
+  subject: z.string().min(1).max(200),
+  bodyHtml: z.string().min(1).max(200 * 1024),
+});
+
+/**
+ * UX-R2-1 (round-3) — map server error code → focusable field so SR
+ * users hear the inline error AT the field, not just in a transient
+ * toast (WCAG 3.3.1 + 3.3.3).
+ *
+ * Round-4 MED-E — form-level errors (quota, rate-limit, halt) clear
+ * only on resubmit; field-level errors clear when the user edits THAT
+ * field. Distinguishing them prevents the form-level error from
+ * disappearing the moment the user types in any unrelated field.
+ */
+type ServerErrorField = 'subject' | 'body' | 'segment' | 'customList' | null;
+const ERROR_CODE_FIELD: Record<string, ServerErrorField> = {
+  broadcast_subject_too_long: 'subject',
+  broadcast_subject_empty: 'subject',
+  broadcast_body_too_large: 'body',
+  broadcast_body_unsafe_html: 'body',
+  broadcast_empty_segment_blocked: 'segment',
+  broadcast_audience_too_large: 'segment',
+  broadcast_custom_recipient_unknown: 'customList',
+  broadcast_custom_recipient_invalid_format: 'customList',
+  broadcast_custom_recipient_empty: 'customList',
+  broadcast_custom_recipient_too_many: 'customList',
+};
+
+/**
+ * Simplify-S4 (round-3) — switch instead of nested ternary
+ * (CLAUDE.md forbids nested ternaries in presentation layer).
+ */
+function buildSegmentPayload(
+  segment: SegmentPickerValue,
+  customLines: ReadonlyArray<string>,
+):
+  | { kind: 'tier'; tierCodes: ReadonlyArray<string> }
+  | { kind: 'custom'; emails: ReadonlyArray<string> }
+  | { kind: 'all_members' | 'event_attendees_last_90d' } {
+  switch (segment.kind) {
+    case 'tier':
+      return { kind: 'tier', tierCodes: segment.tierCodes };
+    case 'custom':
+      return { kind: 'custom', emails: customLines };
+    default:
+      return { kind: segment.kind };
+  }
+}
+
+export interface ComposeFormProps {
+  readonly initialDraftId?: string | null;
+  readonly initialSubject?: string;
+  readonly initialBodyHtml?: string;
+  readonly initialQuota?: QuotaSnapshot | null;
+}
+
+export function ComposeForm({
+  initialDraftId = null,
+  initialSubject = '',
+  initialBodyHtml = '<p></p>',
+  initialQuota = null,
+}: ComposeFormProps): React.ReactElement {
+  const router = useRouter();
+  const t = useTranslations('portal.broadcasts.compose');
+  const tErr = useTranslations('portal.broadcasts.compose.errors');
+
+  const [subject, setSubject] = useState<string>(initialSubject);
+  const [bodyHtml, setBodyHtml] = useState<string>(initialBodyHtml);
+  const [segment, setSegment] = useState<SegmentPickerValue>({
+    kind: 'all_members',
+    tierCodes: [],
+  });
+  const [customList, setCustomList] = useState<string>('');
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [quotaRefreshKey, setQuotaRefreshKey] = useState<number>(0);
+  const [serverError, setServerError] = useState<{
+    field: ServerErrorField;
+    message: string;
+  } | null>(null);
+
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const bodyContainerRef = useRef<HTMLDivElement>(null);
+
+  const deferredBody = useDeferredValue(bodyHtml);
+
+  // UX-R2-1 — auto-focus the failing field when a server error arrives.
+  useEffect(() => {
+    if (serverError === null) return;
+    if (serverError.field === 'subject') subjectRef.current?.focus();
+    else if (serverError.field === 'body') bodyContainerRef.current?.focus();
+    // segment / customList are radio/textarea — toast suffices
+  }, [serverError]);
+
+  const customLines = parseLines(customList);
+  const validation = SubmitSchema.safeParse({ subject, bodyHtml });
+  const customListValid =
+    segment.kind !== 'custom' || (customLines.length > 0 && customLines.length <= 100);
+  const tierValid = segment.kind !== 'tier' || segment.tierCodes.length > 0;
+  const submitDisabled =
+    !validation.success || !customListValid || !tierValid;
+
+  // UX-C2 — per-field error tracking for aria-describedby + aria-invalid.
+  // Empty subject/body is the "needs input" state, not an "error" state
+  // (don't shout red at users who haven't typed yet); only mark invalid
+  // when the user has typed something AND it fails.
+  const subjectInvalid = subject.length > 0 && subject.length > 200;
+  const bodyInvalid = bodyHtml.length > 200 * 1024;
+
+  async function onSubmit() {
+    if (submitting) return;
+    setSubmitting(true);
+    setServerError(null);
+    try {
+      const body: Record<string, unknown> = {
+        subject,
+        bodyHtml,
+        bodySource: bodyHtml,
+        segment: buildSegmentPayload(segment, customLines),
+        scheduledFor,
+      };
+      if (initialDraftId !== null) body['draftId'] = initialDraftId;
+
+      const res = await fetch('/api/broadcasts/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+
+      const responseBody = (await res.json().catch(() => ({}))) as {
+        error?: { code?: string; message?: string };
+        broadcastId?: string;
+      };
+
+      if (res.ok && responseBody.broadcastId) {
+        toast.success(t('toast.submitted'), {
+          description: t('toast.submittedSlaHint'),
+        });
+        setQuotaRefreshKey((n) => n + 1);
+        router.push(`/portal/benefits/e-blasts?submitted=${responseBody.broadcastId}`);
+        router.refresh();
+        return;
+      }
+
+      const code = responseBody.error?.code ?? 'internal_error';
+      // Use the i18n key if recognised; fall back to the server message.
+      let msg: string;
+      try {
+        msg = tErr(code);
+      } catch {
+        msg = responseBody.error?.message ?? tErr('internal_error');
+      }
+      // UX-R2-1: surface to the failing field; useEffect will focus.
+      setServerError({ field: ERROR_CODE_FIELD[code] ?? null, message: msg });
+      toast.error(msg);
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : tErr('internal_error'),
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function onSaveDraft() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const body: Record<string, unknown> = {
+        subject,
+        bodyHtml,
+        bodySource: bodyHtml,
+        segmentType: segment.kind,
+        segmentParams: segment.kind === 'tier' ? { tierCodes: segment.tierCodes } : null,
+        customRecipientEmails: segment.kind === 'custom' ? customLines : null,
+        scheduledFor,
+      };
+      const method = initialDraftId !== null ? 'PUT' : 'POST';
+      if (initialDraftId !== null) body['draftId'] = initialDraftId;
+
+      const res = await fetch('/api/broadcasts/draft', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const respBody = (await res.json().catch(() => ({}))) as {
+          error?: { code?: string };
+        };
+        const code = respBody.error?.code ?? 'internal_error';
+        let msg: string;
+        try {
+          msg = tErr(code);
+        } catch {
+          msg = tErr('internal_error');
+        }
+        toast.error(msg);
+        return;
+      }
+      toast.success(t('toast.drafted'));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} />
+      <Card>
+        <CardContent className="space-y-6 pt-6">
+          <div className="space-y-2">
+            <Label htmlFor="broadcast-subject">{t('fields.subject')}</Label>
+            <Input
+              ref={subjectRef}
+              id="broadcast-subject"
+              value={subject}
+              onChange={(e) => {
+                setSubject(e.target.value);
+                if (serverError?.field === 'subject') setServerError(null);
+              }}
+              placeholder={t('fields.subjectPlaceholder')}
+              maxLength={200}
+              disabled={submitting}
+              aria-describedby={
+                serverError?.field === 'subject'
+                  ? 'broadcast-subject-error broadcast-subject-counter'
+                  : 'broadcast-subject-counter'
+              }
+              aria-invalid={
+                subjectInvalid || serverError?.field === 'subject' || undefined
+              }
+            />
+            {serverError?.field === 'subject' ? (
+              <p
+                id="broadcast-subject-error"
+                role="alert"
+                className="text-xs text-destructive"
+              >
+                {serverError.message}
+              </p>
+            ) : null}
+            <p
+              id="broadcast-subject-counter"
+              className="text-xs text-muted-foreground"
+              aria-live="off"
+            >
+              {t('fields.subjectCounter', {
+                count: subject.length,
+                max: 200,
+              })}
+            </p>
+          </div>
+
+          <SegmentPicker
+            value={segment}
+            onChange={setSegment}
+            disabled={submitting}
+          />
+
+          {segment.kind === 'custom' ? (
+            <CustomListInput
+              value={customList}
+              onChange={setCustomList}
+              disabled={submitting}
+            />
+          ) : null}
+
+          <div
+            ref={bodyContainerRef}
+            tabIndex={-1}
+            className="space-y-2 outline-none"
+            aria-invalid={bodyInvalid || serverError?.field === 'body' || undefined}
+          >
+            <Label id="broadcast-body-label">{t('fields.bodyLabel')}</Label>
+            <TiptapEditor
+              initialHtml={initialBodyHtml}
+              onChange={(next) => {
+                setBodyHtml(next);
+                if (serverError?.field === 'body') setServerError(null);
+              }}
+              disabled={submitting}
+              labelledById="broadcast-body-label"
+            />
+            {serverError?.field === 'body' ? (
+              <p className="text-xs text-destructive" role="alert">
+                {serverError.message}
+              </p>
+            ) : bodyInvalid ? (
+              <p className="text-xs text-destructive" role="alert">
+                {tErr('broadcast_body_too_large')}
+              </p>
+            ) : null}
+          </div>
+
+          <SchedulePicker
+            value={scheduledFor}
+            onChange={setScheduledFor}
+            disabled={submitting}
+          />
+
+          <PreviewPane subject={subject} bodyHtml={deferredBody} />
+
+          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onSaveDraft}
+              disabled={submitting}
+            >
+              {t('button.saveDraft')}
+            </Button>
+            <SubmitButton
+              disabled={submitDisabled}
+              submitting={submitting}
+              onClick={onSubmit}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

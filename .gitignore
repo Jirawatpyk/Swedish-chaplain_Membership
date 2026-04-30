@@ -148,3 +148,4 @@ docs/~$*
 ~$*.xls*
 .vercel
 .env*.local
+.e2e-seed.json

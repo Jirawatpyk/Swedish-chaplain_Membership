@@ -27,6 +27,13 @@ const domainForbiddenImports = [
   "pino",
   "@vercel/otel",
   "@opentelemetry/api",
+  // F7 — broadcasts Domain layer must be framework-free. Tiptap is a
+  // browser-side rich-text editor, DOMPurify is a sanitiser binding,
+  // email-validator is a Node lib — all belong in Infrastructure.
+  "@tiptap/react",
+  "@tiptap/starter-kit",
+  "isomorphic-dompurify",
+  "email-validator",
 ];
 
 const applicationForbiddenImports = [
@@ -46,6 +53,15 @@ const applicationForbiddenImports = [
   "stripe",
   "@stripe/stripe-js",
   "@stripe/react-stripe-js",
+  // F7 — broadcasts Application layer talks to Resend Broadcasts /
+  // DOMPurify / Tiptap / email-validator only via Infrastructure ports
+  // (HtmlSanitizerPort, EmailValidatorPort, BroadcastsGatewayPort).
+  // Direct imports break testability and the OWASP A06 sanitiser-
+  // boundary rule (Plan § Constitution).
+  "@tiptap/react",
+  "@tiptap/starter-kit",
+  "isomorphic-dompurify",
+  "email-validator",
 ];
 
 /**
@@ -96,7 +112,7 @@ const eslintConfig = defineConfig([
           })),
           patterns: [
             {
-              group: ["next/*", "drizzle-orm/*", "stripe/*", "@stripe/*"],
+              group: ["next/*", "drizzle-orm/*", "stripe/*", "@stripe/*", "@tiptap/*"],
               message: "Domain layer must not import framework subpaths.",
             },
           ],
@@ -125,11 +141,15 @@ const eslintConfig = defineConfig([
               // `@stripe/*/internal` deep imports slip past the bare-name
               // `paths:` list. Application MUST mock/inject via Infrastructure
               // port; ANY Stripe subpath coupling breaks that boundary.
-              group: ["stripe/*", "@stripe/*"],
+              // F7 — same rule applies to `@tiptap/core`, `@tiptap/extension-*`,
+              // and other Tiptap subpaths. Editor concerns belong in
+              // Presentation; sanitisation in Infrastructure (DOMPurify port).
+              group: ["stripe/*", "@stripe/*", "@tiptap/*"],
               message:
-                "Application layer must not import Stripe SDK subpaths. " +
-                "Go through the Infrastructure port (StripeClient) — " +
-                "Constitution Principle III + PCI DSS Principle IV.",
+                "Application layer must not import Stripe or Tiptap SDK subpaths. " +
+                "Go through the Infrastructure port (StripeClient / " +
+                "HtmlSanitizerPort / BroadcastsGatewayPort) — " +
+                "Constitution Principle III + PCI DSS Principle IV (F5) / OWASP A06 (F7).",
             },
             {
               // Path C hardening — B1-class regression guard.
@@ -190,6 +210,7 @@ const eslintConfig = defineConfig([
       "src/modules/members/**",
       "src/modules/invoicing/**",
       "src/modules/payments/**",
+      "src/modules/broadcasts/**",
       // `src/lib/**` is the shared composition adapter layer.
       // Files here provide the glue between module internals and
       // Next.js route handlers (cookies, session lookup, db client,
@@ -295,6 +316,23 @@ const eslintConfig = defineConfig([
               ],
               message:
                 "Cross-module import must go through the payments public barrel (`@/modules/payments`). " +
+                "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
+            {
+              // F7 — broadcasts module public-barrel boundary (T007).
+              group: [
+                "@/modules/broadcasts/domain/**",
+                "@/modules/broadcasts/application/**",
+                "@/modules/broadcasts/infrastructure/**",
+                "./modules/broadcasts/domain/**",
+                "./modules/broadcasts/application/**",
+                "./modules/broadcasts/infrastructure/**",
+                "../modules/broadcasts/domain/**",
+                "../modules/broadcasts/application/**",
+                "../modules/broadcasts/infrastructure/**",
+              ],
+              message:
+                "Cross-module import must go through the broadcasts public barrel (`@/modules/broadcasts`). " +
                 "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
             },
           ],

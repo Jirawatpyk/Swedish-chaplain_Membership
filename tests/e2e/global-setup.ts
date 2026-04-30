@@ -13,6 +13,7 @@
  */
 import postgres from 'postgres';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { seedF7Broadcasts } from './helpers/broadcasts-seed';
 
 async function resetF5IssuedInvoice(): Promise<void> {
   const id = process.env.E2E_ISSUED_INVOICE_ID;
@@ -50,6 +51,27 @@ async function globalSetup(): Promise<void> {
     await resetF5IssuedInvoice();
   } catch (error) {
     console.warn('[e2e global setup] F5 invoice reset failed:', String(error));
+  }
+
+  try {
+    const seed = await seedF7Broadcasts();
+    if (seed) {
+      // Worker processes inherit process.env from the parent process at
+      // spawn time. Set the env vars BEFORE workers fork so every spec
+      // sees them automatically.
+      process.env.E2E_SEED_BROADCAST_ID = seed.broadcastId;
+      process.env.E2E_SEED_HALTED_MEMBER_NAME = seed.haltedMemberDisplayName;
+      // Also persist to a fixture file so workers that fork after env
+      // mutation can re-read.
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(
+        '.e2e-seed.json',
+        JSON.stringify(seed),
+        'utf8',
+      );
+    }
+  } catch (error) {
+    console.warn('[e2e global setup] F7 broadcast seed failed:', String(error));
   }
 }
 

@@ -1298,6 +1298,179 @@
         }
       }
     },
+    "broadcasts": {
+      "queue": {
+        "title": "Granskningskö för E-Blast",
+        "subtitle": "Granska och godkänn utskick som medlemmar har skickat in.",
+        "empty": "När medlemmar skickar in utskick visas de här för granskning.",
+        "emptyTitle": "Kön är tom",
+        "totalPending": "{count} väntar",
+        "tableAria": "Granskningskö för utskick",
+        "ageBadge": {
+          "aging": "{hours} h väntar",
+          "overdue": "{hours} h — försenad"
+        },
+        "bulk": {
+          "selectAria": "Välj utskick",
+          "selected": "{count} markerade",
+          "approveSelected": "Godkänn och skicka markerade",
+          "clear": "Rensa markering",
+          "successAll": "Alla markerade utskick godkända.",
+          "failureAll": "Massgodkännande misslyckades. Försök igen eller godkänn ett i taget.",
+          "partial": "{ok} godkända, {fail} misslyckades."
+        },
+        "filters": {
+          "formAriaLabel": "Filter för utskickskö",
+          "statusLabel": "Status",
+          "statusAll": "Alla statusar",
+          "memberLabel": "Medlem",
+          "memberAll": "Alla medlemmar",
+          "fromDate": "Från",
+          "toDate": "Till",
+          "apply": "Tillämpa filter",
+          "reset": "Återställ"
+        },
+        "columns": {
+          "submittedAt": "Inskickad",
+          "member": "Medlem",
+          "subject": "Ämne",
+          "segment": "Mottagare",
+          "recipientCount": "Mottagare",
+          "status": "Status",
+          "actions": "Åtgärder"
+        },
+        "status": {
+          "draft": "Utkast",
+          "submitted": "Inväntar granskning",
+          "approved": "Godkänd",
+          "sending": "Skickar",
+          "sent": "Skickad",
+          "rejected": "Avvisad",
+          "cancelled": "Avbruten",
+          "failed_to_dispatch": "Misslyckades"
+        },
+        "actorRole": {
+          "member_self_service": "Medlem",
+          "admin_proxy": "Admin (ombud)",
+          "system": "System"
+        },
+        "pagination": {
+          "previous": "Föregående",
+          "next": "Nästa"
+        },
+        "slaBanner": {
+          "targetSla": "Mål för granskningstid (SLA): 48 timmar",
+          "medianRolling30d": "Median beslutstid (rullande 30 dagar): {hours} h",
+          "p95Rolling30d": "p95: {hours} h",
+          "withinBudget": "Inom SLA-budget",
+          "breachWarning": "SC-002 överskridning — kontrollera granskningskapacitet"
+        },
+        "proxySubmitButton": "Skicka in å medlems vägnar"
+      },
+      "review": {
+        "title": "Granska utskick",
+        "subtitle": "Granska innehåll + godkänn, avvisa eller avbryt.",
+        "bodyRenderFailedTitle": "Innehållet kunde inte renderas säkert",
+        "bodyRenderFailedHint": "Saneringen kunde inte bearbeta detta utskick. Godkännande är blockerat — kontakta drift för utredning.",
+        "fields": {
+          "subject": "Ämne",
+          "body": "Meddelande",
+          "segment": "Mottagare",
+          "recipientCount": "Beräknade mottagare",
+          "submittedBy": "Inskickad av",
+          "submittedAt": "Inskickad",
+          "scheduledFor": "Schemalagd till",
+          "actorRole": "Aktörsroll"
+        },
+        "audit": {
+          "title": "Livscykelstidslinje",
+          "drafted": "Utkast skapat",
+          "submitted": "Inskickad",
+          "approved": "Godkänd",
+          "rejected": "Avvisad",
+          "cancelled": "Avbruten",
+          "sendStarted": "Sändning startad",
+          "sent": "Skickad",
+          "failedToDispatch": "Sändning misslyckades",
+          "actorBy": "av {actor}",
+          "actorSystem": "system",
+          "actorUnknown": "okänd användare"
+        }
+      },
+      "approveDialog": {
+        "title": "Godkänna detta utskick?",
+        "description": "Välj att skicka omedelbart eller schemalägga. Mottagarna ser din kammares varumärke som avsändare.",
+        "decision": {
+          "sendNow": "Godkänn och skicka nu",
+          "schedule": "Godkänn och schemalägg"
+        },
+        "scheduleLabel": "Skicka",
+        "scheduleHelp": "Minst 5 minuter från nu.",
+        "confirm": "Godkänn",
+        "cancel": "Avbryt"
+      },
+      "rejectDialog": {
+        "title": "Avvisa detta utskick?",
+        "description": "Ange en anledning — medlemmen ser den ordagrant i e-postmeddelandet.",
+        "reasonLabel": "Anledning till avvisning",
+        "reasonPlaceholder": "Förklara varför detta utskick inte kan fortsätta…",
+        "reasonHelp": "1–2 000 tecken. Skickas ordagrant till medlemmen.",
+        "confirm": "Avvisa",
+        "cancel": "Avbryt",
+        "errors": {
+          "reasonRequired": "En icke-tom anledning krävs.",
+          "reasonTooLong": "Anledningen överskrider 2 000 tecken."
+        }
+      },
+      "cancelDialog": {
+        "title": "Avbryta detta utskick?",
+        "description": "Detta frigör medlemmens reserverade kvot. Ange en anledning för granskningsloggen + medlemsmeddelande.",
+        "reasonLabel": "Anledning till avbrott",
+        "reasonPlaceholder": "Varför avbryts detta…",
+        "reasonHelp": "1–500 tecken.",
+        "confirm": "Avbryt utskick",
+        "cancel": "Behåll utskick"
+      },
+      "proxySubmitDialog": {
+        "title": "Skicka in å medlems vägnar",
+        "description": "Skapa ett utskick som köläggs för granskning med ombudsmedlemmens kvot.",
+        "memberLabel": "Medlem",
+        "memberPlaceholder": "Sök efter företagsnamn…",
+        "subjectLabel": "Ämne",
+        "bodyLabel": "Meddelande",
+        "segmentLabel": "Mottagare",
+        "confirm": "Skicka in",
+        "cancel": "Avbryt"
+      },
+      "haltBanner": {
+        "title": "{count, plural, =1 {1 medlem är spärrad} other {# medlemmar är spärrade}} från utskick",
+        "body": "Automatisk spärr utlöst av klagomålströskel. Granska och häv spärren om det är lämpligt.",
+        "clearAction": "Granska och häv spärr",
+        "haltedSince": "Spärrad sedan {date}",
+        "readOnlyNote": "Manager-roll — skrivskyddad"
+      },
+      "clearHaltDialog": {
+        "title": "Häva utskicksspärr?",
+        "body": "Skriv medlemmens företagsnamn för att bekräfta. Detta återställer möjligheten att skicka nya utskick.",
+        "phraseLabel": "Skriv {phrase} för att bekräfta",
+        "phraseError": "Texten matchar inte.",
+        "confirm": "Häv spärr",
+        "cancel": "Avbryt"
+      },
+      "managerReadonlyBanner": {
+        "title": "Skrivskyddat läge",
+        "body": "Manager-roll: du kan se kön och utskicksdetaljer men inte godkänna, avvisa eller avbryta."
+      },
+      "toast": {
+        "approved": "Utskick godkänt.",
+        "rejected": "Utskick avvisat. Medlem meddelad.",
+        "cancelled": "Utskick avbrutet.",
+        "proxySubmitted": "Inskickad för granskning.",
+        "clearHalted": "Spärr hävd. Medlemmen kan skicka nya utskick.",
+        "concurrentRace": "En annan administratör hann före dig. Uppdaterar…",
+        "error": "Åtgärden misslyckades. Försök igen."
+      }
+    },
     "refund": {
       "title": "Utfärda återbetalning",
       "button": {
@@ -1419,7 +1592,9 @@
       "viewAuditLog": "Visa revisionslogg",
       "newMember": "Skapa ny medlem",
       "newInvoice": "Skapa ny faktura",
-      "issueRefund": "Utfärda återbetalning — hitta betald faktura"
+      "issueRefund": "Utfärda återbetalning — hitta betald faktura",
+      "reviewBroadcasts": "Granska utskickskön",
+      "broadcastsHalted": "Spärrade medlemmar — utskicksgranskning"
     },
     "navigate": {
       "plansList": "Paketlista",
@@ -1429,7 +1604,8 @@
       "membersList": "Medlemslista",
       "invoicesList": "Fakturalista",
       "invoicesPaidOnline": "Fakturor: betalda online (avstämning)",
-      "creditNotesList": "Kreditnotalista"
+      "creditNotesList": "Kreditnotalista",
+      "broadcastsQueue": "Granskningskö för E-Blast"
     }
   },
   "nav": {
@@ -1594,6 +1770,152 @@
         },
         "reason": {
           "heading": "Anledning"
+        }
+      }
+    },
+    "broadcasts": {
+      "compose": {
+        "title": "Skapa E-Blast",
+        "subtitle": "Skicka ett meddelande till din kammares medlemmar.",
+        "fields": {
+          "subject": "Ämne",
+          "subjectPlaceholder": "Ämnesrad (max 200 tecken)",
+          "bodyLabel": "Meddelande",
+          "bodyPlaceholder": "Skriv ditt meddelande — formatering bevaras.",
+          "segmentLabel": "Mottagare",
+          "customListLabel": "Anpassad e-postlista",
+          "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje adress måste redan finnas i din kammares katalog.",
+          "schedulePicker": "Schemalägg till senare",
+          "scheduleHelp": "Lämna tomt för omedelbar granskning.",
+          "previewLabel": "Förhandsgranskning",
+          "previewLoading": "Laddar förhandsgranskning…",
+          "previewUnavailable": "Förhandsgranskning är tillfälligt otillgänglig",
+          "previewUnavailableHint": "Uppdatera sidan för att försöka igen — ditt utkast är säkert.",
+          "subjectCounter": "{count} / {max} tecken",
+          "linkUrlLabel": "Länk-URL",
+          "linkConfirm": "Använd länk",
+          "linkCancel": "Avbryt",
+          "tierCodesPlaceholder": "premium, large",
+          "tierCodesHelp": "Kommaseparerade nivåkoder",
+          "customListPlaceholder": "alice@example.com\nbob@example.com"
+        },
+        "segmentOption": {
+          "all_members": "Alla medlemmar",
+          "tier": "Specifik medlemsnivå",
+          "event_attendees_last_90d": "Eventdeltagare (senaste 90 dagarna)",
+          "custom": "Anpassad e-postlista"
+        },
+        "comingSoon": "(kommer snart)",
+        "tierLabel": "Nivåkod",
+        "editor": {
+          "aria": {
+            "toolbar": "Formateringsverktygsfält",
+            "bold": "Fet (Ctrl+B)",
+            "italic": "Kursiv (Ctrl+I)",
+            "underline": "Understruken (Ctrl+U)",
+            "bulletList": "Punktlista",
+            "orderedList": "Numrerad lista",
+            "link": "Infoga länk",
+            "clearLink": "Ta bort länk"
+          },
+          "announcements": {
+            "boldOn": "Fet på",
+            "boldOff": "Fet av",
+            "italicOn": "Kursiv på",
+            "italicOff": "Kursiv av",
+            "underlineOn": "Understruken på",
+            "underlineOff": "Understruken av",
+            "bulletListOn": "Punktlista på",
+            "bulletListOff": "Punktlista av",
+            "orderedListOn": "Numrerad lista på",
+            "orderedListOff": "Numrerad lista av",
+            "linkSet": "Länk tillagd",
+            "linkCleared": "Länk borttagen"
+          }
+        },
+        "toast": {
+          "drafted": "Utkast sparat.",
+          "submitted": "Inskickad för administratörsgranskning.",
+          "submittedSlaHint": "Mål för administratörsgranskning: 48 timmar.",
+          "sanitiserStripped": "Viss formatering som inte stöds togs bort automatiskt.",
+          "savingDraft": "Sparar utkast…",
+          "submitting": "Skickar in…",
+          "takingLonger": "Det tar längre tid än väntat — vänligen vänta."
+        },
+        "button": {
+          "saveDraft": "Spara som utkast",
+          "submit": "Skicka för granskning",
+          "deleteDraft": "Släng utkast"
+        },
+        "errors": {
+          "broadcast_quota_blocked": "Du har använt hela din E-Blast-kvot för i år.",
+          "broadcast_not_in_plan": "Din medlemsplan inkluderar inte E-Blast-förmånen.",
+          "broadcast_subject_too_long": "Ämnet får vara högst 200 tecken.",
+          "broadcast_subject_empty": "Ämne krävs.",
+          "broadcast_body_too_large": "Meddelandet överskrider gränsen på 200 KB.",
+          "broadcast_body_unsafe_html": "Meddelandet innehåller formatering som inte stöds — förenkla det.",
+          "broadcast_empty_segment_blocked": "Inga matchande mottagare hittades.",
+          "broadcast_audience_too_large": "Mottagarlistan överstiger gränsen på 5 000.",
+          "broadcast_custom_recipient_unknown": "Vissa anpassade mottagare finns inte i din katalog.",
+          "broadcast_custom_recipient_invalid_format": "Vissa anpassade mottagare är inte giltiga e-postadresser.",
+          "broadcast_member_missing_primary_contact_email": "Din profil saknar en primär kontakt-e-post.",
+          "broadcast_member_halted_pending_review": "Dina utskicksbehörigheter är pausade i väntan på administratörsgranskning.",
+          "broadcast_rate_limit_exceeded": "För många inskickningar. Försök igen senare.",
+          "broadcast_immutable_after_submit": "Detta utskick har skickats in och kan inte längre redigeras.",
+          "broadcast_not_found": "Vi kunde inte hitta det utskicket.",
+          "internal_error": "Ett oväntat fel inträffade. Försök igen."
+        },
+        "delete": {
+          "title": "Släng detta utkast?",
+          "body": "Detta tar bort ditt utkast permanent. Åtgärden kan inte ångras.",
+          "confirm": "Släng",
+          "cancel": "Fortsätt redigera"
+        }
+      },
+      "quota": {
+        "headerLabel": "E-Blast-kvot ({year})",
+        "planLabel": "Plan: {plan}",
+        "used": "Använt",
+        "reserved": "Reserverat",
+        "remaining": "Återstår",
+        "cap": "Plangräns",
+        "exhausted": "Hela E-Blast-kvoten för {year} har använts.",
+        "progressLabel": "E-Blast-kvot använd",
+        "fetchError": "Kunde inte ladda kvot.",
+        "retry": "Försök igen"
+      },
+      "banner": {
+        "acknowledgement": {
+          "title": "Samtycke till marknadskommunikation",
+          "body": "Att skicka in ett E-Blast bekräftar att mottagarna har samtyckt till att ta emot din kammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
+          "acknowledge": "Jag bekräftar",
+          "remindLater": "Påminn senare",
+          "closeLabel": "Stäng banner"
+        }
+      },
+      "list": {
+        "title": "Mina utskick",
+        "subtitle": "Följ status och leveransresultat för varje E-Blast du har skickat.",
+        "empty": "Skicka ditt första kammaromfattande utskick — dina mottagare är bara ett klick bort.",
+        "emptyTitle": "Inga utskick ännu",
+        "emptyCta": "Skapa ditt första E-Blast",
+        "quotaExhaustedTooltip": "Din E-Blast-kvot för {year} är förbrukad. Förnyas den 1 januari nästa år.",
+        "columns": {
+          "subject": "Ämne",
+          "status": "Status",
+          "submittedAt": "Inskickad",
+          "sentAt": "Skickad",
+          "audience": "Mottagare"
+        },
+        "status": {
+          "draft": "Utkast",
+          "submitted": "Inväntar granskning",
+          "approved": "Godkänd",
+          "sending": "Skickar",
+          "sent": "Skickad",
+          "rejected": "Avvisad",
+          "cancelled": "Avbruten",
+          "failed_to_dispatch": "Misslyckades"
         }
       }
     },
@@ -1839,6 +2161,28 @@
     },
     "refundConfirmation": {
       "subject": "Bekräftelse av återbetalning"
+    },
+    "broadcastApproved": {
+      "subject": "Ditt utskick har godkänts",
+      "greeting": "Hej {name},",
+      "body": "Ditt utskick \"{subject}\" har godkänts och kommer att skickas {scheduleHint}.",
+      "scheduleNow": "inom kort",
+      "scheduleAt": "den {when}",
+      "footer": "Du ser leveransresultaten på din förmånssida när utskicket är klart."
+    },
+    "broadcastRejected": {
+      "subject": "Ditt utskick har inte godkänts",
+      "greeting": "Hej {name},",
+      "body": "Ditt utskick \"{subject}\" har inte godkänts.",
+      "reasonHeading": "Anledning från din kammaradmin:",
+      "footer": "Din reserverade kvot har frigjorts. Du är välkommen att skicka ett reviderat utskick."
+    },
+    "broadcastCancelled": {
+      "subject": "Ditt utskick har avbrutits",
+      "greeting": "Hej {name},",
+      "body": "Ditt utskick \"{subject}\" har avbrutits.",
+      "reasonHeading": "Anteckning om avbrott:",
+      "footer": "Din reserverade kvot har frigjorts."
     }
   }
 }

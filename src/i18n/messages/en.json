@@ -1298,6 +1298,179 @@
         }
       }
     },
+    "broadcasts": {
+      "queue": {
+        "title": "E-Blast review queue",
+        "subtitle": "Review and approve broadcasts submitted by members.",
+        "empty": "When members submit broadcasts, they appear here for your review.",
+        "emptyTitle": "Queue is clear",
+        "totalPending": "{count} pending",
+        "tableAria": "Broadcast review queue",
+        "ageBadge": {
+          "aging": "{hours}h waiting",
+          "overdue": "{hours}h — overdue"
+        },
+        "bulk": {
+          "selectAria": "Select broadcast",
+          "selected": "{count} selected",
+          "approveSelected": "Approve & send selected",
+          "clear": "Clear selection",
+          "successAll": "All selected broadcasts approved.",
+          "failureAll": "Bulk approve failed. Try again or approve individually.",
+          "partial": "{ok} approved, {fail} failed."
+        },
+        "filters": {
+          "formAriaLabel": "Broadcast queue filters",
+          "statusLabel": "Status",
+          "statusAll": "All statuses",
+          "memberLabel": "Member",
+          "memberAll": "All members",
+          "fromDate": "From",
+          "toDate": "To",
+          "apply": "Apply filters",
+          "reset": "Reset"
+        },
+        "columns": {
+          "submittedAt": "Submitted",
+          "member": "Member",
+          "subject": "Subject",
+          "segment": "Audience",
+          "recipientCount": "Recipients",
+          "status": "Status",
+          "actions": "Actions"
+        },
+        "status": {
+          "draft": "Draft",
+          "submitted": "Awaiting review",
+          "approved": "Approved",
+          "sending": "Sending",
+          "sent": "Sent",
+          "rejected": "Rejected",
+          "cancelled": "Cancelled",
+          "failed_to_dispatch": "Failed"
+        },
+        "actorRole": {
+          "member_self_service": "Member",
+          "admin_proxy": "Admin (proxy)",
+          "system": "System"
+        },
+        "pagination": {
+          "previous": "Previous",
+          "next": "Next"
+        },
+        "slaBanner": {
+          "targetSla": "Target review SLA: 48 hours",
+          "medianRolling30d": "Median time-to-decision (rolling 30d): {hours}h",
+          "p95Rolling30d": "p95: {hours}h",
+          "withinBudget": "Within SLA budget",
+          "breachWarning": "SC-002 breach — review queue capacity"
+        },
+        "proxySubmitButton": "Submit on behalf of member"
+      },
+      "review": {
+        "title": "Broadcast review",
+        "subtitle": "Inspect content + approve, reject, or cancel.",
+        "bodyRenderFailedTitle": "Body could not be rendered safely",
+        "bodyRenderFailedHint": "The sanitiser failed to process this broadcast. Approve is blocked — contact ops to investigate.",
+        "fields": {
+          "subject": "Subject",
+          "body": "Message",
+          "segment": "Audience",
+          "recipientCount": "Estimated recipients",
+          "submittedBy": "Submitted by",
+          "submittedAt": "Submitted at",
+          "scheduledFor": "Scheduled for",
+          "actorRole": "Actor role"
+        },
+        "audit": {
+          "title": "Lifecycle timeline",
+          "drafted": "Drafted",
+          "submitted": "Submitted",
+          "approved": "Approved",
+          "rejected": "Rejected",
+          "cancelled": "Cancelled",
+          "sendStarted": "Send started",
+          "sent": "Sent",
+          "failedToDispatch": "Dispatch failed",
+          "actorBy": "by {actor}",
+          "actorSystem": "system",
+          "actorUnknown": "unknown user"
+        }
+      },
+      "approveDialog": {
+        "title": "Approve this broadcast?",
+        "description": "Choose to send immediately or schedule for later. Recipients receive your chamber's branding as the sender.",
+        "decision": {
+          "sendNow": "Approve & send now",
+          "schedule": "Approve & schedule"
+        },
+        "scheduleLabel": "Send at",
+        "scheduleHelp": "At least 5 minutes from now.",
+        "confirm": "Approve",
+        "cancel": "Cancel"
+      },
+      "rejectDialog": {
+        "title": "Reject this broadcast?",
+        "description": "Provide a reason — the member will see it verbatim in their notification email.",
+        "reasonLabel": "Reason for rejection",
+        "reasonPlaceholder": "Explain why this broadcast cannot proceed…",
+        "reasonHelp": "1–2,000 characters. Sent to member verbatim.",
+        "confirm": "Reject",
+        "cancel": "Cancel",
+        "errors": {
+          "reasonRequired": "A non-empty reason is required.",
+          "reasonTooLong": "Reason exceeds 2,000 characters."
+        }
+      },
+      "cancelDialog": {
+        "title": "Cancel this broadcast?",
+        "description": "This releases the member's reserved quota slot. Provide a reason for the audit log + member notification.",
+        "reasonLabel": "Reason for cancellation",
+        "reasonPlaceholder": "Why is this being cancelled…",
+        "reasonHelp": "1–500 characters.",
+        "confirm": "Cancel broadcast",
+        "cancel": "Keep"
+      },
+      "proxySubmitDialog": {
+        "title": "Submit on behalf of member",
+        "description": "Compose a broadcast that will be queued for review with the proxied member's quota.",
+        "memberLabel": "Member",
+        "memberPlaceholder": "Search by company name…",
+        "subjectLabel": "Subject",
+        "bodyLabel": "Message",
+        "segmentLabel": "Audience",
+        "confirm": "Submit",
+        "cancel": "Cancel"
+      },
+      "haltBanner": {
+        "title": "{count, plural, =1 {1 member is halted} other {# members are halted}} from broadcasting",
+        "body": "Auto-halt triggered by complaint-rate threshold. Review and clear the halt if appropriate.",
+        "clearAction": "Review + clear halt",
+        "haltedSince": "Halted since {date}",
+        "readOnlyNote": "Manager role — read-only"
+      },
+      "clearHaltDialog": {
+        "title": "Clear broadcast halt?",
+        "body": "Type the member's company name to confirm. This restores their ability to submit new broadcasts.",
+        "phraseLabel": "Type {phrase} to confirm",
+        "phraseError": "Phrase does not match.",
+        "confirm": "Clear halt",
+        "cancel": "Cancel"
+      },
+      "managerReadonlyBanner": {
+        "title": "Read-only mode",
+        "body": "Manager role: you can view the queue + broadcast details but cannot approve, reject, or cancel."
+      },
+      "toast": {
+        "approved": "Broadcast approved.",
+        "rejected": "Broadcast rejected. Member notified.",
+        "cancelled": "Broadcast cancelled.",
+        "proxySubmitted": "Submitted for review.",
+        "clearHalted": "Halt cleared. Member can submit new broadcasts.",
+        "concurrentRace": "Another admin acted on this broadcast first. Refreshing…",
+        "error": "Action failed. Please try again."
+      }
+    },
     "refund": {
       "title": "Issue refund",
       "button": {
@@ -1419,7 +1592,9 @@
       "viewAuditLog": "View audit log",
       "newMember": "Create new member",
       "newInvoice": "Create new invoice",
-      "issueRefund": "Issue refund — find paid invoice"
+      "issueRefund": "Issue refund — find paid invoice",
+      "reviewBroadcasts": "Review broadcasts queue",
+      "broadcastsHalted": "Halted members — broadcast review"
     },
     "navigate": {
       "plansList": "Plans list",
@@ -1429,7 +1604,8 @@
       "membersList": "Members list",
       "invoicesList": "Invoices list",
       "invoicesPaidOnline": "Invoices: paid online (reconciliation)",
-      "creditNotesList": "Credit notes list"
+      "creditNotesList": "Credit notes list",
+      "broadcastsQueue": "E-Blast review queue"
     }
   },
   "nav": {
@@ -1594,6 +1770,152 @@
         },
         "reason": {
           "heading": "Reason"
+        }
+      }
+    },
+    "broadcasts": {
+      "compose": {
+        "title": "Compose E-Blast",
+        "subtitle": "Send a message to your chamber's members.",
+        "fields": {
+          "subject": "Subject",
+          "subjectPlaceholder": "Subject line (max 200 characters)",
+          "bodyLabel": "Message",
+          "bodyPlaceholder": "Write your message — formatting is preserved.",
+          "segmentLabel": "Recipients",
+          "customListLabel": "Custom email list",
+          "customListHelp": "One email per line, up to 100 entries. Each must already be in your tenant directory.",
+          "schedulePicker": "Schedule for later",
+          "scheduleHelp": "Leave blank to submit for immediate review.",
+          "previewLabel": "Preview",
+          "previewLoading": "Loading preview…",
+          "previewUnavailable": "Preview is temporarily unavailable",
+          "previewUnavailableHint": "Refresh the page to retry — your draft is safe.",
+          "subjectCounter": "{count} / {max} characters",
+          "linkUrlLabel": "Link URL",
+          "linkConfirm": "Set link",
+          "linkCancel": "Cancel",
+          "tierCodesPlaceholder": "premium, large",
+          "tierCodesHelp": "Comma-separated tier codes",
+          "customListPlaceholder": "alice@example.com\nbob@example.com"
+        },
+        "segmentOption": {
+          "all_members": "All members",
+          "tier": "Specific membership tier",
+          "event_attendees_last_90d": "Event attendees (last 90 days)",
+          "custom": "Custom email list"
+        },
+        "comingSoon": "(coming soon)",
+        "tierLabel": "Tier code",
+        "editor": {
+          "aria": {
+            "toolbar": "Formatting toolbar",
+            "bold": "Bold (Ctrl+B)",
+            "italic": "Italic (Ctrl+I)",
+            "underline": "Underline (Ctrl+U)",
+            "bulletList": "Bullet list",
+            "orderedList": "Numbered list",
+            "link": "Insert link",
+            "clearLink": "Remove link"
+          },
+          "announcements": {
+            "boldOn": "Bold on",
+            "boldOff": "Bold off",
+            "italicOn": "Italic on",
+            "italicOff": "Italic off",
+            "underlineOn": "Underline on",
+            "underlineOff": "Underline off",
+            "bulletListOn": "Bullet list on",
+            "bulletListOff": "Bullet list off",
+            "orderedListOn": "Numbered list on",
+            "orderedListOff": "Numbered list off",
+            "linkSet": "Link added",
+            "linkCleared": "Link removed"
+          }
+        },
+        "toast": {
+          "drafted": "Draft saved.",
+          "submitted": "Submitted for admin review.",
+          "submittedSlaHint": "Admin review target: 48 hours.",
+          "sanitiserStripped": "Some unsupported formatting was removed automatically.",
+          "savingDraft": "Saving draft…",
+          "submitting": "Submitting…",
+          "takingLonger": "Taking longer than expected — please wait."
+        },
+        "button": {
+          "saveDraft": "Save as draft",
+          "submit": "Submit for review",
+          "deleteDraft": "Discard draft"
+        },
+        "errors": {
+          "broadcast_quota_blocked": "You've used all of your E-Blast quota for this year.",
+          "broadcast_not_in_plan": "Your membership plan does not include the E-Blast benefit.",
+          "broadcast_subject_too_long": "Subject must be 200 characters or fewer.",
+          "broadcast_subject_empty": "Subject is required.",
+          "broadcast_body_too_large": "Message body exceeds the 200 KB size limit.",
+          "broadcast_body_unsafe_html": "Message body contains formatting we can't accept — please simplify.",
+          "broadcast_empty_segment_blocked": "No eligible recipients matched.",
+          "broadcast_audience_too_large": "Audience exceeds the 5,000 recipient limit.",
+          "broadcast_custom_recipient_unknown": "Some custom recipients are not in your directory.",
+          "broadcast_custom_recipient_invalid_format": "Some custom recipients are not valid email addresses.",
+          "broadcast_member_missing_primary_contact_email": "Your profile is missing a primary contact email.",
+          "broadcast_member_halted_pending_review": "Your broadcast privileges are paused pending admin review.",
+          "broadcast_rate_limit_exceeded": "Too many submissions. Please try again later.",
+          "broadcast_immutable_after_submit": "This broadcast has been submitted and can no longer be edited.",
+          "broadcast_not_found": "We could not find that broadcast.",
+          "internal_error": "An unexpected error occurred. Please try again."
+        },
+        "delete": {
+          "title": "Discard this draft?",
+          "body": "This will permanently remove your draft. This action cannot be undone.",
+          "confirm": "Discard",
+          "cancel": "Keep editing"
+        }
+      },
+      "quota": {
+        "headerLabel": "E-Blast quota ({year})",
+        "planLabel": "Plan: {plan}",
+        "used": "Used",
+        "reserved": "Reserved",
+        "remaining": "Remaining",
+        "cap": "Plan limit",
+        "exhausted": "All E-Blast quota for {year} has been used.",
+        "progressLabel": "E-Blast quota used",
+        "fetchError": "Could not load quota.",
+        "retry": "Retry"
+      },
+      "banner": {
+        "acknowledgement": {
+          "title": "Marketing communications consent",
+          "body": "Submitting an E-Blast confirms recipients have agreed to receive your chamber's communications. You can revoke consent on a per-recipient basis at any time.",
+          "acknowledge": "I acknowledge",
+          "remindLater": "Remind me later",
+          "closeLabel": "Close banner"
+        }
+      },
+      "list": {
+        "title": "My broadcasts",
+        "subtitle": "Track the status and delivery results of every E-Blast you've submitted.",
+        "empty": "Send your first chamber-wide email — your audience is just one click away.",
+        "emptyTitle": "No broadcasts yet",
+        "emptyCta": "Compose your first E-Blast",
+        "quotaExhaustedTooltip": "Your {year} E-Blast quota is exhausted. Renews January 1 of next year.",
+        "columns": {
+          "subject": "Subject",
+          "status": "Status",
+          "submittedAt": "Submitted",
+          "sentAt": "Sent",
+          "audience": "Audience"
+        },
+        "status": {
+          "draft": "Draft",
+          "submitted": "Awaiting review",
+          "approved": "Approved",
+          "sending": "Sending",
+          "sent": "Sent",
+          "rejected": "Rejected",
+          "cancelled": "Cancelled",
+          "failed_to_dispatch": "Failed"
         }
       }
     },
@@ -1839,6 +2161,28 @@
     },
     "refundConfirmation": {
       "subject": "Refund confirmation"
+    },
+    "broadcastApproved": {
+      "subject": "Your E-Blast was approved",
+      "greeting": "Hi {name},",
+      "body": "Your E-Blast \"{subject}\" has been approved and will be sent {scheduleHint}.",
+      "scheduleNow": "shortly",
+      "scheduleAt": "on {when}",
+      "footer": "You'll see delivery results on your benefits page once the broadcast completes."
+    },
+    "broadcastRejected": {
+      "subject": "Your E-Blast was not approved",
+      "greeting": "Hi {name},",
+      "body": "Your E-Blast \"{subject}\" was not approved.",
+      "reasonHeading": "Reason from your chamber admin:",
+      "footer": "Your reserved quota slot has been released. You're welcome to submit a revised broadcast."
+    },
+    "broadcastCancelled": {
+      "subject": "Your E-Blast was cancelled",
+      "greeting": "Hi {name},",
+      "body": "Your E-Blast \"{subject}\" has been cancelled.",
+      "reasonHeading": "Cancellation note:",
+      "footer": "Your reserved quota slot has been released."
     }
   }
 }
