@@ -127,6 +127,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     async setMemberHalt() {
       return ok(undefined);
     },
+    async memberExistsInTenant() { return true; },
     async markBroadcastsAcknowledged() {
       return ok(undefined);
     },
@@ -736,11 +737,15 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
 
   // ---- Quota invariant violation (cap=0 from getPlanForMember) ------
 
-  it('quota lookup returns invariant violation → broadcast_quota_blocked', async () => {
-    // computeQuotaCounter receives countForMemberQuota with high counts vs
-    // small cap → asQuotaCounter rejects with over_subscription invariant
-    // → use-case maps to broadcast_quota_blocked.
-    const { audit, deps } = makeDeps({
+  it('quota lookup returns invariant violation → submit.server_error (round-4 MED-D)', async () => {
+    // Round-4 MED-D — counter internal-error (e.g. over-subscription
+    // invariant from corrupt state) is NOT "quota full". The use-case
+    // now returns `submit.server_error` so the route maps to 500
+    // internal_error instead of misleading 422 `quota_blocked`.
+    // computeQuotaCounter receives countForMemberQuota with high counts
+    // vs small cap → asQuotaCounter rejects with over_subscription
+    // invariant.
+    const { deps } = makeDeps({
       primaryContact: 'me@example.com',
       planCap: 6,
       used: 5,
@@ -749,11 +754,8 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     const result = await submitBroadcast(deps, baseInput);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.kind).toBe('broadcast_quota_blocked');
+      expect(result.error.kind).toBe('submit.server_error');
     }
-    expect(
-      audit.emits.find((e) => e.eventType === 'broadcast_quota_blocked'),
-    ).toBeDefined();
   });
 
   // ---- Branch coverage: existing-draft + tier / custom paths --------

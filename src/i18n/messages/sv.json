@@ -1300,175 +1300,175 @@
     },
     "broadcasts": {
       "queue": {
-        "title": "[F7-SV-REVIEW] E-Blast review queue",
-        "subtitle": "[F7-SV-REVIEW] Review and approve broadcasts submitted by members.",
-        "empty": "[F7-SV-REVIEW] When members submit broadcasts, they appear here for your review.",
-        "emptyTitle": "[F7-SV-REVIEW] Queue is clear",
-        "totalPending": "[F7-SV-REVIEW] {count} pending",
-        "tableAria": "[F7-SV-REVIEW] Broadcast review queue",
+        "title": "Granskningskö för E-Blast",
+        "subtitle": "Granska och godkänn utskick som medlemmar har skickat in.",
+        "empty": "När medlemmar skickar in utskick visas de här för granskning.",
+        "emptyTitle": "Kön är tom",
+        "totalPending": "{count} väntar",
+        "tableAria": "Granskningskö för utskick",
         "ageBadge": {
-          "aging": "[F7-SV-REVIEW] {hours}h waiting",
-          "overdue": "[F7-SV-REVIEW] {hours}h — overdue"
+          "aging": "{hours} h väntar",
+          "overdue": "{hours} h — försenad"
         },
         "bulk": {
-          "selectAria": "[F7-SV-REVIEW] Select broadcast",
-          "selected": "[F7-SV-REVIEW] {count} selected",
-          "approveSelected": "[F7-SV-REVIEW] Approve & send selected",
-          "clear": "[F7-SV-REVIEW] Clear selection",
-          "successAll": "[F7-SV-REVIEW] All selected broadcasts approved.",
-          "failureAll": "[F7-SV-REVIEW] Bulk approve failed. Try again or approve individually.",
-          "partial": "[F7-SV-REVIEW] {ok} approved, {fail} failed."
+          "selectAria": "Välj utskick",
+          "selected": "{count} markerade",
+          "approveSelected": "Godkänn och skicka valda",
+          "clear": "Rensa markering",
+          "successAll": "Alla valda utskick godkända.",
+          "failureAll": "Massgodkännande misslyckades. Försök igen eller godkänn ett i taget.",
+          "partial": "{ok} godkända, {fail} misslyckades."
         },
         "filters": {
-          "formAriaLabel": "[F7-SV-REVIEW] Broadcast queue filters",
-          "statusLabel": "[F7-SV-REVIEW] Status",
-          "statusAll": "[F7-SV-REVIEW] All statuses",
-          "memberLabel": "[F7-SV-REVIEW] Member",
-          "memberAll": "[F7-SV-REVIEW] All members",
-          "fromDate": "[F7-SV-REVIEW] From",
-          "toDate": "[F7-SV-REVIEW] To",
-          "apply": "[F7-SV-REVIEW] Apply filters",
-          "reset": "[F7-SV-REVIEW] Reset"
+          "formAriaLabel": "Filter för utskickskö",
+          "statusLabel": "Status",
+          "statusAll": "Alla statusar",
+          "memberLabel": "Medlem",
+          "memberAll": "Alla medlemmar",
+          "fromDate": "Från",
+          "toDate": "Till",
+          "apply": "Tillämpa filter",
+          "reset": "Återställ"
         },
         "columns": {
-          "submittedAt": "[F7-SV-REVIEW] Submitted",
-          "member": "[F7-SV-REVIEW] Member",
-          "subject": "[F7-SV-REVIEW] Subject",
-          "segment": "[F7-SV-REVIEW] Audience",
-          "recipientCount": "[F7-SV-REVIEW] Recipients",
-          "status": "[F7-SV-REVIEW] Status",
-          "actions": "[F7-SV-REVIEW] Actions"
+          "submittedAt": "Inskickad",
+          "member": "Medlem",
+          "subject": "Ämne",
+          "segment": "Mottagare",
+          "recipientCount": "Mottagare",
+          "status": "Status",
+          "actions": "Åtgärder"
         },
         "status": {
-          "draft": "[F7-SV-REVIEW] Draft",
-          "submitted": "[F7-SV-REVIEW] Awaiting review",
-          "approved": "[F7-SV-REVIEW] Approved",
-          "sending": "[F7-SV-REVIEW] Sending",
-          "sent": "[F7-SV-REVIEW] Sent",
-          "rejected": "[F7-SV-REVIEW] Rejected",
-          "cancelled": "[F7-SV-REVIEW] Cancelled",
-          "failed_to_dispatch": "[F7-SV-REVIEW] Failed"
+          "draft": "Utkast",
+          "submitted": "Inväntar granskning",
+          "approved": "Godkänd",
+          "sending": "Skickar",
+          "sent": "Skickad",
+          "rejected": "Avvisad",
+          "cancelled": "Avbruten",
+          "failed_to_dispatch": "Misslyckades"
         },
         "actorRole": {
-          "member_self_service": "[F7-SV-REVIEW] Member",
-          "admin_proxy": "[F7-SV-REVIEW] Admin (proxy)",
-          "system": "[F7-SV-REVIEW] System"
+          "member_self_service": "Medlem",
+          "admin_proxy": "Admin (ombud)",
+          "system": "System"
         },
         "pagination": {
-          "previous": "[F7-SV-REVIEW] Previous",
-          "next": "[F7-SV-REVIEW] Next"
+          "previous": "Föregående",
+          "next": "Nästa"
         },
         "slaBanner": {
-          "targetSla": "[F7-SV-REVIEW] Target review SLA: 48 hours",
-          "medianRolling30d": "[F7-SV-REVIEW] Median time-to-decision (rolling 30d): {hours}h",
-          "p95Rolling30d": "[F7-SV-REVIEW] p95: {hours}h",
-          "withinBudget": "[F7-SV-REVIEW] Within SLA budget",
-          "breachWarning": "[F7-SV-REVIEW] SC-002 breach — review queue capacity"
+          "targetSla": "Mål för granskningstid (SLA): 48 timmar",
+          "medianRolling30d": "Median beslutstid (rullande 30 dagar): {hours} h",
+          "p95Rolling30d": "p95: {hours} h",
+          "withinBudget": "Inom SLA-budget",
+          "breachWarning": "SC-002 överskridning — kontrollera granskningskapacitet"
         },
-        "proxySubmitButton": "[F7-SV-REVIEW] Submit on behalf of member"
+        "proxySubmitButton": "Skicka in å medlems vägnar"
       },
       "review": {
-        "title": "[F7-SV-REVIEW] Broadcast review",
-        "subtitle": "[F7-SV-REVIEW] Inspect content + approve, reject, or cancel.",
-        "bodyRenderFailedTitle": "[F7-SV-REVIEW] Body could not be rendered safely",
-        "bodyRenderFailedHint": "[F7-SV-REVIEW] The sanitiser failed to process this broadcast. Approve is blocked — contact ops to investigate.",
+        "title": "Granska utskick",
+        "subtitle": "Granska innehåll + godkänn, avvisa eller avbryt.",
+        "bodyRenderFailedTitle": "Innehållet kunde inte renderas säkert",
+        "bodyRenderFailedHint": "Saneringen kunde inte bearbeta detta utskick. Godkännande är blockerat — kontakta drift för utredning.",
         "fields": {
-          "subject": "[F7-SV-REVIEW] Subject",
-          "body": "[F7-SV-REVIEW] Message",
-          "segment": "[F7-SV-REVIEW] Audience",
-          "recipientCount": "[F7-SV-REVIEW] Estimated recipients",
-          "submittedBy": "[F7-SV-REVIEW] Submitted by",
-          "submittedAt": "[F7-SV-REVIEW] Submitted at",
-          "scheduledFor": "[F7-SV-REVIEW] Scheduled for",
-          "actorRole": "[F7-SV-REVIEW] Actor role"
+          "subject": "Ämne",
+          "body": "Meddelande",
+          "segment": "Mottagare",
+          "recipientCount": "Beräknade mottagare",
+          "submittedBy": "Inskickad av",
+          "submittedAt": "Inskickad",
+          "scheduledFor": "Schemalagd till",
+          "actorRole": "Aktörsroll"
         },
         "audit": {
-          "title": "[F7-SV-REVIEW] Lifecycle timeline",
-          "drafted": "[F7-SV-REVIEW] Drafted",
-          "submitted": "[F7-SV-REVIEW] Submitted",
-          "approved": "[F7-SV-REVIEW] Approved",
-          "rejected": "[F7-SV-REVIEW] Rejected",
-          "cancelled": "[F7-SV-REVIEW] Cancelled",
-          "sendStarted": "[F7-SV-REVIEW] Send started",
-          "sent": "[F7-SV-REVIEW] Sent",
-          "failedToDispatch": "[F7-SV-REVIEW] Dispatch failed",
-          "actorBy": "[F7-SV-REVIEW] by {actor}",
-          "actorSystem": "[F7-SV-REVIEW] system",
-          "actorUnknown": "[F7-SV-REVIEW] unknown user"
+          "title": "Livscykelstidslinje",
+          "drafted": "Utkast skapat",
+          "submitted": "Inskickad",
+          "approved": "Godkänd",
+          "rejected": "Avvisad",
+          "cancelled": "Avbruten",
+          "sendStarted": "Sändning startad",
+          "sent": "Skickad",
+          "failedToDispatch": "Sändning misslyckades",
+          "actorBy": "av {actor}",
+          "actorSystem": "system",
+          "actorUnknown": "okänd användare"
         }
       },
       "approveDialog": {
-        "title": "[F7-SV-REVIEW] Approve this broadcast?",
-        "description": "[F7-SV-REVIEW] Choose to send immediately or schedule for later. Recipients receive your chamber's branding as the sender.",
+        "title": "Godkänna detta utskick?",
+        "description": "Välj att skicka omedelbart eller schemalägga. Mottagarna ser din kammares varumärke som avsändare.",
         "decision": {
-          "sendNow": "[F7-SV-REVIEW] Approve & send now",
-          "schedule": "[F7-SV-REVIEW] Approve & schedule"
+          "sendNow": "Godkänn och skicka nu",
+          "schedule": "Godkänn och schemalägg"
         },
-        "scheduleLabel": "[F7-SV-REVIEW] Send at",
-        "scheduleHelp": "[F7-SV-REVIEW] At least 5 minutes from now.",
-        "confirm": "[F7-SV-REVIEW] Approve",
-        "cancel": "[F7-SV-REVIEW] Cancel"
+        "scheduleLabel": "Skicka",
+        "scheduleHelp": "Minst 5 minuter från nu.",
+        "confirm": "Godkänn",
+        "cancel": "Avbryt"
       },
       "rejectDialog": {
-        "title": "[F7-SV-REVIEW] Reject this broadcast?",
-        "description": "[F7-SV-REVIEW] Provide a reason — the member will see it verbatim in their notification email.",
-        "reasonLabel": "[F7-SV-REVIEW] Reason for rejection",
-        "reasonPlaceholder": "[F7-SV-REVIEW] Explain why this broadcast cannot proceed…",
-        "reasonHelp": "[F7-SV-REVIEW] 1–2,000 characters. Sent to member verbatim.",
-        "confirm": "[F7-SV-REVIEW] Reject",
-        "cancel": "[F7-SV-REVIEW] Cancel",
+        "title": "Avvisa detta utskick?",
+        "description": "Ange en anledning — medlemmen ser den ordagrant i e-postmeddelandet.",
+        "reasonLabel": "Anledning till avvisning",
+        "reasonPlaceholder": "Förklara varför detta utskick inte kan fortsätta…",
+        "reasonHelp": "1–2 000 tecken. Skickas ordagrant till medlemmen.",
+        "confirm": "Avvisa",
+        "cancel": "Avbryt",
         "errors": {
-          "reasonRequired": "[F7-SV-REVIEW] A non-empty reason is required.",
-          "reasonTooLong": "[F7-SV-REVIEW] Reason exceeds 2,000 characters."
+          "reasonRequired": "En icke-tom anledning krävs.",
+          "reasonTooLong": "Anledningen överskrider 2 000 tecken."
         }
       },
       "cancelDialog": {
-        "title": "[F7-SV-REVIEW] Cancel this broadcast?",
-        "description": "[F7-SV-REVIEW] This releases the member's reserved quota slot. Provide a reason for the audit log + member notification.",
-        "reasonLabel": "[F7-SV-REVIEW] Reason for cancellation",
-        "reasonPlaceholder": "[F7-SV-REVIEW] Why is this being cancelled…",
-        "reasonHelp": "[F7-SV-REVIEW] 1–500 characters.",
-        "confirm": "[F7-SV-REVIEW] Cancel broadcast",
-        "cancel": "[F7-SV-REVIEW] Keep"
+        "title": "Avbryta detta utskick?",
+        "description": "Detta frigör medlemmens reserverade kvot. Ange en anledning för granskningsloggen + medlemsmeddelande.",
+        "reasonLabel": "Anledning till avbrott",
+        "reasonPlaceholder": "Varför avbryts detta…",
+        "reasonHelp": "1–500 tecken.",
+        "confirm": "Avbryt utskick",
+        "cancel": "Behåll"
       },
       "proxySubmitDialog": {
-        "title": "[F7-SV-REVIEW] Submit on behalf of member",
-        "description": "[F7-SV-REVIEW] Compose a broadcast that will be queued for review with the proxied member's quota.",
-        "memberLabel": "[F7-SV-REVIEW] Member",
-        "memberPlaceholder": "[F7-SV-REVIEW] Search by company name…",
-        "subjectLabel": "[F7-SV-REVIEW] Subject",
-        "bodyLabel": "[F7-SV-REVIEW] Message",
-        "segmentLabel": "[F7-SV-REVIEW] Audience",
-        "confirm": "[F7-SV-REVIEW] Submit",
-        "cancel": "[F7-SV-REVIEW] Cancel"
+        "title": "Skicka in å medlems vägnar",
+        "description": "Skapa ett utskick som köläggs för granskning med ombudsmedlemmens kvot.",
+        "memberLabel": "Medlem",
+        "memberPlaceholder": "Sök efter företagsnamn…",
+        "subjectLabel": "Ämne",
+        "bodyLabel": "Meddelande",
+        "segmentLabel": "Mottagare",
+        "confirm": "Skicka in",
+        "cancel": "Avbryt"
       },
       "haltBanner": {
-        "title": "[F7-SV-REVIEW] {count, plural, =1 {1 member is halted} other {# members are halted}} from broadcasting",
-        "body": "[F7-SV-REVIEW] Auto-halt triggered by complaint-rate threshold. Review and clear the halt if appropriate.",
-        "clearAction": "[F7-SV-REVIEW] Review + clear halt",
-        "haltedSince": "[F7-SV-REVIEW] Halted since {date}",
-        "readOnlyNote": "[F7-SV-REVIEW] Manager role — read-only"
+        "title": "{count, plural, =1 {1 medlem är spärrad} other {# medlemmar är spärrade}} från utskick",
+        "body": "Automatisk spärr utlöst av klagomålströskel. Granska och häv spärren om det är lämpligt.",
+        "clearAction": "Granska och häv spärr",
+        "haltedSince": "Spärrad sedan {date}",
+        "readOnlyNote": "Chefsroll — endast läsbehörighet"
       },
       "clearHaltDialog": {
-        "title": "[F7-SV-REVIEW] Clear broadcast halt?",
-        "body": "[F7-SV-REVIEW] Type the member's company name to confirm. This restores their ability to submit new broadcasts.",
-        "phraseLabel": "[F7-SV-REVIEW] Type {phrase} to confirm",
-        "phraseError": "[F7-SV-REVIEW] Phrase does not match.",
-        "confirm": "[F7-SV-REVIEW] Clear halt",
-        "cancel": "[F7-SV-REVIEW] Cancel"
+        "title": "Häva utskicksspärr?",
+        "body": "Skriv medlemmens företagsnamn för att bekräfta. Detta återställer möjligheten att skicka nya utskick.",
+        "phraseLabel": "Skriv {phrase} för att bekräfta",
+        "phraseError": "Texten matchar inte.",
+        "confirm": "Häv spärr",
+        "cancel": "Avbryt"
       },
       "managerReadonlyBanner": {
-        "title": "[F7-SV-REVIEW] Read-only mode",
-        "body": "[F7-SV-REVIEW] Manager role: you can view the queue + broadcast details but cannot approve, reject, or cancel."
+        "title": "Läsbehörighetsläge",
+        "body": "Chefsroll: du kan se kön och utskicksdetaljer men inte godkänna, avvisa eller avbryta."
       },
       "toast": {
-        "approved": "[F7-SV-REVIEW] Broadcast approved.",
-        "rejected": "[F7-SV-REVIEW] Broadcast rejected. Member notified.",
-        "cancelled": "[F7-SV-REVIEW] Broadcast cancelled.",
-        "proxySubmitted": "[F7-SV-REVIEW] Submitted for review.",
-        "clearHalted": "[F7-SV-REVIEW] Halt cleared. Member can submit new broadcasts.",
-        "concurrentRace": "[F7-SV-REVIEW] Another admin acted on this broadcast first. Refreshing…",
-        "error": "[F7-SV-REVIEW] Action failed. Please try again."
+        "approved": "Utskick godkänt.",
+        "rejected": "Utskick avvisat. Medlem meddelad.",
+        "cancelled": "Utskick avbrutet.",
+        "proxySubmitted": "Inskickad för granskning.",
+        "clearHalted": "Spärr hävd. Medlemmen kan skicka nya utskick.",
+        "concurrentRace": "En annan administratör hann först. Uppdaterar…",
+        "error": "Åtgärden misslyckades. Försök igen."
       }
     },
     "refund": {
@@ -1593,8 +1593,8 @@
       "newMember": "Skapa ny medlem",
       "newInvoice": "Skapa ny faktura",
       "issueRefund": "Utfärda återbetalning — hitta betald faktura",
-      "reviewBroadcasts": "[F7-SV-REVIEW] Review broadcasts queue",
-      "broadcastsHalted": "[F7-SV-REVIEW] Halted members — broadcast review"
+      "reviewBroadcasts": "Granska utskickskön",
+      "broadcastsHalted": "Spärrade medlemmar — utskicksgranskning"
     },
     "navigate": {
       "plansList": "Paketlista",
@@ -1605,7 +1605,7 @@
       "invoicesList": "Fakturalista",
       "invoicesPaidOnline": "Fakturor: betalda online (avstämning)",
       "creditNotesList": "Kreditnotalista",
-      "broadcastsQueue": "[F7-SV-REVIEW] E-Blast review queue"
+      "broadcastsQueue": "Granskningskö för E-Blast"
     }
   },
   "nav": {
@@ -1775,147 +1775,147 @@
     },
     "broadcasts": {
       "compose": {
-        "title": "[F7-SV-REVIEW] Compose E-Blast",
-        "subtitle": "[F7-SV-REVIEW] Send a message to your chamber's members.",
+        "title": "Skapa E-Blast",
+        "subtitle": "Skicka ett meddelande till din kammares medlemmar.",
         "fields": {
-          "subject": "[F7-SV-REVIEW] Subject",
-          "subjectPlaceholder": "[F7-SV-REVIEW] Subject line (max 200 characters)",
-          "bodyLabel": "[F7-SV-REVIEW] Message",
-          "bodyPlaceholder": "[F7-SV-REVIEW] Write your message — formatting is preserved.",
-          "segmentLabel": "[F7-SV-REVIEW] Recipients",
-          "customListLabel": "[F7-SV-REVIEW] Custom email list",
-          "customListHelp": "[F7-SV-REVIEW] One email per line, up to 100 entries. Each must already be in your tenant directory.",
-          "schedulePicker": "[F7-SV-REVIEW] Schedule for later",
-          "scheduleHelp": "[F7-SV-REVIEW] Leave blank to submit for immediate review.",
-          "previewLabel": "[F7-SV-REVIEW] Preview",
-          "previewLoading": "[F7-SV-REVIEW] Loading preview…",
-          "previewUnavailable": "[F7-SV-REVIEW] Preview is temporarily unavailable",
-          "previewUnavailableHint": "[F7-SV-REVIEW] Refresh the page to retry — your draft is safe.",
-          "subjectCounter": "[F7-SV-REVIEW] {count} / {max} characters",
-          "linkUrlLabel": "[F7-SV-REVIEW] Link URL",
-          "linkConfirm": "[F7-SV-REVIEW] Set link",
-          "linkCancel": "[F7-SV-REVIEW] Cancel",
+          "subject": "Ämne",
+          "subjectPlaceholder": "Ämnesrad (max 200 tecken)",
+          "bodyLabel": "Meddelande",
+          "bodyPlaceholder": "Skriv ditt meddelande — formatering bevaras.",
+          "segmentLabel": "Mottagare",
+          "customListLabel": "Anpassad e-postlista",
+          "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje måste finnas i din kammares katalog.",
+          "schedulePicker": "Schemalägg till senare",
+          "scheduleHelp": "Lämna tomt för omedelbar granskning.",
+          "previewLabel": "Förhandsgranskning",
+          "previewLoading": "Laddar förhandsgranskning…",
+          "previewUnavailable": "Förhandsgranskning är tillfälligt otillgänglig",
+          "previewUnavailableHint": "Uppdatera sidan för att försöka igen — ditt utkast är säkert.",
+          "subjectCounter": "{count} / {max} tecken",
+          "linkUrlLabel": "Länk-URL",
+          "linkConfirm": "Lägg till länk",
+          "linkCancel": "Avbryt",
           "tierCodesPlaceholder": "premium, large",
-          "tierCodesHelp": "[F7-SV-REVIEW] Comma-separated tier codes",
+          "tierCodesHelp": "Kommaseparerade nivåkoder",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
         },
         "segmentOption": {
-          "all_members": "[F7-SV-REVIEW] All members",
-          "tier": "[F7-SV-REVIEW] Specific membership tier",
-          "event_attendees_last_90d": "[F7-SV-REVIEW] Event attendees (last 90 days)",
-          "custom": "[F7-SV-REVIEW] Custom email list"
+          "all_members": "Alla medlemmar",
+          "tier": "Specifik medlemsnivå",
+          "event_attendees_last_90d": "Eventdeltagare (senaste 90 dagarna)",
+          "custom": "Anpassad e-postlista"
         },
-        "comingSoon": "[F7-SV-REVIEW] (coming soon)",
-        "tierLabel": "[F7-SV-REVIEW] Tier code",
+        "comingSoon": "(kommer snart)",
+        "tierLabel": "Nivåkod",
         "editor": {
           "aria": {
-            "toolbar": "[F7-SV-REVIEW] Formatting toolbar",
-            "bold": "[F7-SV-REVIEW] Bold (Ctrl+B)",
-            "italic": "[F7-SV-REVIEW] Italic (Ctrl+I)",
-            "underline": "[F7-SV-REVIEW] Underline (Ctrl+U)",
-            "bulletList": "[F7-SV-REVIEW] Bullet list",
-            "orderedList": "[F7-SV-REVIEW] Numbered list",
-            "link": "[F7-SV-REVIEW] Insert link",
-            "clearLink": "[F7-SV-REVIEW] Remove link"
+            "toolbar": "Formateringsverktygsfält",
+            "bold": "Fet (Ctrl+B)",
+            "italic": "Kursiv (Ctrl+I)",
+            "underline": "Understruken (Ctrl+U)",
+            "bulletList": "Punktlista",
+            "orderedList": "Numrerad lista",
+            "link": "Infoga länk",
+            "clearLink": "Ta bort länk"
           },
           "announcements": {
-            "boldOn": "[F7-SV-REVIEW] Bold on",
-            "boldOff": "[F7-SV-REVIEW] Bold off",
-            "italicOn": "[F7-SV-REVIEW] Italic on",
-            "italicOff": "[F7-SV-REVIEW] Italic off",
-            "underlineOn": "[F7-SV-REVIEW] Underline on",
-            "underlineOff": "[F7-SV-REVIEW] Underline off",
-            "bulletListOn": "[F7-SV-REVIEW] Bullet list on",
-            "bulletListOff": "[F7-SV-REVIEW] Bullet list off",
-            "orderedListOn": "[F7-SV-REVIEW] Numbered list on",
-            "orderedListOff": "[F7-SV-REVIEW] Numbered list off",
-            "linkSet": "[F7-SV-REVIEW] Link added",
-            "linkCleared": "[F7-SV-REVIEW] Link removed"
+            "boldOn": "Fet på",
+            "boldOff": "Fet av",
+            "italicOn": "Kursiv på",
+            "italicOff": "Kursiv av",
+            "underlineOn": "Understruken på",
+            "underlineOff": "Understruken av",
+            "bulletListOn": "Punktlista på",
+            "bulletListOff": "Punktlista av",
+            "orderedListOn": "Numrerad lista på",
+            "orderedListOff": "Numrerad lista av",
+            "linkSet": "Länk tillagd",
+            "linkCleared": "Länk borttagen"
           }
         },
         "toast": {
-          "drafted": "[F7-SV-REVIEW] Draft saved.",
-          "submitted": "[F7-SV-REVIEW] Submitted for admin review.",
-          "submittedSlaHint": "[F7-SV-REVIEW] Admin review target: 48 hours.",
-          "sanitiserStripped": "[F7-SV-REVIEW] Some unsupported formatting was removed automatically.",
-          "savingDraft": "[F7-SV-REVIEW] Saving draft…",
-          "submitting": "[F7-SV-REVIEW] Submitting…",
-          "takingLonger": "[F7-SV-REVIEW] Taking longer than expected — please wait."
+          "drafted": "Utkast sparat.",
+          "submitted": "Inskickad för administratörsgranskning.",
+          "submittedSlaHint": "Mål för administratörsgranskning: 48 timmar.",
+          "sanitiserStripped": "Viss formatering som inte stöds togs bort automatiskt.",
+          "savingDraft": "Sparar utkast…",
+          "submitting": "Skickar in…",
+          "takingLonger": "Det tar längre tid än väntat — vänligen vänta."
         },
         "button": {
-          "saveDraft": "[F7-SV-REVIEW] Save as draft",
-          "submit": "[F7-SV-REVIEW] Submit for review",
-          "deleteDraft": "[F7-SV-REVIEW] Discard draft"
+          "saveDraft": "Spara som utkast",
+          "submit": "Skicka för granskning",
+          "deleteDraft": "Kasta utkast"
         },
         "errors": {
-          "broadcast_quota_blocked": "[F7-SV-REVIEW] You've used all of your E-Blast quota for this year.",
-          "broadcast_not_in_plan": "[F7-SV-REVIEW] Your membership plan does not include the E-Blast benefit.",
-          "broadcast_subject_too_long": "[F7-SV-REVIEW] Subject must be 200 characters or fewer.",
-          "broadcast_subject_empty": "[F7-SV-REVIEW] Subject is required.",
-          "broadcast_body_too_large": "[F7-SV-REVIEW] Message body exceeds the 200 KB size limit.",
-          "broadcast_body_unsafe_html": "[F7-SV-REVIEW] Message body contains formatting we can't accept — please simplify.",
-          "broadcast_empty_segment_blocked": "[F7-SV-REVIEW] No eligible recipients matched.",
-          "broadcast_audience_too_large": "[F7-SV-REVIEW] Audience exceeds the 5,000 recipient limit.",
-          "broadcast_custom_recipient_unknown": "[F7-SV-REVIEW] Some custom recipients are not in your directory.",
-          "broadcast_custom_recipient_invalid_format": "[F7-SV-REVIEW] Some custom recipients are not valid email addresses.",
-          "broadcast_member_missing_primary_contact_email": "[F7-SV-REVIEW] Your profile is missing a primary contact email.",
-          "broadcast_member_halted_pending_review": "[F7-SV-REVIEW] Your broadcast privileges are paused pending admin review.",
-          "broadcast_rate_limit_exceeded": "[F7-SV-REVIEW] Too many submissions. Please try again later.",
-          "broadcast_immutable_after_submit": "[F7-SV-REVIEW] This broadcast has been submitted and can no longer be edited.",
-          "broadcast_not_found": "[F7-SV-REVIEW] We could not find that broadcast.",
-          "internal_error": "[F7-SV-REVIEW] An unexpected error occurred. Please try again."
+          "broadcast_quota_blocked": "Du har använt hela din E-Blast-kvot för i år.",
+          "broadcast_not_in_plan": "Din medlemsplan inkluderar inte E-Blast-förmånen.",
+          "broadcast_subject_too_long": "Ämnet får vara högst 200 tecken.",
+          "broadcast_subject_empty": "Ämne krävs.",
+          "broadcast_body_too_large": "Meddelandet överskrider gränsen på 200 KB.",
+          "broadcast_body_unsafe_html": "Meddelandet innehåller formatering vi inte kan acceptera — förenkla.",
+          "broadcast_empty_segment_blocked": "Inga matchande mottagare hittades.",
+          "broadcast_audience_too_large": "Mottagarlistan överstiger gränsen på 5 000.",
+          "broadcast_custom_recipient_unknown": "Vissa anpassade mottagare finns inte i din katalog.",
+          "broadcast_custom_recipient_invalid_format": "Vissa anpassade mottagare är inte giltiga e-postadresser.",
+          "broadcast_member_missing_primary_contact_email": "Din profil saknar en primär kontakt-e-post.",
+          "broadcast_member_halted_pending_review": "Dina utskicksbehörigheter är pausade i väntan på administratörsgranskning.",
+          "broadcast_rate_limit_exceeded": "För många inskickningar. Försök igen senare.",
+          "broadcast_immutable_after_submit": "Detta utskick har skickats in och kan inte längre redigeras.",
+          "broadcast_not_found": "Vi kunde inte hitta det utskicket.",
+          "internal_error": "Ett oväntat fel inträffade. Försök igen."
         },
         "delete": {
-          "title": "[F7-SV-REVIEW] Discard this draft?",
-          "body": "[F7-SV-REVIEW] This will permanently remove your draft. This action cannot be undone.",
-          "confirm": "[F7-SV-REVIEW] Discard",
-          "cancel": "[F7-SV-REVIEW] Keep editing"
+          "title": "Kasta detta utkast?",
+          "body": "Detta tar bort ditt utkast permanent. Åtgärden kan inte ångras.",
+          "confirm": "Kasta",
+          "cancel": "Fortsätt redigera"
         }
       },
       "quota": {
-        "headerLabel": "[F7-SV-REVIEW] E-Blast quota ({year})",
-        "planLabel": "[F7-SV-REVIEW] Plan: {plan}",
-        "used": "[F7-SV-REVIEW] Used",
-        "reserved": "[F7-SV-REVIEW] Reserved",
-        "remaining": "[F7-SV-REVIEW] Remaining",
-        "cap": "[F7-SV-REVIEW] Plan limit",
-        "exhausted": "[F7-SV-REVIEW] All E-Blast quota for {year} has been used.",
-        "progressLabel": "[F7-SV-REVIEW] E-Blast quota used",
-        "fetchError": "[F7-SV-REVIEW] Could not load quota.",
-        "retry": "[F7-SV-REVIEW] Retry"
+        "headerLabel": "E-Blast-kvot ({year})",
+        "planLabel": "Plan: {plan}",
+        "used": "Använt",
+        "reserved": "Reserverat",
+        "remaining": "Återstår",
+        "cap": "Plangräns",
+        "exhausted": "Hela E-Blast-kvoten för {year} har använts.",
+        "progressLabel": "E-Blast-kvot använd",
+        "fetchError": "Kunde inte ladda kvot.",
+        "retry": "Försök igen"
       },
       "banner": {
         "acknowledgement": {
-          "title": "[F7-SV-REVIEW] Marketing communications consent",
-          "body": "[F7-SV-REVIEW] Submitting an E-Blast confirms recipients have agreed to receive your chamber's communications. You can revoke consent on a per-recipient basis at any time.",
-          "acknowledge": "[F7-SV-REVIEW] I acknowledge",
-          "remindLater": "[F7-SV-REVIEW] Remind me later",
-          "closeLabel": "[F7-SV-REVIEW] Close banner"
+          "title": "Samtycke till marknadskommunikation",
+          "body": "Att skicka in ett E-Blast bekräftar att mottagarna har samtyckt till att ta emot din kammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
+          "acknowledge": "Jag bekräftar",
+          "remindLater": "Påminn senare",
+          "closeLabel": "Stäng banner"
         }
       },
       "list": {
-        "title": "[F7-SV-REVIEW] My broadcasts",
-        "subtitle": "[F7-SV-REVIEW] Track the status and delivery results of every E-Blast you've submitted.",
-        "empty": "[F7-SV-REVIEW] Send your first chamber-wide email — your audience is just one click away.",
-        "emptyTitle": "[F7-SV-REVIEW] No broadcasts yet",
-        "emptyCta": "[F7-SV-REVIEW] Compose your first E-Blast",
-        "quotaExhaustedTooltip": "[F7-SV-REVIEW] Your {year} E-Blast quota is exhausted. Renews January 1 of next year.",
+        "title": "Mina utskick",
+        "subtitle": "Följ status och leveransresultat för varje E-Blast du har skickat.",
+        "empty": "Skicka ditt första kammaromfattande e-post — dina mottagare är bara ett klick bort.",
+        "emptyTitle": "Inga utskick ännu",
+        "emptyCta": "Skapa ditt första E-Blast",
+        "quotaExhaustedTooltip": "Din E-Blast-kvot för {year} är förbrukad. Förnyas den 1 januari nästa år.",
         "columns": {
-          "subject": "[F7-SV-REVIEW] Subject",
-          "status": "[F7-SV-REVIEW] Status",
-          "submittedAt": "[F7-SV-REVIEW] Submitted",
-          "sentAt": "[F7-SV-REVIEW] Sent",
-          "audience": "[F7-SV-REVIEW] Audience"
+          "subject": "Ämne",
+          "status": "Status",
+          "submittedAt": "Inskickad",
+          "sentAt": "Skickad",
+          "audience": "Mottagare"
         },
         "status": {
-          "draft": "[F7-SV-REVIEW] Draft",
-          "submitted": "[F7-SV-REVIEW] Awaiting review",
-          "approved": "[F7-SV-REVIEW] Approved",
-          "sending": "[F7-SV-REVIEW] Sending",
-          "sent": "[F7-SV-REVIEW] Sent",
-          "rejected": "[F7-SV-REVIEW] Rejected",
-          "cancelled": "[F7-SV-REVIEW] Cancelled",
-          "failed_to_dispatch": "[F7-SV-REVIEW] Failed"
+          "draft": "Utkast",
+          "submitted": "Inväntar granskning",
+          "approved": "Godkänd",
+          "sending": "Skickar",
+          "sent": "Skickad",
+          "rejected": "Avvisad",
+          "cancelled": "Avbruten",
+          "failed_to_dispatch": "Misslyckades"
         }
       }
     },
@@ -2163,26 +2163,26 @@
       "subject": "Bekräftelse av återbetalning"
     },
     "broadcastApproved": {
-      "subject": "[F7-SV-REVIEW] Your E-Blast was approved",
-      "greeting": "[F7-SV-REVIEW] Hi {name},",
-      "body": "[F7-SV-REVIEW] Your E-Blast \"{subject}\" has been approved and will be sent {scheduleHint}.",
-      "scheduleNow": "[F7-SV-REVIEW] shortly",
-      "scheduleAt": "[F7-SV-REVIEW] on {when}",
-      "footer": "[F7-SV-REVIEW] You'll see delivery results on your benefits page once the broadcast completes."
+      "subject": "Ditt E-Blast har godkänts",
+      "greeting": "Hej {name},",
+      "body": "Ditt E-Blast \"{subject}\" har godkänts och kommer att skickas {scheduleHint}.",
+      "scheduleNow": "inom kort",
+      "scheduleAt": "den {when}",
+      "footer": "Du ser leveransresultaten på din förmånssida när utskicket är klart."
     },
     "broadcastRejected": {
-      "subject": "[F7-SV-REVIEW] Your E-Blast was not approved",
-      "greeting": "[F7-SV-REVIEW] Hi {name},",
-      "body": "[F7-SV-REVIEW] Your E-Blast \"{subject}\" was not approved.",
-      "reasonHeading": "[F7-SV-REVIEW] Reason from your chamber admin:",
-      "footer": "[F7-SV-REVIEW] Your reserved quota slot has been released. You're welcome to submit a revised broadcast."
+      "subject": "Ditt E-Blast har inte godkänts",
+      "greeting": "Hej {name},",
+      "body": "Ditt E-Blast \"{subject}\" har inte godkänts.",
+      "reasonHeading": "Anledning från din kammaradmin:",
+      "footer": "Din reserverade kvot har frigjorts. Du är välkommen att skicka ett reviderat utskick."
     },
     "broadcastCancelled": {
-      "subject": "[F7-SV-REVIEW] Your E-Blast was cancelled",
-      "greeting": "[F7-SV-REVIEW] Hi {name},",
-      "body": "[F7-SV-REVIEW] Your E-Blast \"{subject}\" has been cancelled.",
-      "reasonHeading": "[F7-SV-REVIEW] Cancellation note:",
-      "footer": "[F7-SV-REVIEW] Your reserved quota slot has been released."
+      "subject": "Ditt E-Blast har avbrutits",
+      "greeting": "Hej {name},",
+      "body": "Ditt E-Blast \"{subject}\" har avbrutits.",
+      "reasonHeading": "Anteckning om avbrott:",
+      "footer": "Din reserverade kvot har frigjorts."
     }
   }
 }

@@ -54,7 +54,10 @@ export function ClearHaltDialog({
   const normalize = (s: string): string =>
     s
       .trim()
-      .replace(/[\s​-‍﻿]+/g, ' ') // collapse whitespace incl. zero-width
+      // Round-4 HIGH-H — `\s` covers ASCII/Unicode whitespace; explicit
+      // \u escapes for zero-width chars (ZWSP / ZWNJ / ZWJ / BOM) so
+      // the regex source is unambiguous regardless of editor encoding.
+      .replace(/[\s​‌‍﻿]+/g, ' ')
       .replace(/[.,;:!?'"()\-—]/g, '') // strip common punctuation
       .toLowerCase();
   const phraseValid = normalize(phrase) === normalize(memberDisplayName);

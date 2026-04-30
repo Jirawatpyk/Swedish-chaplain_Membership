@@ -66,6 +66,7 @@ function makeBridges(members: ReadonlyArray<MemberRecipient>): {
       async setMemberHalt() {
         return ok(undefined);
       },
+      async memberExistsInTenant() { return true; },
       async markBroadcastsAcknowledged() {
         return ok(undefined);
       },

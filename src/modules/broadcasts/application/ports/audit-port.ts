@@ -49,33 +49,36 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_cancelled',
   'broadcast_cancel_too_late',
   'broadcast_send_started',
-  'broadcast_send_timeout_completed',
-  'broadcast_sent',
-  'broadcast_quota_consumed',
+  'broadcast_send_timeout_completed', // US6-deferred (24h stuck-sending reconcile)
+  'broadcast_sent',                    // US4-deferred (Resend webhook delivered handler)
+  'broadcast_quota_consumed',          // US4-deferred (consumed at sending→sent webhook)
   'broadcast_failed_to_dispatch',
-  'broadcast_resend_resource_missing', // R2-NEW-3
+  'broadcast_resend_resource_missing', // R2-NEW-3 — emitted by dispatch worker
+  'broadcast_resend_audience_drift',   // F7.1-IMP5 — audience count mismatch on idempotency replay
   'broadcast_concurrent_action_blocked',
 
   // --- Cross-tenant probes (Constitution Principle I) — 2 events ----
   'broadcast_cross_member_probe',
   'broadcast_cross_tenant_probe',
 
-  // --- Unsubscribe + suppression (US4) — 4 events --------------------
-  'broadcast_unsubscribed',
-  'broadcast_unsubscribe_token_invalid',
-  'broadcast_suppression_applied',
-  'broadcast_complaint_received',
+  // --- Unsubscribe + suppression (US5) — 4 events --------------------
+  // All US5-deferred — emit sites land with the public unsubscribe
+  // page + suppression-applied state machine in a follow-up phase.
+  'broadcast_unsubscribed',                  // US5-deferred
+  'broadcast_unsubscribe_token_invalid',     // US5-deferred
+  'broadcast_suppression_applied',           // US5-deferred
+  'broadcast_complaint_received',            // US4-deferred (webhook complaint event)
 
-  // --- Webhook (US5) — 1 event ---------------------------------------
-  'broadcast_webhook_signature_rejected',
+  // --- Webhook (US4) — 1 event ---------------------------------------
+  'broadcast_webhook_signature_rejected',    // US4-deferred (Resend webhook handler)
 
   // --- Plan-expiry edge (US6) — 1 event ------------------------------
-  'broadcast_sent_with_expired_member_plan',
+  'broadcast_sent_with_expired_member_plan', // US6-deferred (cron expiry guard)
 
   // --- Clarifications session 5 (Q14 + Q15) — 3 events ---------------
-  'broadcast_complaint_rate_per_broadcast_breach', // Q14 / SC-005 (b)
-  'broadcast_member_dispatch_resumed',             // Q14 admin clear-halt
-  'member_acknowledged_broadcasts_terms',          // Q15 GDPR Art. 7
+  'broadcast_complaint_rate_per_broadcast_breach', // US4-deferred (5% complaint-rate auto-halt webhook handler)
+  'broadcast_member_dispatch_resumed',             // Q14 admin clear-halt — emitted
+  'member_acknowledged_broadcasts_terms',          // Q15 GDPR Art. 7 — emitted (round-4 CRIT-B)
 ] as const;
 
 /**
@@ -84,7 +87,7 @@ export const F7_AUDIT_EVENT_TYPES = [
  * lives at type level; if the count is wrong, TypeScript errors here
  * with "Type '38' is not assignable to type '37'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 37
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 38
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;

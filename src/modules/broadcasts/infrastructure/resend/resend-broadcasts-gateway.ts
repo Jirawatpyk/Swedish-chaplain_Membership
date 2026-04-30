@@ -52,38 +52,50 @@ export type GatewayThrowableKind =
 /**
  * `subKind` distinguishes the underlying transport class for `retryable`
  * errors so OTel metrics + alerts can split network outage from server
- * 5xx (review I6 — 2026-04-30). Other kinds carry `subKind: 'api'`.
- *
- * Type-1 (round-3) — single source of truth: the port owns the union;
- * the adapter aliases it to keep the existing public name but cannot
- * drift out of sync.
+ * 5xx (review I6). Aliases the port-owned union (round-3 Type-1 single
+ * source of truth).
  */
 export type GatewayThrowableSubKind = GatewayRetryableSubKind;
 
+/**
+ * Round-4 CRIT-E — discriminated init union; only `retryable` carries
+ * `subKind`; only `resource_missing` carries `resourceType` + `resourceId`;
+ * only `permanent` carries `code`. Eliminates illegal combinations like
+ * `(kind:'permanent', subKind:'network')` at compile time and removes
+ * the `subKind ?? 'api'` default that masked classifier bugs.
+ */
+export type GatewayThrowableInit =
+  | { readonly kind: 'retryable'; readonly subKind: GatewayThrowableSubKind; readonly reason: string }
+  | { readonly kind: 'idempotency_conflict'; readonly reason: string }
+  | {
+      readonly kind: 'resource_missing';
+      readonly resourceType: 'audience' | 'broadcast';
+      readonly resourceId: string;
+      readonly reason: string;
+    }
+  | { readonly kind: 'permanent'; readonly code: string; readonly reason: string };
+
 export class GatewayThrowable extends Error {
   readonly kind: GatewayThrowableKind;
-  readonly subKind: GatewayThrowableSubKind;
+  readonly subKind?: GatewayThrowableSubKind;
   readonly reason: string;
   readonly code?: string;
   readonly resourceType?: 'audience' | 'broadcast';
   readonly resourceId?: string;
 
-  constructor(opts: {
-    kind: GatewayThrowableKind;
-    subKind?: GatewayThrowableSubKind;
-    reason: string;
-    code?: string;
-    resourceType?: 'audience' | 'broadcast';
-    resourceId?: string;
-  }) {
-    super(opts.reason);
+  constructor(init: GatewayThrowableInit) {
+    super(init.reason);
     this.name = 'GatewayThrowable';
-    this.kind = opts.kind;
-    this.subKind = opts.subKind ?? 'api';
-    this.reason = opts.reason;
-    if (opts.code !== undefined) this.code = opts.code;
-    if (opts.resourceType !== undefined) this.resourceType = opts.resourceType;
-    if (opts.resourceId !== undefined) this.resourceId = opts.resourceId;
+    this.kind = init.kind;
+    this.reason = init.reason;
+    if (init.kind === 'retryable') {
+      this.subKind = init.subKind;
+    } else if (init.kind === 'resource_missing') {
+      this.resourceType = init.resourceType;
+      this.resourceId = init.resourceId;
+    } else if (init.kind === 'permanent') {
+      this.code = init.code;
+    }
   }
 }
 
@@ -159,7 +171,8 @@ async function withRetry<T>(
   }
   // Review #17: ALWAYS rethrow as GatewayThrowable so callers can rely
   // on `instanceof GatewayThrowable` + `.kind` discrimination. A bare
-  // SDK throwable that bypassed classification escapes as `retryable`.
+  // SDK throwable that bypassed classification escapes as `retryable`
+  // with `subKind: 'timeout'`.
   if (lastErr instanceof GatewayThrowable) throw lastErr;
   const reason =
     lastErr instanceof Error ? lastErr.message : String(lastErr ?? 'unknown retryable error');
@@ -288,6 +301,37 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       },
       { method: 'sendBroadcast' },
     );
+  },
+
+  async getAudienceContactCount(audienceId: string): Promise<number | null> {
+    // F7.1-IMP5 — query Resend for the contact count on an audience.
+    // The SDK exposes `contacts.list(audienceId)` (paginated). For
+    // MVP we list and return `data.length`; a future optimisation
+    // could use a head-only endpoint when Resend provides one.
+    try {
+      return await withRetry(
+        async () => {
+          const sdk = client();
+          const result = (await sdk.contacts.list({ audienceId })) as ResendSdkResponse<{
+            data: ReadonlyArray<unknown>;
+          }>;
+          if (result.error) {
+            throw classifyResendError(
+              result.error ?? undefined,
+              'audience',
+              audienceId,
+            );
+          }
+          return result.data?.data.length ?? 0;
+        },
+        { method: 'getAudienceContactCount' },
+      );
+    } catch (e) {
+      if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
+        return null;
+      }
+      throw e;
+    }
   },
 
   async retrieveBroadcast(

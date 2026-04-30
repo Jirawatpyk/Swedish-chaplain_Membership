@@ -345,28 +345,85 @@ export async function dispatchScheduledBroadcast(
         );
         // Fall through to permanent handler below.
       } else {
-        // IMP-5 (round-3) — idempotency_conflict post-send means Resend
-        // accepted a prior attempt's `sendBroadcast`. Recipients DID
-        // receive the email IF the prior attempt's `addContactsToAudience`
-        // completed in full. If a tick-1 chunk failed mid-population
-        // (network drop after chunk N of M), the original audience has
-        // fewer contacts than `recipientCount` — partial delivery.
-        // Verifying via `getAudienceContactCount` requires persisting the
-        // original audienceId between ticks (architectural change scoped
-        // to F7.1). For MVP, surface the partial-delivery risk in the
-        // log so ops can investigate when complaint-rate spikes.
-        logger.warn(
-          {
-            tenantId: deps.tenant.slug,
-            broadcastId: input.broadcastId as string,
-            resendBroadcastId,
-            expectedRecipientCount: resolvedResult.value.estimatedCount,
-            note: 'recipients_may_be_partial_if_prior_attempt_failed_mid_addContacts',
-          },
-          'broadcasts.dispatch.idempotency_replay',
-        );
+        // F7.1-IMP5 (round-4 follow-up) — idempotency_conflict post-send
+        // means Resend accepted a prior attempt's `sendBroadcast`.
+        // Recipients DID receive the email IF the prior attempt's
+        // `addContactsToAudience` completed in full. Verify by querying
+        // the audience contact count and comparing against the expected
+        // recipient count; on mismatch, emit
+        // `broadcast_resend_audience_drift` audit so ops can confirm
+        // partial-delivery scope.
+        const expectedCount = resolvedResult.value.estimatedCount;
+        let actualCount: number | null = null;
+        try {
+          actualCount = await deps.broadcastsGateway.getAudienceContactCount(
+            resendAudienceId,
+          );
+        } catch (countErr) {
+          logger.warn(
+            {
+              err: countErr instanceof Error ? countErr.message : String(countErr),
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendBroadcastId,
+            },
+            'broadcasts.dispatch.audience_count_check_failed',
+          );
+        }
+        if (actualCount !== null && actualCount !== expectedCount) {
+          // Audience drift detected — emit audit + log error so ops
+          // can investigate. We DO advance to 'sending' because Resend
+          // has already accepted the broadcast (idempotency replay);
+          // the drift is a forensic record, not a blocker.
+          try {
+            await deps.audit.emit(null, {
+              tenantId: deps.tenant.slug,
+              eventType: 'broadcast_resend_audience_drift',
+              actorUserId: 'system:cron',
+              summary: `Broadcast ${input.broadcastId} audience drift on idempotency replay (expected ${expectedCount}, actual ${actualCount})`,
+              payload: {
+                broadcastId: input.broadcastId,
+                resendBroadcastId,
+                resendAudienceId,
+                expectedRecipientCount: expectedCount,
+                actualRecipientCount: actualCount,
+                drift: expectedCount - actualCount,
+              },
+              requestId: null,
+            });
+          } catch (auditErr) {
+            logger.error(
+              {
+                err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+                tenantId: deps.tenant.slug,
+                broadcastId: input.broadcastId as string,
+              },
+              'broadcasts.dispatch.audience_drift_audit_emit_failed',
+            );
+          }
+          logger.error(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              expectedRecipientCount: expectedCount,
+              actualRecipientCount: actualCount,
+              severity: 'critical',
+            },
+            'broadcasts.dispatch.audience_drift_detected',
+          );
+        } else {
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendBroadcastId,
+              expectedRecipientCount: expectedCount,
+              actualRecipientCount: actualCount,
+            },
+            'broadcasts.dispatch.idempotency_replay',
+          );
+        }
         // Treat as success — fall through to attach + transition.
-        // (No throw — we land in step 4.)
       }
     }
 

@@ -91,6 +91,7 @@ function makeMembersBridge(state: State): MembersBridgePort {
       else state.haltedSet.delete(memberId);
       return ok(undefined);
     },
+    async memberExistsInTenant() { return true; },
     async markBroadcastsAcknowledged() {
       return ok(undefined);
     },

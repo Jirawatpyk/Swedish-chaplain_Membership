@@ -131,8 +131,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         case 'broadcast_audience_post_suppression_empty':
           summary.permanent_failed++;
           break;
-        default:
+        default: {
+          // Round-4 HIGH-D — unknown error kind must NOT silently
+          // increment "skipped" (a benign-sounding bucket). A new
+          // error kind that we forgot to handle here should fire an
+          // alert so we can extend the switch.
           summary.skipped++;
+          const errKind = (result.error as { kind?: string }).kind ?? 'unknown';
+          logger.error(
+            {
+              tenantId: tenant.slug,
+              broadcastId: row.broadcast_id,
+              errorKind: errKind,
+            },
+            'cron.broadcasts.dispatch.unknown_error_kind',
+          );
+        }
       }
     } catch (e) {
       // Review #13: uncaught throws (e.g., programming bugs) must be

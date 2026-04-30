@@ -161,10 +161,19 @@ function makeRepo(opts: RepoOpts): {
   };
 }
 
+type ThrowSpec =
+  | { kind: 'retryable' | 'permanent'; reason: string }
+  | {
+      kind: 'resource_missing';
+      reason: string;
+      resourceType: 'audience' | 'broadcast';
+      resourceId: string;
+    };
+
 interface GatewayOpts {
-  readonly throwOnCreateAudience?: { kind: 'retryable' | 'permanent'; reason: string };
-  readonly throwOnCreateBroadcast?: { kind: 'retryable' | 'permanent'; reason: string };
-  readonly throwOnSend?: { kind: 'retryable' | 'permanent'; reason: string };
+  readonly throwOnCreateAudience?: ThrowSpec;
+  readonly throwOnCreateBroadcast?: ThrowSpec;
+  readonly throwOnSend?: ThrowSpec;
   readonly errorAsPlainError?: boolean;
 }
 
@@ -182,7 +191,7 @@ function makeGateway(opts: GatewayOpts = {}): {
   }> = [];
   const createCalls: Array<{ audienceId: string; subject: string }> = [];
   const sendCalls: Array<{ broadcastId: string; idempotencyKey: string }> = [];
-  function maybeThrow(spec?: { kind: string; reason: string }): void {
+  function maybeThrow(spec?: ThrowSpec): void {
     if (!spec) return;
     if (opts.errorAsPlainError) {
       throw new Error(spec.reason);
@@ -215,6 +224,9 @@ function makeGateway(opts: GatewayOpts = {}): {
       async retrieveBroadcast() {
         return null;
       },
+      async getAudienceContactCount() {
+        return 2; // matches estimatedRecipientCount in default fixture
+      },
     },
   };
 }
@@ -244,6 +256,7 @@ function makeMembersBridge(opts: {
     async setMemberHalt() {
       return ok(undefined);
     },
+    async memberExistsInTenant() { return true; },
     async markBroadcastsAcknowledged() {
       return ok(undefined);
     },
@@ -591,6 +604,60 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(transition).toBeDefined();
     expect(
       audit.emits.find((e) => e.eventType === 'broadcast_failed_to_dispatch'),
+    ).toBeDefined();
+  });
+
+  // ---- Resource missing (404 from Resend) — F7.1-T2 -----------------
+
+  it('gateway resource_missing on createBroadcast → emits broadcast_resend_resource_missing audit + transitions to failed_to_dispatch', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway({
+      throwOnCreateBroadcast: {
+        kind: 'resource_missing',
+        reason: 'audience not found',
+        resourceType: 'audience',
+        resourceId: 'aud-fake-1',
+      },
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_resend_resource_missing');
+      if (result.error.kind === 'broadcast_resend_resource_missing') {
+        expect(result.error.resourceType).toBe('audience');
+        expect(result.error.resourceId).toBe('aud-fake-1');
+      }
+    }
+    // Distinct audit event emitted (NOT broadcast_failed_to_dispatch)
+    const resourceMissingAudit = audit.emits.find(
+      (e) => e.eventType === 'broadcast_resend_resource_missing',
+    );
+    expect(resourceMissingAudit).toBeDefined();
+    expect(resourceMissingAudit?.payload['resourceType']).toBe('audience');
+    expect(resourceMissingAudit?.payload['resourceId']).toBe('aud-fake-1');
+    // Row transitions to failed_to_dispatch (not stuck in approved)
+    expect(
+      repo.transitions.find((t) => t.status === 'failed_to_dispatch'),
     ).toBeDefined();
   });
 

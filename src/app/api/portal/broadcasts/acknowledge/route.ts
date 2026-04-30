@@ -17,6 +17,7 @@ import {
   drizzleMemberRepo,
   asMemberId,
 } from '@/modules/members';
+import { f7AuditAdapter } from '@/modules/broadcasts';
 import {
   errorResponse,
   baseHeaders,
@@ -76,6 +77,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         'broadcasts.acknowledge.member_repo_error',
       );
       return errorResponse(500, 'internal_error', correlationId);
+    }
+
+    // Round-4 CRIT-B: emit GDPR Art. 7 demonstrable-consent audit on
+    // first acknowledgement. Idempotent calls (already-acknowledged)
+    // skip re-emission so the audit log records the first consent
+    // event only — that's the durable evidence regulators ask for.
+    if (result.value.previouslyNull) {
+      try {
+        await f7AuditAdapter.emit(null, {
+          tenantId: ctx.tenant.slug,
+          eventType: 'member_acknowledged_broadcasts_terms',
+          actorUserId: ctx.current.user.id,
+          summary: `Member ${ctx.member.memberId} acknowledged broadcasts terms (locale: ${locale})`,
+          payload: {
+            memberId: ctx.member.memberId,
+            locale,
+            acknowledgedAt: result.value.acknowledgedAt.toISOString(),
+          },
+          requestId: correlationId,
+        });
+      } catch (auditErr) {
+        // Best-effort — never 5xx the request when the F3 column write
+        // already succeeded. logger.error so ops can backfill the
+        // audit row from the column timestamp if needed.
+        logger.error(
+          {
+            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            correlationId,
+            tenantId: ctx.tenant.slug,
+            memberId: ctx.member.memberId,
+            locale,
+          },
+          'broadcasts.acknowledge.audit_emit_failed',
+        );
+      }
     }
 
     return NextResponse.json(

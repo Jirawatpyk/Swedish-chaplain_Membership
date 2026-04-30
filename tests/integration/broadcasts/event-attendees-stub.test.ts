@@ -44,6 +44,7 @@ const emptyMembersBridge: MembersBridgePort = {
   async setMemberHalt() {
     return ok(undefined);
   },
+  async memberExistsInTenant() { return true; },
   async markBroadcastsAcknowledged() {
     return ok(undefined);
   },

@@ -85,6 +85,17 @@ export interface MembersBridgePort {
   ): Promise<EmailLower | null>;
 
   /**
+   * F7.1-HIGHC — boolean existence check, distinguishing "wrong member
+   * id" from "member exists but lacks primary contact email" in the
+   * proxy-submit + similar admin paths. Cheap `EXISTS` query; returns
+   * `true` even when the member has no primary email.
+   */
+  memberExistsInTenant(
+    tenantCtx: TenantContext,
+    memberId: string,
+  ): Promise<boolean>;
+
+  /**
    * Look up an email against ANY contact in the tenant graph (FR-015d
    * custom-list validation branch 2: secondary contacts).
    */

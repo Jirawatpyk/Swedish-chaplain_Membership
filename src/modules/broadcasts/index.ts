@@ -228,6 +228,12 @@ export type {
 // MembersBridge instance — exposed for the admin queue server component
 // which reads halt-state inline.
 export { membersBridge } from './infrastructure/members-bridge';
+
+// F7 audit adapter — exposed at the barrel because the
+// `/api/portal/broadcasts/acknowledge` route emits the GDPR Art. 7
+// `member_acknowledged_broadcasts_terms` event AFTER the F3 use-case
+// completes, outside its port boundary (Round-4 CRIT-B).
+export { f7AuditAdapter } from './infrastructure/audit-adapter';
 export type {
   MemberHaltSummary,
   MemberRecipient,

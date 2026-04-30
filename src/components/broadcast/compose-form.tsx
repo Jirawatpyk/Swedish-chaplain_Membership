@@ -51,6 +51,11 @@ const SubmitSchema = z.object({
  * UX-R2-1 (round-3) — map server error code → focusable field so SR
  * users hear the inline error AT the field, not just in a transient
  * toast (WCAG 3.3.1 + 3.3.3).
+ *
+ * Round-4 MED-E — form-level errors (quota, rate-limit, halt) clear
+ * only on resubmit; field-level errors clear when the user edits THAT
+ * field. Distinguishing them prevents the form-level error from
+ * disappearing the moment the user types in any unrelated field.
  */
 type ServerErrorField = 'subject' | 'body' | 'segment' | 'customList' | null;
 const ERROR_CODE_FIELD: Record<string, ServerErrorField> = {

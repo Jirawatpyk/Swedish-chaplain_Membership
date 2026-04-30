@@ -18,7 +18,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { getTranslations } from 'next-intl/server';
-import { db } from '@/lib/db';
+import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getCurrentSession } from '@/lib/auth-session';
@@ -57,13 +57,18 @@ async function checkEligibility(): Promise<BannerEligibility> {
   // `broadcasts_acknowledged_at` column (Q15 storage added by
   // migration 0071). A small read here keeps the banner self-contained
   // without bloating the F3 entity for a per-tenant flag.
-  const ackResult = (await db.execute(sql`
-    SELECT broadcasts_acknowledged_at
-      FROM members
-     WHERE tenant_id = ${tenant.slug}
-       AND member_id = ${memberId}
-     LIMIT 1
-  `)) as unknown as Array<{ broadcasts_acknowledged_at: Date | null }>;
+  //
+  // Round-4 CRIT-A: routed through `runInTenant` so RLS+FORCE on
+  // `members` applies (Constitution Principle I two-layer isolation).
+  const ackResult = (await runInTenant(tenant, async (tx) =>
+    tx.execute(sql`
+      SELECT broadcasts_acknowledged_at
+        FROM members
+       WHERE tenant_id = ${tenant.slug}
+         AND member_id = ${memberId}
+       LIMIT 1
+    `),
+  )) as unknown as Array<{ broadcasts_acknowledged_at: Date | null }>;
   const ack = ackResult[0]?.broadcasts_acknowledged_at ?? null;
   if (ack !== null) {
     return { show: false, memberId };

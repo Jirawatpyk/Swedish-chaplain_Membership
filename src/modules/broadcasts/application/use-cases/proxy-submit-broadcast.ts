@@ -55,20 +55,22 @@ export async function proxySubmitBroadcast(
   deps: ProxySubmitBroadcastDeps,
   input: ProxySubmitBroadcastInput,
 ): Promise<Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>> {
-  // Verify proxied member exists in tenant by checking their primary
-  // contact lookup; failure surfaces as `broadcast_member_not_found`.
-  const replyTo = await deps.membersBridge.getMemberPrimaryContact(
+  // F7.1-HIGHC — distinguish "wrong member id" from "member exists but
+  // lacks primary contact email" so admins (or scripted API hits) get
+  // a precise error code. `memberExistsInTenant` returns false when
+  // RLS filters out a cross-tenant guess OR when the id is unknown.
+  const exists = await deps.membersBridge.memberExistsInTenant(
     deps.tenant,
     input.proxiedMemberId,
   );
-  if (replyTo === null) {
-    // Could be either "member doesn't exist" or "member exists but lacks
-    // primary contact email" — submitBroadcast handles the second case
-    // with broadcast_member_missing_primary_contact_email. We let the
-    // delegate compute the right error. But we can short-circuit if
-    // F3 returns null for an unknown id; the delegate also rejects
-    // appropriately.
-    // Fall through to submitBroadcast — it will surface the right error.
+  if (!exists) {
+    return {
+      ok: false,
+      error: {
+        kind: 'broadcast_member_not_found',
+        memberId: input.proxiedMemberId,
+      },
+    } as Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>;
   }
 
   const submitInput: SubmitBroadcastInput = {

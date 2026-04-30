@@ -93,4 +93,18 @@ export interface BroadcastsGatewayPort {
   retrieveBroadcast(
     broadcastId: string,
   ): Promise<RetrievedBroadcastResource | null>;
+
+  /**
+   * Round-4 IMP-5 — count contacts present in a Resend audience. Used
+   * by the dispatch worker on idempotency-replay paths to verify the
+   * prior attempt's `addContactsToAudience` populated all expected
+   * recipients. A mismatch surfaces as
+   * `broadcast_resend_audience_drift` audit emission so ops can
+   * investigate partial-delivery before the broadcast ships.
+   *
+   * Returns `null` if the audience itself is missing (404).
+   */
+  getAudienceContactCount(
+    audienceId: string,
+  ): Promise<number | null>;
 }

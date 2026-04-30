@@ -84,6 +84,7 @@ function makeMembersBridge({
     async setMemberHalt() {
       return { ok: true, value: undefined };
     },
+    async memberExistsInTenant() { return true; },
     async markBroadcastsAcknowledged() {
       return { ok: true, value: undefined };
     },

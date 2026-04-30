@@ -44,7 +44,11 @@ export type ValidateCustomRecipientsError =
   | {
       readonly kind: 'broadcast_custom_recipient_unknown';
       readonly unresolved: ReadonlyArray<string>;
-    };
+    }
+  // Round-4 MED-B — wrap lookup loop so a transient Neon connection
+  // blip doesn't propagate raw Drizzle/SQL details to the route's 500
+  // body. Caller maps to `internal_error` envelope.
+  | { readonly kind: 'validate_custom.server_error'; readonly message: string };
 
 export interface ValidateCustomRecipientsDeps {
   readonly tenant: TenantContext;
@@ -96,27 +100,39 @@ export async function validateCustomRecipients(
   const uniq = Array.from(new Set(normalised)) as EmailLower[];
 
   const unresolved: string[] = [];
-  for (const email of uniq) {
-    const memberPrimary =
-      await deps.membersBridge.lookupMemberPrimaryContactEmailInTenant(
+  try {
+    // Round-4 MED-B — sequential per-entry lookups (3 sources × N up
+    // to 100). Cost is bounded by `MAX_ENTRIES`; parallelizing risks
+    // saturating the per-tenant DB connection. Wrapped in try/catch
+    // so transient infra errors return a typed envelope rather than
+    // leaking raw SQL to the response body.
+    for (const email of uniq) {
+      const memberPrimary =
+        await deps.membersBridge.lookupMemberPrimaryContactEmailInTenant(
+          deps.tenant,
+          email,
+        );
+      if (memberPrimary !== null) continue;
+
+      const contact = await deps.membersBridge.lookupContactEmailInTenant(
         deps.tenant,
         email,
       );
-    if (memberPrimary !== null) continue;
+      if (contact !== null) continue;
 
-    const contact = await deps.membersBridge.lookupContactEmailInTenant(
-      deps.tenant,
-      email,
-    );
-    if (contact !== null) continue;
+      const attendee = await deps.eventAttendees.lookupAttendeeEmailInTenant(
+        deps.tenant,
+        email,
+      );
+      if (attendee !== null) continue;
 
-    const attendee = await deps.eventAttendees.lookupAttendeeEmailInTenant(
-      deps.tenant,
-      email,
-    );
-    if (attendee !== null) continue;
-
-    unresolved.push(email);
+      unresolved.push(email);
+    }
+  } catch (e) {
+    return err({
+      kind: 'validate_custom.server_error',
+      message: e instanceof Error ? e.message : 'unknown error',
+    });
   }
 
   if (unresolved.length > 0) {

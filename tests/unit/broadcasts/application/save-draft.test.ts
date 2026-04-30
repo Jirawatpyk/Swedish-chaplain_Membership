@@ -188,6 +188,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     async setMemberHalt() {
       return { ok: true, value: undefined };
     },
+    async memberExistsInTenant() { return true; },
     async markBroadcastsAcknowledged() {
       return { ok: true, value: undefined };
     },

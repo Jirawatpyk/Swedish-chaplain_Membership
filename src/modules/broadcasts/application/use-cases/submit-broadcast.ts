@@ -233,11 +233,15 @@ export async function submitBroadcast(
       { memberId: input.memberId },
     );
     if (!quota.ok) {
-      await emitReject(deps, input, 'broadcast_quota_blocked', {
-        memberId: input.memberId,
-        reason: quota.error.kind,
+      // Round-4 MED-D — counter internal error (DB blip) is NOT
+      // "quota full". Returning fake `quota_blocked` collapses the
+      // distinction and wrongly maps to 422 (user fault). Surface as
+      // 500 server_error so ops dashboards can split rate-limited
+      // submissions from infra-induced rejections.
+      return err({
+        kind: 'submit.server_error',
+        message: `quota_counter_error: ${quota.error.kind}`,
       });
-      return err({ kind: 'broadcast_quota_blocked', used: 0, reserved: 0, cap: 0 });
     }
     if (quota.value.counter.remaining === 0) {
       await emitReject(deps, input, 'broadcast_quota_blocked', {
@@ -274,9 +278,15 @@ export async function submitBroadcast(
   // ---- Precondition (c): subject length ----------------------------
   const trimmedSubject = input.subject.trim();
   if (trimmedSubject.length === 0) {
+    // Round-4 MED-A — emit `broadcast_subject_too_long` with `length:0`
+    // so audit + client error code agree on the same event type. The
+    // alternative (separate `broadcast_subject_empty` event) would
+    // require enum migration; mapping empty as length-0 keeps a single
+    // event type and the audit payload distinguishes the two cases.
     await emitReject(deps, input, 'broadcast_subject_too_long', {
       memberId: input.memberId,
       length: 0,
+      reason: 'empty_after_trim',
     });
     return err({ kind: 'broadcast_subject_empty' });
   }
@@ -331,6 +341,15 @@ export async function submitBroadcast(
       { raw: input.segment.emails },
     );
     if (!validated.ok) {
+      // Round-4 MED-B — server_error from the lookup loop maps to
+      // submit-level server_error so the route returns 500 instead of
+      // a misleading 422.
+      if (validated.error.kind === 'validate_custom.server_error') {
+        return err({
+          kind: 'submit.server_error',
+          message: `validate_custom_recipients_failed: ${validated.error.message}`,
+        });
+      }
       await emitReject(deps, input, 'broadcast_custom_recipient_unknown', {
         memberId: input.memberId,
         ...validated.error,
@@ -369,17 +388,34 @@ export async function submitBroadcast(
     return err(resolved.error);
   }
 
-  // Non-blocking: orphan members → emit per-orphan audit
-  for (const orphanMemberId of resolved.value.orphans) {
-    await emitReject(
-      deps,
-      { ...input, memberId: orphanMemberId },
-      'broadcast_member_missing_primary_contact_email',
-      {
-        memberId: orphanMemberId,
-        triggeredBySubmissionFromMember: input.memberId,
-      },
-    );
+  // Non-blocking: orphan members → emit per-orphan audit (round-4 HIGH-B
+  // — cap at 50 to prevent submit-budget breach when orphan list grows;
+  // truncation summary preserves audit trail when exceeded). Parallelize
+  // via Promise.all so 50 INSERTs land in <100ms instead of sequential
+  // 50× DB roundtrip cost.
+  const ORPHAN_AUDIT_CAP = 50;
+  const orphans = resolved.value.orphans;
+  const reportedOrphans = orphans.slice(0, ORPHAN_AUDIT_CAP);
+  await Promise.all(
+    reportedOrphans.map((orphanMemberId) =>
+      emitReject(
+        deps,
+        { ...input, memberId: orphanMemberId },
+        'broadcast_member_missing_primary_contact_email',
+        {
+          memberId: orphanMemberId,
+          triggeredBySubmissionFromMember: input.memberId,
+        },
+      ),
+    ),
+  );
+  if (orphans.length > ORPHAN_AUDIT_CAP) {
+    await emitReject(deps, input, 'member_missing_primary_contact', {
+      truncated: true,
+      totalOrphans: orphans.length,
+      reported: ORPHAN_AUDIT_CAP,
+      triggeredBySubmissionFromMember: input.memberId,
+    });
   }
 
   // ---- Atomic persist: insert(draft) → transition(submitted) → audit ----

@@ -98,6 +98,22 @@ export const membersBridge: MembersBridgePort = {
     return unsafeBrandEmailLower(result.value.toLowerCase().trim());
   },
 
+  async memberExistsInTenant(
+    tenantCtx: TenantContext,
+    memberId: string,
+  ): Promise<boolean> {
+    // F7.1-HIGHC — F3 `findById` is `runInTenant`-internal already
+    // (Result<Member, RepoError>); cross-tenant guess returns
+    // `repo.not_found` (RLS filters at db layer). The boolean
+    // unwrap discards the F3 error shape — F7's caller only needs
+    // existence, not the F3 reason.
+    const result = await drizzleMemberRepo.findById(
+      tenantCtx,
+      asMemberId(memberId),
+    );
+    return result.ok;
+  },
+
   async lookupContactEmailInTenant(
     tenantCtx: TenantContext,
     emailLower: EmailLower,

@@ -14,6 +14,7 @@
  * for unit testing without route boundary.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort } from '../ports/audit-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
@@ -76,8 +77,20 @@ export async function clearHalt(
         },
         requestId: input.requestId,
       });
-    } catch {
-      // best-effort — never 5xx the request because audit failed
+    } catch (auditErr) {
+      // Round-4 HIGH-A — never 5xx the request because audit failed,
+      // BUT never silently lose the GDPR / forensic record. Log at
+      // error severity so ops can re-emit by hand from the column
+      // timestamp if needed (`setMemberHalt(false)` already succeeded).
+      logger.error(
+        {
+          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          tenantId: deps.tenant.slug,
+          memberId: input.memberId,
+          actorUserId: input.actorUserId,
+        },
+        'broadcasts.clear_halt.audit_emit_failed',
+      );
     }
 
     return ok({ memberId: input.memberId, clearedAt: now });

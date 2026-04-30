@@ -77,6 +77,7 @@ function makeMembersBridge(opts: {
         if (opts.setHaltThrows) throw new Error('db down');
         return opts.setHaltResult ?? ok(undefined);
       },
+      async memberExistsInTenant() { return true; },
       async markBroadcastsAcknowledged() {
         return ok(undefined);
       },

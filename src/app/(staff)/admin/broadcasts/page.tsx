@@ -14,7 +14,7 @@ import {
   makeGetBroadcastDeps,
   membersBridge,
 } from '@/modules/broadcasts';
-import { db, runInTenant } from '@/lib/db';
+import { runInTenant } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
@@ -170,11 +170,15 @@ export default async function AdminBroadcastsPage({
     displayName: r.company_name,
   }));
 
-  // Pending count for header subtitle
-  const pendingRows = await db.execute(sql`
-    SELECT COUNT(*)::int AS n FROM broadcasts
-    WHERE tenant_id = ${tenant.slug} AND status = 'submitted'
-  `) as unknown as Array<{ n: number }>;
+  // Pending count for header subtitle.
+  // Round-4 CRIT-A: routed through `runInTenant` so RLS+FORCE on
+  // `broadcasts` applies (Constitution Principle I two-layer isolation).
+  const pendingRows = (await runInTenant(tenant, async (tx) =>
+    tx.execute(sql`
+      SELECT COUNT(*)::int AS n FROM broadcasts
+      WHERE tenant_id = ${tenant.slug} AND status = 'submitted'
+    `),
+  )) as unknown as Array<{ n: number }>;
   const totalPending = pendingRows[0]?.n ?? 0;
 
   return (

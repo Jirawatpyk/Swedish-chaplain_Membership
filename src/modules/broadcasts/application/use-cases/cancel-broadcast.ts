@@ -18,6 +18,7 @@
  *   - State-cutoff fail → `broadcast_cancel_too_late`
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
@@ -123,8 +124,19 @@ export async function cancelBroadcast(
             },
             requestId: input.requestId,
           });
-        } catch {
-          // best-effort
+        } catch (auditErr) {
+          // Round-4 HIGH-A — log audit-emit failure so ops can backfill
+          // (no silent swallow on a forensic event).
+          logger.error(
+            {
+              err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              actorUserId,
+              phase: 'cancel_too_late',
+            },
+            'broadcasts.cancel.audit_emit_failed',
+          );
         }
         return err({
           kind: 'broadcast_cancel_too_late',

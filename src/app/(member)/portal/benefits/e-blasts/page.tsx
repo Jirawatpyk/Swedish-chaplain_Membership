@@ -9,7 +9,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { QuotaDisplay } from '@/components/broadcast/quota-display';
 import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
-import { db } from '@/lib/db';
+import { runInTenant } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
@@ -78,15 +78,19 @@ export default async function EblastsListPage(): Promise<React.ReactElement> {
         quotaYear: quotaResult.value.quotaYear,
       };
     }
-    const result = (await db.execute(sql`
-      SELECT broadcast_id, subject, status, submitted_at, sent_at,
-             estimated_recipient_count
-        FROM broadcasts
-       WHERE tenant_id = ${tenant.slug}
-         AND requested_by_member_id = ${memberId}
-       ORDER BY COALESCE(submitted_at, created_at) DESC
-       LIMIT 50
-    `)) as unknown as Array<BroadcastRow>;
+    // Round-4 CRIT-A: routed through `runInTenant` so RLS+FORCE on
+    // `broadcasts` applies (Constitution Principle I two-layer isolation).
+    const result = (await runInTenant(tenant, async (tx) =>
+      tx.execute(sql`
+        SELECT broadcast_id, subject, status, submitted_at, sent_at,
+               estimated_recipient_count
+          FROM broadcasts
+         WHERE tenant_id = ${tenant.slug}
+           AND requested_by_member_id = ${memberId}
+         ORDER BY COALESCE(submitted_at, created_at) DESC
+         LIMIT 50
+      `),
+    )) as unknown as Array<BroadcastRow>;
     rows = result;
   }
 

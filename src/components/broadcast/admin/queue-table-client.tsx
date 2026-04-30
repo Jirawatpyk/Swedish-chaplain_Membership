@@ -244,6 +244,11 @@ export function QueueTableClient({
     state: { rowSelection },
     enableRowSelection: (row) => row.original.actionable,
     onRowSelectionChange: setRowSelection,
+    // Round-4 HIGH-G — stable row id keyed on broadcastId so the
+    // failed-rows-stay-selected guarantee survives data refresh /
+    // reorder. Without this, TanStack defaults to the row index and
+    // selection points to wrong rows after `router.refresh()`.
+    getRowId: (row) => row.broadcastId,
     getCoreRowModel: getCoreRowModel(),
   });
 
@@ -347,14 +352,11 @@ export function QueueTableClient({
               .join(', '),
           },
         );
-        // Clear successful rows; keep failures selected.
-        const failedSet = new Set(failures.map((f) => f.id));
+        // Clear successful rows; keep failures selected. With
+        // `getRowId: row => row.broadcastId`, row.id === broadcastId so
+        // the mapping is direct.
         const nextSelection: RowSelectionState = {};
-        for (const row of selectedRows) {
-          if (failedSet.has(row.original.broadcastId)) {
-            nextSelection[row.id] = true;
-          }
-        }
+        for (const f of failures) nextSelection[f.id] = true;
         setRowSelection(nextSelection);
       }
       router.refresh();
@@ -384,17 +386,18 @@ export function QueueTableClient({
     </tr>
   );
 
-  // UX-R2-5 (round-3) — sticky bar uses CSS variable for the staff
-  // shell's PageHeader height so it doesn't slide UNDER the (higher
-  // z-index) shell header. Falls back to top-0 if the variable is
-  // not defined (e.g. portal contexts).
+  // UX-R2-5 (round-3) + Round-4 CRIT-D — sticky bar uses the staff
+  // shell's `--top-bar-height` CSS variable (defined globally and
+  // applied at `src/app/(staff)/admin/layout.tsx` header). The bar sits
+  // BELOW the shell header rather than under it. Falls back to 0px in
+  // portal contexts where the variable isn't defined.
   const bulkBar =
     !readOnly && selectedIds.length > 0 ? (
       <div
         role="region"
         aria-label={columnLabels.bulkSelected}
         className="sticky z-20 mb-2 flex items-center justify-between gap-3 rounded-md border bg-primary/5 px-3 py-2"
-        style={{ top: 'var(--staff-shell-header-height, 0px)' }}
+        style={{ top: 'var(--top-bar-height, 0px)' }}
       >
         <span className="text-sm font-medium">
           {columnLabels.bulkSelected.replace(
