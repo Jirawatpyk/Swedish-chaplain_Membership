@@ -147,6 +147,7 @@ export function QueueTableClient({
     return base;
   }, [columnLabels, readOnly]);
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table v8 hook
   const table = useReactTable({
     data: rows as EnrichedQueueRow[],
     columns,
