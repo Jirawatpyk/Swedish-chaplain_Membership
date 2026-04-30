@@ -5,7 +5,8 @@
  * (security-critical: every FR-002 precondition a–k surfaces a typed
  * error code + audit emission).
  *
- * Pipeline (FR-002 preconditions in CHEAP → EXPENSIVE order):
+ * Pipeline (FR-002 preconditions in CHEAP → EXPENSIVE order; the letters
+ * map to the FR-002 sub-clauses, not pipeline order):
  *   k. halt flag → broadcast_member_halted_pending_review
  *   d. rate limit → broadcast_rate_limit_exceeded
  *   a. plan check → broadcast_not_in_plan
@@ -13,10 +14,10 @@
  *   j. reply-to → broadcast_member_missing_primary_contact_email
  *   c. subject length → broadcast_subject_too_long
  *   e. sanitiser → broadcast_body_unsafe_html (catches sanitiser-throw
- *      OR empty-after-strip)
- *   d. body size → broadcast_body_too_large
+ *      OR empty-after-strip) / sanitizer_unavailable → 500 (review I3)
+ *   f. body size → broadcast_body_too_large
  *   h. custom validate → broadcast_custom_recipient_unknown / invalid format
- *   f+g+i. segment resolve → broadcast_empty_segment_blocked /
+ *   g+i. segment resolve → broadcast_empty_segment_blocked /
  *      broadcast_audience_too_large; orphans emit
  *      broadcast_member_missing_primary_contact_email (non-blocking)
  *
@@ -296,6 +297,14 @@ export async function submitBroadcast(
     { rawHtml: input.bodyHtml },
   );
   if (!sanitised.ok) {
+    if (sanitised.error.kind === 'sanitizer_unavailable') {
+      // Infra fault, NOT user-content fault. Surface as 500 internal_error.
+      // sanitize-html.ts already logged the underlying reason at error level.
+      return err({
+        kind: 'submit.server_error',
+        message: `sanitizer_unavailable: ${sanitised.error.reason}`,
+      });
+    }
     const eventType: F7AuditEventType =
       sanitised.error.kind === 'broadcast_body_too_large'
         ? 'broadcast_body_too_large'

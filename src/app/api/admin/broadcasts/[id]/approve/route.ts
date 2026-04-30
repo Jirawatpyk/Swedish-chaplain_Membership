@@ -116,11 +116,20 @@ export async function POST(
         });
       }
     } catch (e) {
-      logger.warn(
+      // Review I5 — emit at error severity so log-aggregation alerts
+      // can enumerate "approvals where the member never got told." The
+      // approval itself succeeded (audit `broadcast_approved` already
+      // fired inside the use-case) — this is a notification-side
+      // best-effort failure that needs ops visibility for backfill.
+      logger.error(
         {
           err: e instanceof Error ? e.message : String(e),
           correlationId,
+          tenantId: tenantCtx.slug,
           broadcastId: parsedId.value as string,
+          recipient: result.value.broadcast.replyToEmail,
+          templateKey: 'broadcast_approved',
+          severity: 'notification_email',
         },
         'broadcasts.approve.member_email_enqueue_failed',
       );

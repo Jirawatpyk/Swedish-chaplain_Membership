@@ -22,8 +22,18 @@
  * Pure interface — no framework imports (Constitution Principle III).
  */
 
+/**
+ * Transport-class tag on `retryable` errors so OTel metrics can split
+ * network outage from server-side bugs (review I6 — 2026-04-30).
+ */
+export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'api';
+
 export type BroadcastsGatewayError =
-  | { readonly kind: 'retryable'; readonly reason: string }
+  | {
+      readonly kind: 'retryable';
+      readonly subKind: GatewayRetryableSubKind;
+      readonly reason: string;
+    }
   | { readonly kind: 'idempotency_conflict'; readonly reason: string }
   | { readonly kind: 'resource_missing'; readonly resourceType: 'audience' | 'broadcast'; readonly resourceId: string }
   | { readonly kind: 'permanent'; readonly code: string; readonly reason: string };

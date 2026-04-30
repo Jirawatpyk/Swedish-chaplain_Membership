@@ -6,11 +6,21 @@
  * Fetches `GET /api/broadcasts/quota` on mount + on `refreshKey` change.
  * Progress bar turns destructive when remaining=0. Displays the four
  * counters per FR-003.
+ *
+ * Reviews applied (2026-04-30):
+ *   - I1 — `aria-live` scoped to counter values only (was the entire
+ *     Card → announced "Quota loading… Used 3 Reserved 1…" on every
+ *     refresh)
+ *   - I2 — error state has actionable Retry button instead of muted
+ *     destructive text
+ *   - Smart-4 — plan name + compose CTA when `remaining > 0`
  */
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export interface QuotaSnapshot {
@@ -19,6 +29,8 @@ export interface QuotaSnapshot {
   readonly remaining: number;
   readonly cap: number;
   readonly quotaYear: number;
+  /** Plan tier display name (e.g. "Premium Corporate"). Smart-4. */
+  readonly planName?: string | null;
 }
 
 export interface QuotaDisplayProps {
@@ -26,16 +38,21 @@ export interface QuotaDisplayProps {
   readonly refreshKey?: number;
   /** Initial value for SSR + first paint. */
   readonly initial?: QuotaSnapshot | null;
+  /** Show "Compose" deep-link when remaining>0 (Smart-4). Default false on compose page itself. */
+  readonly showComposeCta?: boolean;
 }
 
 export function QuotaDisplay({
   refreshKey = 0,
   initial = null,
+  showComposeCta = false,
 }: QuotaDisplayProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.quota');
+  const tCompose = useTranslations('portal.broadcasts.compose');
   const [snap, setSnap] = useState<QuotaSnapshot | null>(initial);
   const [loading, setLoading] = useState<boolean>(initial === null);
   const [error, setError] = useState<boolean>(false);
+  const [retryNonce, setRetryNonce] = useState<number>(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +76,7 @@ export function QuotaDisplay({
           reserved: number;
           remaining: number;
           cap: number;
+          planName?: string | null;
         };
         if (!cancelled) {
           setSnap({
@@ -67,6 +85,7 @@ export function QuotaDisplay({
             remaining: body.remaining,
             cap: body.cap,
             quotaYear: body.quotaYear,
+            planName: body.planName ?? null,
           });
         }
       } catch {
@@ -79,25 +98,49 @@ export function QuotaDisplay({
     return () => {
       cancelled = true;
     };
-  }, [refreshKey]);
+  }, [refreshKey, retryNonce]);
 
-  const pct =
+  // Clamp percentage at 100 to avoid race conditions where used+reserved
+  // briefly exceeds cap (P6 finding).
+  const rawPct =
     snap && snap.cap > 0 ? ((snap.used + snap.reserved) / snap.cap) * 100 : 0;
+  const pct = Math.min(100, rawPct);
   const exhausted = snap !== null && snap.remaining === 0;
+  const ariaValueNow = snap ? Math.min(snap.cap, snap.used + snap.reserved) : 0;
 
   return (
-    <Card aria-busy={loading} aria-live="polite">
+    <Card aria-busy={loading}>
       <CardContent className="space-y-3 pt-6">
-        <div className="text-sm font-medium">
-          {snap === null
-            ? t('headerLabel', { year: new Date().getFullYear() })
-            : t('headerLabel', { year: snap.quotaYear })}
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div className="text-sm font-medium">
+            {snap === null
+              ? t('headerLabel', { year: new Date().getFullYear() })
+              : t('headerLabel', { year: snap.quotaYear })}
+          </div>
+          {snap?.planName ? (
+            <span className="text-xs text-muted-foreground">
+              {t('planLabel', { plan: snap.planName })}
+            </span>
+          ) : null}
         </div>
         {error ? (
-          <p className="text-xs text-destructive">{t('fetchError')}</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-destructive">{t('fetchError')}</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setRetryNonce((n) => n + 1)}
+            >
+              {t('retry')}
+            </Button>
+          </div>
         ) : snap !== null ? (
           <>
-            <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4 sm:gap-2">
+            <div
+              className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4 sm:gap-2"
+              aria-live="polite"
+            >
               <Counter label={t('used')} value={snap.used} />
               <Counter label={t('reserved')} value={snap.reserved} />
               <Counter
@@ -110,7 +153,7 @@ export function QuotaDisplay({
             <div
               className="h-2 w-full overflow-hidden rounded-full bg-muted"
               role="progressbar"
-              aria-valuenow={snap.used + snap.reserved}
+              aria-valuenow={ariaValueNow}
               aria-valuemax={snap.cap}
               aria-valuemin={0}
               aria-label={t('progressLabel')}
@@ -120,13 +163,20 @@ export function QuotaDisplay({
                   'h-full transition-all',
                   exhausted ? 'bg-destructive' : 'bg-primary',
                 )}
-                style={{ width: `${Math.min(100, pct)}%` }}
+                style={{ width: `${pct}%` }}
               />
             </div>
             {exhausted ? (
               <p className="text-xs text-destructive">
                 {t('exhausted', { year: snap.quotaYear })}
               </p>
+            ) : showComposeCta ? (
+              <Link
+                href="/portal/broadcasts/new"
+                className={cn(buttonVariants({ size: 'sm' }), 'mt-2')}
+              >
+                {tCompose('title')}
+              </Link>
             ) : null}
           </>
         ) : (

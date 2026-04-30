@@ -6,6 +6,7 @@
  * are module-level constants.
  */
 import { asTenantContext } from '@/modules/tenants';
+import { env } from '@/lib/env';
 import { makeDrizzleBroadcastsRepo } from './db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
@@ -23,6 +24,9 @@ import type { BroadcastsGatewayPort } from '../application/ports/broadcasts-gate
  * → `jsdom` → `@exodus/bytes`, `resend` SDK). Read-only routes (admin queue
  * list, broadcast detail page) MUST NOT trigger these imports — they would
  * crash SSR with `ERR_REQUIRE_ESM` on the dompurify chain.
+ *
+ * See `docs/runbooks/f7-dompurify-esm-workaround.md` for the full root
+ * cause + 4-layer defence + removal criteria.
  */
 function loadDompurifySanitizer(): HtmlSanitizerPort {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -196,8 +200,13 @@ export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {
 }
 
 /**
- * Wave 1 wires the cron worker against the gateway STUB. Wave 2 (T104)
- * replaces the stub with the real Resend Broadcasts SDK adapter.
+ * Cron worker composition root. Wires the live Resend Broadcasts SDK
+ * adapter (lazy-loaded so admin/portal SSR routes never pull the
+ * dompurify ESM chain — see runbook ref above).
+ *
+ * `fromEmail` is sourced from `env.broadcasts.fromEmail` (zod-validated
+ * at boot — refuses IANA reserved TLDs per review C1 — 2026-04-30) so
+ * this factory cannot accidentally dispatch from a placeholder address.
  */
 export function makeDispatchScheduledBroadcastDeps(
   tenantId: string,
@@ -212,5 +221,6 @@ export function makeDispatchScheduledBroadcastDeps(
     eventAttendees: eventAttendeesStub,
     audit: f7AuditAdapter,
     clock: systemClock,
+    fromEmail: env.broadcasts.fromEmail,
   };
 }

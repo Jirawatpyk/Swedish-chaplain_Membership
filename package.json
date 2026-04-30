@@ -123,6 +123,7 @@
       "esbuild"
     ],
     "overrides": {
+      "//": "F7 — pinned per docs/runbooks/f7-dompurify-esm-workaround.md. Bumping these triggers ERR_REQUIRE_ESM on SSR via the @exodus/bytes ESM-only chain (Node 20). See runbook before changing.",
       "jsdom": "25.0.1",
       "html-encoding-sniffer": "4.0.0",
       "whatwg-url": "14.2.0"

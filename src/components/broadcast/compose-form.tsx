@@ -85,6 +85,13 @@ export function ComposeForm({
   const submitDisabled =
     !validation.success || !customListValid || !tierValid;
 
+  // UX-C2 — per-field error tracking for aria-describedby + aria-invalid.
+  // Empty subject/body is the "needs input" state, not an "error" state
+  // (don't shout red at users who haven't typed yet); only mark invalid
+  // when the user has typed something AND it fails.
+  const subjectInvalid = subject.length > 0 && subject.length > 200;
+  const bodyInvalid = bodyHtml.length > 200 * 1024;
+
   async function onSubmit() {
     if (submitting) return;
     setSubmitting(true);
@@ -199,7 +206,19 @@ export function ComposeForm({
               placeholder={t('fields.subjectPlaceholder')}
               maxLength={200}
               disabled={submitting}
+              aria-describedby="broadcast-subject-counter"
+              aria-invalid={subjectInvalid || undefined}
             />
+            <p
+              id="broadcast-subject-counter"
+              className="text-xs text-muted-foreground"
+              aria-live="off"
+            >
+              {t('fields.subjectCounter', {
+                count: subject.length,
+                max: 200,
+              })}
+            </p>
           </div>
 
           <SegmentPicker
@@ -216,7 +235,10 @@ export function ComposeForm({
             />
           ) : null}
 
-          <div className="space-y-2">
+          <div
+            className="space-y-2"
+            aria-invalid={bodyInvalid || undefined}
+          >
             <Label id="broadcast-body-label">{t('fields.bodyLabel')}</Label>
             <TiptapEditor
               initialHtml={initialBodyHtml}
@@ -224,6 +246,11 @@ export function ComposeForm({
               disabled={submitting}
               labelledById="broadcast-body-label"
             />
+            {bodyInvalid ? (
+              <p className="text-xs text-destructive" role="alert">
+                {tErr('broadcast_body_too_large')}
+              </p>
+            ) : null}
           </div>
 
           <SchedulePicker

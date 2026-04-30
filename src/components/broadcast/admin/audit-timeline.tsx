@@ -21,6 +21,20 @@ interface AuditRow {
   // Raw SQL via `db.execute` returns the column as a string when the
   // query goes through postgres.js's untyped pipeline — not a Date.
   readonly timestamp: string | Date;
+  /** Resolved via LEFT JOIN users (UX-C6). Null for system actors. */
+  readonly actorEmail: string | null;
+}
+
+function formatActor(row: AuditRow, t: (key: string) => string): string {
+  if (row.actorUserId.startsWith('system:')) {
+    return t('actorSystem');
+  }
+  if (row.actorEmail !== null && row.actorEmail.length > 0) {
+    return row.actorEmail;
+  }
+  // Fallback: short id hash so SR users always have a stable identifier
+  // even when the join returned no row.
+  return row.actorUserId.slice(0, 8);
 }
 
 const RELEVANT_EVENTS = [
@@ -52,18 +66,20 @@ export async function AuditTimeline({
 
   // Raw SQL via Drizzle `sql` template (auditLog schema is NOT exposed
   // by the F1 barrel — Principle III preserves append-only ownership).
-  // The result is cast to a typed `AuditRow` shape; SELECT columns
-  // mirror the F1-defined audit_log table (id, timestamp, event_type,
-  // actor_user_id, summary, request_id, payload, tenant_id).
+  // LEFT JOIN users to surface actor email for SR users (UX-C6 — "who
+  // approved?"). System actors (`system:cron`) carry their literal
+  // string in actorUserId so the display falls back to that.
   const rows = (await db.execute(sql`
-    SELECT event_type::text AS "eventType",
-           actor_user_id    AS "actorUserId",
-           timestamp        AS "timestamp"
-      FROM audit_log
-     WHERE tenant_id = ${tenantId}
-       AND payload->>'broadcastId' = ${broadcastId}
-       AND event_type::text = ANY(${sql.raw(`ARRAY[${RELEVANT_EVENTS.map((e) => `'${e}'`).join(', ')}]::text[]`)})
-     ORDER BY timestamp ASC
+    SELECT al.event_type::text AS "eventType",
+           al.actor_user_id    AS "actorUserId",
+           al.timestamp        AS "timestamp",
+           u.email             AS "actorEmail"
+      FROM audit_log al
+      LEFT JOIN users u ON u.id::text = al.actor_user_id
+     WHERE al.tenant_id = ${tenantId}
+       AND al.payload->>'broadcastId' = ${broadcastId}
+       AND al.event_type::text = ANY(${sql.raw(`ARRAY[${RELEVANT_EVENTS.map((e) => `'${e}'`).join(', ')}]::text[]`)})
+     ORDER BY al.timestamp ASC
   `)) as unknown as ReadonlyArray<AuditRow>;
   const events = rows;
 
@@ -112,6 +128,10 @@ export async function AuditTimeline({
                   </p>
                   <p className="text-xs text-muted-foreground tabular-nums">
                     {fmt.format(ts)}
+                    <span className="mx-1.5" aria-hidden="true">
+                      ·
+                    </span>
+                    <span>{t('actorBy', { actor: formatActor(r, t) })}</span>
                   </p>
                 </div>
               </li>

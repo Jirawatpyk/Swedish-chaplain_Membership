@@ -89,11 +89,19 @@ export async function POST(
         });
       }
     } catch (e) {
-      logger.warn(
+      // Review I5 — see approve/route.ts for rationale. Note: the
+      // verbatim rejection reason is in the email payload but is NOT
+      // logged here (FR-012 keeps reason out of audit; sha256(reason)
+      // is in the use-case's `broadcast_rejected` payload already).
+      logger.error(
         {
           err: e instanceof Error ? e.message : String(e),
           correlationId,
+          tenantId: tenantCtx.slug,
           broadcastId: parsedId.value as string,
+          recipient: result.value.broadcast.replyToEmail,
+          templateKey: 'broadcast_rejected',
+          severity: 'notification_email',
         },
         'broadcasts.reject.member_email_enqueue_failed',
       );

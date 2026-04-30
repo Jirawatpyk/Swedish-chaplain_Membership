@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
+import { logger } from '@/lib/logger';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
@@ -59,6 +60,12 @@ export default async function AdminBroadcastDetailPage({
     { dateStyle: 'medium', timeStyle: 'short' },
   );
 
+  // UX I14 — defence-in-depth: re-sanitise stored bodyHtml at render
+  // time. The body was already sanitised at submit (sanitize-html.ts)
+  // but a future migration loosening at-submit rules MUST NOT widen
+  // the trust boundary. Sanitising twice is cheap + idempotent.
+  const sanitisedBody = await renderTimeSanitise(broadcast.bodyHtml);
+
   return (
     <DetailContainer>
       <PageHeader
@@ -109,8 +116,8 @@ export default async function AdminBroadcastDetailPage({
         </h3>
         <div
           className="prose prose-sm dark:prose-invert max-w-none"
-          // sanitised at submit; rendered as-is here
-          dangerouslySetInnerHTML={{ __html: broadcast.bodyHtml }}
+          // Defence-in-depth: re-sanitised at render time (UX I14).
+          dangerouslySetInnerHTML={{ __html: sanitisedBody }}
         />
       </section>
 
@@ -123,6 +130,28 @@ export default async function AdminBroadcastDetailPage({
       ) : null}
     </DetailContainer>
   );
+}
+
+/**
+ * Render-time sanitisation helper (UX I14). Lazy-loaded so admin/portal
+ * SSR routes that don't render `dangerouslySetInnerHTML` never pull the
+ * jsdom ESM chain (see `docs/runbooks/f7-dompurify-esm-workaround.md`).
+ */
+async function renderTimeSanitise(html: string): Promise<string> {
+  try {
+    const { dompurifySanitizer } = await import(
+      '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer'
+    );
+    return dompurifySanitizer.sanitize(html);
+  } catch (e) {
+    logger.error(
+      { err: e instanceof Error ? e.message : String(e) },
+      'admin.broadcasts.detail.render_sanitise_failed',
+    );
+    // On sanitiser failure, return empty string rather than the raw
+    // body — staff sees "No body" instead of risking unsafe markup.
+    return '';
+  }
 }
 
 function Field({

@@ -1302,8 +1302,22 @@
       "queue": {
         "title": "E-Blast review queue",
         "subtitle": "Review and approve broadcasts submitted by members.",
-        "empty": "No broadcasts awaiting review.",
+        "empty": "When members submit broadcasts, they appear here for your review.",
+        "emptyTitle": "Queue is clear",
         "totalPending": "{count} pending",
+        "tableAria": "Broadcast review queue",
+        "ageBadge": {
+          "aging": "{hours}h waiting",
+          "overdue": "{hours}h — overdue"
+        },
+        "bulk": {
+          "selectAria": "Select broadcast",
+          "selected": "{count} selected",
+          "approveSelected": "Approve & send selected",
+          "successAll": "All selected broadcasts approved.",
+          "failureAll": "Bulk approve failed. Try again or approve individually.",
+          "partial": "{ok} approved, {fail} failed."
+        },
         "filters": {
           "formAriaLabel": "Broadcast queue filters",
           "statusLabel": "Status",
@@ -1374,7 +1388,9 @@
           "cancelled": "Cancelled",
           "sendStarted": "Send started",
           "sent": "Sent",
-          "failedToDispatch": "Dispatch failed"
+          "failedToDispatch": "Dispatch failed",
+          "actorBy": "by {actor}",
+          "actorSystem": "system"
         }
       },
       "approveDialog": {
@@ -1426,7 +1442,8 @@
         "title": "{count, plural, =1 {1 member is halted} other {# members are halted}} from broadcasting",
         "body": "Auto-halt triggered by complaint-rate threshold. Review and clear the halt if appropriate.",
         "clearAction": "Review + clear halt",
-        "haltedSince": "Halted since {date}"
+        "haltedSince": "Halted since {date}",
+        "readOnlyNote": "Manager role — read-only"
       },
       "clearHaltDialog": {
         "title": "Clear broadcast halt?",
@@ -1571,7 +1588,9 @@
       "viewAuditLog": "View audit log",
       "newMember": "Create new member",
       "newInvoice": "Create new invoice",
-      "issueRefund": "Issue refund — find paid invoice"
+      "issueRefund": "Issue refund — find paid invoice",
+      "reviewBroadcasts": "Review broadcasts queue",
+      "broadcastsHalted": "Halted members — broadcast review"
     },
     "navigate": {
       "plansList": "Plans list",
@@ -1581,7 +1600,8 @@
       "membersList": "Members list",
       "invoicesList": "Invoices list",
       "invoicesPaidOnline": "Invoices: paid online (reconciliation)",
-      "creditNotesList": "Credit notes list"
+      "creditNotesList": "Credit notes list",
+      "broadcastsQueue": "E-Blast review queue"
     }
   },
   "nav": {
@@ -1764,6 +1784,10 @@
           "schedulePicker": "Schedule for later",
           "scheduleHelp": "Leave blank to submit for immediate review.",
           "previewLabel": "Preview",
+          "previewLoading": "Loading preview…",
+          "previewUnavailable": "Preview is temporarily unavailable",
+          "previewUnavailableHint": "Refresh the page to retry — your draft is safe.",
+          "subjectCounter": "{count} / {max} characters",
           "linkUrlLabel": "Link URL",
           "linkConfirm": "Set link",
           "linkCancel": "Cancel",
@@ -1777,6 +1801,7 @@
           "event_attendees_last_90d": "Event attendees (last 90 days)",
           "custom": "Custom email list"
         },
+        "comingSoon": "(coming soon)",
         "tierLabel": "Tier code",
         "editor": {
           "aria": {
@@ -1845,13 +1870,15 @@
       },
       "quota": {
         "headerLabel": "E-Blast quota ({year})",
+        "planLabel": "Plan: {plan}",
         "used": "Used",
         "reserved": "Reserved",
         "remaining": "Remaining",
         "cap": "Plan limit",
         "exhausted": "All E-Blast quota for {year} has been used.",
         "progressLabel": "E-Blast quota used",
-        "fetchError": "Could not load quota. Please refresh."
+        "fetchError": "Could not load quota.",
+        "retry": "Retry"
       },
       "banner": {
         "acknowledgement": {
@@ -1865,7 +1892,10 @@
       "list": {
         "title": "My broadcasts",
         "subtitle": "Track the status and delivery results of every E-Blast you've submitted.",
-        "empty": "No broadcasts yet — submit your first one above.",
+        "empty": "Send your first chamber-wide email — your audience is just one click away.",
+        "emptyTitle": "No broadcasts yet",
+        "emptyCta": "Compose your first E-Blast",
+        "quotaExhaustedTooltip": "Your {year} E-Blast quota is exhausted. Renews January 1 of next year.",
         "columns": {
           "subject": "Subject",
           "status": "Status",

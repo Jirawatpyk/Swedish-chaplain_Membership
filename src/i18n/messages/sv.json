@@ -1302,8 +1302,22 @@
       "queue": {
         "title": "[F7-SV-REVIEW] E-Blast review queue",
         "subtitle": "[F7-SV-REVIEW] Review and approve broadcasts submitted by members.",
-        "empty": "[F7-SV-REVIEW] No broadcasts awaiting review.",
+        "empty": "[F7-SV-REVIEW] When members submit broadcasts, they appear here for your review.",
+        "emptyTitle": "[F7-SV-REVIEW] Queue is clear",
         "totalPending": "[F7-SV-REVIEW] {count} pending",
+        "tableAria": "[F7-SV-REVIEW] Broadcast review queue",
+        "ageBadge": {
+          "aging": "[F7-SV-REVIEW] {hours}h waiting",
+          "overdue": "[F7-SV-REVIEW] {hours}h — overdue"
+        },
+        "bulk": {
+          "selectAria": "[F7-SV-REVIEW] Select broadcast",
+          "selected": "[F7-SV-REVIEW] {count} selected",
+          "approveSelected": "[F7-SV-REVIEW] Approve & send selected",
+          "successAll": "[F7-SV-REVIEW] All selected broadcasts approved.",
+          "failureAll": "[F7-SV-REVIEW] Bulk approve failed. Try again or approve individually.",
+          "partial": "[F7-SV-REVIEW] {ok} approved, {fail} failed."
+        },
         "filters": {
           "formAriaLabel": "[F7-SV-REVIEW] Broadcast queue filters",
           "statusLabel": "[F7-SV-REVIEW] Status",
@@ -1374,7 +1388,9 @@
           "cancelled": "[F7-SV-REVIEW] Cancelled",
           "sendStarted": "[F7-SV-REVIEW] Send started",
           "sent": "[F7-SV-REVIEW] Sent",
-          "failedToDispatch": "[F7-SV-REVIEW] Dispatch failed"
+          "failedToDispatch": "[F7-SV-REVIEW] Dispatch failed",
+          "actorBy": "[F7-SV-REVIEW] by {actor}",
+          "actorSystem": "[F7-SV-REVIEW] system"
         }
       },
       "approveDialog": {
@@ -1426,7 +1442,8 @@
         "title": "[F7-SV-REVIEW] {count, plural, =1 {1 member is halted} other {# members are halted}} from broadcasting",
         "body": "[F7-SV-REVIEW] Auto-halt triggered by complaint-rate threshold. Review and clear the halt if appropriate.",
         "clearAction": "[F7-SV-REVIEW] Review + clear halt",
-        "haltedSince": "[F7-SV-REVIEW] Halted since {date}"
+        "haltedSince": "[F7-SV-REVIEW] Halted since {date}",
+        "readOnlyNote": "[F7-SV-REVIEW] Manager role — read-only"
       },
       "clearHaltDialog": {
         "title": "[F7-SV-REVIEW] Clear broadcast halt?",
@@ -1571,7 +1588,9 @@
       "viewAuditLog": "Visa revisionslogg",
       "newMember": "Skapa ny medlem",
       "newInvoice": "Skapa ny faktura",
-      "issueRefund": "Utfärda återbetalning — hitta betald faktura"
+      "issueRefund": "Utfärda återbetalning — hitta betald faktura",
+      "reviewBroadcasts": "[F7-SV-REVIEW] Review broadcasts queue",
+      "broadcastsHalted": "[F7-SV-REVIEW] Halted members — broadcast review"
     },
     "navigate": {
       "plansList": "Paketlista",
@@ -1581,7 +1600,8 @@
       "membersList": "Medlemslista",
       "invoicesList": "Fakturalista",
       "invoicesPaidOnline": "Fakturor: betalda online (avstämning)",
-      "creditNotesList": "Kreditnotalista"
+      "creditNotesList": "Kreditnotalista",
+      "broadcastsQueue": "[F7-SV-REVIEW] E-Blast review queue"
     }
   },
   "nav": {
@@ -1764,6 +1784,10 @@
           "schedulePicker": "[F7-SV-REVIEW] Schedule for later",
           "scheduleHelp": "[F7-SV-REVIEW] Leave blank to submit for immediate review.",
           "previewLabel": "[F7-SV-REVIEW] Preview",
+          "previewLoading": "[F7-SV-REVIEW] Loading preview…",
+          "previewUnavailable": "[F7-SV-REVIEW] Preview is temporarily unavailable",
+          "previewUnavailableHint": "[F7-SV-REVIEW] Refresh the page to retry — your draft is safe.",
+          "subjectCounter": "[F7-SV-REVIEW] {count} / {max} characters",
           "linkUrlLabel": "[F7-SV-REVIEW] Link URL",
           "linkConfirm": "[F7-SV-REVIEW] Set link",
           "linkCancel": "[F7-SV-REVIEW] Cancel",
@@ -1777,6 +1801,7 @@
           "event_attendees_last_90d": "[F7-SV-REVIEW] Event attendees (last 90 days)",
           "custom": "[F7-SV-REVIEW] Custom email list"
         },
+        "comingSoon": "[F7-SV-REVIEW] (coming soon)",
         "tierLabel": "[F7-SV-REVIEW] Tier code",
         "editor": {
           "aria": {
@@ -1845,13 +1870,15 @@
       },
       "quota": {
         "headerLabel": "[F7-SV-REVIEW] E-Blast quota ({year})",
+        "planLabel": "[F7-SV-REVIEW] Plan: {plan}",
         "used": "[F7-SV-REVIEW] Used",
         "reserved": "[F7-SV-REVIEW] Reserved",
         "remaining": "[F7-SV-REVIEW] Remaining",
         "cap": "[F7-SV-REVIEW] Plan limit",
         "exhausted": "[F7-SV-REVIEW] All E-Blast quota for {year} has been used.",
         "progressLabel": "[F7-SV-REVIEW] E-Blast quota used",
-        "fetchError": "[F7-SV-REVIEW] Could not load quota. Please refresh."
+        "fetchError": "[F7-SV-REVIEW] Could not load quota.",
+        "retry": "[F7-SV-REVIEW] Retry"
       },
       "banner": {
         "acknowledgement": {
@@ -1865,7 +1892,10 @@
       "list": {
         "title": "[F7-SV-REVIEW] My broadcasts",
         "subtitle": "[F7-SV-REVIEW] Track the status and delivery results of every E-Blast you've submitted.",
-        "empty": "[F7-SV-REVIEW] No broadcasts yet — submit your first one above.",
+        "empty": "[F7-SV-REVIEW] Send your first chamber-wide email — your audience is just one click away.",
+        "emptyTitle": "[F7-SV-REVIEW] No broadcasts yet",
+        "emptyCta": "[F7-SV-REVIEW] Compose your first E-Blast",
+        "quotaExhaustedTooltip": "[F7-SV-REVIEW] Your {year} E-Blast quota is exhausted. Renews January 1 of next year.",
         "columns": {
           "subject": "[F7-SV-REVIEW] Subject",
           "status": "[F7-SV-REVIEW] Status",

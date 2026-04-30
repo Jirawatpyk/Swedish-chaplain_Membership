@@ -263,6 +263,42 @@ const schema = z.object({
   // SECRET — redacted in logs.
   RESEND_BROADCASTS_WEBHOOK_SECRET: z.string().min(32).describe('SECRET — do not log'),
 
+  // From-address used for outbound F7 broadcast dispatches (passed as
+  // `from` to `broadcasts.create`). MUST match a domain verified in the
+  // Resend account bound to `RESEND_BROADCASTS_API_KEY`.
+  //
+  // Accepts EITHER format (Resend SDK supports both):
+  //   - bare:    `noreply@domain.tld`
+  //   - wrapped: `Display Name <noreply@domain.tld>`
+  //
+  // No default — boot fails if unset to prevent accidental dispatch
+  // from a placeholder address (see review C1 — 2026-04-30).
+  BROADCASTS_FROM_EMAIL: z
+    .string()
+    .min(3)
+    .refine(
+      (v) => {
+        // Extract email portion: either the whole string, or the part
+        // inside <…> for the wrapped form.
+        const wrapped = v.match(/<([^>]+)>\s*$/);
+        const email = wrapped ? wrapped[1]?.trim() : v.trim();
+        if (!email) return false;
+        // Lightweight RFC-5321 check (matches `RESEND_FROM_EMAIL` style).
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+      },
+      'must be `local@domain` or `Display Name <local@domain>`',
+    )
+    .refine(
+      (v) => {
+        const wrapped = v.match(/<([^>]+)>\s*$/);
+        const email = wrapped ? wrapped[1]?.trim() : v.trim();
+        if (!email) return true;
+        const domain = email.split('@')[1] ?? '';
+        return !/\.(example|invalid|test|localhost)$/i.test(domain);
+      },
+      'must not use IANA reserved TLDs (.example/.invalid/.test/.localhost)',
+    ),
+
   // HMAC secret used to sign one-click unsubscribe tokens. ≥32 bytes of
   // entropy. MUST be distinct from `AUTH_COOKIE_SIGNING_SECRET` (per
   // research.md § 4) so token rotation does not invalidate user sessions.
@@ -465,6 +501,7 @@ export const env = {
     apiKey: raw.RESEND_BROADCASTS_API_KEY,
     webhookSecret: raw.RESEND_BROADCASTS_WEBHOOK_SECRET,
     unsubscribeTokenSecret: raw.UNSUBSCRIBE_TOKEN_SECRET,
+    fromEmail: raw.BROADCASTS_FROM_EMAIL,
   },
 } as const;
 

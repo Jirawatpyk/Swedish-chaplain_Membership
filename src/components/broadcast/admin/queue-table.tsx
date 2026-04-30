@@ -6,6 +6,7 @@
  * needing locale or i18n at runtime. Activates virtualization above 100
  * rows (perf.md CHK039).
  */
+import { Inbox } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import {
   QueueTableClient,
@@ -66,18 +67,51 @@ export async function QueueTable({
   );
 
   if (rows.length === 0) {
+    // UX-C5: empty state with title + body + visual anchor (no CTA —
+    // admin can't manufacture submissions; queue empties when members
+    // submit).
     return (
-      <p className="rounded-md border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
-        {t('empty')}
-      </p>
+      <div className="flex flex-col items-center gap-3 rounded-md border bg-muted/20 px-4 py-12 text-center">
+        <div className="rounded-full bg-background p-3">
+          <Inbox
+            className="h-6 w-6 text-muted-foreground"
+            aria-hidden="true"
+          />
+        </div>
+        <p className="text-sm font-medium">{t('emptyTitle')}</p>
+        <p className="max-w-md text-xs text-muted-foreground">{t('empty')}</p>
+      </div>
     );
   }
 
+  // Smart-3 — SLA age badge thresholds. 48h target per spec FR-022.
+  // Server component runs once per request — `Date.now()` is the
+  // intended boundary value here. ESLint react-hooks/purity is overly
+  // strict for server components.
+  // eslint-disable-next-line react-hooks/purity
+  const nowMs = Date.now();
+  const SLA_AMBER_HOURS = 24;
+  const SLA_RED_HOURS = 48;
+
   const enrichedRows: ReadonlyArray<EnrichedQueueRow> = rows.map((row) => {
-    const submittedAt =
-      row.submittedAt !== null
-        ? dateFormatter.format(new Date(row.submittedAt))
-        : dateFormatter.format(new Date(row.createdAt));
+    const submittedAtIso = row.submittedAt ?? row.createdAt;
+    const submittedDate = new Date(submittedAtIso);
+    const submittedAt = dateFormatter.format(submittedDate);
+    const hoursWaiting =
+      row.status === 'submitted'
+        ? Math.floor((nowMs - submittedDate.getTime()) / (60 * 60 * 1000))
+        : null;
+
+    let ageBadgeLabel: string | null = null;
+    let ageBadgeVariant: 'amber' | 'red' | null = null;
+    if (hoursWaiting !== null && hoursWaiting >= SLA_RED_HOURS) {
+      ageBadgeLabel = t('ageBadge.overdue', { hours: hoursWaiting });
+      ageBadgeVariant = 'red';
+    } else if (hoursWaiting !== null && hoursWaiting >= SLA_AMBER_HOURS) {
+      ageBadgeLabel = t('ageBadge.aging', { hours: hoursWaiting });
+      ageBadgeVariant = 'amber';
+    }
+
     const style = STATUS_STYLE[row.status];
     const enriched: EnrichedQueueRow = {
       broadcastId: row.broadcastId,
@@ -90,6 +124,8 @@ export async function QueueTable({
       segmentLabel: row.segmentType,
       recipientCount: row.estimatedRecipientCount,
       submittedAtFormatted: submittedAt,
+      ageBadgeLabel,
+      ageBadgeVariant,
       statusBadgeVariant: style.variant,
       statusBadgeLabel: tStatus(row.status),
       actionable: row.status === 'submitted',
@@ -112,6 +148,13 @@ export async function QueueTable({
         recipientCount: t('columns.recipientCount'),
         status: t('columns.status'),
         actions: t('columns.actions'),
+        select: t('bulk.selectAria'),
+        bulkApprove: t('bulk.approveSelected'),
+        bulkSelected: t('bulk.selected'),
+        bulkSuccess: t('bulk.successAll'),
+        bulkFailure: t('bulk.failureAll'),
+        bulkPartial: t('bulk.partial'),
+        tableAria: t('tableAria'),
       }}
     />
   );

@@ -280,7 +280,11 @@ describe('sanitize-html — Wave 6 (T064 GREEN)', () => {
 
   // ---- Defensive: sanitiser-port throws ------------------------------
 
-  it('sanitiser port throws Error → broadcast_body_unsafe_html with err.message', () => {
+  // Review I3 (2026-04-30): sanitiser-throw maps to `sanitizer_unavailable`
+  // (5xx-class infra fault) NOT `broadcast_body_unsafe_html` (4xx user
+  // fault). Distinct error code lets the route handler produce a
+  // 500 internal_error + ops alert instead of gaslighting the user.
+  it('sanitiser port throws Error → sanitizer_unavailable with err.message', () => {
     const throwingDeps = {
       sanitizer: {
         sanitize() {
@@ -291,14 +295,14 @@ describe('sanitize-html — Wave 6 (T064 GREEN)', () => {
     const result = sanitizeHtml(throwingDeps, { rawHtml: '<p>any</p>' });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.kind).toBe('broadcast_body_unsafe_html');
-      if (result.error.kind === 'broadcast_body_unsafe_html') {
+      expect(result.error.kind).toBe('sanitizer_unavailable');
+      if (result.error.kind === 'sanitizer_unavailable') {
         expect(result.error.reason).toBe('DOMPurify init failure');
       }
     }
   });
 
-  it('sanitiser port throws non-Error → broadcast_body_unsafe_html with "unknown sanitiser error"', () => {
+  it('sanitiser port throws non-Error → sanitizer_unavailable with "unknown sanitiser error"', () => {
     const throwingDeps = {
       sanitizer: {
         sanitize() {
@@ -308,7 +312,7 @@ describe('sanitize-html — Wave 6 (T064 GREEN)', () => {
     };
     const result = sanitizeHtml(throwingDeps, { rawHtml: '<p>any</p>' });
     expect(result.ok).toBe(false);
-    if (!result.ok && result.error.kind === 'broadcast_body_unsafe_html') {
+    if (!result.ok && result.error.kind === 'sanitizer_unavailable') {
       expect(result.error.reason).toBe('unknown sanitiser error');
     }
   });

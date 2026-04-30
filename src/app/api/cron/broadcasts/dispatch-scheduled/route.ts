@@ -5,9 +5,17 @@
  *
  * Auth: Bearer token via `CRON_SECRET` (matches F4 outbox-dispatch).
  *
- * Iterates `broadcasts` rows in tenant where status='approved' AND
- * scheduledFor <= now(). Calls `dispatchScheduledBroadcast` per row.
- * Returns aggregate summary.
+ * Concurrency model (review C2 — 2026-04-30):
+ *   - Eligible-row scan uses `FOR UPDATE SKIP LOCKED` so two overlapping
+ *     ticks (cron-job.org retry storm or 5-min cadence collision)
+ *     CANNOT both grab the same broadcast.
+ *   - Per-row dispatch enters tenant-scoped tx via the use-case which
+ *     internally acquires `pg_advisory_xact_lock('broadcasts:'+tenant+':'+id)`
+ *     — closes the TOCTOU window between cron + manual admin send-now.
+ *
+ * RLS context: the eligible scan runs with `runInTenant(tenant.slug)` so
+ * RLS+FORCE policies apply (Constitution Principle I clause 1 — every
+ * read goes through tenant isolation, even cron paths).
  *
  * Single-tenant SweCham MVP — runs against the deployed tenant slug.
  * Future SaaS multi-tenant: iterate tenant catalogue (deferred to F10).
@@ -19,7 +27,8 @@ import {
   dispatchScheduledBroadcast,
   makeDispatchScheduledBroadcastDeps,
 } from '@/modules/broadcasts';
-import { db } from '@/lib/db';
+import { runInTenant } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -36,27 +45,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const tenantCtx = resolveTenantFromRequest(request);
+  const tenant = asTenantContext(tenantCtx.slug);
 
-  // Eligible-row pick happens against `db` (no RLS in cron context — the
-  // route runs as cron, not chamber_app). Per-row dispatch then enters
-  // tenant-scoped tx via the use-case's broadcastsRepo.withTx.
+  // Eligible-row pick goes through `runInTenant` so RLS+FORCE applies
+  // (cron-system context). `FOR UPDATE SKIP LOCKED` prevents two ticks
+  // grabbing the same row — the second tick's transaction will skip
+  // any row whose advisory lock is held by an in-flight worker.
   let eligible: ReadonlyArray<{ broadcast_id: string }>;
   try {
-    eligible = (await db.execute(sql`
-      SELECT broadcast_id::text AS broadcast_id
-      FROM broadcasts
-      WHERE tenant_id = ${tenantCtx.slug}
-        AND status = 'approved'
-        AND scheduled_for IS NOT NULL
-        AND scheduled_for <= now()
-      ORDER BY scheduled_for ASC
-      LIMIT ${MAX_PER_TICK}
-    `)) as unknown as Array<{ broadcast_id: string }>;
+    eligible = await runInTenant(tenant, async (tx) => {
+      const rows = (await tx.execute(sql`
+        SELECT broadcast_id::text AS broadcast_id
+        FROM broadcasts
+        WHERE tenant_id = ${tenant.slug}
+          AND status = 'approved'
+          AND scheduled_for IS NOT NULL
+          AND scheduled_for <= now()
+        ORDER BY scheduled_for ASC
+        LIMIT ${MAX_PER_TICK}
+        FOR UPDATE SKIP LOCKED
+      `)) as unknown as Array<{ broadcast_id: string }>;
+      return rows;
+    });
   } catch (e) {
     logger.error(
       {
         err: e instanceof Error ? e.message : String(e),
-        tenantId: tenantCtx.slug,
+        tenantId: tenant.slug,
       },
       'cron.broadcasts.dispatch.eligible_query_failed',
     );
@@ -71,10 +86,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     succeeded: 0,
     retryable: 0,
     permanent_failed: 0,
+    resource_missing: 0,
     skipped: 0,
+    uncaught_error: 0,
   };
 
-  const deps = makeDispatchScheduledBroadcastDeps(tenantCtx.slug);
+  const deps = makeDispatchScheduledBroadcastDeps(tenant.slug);
   for (const row of eligible) {
     summary.processed++;
     try {
@@ -90,11 +107,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           summary.retryable++;
           logger.warn(
             {
-              tenantId: tenantCtx.slug,
+              tenantId: tenant.slug,
               broadcastId: row.broadcast_id,
+              subKind: result.error.subKind,
               reason: result.error.reason,
             },
             'cron.broadcasts.dispatch.retryable',
+          );
+          break;
+        case 'broadcast_resend_resource_missing':
+          summary.resource_missing++;
+          logger.error(
+            {
+              tenantId: tenant.slug,
+              broadcastId: row.broadcast_id,
+              resourceType: result.error.resourceType,
+              resourceId: result.error.resourceId,
+            },
+            'cron.broadcasts.dispatch.resend_resource_missing',
           );
           break;
         case 'broadcast_failed_to_dispatch':
@@ -105,11 +135,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           summary.skipped++;
       }
     } catch (e) {
-      summary.permanent_failed++;
+      // Review #13: uncaught throws (e.g., programming bugs) must be
+      // distinguishable from handled permanent failures so dashboards
+      // alert on the right class. The broadcast row stays 'approved'
+      // but the next tick will hit the same bug — alert immediately.
+      summary.uncaught_error++;
       logger.error(
         {
           err: e instanceof Error ? e.message : String(e),
-          tenantId: tenantCtx.slug,
+          stack: e instanceof Error ? e.stack : undefined,
+          tenantId: tenant.slug,
           broadcastId: row.broadcast_id,
         },
         'cron.broadcasts.dispatch.uncaught_error',
@@ -118,7 +153,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   logger.info(
-    { tenantId: tenantCtx.slug, ...summary },
+    { tenantId: tenant.slug, ...summary },
     'cron.broadcasts.dispatch.tick_complete',
   );
   return NextResponse.json(summary, { status: 200 });

@@ -25,7 +25,8 @@ export async function ManagerReadonlyBanner(): Promise<React.ReactElement> {
         aria-hidden="true"
       />
       <div className="space-y-1">
-        <h2 className="text-sm font-semibold">{t('title')}</h2>
+        {/* h3: page-level h1 lives in PageHeader; SLA + halt banners share h2 → manager banner is h3 */}
+        <h3 className="text-sm font-semibold">{t('title')}</h3>
         <p className="text-sm text-muted-foreground">{t('body')}</p>
       </div>
     </div>

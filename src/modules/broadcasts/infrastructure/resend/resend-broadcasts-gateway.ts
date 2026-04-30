@@ -42,15 +42,34 @@ interface ResendSdkResponse<T> {
   readonly error?: ResendErrorShape | null;
 }
 
-class GatewayThrowable extends Error {
-  readonly kind: 'retryable' | 'permanent' | 'idempotency_conflict' | 'resource_missing';
+export type GatewayThrowableKind =
+  | 'retryable'
+  | 'permanent'
+  | 'idempotency_conflict'
+  | 'resource_missing';
+
+/**
+ * `subKind` distinguishes the underlying transport class for `retryable`
+ * errors so OTel metrics + alerts can split network outage from server
+ * 5xx (review I6 — 2026-04-30). Other kinds carry `subKind: 'api'`.
+ */
+export type GatewayThrowableSubKind =
+  | 'network'
+  | 'timeout'
+  | 'server_5xx'
+  | 'api';
+
+export class GatewayThrowable extends Error {
+  readonly kind: GatewayThrowableKind;
+  readonly subKind: GatewayThrowableSubKind;
   readonly reason: string;
   readonly code?: string;
   readonly resourceType?: 'audience' | 'broadcast';
   readonly resourceId?: string;
 
   constructor(opts: {
-    kind: 'retryable' | 'permanent' | 'idempotency_conflict' | 'resource_missing';
+    kind: GatewayThrowableKind;
+    subKind?: GatewayThrowableSubKind;
     reason: string;
     code?: string;
     resourceType?: 'audience' | 'broadcast';
@@ -59,6 +78,7 @@ class GatewayThrowable extends Error {
     super(opts.reason);
     this.name = 'GatewayThrowable';
     this.kind = opts.kind;
+    this.subKind = opts.subKind ?? 'api';
     this.reason = opts.reason;
     if (opts.code !== undefined) this.code = opts.code;
     if (opts.resourceType !== undefined) this.resourceType = opts.resourceType;
@@ -75,11 +95,27 @@ function classifyResendError(
   const reason = err?.message ?? 'unknown resend error';
   const code = err?.name ?? `http_${status}`;
 
-  if (status >= 500 || status === 0) {
-    return new GatewayThrowable({ kind: 'retryable', reason });
+  // Review I6: tag retryable errors with the transport class so OTel
+  // metrics + alerts can split network outage from server-side bugs.
+  if (status === 0) {
+    return new GatewayThrowable({
+      kind: 'retryable',
+      subKind: 'network',
+      reason,
+    });
+  }
+  if (status >= 500) {
+    return new GatewayThrowable({
+      kind: 'retryable',
+      subKind: 'server_5xx',
+      reason,
+    });
   }
   if (status === 409) {
-    return new GatewayThrowable({ kind: 'idempotency_conflict', reason });
+    return new GatewayThrowable({
+      kind: 'idempotency_conflict',
+      reason,
+    });
   }
   if (status === 404 && resourceType !== undefined && resourceId !== undefined) {
     return new GatewayThrowable({
@@ -120,7 +156,13 @@ async function withRetry<T>(
       await new Promise((resolve) => setTimeout(resolve, backoff));
     }
   }
-  throw lastErr ?? new GatewayThrowable({ kind: 'retryable', reason: 'unknown retryable error' });
+  // Review #17: ALWAYS rethrow as GatewayThrowable so callers can rely
+  // on `instanceof GatewayThrowable` + `.kind` discrimination. A bare
+  // SDK throwable that bypassed classification escapes as `retryable`.
+  if (lastErr instanceof GatewayThrowable) throw lastErr;
+  const reason =
+    lastErr instanceof Error ? lastErr.message : String(lastErr ?? 'unknown retryable error');
+  throw new GatewayThrowable({ kind: 'retryable', subKind: 'timeout', reason });
 }
 
 function client(): Resend {
@@ -295,7 +337,13 @@ function normaliseStatus(
       return raw;
     default:
       // Unknown Resend status — treat as 'queued' (non-terminal, will
-      // be retried by reconciler).
+      // be retried by reconciler). Log so a future Resend status
+      // addition is visible in ops dashboards instead of silently
+      // looping the reconciler forever.
+      logger.error(
+        { rawStatus: raw },
+        'resend.broadcasts.unknown_status',
+      );
       return 'queued';
   }
 }

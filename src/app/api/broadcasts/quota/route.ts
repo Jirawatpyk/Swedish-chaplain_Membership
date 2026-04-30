@@ -47,10 +47,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const { counter, quotaYear, planCode, planId } = result.value;
 
+    // Smart-4: humanize planCode to a display name (e.g.,
+    // "premium_corporate" → "Premium Corporate"). Avoids extending the
+    // F2 bridge contract just for a UI label.
+    const planName =
+      planCode.length > 0
+        ? planCode
+            .split(/[_-]/)
+            .map((p) => (p.length === 0 ? p : p[0]!.toUpperCase() + p.slice(1)))
+            .join(' ')
+        : null;
+
     return NextResponse.json(
       {
         planId,
         planCode,
+        planName,
         eblastPerYear: counter.cap,
         quotaYear,
         used: counter.used,

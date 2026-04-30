@@ -274,72 +274,58 @@ export async function resolveTenantDisplayName(
 }
 
 /**
- * Maps an Application-layer error kind from `submit-broadcast.ts` (or
- * `save-draft.ts`) to its (status, code) HTTP pair. Single source of
- * truth — route handlers MUST use this to keep the mapping consistent.
+ * Status-code map for known F7 error kinds. Mirrors F4/F5's data-driven
+ * pattern — adding a new code requires updating both this map and the
+ * `F7RouteErrorCode` union (TS will fail compile if either drifts).
+ */
+const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
+  broadcast_member_halted_pending_review: 422,
+  broadcast_rate_limit_exceeded: 429,
+  broadcast_not_in_plan: 422,
+  broadcast_quota_blocked: 422,
+  broadcast_member_missing_primary_contact_email: 422,
+  broadcast_subject_too_long: 422,
+  broadcast_subject_empty: 422,
+  broadcast_body_too_large: 422,
+  broadcast_body_unsafe_html: 422,
+  broadcast_custom_recipient_unknown: 422,
+  broadcast_custom_recipient_invalid_format: 422,
+  broadcast_custom_recipient_empty: 422,
+  broadcast_custom_recipient_too_many: 422,
+  broadcast_empty_segment_blocked: 422,
+  broadcast_audience_too_large: 422,
+  broadcast_immutable_after_submit: 409,
+  broadcast_not_found: 404,
+  broadcast_invalid_state_transition: 409,
+  broadcast_concurrent_action_blocked: 409,
+  broadcast_cancel_too_late: 409,
+  broadcast_schedule_too_soon: 422,
+  broadcast_rejection_reason_required: 400,
+  broadcast_rejection_reason_too_long: 400,
+  broadcast_cancel_reason_too_long: 400,
+  broadcast_member_not_found: 404,
+  invalid_body: 400,
+  forbidden: 403,
+  feature_disabled: 503,
+  internal_error: 500,
+};
+
+function isF7RouteErrorCode(kind: string): kind is F7RouteErrorCode {
+  return Object.prototype.hasOwnProperty.call(F7_ERROR_STATUS, kind);
+}
+
+/**
+ * Maps an Application-layer error kind to its (status, code) HTTP pair.
+ * Unknown kinds fall through to 500 `internal_error` — route handlers
+ * should map their domain-specific kinds before invoking this generic
+ * fallback.
  */
 export function httpStatusForBroadcastError(kind: string): {
   readonly status: number;
   readonly code: F7RouteErrorCode;
 } {
-  switch (kind) {
-    case 'broadcast_member_halted_pending_review':
-      return { status: 422, code: 'broadcast_member_halted_pending_review' };
-    case 'broadcast_rate_limit_exceeded':
-      return { status: 429, code: 'broadcast_rate_limit_exceeded' };
-    case 'broadcast_not_in_plan':
-      return { status: 422, code: 'broadcast_not_in_plan' };
-    case 'broadcast_quota_blocked':
-      return { status: 422, code: 'broadcast_quota_blocked' };
-    case 'broadcast_member_missing_primary_contact_email':
-      return {
-        status: 422,
-        code: 'broadcast_member_missing_primary_contact_email',
-      };
-    case 'broadcast_subject_too_long':
-      return { status: 422, code: 'broadcast_subject_too_long' };
-    case 'broadcast_subject_empty':
-      return { status: 422, code: 'broadcast_subject_empty' };
-    case 'broadcast_body_too_large':
-      return { status: 422, code: 'broadcast_body_too_large' };
-    case 'broadcast_body_unsafe_html':
-      return { status: 422, code: 'broadcast_body_unsafe_html' };
-    case 'broadcast_custom_recipient_unknown':
-      return { status: 422, code: 'broadcast_custom_recipient_unknown' };
-    case 'broadcast_custom_recipient_invalid_format':
-      return {
-        status: 422,
-        code: 'broadcast_custom_recipient_invalid_format',
-      };
-    case 'broadcast_custom_recipient_empty':
-      return { status: 422, code: 'broadcast_custom_recipient_empty' };
-    case 'broadcast_custom_recipient_too_many':
-      return { status: 422, code: 'broadcast_custom_recipient_too_many' };
-    case 'broadcast_empty_segment_blocked':
-      return { status: 422, code: 'broadcast_empty_segment_blocked' };
-    case 'broadcast_audience_too_large':
-      return { status: 422, code: 'broadcast_audience_too_large' };
-    case 'broadcast_immutable_after_submit':
-      return { status: 409, code: 'broadcast_immutable_after_submit' };
-    case 'broadcast_not_found':
-      return { status: 404, code: 'broadcast_not_found' };
-    case 'broadcast_invalid_state_transition':
-      return { status: 409, code: 'broadcast_invalid_state_transition' };
-    case 'broadcast_concurrent_action_blocked':
-      return { status: 409, code: 'broadcast_concurrent_action_blocked' };
-    case 'broadcast_cancel_too_late':
-      return { status: 409, code: 'broadcast_cancel_too_late' };
-    case 'broadcast_schedule_too_soon':
-      return { status: 422, code: 'broadcast_schedule_too_soon' };
-    case 'broadcast_rejection_reason_required':
-      return { status: 400, code: 'broadcast_rejection_reason_required' };
-    case 'broadcast_rejection_reason_too_long':
-      return { status: 400, code: 'broadcast_rejection_reason_too_long' };
-    case 'broadcast_cancel_reason_too_long':
-      return { status: 400, code: 'broadcast_cancel_reason_too_long' };
-    case 'broadcast_member_not_found':
-      return { status: 404, code: 'broadcast_member_not_found' };
-    default:
-      return { status: 500, code: 'internal_error' };
+  if (isF7RouteErrorCode(kind)) {
+    return { status: F7_ERROR_STATUS[kind], code: kind };
   }
+  return { status: 500, code: 'internal_error' };
 }

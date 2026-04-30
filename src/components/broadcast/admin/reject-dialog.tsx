@@ -50,12 +50,22 @@ export function RejectDialog({
   const [reason, setReason] = useState<string>('');
   const [pending, startTransition] = useTransition();
 
-  // Auto-focus the textarea on open via a deferred timer so the
-  // AlertDialog finishes its mount first.
+  // Review UX I4 — use requestAnimationFrame chained with the dialog's
+  // `data-open` mount cycle; double-RAF guarantees the AlertDialog has
+  // finished mounting before we focus, with no fixed timeout that
+  // races on slow devices / reduced-motion.
   useEffect(() => {
     if (!open) return undefined;
-    const timer = window.setTimeout(() => textareaRef.current?.focus(), 50);
-    return () => window.clearTimeout(timer);
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      if (raf2 !== 0) window.cancelAnimationFrame(raf2);
+    };
   }, [open]);
 
   // Reset state via the onOpenChange wrapper instead of an effect to

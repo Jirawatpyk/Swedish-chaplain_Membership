@@ -1302,8 +1302,22 @@
       "queue": {
         "title": "คิวตรวจสอบ E-Blast",
         "subtitle": "ตรวจสอบและอนุมัติ E-Blast ที่สมาชิกส่งมา",
-        "empty": "ไม่มี E-Blast รอการตรวจสอบ",
+        "empty": "เมื่อสมาชิกส่ง E-Blast จะปรากฏที่นี่ให้คุณตรวจสอบ",
+        "emptyTitle": "ไม่มีรายการรอตรวจสอบ",
         "totalPending": "{count} รายการรอตรวจ",
+        "tableAria": "คิวตรวจสอบ E-Blast",
+        "ageBadge": {
+          "aging": "รอ {hours} ชม.",
+          "overdue": "{hours} ชม. — เกินกำหนด"
+        },
+        "bulk": {
+          "selectAria": "เลือก E-Blast",
+          "selected": "เลือกแล้ว {count} รายการ",
+          "approveSelected": "อนุมัติและส่งรายการที่เลือก",
+          "successAll": "อนุมัติ E-Blast ที่เลือกทั้งหมดสำเร็จ",
+          "failureAll": "อนุมัติเป็นกลุ่มไม่สำเร็จ ลองใหม่หรืออนุมัติทีละรายการ",
+          "partial": "สำเร็จ {ok} รายการ ล้มเหลว {fail} รายการ"
+        },
         "filters": {
           "formAriaLabel": "ตัวกรองคิวตรวจสอบ E-Blast",
           "statusLabel": "สถานะ",
@@ -1374,7 +1388,9 @@
           "cancelled": "ยกเลิก",
           "sendStarted": "เริ่มส่ง",
           "sent": "ส่งสำเร็จ",
-          "failedToDispatch": "ส่งไม่สำเร็จ"
+          "failedToDispatch": "ส่งไม่สำเร็จ",
+          "actorBy": "โดย {actor}",
+          "actorSystem": "ระบบ"
         }
       },
       "approveDialog": {
@@ -1426,7 +1442,8 @@
         "title": "{count, plural, =1 {สมาชิก 1 รายถูกพักการส่ง} other {สมาชิก # รายถูกพักการส่ง}}",
         "body": "พักอัตโนมัติเนื่องจากเกินเกณฑ์ความถี่ในการรายงานสแปม กรุณาตรวจสอบและคลายล็อกหากเหมาะสม",
         "clearAction": "ตรวจสอบและคลายล็อก",
-        "haltedSince": "ถูกพักตั้งแต่ {date}"
+        "haltedSince": "ถูกพักตั้งแต่ {date}",
+        "readOnlyNote": "บทบาทผู้จัดการ — อ่านอย่างเดียว"
       },
       "clearHaltDialog": {
         "title": "คลายล็อกการส่งของสมาชิก?",
@@ -1571,7 +1588,9 @@
       "viewAuditLog": "ดูประวัติการตรวจสอบ",
       "newMember": "สร้างสมาชิกใหม่",
       "newInvoice": "สร้างใบแจ้งหนี้ใหม่",
-      "issueRefund": "คืนเงิน — ค้นหาใบแจ้งหนี้ที่ชำระแล้ว"
+      "issueRefund": "คืนเงิน — ค้นหาใบแจ้งหนี้ที่ชำระแล้ว",
+      "reviewBroadcasts": "ตรวจสอบคิว E-Blast",
+      "broadcastsHalted": "สมาชิกที่ถูกระงับ — ตรวจสอบ E-Blast"
     },
     "navigate": {
       "plansList": "รายการแพ็กเกจ",
@@ -1581,7 +1600,8 @@
       "membersList": "รายการสมาชิก",
       "invoicesList": "รายการใบแจ้งหนี้",
       "invoicesPaidOnline": "ใบแจ้งหนี้: ชำระออนไลน์ (กระทบยอด)",
-      "creditNotesList": "รายการใบลดหนี้"
+      "creditNotesList": "รายการใบลดหนี้",
+      "broadcastsQueue": "คิวตรวจสอบ E-Blast"
     }
   },
   "nav": {
@@ -1764,6 +1784,10 @@
           "schedulePicker": "ตั้งเวลาส่ง",
           "scheduleHelp": "เว้นว่างไว้เพื่อส่งทันทีหลังตรวจสอบ",
           "previewLabel": "ตัวอย่าง",
+          "previewLoading": "กำลังโหลดตัวอย่าง…",
+          "previewUnavailable": "ดูตัวอย่างไม่ได้ชั่วคราว",
+          "previewUnavailableHint": "รีเฟรชหน้าเพื่อลองใหม่ — แบบร่างของคุณยังอยู่ครบ",
+          "subjectCounter": "{count} / {max} ตัวอักษร",
           "linkUrlLabel": "URL ของลิงก์",
           "linkConfirm": "ตั้งค่าลิงก์",
           "linkCancel": "ยกเลิก",
@@ -1777,6 +1801,7 @@
           "event_attendees_last_90d": "ผู้เข้าร่วมงาน (90 วันล่าสุด)",
           "custom": "รายชื่ออีเมลกำหนดเอง"
         },
+        "comingSoon": "(เร็ว ๆ นี้)",
         "tierLabel": "รหัสระดับ",
         "editor": {
           "aria": {
@@ -1845,13 +1870,15 @@
       },
       "quota": {
         "headerLabel": "โควตา E-Blast ({year})",
+        "planLabel": "แพ็กเกจ: {plan}",
         "used": "ใช้ไป",
         "reserved": "จองไว้",
         "remaining": "คงเหลือ",
         "cap": "เพดานแพ็กเกจ",
         "exhausted": "โควตา E-Blast ของปี {year} ถูกใช้หมดแล้ว",
         "progressLabel": "โควตา E-Blast ที่ใช้ไป",
-        "fetchError": "ไม่สามารถโหลดโควตาได้ กรุณารีเฟรช"
+        "fetchError": "ไม่สามารถโหลดโควตาได้",
+        "retry": "ลองใหม่"
       },
       "banner": {
         "acknowledgement": {
@@ -1865,7 +1892,10 @@
       "list": {
         "title": "E-Blast ของฉัน",
         "subtitle": "ติดตามสถานะและผลการส่ง E-Blast ทั้งหมดที่คุณส่ง",
-        "empty": "ยังไม่มี E-Blast — ส่งฉบับแรกได้ด้านบน",
+        "empty": "ส่งอีเมลถึงสมาชิกหอการค้าครั้งแรก — กดเพียงคลิกเดียว",
+        "emptyTitle": "ยังไม่มี E-Blast",
+        "emptyCta": "เขียน E-Blast ฉบับแรก",
+        "quotaExhaustedTooltip": "โควตา E-Blast ของปี {year} ถูกใช้หมดแล้ว — รีเซ็ตในวันที่ 1 มกราคมปีถัดไป",
         "columns": {
           "subject": "หัวข้อ",
           "status": "สถานะ",

@@ -329,6 +329,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -372,6 +373,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -397,6 +399,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -421,6 +424,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -454,6 +458,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -494,6 +499,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -534,6 +540,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -567,6 +574,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -609,6 +617,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -647,6 +656,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -677,6 +687,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -710,6 +721,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );
@@ -743,6 +755,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         eventAttendees: makeEventAttendees(),
         audit: audit.port,
         clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
       },
       baseInput,
     );

@@ -134,7 +134,10 @@ export function TiptapToolbar({
       aria-pressed={active}
       onClick={onClick}
       disabled={disabled}
-      className={cn('h-8 w-8 p-0', active && 'bg-accent text-accent-foreground')}
+      className={cn(
+        'h-11 w-11 min-h-11 min-w-11 p-0',
+        active && 'bg-accent text-accent-foreground',
+      )}
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
     </Button>
@@ -175,7 +178,7 @@ export function TiptapToolbar({
               aria-pressed={editor.isActive('link')}
               onClick={openLinkPopover}
               className={cn(
-                'h-8 w-8 p-0',
+                'h-11 w-11 min-h-11 min-w-11 p-0',
                 editor.isActive('link') && 'bg-accent text-accent-foreground',
               )}
             >

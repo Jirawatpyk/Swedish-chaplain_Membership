@@ -121,6 +121,22 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     url: '/admin/invoices?paidOnly=1',
     requires: 'admin',
   },
+  // F7 Smart-1 — Email Broadcast actions. Admins use the queue daily;
+  // halt-clear is rare but high-stakes (Q14). Member-self-service
+  // "compose" is reachable from the portal palette only (this module
+  // serves the admin/staff palette).
+  {
+    id: 'broadcast.review',
+    label: 'palette.actions.reviewBroadcasts',
+    url: '/admin/broadcasts',
+    requires: 'read',
+  },
+  {
+    id: 'broadcast.halted',
+    label: 'palette.actions.broadcastsHalted',
+    url: '/admin/broadcasts?status=halted',
+    requires: 'admin',
+  },
 ];
 
 const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
@@ -178,6 +194,13 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.creditNotes',
     label: 'palette.navigate.creditNotesList',
     url: '/admin/credit-notes',
+    requires: 'read',
+  },
+  // F7 Smart-1 — broadcast review queue navigation entry.
+  {
+    id: 'nav.broadcasts',
+    label: 'palette.navigate.broadcastsQueue',
+    url: '/admin/broadcasts',
     requires: 'read',
   },
 ];

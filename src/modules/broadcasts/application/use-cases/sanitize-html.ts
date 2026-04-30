@@ -7,8 +7,19 @@
  * `broadcasts.body_html` insert.
  *
  * Pure Application logic — no framework imports (Constitution Principle III).
+ *
+ * Error taxonomy (review I3 — 2026-04-30):
+ *   - `sanitizer_unavailable` (5xx-class): the sanitiser ITSELF threw
+ *     (e.g., DOMPurify load failure, ESM crash, returned non-string).
+ *     Caller maps to 500 internal_error + alerting; user content is
+ *     valid, infra is broken. Log severity: error.
+ *   - `broadcast_body_unsafe_html` (4xx-class): user content was
+ *     stripped to nothing (every tag forbidden) — user fault, not
+ *     infra. Caller maps to 400/422 with a clearer message.
+ *   - `broadcast_body_too_large`: post-sanitisation size > 200 KB.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
 
 /** 200 KB rendered HTML cap (FR-002f). */
@@ -16,7 +27,8 @@ const MAX_BODY_HTML_BYTES = 200 * 1024;
 
 export type SanitizeHtmlError =
   | { readonly kind: 'broadcast_body_too_large'; readonly bytes: number }
-  | { readonly kind: 'broadcast_body_unsafe_html'; readonly reason: string };
+  | { readonly kind: 'broadcast_body_unsafe_html'; readonly reason: string }
+  | { readonly kind: 'sanitizer_unavailable'; readonly reason: string };
 
 export interface SanitizeHtmlDeps {
   readonly sanitizer: HtmlSanitizerPort;
@@ -33,11 +45,6 @@ export interface SanitizeHtmlOutput {
   readonly bytes: number;
 }
 
-/**
- * Sanitise + measure. Single side-effect-free function — caller owns
- * persistence + audit emission. Errors map 1:1 to FR-002 precondition
- * (d) + (e) error codes.
- */
 export function sanitizeHtml(
   deps: SanitizeHtmlDeps,
   input: SanitizeHtmlInput,
@@ -47,7 +54,12 @@ export function sanitizeHtml(
     sanitised = deps.sanitizer.sanitize(input.rawHtml);
   } catch (e) {
     const reason = e instanceof Error ? e.message : 'unknown sanitiser error';
-    return err({ kind: 'broadcast_body_unsafe_html', reason });
+    // Sanitiser threw — infra fault, NOT user content. Log + escalate.
+    logger.error(
+      { err: reason, rawHtmlBytes: Buffer.byteLength(input.rawHtml, 'utf8') },
+      'broadcasts.sanitize.sanitizer_unavailable',
+    );
+    return err({ kind: 'sanitizer_unavailable', reason });
   }
 
   const bytes = Buffer.byteLength(sanitised, 'utf8');

@@ -145,6 +145,12 @@ function mapDraftError(
   error: SaveDraftError,
   correlationId: string,
 ): NextResponse {
+  if (
+    error.kind === 'sanitizer_unavailable' ||
+    error.kind === 'save_draft.server_error'
+  ) {
+    return errorResponse(500, 'internal_error', correlationId);
+  }
   const { status, code } = httpStatusForBroadcastError(error.kind);
   const details: Record<string, unknown> = {};
   if (error.kind === 'broadcast_subject_too_long' && 'length' in error) {

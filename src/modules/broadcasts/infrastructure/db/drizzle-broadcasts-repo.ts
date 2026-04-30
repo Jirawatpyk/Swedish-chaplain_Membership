@@ -293,6 +293,15 @@ export function makeDrizzleBroadcastsRepo(
       broadcastId: BroadcastId,
     ): Promise<BroadcastStatus | null> {
       const tx = txUnknown as TenantTx;
+      // Review C2: per-(tenant, broadcast) advisory lock auto-released
+      // at tx-end. Closes the TOCTOU window between cron dispatch and
+      // manual admin send-now/approve/reject so a single broadcast can
+      // never be dispatched twice through different code paths.
+      // Namespace `broadcasts:` is disjoint from F4 `invoicing:` and F5
+      // `payments:` so cross-feature contention is impossible.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts:' || ${tenantIdArg} || ':' || ${broadcastId as string}, 0))`,
+      );
       const result = (await tx.execute(
         sql`SELECT status::text AS status FROM broadcasts
              WHERE tenant_id = ${tenantIdArg}

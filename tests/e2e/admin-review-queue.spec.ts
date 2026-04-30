@@ -62,6 +62,29 @@ const SEED = loadSeed();
 const SEEDED_SUBMITTED_BROADCAST_ID = SEED.broadcastId;
 const SEEDED_HALTED_MEMBER_DISPLAY_NAME = SEED.haltedMemberDisplayName;
 
+/**
+ * Review I2 — CI hard-guard against silent green builds.
+ *
+ * The runtime `test.skip(...)` calls below let local dev runs proceed
+ * when env+seed are absent. CI MUST fail fast instead so a broken
+ * F7 toggle never sneaks past as "all green (everything skipped)."
+ * Set `E2E_REQUIRE_F7=true` in CI so the guard converts skip → fail.
+ */
+const REQUIRE_F7 = process.env.E2E_REQUIRE_F7 === 'true';
+if (REQUIRE_F7) {
+  const missing: string[] = [];
+  if (!ADMIN_EMAIL || !ADMIN_PASSWORD) missing.push('E2E_ADMIN_*');
+  if (!MANAGER_EMAIL || !MANAGER_PASSWORD) missing.push('E2E_MANAGER_*');
+  if (!SEEDED_SUBMITTED_BROADCAST_ID) missing.push('E2E_SEED_BROADCAST_ID / .e2e-seed.json');
+  if (process.env.FEATURE_F7_BROADCASTS !== 'true') missing.push('FEATURE_F7_BROADCASTS=true');
+  if (missing.length > 0) {
+    throw new Error(
+      `[admin-review-queue] E2E_REQUIRE_F7=true but missing: ${missing.join(', ')}. ` +
+        `Refusing to silently skip in CI. Either provide the env+seed, or unset E2E_REQUIRE_F7.`,
+    );
+  }
+}
+
 test.describe.configure({ mode: 'serial' });
 
 test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {

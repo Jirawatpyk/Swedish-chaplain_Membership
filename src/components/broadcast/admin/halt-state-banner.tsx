@@ -13,7 +13,6 @@
 import { ShieldAlert } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { ClearHaltDialog } from './clear-halt-dialog';
-import { Button } from '@/components/ui/button';
 
 export interface HaltedMember {
   readonly memberId: string;
@@ -52,6 +51,7 @@ export async function HaltStateBanner({
         />
         <div className="flex-1 space-y-3">
           <div>
+            {/* h2: PageHeader is the page h1; halt banner shares h2 with SLA banner */}
             <h2 className="text-sm font-semibold text-destructive">
               {t('title', { count: halted.length })}
             </h2>
@@ -75,9 +75,13 @@ export async function HaltStateBanner({
                     memberDisplayName={m.displayName}
                   />
                 ) : (
-                  <Button variant="outline" size="sm" disabled>
-                    {t('clearAction')}
-                  </Button>
+                  // UX I8: a disabled button fails contrast + tells the
+                  // manager nothing about WHY they can't act. Render an
+                  // inline note instead so the role limitation is
+                  // self-explanatory.
+                  <span className="text-xs italic text-muted-foreground">
+                    {t('readOnlyNote')}
+                  </span>
                 )}
               </li>
             ))}

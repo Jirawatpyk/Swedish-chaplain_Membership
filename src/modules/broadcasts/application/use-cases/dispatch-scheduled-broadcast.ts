@@ -1,5 +1,5 @@
 /**
- * `dispatch-scheduled-broadcast.ts` — F7 US2 cron worker (Wave 1).
+ * `dispatch-scheduled-broadcast.ts` — F7 US2 cron worker.
  *
  * Per-cron-tick worker:
  *   1. lockForUpdate row in 'approved' status with scheduledFor <= now()
@@ -11,16 +11,23 @@
  *   5. applyTransition('sending', {sendingStartedAt})
  *   6. Audit broadcast_send_started
  *
- * On Resend retryable failure → row stays 'approved'; cron re-attempts
- * next tick with same idempotency key (Resend dedupes).
+ * Gateway error handling (review E3 — 2026-04-30):
+ *   - `retryable` → row stays 'approved'; cron re-attempts next tick
+ *     with the same idempotency key (Resend dedupes)
+ *   - `idempotency_conflict` → success-replay; advance to 'sending'
+ *     (Resend already accepted this broadcast on a prior attempt)
+ *   - `resource_missing` (404) → emit `broadcast_resend_resource_missing`
+ *     audit + transition to `failed_to_dispatch`
+ *   - `permanent` → transition to 'failed_to_dispatch' + audit
+ *     `broadcast_failed_to_dispatch`
  *
- * On Resend permanent failure → applyTransition('failed_to_dispatch')
- * + audit broadcast_failed_to_dispatch.
- *
- * The cron route handler iterates eligible rows and calls this worker
- * once per row.
+ * From-address (review C1):
+ *   `deps.fromEmail` MUST be a verified Resend domain — wired from
+ *   `env.broadcasts.fromEmail` in the composition root. The use-case
+ *   does NOT carry a default to prevent fake-domain regressions.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
@@ -35,8 +42,6 @@ import type { EventAttendeesRepository } from '../ports/event-attendees-reposito
 import { resolveSegmentRecipients } from './resolve-segment-recipients';
 import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
 
-const RESEND_FROM_EMAIL = 'noreply@swecham.example';
-
 export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
   | {
@@ -46,7 +51,13 @@ export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_audience_post_suppression_empty' }
   | {
       readonly kind: 'gateway_retryable';
+      readonly subKind: 'network' | 'timeout' | 'server_5xx' | 'api';
       readonly reason: string;
+    }
+  | {
+      readonly kind: 'broadcast_resend_resource_missing';
+      readonly resourceType: 'audience' | 'broadcast';
+      readonly resourceId: string;
     }
   | {
       readonly kind: 'broadcast_failed_to_dispatch';
@@ -63,6 +74,12 @@ export interface DispatchScheduledBroadcastDeps {
   readonly eventAttendees: EventAttendeesRepository;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
+  /**
+   * From-address used as `from` on Resend `broadcasts.create`. MUST be a
+   * verified Resend domain. No default — composition root passes
+   * `env.broadcasts.fromEmail` (review C1 — 2026-04-30).
+   */
+  readonly fromEmail: string;
 }
 
 export interface DispatchScheduledBroadcastInput {
@@ -78,6 +95,84 @@ export interface DispatchScheduledBroadcastOutput {
 
 function buildIdempotencyKey(tenantId: string, broadcastId: string): string {
   return `broadcast-${tenantId}-${broadcastId}`;
+}
+
+/**
+ * Helper: transition a broadcast to `failed_to_dispatch` + emit a
+ * matching audit event in a single tx. On cleanup failure, log loudly
+ * (review E1) so ops can reconcile manually — silent swallow leaves
+ * the row stuck in 'approved' with no audit trail.
+ */
+async function failDispatchAndAudit(
+  deps: DispatchScheduledBroadcastDeps,
+  input: DispatchScheduledBroadcastInput,
+  now: Date,
+  reason: string,
+  eventType: 'broadcast_failed_to_dispatch' | 'broadcast_resend_resource_missing',
+  payload: Record<string, unknown>,
+  phase: string,
+): Promise<void> {
+  try {
+    await deps.broadcastsRepo.withTx(async (tx) => {
+      await deps.broadcastsRepo.applyTransition(
+        tx,
+        deps.tenant.slug,
+        input.broadcastId,
+        'failed_to_dispatch',
+        { failedToDispatchAt: now, failureReason: reason },
+      );
+      await deps.audit.emit(tx, {
+        tenantId: deps.tenant.slug,
+        eventType,
+        actorUserId: 'system:cron',
+        summary: `Broadcast ${input.broadcastId} dispatch failed (${phase})`,
+        payload,
+        requestId: null,
+      });
+    });
+  } catch (cleanupErr) {
+    logger.error(
+      {
+        err:
+          cleanupErr instanceof Error
+            ? cleanupErr.message
+            : String(cleanupErr),
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId as string,
+        phase,
+      },
+      'broadcasts.dispatch.cleanup_failed',
+    );
+  }
+}
+
+/**
+ * Duck-type a thrown gateway error into the
+ * `BroadcastsGatewayError`-compatible shape. The infrastructure adapter
+ * throws a `GatewayThrowable` carrying `kind` + `subKind` + `resourceType`
+ * fields; we read them via structural typing so the Application layer
+ * does not import from Infrastructure (Constitution Principle III).
+ */
+type GatewayThrownShape = {
+  kind?: string;
+  subKind?: string;
+  reason?: string;
+  resourceType?: 'audience' | 'broadcast';
+  resourceId?: string;
+  code?: string;
+};
+
+function classifyThrown(e: unknown): GatewayThrownShape & { kind: string } {
+  if (typeof e === 'object' && e !== null && 'kind' in e) {
+    const shape = e as GatewayThrownShape;
+    if (typeof shape.kind === 'string') {
+      return { ...shape, kind: shape.kind };
+    }
+  }
+  return {
+    kind: 'unknown',
+    reason: e instanceof Error ? e.message : String(e),
+  };
 }
 
 export async function dispatchScheduledBroadcast(
@@ -152,42 +247,30 @@ export async function dispatchScheduledBroadcast(
 
   if (!resolvedResult.ok) {
     // Audience evaporated post-suppression — transition to
-    // failed_to_dispatch + emit audit + member notification at route layer
-    try {
-      await deps.broadcastsRepo.withTx(async (tx) => {
-        await deps.broadcastsRepo.applyTransition(
-          tx,
-          deps.tenant.slug,
-          input.broadcastId,
-          'failed_to_dispatch',
-          {
-            failedToDispatchAt: now,
-            failureReason: 'audience_post_suppression_empty',
-          },
-        );
-        await deps.audit.emit(tx, {
-          tenantId: deps.tenant.slug,
-          eventType: 'broadcast_failed_to_dispatch',
-          actorUserId: 'system:cron',
-          summary: `Broadcast ${input.broadcastId} dispatch failed (audience empty post-suppression)`,
-          payload: {
-            broadcastId: input.broadcastId,
-            reason: 'audience_post_suppression_empty',
-            failedAt: now.toISOString(),
-          },
-          requestId: null,
-        });
-      });
-    } catch {
-      // best-effort cleanup
-    }
+    // failed_to_dispatch + emit audit + member notification at route layer.
+    await failDispatchAndAudit(
+      deps,
+      input,
+      now,
+      'audience_post_suppression_empty',
+      'broadcast_failed_to_dispatch',
+      {
+        broadcastId: input.broadcastId,
+        reason: 'audience_post_suppression_empty',
+        failedAt: now.toISOString(),
+      },
+      'audience_post_suppression_empty',
+    );
     return err({ kind: 'broadcast_audience_post_suppression_empty' });
   }
 
   // Step 3: Resend Broadcasts API calls (createAudience + addContacts +
   // createBroadcast + sendBroadcast). External calls happen OUTSIDE tx.
-  let resendAudienceId: string;
-  let resendBroadcastId: string;
+  // Empty string sentinel means "not yet assigned" — used by the
+  // idempotency_conflict handler to distinguish pre-send vs post-send
+  // conflict (the latter is recoverable as success-replay).
+  let resendAudienceId = '';
+  let resendBroadcastId = '';
   try {
     const audienceResult = await deps.broadcastsGateway.createAudience(
       `broadcast-${input.broadcastId}-${now.getTime()}`,
@@ -207,7 +290,7 @@ export async function dispatchScheduledBroadcast(
       subject: broadcast.subject,
       htmlBody: broadcast.bodyHtml,
       fromName: broadcast.fromName,
-      fromEmail: RESEND_FROM_EMAIL,
+      fromEmail: deps.fromEmail,
       replyToEmail: broadcast.replyToEmail,
       broadcastNameForResendDashboard: `${broadcast.fromName} — ${broadcast.subject.slice(0, 60)}`,
     });
@@ -218,49 +301,107 @@ export async function dispatchScheduledBroadcast(
       buildIdempotencyKey(deps.tenant.slug, input.broadcastId as string),
     );
   } catch (e) {
-    const eShape = e as
-      | { kind?: string; reason?: string; code?: string }
-      | Error;
-    if (
-      typeof (eShape as { kind?: string }).kind === 'string' &&
-      (eShape as { kind?: string }).kind === 'retryable'
-    ) {
+    const shape = classifyThrown(e);
+
+    // ---- Retryable: row stays 'approved' for next tick ---------------
+    if (shape.kind === 'retryable') {
+      const subKind =
+        (shape.subKind as 'network' | 'timeout' | 'server_5xx' | 'api') ?? 'api';
+      logger.warn(
+        {
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId as string,
+          subKind,
+          reason: shape.reason ?? 'retryable',
+        },
+        'broadcasts.dispatch.gateway_retryable',
+      );
       return err({
         kind: 'gateway_retryable',
-        reason:
-          typeof (eShape as { reason?: string }).reason === 'string'
-            ? ((eShape as { reason?: string }).reason as string)
-            : 'retryable',
+        subKind,
+        reason: shape.reason ?? 'retryable',
       });
     }
-    // permanent — transition to failed_to_dispatch
-    const reason = e instanceof Error ? e.message : 'unknown gateway error';
-    try {
-      await deps.broadcastsRepo.withTx(async (tx) => {
-        await deps.broadcastsRepo.applyTransition(
-          tx,
-          deps.tenant.slug,
-          input.broadcastId,
-          'failed_to_dispatch',
-          { failedToDispatchAt: now, failureReason: reason },
-        );
-        await deps.audit.emit(tx, {
-          tenantId: deps.tenant.slug,
-          eventType: 'broadcast_failed_to_dispatch',
-          actorUserId: 'system:cron',
-          summary: `Broadcast ${input.broadcastId} dispatch failed permanently`,
-          payload: {
-            broadcastId: input.broadcastId,
-            reason,
-            failedAt: now.toISOString(),
+
+    // ---- Idempotency conflict: success-replay ------------------------
+    // Resend already accepted this broadcast on a prior attempt. Treat
+    // as success and fall through to attachResendIds + transition. We
+    // know the resendBroadcastId IFF the conflict happened on `send`
+    // (after createBroadcast); on early conflict we cannot recover the
+    // ID and must drop to permanent.
+    if (shape.kind === 'idempotency_conflict') {
+      // If we never reached `createBroadcast` (resendBroadcastId is
+      // unset because the conflict surfaced earlier), we cannot
+      // safely advance — fall through to permanent so the next cron
+      // tick re-resolves the row from scratch.
+      if (resendBroadcastId === '') {
+        logger.error(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            reason: shape.reason,
           },
-          requestId: null,
-        });
-      });
-    } catch {
-      // best-effort
+          'broadcasts.dispatch.idempotency_conflict_pre_send',
+        );
+        // Fall through to permanent handler below.
+      } else {
+        logger.warn(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            resendBroadcastId,
+          },
+          'broadcasts.dispatch.idempotency_replay',
+        );
+        // Treat as success — fall through to attach + transition.
+        // (No throw — we land in step 4.)
+      }
     }
-    return err({ kind: 'broadcast_failed_to_dispatch', reason });
+
+    // ---- Resource missing: 404 from Resend ---------------------------
+    if (shape.kind === 'resource_missing') {
+      await failDispatchAndAudit(
+        deps,
+        input,
+        now,
+        `resend_resource_missing:${shape.resourceType}`,
+        'broadcast_resend_resource_missing',
+        {
+          broadcastId: input.broadcastId,
+          resourceType: shape.resourceType,
+          resourceId: shape.resourceId,
+          failedAt: now.toISOString(),
+        },
+        'resend_resource_missing',
+      );
+      return err({
+        kind: 'broadcast_resend_resource_missing',
+        resourceType: shape.resourceType ?? 'broadcast',
+        resourceId: shape.resourceId ?? (input.broadcastId as string),
+      });
+    }
+
+    // ---- Permanent (and idempotency_conflict_pre_send fall-through) --
+    if (shape.kind !== 'idempotency_conflict' || resendBroadcastId === '') {
+      const reason =
+        shape.reason ??
+        (e instanceof Error ? e.message : 'unknown gateway error');
+      await failDispatchAndAudit(
+        deps,
+        input,
+        now,
+        reason,
+        'broadcast_failed_to_dispatch',
+        {
+          broadcastId: input.broadcastId,
+          reason,
+          code: shape.code,
+          failedAt: now.toISOString(),
+        },
+        'permanent_failure',
+      );
+      return err({ kind: 'broadcast_failed_to_dispatch', reason });
+    }
   }
 
   // Step 4 + 5: attach Resend ids + transition to 'sending' + audit
@@ -306,11 +447,27 @@ export async function dispatchScheduledBroadcast(
       recipientCount: resolvedResult.value.estimatedCount,
     });
   } catch (e) {
-    // DB write failed AFTER Resend success. Next cron tick will re-detect
-    // 'approved' status (we never updated) → re-call Resend with same
-    // idempotency key → Resend dedupes; eventually the DB write succeeds.
+    // Review E2 — DB write failed AFTER Resend success. Recipients have
+    // (or will) receive the broadcast but the DB row is still
+    // 'approved'. Next cron tick will re-detect 'approved' status and
+    // re-call Resend with the same idempotency key (Resend dedupes →
+    // safe replay). MUST log at error severity so ops alerts fire and
+    // operators can confirm the eventual reconciliation.
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId as string,
+        resendAudienceId,
+        resendBroadcastId,
+        phase: 'db_write_after_resend_success',
+        severity: 'critical',
+      },
+      'broadcasts.dispatch.db_write_after_resend_success',
+    );
     return err({
       kind: 'gateway_retryable',
+      subKind: 'api',
       reason: `db_write_after_resend_success: ${
         e instanceof Error ? e.message : 'unknown'
       }`,

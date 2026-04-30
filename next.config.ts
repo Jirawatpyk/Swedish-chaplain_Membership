@@ -37,6 +37,8 @@ const nextConfig: NextConfig = {
   // `@exodus/bytes/encoding-lite.js` (ESM-only). Bundling these via
   // Turbopack triggers `ERR_REQUIRE_ESM` on SSR. Mark them as server-side
   // externals so Node loads them at runtime instead.
+  // See `docs/runbooks/f7-dompurify-esm-workaround.md` for the full
+  // root cause + 4-layer defence + removal criteria.
   serverExternalPackages: [
     'isomorphic-dompurify',
     'jsdom',

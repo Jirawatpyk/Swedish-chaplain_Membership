@@ -45,7 +45,14 @@ export function ClearHaltDialog({
   const [phrase, setPhrase] = useState<string>('');
   const [pending, startTransition] = useTransition();
 
-  const phraseValid = phrase.trim() === memberDisplayName.trim();
+  // Review UX-C3: locale-aware case-insensitive comparison so admins
+  // typing "acme co., ltd" for `Acme Co., Ltd` aren't blocked by case
+  // mismatch — accent sensitivity remains (Thai/Swedish diacritics
+  // must match exactly).
+  const phraseValid =
+    phrase.trim().localeCompare(memberDisplayName.trim(), undefined, {
+      sensitivity: 'accent',
+    }) === 0;
 
   function onConfirm() {
     if (!phraseValid) return;
@@ -88,6 +95,11 @@ export function ClearHaltDialog({
           <Label htmlFor="clear-halt-phrase">
             {t('phraseLabel', { phrase: memberDisplayName })}
           </Label>
+          {/* UX-C3: show the expected phrase as a copy-target so admins
+              don't have to retype while squinting between fields. */}
+          <code className="block rounded bg-muted px-2 py-1 text-xs font-mono">
+            {memberDisplayName}
+          </code>
           <Input
             id="clear-halt-phrase"
             value={phrase}

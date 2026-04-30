@@ -2,11 +2,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
+import { Mail } from 'lucide-react';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { QuotaDisplay } from '@/components/broadcast/quota-display';
+import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
 import { db } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -97,7 +99,12 @@ export default async function EblastsListPage(): Promise<React.ReactElement> {
         subtitle={t('subtitle')}
         actions={
           composeDisabled ? (
-            <Button disabled>{tCompose('title')}</Button>
+            <ComposeButtonWithTooltip
+              label={tCompose('title')}
+              tooltipText={t('quotaExhaustedTooltip', {
+                year: quota?.quotaYear ?? new Date().getFullYear(),
+              })}
+            />
           ) : (
             <Link
               href="/portal/broadcasts/new"
@@ -109,16 +116,28 @@ export default async function EblastsListPage(): Promise<React.ReactElement> {
         }
       />
 
-      <QuotaDisplay initial={quota} />
+      <QuotaDisplay initial={quota} showComposeCta={!composeDisabled} />
 
       <section
         aria-label={t('title')}
         className="mt-6 overflow-x-auto rounded-md border"
       >
         {rows.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-            {t('empty')}
-          </p>
+          <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+            <div className="rounded-full bg-muted p-3">
+              <Mail className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+            </div>
+            <p className="text-sm font-medium">{t('emptyTitle')}</p>
+            <p className="max-w-md text-xs text-muted-foreground">{t('empty')}</p>
+            {composeDisabled ? null : (
+              <Link
+                href="/portal/broadcasts/new"
+                className={buttonVariants({ size: 'sm' })}
+              >
+                {t('emptyCta')}
+              </Link>
+            )}
+          </div>
         ) : (
           <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-muted/50 text-xs uppercase tracking-wide">
