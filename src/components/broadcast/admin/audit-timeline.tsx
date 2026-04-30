@@ -1,21 +1,18 @@
 /**
  * Audit timeline (T124 helper) — server component renders lifecycle
- * events for a broadcast from `audit_log`.
+ * events for a broadcast from the F1-owned `audit_log` table.
  *
  * Shows: drafted → submitted → approved → sending → sent / rejected /
  * cancelled / failed_to_dispatch.
  *
- * Uses Drizzle ORM with the F1-owned `auditLog` schema + JSONB
- * predicate via `sql` template literal (Drizzle's documented escape
- * hatch — there is no first-class `->>` operator in core ORM as of
- * drizzle-orm@latest). The schema import keeps cross-module access
- * within the public Drizzle surface; raw `db.execute(sql\`SELECT…\`)`
- * is avoided so the column projection stays type-checked.
+ * F1's `auditLog` schema is intentionally NOT exposed in the public
+ * `@/modules/auth` barrel (Constitution Principle III — append-only
+ * audit trail is owned by F1's repos). F7 reads via `db.execute(sql\`...\`)`
+ * with a typed cast — same pattern F4's `audit-timeline.tsx` uses.
  */
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { db } from '@/lib/db';
-import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { CheckCircle2, Circle } from 'lucide-react';
 
 interface AuditRow {
@@ -51,28 +48,22 @@ export async function AuditTimeline({
     { dateStyle: 'medium', timeStyle: 'short' },
   );
 
-  // Drizzle ORM query against the F1-owned `auditLog` schema. JSON-path
-  // predicate uses `sql\`...\`` template (no first-class JSONB `->>`
-  // operator in Drizzle core) but the SELECT/WHERE/ORDER BY use typed
-  // column refs so any rename of the schema is caught at compile time.
-  const events = (await db
-    .select({
-      eventType: auditLog.eventType,
-      actorUserId: auditLog.actorUserId,
-      timestamp: auditLog.timestamp,
-    })
-    .from(auditLog)
-    .where(
-      and(
-        eq(auditLog.tenantId, tenantId),
-        sql`${auditLog.payload}->>'broadcastId' = ${broadcastId}`,
-        inArray(
-          auditLog.eventType,
-          RELEVANT_EVENTS as unknown as Array<typeof auditLog.eventType._.data>,
-        ),
-      ),
-    )
-    .orderBy(asc(auditLog.timestamp))) as ReadonlyArray<AuditRow>;
+  // Raw SQL via Drizzle `sql` template (auditLog schema is NOT exposed
+  // by the F1 barrel — Principle III preserves append-only ownership).
+  // The result is cast to a typed `AuditRow` shape; SELECT columns
+  // mirror the F1-defined audit_log table (id, timestamp, event_type,
+  // actor_user_id, summary, request_id, payload, tenant_id).
+  const rows = (await db.execute(sql`
+    SELECT event_type::text AS "eventType",
+           actor_user_id    AS "actorUserId",
+           timestamp        AS "timestamp"
+      FROM audit_log
+     WHERE tenant_id = ${tenantId}
+       AND payload->>'broadcastId' = ${broadcastId}
+       AND event_type::text = ANY(${sql.raw(`ARRAY[${RELEVANT_EVENTS.map((e) => `'${e}'`).join(', ')}]::audit_event_type[]`)})
+     ORDER BY timestamp ASC
+  `)) as unknown as ReadonlyArray<AuditRow>;
+  const events = rows;
 
   const eventLabel: Record<string, string> = {
     broadcast_drafted: t('drafted'),

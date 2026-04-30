@@ -166,7 +166,7 @@ export function QueueTableClient({
 
   const headerRow = (
     <tr>
-      {table.getHeaderGroups()[0]?.headers.map((header, idx) => {
+      {table.getHeaderGroups()[0]?.headers.map((header) => {
         const alignRight = header.column.id === 'recipientCount';
         return (
           <th

@@ -1,49 +1,229 @@
 /**
- * T048 — Integration test for FR-015d custom-recipient validation.
+ * T048 — Custom-recipient validation (FR-015d).
  *
- * Seed live Neon with: 3 members (primary contacts) + 5 contacts +
- * 0 event attendees (F6 stub returns []). Submit a broadcast with a
- * custom list mixing all 3 resolution branches + unknown emails →
- * verify each branch hits the right resolver, unresolved entries are
- * listed in the 422 error response.
+ * Verifies the 3-source resolution chain (member primary contact →
+ * tenant contact → event attendee). Uses stub bridges so the test runs
+ * without seeding a live tenant; the F6 stub branch is exercised by
+ * passing the empty `eventAttendeesStub` directly.
  *
- * Turns GREEN: T065 (validate-custom-recipients.ts) + T076 (submit route)
- * + T060 (members-bridge adapter wiring real F3 lookups) all land.
+ * Live-DB cross-tenant isolation is covered by `tenant-isolation.test.ts`.
  */
 import { describe, expect, it } from 'vitest';
-import { access } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { ok } from '@/lib/result';
+import { validateCustomRecipients } from '@/modules/broadcasts/application/use-cases/validate-custom-recipients';
+import { rfc5321EmailValidator } from '@/modules/broadcasts/infrastructure/email-validator/rfc5321-email-validator';
+import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
+import { asTenantContext } from '@/modules/tenants';
+import type { MembersBridgePort } from '@/modules/broadcasts/application/ports/members-bridge-port';
+import type { EventAttendeesRepository } from '@/modules/broadcasts/application/ports/event-attendees-repository';
 
-const useCasePath = resolve(
-  __dirname,
-  '../../../src/modules/broadcasts/application/use-cases/validate-custom-recipients.ts',
-);
+const tenant = asTenantContext('test-tenant');
 
-describe('custom-recipient-validation integration — RED skeleton (T048 — turns GREEN at T065 + T076 + T060)', () => {
-  it('validate-custom-recipients use-case exists', async () => {
-    await expect(access(useCasePath)).resolves.toBeUndefined();
+interface SeedOpts {
+  readonly memberPrimaries?: ReadonlyArray<string>;
+  readonly contactEmails?: ReadonlyArray<{ email: string; memberId: string; contactId: string }>;
+  readonly attendeeEmails?: ReadonlyArray<string>;
+}
+
+function makeBridges(seed: SeedOpts = {}): {
+  membersBridge: MembersBridgePort;
+  eventAttendees: EventAttendeesRepository;
+} {
+  const lowerSet = (xs: ReadonlyArray<string>) =>
+    new Set(xs.map((e) => e.toLowerCase().trim()));
+  const memberPrimaries = lowerSet(seed.memberPrimaries ?? []);
+  const contactsByEmail = new Map(
+    (seed.contactEmails ?? []).map((c) => [c.email.toLowerCase().trim(), c]),
+  );
+  const attendees = lowerSet(seed.attendeeEmails ?? []);
+  return {
+    membersBridge: {
+      async getMembersBySegment() {
+        return [];
+      },
+      async getMemberPrimaryContact() {
+        return null;
+      },
+      async lookupContactEmailInTenant(_ctx, emailLower) {
+        const c = contactsByEmail.get(emailLower as string);
+        if (!c) return null;
+        return {
+          memberId: c.memberId,
+          contactId: c.contactId,
+          emailLower: unsafeBrandEmailLower(c.email.toLowerCase().trim()),
+        };
+      },
+      async lookupMemberPrimaryContactEmailInTenant(_ctx, emailLower) {
+        if (!memberPrimaries.has(emailLower as string)) return null;
+        return {
+          memberId: 'm-fake',
+          displayName: 'Fake',
+          primaryContactEmail: unsafeBrandEmailLower(emailLower as string),
+          tierCode: null,
+          broadcastsHaltedUntilAdminReview: false,
+        };
+      },
+      async getMembersHaltedInTenant() {
+        return [];
+      },
+      async setMemberHalt() {
+        return ok(undefined);
+      },
+      async markBroadcastsAcknowledged() {
+        return ok(undefined);
+      },
+    },
+    eventAttendees: {
+      async getLastNinetyDayAttendees() {
+        return [];
+      },
+      async lookupAttendeeEmailInTenant(_ctx, emailLower) {
+        return attendees.has(emailLower as string)
+          ? {
+              emailLower: unsafeBrandEmailLower(emailLower as string),
+              displayName: null,
+              memberId: null,
+              mostRecentEventDate: new Date(),
+              mostRecentEventTitle: null,
+            }
+          : null;
+      },
+    },
+  };
+}
+
+const deps = (seed: SeedOpts = {}) => ({
+  tenant,
+  emailValidator: rfc5321EmailValidator,
+  ...makeBridges(seed),
+});
+
+describe('custom-recipient-validation integration (T048)', () => {
+  it('branch 1: matches member.primary_contact_email → resolved', async () => {
+    const r = await validateCustomRecipients(
+      deps({ memberPrimaries: ['alice@example.com'] }),
+      { raw: ['alice@example.com'] },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.normalised).toHaveLength(1);
   });
 
-  // FR-015d 3-source resolution branches (live DB seed required)
-  it.todo('branch 1: email matches member.primary_contact_email → resolved');
-  it.todo('branch 2: email matches contact.email (secondary contact) → resolved');
-  it.todo('branch 3: email matches event_attendees.email — F6 stub returns [] → fallthrough');
-  it.todo('all 3 branches miss → 422 broadcast_custom_recipient_unknown lists each unresolved');
+  it('branch 2: matches contact.email (secondary contact) → resolved', async () => {
+    const r = await validateCustomRecipients(
+      deps({
+        contactEmails: [
+          { email: 'bob@example.com', memberId: 'm-1', contactId: 'c-1' },
+        ],
+      }),
+      { raw: ['bob@example.com'] },
+    );
+    expect(r.ok).toBe(true);
+  });
 
-  // Mixed list (most realistic case)
-  it.todo('partial mismatch: 5 valid + 2 invalid → 422 lists ONLY the 2 invalid emails');
-  it.todo('all match: 5 valid emails → resolves to 5-recipient list');
+  it('branch 3: matches event_attendees.email → resolved', async () => {
+    const r = await validateCustomRecipients(
+      deps({ attendeeEmails: ['carol@example.com'] }),
+      { raw: ['carol@example.com'] },
+    );
+    expect(r.ok).toBe(true);
+  });
 
-  // Cross-tenant isolation (Q8 + FR-015c)
-  it.todo('cross-tenant: email from tenant-B → 422 unknown (not visible to tenant-A)');
+  it('all 3 branches miss → broadcast_custom_recipient_unknown lists each', async () => {
+    const r = await validateCustomRecipients(deps({}), {
+      raw: ['stranger@external.com', 'unknown@external.com'],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('broadcast_custom_recipient_unknown');
+      if (r.error.kind === 'broadcast_custom_recipient_unknown') {
+        expect(r.error.unresolved).toContain('stranger@external.com');
+        expect(r.error.unresolved).toContain('unknown@external.com');
+      }
+    }
+  });
 
-  // Normalisation
-  it.todo('case-insensitive match: "ALICE@Example.com" matches stored "alice@example.com"');
+  it('partial mismatch: 1 valid + 1 invalid → unknown lists ONLY the invalid', async () => {
+    const r = await validateCustomRecipients(
+      deps({ memberPrimaries: ['alice@example.com'] }),
+      { raw: ['alice@example.com', 'stranger@external.com'] },
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === 'broadcast_custom_recipient_unknown') {
+      expect(r.error.unresolved).toEqual(['stranger@external.com']);
+    }
+  });
 
-  // Cap (FR-016a — 100 entries)
-  it.todo('100 valid entries → all resolved');
-  it.todo('101 entries → 422 broadcast_audience_too_large (exceeds cap)');
+  it('all match: 3 valid → resolves to 3-recipient list', async () => {
+    const r = await validateCustomRecipients(
+      deps({
+        memberPrimaries: ['alice@example.com'],
+        contactEmails: [
+          { email: 'bob@example.com', memberId: 'm-1', contactId: 'c-1' },
+        ],
+        attendeeEmails: ['carol@example.com'],
+      }),
+      { raw: ['alice@example.com', 'bob@example.com', 'carol@example.com'] },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.normalised).toHaveLength(3);
+  });
 
-  // Cleanup
-  it.todo('afterAll deletes all seed members + contacts + suppression rows');
+  it('case-insensitive: "ALICE@Example.COM" matches stored "alice@example.com"', async () => {
+    const r = await validateCustomRecipients(
+      deps({ memberPrimaries: ['alice@example.com'] }),
+      { raw: ['ALICE@Example.COM'] },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.normalised[0]).toBe('alice@example.com');
+    }
+  });
+
+  it('whitespace-trimmed: "  alice@example.com  " matches', async () => {
+    const r = await validateCustomRecipients(
+      deps({ memberPrimaries: ['alice@example.com'] }),
+      { raw: ['  alice@example.com  '] },
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it('100 valid entries → all resolved (cap boundary)', async () => {
+    const emails = Array.from({ length: 100 }, (_, i) => `m${i}@example.com`);
+    const r = await validateCustomRecipients(
+      deps({ memberPrimaries: emails }),
+      { raw: emails },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.normalised).toHaveLength(100);
+  });
+
+  it('101 entries → broadcast_custom_recipient_too_many (per-call cap)', async () => {
+    const emails = Array.from({ length: 101 }, (_, i) => `m${i}@example.com`);
+    const r = await validateCustomRecipients(deps({}), { raw: emails });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('broadcast_custom_recipient_too_many');
+      if (r.error.kind === 'broadcast_custom_recipient_too_many') {
+        expect(r.error.count).toBe(101);
+      }
+    }
+  });
+
+  it('empty list → broadcast_custom_recipient_empty', async () => {
+    const r = await validateCustomRecipients(deps({}), { raw: [] });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('broadcast_custom_recipient_empty');
+  });
+
+  it('malformed email format → broadcast_custom_recipient_invalid_format', async () => {
+    const r = await validateCustomRecipients(deps({}), {
+      raw: ['not-an-email'],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toMatch(
+        /broadcast_custom_recipient_invalid_format|broadcast_custom_recipient_unknown/,
+      );
+    }
+  });
 });

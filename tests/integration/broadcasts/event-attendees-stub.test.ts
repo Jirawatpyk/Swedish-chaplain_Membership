@@ -1,43 +1,131 @@
 /**
- * T050 — Integration test for FR-015a F6 EventAttendees stub-port.
+ * T050 — F6 EventAttendees stub-port (FR-015a).
  *
- * Verifies that `event_attendees_last_90d` segment resolves to `[]` until
- * F6 ships. Submission with this segment → rejected with
- * broadcast_empty_segment_blocked (since 0 recipients after resolution).
- *
- * Phase 2 batch ship contract: F7 + F6 release together (Clarifications Q5);
- * F6's `/speckit.implement` swaps the F7 stub for a real Drizzle adapter.
- *
- * Turns GREEN: T062 (event-attendees-stub Infrastructure adapter — F6
- * stub returning []) + T066 (resolve-segment-recipients.ts) + T076
- * (submit route) land.
+ * Verifies the stub returns `[]` and the upstream resolve-segment use
+ * case surfaces `broadcast_empty_segment_blocked` for the
+ * `event_attendees_last_90d` segment until F6 ships. Forward-compat
+ * with the EventAttendeesRepository port is verified by a structural
+ * type-shape assertion.
  */
 import { describe, expect, it } from 'vitest';
-import { access } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { ok } from '@/lib/result';
+import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
+import { resolveSegmentRecipients } from '@/modules/broadcasts/application/use-cases/resolve-segment-recipients';
+import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
+import { asTenantContext } from '@/modules/tenants';
+import type {
+  EventAttendeesRepository,
+} from '@/modules/broadcasts/application/ports/event-attendees-repository';
+import type {
+  MembersBridgePort,
+} from '@/modules/broadcasts/application/ports/members-bridge-port';
+import type {
+  MarketingUnsubscribesRepo,
+} from '@/modules/broadcasts/application/ports/marketing-unsubscribes-repo';
 
-const stubAdapterPath = resolve(
-  __dirname,
-  '../../../src/modules/broadcasts/infrastructure/event-attendees-stub.ts',
-);
+const tenant = asTenantContext('test-tenant');
 
-describe('event-attendees-stub integration — RED skeleton (T050 — turns GREEN at T062 + T066 + T076)', () => {
-  it('event-attendees stub adapter exists', async () => {
-    await expect(access(stubAdapterPath)).resolves.toBeUndefined();
+const emptyMembersBridge: MembersBridgePort = {
+  async getMembersBySegment() {
+    return [];
+  },
+  async getMemberPrimaryContact() {
+    return null;
+  },
+  async lookupContactEmailInTenant() {
+    return null;
+  },
+  async lookupMemberPrimaryContactEmailInTenant() {
+    return null;
+  },
+  async getMembersHaltedInTenant() {
+    return [];
+  },
+  async setMemberHalt() {
+    return ok(undefined);
+  },
+  async markBroadcastsAcknowledged() {
+    return ok(undefined);
+  },
+};
+
+const emptyUnsubscribes: MarketingUnsubscribesRepo = {
+  async upsert() {
+    throw new Error('not used');
+  },
+  async findByEmailLower() {
+    return null;
+  },
+  async lookupBatch() {
+    return new Set();
+  },
+  async setMemberIdNull() {
+    return { affected: 0 };
+  },
+};
+
+describe('event-attendees-stub (T050)', () => {
+  it('stub.getLastNinetyDayAttendees returns empty array', async () => {
+    const result = await eventAttendeesStub.getLastNinetyDayAttendees(tenant);
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(0);
   });
 
-  // FR-015a stub behaviour
-  it.todo('stub.getLastNinetyDayAttendees returns empty array');
-  it.todo('stub.lookupAttendeeEmailInTenant returns null for any input');
+  it('stub.lookupAttendeeEmailInTenant returns null for any input', async () => {
+    const r = await eventAttendeesStub.lookupAttendeeEmailInTenant(
+      tenant,
+      unsafeBrandEmailLower('any@example.com'),
+    );
+    expect(r).toBeNull();
+  });
 
-  // Submit-broadcast with event_attendees_last_90d segment
-  it.todo('submit with segment_type=event_attendees_last_90d → segment resolves []');
-  it.todo('empty segment after resolution → 422 broadcast_empty_segment_blocked');
-  it.todo('audit broadcast_empty_segment_blocked emitted with segment_type=event_attendees_last_90d');
+  it('resolve-segment with event_attendees_last_90d → empty → broadcast_empty_segment_blocked', async () => {
+    const r = await resolveSegmentRecipients(
+      {
+        tenant,
+        membersBridge: emptyMembersBridge,
+        eventAttendees: eventAttendeesStub,
+        marketingUnsubscribes: emptyUnsubscribes,
+      },
+      {
+        segment: { kind: 'event_attendees_last_90d' },
+        requestingMemberPrimaryEmail: null,
+        customRecipients: null,
+      },
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('broadcast_empty_segment_blocked');
+  });
 
-  // F6 swap-in contract (forward compat)
-  it.todo('stub satisfies EventAttendeesRepository port interface (F6 swap-in compatible)');
+  it('stub satisfies EventAttendeesRepository port (forward-compat F6 swap-in)', () => {
+    const _shape: EventAttendeesRepository = eventAttendeesStub;
+    // Methods present
+    expect(typeof eventAttendeesStub.getLastNinetyDayAttendees).toBe(
+      'function',
+    );
+    expect(typeof eventAttendeesStub.lookupAttendeeEmailInTenant).toBe(
+      'function',
+    );
+  });
 
-  // Cleanup
-  it.todo('afterAll cleans test tenant');
+  it('multiple invocations remain deterministic (no state)', async () => {
+    const a = await eventAttendeesStub.getLastNinetyDayAttendees(tenant);
+    const b = await eventAttendeesStub.getLastNinetyDayAttendees(tenant);
+    expect(a).toEqual(b);
+  });
+
+  it('lookup returns null for varied input emails', async () => {
+    expect(
+      await eventAttendeesStub.lookupAttendeeEmailInTenant(
+        tenant,
+        unsafeBrandEmailLower('a@example.com'),
+      ),
+    ).toBeNull();
+    expect(
+      await eventAttendeesStub.lookupAttendeeEmailInTenant(
+        tenant,
+        unsafeBrandEmailLower('b@example.com'),
+      ),
+    ).toBeNull();
+  });
 });
