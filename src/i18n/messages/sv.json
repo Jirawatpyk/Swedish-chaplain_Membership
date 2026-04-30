@@ -1298,6 +1298,158 @@
         }
       }
     },
+    "broadcasts": {
+      "queue": {
+        "title": "[F7-SV-REVIEW] E-Blast review queue",
+        "subtitle": "[F7-SV-REVIEW] Review and approve broadcasts submitted by members.",
+        "empty": "[F7-SV-REVIEW] No broadcasts awaiting review.",
+        "totalPending": "[F7-SV-REVIEW] {count} pending",
+        "filters": {
+          "formAriaLabel": "[F7-SV-REVIEW] Broadcast queue filters",
+          "statusLabel": "[F7-SV-REVIEW] Status",
+          "statusAll": "[F7-SV-REVIEW] All statuses",
+          "memberLabel": "[F7-SV-REVIEW] Member",
+          "memberAll": "[F7-SV-REVIEW] All members",
+          "fromDate": "[F7-SV-REVIEW] From",
+          "toDate": "[F7-SV-REVIEW] To",
+          "apply": "[F7-SV-REVIEW] Apply filters",
+          "reset": "[F7-SV-REVIEW] Reset"
+        },
+        "columns": {
+          "submittedAt": "[F7-SV-REVIEW] Submitted",
+          "member": "[F7-SV-REVIEW] Member",
+          "subject": "[F7-SV-REVIEW] Subject",
+          "segment": "[F7-SV-REVIEW] Audience",
+          "recipientCount": "[F7-SV-REVIEW] Recipients",
+          "status": "[F7-SV-REVIEW] Status",
+          "actions": "[F7-SV-REVIEW] Actions"
+        },
+        "status": {
+          "draft": "[F7-SV-REVIEW] Draft",
+          "submitted": "[F7-SV-REVIEW] Awaiting review",
+          "approved": "[F7-SV-REVIEW] Approved",
+          "sending": "[F7-SV-REVIEW] Sending",
+          "sent": "[F7-SV-REVIEW] Sent",
+          "rejected": "[F7-SV-REVIEW] Rejected",
+          "cancelled": "[F7-SV-REVIEW] Cancelled",
+          "failed_to_dispatch": "[F7-SV-REVIEW] Failed"
+        },
+        "actorRole": {
+          "member_self_service": "[F7-SV-REVIEW] Member",
+          "admin_proxy": "[F7-SV-REVIEW] Admin (proxy)",
+          "system": "[F7-SV-REVIEW] System"
+        },
+        "pagination": {
+          "previous": "[F7-SV-REVIEW] Previous",
+          "next": "[F7-SV-REVIEW] Next"
+        },
+        "slaBanner": {
+          "targetSla": "[F7-SV-REVIEW] Target review SLA: 48 hours",
+          "medianRolling30d": "[F7-SV-REVIEW] Median time-to-decision (rolling 30d): {hours}h",
+          "p95Rolling30d": "[F7-SV-REVIEW] p95: {hours}h",
+          "withinBudget": "[F7-SV-REVIEW] Within SLA budget",
+          "breachWarning": "[F7-SV-REVIEW] SC-002 breach — review queue capacity"
+        },
+        "proxySubmitButton": "[F7-SV-REVIEW] Submit on behalf of member"
+      },
+      "review": {
+        "title": "[F7-SV-REVIEW] Broadcast review",
+        "subtitle": "[F7-SV-REVIEW] Inspect content + approve, reject, or cancel.",
+        "fields": {
+          "subject": "[F7-SV-REVIEW] Subject",
+          "body": "[F7-SV-REVIEW] Message",
+          "segment": "[F7-SV-REVIEW] Audience",
+          "recipientCount": "[F7-SV-REVIEW] Estimated recipients",
+          "submittedBy": "[F7-SV-REVIEW] Submitted by",
+          "submittedAt": "[F7-SV-REVIEW] Submitted at",
+          "scheduledFor": "[F7-SV-REVIEW] Scheduled for",
+          "actorRole": "[F7-SV-REVIEW] Actor role"
+        },
+        "audit": {
+          "title": "[F7-SV-REVIEW] Lifecycle timeline",
+          "drafted": "[F7-SV-REVIEW] Drafted",
+          "submitted": "[F7-SV-REVIEW] Submitted",
+          "approved": "[F7-SV-REVIEW] Approved",
+          "rejected": "[F7-SV-REVIEW] Rejected",
+          "cancelled": "[F7-SV-REVIEW] Cancelled",
+          "sendStarted": "[F7-SV-REVIEW] Send started",
+          "sent": "[F7-SV-REVIEW] Sent",
+          "failedToDispatch": "[F7-SV-REVIEW] Dispatch failed"
+        }
+      },
+      "approveDialog": {
+        "title": "[F7-SV-REVIEW] Approve this broadcast?",
+        "description": "[F7-SV-REVIEW] Choose to send immediately or schedule for later. Recipients receive your chamber's branding as the sender.",
+        "decision": {
+          "sendNow": "[F7-SV-REVIEW] Approve & send now",
+          "schedule": "[F7-SV-REVIEW] Approve & schedule"
+        },
+        "scheduleLabel": "[F7-SV-REVIEW] Send at",
+        "scheduleHelp": "[F7-SV-REVIEW] At least 5 minutes from now.",
+        "confirm": "[F7-SV-REVIEW] Approve",
+        "cancel": "[F7-SV-REVIEW] Cancel"
+      },
+      "rejectDialog": {
+        "title": "[F7-SV-REVIEW] Reject this broadcast?",
+        "description": "[F7-SV-REVIEW] Provide a reason — the member will see it verbatim in their notification email.",
+        "reasonLabel": "[F7-SV-REVIEW] Reason for rejection",
+        "reasonPlaceholder": "[F7-SV-REVIEW] Explain why this broadcast cannot proceed…",
+        "reasonHelp": "[F7-SV-REVIEW] 1–2,000 characters. Sent to member verbatim.",
+        "confirm": "[F7-SV-REVIEW] Reject",
+        "cancel": "[F7-SV-REVIEW] Cancel",
+        "errors": {
+          "reasonRequired": "[F7-SV-REVIEW] A non-empty reason is required.",
+          "reasonTooLong": "[F7-SV-REVIEW] Reason exceeds 2,000 characters."
+        }
+      },
+      "cancelDialog": {
+        "title": "[F7-SV-REVIEW] Cancel this broadcast?",
+        "description": "[F7-SV-REVIEW] This releases the member's reserved quota slot. Provide a reason for the audit log + member notification.",
+        "reasonLabel": "[F7-SV-REVIEW] Reason for cancellation",
+        "reasonPlaceholder": "[F7-SV-REVIEW] Why is this being cancelled…",
+        "reasonHelp": "[F7-SV-REVIEW] 1–500 characters.",
+        "confirm": "[F7-SV-REVIEW] Cancel broadcast",
+        "cancel": "[F7-SV-REVIEW] Keep"
+      },
+      "proxySubmitDialog": {
+        "title": "[F7-SV-REVIEW] Submit on behalf of member",
+        "description": "[F7-SV-REVIEW] Compose a broadcast that will be queued for review with the proxied member's quota.",
+        "memberLabel": "[F7-SV-REVIEW] Member",
+        "memberPlaceholder": "[F7-SV-REVIEW] Search by company name…",
+        "subjectLabel": "[F7-SV-REVIEW] Subject",
+        "bodyLabel": "[F7-SV-REVIEW] Message",
+        "segmentLabel": "[F7-SV-REVIEW] Audience",
+        "confirm": "[F7-SV-REVIEW] Submit",
+        "cancel": "[F7-SV-REVIEW] Cancel"
+      },
+      "haltBanner": {
+        "title": "[F7-SV-REVIEW] {count, plural, =1 {1 member is halted} other {# members are halted}} from broadcasting",
+        "body": "[F7-SV-REVIEW] Auto-halt triggered by complaint-rate threshold. Review and clear the halt if appropriate.",
+        "clearAction": "[F7-SV-REVIEW] Review + clear halt",
+        "haltedSince": "[F7-SV-REVIEW] Halted since {date}"
+      },
+      "clearHaltDialog": {
+        "title": "[F7-SV-REVIEW] Clear broadcast halt?",
+        "body": "[F7-SV-REVIEW] Type the member's company name to confirm. This restores their ability to submit new broadcasts.",
+        "phraseLabel": "[F7-SV-REVIEW] Type {phrase} to confirm",
+        "phraseError": "[F7-SV-REVIEW] Phrase does not match.",
+        "confirm": "[F7-SV-REVIEW] Clear halt",
+        "cancel": "[F7-SV-REVIEW] Cancel"
+      },
+      "managerReadonlyBanner": {
+        "title": "[F7-SV-REVIEW] Read-only mode",
+        "body": "[F7-SV-REVIEW] Manager role: you can view the queue + broadcast details but cannot approve, reject, or cancel."
+      },
+      "toast": {
+        "approved": "[F7-SV-REVIEW] Broadcast approved.",
+        "rejected": "[F7-SV-REVIEW] Broadcast rejected. Member notified.",
+        "cancelled": "[F7-SV-REVIEW] Broadcast cancelled.",
+        "proxySubmitted": "[F7-SV-REVIEW] Submitted for review.",
+        "clearHalted": "[F7-SV-REVIEW] Halt cleared. Member can submit new broadcasts.",
+        "concurrentRace": "[F7-SV-REVIEW] Another admin acted on this broadcast first. Refreshing…",
+        "error": "[F7-SV-REVIEW] Action failed. Please try again."
+      }
+    },
     "refund": {
       "title": "Utfärda återbetalning",
       "button": {
@@ -1975,6 +2127,28 @@
     },
     "refundConfirmation": {
       "subject": "Bekräftelse av återbetalning"
+    },
+    "broadcastApproved": {
+      "subject": "[F7-SV-REVIEW] Your E-Blast was approved",
+      "greeting": "[F7-SV-REVIEW] Hi {name},",
+      "body": "[F7-SV-REVIEW] Your E-Blast \"{subject}\" has been approved and will be sent {scheduleHint}.",
+      "scheduleNow": "[F7-SV-REVIEW] shortly",
+      "scheduleAt": "[F7-SV-REVIEW] on {when}",
+      "footer": "[F7-SV-REVIEW] You'll see delivery results on your benefits page once the broadcast completes."
+    },
+    "broadcastRejected": {
+      "subject": "[F7-SV-REVIEW] Your E-Blast was not approved",
+      "greeting": "[F7-SV-REVIEW] Hi {name},",
+      "body": "[F7-SV-REVIEW] Your E-Blast \"{subject}\" was not approved.",
+      "reasonHeading": "[F7-SV-REVIEW] Reason from your chamber admin:",
+      "footer": "[F7-SV-REVIEW] Your reserved quota slot has been released. You're welcome to submit a revised broadcast."
+    },
+    "broadcastCancelled": {
+      "subject": "[F7-SV-REVIEW] Your E-Blast was cancelled",
+      "greeting": "[F7-SV-REVIEW] Hi {name},",
+      "body": "[F7-SV-REVIEW] Your E-Blast \"{subject}\" has been cancelled.",
+      "reasonHeading": "[F7-SV-REVIEW] Cancellation note:",
+      "footer": "[F7-SV-REVIEW] Your reserved quota slot has been released."
     }
   }
 }

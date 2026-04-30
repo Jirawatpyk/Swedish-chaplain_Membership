@@ -47,6 +47,15 @@ export type F7RouteErrorCode =
   // State-machine + lifecycle
   | 'broadcast_immutable_after_submit'
   | 'broadcast_not_found'
+  // US2 lifecycle (admin review)
+  | 'broadcast_invalid_state_transition'
+  | 'broadcast_concurrent_action_blocked'
+  | 'broadcast_cancel_too_late'
+  | 'broadcast_schedule_too_soon'
+  | 'broadcast_rejection_reason_required'
+  | 'broadcast_rejection_reason_too_long'
+  | 'broadcast_cancel_reason_too_long'
+  | 'broadcast_member_not_found'
   // Generic HTTP-shape codes
   | 'invalid_body'
   | 'forbidden'
@@ -130,6 +139,42 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
   broadcast_not_found: {
     message: 'Broadcast not found.',
     messageThai: 'ไม่พบ E-Blast',
+  },
+  broadcast_invalid_state_transition: {
+    message:
+      'This broadcast is not in a state that allows that action — it may have been processed by another admin.',
+    messageThai:
+      'สถานะของ E-Blast ไม่อนุญาตให้ดำเนินการนี้ — อาจถูกอนุมัติหรือปฏิเสธโดยอดมินคนอื่นแล้ว',
+  },
+  broadcast_concurrent_action_blocked: {
+    message: 'Another admin acted on this broadcast at the same time. Please refresh and try again.',
+    messageThai: 'อดมินคนอื่นกำลังดำเนินการกับ E-Blast นี้พร้อมกัน กรุณารีเฟรชแล้วลองใหม่',
+  },
+  broadcast_cancel_too_late: {
+    message:
+      'This broadcast can no longer be cancelled — it has already started sending or completed.',
+    messageThai:
+      'ยกเลิก E-Blast นี้ไม่ได้แล้ว — ส่งไปแล้วหรือดำเนินการเสร็จสิ้น',
+  },
+  broadcast_schedule_too_soon: {
+    message: 'Scheduled time must be at least 5 minutes in the future.',
+    messageThai: 'เวลานัดหมายต้องอยู่ในอนาคตอย่างน้อย 5 นาที',
+  },
+  broadcast_rejection_reason_required: {
+    message: 'A non-empty rejection reason is required.',
+    messageThai: 'กรุณากรอกเหตุผลในการปฏิเสธ',
+  },
+  broadcast_rejection_reason_too_long: {
+    message: 'Rejection reason must be 2,000 characters or fewer.',
+    messageThai: 'เหตุผลในการปฏิเสธต้องมีไม่เกิน 2,000 ตัวอักษร',
+  },
+  broadcast_cancel_reason_too_long: {
+    message: 'Cancellation reason must be 500 characters or fewer.',
+    messageThai: 'เหตุผลในการยกเลิกต้องมีไม่เกิน 500 ตัวอักษร',
+  },
+  broadcast_member_not_found: {
+    message: 'Member not found in this tenant.',
+    messageThai: 'ไม่พบสมาชิกในผู้เช่ารายนี้',
   },
   invalid_body: {
     message: 'Request body is invalid.',
@@ -278,6 +323,22 @@ export function httpStatusForBroadcastError(kind: string): {
       return { status: 409, code: 'broadcast_immutable_after_submit' };
     case 'broadcast_not_found':
       return { status: 404, code: 'broadcast_not_found' };
+    case 'broadcast_invalid_state_transition':
+      return { status: 409, code: 'broadcast_invalid_state_transition' };
+    case 'broadcast_concurrent_action_blocked':
+      return { status: 409, code: 'broadcast_concurrent_action_blocked' };
+    case 'broadcast_cancel_too_late':
+      return { status: 409, code: 'broadcast_cancel_too_late' };
+    case 'broadcast_schedule_too_soon':
+      return { status: 422, code: 'broadcast_schedule_too_soon' };
+    case 'broadcast_rejection_reason_required':
+      return { status: 400, code: 'broadcast_rejection_reason_required' };
+    case 'broadcast_rejection_reason_too_long':
+      return { status: 400, code: 'broadcast_rejection_reason_too_long' };
+    case 'broadcast_cancel_reason_too_long':
+      return { status: 400, code: 'broadcast_cancel_reason_too_long' };
+    case 'broadcast_member_not_found':
+      return { status: 404, code: 'broadcast_member_not_found' };
     default:
       return { status: 500, code: 'internal_error' };
   }

@@ -1298,6 +1298,158 @@
         }
       }
     },
+    "broadcasts": {
+      "queue": {
+        "title": "คิวตรวจสอบ E-Blast",
+        "subtitle": "ตรวจสอบและอนุมัติ E-Blast ที่สมาชิกส่งมา",
+        "empty": "ไม่มี E-Blast รอการตรวจสอบ",
+        "totalPending": "{count} รายการรอตรวจ",
+        "filters": {
+          "formAriaLabel": "ตัวกรองคิวตรวจสอบ E-Blast",
+          "statusLabel": "สถานะ",
+          "statusAll": "ทั้งหมด",
+          "memberLabel": "สมาชิก",
+          "memberAll": "สมาชิกทั้งหมด",
+          "fromDate": "จาก",
+          "toDate": "ถึง",
+          "apply": "กรอง",
+          "reset": "ล้าง"
+        },
+        "columns": {
+          "submittedAt": "ส่งเมื่อ",
+          "member": "สมาชิก",
+          "subject": "หัวข้อ",
+          "segment": "ผู้รับ",
+          "recipientCount": "จำนวนผู้รับ",
+          "status": "สถานะ",
+          "actions": "การดำเนินการ"
+        },
+        "status": {
+          "draft": "ฉบับร่าง",
+          "submitted": "รอตรวจสอบ",
+          "approved": "อนุมัติแล้ว",
+          "sending": "กำลังส่ง",
+          "sent": "ส่งแล้ว",
+          "rejected": "ปฏิเสธ",
+          "cancelled": "ยกเลิก",
+          "failed_to_dispatch": "ส่งไม่สำเร็จ"
+        },
+        "actorRole": {
+          "member_self_service": "สมาชิก",
+          "admin_proxy": "ผู้ดูแล (ส่งแทน)",
+          "system": "ระบบ"
+        },
+        "pagination": {
+          "previous": "ก่อนหน้า",
+          "next": "ถัดไป"
+        },
+        "slaBanner": {
+          "targetSla": "เป้าหมายการตรวจสอบ: 48 ชั่วโมง",
+          "medianRolling30d": "เวลาตรวจสอบเฉลี่ย (30 วันล่าสุด): {hours} ชม.",
+          "p95Rolling30d": "p95: {hours} ชม.",
+          "withinBudget": "อยู่ในเกณฑ์ SLA",
+          "breachWarning": "เกิน SLA — ทบทวนกำลังคนของทีมตรวจสอบ"
+        },
+        "proxySubmitButton": "ส่งแทนสมาชิก"
+      },
+      "review": {
+        "title": "ตรวจสอบ E-Blast",
+        "subtitle": "ดูเนื้อหา + อนุมัติ ปฏิเสธ หรือยกเลิก",
+        "fields": {
+          "subject": "หัวข้อ",
+          "body": "ข้อความ",
+          "segment": "ผู้รับ",
+          "recipientCount": "จำนวนผู้รับโดยประมาณ",
+          "submittedBy": "ส่งโดย",
+          "submittedAt": "ส่งเมื่อ",
+          "scheduledFor": "นัดส่ง",
+          "actorRole": "บทบาทผู้ส่ง"
+        },
+        "audit": {
+          "title": "ไทม์ไลน์ลำดับการดำเนินการ",
+          "drafted": "สร้างฉบับร่าง",
+          "submitted": "ส่งตรวจสอบ",
+          "approved": "อนุมัติ",
+          "rejected": "ปฏิเสธ",
+          "cancelled": "ยกเลิก",
+          "sendStarted": "เริ่มส่ง",
+          "sent": "ส่งสำเร็จ",
+          "failedToDispatch": "ส่งไม่สำเร็จ"
+        }
+      },
+      "approveDialog": {
+        "title": "อนุมัติ E-Blast นี้?",
+        "description": "เลือกส่งทันทีหรือนัดส่งภายหลัง ผู้รับจะเห็นแบรนด์ของหอการค้าเป็นผู้ส่ง",
+        "decision": {
+          "sendNow": "อนุมัติและส่งทันที",
+          "schedule": "อนุมัติและนัดส่ง"
+        },
+        "scheduleLabel": "ส่งเวลา",
+        "scheduleHelp": "อย่างน้อย 5 นาทีจากเวลาปัจจุบัน",
+        "confirm": "อนุมัติ",
+        "cancel": "ยกเลิก"
+      },
+      "rejectDialog": {
+        "title": "ปฏิเสธ E-Blast นี้?",
+        "description": "ระบุเหตุผล — สมาชิกจะเห็นข้อความนี้ในอีเมลแจ้งเตือนตรงตามที่กรอก",
+        "reasonLabel": "เหตุผลในการปฏิเสธ",
+        "reasonPlaceholder": "อธิบายเหตุผลที่ E-Blast นี้ไม่สามารถดำเนินการได้…",
+        "reasonHelp": "1–2,000 ตัวอักษร ส่งให้สมาชิกตรงตามที่กรอก",
+        "confirm": "ปฏิเสธ",
+        "cancel": "ยกเลิก",
+        "errors": {
+          "reasonRequired": "กรุณากรอกเหตุผล",
+          "reasonTooLong": "เหตุผลต้องไม่เกิน 2,000 ตัวอักษร"
+        }
+      },
+      "cancelDialog": {
+        "title": "ยกเลิก E-Blast นี้?",
+        "description": "การยกเลิกจะคืนโควตาที่จองไว้ของสมาชิก กรุณากรอกเหตุผลสำหรับ audit log + อีเมลแจ้งสมาชิก",
+        "reasonLabel": "เหตุผลในการยกเลิก",
+        "reasonPlaceholder": "เหตุผลที่ยกเลิก…",
+        "reasonHelp": "1–500 ตัวอักษร",
+        "confirm": "ยกเลิก E-Blast",
+        "cancel": "ไม่ยกเลิก"
+      },
+      "proxySubmitDialog": {
+        "title": "ส่งแทนสมาชิก",
+        "description": "เขียน E-Blast ที่จะถูกส่งเข้าคิวตรวจสอบโดยใช้โควตาของสมาชิกที่ส่งแทน",
+        "memberLabel": "สมาชิก",
+        "memberPlaceholder": "ค้นหาด้วยชื่อบริษัท…",
+        "subjectLabel": "หัวข้อ",
+        "bodyLabel": "ข้อความ",
+        "segmentLabel": "ผู้รับ",
+        "confirm": "ส่ง",
+        "cancel": "ยกเลิก"
+      },
+      "haltBanner": {
+        "title": "{count, plural, =1 {สมาชิก 1 รายถูกพักการส่ง} other {สมาชิก # รายถูกพักการส่ง}}",
+        "body": "พักอัตโนมัติเนื่องจากเกินเกณฑ์ความถี่ในการรายงานสแปม กรุณาตรวจสอบและคลายล็อกหากเหมาะสม",
+        "clearAction": "ตรวจสอบและคลายล็อก",
+        "haltedSince": "ถูกพักตั้งแต่ {date}"
+      },
+      "clearHaltDialog": {
+        "title": "คลายล็อกการส่งของสมาชิก?",
+        "body": "พิมพ์ชื่อบริษัทของสมาชิกเพื่อยืนยัน การคลายล็อกจะเปิดให้สมาชิกส่ง E-Blast ใหม่ได้อีกครั้ง",
+        "phraseLabel": "พิมพ์ {phrase} เพื่อยืนยัน",
+        "phraseError": "ข้อความไม่ตรงกัน",
+        "confirm": "คลายล็อก",
+        "cancel": "ยกเลิก"
+      },
+      "managerReadonlyBanner": {
+        "title": "โหมดอ่านอย่างเดียว",
+        "body": "บทบาท Manager: คุณสามารถดูคิวและรายละเอียด E-Blast ได้ แต่อนุมัติ ปฏิเสธ หรือยกเลิกไม่ได้"
+      },
+      "toast": {
+        "approved": "อนุมัติ E-Blast แล้ว",
+        "rejected": "ปฏิเสธ E-Blast แล้ว แจ้งสมาชิกเรียบร้อย",
+        "cancelled": "ยกเลิก E-Blast แล้ว",
+        "proxySubmitted": "ส่งเข้าคิวตรวจสอบแล้ว",
+        "clearHalted": "คลายล็อกแล้ว สมาชิกส่ง E-Blast ใหม่ได้",
+        "concurrentRace": "ผู้ดูแลคนอื่นดำเนินการก่อนหน้านี้แล้ว กำลังรีเฟรช…",
+        "error": "ดำเนินการไม่สำเร็จ กรุณาลองใหม่"
+      }
+    },
     "refund": {
       "title": "คืนเงิน",
       "button": {
@@ -1975,6 +2127,28 @@
     },
     "refundConfirmation": {
       "subject": "ยืนยันการคืนเงิน"
+    },
+    "broadcastApproved": {
+      "subject": "E-Blast ของคุณได้รับการอนุมัติแล้ว",
+      "greeting": "สวัสดีคุณ {name},",
+      "body": "E-Blast \"{subject}\" ของคุณได้รับการอนุมัติและจะส่ง{scheduleHint}",
+      "scheduleNow": "ในไม่ช้า",
+      "scheduleAt": "ในวันที่ {when}",
+      "footer": "คุณจะเห็นผลการส่งในหน้าสิทธิประโยชน์เมื่อ E-Blast ส่งเสร็จ"
+    },
+    "broadcastRejected": {
+      "subject": "E-Blast ของคุณไม่ได้รับการอนุมัติ",
+      "greeting": "สวัสดีคุณ {name},",
+      "body": "E-Blast \"{subject}\" ของคุณไม่ได้รับการอนุมัติ",
+      "reasonHeading": "เหตุผลจากผู้ดูแลหอการค้า:",
+      "footer": "โควตาที่จองไว้ได้รับการคืนแล้ว คุณสามารถส่ง E-Blast ฉบับใหม่ได้"
+    },
+    "broadcastCancelled": {
+      "subject": "E-Blast ของคุณถูกยกเลิก",
+      "greeting": "สวัสดีคุณ {name},",
+      "body": "E-Blast \"{subject}\" ของคุณถูกยกเลิก",
+      "reasonHeading": "หมายเหตุการยกเลิก:",
+      "footer": "โควตาที่จองไว้ได้รับการคืนแล้ว"
     }
   }
 }

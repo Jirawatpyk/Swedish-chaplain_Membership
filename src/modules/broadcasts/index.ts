@@ -205,9 +205,6 @@ export {
 } from './infrastructure/broadcasts-deps';
 
 // --- Composition root factories (Phase 4 US2) ----------------------------
-// Note: Wave 1 wires factories to existing infrastructure. Resend
-// Broadcasts gateway adapter (Wave 2) replaces the stub gateway used
-// here for `makeDispatchScheduledBroadcastDeps`.
 export {
   makeApproveBroadcastDeps,
   makeRejectBroadcastDeps,
@@ -216,3 +213,23 @@ export {
   makeClearHaltDeps,
   makeDispatchScheduledBroadcastDeps,
 } from './infrastructure/broadcasts-deps';
+
+// --- Infrastructure adapters consumed by routes (Phase 4 US2) ------------
+// EmailTransactionalPort impl is exposed at the barrel because admin
+// review API routes (approve/reject/cancel) trigger member notifications
+// AFTER the use-case completes — outside the use-case's port boundary,
+// so the route handler imports it directly.
+export { emailTransactionalBridge } from './infrastructure/email-transactional-bridge';
+export type {
+  EmailTransactionalPort,
+  SendEmailInput,
+} from './application/ports/email-transactional-port';
+
+// MembersBridge instance — exposed for the admin queue server component
+// which reads halt-state inline.
+export { membersBridge } from './infrastructure/members-bridge';
+export type {
+  MemberHaltSummary,
+  MemberRecipient,
+  MembersBridgePort,
+} from './application/ports/members-bridge-port';
