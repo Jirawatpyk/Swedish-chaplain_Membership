@@ -22,7 +22,7 @@
 | Unit | 17 files / 234 tests pass |
 | Contract | 7 files / 102 tests pass |
 | Integration | 7 files / 65 tests pass (live Neon Singapore) |
-| E2E | 6 files / 29 tests pass (chromium) |
+| E2E | 6 files / 87 tests pass (3 projects × 29 — chromium + mobile-chrome + mobile-safari, post-2026-05-01 cross-browser uplift) |
 
 ## Changelog Entry
 
@@ -137,10 +137,23 @@ Re-applicable via `pnpm tsx scripts/apply-migration-0074.ts <migration.sql>`.
 Unit              17 files    234 tests   pass
 Contract           7 files    102 tests   pass
 Integration        7 files     65 tests   pass  (live Neon Singapore)
-E2E                6 files     29 tests   pass  (chromium, --workers=1)
+E2E                6 files     87 tests   pass  (chromium + mobile-chrome + mobile-safari × 29, --workers=1)
 ─────────────────────────────────────────────
-Total F7          37 files    430 tests   pass / 0 todo / 0 fixme / 0 skip
+Total F7          37 files    488 tests   pass / 0 todo / 0 fixme / 0 skip
 ```
+
+> **2026-05-01 cross-browser uplift**: After Node 22 LTS migration the
+> dompurify ESM 4-layer workaround was removed. While re-running E2E
+> across all 3 Playwright projects (chromium + mobile-chrome +
+> mobile-safari per `playwright.config.ts`), 7 mobile failures surfaced
+> + were fixed in commits `cf25cff`. Two root causes addressed:
+> (a) admin-review-queue regex matched legacy "no broadcasts" instead
+> of the i18n empty-state "Queue is clear"; (b) WebKit (`mobile-safari`
+> iPhone 12 device profile) flaked on `getByLabel().fill()` due to
+> autofill-heuristic races — replaced with `click() + fill() +
+> expect(toHaveValue)` pattern + widened sign-in waitForURL timeout
+> from 10s → 15s. F7 now ships with **full cross-browser E2E coverage
+> on the 3 default Playwright projects** instead of chromium-only.
 
 ## Performance budgets (per FR-013 / SC-002 / Q6)
 
