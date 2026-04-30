@@ -84,9 +84,15 @@ export async function AuditTimeline({
   // `audit_log` applies (Constitution v1.4.0 Principle I two-layer
   // isolation; the `WHERE al.tenant_id = ...` clause is the in-app
   // filter; RLS is the database-layer enforcement).
-  // Simplify-S5 — native array binding (drizzle binds `string[]` as
-  // `text[]` parameter; safer than `sql.raw` quote-interpolation).
+  // postgres.js `sql` template tag does not auto-cast JS string[] into
+  // PG `text[]`; pass it as an explicit ARRAY[...] literal so the
+  // `= ANY(...)` operator gets the correct type. RELEVANT_EVENTS is a
+  // const tuple of safe enum literals — string-interpolation here is
+  // safe (no user input).
   const tenantCtx = asTenantContext(tenantId);
+  const eventList = sql.raw(
+    `(${RELEVANT_EVENTS.map((e) => `'${e}'`).join(',')})`,
+  );
   const rows = (await runInTenant(tenantCtx, async (tx) =>
     tx.execute(sql`
       SELECT al.event_type::text                           AS "eventType",
@@ -97,7 +103,7 @@ export async function AuditTimeline({
         LEFT JOIN users u ON u.id::text = al.actor_user_id
        WHERE al.tenant_id = ${tenantId}
          AND al.payload->>'broadcastId' = ${broadcastId}
-         AND al.event_type::text = ANY(${RELEVANT_EVENTS as unknown as string[]})
+         AND al.event_type::text IN ${eventList}
        ORDER BY al.timestamp ASC
     `),
   )) as unknown as ReadonlyArray<AuditRow>;

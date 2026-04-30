@@ -93,14 +93,28 @@ function installLinkHardeningHook(): void {
   if (hookInstalled) return;
   // Force every surviving anchor to be safe regardless of input.
   // Hook fires once per element after attribute sanitisation.
+  //
+  // NOTE: cannot use `node instanceof Element` here — on Node 22 server
+  // runtime the `Element` global is provided by isomorphic-dompurify's
+  // internal jsdom, but only on `globalThis`. Avoid the cross-realm
+  // ambiguity by checking `nodeType === 1` (ELEMENT_NODE) + the runtime
+  // shape of the methods we use.
   DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    const el = node as {
+      nodeType?: number;
+      tagName?: string;
+      hasAttribute?: (name: string) => boolean;
+      setAttribute?: (name: string, value: string) => void;
+    };
     if (
-      node instanceof Element &&
-      node.tagName === 'A' &&
-      node.hasAttribute('href')
+      el.nodeType === 1 &&
+      el.tagName === 'A' &&
+      typeof el.hasAttribute === 'function' &&
+      typeof el.setAttribute === 'function' &&
+      el.hasAttribute('href')
     ) {
-      node.setAttribute('rel', 'noopener noreferrer nofollow');
-      node.setAttribute('target', '_blank');
+      el.setAttribute('rel', 'noopener noreferrer nofollow');
+      el.setAttribute('target', '_blank');
     }
   });
   hookInstalled = true;

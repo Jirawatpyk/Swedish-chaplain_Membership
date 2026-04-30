@@ -155,10 +155,11 @@ export async function QueueTable({
         select: t('bulk.selectAria'),
         bulkApprove: t('bulk.approveSelected'),
         bulkClear: t('bulk.clear'),
-        bulkSelected: t('bulk.selected'),
+        // Raw templates — client substitutes {count}/{ok}/{fail} via .replace()
+        bulkSelected: t.raw('bulk.selected') as string,
         bulkSuccess: t('bulk.successAll'),
         bulkFailure: t('bulk.failureAll'),
-        bulkPartial: t('bulk.partial'),
+        bulkPartial: t.raw('bulk.partial') as string,
         tableAria: t('tableAria'),
       }}
     />
