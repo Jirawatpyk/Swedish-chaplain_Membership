@@ -33,6 +33,19 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  // F7 — Vercel serverless runtime (Node 22) does NOT enable
+  // --experimental-require-module by default, so isomorphic-dompurify's
+  // jsdom transitive chain (jsdom → html-encoding-sniffer → @exodus/bytes,
+  // ESM-only) crashes Lambda cold-start with ERR_REQUIRE_ESM. Marking
+  // them as server-side externals lets Node load them at runtime via the
+  // pnpm.overrides-pinned CJS-clean versions instead of bundling them.
+  // See docs/runbooks/f7-dompurify-esm-workaround.md.
+  serverExternalPackages: [
+    'isomorphic-dompurify',
+    'jsdom',
+    'html-encoding-sniffer',
+    '@exodus/bytes',
+  ],
   // Security headers (HSTS, CSP, X-Frame-Options) are set in proxy.ts so
   // they apply uniformly to API routes and pages — single source of truth.
   // (Next.js 16 renamed the `middleware.ts` convention to `proxy.ts`.)

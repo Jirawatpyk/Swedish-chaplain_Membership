@@ -1,16 +1,19 @@
 # F7 — `isomorphic-dompurify` ESM/CJS interop workaround
 
-**Status**: ✅ **RESOLVED 2026-04-30** — Removal criterion #1 met (Node 22 LTS adoption).
-The 4-layer workaround was removed in commit `<HEAD>` after upgrading
-`engines.node: ">=22.0.0"`. Static imports + default `pnpm.overrides` (none)
-+ no `serverExternalPackages` block now work natively because Node 22's
-`--experimental-require-module` is on by default. This document is
-preserved for **historical context** only — DO NOT re-apply the workaround
-unless the project ever rolls back to Node 20.
+**Status**: ⚠️ **PARTIALLY ACTIVE** — 2 of 4 layers re-applied 2026-05-01
 
-**Original status (preserved)**: ACTIVE workaround — 2026-04-30
+**History**:
+- 2026-04-30 (Node 20): all 4 layers active
+- 2026-04-30 (Node 22 LTS adoption): all 4 layers removed; verified GREEN locally + on Node 22 dev-server
+- 2026-05-01 (Vercel prod deploy crashed): **Vercel's serverless Node 22 runtime does NOT enable `--experimental-require-module`** by default — even though local Node 22 binary does. Lambda cold-start crashed with `ERR_REQUIRE_ESM` on `/var/task/node_modules/.pnpm/@exodus+bytes@1.15.0/.../encoding-lite.js`. 2 layers re-applied:
+  - **Layer 3 ACTIVE** (`pnpm.overrides` pins `jsdom@25` + `html-encoding-sniffer@4` + `whatwg-url@14`) — keeps the dep tree CJS-clean so `@exodus/bytes` ESM-only chunk is never pulled in.
+  - **Layer 4 ACTIVE** (`next.config.ts` `serverExternalPackages: ['isomorphic-dompurify','jsdom','html-encoding-sniffer','@exodus/bytes']`) — tells Next.js bundler to leave these as Node externals so the runtime's CJS-pinned versions are loaded.
 
-**Affected (historically)**: F7 Email Broadcast (compose, submit, dispatch, admin review)
+**Layers NOT needed** (Node 22 supports static imports in dev + Vercel build phase):
+- ~~Layer 1: dynamic `await import('isomorphic-dompurify')` in preview-pane.tsx~~ — static import works on Node 22.
+- ~~Layer 2: lazy `require()` in broadcasts-deps.ts~~ — static import works on Node 22.
+
+**Affected**: F7 Email Broadcast (compose, submit, dispatch, admin review)
 
 **Symptom**:
 
