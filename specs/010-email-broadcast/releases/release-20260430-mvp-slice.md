@@ -73,6 +73,8 @@
 - queue page barrel imports loading dompurify chain via composition root → lazy `require()` for read-only deps
 - preview-pane SSR static-import of isomorphic-dompurify crashed Node 20 CJS loader → dynamic `await import()` inside `useEffect` (browser-only)
 - pnpm overrides pin `jsdom@25 + whatwg-url@14 + html-encoding-sniffer@4` to bypass ESM-only `@exodus/bytes` chain in jsdom@28
+- 0076 — DB↔TS audit-event enum drift (`broadcast_resend_audience_drift` + `broadcast_resend_drift_check_unverifiable` were in `F7_AUDIT_EVENT_TYPES` but not yet in Postgres `audit_event_type`); first emit would have thrown `invalid input value for enum`. Fixed via migration 0076 + manual `sql.unsafe()` apply on Neon (commit `12baa31`)
+- `_journal.json` backfill — migrations 0074/0075/0076 were originally applied via direct `sql.unsafe()` outside `drizzle-kit migrate`, so `drizzle/migrations/meta/_journal.json` did not contain idx 74/75/76 entries; subsequent `pnpm db:migrate` runs would silently skip them. Backfilled the journal + the `drizzle.__drizzle_migrations` table (rows 92/93/94 with computed SHA-256 hashes matching Drizzle's algorithm) in commit `9ef6689`. Verified `pnpm db:migrate` runs clean against the synced state. **Future maintainers**: prefer running `pnpm db:migrate` (not direct `sql.unsafe()`) so the journal stays in sync automatically.
 
 ### Architecture decisions (resolved during /speckit.plan + Ultraplan)
 - AD1: Two-phase Resend dispatch (status=approved + outbox enqueue → cron picks up → Resend call)
@@ -96,7 +98,7 @@
 - US5 Public unsubscribe page — Phase 7
 - US6 Scheduled future-dated send improvements — Phase 8 (basic schedule path ships in US2)
 - F6 EventAttendees stub — F7 ships with stub returning `[]`; F6 swaps in real Drizzle adapter at F6 ship
-- F7 SV translations are `[F7-SV-REVIEW]` placeholders — chamber liaison reviews at /speckit.ship gate
+- F7 SV translations were originally `[F7-SV-REVIEW]` placeholders; auto-translated EN→SV via map during round-4 (256 keys). **Status as of 2026-04-30**: 0 placeholders remaining (`grep "F7-SV-REVIEW" src/i18n/messages/sv.json` returns 0); strings are production-shipped pending chamber TH/SV liaison content-quality sign-off at `/speckit.ship` gate
 - isomorphic-dompurify ESM workaround documented in `docs/runbooks/f7-dompurify-esm-workaround.md` — track upstream for removal
 ```
 

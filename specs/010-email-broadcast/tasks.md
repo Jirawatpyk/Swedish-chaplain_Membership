@@ -300,6 +300,16 @@ description: "F7 — Email Broadcast (E-Blast) — TDD-ordered task list"
 
 ---
 
+## ── MVP slice ends here · everything below is post-MVP (deferred) ──
+
+> Tasks T127+ below are intentionally **`[ ]` not started** at the 2026-04-30 MVP ship.
+> They cover US3–US6 (member quota dashboard, public unsubscribe, webhook delivery
+> tracking, scheduled-send polish) and ship in Phase 5–8 per `docs/phases-plan.md`.
+> Do **not** treat them as incomplete in-scope work — they are explicit deferrals
+> per Ultraplan (see `releases/release-20260430-mvp-slice.md` § "Known limitations").
+
+---
+
 ## Phase 5: User Story 3 — Member sees quota + history (Priority: P2)
 
 **Goal**: Member opens `/portal/benefits/e-blasts` and sees quota counters (sent + reserved + remaining + cap + reset date) + paginated broadcast history with status badges + delivery summary on detail.

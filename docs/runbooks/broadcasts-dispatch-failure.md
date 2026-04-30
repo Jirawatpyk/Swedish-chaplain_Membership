@@ -95,3 +95,27 @@ After fix is deployed:
 - Phase 3+ retry policy with exponential backoff (1/2/4/8/16s × 5) per CHK020 — handles transient Resend 5xx automatically without surfacing as `failed_to_dispatch`.
 - Monthly Resend quota monitoring; alert at 80% to give admin lead time to upgrade.
 - Pre-deploy verification: `pnpm test:integration tests/integration/broadcasts/` GREEN required.
+
+## Pre-prod alert wiring checklist (one-time, before first prod dispatch)
+
+Confirm the following alerts from `docs/observability.md` § Alerting Rules are
+wired in the prod alerting backend (Grafana / Vercel Observability /
+PagerDuty integration) **before** the first production `dispatch-scheduled`
+cron tick fires:
+
+- [ ] `broadcasts.dispatch_failure_rate > 10% / 1h` → page on-call
+- [ ] `broadcasts.failed_to_dispatch.count > 0 / 5min` → alarm
+- [ ] `broadcasts.audience_drift_detected.count > 0 / 24h` → page (R5-IMP5)
+- [ ] `broadcasts.drift_check_unverifiable.count > 1 / 1h` → alarm (R5-S1)
+- [ ] `broadcasts.complaint_rate_per_broadcast_breach > 0 / 24h` → page
+- [ ] `broadcasts.webhook_signature_rejected > 5 / 1h` → page (signature-spoof attempt)
+
+Verification command (manual, post-wire):
+
+```bash
+# Smoke-test by triggering a forced 5xx in a non-prod chamber tenant + confirming alert fires
+# OR by tail-following Vercel logs during a known dispatch and confirming counter increments
+vercel logs <prod-deployment-url> --follow | grep -E "broadcasts\.(dispatch_failure|drift)"
+```
+
+Document the wire-up date + verifier name in `releases/release-20260430-mvp-slice.md` § "Post-ship verification".

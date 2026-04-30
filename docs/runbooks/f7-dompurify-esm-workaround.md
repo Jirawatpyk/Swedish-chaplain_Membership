@@ -120,6 +120,21 @@ pnpm test:e2e tests/e2e/broadcast-compose-and-submit.spec.ts --workers=1 --proje
 curl -i http://localhost:3100/portal/broadcasts/new  # 307 (auth) — never 500
 ```
 
+## Revisit checkpoint
+
+**Next mandatory revisit**: 2026-10-30 (6 months from F7 ship) OR at the
+start of F7.1 (US3+ scope), whichever comes first. Re-evaluate the four
+removal criteria below; if any are met, the maintainer **MUST** schedule
+removal in the same release. Document the re-evaluation outcome in this
+runbook (append a `## Revisit log` section). This prevents the four-layer
+workaround from quietly becoming permanent debt.
+
+**Tracking issues** (subscribe for upstream fix notifications):
+- isomorphic-dompurify: https://github.com/kkomelin/isomorphic-dompurify/issues
+- jsdom @exodus/bytes ESM resolution: https://github.com/jsdom/jsdom/issues
+- whatwg-url CJS-clean release: https://github.com/jsdom/whatwg-url/releases
+- html-encoding-sniffer CJS-clean: https://github.com/jsdom/html-encoding-sniffer/releases
+
 ## Removal criteria (when this workaround can be dropped)
 
 ANY of:
