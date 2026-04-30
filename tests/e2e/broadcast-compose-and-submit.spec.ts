@@ -108,13 +108,10 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     }
   });
 
-  test('AS1: after-submit envelope carries reviewSlaTargetHours = 48 (FR-013)', async ({
+  test('AS1: submit envelope shape — happy 200 OR structured 4xx (NEVER 5xx)', async ({
     page,
   }) => {
     await signInMember(page);
-    const probe = await page.request.get('/portal/broadcasts/new');
-    test.skip(probe.status() === 503, 'F7 feature flag is OFF (ship-dark)');
-
     await page.goto('/portal/broadcasts/new');
     const result = await page.evaluate(async () => {
       const res = await fetch('/api/broadcasts/submit', {
@@ -122,7 +119,7 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          subject: '[E2E] SLA hint',
+          subject: '[E2E] envelope-shape',
           bodyHtml: '<p>x</p>',
           bodySource: 'plain',
           segment: { kind: 'all_members' },
@@ -131,11 +128,15 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
       });
       return { status: res.status, body: await res.json().catch(() => null) };
     });
-    test.skip(
-      result.status !== 200,
-      `submit not allowed in current seed state (status ${result.status})`,
-    );
-    expect(result.body.reviewSlaTargetHours).toBe(48);
+    // Never accept 5xx — the dompurify ESM root-cause fix guarantees
+    // the submit route always returns a structured envelope.
+    expect(result.status).toBeLessThan(500);
+    if (result.status === 200) {
+      expect(result.body.reviewSlaTargetHours).toBe(48);
+    } else {
+      expect([400, 422, 429]).toContain(result.status);
+      expect(result.body?.error?.code).toBeTruthy();
+    }
   });
 
   test('AS1: invalid body (subject empty) → 400 invalid_body', async ({ page }) => {

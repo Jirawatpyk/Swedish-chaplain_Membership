@@ -92,10 +92,7 @@ test.describe('Broadcast draft restore (T054 — US1 AS3)', () => {
       });
       return { status: res.status, body: await res.json().catch(() => null) };
     });
-    test.skip(
-      ![200, 201].includes(created.status),
-      `draft create returned ${created.status}; cannot test update`,
-    );
+    expect([200, 201]).toContain(created.status);
 
     const draftId = (created.body as { broadcastId: string }).broadcastId;
     const updated = await page.evaluate(async (id: string) => {
