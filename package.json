@@ -121,6 +121,18 @@
       "@node-rs/argon2",
       "sharp",
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "jsdom": "25.0.1",
+      "html-encoding-sniffer": "4.0.0",
+      "whatwg-url": "14.2.0"
+    },
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "jsdom": "*",
+        "html-encoding-sniffer": "*",
+        "whatwg-url": "*"
+      }
+    }
   }
 }

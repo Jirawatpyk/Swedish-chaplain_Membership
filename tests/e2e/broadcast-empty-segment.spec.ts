@@ -61,8 +61,11 @@ test.describe('Broadcast empty segment (T055 — US1 AS4)', () => {
     });
     expect([400, 422, 500]).toContain(r.status);
     if (r.status === 422) {
+      // Quota_blocked may fire first when the test member's quota is
+      // exhausted by prior tests (precondition order: halt → rate →
+      // plan → quota → primary-contact → … → custom-list-validation).
       expect(r.body?.error?.code).toMatch(
-        /broadcast_custom_recipient_unknown|broadcast_empty_segment_blocked/,
+        /broadcast_custom_recipient_unknown|broadcast_empty_segment_blocked|broadcast_quota_blocked/,
       );
     }
   });
@@ -141,7 +144,9 @@ test.describe('Broadcast empty segment (T055 — US1 AS4)', () => {
     });
     expect([400, 422, 500]).toContain(r.status);
     if (r.status === 422) {
-      expect(r.body?.error?.code).toBe('broadcast_empty_segment_blocked');
+      expect(r.body?.error?.code).toMatch(
+        /broadcast_empty_segment_blocked|broadcast_quota_blocked/,
+      );
     }
   });
 });

@@ -18,7 +18,9 @@ import { CheckCircle2, Circle } from 'lucide-react';
 interface AuditRow {
   readonly eventType: string;
   readonly actorUserId: string;
-  readonly timestamp: Date;
+  // Raw SQL via `db.execute` returns the column as a string when the
+  // query goes through postgres.js's untyped pipeline — not a Date.
+  readonly timestamp: string | Date;
 }
 
 const RELEVANT_EVENTS = [
@@ -60,7 +62,7 @@ export async function AuditTimeline({
       FROM audit_log
      WHERE tenant_id = ${tenantId}
        AND payload->>'broadcastId' = ${broadcastId}
-       AND event_type::text = ANY(${sql.raw(`ARRAY[${RELEVANT_EVENTS.map((e) => `'${e}'`).join(', ')}]::audit_event_type[]`)})
+       AND event_type::text = ANY(${sql.raw(`ARRAY[${RELEVANT_EVENTS.map((e) => `'${e}'`).join(', ')}]::text[]`)})
      ORDER BY timestamp ASC
   `)) as unknown as ReadonlyArray<AuditRow>;
   const events = rows;
@@ -86,32 +88,35 @@ export async function AuditTimeline({
         <p className="text-xs text-muted-foreground">—</p>
       ) : (
         <ol className="space-y-2">
-          {events.map((r, idx) => (
-            <li
-              key={`${r.eventType}-${r.timestamp.getTime()}`}
-              className="flex items-start gap-3"
-            >
-              {idx === events.length - 1 ? (
-                <CheckCircle2
-                  className="mt-0.5 h-4 w-4 shrink-0 text-primary"
-                  aria-hidden="true"
-                />
-              ) : (
-                <Circle
-                  className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-              )}
-              <div className="flex-1">
-                <p className="text-sm font-medium">
-                  {eventLabel[r.eventType] ?? r.eventType}
-                </p>
-                <p className="text-xs text-muted-foreground tabular-nums">
-                  {fmt.format(new Date(r.timestamp))}
-                </p>
-              </div>
-            </li>
-          ))}
+          {events.map((r, idx) => {
+            const ts = new Date(r.timestamp);
+            return (
+              <li
+                key={`${r.eventType}-${ts.getTime()}`}
+                className="flex items-start gap-3"
+              >
+                {idx === events.length - 1 ? (
+                  <CheckCircle2
+                    className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Circle
+                    className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                )}
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    {eventLabel[r.eventType] ?? r.eventType}
+                  </p>
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {fmt.format(ts)}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
         </ol>
       )}
     </section>

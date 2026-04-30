@@ -9,11 +9,18 @@
  * If a future Tiptap upgrade ever lets unsafe markup escape the editor's
  * `transformPastedHTML` path, the preview pane still renders safely.
  *
+ * **SSR-safe load** (root cause: isomorphic-dompurify → jsdom → ESM-only
+ * @exodus/bytes crashes Node 20's CJS loader during SSR pre-render).
+ * Dompurify is loaded ONLY in the browser via `useEffect` + dynamic
+ * import, so the server-render path never touches it. Initial paint
+ * shows an unsanitised-but-empty preview (browser sanitises on first
+ * effect tick — no XSS surface because nothing is dangerouslySet
+ * until DOMPurify is ready).
+ *
  * Re-renders are throttled by the parent's `useDeferredValue(bodyHtml)`
  * — preview pane just renders whatever it receives.
  */
-import { useMemo } from 'react';
-import DOMPurify from 'isomorphic-dompurify';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 const PREVIEW_SANITIZER_CONFIG = Object.freeze({
@@ -54,6 +61,11 @@ const PREVIEW_SANITIZER_CONFIG = Object.freeze({
   RETURN_TRUSTED_TYPE: false,
 });
 
+type PurifyLike = {
+  sanitize: (html: string, config: unknown) => string;
+};
+let cachedPurify: PurifyLike | null = null;
+
 export interface PreviewPaneProps {
   readonly subject: string;
   readonly bodyHtml: string;
@@ -64,10 +76,27 @@ export function PreviewPane({
   bodyHtml,
 }: PreviewPaneProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.fields');
-  const sanitised = useMemo(
-    () => DOMPurify.sanitize(bodyHtml, PREVIEW_SANITIZER_CONFIG) as string,
-    [bodyHtml],
-  );
+  const [sanitised, setSanitised] = useState<string>('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async (): Promise<void> => {
+      if (cachedPurify === null) {
+        const mod = (await import('isomorphic-dompurify')) as {
+          default: PurifyLike;
+        };
+        cachedPurify = mod.default;
+      }
+      if (cancelled) return;
+      setSanitised(
+        cachedPurify.sanitize(bodyHtml, PREVIEW_SANITIZER_CONFIG) as string,
+      );
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [bodyHtml]);
 
   return (
     <section
@@ -79,13 +108,13 @@ export function PreviewPane({
           {t('previewLabel')}
         </p>
         <h3 className="text-sm font-semibold">
-          {subject.length > 0 ? subject : ' '}
+          {subject.length > 0 ? subject : ' '}
         </h3>
       </header>
       <div
         className="prose prose-sm dark:prose-invert max-w-none px-3 py-2"
-        // sanitised — defence-in-depth: server already sanitised; this
-        // is a second pass before the browser-rendered preview.
+        // Sanitised by DOMPurify in useEffect (browser-only). Empty
+        // string at SSR + first paint until effect resolves.
         dangerouslySetInnerHTML={{ __html: sanitised }}
       />
     </section>
