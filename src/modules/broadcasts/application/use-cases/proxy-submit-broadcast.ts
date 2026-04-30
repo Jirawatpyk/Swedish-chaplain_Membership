@@ -55,14 +55,25 @@ export async function proxySubmitBroadcast(
   deps: ProxySubmitBroadcastDeps,
   input: ProxySubmitBroadcastInput,
 ): Promise<Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>> {
-  // F7.1-HIGHC — distinguish "wrong member id" from "member exists but
-  // lacks primary contact email" so admins (or scripted API hits) get
-  // a precise error code. `memberExistsInTenant` returns false when
-  // RLS filters out a cross-tenant guess OR when the id is unknown.
-  const exists = await deps.membersBridge.memberExistsInTenant(
-    deps.tenant,
-    input.proxiedMemberId,
-  );
+  // F7.1-HIGHC + R5-S2 — distinguish "wrong member id" (false) from
+  // "infra failure" (throws). The bridge re-throws on `repo.unexpected`
+  // so a Neon outage surfaces as 500 server_error instead of misleading
+  // 422 member_not_found.
+  let exists: boolean;
+  try {
+    exists = await deps.membersBridge.memberExistsInTenant(
+      deps.tenant,
+      input.proxiedMemberId,
+    );
+  } catch (e) {
+    return {
+      ok: false,
+      error: {
+        kind: 'submit.server_error',
+        message: `member_exists_check_failed: ${e instanceof Error ? e.message : 'unknown'}`,
+      },
+    } as Result<ProxySubmitBroadcastOutput, ProxySubmitBroadcastError>;
+  }
   if (!exists) {
     return {
       ok: false,

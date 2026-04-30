@@ -355,20 +355,55 @@ export async function dispatchScheduledBroadcast(
         // partial-delivery scope.
         const expectedCount = resolvedResult.value.estimatedCount;
         let actualCount: number | null = null;
+        let countCheckFailed = false;
         try {
           actualCount = await deps.broadcastsGateway.getAudienceContactCount(
             resendAudienceId,
           );
         } catch (countErr) {
-          logger.warn(
+          // Round-5 R5-S1 — when the count fetch fails on a non-404
+          // (e.g. Resend 5xx, network), we cannot verify drift. Emit a
+          // dedicated forensic audit event so ops sees the
+          // unverifiable-replay condition (it would otherwise be
+          // silently skipped because actualCount stays null).
+          countCheckFailed = true;
+          logger.error(
             {
               err: countErr instanceof Error ? countErr.message : String(countErr),
               tenantId: deps.tenant.slug,
               broadcastId: input.broadcastId as string,
               resendBroadcastId,
+              expectedRecipientCount: expectedCount,
+              severity: 'critical',
             },
             'broadcasts.dispatch.audience_count_check_failed',
           );
+          try {
+            await deps.audit.emit(null, {
+              tenantId: deps.tenant.slug,
+              eventType: 'broadcast_resend_drift_check_unverifiable',
+              actorUserId: 'system:cron',
+              summary: `Broadcast ${input.broadcastId} idempotency replay — audience count unverifiable`,
+              payload: {
+                broadcastId: input.broadcastId,
+                resendBroadcastId,
+                resendAudienceId,
+                expectedRecipientCount: expectedCount,
+                errorReason:
+                  countErr instanceof Error ? countErr.message : String(countErr),
+              },
+              requestId: null,
+            });
+          } catch (auditErr) {
+            logger.error(
+              {
+                err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+                tenantId: deps.tenant.slug,
+                broadcastId: input.broadcastId as string,
+              },
+              'broadcasts.dispatch.unverifiable_audit_emit_failed',
+            );
+          }
         }
         if (actualCount !== null && actualCount !== expectedCount) {
           // Audience drift detected — emit audit + log error so ops
@@ -411,7 +446,7 @@ export async function dispatchScheduledBroadcast(
             },
             'broadcasts.dispatch.audience_drift_detected',
           );
-        } else {
+        } else if (!countCheckFailed) {
           logger.warn(
             {
               tenantId: deps.tenant.slug,

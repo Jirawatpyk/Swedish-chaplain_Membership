@@ -928,7 +928,7 @@ recipient email addresses (when used as keys), `Svix-Signature` header
 value, or unsubscribe-token plaintext is ever attributed** — those are in
 pino's redact list (see § 22.4).
 
-### 22.1 Metrics catalogue (16 metrics)
+### 22.1 Metrics catalogue (18 metrics)
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
@@ -948,6 +948,8 @@ pino's redact list (see § 22.4).
 | `broadcasts.complaint_rate_per_broadcast` | gauge | `tenant`, `broadcast_id` | Per-broadcast complaint rate; ≥ 0.1 % warn, ≥ 0.5 % page, > 5 % Q14 SC-005 (b) auto-halt |
 | `broadcasts.queue_pending` | gauge | `tenant` | `submitted` + `approved-with-scheduled` count; > 8000 warn |
 | `broadcasts.stuck_sending_count` | gauge | `tenant` | `status='sending'` for > 24 h count; ≥ 1 alarm |
+| `broadcasts.audience_drift_detected.count` | counter | `tenant` | F7.1-IMP5 — emitted whenever idempotency-replay observes a recipient-count mismatch between expected and Resend audience reality. **Black swan event** — should be 0 over weeks; > 0 / 24 h pages ops to investigate partial-delivery scope. Backed by audit event `broadcast_resend_audience_drift`. |
+| `broadcasts.drift_check_unverifiable.count` | counter | `tenant` | Round-5 R5-S1 — emitted when `getAudienceContactCount` fails on a non-404 (Resend 5xx / network) during idempotency replay. The replay still advances to `sending` but recipients-delivered count cannot be verified. Backed by audit event `broadcast_resend_drift_check_unverifiable`. > 1 / hour alarm. |
 
 **Cardinality**: `precondition`, `failure_reason`, `reason`, `event_type`
 are bounded enums; `tenant` is small-cardinality (≤ a few hundred over
@@ -986,6 +988,8 @@ the recipient cap × broadcast count per tenant per quota year (10/year/member
 | `broadcasts.queue_pending` > 8000 | **alarm** | FR-013 SLA breach risk | `docs/runbooks/broadcasts-queue-overflow.md` |
 | Any F7 surface p95 budget breach (any of the 6 SLOs above) | **alarm** | UX degradation; investigate per-surface | `docs/runbooks/broadcasts-perf-regression.md` |
 | `broadcasts.cron.skipped.count{reason="advisory_lock_held"}` > 5 / 5 min | **alarm** | Concurrent cron ticks holding the dispatch lock — possible Vercel function instance retention bug | `docs/runbooks/broadcasts-dispatch-failure.md` |
+| `broadcasts.audience_drift_detected.count` > 0 / 24 h | **page** | F7.1-IMP5 — recipient-count drift on idempotency replay; partial-delivery investigation required | `docs/runbooks/broadcasts-dispatch-failure.md` |
+| `broadcasts.drift_check_unverifiable.count` > 1 / 1 h | **alarm** | R5-S1 — multiple unverifiable replays in a window; Resend availability or app classification bug | `docs/runbooks/broadcasts-dispatch-failure.md` |
 
 ### 22.4 Logging redact rules (additions)
 

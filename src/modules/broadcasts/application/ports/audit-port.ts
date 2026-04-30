@@ -14,13 +14,17 @@
  *
  * Event taxonomy:
  *   - Draft / submission (US1): 15 events
- *   - Admin review (US2): 11 events
+ *   - Admin review + dispatch (US2): 12 events (round-4 added
+ *     `broadcast_resend_audience_drift` for idempotency-replay
+ *     count mismatch + round-5 added
+ *     `broadcast_resend_drift_check_unverifiable` for non-404 fetch
+ *     failures during the same path)
  *   - Cross-tenant probes: 2 events
- *   - Unsubscribe + suppression (US4): 4 events
- *   - Webhook (US5): 1 event
- *   - Plan-expiry edge (US6): 1 event
+ *   - Unsubscribe + suppression (US5): 4 events (deferred emit)
+ *   - Webhook (US4): 1 event (deferred emit)
+ *   - Plan-expiry edge (US6): 1 event (deferred emit)
  *   - Clarifications session 5 (Q14 + Q15): 3 events
- *   = 37 total
+ *   = 39 total
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -55,6 +59,7 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_failed_to_dispatch',
   'broadcast_resend_resource_missing', // R2-NEW-3 — emitted by dispatch worker
   'broadcast_resend_audience_drift',   // F7.1-IMP5 — audience count mismatch on idempotency replay
+  'broadcast_resend_drift_check_unverifiable', // R5-S1 — count fetch failed on non-404
   'broadcast_concurrent_action_blocked',
 
   // --- Cross-tenant probes (Constitution Principle I) — 2 events ----
@@ -87,7 +92,7 @@ export const F7_AUDIT_EVENT_TYPES = [
  * lives at type level; if the count is wrong, TypeScript errors here
  * with "Type '38' is not assignable to type '37'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 38
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 39
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;

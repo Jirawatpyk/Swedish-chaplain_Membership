@@ -175,6 +175,9 @@ interface GatewayOpts {
   readonly throwOnCreateBroadcast?: ThrowSpec;
   readonly throwOnSend?: ThrowSpec;
   readonly errorAsPlainError?: boolean;
+  /** Round-5 R5-T — let tests synthesise audience-count drift on idempotency replay. */
+  readonly audienceContactCount?: number | null;
+  readonly throwOnGetAudienceContactCount?: ThrowSpec;
 }
 
 function makeGateway(opts: GatewayOpts = {}): {
@@ -225,7 +228,10 @@ function makeGateway(opts: GatewayOpts = {}): {
         return null;
       },
       async getAudienceContactCount() {
-        return 2; // matches estimatedRecipientCount in default fixture
+        if (opts.throwOnGetAudienceContactCount) {
+          maybeThrow(opts.throwOnGetAudienceContactCount);
+        }
+        return opts.audienceContactCount ?? 2;
       },
     },
   };
@@ -833,5 +839,109 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         expect(result.error.message).toBe('db down');
       }
     }
+  });
+
+  // ---- F7.1-IMP5 / R5-T — audience drift on idempotency replay -----
+
+  it('idempotency_conflict on send + audience count mismatch → broadcast_resend_audience_drift audit emitted, broadcast still advances to sending', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    // Gateway returns audience contact count of 1 but recipient list
+    // has 2 — mismatch triggers drift audit.
+    const gw = makeGateway({
+      throwOnSend: { kind: 'permanent', reason: 'idempotency_conflict' },
+      // override kind in maybeThrow path: use real shape via plain throw
+      // shape with kind:'idempotency_conflict' instead.
+      audienceContactCount: 1,
+    });
+    // Override sendBroadcast to throw idempotency_conflict shape
+    const gwPort = {
+      ...gw.port,
+      async sendBroadcast() {
+        throw {
+          kind: 'idempotency_conflict',
+          reason: 'duplicate idempotency key',
+        };
+      },
+    };
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gwPort,
+        membersBridge: makeMembersBridge({
+          recipients: [
+            recipient('m-1', 'one@example.com'),
+            recipient('m-2', 'two@example.com'),
+          ],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+      },
+      baseInput,
+    );
+    // Replay treated as success — broadcast advances to 'sending'
+    expect(result.ok).toBe(true);
+    // Drift audit emitted with mismatched counts
+    const driftEvent = audit.emits.find(
+      (e) => e.eventType === 'broadcast_resend_audience_drift',
+    );
+    expect(driftEvent).toBeDefined();
+    expect(driftEvent?.payload['expectedRecipientCount']).toBe(2);
+    expect(driftEvent?.payload['actualRecipientCount']).toBe(1);
+    expect(driftEvent?.payload['drift']).toBe(1);
+  });
+
+  it('R5-S1 — getAudienceContactCount throws non-404 → broadcast_resend_drift_check_unverifiable audit emitted', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway();
+    const gwPort = {
+      ...gw.port,
+      async sendBroadcast() {
+        throw {
+          kind: 'idempotency_conflict',
+          reason: 'duplicate idempotency key',
+        };
+      },
+      async getAudienceContactCount() {
+        throw new Error('Resend 503 — service unavailable');
+      },
+    };
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gwPort,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+      },
+      baseInput,
+    );
+    // Replay still advances (Resend confirmed delivery on prior tick)
+    expect(result.ok).toBe(true);
+    // Unverifiable audit emitted (forensic record)
+    const unverifiableEvent = audit.emits.find(
+      (e) => e.eventType === 'broadcast_resend_drift_check_unverifiable',
+    );
+    expect(unverifiableEvent).toBeDefined();
+    expect(unverifiableEvent?.payload['errorReason']).toContain('503');
   });
 });

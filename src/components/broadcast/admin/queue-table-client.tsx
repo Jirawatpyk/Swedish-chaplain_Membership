@@ -280,7 +280,13 @@ export function QueueTableClient({
     startTransition(async () => {
       type Outcome =
         | { id: string; subject: string; ok: true }
-        | { id: string; subject: string; ok: false; status: number };
+        | {
+            id: string;
+            subject: string;
+            ok: false;
+            status: number;
+            code: string | null;
+          };
       const outcomes: Outcome[] = [];
 
       // IMP-1 round-3 — chunked Promise.allSettled. Each chunk awaits
@@ -305,11 +311,29 @@ export function QueueTableClient({
         for (const result of settled) {
           if (result.status === 'fulfilled') {
             const { res, original } = result.value;
-            outcomes.push(
-              res.ok
-                ? { id: original.broadcastId, subject: original.subject, ok: true }
-                : { id: original.broadcastId, subject: original.subject, ok: false, status: res.status },
-            );
+            if (res.ok) {
+              outcomes.push({
+                id: original.broadcastId,
+                subject: original.subject,
+                ok: true,
+              });
+            } else {
+              // Round-5 R5-S4 — parse the F7 error envelope so the
+              // partial-failure toast description carries the route's
+              // `error.code` (e.g. `broadcast_concurrent_action_blocked`)
+              // instead of just the opaque HTTP status. Admin can self-
+              // diagnose without opening dev-tools.
+              const body = await res
+                .json()
+                .catch(() => null) as { error?: { code?: string } } | null;
+              outcomes.push({
+                id: original.broadcastId,
+                subject: original.subject,
+                ok: false,
+                status: res.status,
+                code: body?.error?.code ?? null,
+              });
+            }
           } else {
             // Network failure — id from chunk position
             const idx = settled.indexOf(result);
@@ -320,6 +344,7 @@ export function QueueTableClient({
                 subject: original.subject,
                 ok: false,
                 status: 0,
+                code: null,
               });
             }
           }
@@ -336,7 +361,7 @@ export function QueueTableClient({
         toast.error(columnLabels.bulkFailure, {
           description: failures
             .slice(0, 3)
-            .map((f) => `${f.subject} (${f.status || 'network'})`)
+            .map((f) => `${f.subject} (${f.code ?? (f.status === 0 ? 'network' : f.status)})`)
             .join(', '),
         });
         // Keep failed rows selected so admin can retry without re-selecting
@@ -348,7 +373,7 @@ export function QueueTableClient({
           {
             description: failures
               .slice(0, 3)
-              .map((f) => `${f.subject} (${f.status || 'network'})`)
+              .map((f) => `${f.subject} (${f.code ?? (f.status === 0 ? 'network' : f.status)})`)
               .join(', '),
           },
         );

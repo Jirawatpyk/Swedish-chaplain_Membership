@@ -102,16 +102,20 @@ export const membersBridge: MembersBridgePort = {
     tenantCtx: TenantContext,
     memberId: string,
   ): Promise<boolean> {
-    // F7.1-HIGHC — F3 `findById` is `runInTenant`-internal already
-    // (Result<Member, RepoError>); cross-tenant guess returns
-    // `repo.not_found` (RLS filters at db layer). The boolean
-    // unwrap discards the F3 error shape — F7's caller only needs
-    // existence, not the F3 reason.
+    // F7.1-HIGHC + Round-5 R5-S2 — discriminate F3 RepoError kinds:
+    // `repo.not_found` (and unknown-ID + cross-tenant RLS-filtered)
+    // → false; `repo.unexpected` (Neon outage / SQL error) is RE-
+    // THROWN so the caller surfaces it as `submit.server_error` (500)
+    // instead of misleading 422 `member_not_found`.
     const result = await drizzleMemberRepo.findById(
       tenantCtx,
       asMemberId(memberId),
     );
-    return result.ok;
+    if (result.ok) return true;
+    if (result.error.code === 'repo.not_found') return false;
+    throw new Error(
+      `members-bridge.memberExistsInTenant: ${result.error.code}`,
+    );
   },
 
   async lookupContactEmailInTenant(

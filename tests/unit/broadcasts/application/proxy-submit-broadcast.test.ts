@@ -58,6 +58,8 @@ interface FixtureOpts {
     memberId: string;
     primaryContactEmail: string | null;
   }>;
+  /** Round-5 R5-T — let tests synthesise "member not found in tenant" + infra-throw paths. */
+  readonly memberExists?: boolean;
 }
 
 function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
@@ -108,7 +110,9 @@ function makeMembersBridge(opts: FixtureOpts): MembersBridgePort {
     async setMemberHalt() {
       return ok(undefined);
     },
-    async memberExistsInTenant() { return true; },
+    async memberExistsInTenant() {
+      return opts.memberExists ?? true;
+    },
     async markBroadcastsAcknowledged() {
       return ok(undefined);
     },
@@ -561,7 +565,8 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
   it('proxy probe returns null but bridge.recipients still resolve → delegate fails on missing primary contact', async () => {
     // Even when getMemberPrimaryContact returns null at the probe, the
     // delegate (submit-broadcast) re-checks and emits the right error.
-    // This proves proxy-submit doesn't add its own short-circuit.
+    // memberExistsInTenant is true (default) so proxy-submit doesn't
+    // short-circuit; submit-broadcast surfaces the precondition (j) error.
     const { deps } = makeDeps({
       primaryContact: null,
       recipients: [
@@ -571,11 +576,49 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
     const result = await proxySubmitBroadcast(deps, baseInput);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      // Delegate surfaces the precondition (j) error — proxy-submit didn't
-      // synthesise broadcast_member_not_found
       expect(result.error.kind).toBe(
         'broadcast_member_missing_primary_contact_email',
       );
+    }
+  });
+
+  // ---- Round-5 R5-T — memberExistsInTenant short-circuits ----------
+
+  it('F7.1-HIGHC — memberExistsInTenant returns false → broadcast_member_not_found', async () => {
+    const { deps } = makeDeps({
+      memberExists: false,
+      primaryContact: 'doesnt@matter.com',
+    });
+    const result = await proxySubmitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_member_not_found');
+      if (result.error.kind === 'broadcast_member_not_found') {
+        expect(result.error.memberId).toBe(baseInput.proxiedMemberId);
+      }
+    }
+  });
+
+  it('R5-S2 — memberExistsInTenant throws (Neon outage) → submit.server_error', async () => {
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      recipients: [{ memberId: 'm-1', primaryContactEmail: 'r@example.com' }],
+    });
+    // Override the bridge to throw, simulating a repo.unexpected
+    // error rethrown from the bridge after R5-S2.
+    const throwingDeps = {
+      ...deps,
+      membersBridge: {
+        ...deps.membersBridge,
+        async memberExistsInTenant(): Promise<boolean> {
+          throw new Error('members-bridge.memberExistsInTenant: repo.unexpected');
+        },
+      },
+    };
+    const result = await proxySubmitBroadcast(throwingDeps, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('submit.server_error');
     }
   });
 });

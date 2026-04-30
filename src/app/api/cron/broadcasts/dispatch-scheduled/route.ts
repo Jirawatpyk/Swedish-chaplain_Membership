@@ -87,7 +87,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     retryable: 0,
     permanent_failed: 0,
     resource_missing: 0,
-    skipped: 0,
+    unknown_error: 0,
     uncaught_error: 0,
   };
 
@@ -132,11 +132,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           summary.permanent_failed++;
           break;
         default: {
-          // Round-4 HIGH-D — unknown error kind must NOT silently
-          // increment "skipped" (a benign-sounding bucket). A new
-          // error kind that we forgot to handle here should fire an
-          // alert so we can extend the switch.
-          summary.skipped++;
+          // Round-4 HIGH-D + Round-5 R5-CRON — unknown error kind goes
+          // to the dedicated `unknown_error` counter (was the
+          // benign-sounding `skipped` bucket; renamed so dashboards
+          // alert on the right class).
+          summary.unknown_error++;
           const errKind = (result.error as { kind?: string }).kind ?? 'unknown';
           logger.error(
             {
