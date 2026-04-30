@@ -150,7 +150,10 @@ export const broadcasts = pgTable(
 
     // Originator (FR-005 + Q12 dual-actor)
     requestedByMemberId: uuid('requested_by_member_id').notNull(),
-    requestedByMemberPlanIdSnapshot: uuid(
+    // TEXT (not uuid) — see migration 0074. F2 plan identity is the
+    // composite (tenant_id, plan_id, plan_year) and `plan_id` is a TEXT
+    // plan-code string ('corporate', 'regular'), not a uuid surrogate.
+    requestedByMemberPlanIdSnapshot: text(
       'requested_by_member_plan_id_snapshot',
     ).notNull(),
     submittedByUserId: uuid('submitted_by_user_id').notNull(),

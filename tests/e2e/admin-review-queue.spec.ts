@@ -20,6 +20,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { seedF7Broadcasts } from './helpers/broadcasts-seed';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -27,15 +28,39 @@ const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
 const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 
 /**
- * Slug for a seeded `submitted` broadcast row used by AS2-AS6 + Q14.
- * The seed is provisioned by the F7 member-compose E2E (or a dedicated
- * test helper if/when one lands). When the slug is unset the dependent
- * tests skip with a clear reason.
+ * Seed for AS2-AS6 + Q14. Provisioned by global-setup via
+ * `helpers/broadcasts-seed.ts`. Falls back to .e2e-seed.json if the
+ * env var didn't propagate to this worker process.
  */
-const SEEDED_SUBMITTED_BROADCAST_ID =
-  process.env.E2E_SEED_BROADCAST_ID;
-const SEEDED_HALTED_MEMBER_DISPLAY_NAME =
-  process.env.E2E_SEED_HALTED_MEMBER_NAME;
+function loadSeed(): {
+  broadcastId?: string;
+  haltedMemberDisplayName?: string;
+} {
+  if (process.env.E2E_SEED_BROADCAST_ID) {
+    const result: { broadcastId?: string; haltedMemberDisplayName?: string } = {
+      broadcastId: process.env.E2E_SEED_BROADCAST_ID,
+    };
+    if (process.env.E2E_SEED_HALTED_MEMBER_NAME) {
+      result.haltedMemberDisplayName = process.env.E2E_SEED_HALTED_MEMBER_NAME;
+    }
+    return result;
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readFileSync, existsSync } = require('node:fs') as typeof import('node:fs');
+    if (!existsSync('.e2e-seed.json')) return {};
+    const data = JSON.parse(readFileSync('.e2e-seed.json', 'utf8')) as {
+      broadcastId: string;
+      haltedMemberDisplayName: string;
+    };
+    return data;
+  } catch {
+    return {};
+  }
+}
+const SEED = loadSeed();
+const SEEDED_SUBMITTED_BROADCAST_ID = SEED.broadcastId;
+const SEEDED_HALTED_MEMBER_DISPLAY_NAME = SEED.haltedMemberDisplayName;
 
 test.describe.configure({ mode: 'serial' });
 
@@ -48,6 +73,16 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
   test.beforeAll(async () => {
     await clearE2ERateLimits();
   });
+
+  /**
+   * Reset the seeded broadcast back to `submitted` before destructive
+   * tests (AS2 approves it, AS3 rejects, AS4 schedules, AS6 races).
+   * Each test runs a fresh seed so the previous run doesn't leave the
+   * row in `approved` / `rejected` / `cancelled` blocking the next.
+   */
+  async function reseed(): Promise<void> {
+    await seedF7Broadcasts();
+  }
 
   async function signIn(
     page: Page,
@@ -123,16 +158,22 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
       !SEEDED_SUBMITTED_BROADCAST_ID,
       'Set E2E_SEED_BROADCAST_ID for an existing `submitted` broadcast',
     );
+    await reseed();
 
     await page.goto(`/admin/broadcasts/${SEEDED_SUBMITTED_BROADCAST_ID}`);
-    await page.getByRole('button', { name: /approve/i }).first().click();
-    await page
-      .getByRole('radio', { name: /send now/i })
-      .check({ force: true });
-    await page.getByRole('button', { name: /confirm/i }).click();
+    await page.getByRole('button', { name: /^approve$/i }).first().click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    await dialog.getByRole('button', { name: /^approve$/i }).click();
+    // Wait for dialog to dismiss → indicates use-case completed (or 409
+    // returned a toast but kept dialog open). Toast-success closes the
+    // dialog; navigate refresh re-renders the StatusBadge.
+    await expect(dialog).toBeHidden({ timeout: 15_000 });
+    // Status badge in detail page should now read Approved or Sending
+    // (cron may have already kicked off send-now within polling window).
     await expect(
-      page.getByText(/approved|sending/i).first(),
-    ).toBeVisible({ timeout: 10_000 });
+      page.getByText(/^(Approved|Sending|Sent)$/i).first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   // ---------- AS3: reject with reason ----------
@@ -144,14 +185,20 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
       !SEEDED_SUBMITTED_BROADCAST_ID,
       'Set E2E_SEED_BROADCAST_ID for an existing `submitted` broadcast',
     );
+    await reseed();
 
     await page.goto(`/admin/broadcasts/${SEEDED_SUBMITTED_BROADCAST_ID}`);
-    await page.getByRole('button', { name: /reject/i }).first().click();
-    await page.getByRole('textbox').fill('Off-topic for chamber audience');
-    await page.getByRole('button', { name: /confirm/i }).click();
-    await expect(page.getByText(/rejected/i).first()).toBeVisible({
-      timeout: 10_000,
-    });
+    await page.getByRole('button', { name: /^reject$/i }).first().click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    await dialog
+      .getByRole('textbox')
+      .fill('Off-topic for chamber audience');
+    await dialog.getByRole('button', { name: /^reject$/i }).click();
+    await expect(dialog).toBeHidden({ timeout: 15_000 });
+    await expect(
+      page.getByText(/^Rejected$/i).first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   // ---------- AS4: approve & schedule ----------
@@ -165,20 +212,28 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
       !SEEDED_SUBMITTED_BROADCAST_ID,
       'Set E2E_SEED_BROADCAST_ID for an existing `submitted` broadcast',
     );
+    await reseed();
 
     await page.goto(`/admin/broadcasts/${SEEDED_SUBMITTED_BROADCAST_ID}`);
-    await page.getByRole('button', { name: /approve/i }).first().click();
-    await page
+    await page.getByRole('button', { name: /^approve$/i }).first().click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    await dialog
       .getByRole('radio', { name: /schedule/i })
       .check({ force: true });
-    const futureIso = new Date(Date.now() + 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 16);
-    await page.locator('input[type="datetime-local"]').fill(futureIso);
-    await page.getByRole('button', { name: /confirm/i }).click();
-    await expect(page.getByText(/approved|scheduled/i).first()).toBeVisible({
-      timeout: 10_000,
-    });
+    // datetime-local input expects LOCAL time without timezone suffix.
+    // Build a local-time string ~70 min in the future so the
+    // server-side `min: now+5min` zod refine passes even with browser
+    // ↔ server clock skew.
+    const future = new Date(Date.now() + 70 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const localStr = `${future.getFullYear()}-${pad(future.getMonth() + 1)}-${pad(future.getDate())}T${pad(future.getHours())}:${pad(future.getMinutes())}`;
+    await dialog.locator('input[type="datetime-local"]').fill(localStr);
+    await dialog.getByRole('button', { name: /^approve$/i }).click();
+    await expect(dialog).toBeHidden({ timeout: 15_000 });
+    await expect(
+      page.getByText(/^Approved$/i).first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   // ---------- AS5: manager read-only ----------
@@ -221,6 +276,7 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
       !SEEDED_SUBMITTED_BROADCAST_ID,
       'Set E2E_SEED_BROADCAST_ID for an existing `submitted` broadcast',
     );
+    await reseed();
 
     const ctxA = await browser.newContext();
     const ctxB = await browser.newContext();
@@ -237,21 +293,31 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     await pageA.goto(`/admin/broadcasts/${SEEDED_SUBMITTED_BROADCAST_ID}`);
     await pageB.goto(`/admin/broadcasts/${SEEDED_SUBMITTED_BROADCAST_ID}`);
 
-    // Tab A approves first — direct API call to avoid dialog timing
-    const responseA = await pageA.request.post(
-      `/api/admin/broadcasts/${SEEDED_SUBMITTED_BROADCAST_ID}/approve`,
-      { data: { decision: 'send_now' } },
-    );
-    expect(responseA.status()).toBeLessThan(400);
+    // Tab A approves first via in-page fetch (carries Origin so CSRF
+    // Origin allow-list passes; `pageA.request.post` skips Origin and
+    // hits the proxy 403).
+    const responseA = await pageA.evaluate(async (id: string) => {
+      const r = await fetch(`/api/admin/broadcasts/${id}/approve`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ decision: 'send_now' }),
+      });
+      return { status: r.status, body: await r.json().catch(() => null) };
+    }, SEEDED_SUBMITTED_BROADCAST_ID as string);
+    expect(responseA.status).toBeLessThan(400);
 
-    // Tab B's approve attempt now races and must lose
-    const responseB = await pageB.request.post(
-      `/api/admin/broadcasts/${SEEDED_SUBMITTED_BROADCAST_ID}/approve`,
-      { data: { decision: 'send_now' } },
-    );
-    expect([409, 422]).toContain(responseB.status());
-    const body = await responseB.json();
-    expect(body.error.code).toMatch(
+    const responseB = await pageB.evaluate(async (id: string) => {
+      const r = await fetch(`/api/admin/broadcasts/${id}/approve`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ decision: 'send_now' }),
+      });
+      return { status: r.status, body: await r.json().catch(() => null) };
+    }, SEEDED_SUBMITTED_BROADCAST_ID as string);
+    expect([409, 422]).toContain(responseB.status);
+    expect(responseB.body?.error?.code).toMatch(
       /broadcast_concurrent_action_blocked|broadcast_invalid_state_transition/,
     );
 

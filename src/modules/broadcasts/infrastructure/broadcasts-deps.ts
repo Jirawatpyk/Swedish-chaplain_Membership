@@ -9,14 +9,35 @@ import { asTenantContext } from '@/modules/tenants';
 import { makeDrizzleBroadcastsRepo } from './db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
-import { dompurifySanitizer } from './sanitizer/dompurify-sanitizer';
 import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator';
 import { membersBridge } from './members-bridge';
 import { plansBridge } from './plans-bridge';
 import { eventAttendeesStub } from './event-attendees-stub';
 import { f7AuditAdapter } from './audit-adapter';
 import { broadcastsRateLimiter } from './rate-limiter';
-import { resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
+import type { HtmlSanitizerPort } from '../application/ports/html-sanitizer-port';
+import type { BroadcastsGatewayPort } from '../application/ports/broadcasts-gateway-port';
+
+/**
+ * Lazy-load adapters that pull in heavy ESM-only deps (`isomorphic-dompurify`
+ * → `jsdom` → `@exodus/bytes`, `resend` SDK). Read-only routes (admin queue
+ * list, broadcast detail page) MUST NOT trigger these imports — they would
+ * crash SSR with `ERR_REQUIRE_ESM` on the dompurify chain.
+ */
+function loadDompurifySanitizer(): HtmlSanitizerPort {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { dompurifySanitizer } = require('./sanitizer/dompurify-sanitizer') as {
+    dompurifySanitizer: HtmlSanitizerPort;
+  };
+  return dompurifySanitizer;
+}
+function loadResendBroadcastsGateway(): BroadcastsGatewayPort {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { resendBroadcastsGateway } = require(
+    './resend/resend-broadcasts-gateway',
+  ) as { resendBroadcastsGateway: BroadcastsGatewayPort };
+  return resendBroadcastsGateway;
+}
 
 import type { ClockPort } from '../application/ports/clock-port';
 import type { SaveDraftDeps } from '../application/use-cases/save-draft';
@@ -39,7 +60,7 @@ export function makeSaveDraftDeps(tenantId: string): SaveDraftDeps {
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    sanitizer: dompurifySanitizer,
+    sanitizer: loadDompurifySanitizer(),
     membersBridge,
     audit: f7AuditAdapter,
     clock: systemClock,
@@ -53,7 +74,7 @@ export function makeSubmitBroadcastDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    sanitizer: dompurifySanitizer,
+    sanitizer: loadDompurifySanitizer(),
     membersBridge,
     plansBridge,
     emailValidator: rfc5321EmailValidator,
@@ -185,7 +206,7 @@ export function makeDispatchScheduledBroadcastDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    broadcastsGateway: resendBroadcastsGateway,
+    broadcastsGateway: loadResendBroadcastsGateway(),
     membersBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
     eventAttendees: eventAttendeesStub,

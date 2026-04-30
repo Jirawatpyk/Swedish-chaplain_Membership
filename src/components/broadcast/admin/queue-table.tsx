@@ -1,19 +1,38 @@
 /**
- * T117 — Admin review queue table (server component).
+ * T117 — Admin review queue table (server async wrapper).
  *
- * Plain shadcn `<Table>` — mirrors F4 invoice-list pattern (per
- * Ultraplan AD9, no TanStack Table v8 in MVP). Server-rendered with
- * server-side filter+sort+cursor pagination.
- *
- * Columns: submittedAt (relative), member display, subject, segment,
- * recipientCount, status badge, actions. Manager role: actions cell
- * hidden via `readOnly` prop.
+ * Pre-formats every i18n string + locale-aware date so the client-side
+ * `QueueTableClient` (TanStack Table v8 + react-virtual) renders without
+ * needing locale or i18n at runtime. Activates virtualization above 100
+ * rows (perf.md CHK039).
  */
-import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { StatusBadge } from './status-badge';
-import { ReviewActions } from './review-actions';
+import {
+  QueueTableClient,
+  type EnrichedQueueRow,
+} from './queue-table-client';
 import type { BroadcastStatus } from '@/modules/broadcasts';
+
+type BadgeVariant =
+  | 'default'
+  | 'secondary'
+  | 'destructive'
+  | 'outline'
+  | 'ghost';
+
+const STATUS_STYLE: Record<
+  BroadcastStatus,
+  { variant: BadgeVariant; className?: string }
+> = {
+  draft: { variant: 'outline', className: 'text-muted-foreground' },
+  submitted: { variant: 'secondary' },
+  approved: { variant: 'default' },
+  sending: { variant: 'default', className: 'motion-safe:animate-pulse' },
+  sent: { variant: 'default' },
+  rejected: { variant: 'destructive' },
+  cancelled: { variant: 'outline', className: 'text-muted-foreground' },
+  failed_to_dispatch: { variant: 'destructive' },
+};
 
 export interface QueueRow {
   readonly broadcastId: string;
@@ -39,6 +58,7 @@ export async function QueueTable({
 }: QueueTableProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.queue');
   const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
+  const tStatus = await getTranslations('admin.broadcasts.queue.status');
   const locale = await getLocale();
   const dateFormatter = new Intl.DateTimeFormat(
     locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
@@ -53,82 +73,46 @@ export async function QueueTable({
     );
   }
 
+  const enrichedRows: ReadonlyArray<EnrichedQueueRow> = rows.map((row) => {
+    const submittedAt =
+      row.submittedAt !== null
+        ? dateFormatter.format(new Date(row.submittedAt))
+        : dateFormatter.format(new Date(row.createdAt));
+    const style = STATUS_STYLE[row.status];
+    const enriched: EnrichedQueueRow = {
+      broadcastId: row.broadcastId,
+      subject: row.subject,
+      memberDisplayName: row.requestedByMemberDisplayName,
+      actorRoleLabel:
+        row.actorRole !== 'member_self_service'
+          ? tActor(row.actorRole as Parameters<typeof tActor>[0])
+          : null,
+      segmentLabel: row.segmentType,
+      recipientCount: row.estimatedRecipientCount,
+      submittedAtFormatted: submittedAt,
+      statusBadgeVariant: style.variant,
+      statusBadgeLabel: tStatus(row.status),
+      actionable: row.status === 'submitted',
+    };
+    if (style.className !== undefined) {
+      return { ...enriched, statusBadgeClassName: style.className };
+    }
+    return enriched;
+  });
+
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <table className="w-full min-w-[920px] text-sm">
-        <thead className="bg-muted/50 text-xs uppercase tracking-wide">
-          <tr>
-            <th scope="col" className="px-3 py-2 text-left">
-              {t('columns.submittedAt')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-left">
-              {t('columns.member')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-left">
-              {t('columns.subject')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-left">
-              {t('columns.segment')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-right">
-              {t('columns.recipientCount')}
-            </th>
-            <th scope="col" className="px-3 py-2 text-left">
-              {t('columns.status')}
-            </th>
-            {!readOnly ? (
-              <th scope="col" className="px-3 py-2 text-left">
-                {t('columns.actions')}
-              </th>
-            ) : null}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.broadcastId} className="border-t">
-              <td className="px-3 py-2 text-muted-foreground tabular-nums">
-                {row.submittedAt !== null
-                  ? dateFormatter.format(new Date(row.submittedAt))
-                  : dateFormatter.format(new Date(row.createdAt))}
-              </td>
-              <td className="px-3 py-2">
-                <div className="flex flex-col">
-                  <span className="font-medium">{row.requestedByMemberDisplayName}</span>
-                  {row.actorRole !== 'member_self_service' ? (
-                    <span className="text-xs text-muted-foreground">
-                      {tActor(row.actorRole as Parameters<typeof tActor>[0])}
-                    </span>
-                  ) : null}
-                </div>
-              </td>
-              <td className="px-3 py-2">
-                <Link
-                  href={`/admin/broadcasts/${row.broadcastId}`}
-                  className="font-medium text-primary hover:underline"
-                >
-                  {row.subject}
-                </Link>
-              </td>
-              <td className="px-3 py-2 text-muted-foreground">
-                {row.segmentType}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {row.estimatedRecipientCount}
-              </td>
-              <td className="px-3 py-2">
-                <StatusBadge status={row.status} />
-              </td>
-              {!readOnly ? (
-                <td className="px-3 py-2">
-                  {row.status === 'submitted' ? (
-                    <ReviewActions broadcastId={row.broadcastId} />
-                  ) : null}
-                </td>
-              ) : null}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <QueueTableClient
+      rows={enrichedRows}
+      readOnly={readOnly}
+      columnLabels={{
+        submittedAt: t('columns.submittedAt'),
+        member: t('columns.member'),
+        subject: t('columns.subject'),
+        segment: t('columns.segment'),
+        recipientCount: t('columns.recipientCount'),
+        status: t('columns.status'),
+        actions: t('columns.actions'),
+      }}
+    />
   );
 }

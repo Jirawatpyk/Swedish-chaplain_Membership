@@ -33,6 +33,16 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  // F7 — `isomorphic-dompurify` pulls in jsdom which transitively requires
+  // `@exodus/bytes/encoding-lite.js` (ESM-only). Bundling these via
+  // Turbopack triggers `ERR_REQUIRE_ESM` on SSR. Mark them as server-side
+  // externals so Node loads them at runtime instead.
+  serverExternalPackages: [
+    'isomorphic-dompurify',
+    'jsdom',
+    'html-encoding-sniffer',
+    '@exodus/bytes',
+  ],
   // Security headers (HSTS, CSP, X-Frame-Options) are set in proxy.ts so
   // they apply uniformly to API routes and pages — single source of truth.
   // (Next.js 16 renamed the `middleware.ts` convention to `proxy.ts`.)
