@@ -1,66 +1,285 @@
 /**
  * T095 — Contract test: POST /api/admin/broadcasts/proxy-submit.
  *
- * Q12 admin-on-behalf-of-member submission.
- * Spec authority: contracts/broadcasts-api.md § 2.5.
+ * Wave 6 GREEN. Spec authority: contracts/broadcasts-api.md § 2.2.
  *
- * Body: { requestedByMemberId, subject, bodyHtml, bodySource, segmentType,
- *         segmentParams?, customRecipientEmails?, scheduledFor? }
- *
- * Use case bypasses quota check (Q12 admin emergency correction);
- * the broadcast row carries actorRole='admin_proxy' and is queued for
- * standard admin review.
- *
- * Turns GREEN: T102 proxy-submit-broadcast.ts + T112 POST handler.
+ * Q12 admin-on-behalf-of-member. Wraps proxySubmitBroadcast which
+ * delegates to submitBroadcast with actorRole='admin_proxy'. Quota
+ * bypass is verified at the use-case level; here we focus on wire
+ * contract: zod input validation + envelope shape + error mapping.
  */
-import { describe, expect, it } from 'vitest';
-import { access } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest, NextResponse } from 'next/server';
+import { ok, err } from '@/lib/result';
 
-const routePath = resolve(
-  __dirname,
-  '../../../src/app/api/admin/broadcasts/proxy-submit/route.ts',
-);
-const useCasePath = resolve(
-  __dirname,
-  '../../../src/modules/broadcasts/application/use-cases/proxy-submit-broadcast.ts',
+const requireAdminContextMock = vi.fn();
+const proxySubmitMock = vi.fn();
+const resolveTenantDisplayNameMock = vi.fn(
+  async (..._args: unknown[]) => 'Test Chamber',
 );
 
-describe('POST /api/admin/broadcasts/proxy-submit — RED contract skeleton (T095 → T102 + T112)', () => {
-  it('route handler exists', async () => {
-    await expect(access(routePath)).resolves.toBeUndefined();
+vi.mock('@/lib/admin-context', () => ({
+  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+}));
+vi.mock('@/lib/tenant-context', () => ({
+  resolveTenantFromRequest: () => ({ slug: 'test-tenant', __brand: true }),
+}));
+vi.mock('@/lib/logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('@/lib/broadcasts-route-helpers', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/lib/broadcasts-route-helpers')
+  >('@/lib/broadcasts-route-helpers');
+  return {
+    ...actual,
+    resolveTenantDisplayName: (...args: unknown[]) =>
+      resolveTenantDisplayNameMock(...args),
+  };
+});
+vi.mock('@/modules/broadcasts', () => ({
+  proxySubmitBroadcast: (...args: unknown[]) => proxySubmitMock(...args),
+  makeProxySubmitBroadcastDeps: () => ({}),
+}));
+
+const VALID_MEMBER_ID = '33333333-3333-3333-3333-333333333333';
+const NEW_BROADCAST_ID = '44444444-4444-4444-4444-444444444444';
+const adminCtx = {
+  current: {
+    user: {
+      id: 'user-admin-1',
+      email: 'admin@swecham.test',
+      role: 'admin' as const,
+      status: 'active' as const,
+      displayName: 'Admin',
+    },
+    session: { id: 'sess-admin-1' },
+  },
+  sourceIp: '203.0.113.10',
+  requestId: 'req-px-1',
+};
+
+const VALID_BODY = {
+  requestedByMemberId: VALID_MEMBER_ID,
+  subject: 'Welcome to the chamber',
+  bodyHtml: '<p>Hello</p>',
+  bodySource: 'plain',
+  segment: { kind: 'all_members' as const },
+  scheduledFor: null,
+};
+
+function makeRequest(body: unknown): NextRequest {
+  return new NextRequest('http://localhost/api/admin/broadcasts/proxy-submit', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+async function importRoute() {
+  return import('@/app/api/admin/broadcasts/proxy-submit/route');
+}
+
+const submitOutput = {
+  broadcastId: NEW_BROADCAST_ID,
+  status: 'submitted' as const,
+  submittedAt: new Date('2026-06-15T05:00:00Z'),
+  estimatedRecipientCount: 42,
+  reservedQuotaSlot: true as const,
+  reviewSlaTargetHours: 48,
+};
+
+beforeEach(() => { vi.resetModules(); vi.clearAllMocks(); });
+afterEach(() => vi.clearAllMocks());
+
+describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () => {
+  it('200 happy: { broadcastId, status:submitted, submittedAt, estimatedRecipientCount, actorRole:admin_proxy }', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(ok(submitOutput));
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      broadcastId: NEW_BROADCAST_ID,
+      status: 'submitted',
+      estimatedRecipientCount: 42,
+      actorRole: 'admin_proxy',
+      reservedQuotaSlot: true,
+      reviewSlaTargetHours: 48,
+    });
   });
 
-  it('proxy-submit-broadcast use-case exists', async () => {
-    await expect(access(useCasePath)).resolves.toBeUndefined();
+  it('Q12 dual-actor: use-case receives proxiedMemberId + adminUserId', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(ok(submitOutput));
+    const { POST } = await importRoute();
+    await POST(makeRequest(VALID_BODY));
+    const callArgs = proxySubmitMock.mock.calls[0]?.[1] as {
+      proxiedMemberId: string;
+      adminUserId: string;
+    };
+    expect(callArgs.proxiedMemberId).toBe(VALID_MEMBER_ID);
+    expect(callArgs.adminUserId).toBe('user-admin-1');
   });
 
-  // Happy path
-  it.todo('POST 200: returns { broadcastId, status: "submitted", actorRole: "admin_proxy", submittedAt, estimatedRecipientCount }');
-  it.todo('persisted row has requested_by_member_id=<proxied member> AND submitted_by_user_id=<admin>');
-  it.todo('audit broadcast_submitted carries actorRole="admin_proxy" + both ids');
+  it('400 invalid_body: subject too long', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    const { POST } = await importRoute();
+    const res = await POST(
+      makeRequest({ ...VALID_BODY, subject: 'x'.repeat(201) }),
+    );
+    expect(res.status).toBe(400);
+    expect(proxySubmitMock).not.toHaveBeenCalled();
+  });
 
-  // Quota bypass (Q12)
-  it.todo('admin proxy bypasses quota check even when proxied member is at quota');
+  it('400 invalid_body: subject empty', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest({ ...VALID_BODY, subject: '' }));
+    expect(res.status).toBe(400);
+  });
 
-  // Member halt-state still respected
-  it.todo('proxy-submit on a halted member → 422 broadcast_member_halted_pending_review');
+  it('400 invalid_body: bodyHtml missing', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    const { POST } = await importRoute();
+    const { bodyHtml: _bh, ...rest } = VALID_BODY;
+    const res = await POST(makeRequest(rest));
+    expect(res.status).toBe(400);
+  });
 
-  // Member existence
-  it.todo('POST 404: requestedByMemberId not found in tenant');
+  it('400 invalid_body: requestedByMemberId not uuid', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    const { POST } = await importRoute();
+    const res = await POST(
+      makeRequest({ ...VALID_BODY, requestedByMemberId: 'not-uuid' }),
+    );
+    expect(res.status).toBe(400);
+  });
 
-  // Standard FR-002 preconditions (h, e, c, d, f, g, i)
-  it.todo('subject too long → 422 broadcast_subject_too_long');
-  it.todo('body unsafe HTML → 422 broadcast_body_unsafe_html');
-  it.todo('empty segment → 422 broadcast_empty_segment_blocked');
-  it.todo('audience too large → 422 broadcast_audience_too_large');
-  it.todo('custom recipient unknown → 422 broadcast_custom_recipient_unknown');
+  it('400 invalid_body: tier segment without tierCodes', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    const { POST } = await importRoute();
+    const res = await POST(
+      makeRequest({ ...VALID_BODY, segment: { kind: 'tier' } }),
+    );
+    expect(res.status).toBe(400);
+  });
 
-  // Authz
-  it.todo('POST 401: unauthenticated');
-  it.todo('POST 403: member role attempting proxy-submit');
-  it.todo('POST 403: manager role attempting proxy-submit');
+  it('400 invalid_body: custom segment > 100 emails', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    const { POST } = await importRoute();
+    const emails = Array.from({ length: 101 }, (_, i) => `u${i}@example.com`);
+    const res = await POST(
+      makeRequest({ ...VALID_BODY, segment: { kind: 'custom', emails } }),
+    );
+    expect(res.status).toBe(400);
+  });
 
-  // Cross-tenant
-  it.todo('POST 404: requestedByMemberId from another tenant');
+  it('400 invalid_body: malformed JSON', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    const req = new NextRequest(
+      'http://localhost/api/admin/broadcasts/proxy-submit',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: 'not-json',
+      },
+    );
+    const { POST } = await importRoute();
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it('404 broadcast_member_not_found: use-case rejects unknown member', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'broadcast_member_not_found', memberId: VALID_MEMBER_ID }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_member_not_found');
+    expect(body.error.details.memberId).toBe(VALID_MEMBER_ID);
+  });
+
+  it('422 broadcast_member_halted_pending_review (admin cannot bypass halt)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(
+      err({
+        kind: 'broadcast_member_halted_pending_review',
+        memberId: VALID_MEMBER_ID,
+      }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(422);
+  });
+
+  it('422 broadcast_subject_too_long surfaced from use-case', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'broadcast_subject_too_long', maxChars: 200, actualChars: 250 }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(422);
+  });
+
+  it('422 broadcast_body_unsafe_html surfaced from use-case', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'broadcast_body_unsafe_html', strippedTags: ['script'] }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(422);
+  });
+
+  it('422 broadcast_empty_segment_blocked', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'broadcast_empty_segment_blocked' }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(422);
+  });
+
+  it('401 unauthenticated', async () => {
+    requireAdminContextMock.mockResolvedValueOnce({
+      response: NextResponse.json({ error: 'unauthorized' }, { status: 401 }),
+    });
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(401);
+  });
+
+  it('403 manager attempting proxy-submit (forbidden)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce({
+      response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
+    });
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(403);
+  });
+
+  it('500 internal_error: submit.server_error', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'submit.server_error', message: 'db down' }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(500);
+  });
+
+  it('500 internal_error: thrown', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockRejectedValueOnce(new Error('boom'));
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(500);
+  });
 });
