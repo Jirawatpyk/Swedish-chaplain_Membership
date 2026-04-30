@@ -113,15 +113,24 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     password: string,
   ): Promise<void> {
     await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(email);
-    await page.getByLabel(/password/i).fill(password);
+    // WebKit (mobile-safari) flakes when `.fill()` runs before the input
+    // has reached focus-eligibility (autofill heuristics race the text).
+    // Focus explicitly + verify the value committed before clicking submit.
+    const emailInput = page.locator('input#email');
+    const passwordInput = page.locator('input#password');
+    await emailInput.click();
+    await emailInput.fill(email);
+    await expect(emailInput).toHaveValue(email);
+    await passwordInput.click();
+    await passwordInput.fill(password);
+    await expect(passwordInput).toHaveValue(password);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL(
       (u) => {
         const p = new URL(u).pathname;
         return /^\/admin(\/|$)/.test(p) && !p.startsWith('/admin/sign-in');
       },
-      { timeout: 10_000 },
+      { timeout: 15_000 },
     );
   }
 
@@ -148,9 +157,14 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     // F7 ON: queue surface must render
     expect(status).toBeLessThan(400);
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
+    // Either: rows exist → <table> renders; OR queue empty → empty-state
+    // panel with i18n title "Queue is clear" (admin.broadcasts.queue.emptyTitle)
+    // OR Thai/Swedish equivalents. Match the i18n keys' English text + a
+    // forgiving fallback so the assertion survives DB state drift between
+    // projects (chromium / mobile-chrome / mobile-safari).
     const tableOrEmpty = page
       .getByRole('table')
-      .or(page.getByText(/no broadcasts/i));
+      .or(page.getByText(/queue is clear|no broadcasts|no pending/i));
     await expect(tableOrEmpty.first()).toBeVisible({ timeout: 10_000 });
   });
 

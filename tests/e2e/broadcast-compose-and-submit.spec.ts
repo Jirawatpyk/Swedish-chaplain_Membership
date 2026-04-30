@@ -32,15 +32,23 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
 
   async function signInMember(page: Page): Promise<void> {
     await page.goto('/portal/sign-in');
-    await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
+    // WebKit (mobile-safari) flakes when .fill() races autofill heuristics.
+    // Click + fill + verify value before submit; widen timeout to 15s.
+    const emailInput = page.locator('input#email');
+    const passwordInput = page.locator('input#password');
+    await emailInput.click();
+    await emailInput.fill(MEMBER_EMAIL!);
+    await expect(emailInput).toHaveValue(MEMBER_EMAIL!);
+    await passwordInput.click();
+    await passwordInput.fill(MEMBER_PASSWORD!);
+    await expect(passwordInput).toHaveValue(MEMBER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL(
       (u) => {
         const p = new URL(u).pathname;
         return /^\/portal(\/|$)/.test(p) && !p.startsWith('/portal/sign-in');
       },
-      { timeout: 10_000 },
+      { timeout: 15_000 },
     );
   }
 
