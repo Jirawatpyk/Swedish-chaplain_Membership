@@ -1,0 +1,254 @@
+'use client';
+
+/**
+ * T081 — Compose form orchestrator.
+ *
+ * Owns the full compose form state via `react-hook-form` + zod resolver.
+ * Wires Tiptap-loader (dynamic-imported), segment-picker, custom-list-input,
+ * schedule-picker, preview-pane, submit-button, and quota-display.
+ *
+ * Submit handler:
+ *   - POST /api/broadcasts/submit (compose-and-submit in one call)
+ *   - 200 → toast.success + redirect to detail page
+ *   - 422 → toast.error with bilingual error message (mapped via
+ *     portal.broadcasts.compose.errors.<code>)
+ *   - 429 → toast.error retry-later
+ *   - 4xx/5xx → toast.error generic
+ *
+ * `useDeferredValue(bodyHtml)` keeps the editor responsive while the
+ * preview pane re-renders.
+ */
+import { useDeferredValue, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
+import { z } from 'zod';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
+import { SegmentPicker, type SegmentPickerValue } from './segment-picker';
+import { CustomListInput, parseLines } from './custom-list-input';
+import { SchedulePicker } from './schedule-picker';
+import { PreviewPane } from './preview-pane';
+import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
+import { SubmitButton } from './submit-button';
+
+const TiptapEditor = loadTiptapEditor<{
+  initialHtml: string;
+  onChange: (html: string) => void;
+  disabled?: boolean;
+  labelledById?: string;
+}>(() => import('./tiptap-editor'));
+
+const SubmitSchema = z.object({
+  subject: z.string().min(1).max(200),
+  bodyHtml: z.string().min(1).max(200 * 1024),
+});
+
+export interface ComposeFormProps {
+  readonly initialDraftId?: string | null;
+  readonly initialSubject?: string;
+  readonly initialBodyHtml?: string;
+  readonly initialQuota?: QuotaSnapshot | null;
+}
+
+export function ComposeForm({
+  initialDraftId = null,
+  initialSubject = '',
+  initialBodyHtml = '<p></p>',
+  initialQuota = null,
+}: ComposeFormProps): React.ReactElement {
+  const router = useRouter();
+  const t = useTranslations('portal.broadcasts.compose');
+  const tErr = useTranslations('portal.broadcasts.compose.errors');
+
+  const [subject, setSubject] = useState<string>(initialSubject);
+  const [bodyHtml, setBodyHtml] = useState<string>(initialBodyHtml);
+  const [segment, setSegment] = useState<SegmentPickerValue>({
+    kind: 'all_members',
+    tierCodes: [],
+  });
+  const [customList, setCustomList] = useState<string>('');
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [quotaRefreshKey, setQuotaRefreshKey] = useState<number>(0);
+
+  const deferredBody = useDeferredValue(bodyHtml);
+
+  const customLines = parseLines(customList);
+  const validation = SubmitSchema.safeParse({ subject, bodyHtml });
+  const customListValid =
+    segment.kind !== 'custom' || (customLines.length > 0 && customLines.length <= 100);
+  const tierValid = segment.kind !== 'tier' || segment.tierCodes.length > 0;
+  const submitDisabled =
+    !validation.success || !customListValid || !tierValid;
+
+  async function onSubmit() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const body: Record<string, unknown> = {
+        subject,
+        bodyHtml,
+        bodySource: bodyHtml,
+        segment:
+          segment.kind === 'tier'
+            ? { kind: 'tier' as const, tierCodes: segment.tierCodes }
+            : segment.kind === 'custom'
+              ? { kind: 'custom' as const, emails: customLines }
+              : { kind: segment.kind },
+        scheduledFor,
+      };
+      if (initialDraftId !== null) body['draftId'] = initialDraftId;
+
+      const res = await fetch('/api/broadcasts/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+
+      const responseBody = (await res.json().catch(() => ({}))) as {
+        error?: { code?: string; message?: string };
+        broadcastId?: string;
+      };
+
+      if (res.ok && responseBody.broadcastId) {
+        toast.success(t('toast.submitted'));
+        setQuotaRefreshKey((n) => n + 1);
+        router.push(`/portal/benefits/e-blasts`);
+        router.refresh();
+        return;
+      }
+
+      const code = responseBody.error?.code ?? 'internal_error';
+      // Use the i18n key if recognised; fall back to the server message.
+      let msg: string;
+      try {
+        msg = tErr(code);
+      } catch {
+        msg = responseBody.error?.message ?? tErr('internal_error');
+      }
+      toast.error(msg);
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : tErr('internal_error'),
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function onSaveDraft() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const body: Record<string, unknown> = {
+        subject,
+        bodyHtml,
+        bodySource: bodyHtml,
+        segmentType: segment.kind,
+        segmentParams: segment.kind === 'tier' ? { tierCodes: segment.tierCodes } : null,
+        customRecipientEmails: segment.kind === 'custom' ? customLines : null,
+        scheduledFor,
+      };
+      const method = initialDraftId !== null ? 'PUT' : 'POST';
+      if (initialDraftId !== null) body['draftId'] = initialDraftId;
+
+      const res = await fetch('/api/broadcasts/draft', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const respBody = (await res.json().catch(() => ({}))) as {
+          error?: { code?: string };
+        };
+        const code = respBody.error?.code ?? 'internal_error';
+        let msg: string;
+        try {
+          msg = tErr(code);
+        } catch {
+          msg = tErr('internal_error');
+        }
+        toast.error(msg);
+        return;
+      }
+      toast.success(t('toast.drafted'));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} />
+      <Card>
+        <CardContent className="space-y-6 pt-6">
+          <div className="space-y-2">
+            <Label htmlFor="broadcast-subject">{t('fields.subject')}</Label>
+            <Input
+              id="broadcast-subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder={t('fields.subjectPlaceholder')}
+              maxLength={200}
+              disabled={submitting}
+            />
+          </div>
+
+          <SegmentPicker
+            value={segment}
+            onChange={setSegment}
+            disabled={submitting}
+          />
+
+          {segment.kind === 'custom' ? (
+            <CustomListInput
+              value={customList}
+              onChange={setCustomList}
+              disabled={submitting}
+            />
+          ) : null}
+
+          <div className="space-y-2">
+            <Label id="broadcast-body-label">{t('fields.bodyLabel')}</Label>
+            <TiptapEditor
+              initialHtml={initialBodyHtml}
+              onChange={setBodyHtml}
+              disabled={submitting}
+              labelledById="broadcast-body-label"
+            />
+          </div>
+
+          <SchedulePicker
+            value={scheduledFor}
+            onChange={setScheduledFor}
+            disabled={submitting}
+          />
+
+          <PreviewPane subject={subject} bodyHtml={deferredBody} />
+
+          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onSaveDraft}
+              disabled={submitting}
+            >
+              {t('button.saveDraft')}
+            </Button>
+            <SubmitButton
+              disabled={submitDisabled}
+              submitting={submitting}
+              onClick={onSubmit}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

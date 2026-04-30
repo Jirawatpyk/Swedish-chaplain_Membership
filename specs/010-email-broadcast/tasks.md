@@ -196,29 +196,29 @@ description: "F7 — Email Broadcast (E-Blast) — TDD-ordered task list"
 
 ### API endpoints for US1
 
-- [ ] T073 [US1] Implement `POST /api/broadcasts/draft` in `src/app/api/broadcasts/draft/route.ts` — wraps Application `save-draft.ts`. zod-validate body per contracts/broadcasts-api.md § 1.1. Kill-switch guard. Test T036 GREEN.
-- [ ] T074 [US1] Implement `PUT /api/broadcasts/draft` in same file — update existing draft. Reject 409 `broadcast_immutable_after_submit` if `status != 'draft'`. Test T036 GREEN.
-- [ ] T075 [US1] Implement `DELETE /api/broadcasts/draft/[id]` — delete draft (no audit for draft-delete — drafts are user-controlled scratch space).
-- [ ] T076 [US1] Implement `POST /api/broadcasts/submit` in `src/app/api/broadcasts/submit/route.ts` — wraps Application `submit-broadcast.ts`. Returns 200 with `broadcastId` + `submittedAt` + `estimatedRecipientCount` + `reservedQuotaSlot=true` + `reviewSlaTargetHours=48`. Tests T037 + T045 + T047–T056 GREEN.
-- [ ] T077 [US1] Implement `GET /api/broadcasts/[id]` in `src/app/api/broadcasts/[id]/route.ts` — member views own broadcast detail. 404 + `broadcast_cross_member_probe` audit on mismatch.
-- [ ] T078 [US1] Implement `GET /api/broadcasts/quota` in `src/app/api/broadcasts/quota/route.ts` — returns derived quota counter for current quota year. Authz: own member only.
+- [X] T073 [US1] Implement `POST /api/broadcasts/draft` in `src/app/api/broadcasts/draft/route.ts` — wraps Application `save-draft.ts`. zod-validate body per contracts/broadcasts-api.md § 1.1. Kill-switch guard. Test T036 GREEN.
+- [X] T074 [US1] Implement `PUT /api/broadcasts/draft` in same file — update existing draft. Reject 409 `broadcast_immutable_after_submit` if `status != 'draft'`. Test T036 GREEN.
+- [X] T075 [US1] Implement `DELETE /api/broadcasts/draft/[id]` — delete draft (no audit for draft-delete — drafts are user-controlled scratch space).
+- [X] T076 [US1] Implement `POST /api/broadcasts/submit` in `src/app/api/broadcasts/submit/route.ts` — wraps Application `submit-broadcast.ts`. Returns 200 with `broadcastId` + `submittedAt` + `estimatedRecipientCount` + `reservedQuotaSlot=true` + `reviewSlaTargetHours=48`. Tests T037 + T045 + T047–T056 GREEN.
+- [X] T077 [US1] Implement `GET /api/broadcasts/[id]` in `src/app/api/broadcasts/[id]/route.ts` — member views own broadcast detail. 404 + `broadcast_cross_member_probe` audit on mismatch.
+- [X] T078 [US1] Implement `GET /api/broadcasts/quota` in `src/app/api/broadcasts/quota/route.ts` — returns derived quota counter for current quota year. Authz: own member only.
 
 ### Member-facing UI for US1
 
-- [ ] T079 [US1] Create compose page `src/app/(member)/portal/broadcasts/new/page.tsx` — server-rendered shell. `FormContainer` (42rem). Loads draft if URL `?draftId=...`.
-- [ ] T080 [US1] Create loading skeleton `src/app/(member)/portal/broadcasts/new/loading.tsx` — shimmer for editor area + toolbar row + button per Plan § Skeleton shimmer placement matrix.
-- [ ] T081 [US1] [P] Create `compose-form.tsx` client component — `react-hook-form` + zod. Wraps Tiptap editor + segment picker + custom-list input + scheduling + preview + submit button.
-- [ ] T082 [US1] [P] Create Tiptap editor wrapper `tiptap-editor.tsx` — `'use client'`. Uses `useEditor` from `@tiptap/react`. StarterKit minus disabled Image extension (R2-NEW-1). Image extension MUST be disabled in `extensions: [...]` config — guards against `<img>` re-introduction. ARIA-live region paired with editor announcing state changes per Plan § Accessibility deep-dive CHK029. Sanitiser-strip-warn paste handler per FR-002a R2-NEW-2.
-- [ ] T083 [US1] [P] Create `tiptap-toolbar.tsx` — bold / italic / underline / lists / link buttons with bilingual labels + Ctrl+B/I/U keyboard shortcuts (with `event.isComposing` IME guard per perf.md CHK059 / i18n.md CHK059).
-- [ ] T084 [US1] [P] Create `editor-skeleton.tsx` shimmer for Tiptap dynamic-import loading state.
-- [ ] T085 [US1] [P] Create `segment-picker.tsx` — fixed segment options + custom-list paste textarea. `aria-describedby` for empty-segment / cap-exceeded warnings.
-- [ ] T086 [US1] [P] Create `custom-list-input.tsx` — textarea with per-entry validation feedback. Lowercase+trim preview. 100-entry counter.
-- [ ] T087 [US1] [P] Create `schedule-picker.tsx` — optional future-send date+time picker (uses TH locale Buddhist Era display via `@js-joda/timezone` + i18n).
-- [ ] T088 [US1] [P] Create `preview-pane.tsx` — split-pane email preview using sanitised body. Re-renders on every editor change.
-- [ ] T089 [US1] [P] Create `quota-display.tsx` — used / reserved / remaining counters fed by `GET /api/broadcasts/quota`.
-- [ ] T090 [US1] [P] Create `submit-button.tsx` — disabled state per FR-002 preconditions. Member-facing latency display per perf.md CHK053 (8s spinner timeout → "Taking longer than expected" toast).
-- [ ] T091 [US1] Wire `marketing-acknowledgement-banner.tsx` (Q15 + R3-NEW-2) at `src/app/(member)/portal/_components/`. Server-rendered. Trigger conditions per Q15: `member` role + tenant has F7 + `broadcasts_acknowledged_at IS NULL` + `eblast_per_year > 0 OR is_active`. "Acknowledge" CTA emits `member_acknowledged_broadcasts_terms` audit + sets `broadcasts_acknowledged_at`. "Remind me later" link records nothing. Per-tenant scope per Q19. Banner-dismissal focus return per a11y.md CHK042.
-- [ ] T092 [US1] [P] Add i18n keys for US1 in `src/i18n/messages/{en,th,sv}.json`:
+- [X] T079 [US1] Create compose page `src/app/(member)/portal/broadcasts/new/page.tsx` — server-rendered shell. `FormContainer` (42rem). Loads draft if URL `?draftId=...`.
+- [X] T080 [US1] Create loading skeleton `src/app/(member)/portal/broadcasts/new/loading.tsx` — shimmer for editor area + toolbar row + button per Plan § Skeleton shimmer placement matrix.
+- [X] T081 [US1] [P] Create `compose-form.tsx` client component — `react-hook-form` + zod. Wraps Tiptap editor + segment picker + custom-list input + scheduling + preview + submit button.
+- [X] T082 [US1] [P] Create Tiptap editor wrapper `tiptap-editor.tsx` — `'use client'`. Uses `useEditor` from `@tiptap/react`. StarterKit minus disabled Image extension (R2-NEW-1). Image extension MUST be disabled in `extensions: [...]` config — guards against `<img>` re-introduction. ARIA-live region paired with editor announcing state changes per Plan § Accessibility deep-dive CHK029. Sanitiser-strip-warn paste handler per FR-002a R2-NEW-2.
+- [X] T083 [US1] [P] Create `tiptap-toolbar.tsx` — bold / italic / underline / lists / link buttons with bilingual labels + Ctrl+B/I/U keyboard shortcuts (with `event.isComposing` IME guard per perf.md CHK059 / i18n.md CHK059).
+- [X] T084 [US1] [P] Create `editor-skeleton.tsx` shimmer for Tiptap dynamic-import loading state.
+- [X] T085 [US1] [P] Create `segment-picker.tsx` — fixed segment options + custom-list paste textarea. `aria-describedby` for empty-segment / cap-exceeded warnings.
+- [X] T086 [US1] [P] Create `custom-list-input.tsx` — textarea with per-entry validation feedback. Lowercase+trim preview. 100-entry counter.
+- [X] T087 [US1] [P] Create `schedule-picker.tsx` — optional future-send date+time picker (uses TH locale Buddhist Era display via `@js-joda/timezone` + i18n).
+- [X] T088 [US1] [P] Create `preview-pane.tsx` — split-pane email preview using sanitised body. Re-renders on every editor change.
+- [X] T089 [US1] [P] Create `quota-display.tsx` — used / reserved / remaining counters fed by `GET /api/broadcasts/quota`.
+- [X] T090 [US1] [P] Create `submit-button.tsx` — disabled state per FR-002 preconditions. Member-facing latency display per perf.md CHK053 (8s spinner timeout → "Taking longer than expected" toast).
+- [X] T091 [US1] Wire `marketing-acknowledgement-banner.tsx` (Q15 + R3-NEW-2) at `src/app/(member)/portal/_components/`. Server-rendered. Trigger conditions per Q15: `member` role + tenant has F7 + `broadcasts_acknowledged_at IS NULL` + `eblast_per_year > 0 OR is_active`. "Acknowledge" CTA emits `member_acknowledged_broadcasts_terms` audit + sets `broadcasts_acknowledged_at`. "Remind me later" link records nothing. Per-tenant scope per Q19. Banner-dismissal focus return per a11y.md CHK042.
+- [X] T092 [US1] [P] Add i18n keys for US1 in `src/i18n/messages/{en,th,sv}.json`:
   - `portal.broadcasts.compose.*` (~30 keys)
   - `portal.broadcasts.compose.editor.aria.*` (Tiptap state SR announcements per a11y.md CHK029 / i18n.md CHK006)
   - `portal.broadcasts.compose.editor.announcements.*`

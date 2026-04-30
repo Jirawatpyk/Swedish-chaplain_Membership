@@ -1597,6 +1597,141 @@
         }
       }
     },
+    "broadcasts": {
+      "compose": {
+        "title": "Compose E-Blast",
+        "subtitle": "Send a message to your chamber's members.",
+        "fields": {
+          "subject": "Subject",
+          "subjectPlaceholder": "Subject line (max 200 characters)",
+          "bodyLabel": "Message",
+          "bodyPlaceholder": "Write your message — formatting is preserved.",
+          "segmentLabel": "Recipients",
+          "customListLabel": "Custom email list",
+          "customListHelp": "One email per line, up to 100 entries. Each must already be in your tenant directory.",
+          "schedulePicker": "Schedule for later",
+          "scheduleHelp": "Leave blank to submit for immediate review.",
+          "previewLabel": "Preview",
+          "linkUrlLabel": "Link URL",
+          "linkConfirm": "Set link",
+          "linkCancel": "Cancel",
+          "tierCodesPlaceholder": "premium, large",
+          "tierCodesHelp": "Comma-separated tier codes",
+          "customListPlaceholder": "alice@example.com\nbob@example.com"
+        },
+        "segmentOption": {
+          "all_members": "All members",
+          "tier": "Specific membership tier",
+          "event_attendees_last_90d": "Event attendees (last 90 days)",
+          "custom": "Custom email list"
+        },
+        "tierLabel": "Tier code",
+        "editor": {
+          "aria": {
+            "toolbar": "Formatting toolbar",
+            "bold": "Bold (Ctrl+B)",
+            "italic": "Italic (Ctrl+I)",
+            "underline": "Underline (Ctrl+U)",
+            "bulletList": "Bullet list",
+            "orderedList": "Numbered list",
+            "link": "Insert link",
+            "clearLink": "Remove link"
+          },
+          "announcements": {
+            "boldOn": "Bold on",
+            "boldOff": "Bold off",
+            "italicOn": "Italic on",
+            "italicOff": "Italic off",
+            "underlineOn": "Underline on",
+            "underlineOff": "Underline off",
+            "bulletListOn": "Bullet list on",
+            "bulletListOff": "Bullet list off",
+            "orderedListOn": "Numbered list on",
+            "orderedListOff": "Numbered list off",
+            "linkSet": "Link added",
+            "linkCleared": "Link removed"
+          }
+        },
+        "toast": {
+          "drafted": "Draft saved.",
+          "submitted": "Submitted for admin review.",
+          "sanitiserStripped": "Some unsupported formatting was removed automatically.",
+          "savingDraft": "Saving draft…",
+          "submitting": "Submitting…",
+          "takingLonger": "Taking longer than expected — please wait."
+        },
+        "button": {
+          "saveDraft": "Save as draft",
+          "submit": "Submit for review",
+          "deleteDraft": "Discard draft"
+        },
+        "errors": {
+          "broadcast_quota_blocked": "You've used all of your E-Blast quota for this year.",
+          "broadcast_not_in_plan": "Your membership plan does not include the E-Blast benefit.",
+          "broadcast_subject_too_long": "Subject must be 200 characters or fewer.",
+          "broadcast_subject_empty": "Subject is required.",
+          "broadcast_body_too_large": "Message body exceeds the 200 KB size limit.",
+          "broadcast_body_unsafe_html": "Message body contains formatting we can't accept — please simplify.",
+          "broadcast_empty_segment_blocked": "No eligible recipients matched.",
+          "broadcast_audience_too_large": "Audience exceeds the 5,000 recipient limit.",
+          "broadcast_custom_recipient_unknown": "Some custom recipients are not in your directory.",
+          "broadcast_custom_recipient_invalid_format": "Some custom recipients are not valid email addresses.",
+          "broadcast_member_missing_primary_contact_email": "Your profile is missing a primary contact email.",
+          "broadcast_member_halted_pending_review": "Your broadcast privileges are paused pending admin review.",
+          "broadcast_rate_limit_exceeded": "Too many submissions. Please try again later.",
+          "broadcast_immutable_after_submit": "This broadcast has been submitted and can no longer be edited.",
+          "broadcast_not_found": "We could not find that broadcast.",
+          "internal_error": "An unexpected error occurred. Please try again."
+        },
+        "delete": {
+          "title": "Discard this draft?",
+          "body": "This will permanently remove your draft. This action cannot be undone.",
+          "confirm": "Discard",
+          "cancel": "Keep editing"
+        }
+      },
+      "quota": {
+        "headerLabel": "E-Blast quota ({year})",
+        "used": "Used",
+        "reserved": "Reserved",
+        "remaining": "Remaining",
+        "cap": "Plan limit",
+        "exhausted": "All E-Blast quota for {year} has been used.",
+        "progressLabel": "E-Blast quota used",
+        "fetchError": "Could not load quota. Please refresh."
+      },
+      "banner": {
+        "acknowledgement": {
+          "title": "Marketing communications consent",
+          "body": "Submitting an E-Blast confirms recipients have agreed to receive your chamber's communications. You can revoke consent on a per-recipient basis at any time.",
+          "acknowledge": "I acknowledge",
+          "remindLater": "Remind me later",
+          "closeLabel": "Close banner"
+        }
+      },
+      "list": {
+        "title": "My broadcasts",
+        "subtitle": "Track the status and delivery results of every E-Blast you've submitted.",
+        "empty": "No broadcasts yet — submit your first one above.",
+        "columns": {
+          "subject": "Subject",
+          "status": "Status",
+          "submittedAt": "Submitted",
+          "sentAt": "Sent",
+          "audience": "Audience"
+        },
+        "status": {
+          "draft": "Draft",
+          "submitted": "Awaiting review",
+          "approved": "Approved",
+          "sending": "Sending",
+          "sent": "Sent",
+          "rejected": "Rejected",
+          "cancelled": "Cancelled",
+          "failed_to_dispatch": "Failed"
+        }
+      }
+    },
     "profile": {
       "title": "My profile",
       "pageTitle": "My Profile",

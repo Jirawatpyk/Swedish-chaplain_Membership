@@ -1597,6 +1597,141 @@
         }
       }
     },
+    "broadcasts": {
+      "compose": {
+        "title": "[F7-SV-REVIEW] Compose E-Blast",
+        "subtitle": "[F7-SV-REVIEW] Send a message to your chamber's members.",
+        "fields": {
+          "subject": "[F7-SV-REVIEW] Subject",
+          "subjectPlaceholder": "[F7-SV-REVIEW] Subject line (max 200 characters)",
+          "bodyLabel": "[F7-SV-REVIEW] Message",
+          "bodyPlaceholder": "[F7-SV-REVIEW] Write your message — formatting is preserved.",
+          "segmentLabel": "[F7-SV-REVIEW] Recipients",
+          "customListLabel": "[F7-SV-REVIEW] Custom email list",
+          "customListHelp": "[F7-SV-REVIEW] One email per line, up to 100 entries. Each must already be in your tenant directory.",
+          "schedulePicker": "[F7-SV-REVIEW] Schedule for later",
+          "scheduleHelp": "[F7-SV-REVIEW] Leave blank to submit for immediate review.",
+          "previewLabel": "[F7-SV-REVIEW] Preview",
+          "linkUrlLabel": "[F7-SV-REVIEW] Link URL",
+          "linkConfirm": "[F7-SV-REVIEW] Set link",
+          "linkCancel": "[F7-SV-REVIEW] Cancel",
+          "tierCodesPlaceholder": "premium, large",
+          "tierCodesHelp": "[F7-SV-REVIEW] Comma-separated tier codes",
+          "customListPlaceholder": "alice@example.com\nbob@example.com"
+        },
+        "segmentOption": {
+          "all_members": "[F7-SV-REVIEW] All members",
+          "tier": "[F7-SV-REVIEW] Specific membership tier",
+          "event_attendees_last_90d": "[F7-SV-REVIEW] Event attendees (last 90 days)",
+          "custom": "[F7-SV-REVIEW] Custom email list"
+        },
+        "tierLabel": "[F7-SV-REVIEW] Tier code",
+        "editor": {
+          "aria": {
+            "toolbar": "[F7-SV-REVIEW] Formatting toolbar",
+            "bold": "[F7-SV-REVIEW] Bold (Ctrl+B)",
+            "italic": "[F7-SV-REVIEW] Italic (Ctrl+I)",
+            "underline": "[F7-SV-REVIEW] Underline (Ctrl+U)",
+            "bulletList": "[F7-SV-REVIEW] Bullet list",
+            "orderedList": "[F7-SV-REVIEW] Numbered list",
+            "link": "[F7-SV-REVIEW] Insert link",
+            "clearLink": "[F7-SV-REVIEW] Remove link"
+          },
+          "announcements": {
+            "boldOn": "[F7-SV-REVIEW] Bold on",
+            "boldOff": "[F7-SV-REVIEW] Bold off",
+            "italicOn": "[F7-SV-REVIEW] Italic on",
+            "italicOff": "[F7-SV-REVIEW] Italic off",
+            "underlineOn": "[F7-SV-REVIEW] Underline on",
+            "underlineOff": "[F7-SV-REVIEW] Underline off",
+            "bulletListOn": "[F7-SV-REVIEW] Bullet list on",
+            "bulletListOff": "[F7-SV-REVIEW] Bullet list off",
+            "orderedListOn": "[F7-SV-REVIEW] Numbered list on",
+            "orderedListOff": "[F7-SV-REVIEW] Numbered list off",
+            "linkSet": "[F7-SV-REVIEW] Link added",
+            "linkCleared": "[F7-SV-REVIEW] Link removed"
+          }
+        },
+        "toast": {
+          "drafted": "[F7-SV-REVIEW] Draft saved.",
+          "submitted": "[F7-SV-REVIEW] Submitted for admin review.",
+          "sanitiserStripped": "[F7-SV-REVIEW] Some unsupported formatting was removed automatically.",
+          "savingDraft": "[F7-SV-REVIEW] Saving draft…",
+          "submitting": "[F7-SV-REVIEW] Submitting…",
+          "takingLonger": "[F7-SV-REVIEW] Taking longer than expected — please wait."
+        },
+        "button": {
+          "saveDraft": "[F7-SV-REVIEW] Save as draft",
+          "submit": "[F7-SV-REVIEW] Submit for review",
+          "deleteDraft": "[F7-SV-REVIEW] Discard draft"
+        },
+        "errors": {
+          "broadcast_quota_blocked": "[F7-SV-REVIEW] You've used all of your E-Blast quota for this year.",
+          "broadcast_not_in_plan": "[F7-SV-REVIEW] Your membership plan does not include the E-Blast benefit.",
+          "broadcast_subject_too_long": "[F7-SV-REVIEW] Subject must be 200 characters or fewer.",
+          "broadcast_subject_empty": "[F7-SV-REVIEW] Subject is required.",
+          "broadcast_body_too_large": "[F7-SV-REVIEW] Message body exceeds the 200 KB size limit.",
+          "broadcast_body_unsafe_html": "[F7-SV-REVIEW] Message body contains formatting we can't accept — please simplify.",
+          "broadcast_empty_segment_blocked": "[F7-SV-REVIEW] No eligible recipients matched.",
+          "broadcast_audience_too_large": "[F7-SV-REVIEW] Audience exceeds the 5,000 recipient limit.",
+          "broadcast_custom_recipient_unknown": "[F7-SV-REVIEW] Some custom recipients are not in your directory.",
+          "broadcast_custom_recipient_invalid_format": "[F7-SV-REVIEW] Some custom recipients are not valid email addresses.",
+          "broadcast_member_missing_primary_contact_email": "[F7-SV-REVIEW] Your profile is missing a primary contact email.",
+          "broadcast_member_halted_pending_review": "[F7-SV-REVIEW] Your broadcast privileges are paused pending admin review.",
+          "broadcast_rate_limit_exceeded": "[F7-SV-REVIEW] Too many submissions. Please try again later.",
+          "broadcast_immutable_after_submit": "[F7-SV-REVIEW] This broadcast has been submitted and can no longer be edited.",
+          "broadcast_not_found": "[F7-SV-REVIEW] We could not find that broadcast.",
+          "internal_error": "[F7-SV-REVIEW] An unexpected error occurred. Please try again."
+        },
+        "delete": {
+          "title": "[F7-SV-REVIEW] Discard this draft?",
+          "body": "[F7-SV-REVIEW] This will permanently remove your draft. This action cannot be undone.",
+          "confirm": "[F7-SV-REVIEW] Discard",
+          "cancel": "[F7-SV-REVIEW] Keep editing"
+        }
+      },
+      "quota": {
+        "headerLabel": "[F7-SV-REVIEW] E-Blast quota ({year})",
+        "used": "[F7-SV-REVIEW] Used",
+        "reserved": "[F7-SV-REVIEW] Reserved",
+        "remaining": "[F7-SV-REVIEW] Remaining",
+        "cap": "[F7-SV-REVIEW] Plan limit",
+        "exhausted": "[F7-SV-REVIEW] All E-Blast quota for {year} has been used.",
+        "progressLabel": "[F7-SV-REVIEW] E-Blast quota used",
+        "fetchError": "[F7-SV-REVIEW] Could not load quota. Please refresh."
+      },
+      "banner": {
+        "acknowledgement": {
+          "title": "[F7-SV-REVIEW] Marketing communications consent",
+          "body": "[F7-SV-REVIEW] Submitting an E-Blast confirms recipients have agreed to receive your chamber's communications. You can revoke consent on a per-recipient basis at any time.",
+          "acknowledge": "[F7-SV-REVIEW] I acknowledge",
+          "remindLater": "[F7-SV-REVIEW] Remind me later",
+          "closeLabel": "[F7-SV-REVIEW] Close banner"
+        }
+      },
+      "list": {
+        "title": "[F7-SV-REVIEW] My broadcasts",
+        "subtitle": "[F7-SV-REVIEW] Track the status and delivery results of every E-Blast you've submitted.",
+        "empty": "[F7-SV-REVIEW] No broadcasts yet — submit your first one above.",
+        "columns": {
+          "subject": "[F7-SV-REVIEW] Subject",
+          "status": "[F7-SV-REVIEW] Status",
+          "submittedAt": "[F7-SV-REVIEW] Submitted",
+          "sentAt": "[F7-SV-REVIEW] Sent",
+          "audience": "[F7-SV-REVIEW] Audience"
+        },
+        "status": {
+          "draft": "[F7-SV-REVIEW] Draft",
+          "submitted": "[F7-SV-REVIEW] Awaiting review",
+          "approved": "[F7-SV-REVIEW] Approved",
+          "sending": "[F7-SV-REVIEW] Sending",
+          "sent": "[F7-SV-REVIEW] Sent",
+          "rejected": "[F7-SV-REVIEW] Rejected",
+          "cancelled": "[F7-SV-REVIEW] Cancelled",
+          "failed_to_dispatch": "[F7-SV-REVIEW] Failed"
+        }
+      }
+    },
     "profile": {
       "title": "Min profil",
       "pageTitle": "Min profil",
