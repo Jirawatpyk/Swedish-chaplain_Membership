@@ -1313,9 +1313,9 @@
         "bulk": {
           "selectAria": "Välj utskick",
           "selected": "{count} markerade",
-          "approveSelected": "Godkänn och skicka valda",
+          "approveSelected": "Godkänn och skicka markerade",
           "clear": "Rensa markering",
-          "successAll": "Alla valda utskick godkända.",
+          "successAll": "Alla markerade utskick godkända.",
           "failureAll": "Massgodkännande misslyckades. Försök igen eller godkänn ett i taget.",
           "partial": "{ok} godkända, {fail} misslyckades."
         },
@@ -1429,7 +1429,7 @@
         "reasonPlaceholder": "Varför avbryts detta…",
         "reasonHelp": "1–500 tecken.",
         "confirm": "Avbryt utskick",
-        "cancel": "Behåll"
+        "cancel": "Behåll utskick"
       },
       "proxySubmitDialog": {
         "title": "Skicka in å medlems vägnar",
@@ -1447,7 +1447,7 @@
         "body": "Automatisk spärr utlöst av klagomålströskel. Granska och häv spärren om det är lämpligt.",
         "clearAction": "Granska och häv spärr",
         "haltedSince": "Spärrad sedan {date}",
-        "readOnlyNote": "Chefsroll — endast läsbehörighet"
+        "readOnlyNote": "Manager-roll — skrivskyddad"
       },
       "clearHaltDialog": {
         "title": "Häva utskicksspärr?",
@@ -1458,8 +1458,8 @@
         "cancel": "Avbryt"
       },
       "managerReadonlyBanner": {
-        "title": "Läsbehörighetsläge",
-        "body": "Chefsroll: du kan se kön och utskicksdetaljer men inte godkänna, avvisa eller avbryta."
+        "title": "Skrivskyddat läge",
+        "body": "Manager-roll: du kan se kön och utskicksdetaljer men inte godkänna, avvisa eller avbryta."
       },
       "toast": {
         "approved": "Utskick godkänt.",
@@ -1467,7 +1467,7 @@
         "cancelled": "Utskick avbrutet.",
         "proxySubmitted": "Inskickad för granskning.",
         "clearHalted": "Spärr hävd. Medlemmen kan skicka nya utskick.",
-        "concurrentRace": "En annan administratör hann först. Uppdaterar…",
+        "concurrentRace": "En annan administratör hann före dig. Uppdaterar…",
         "error": "Åtgärden misslyckades. Försök igen."
       }
     },
@@ -1784,7 +1784,7 @@
           "bodyPlaceholder": "Skriv ditt meddelande — formatering bevaras.",
           "segmentLabel": "Mottagare",
           "customListLabel": "Anpassad e-postlista",
-          "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje måste finnas i din kammares katalog.",
+          "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje adress måste redan finnas i din kammares katalog.",
           "schedulePicker": "Schemalägg till senare",
           "scheduleHelp": "Lämna tomt för omedelbar granskning.",
           "previewLabel": "Förhandsgranskning",
@@ -1793,7 +1793,7 @@
           "previewUnavailableHint": "Uppdatera sidan för att försöka igen — ditt utkast är säkert.",
           "subjectCounter": "{count} / {max} tecken",
           "linkUrlLabel": "Länk-URL",
-          "linkConfirm": "Lägg till länk",
+          "linkConfirm": "Använd länk",
           "linkCancel": "Avbryt",
           "tierCodesPlaceholder": "premium, large",
           "tierCodesHelp": "Kommaseparerade nivåkoder",
@@ -1845,7 +1845,7 @@
         "button": {
           "saveDraft": "Spara som utkast",
           "submit": "Skicka för granskning",
-          "deleteDraft": "Kasta utkast"
+          "deleteDraft": "Släng utkast"
         },
         "errors": {
           "broadcast_quota_blocked": "Du har använt hela din E-Blast-kvot för i år.",
@@ -1853,7 +1853,7 @@
           "broadcast_subject_too_long": "Ämnet får vara högst 200 tecken.",
           "broadcast_subject_empty": "Ämne krävs.",
           "broadcast_body_too_large": "Meddelandet överskrider gränsen på 200 KB.",
-          "broadcast_body_unsafe_html": "Meddelandet innehåller formatering vi inte kan acceptera — förenkla.",
+          "broadcast_body_unsafe_html": "Meddelandet innehåller formatering som inte stöds — förenkla det.",
           "broadcast_empty_segment_blocked": "Inga matchande mottagare hittades.",
           "broadcast_audience_too_large": "Mottagarlistan överstiger gränsen på 5 000.",
           "broadcast_custom_recipient_unknown": "Vissa anpassade mottagare finns inte i din katalog.",
@@ -1866,9 +1866,9 @@
           "internal_error": "Ett oväntat fel inträffade. Försök igen."
         },
         "delete": {
-          "title": "Kasta detta utkast?",
+          "title": "Släng detta utkast?",
           "body": "Detta tar bort ditt utkast permanent. Åtgärden kan inte ångras.",
-          "confirm": "Kasta",
+          "confirm": "Släng",
           "cancel": "Fortsätt redigera"
         }
       },
@@ -1896,7 +1896,7 @@
       "list": {
         "title": "Mina utskick",
         "subtitle": "Följ status och leveransresultat för varje E-Blast du har skickat.",
-        "empty": "Skicka ditt första kammaromfattande e-post — dina mottagare är bara ett klick bort.",
+        "empty": "Skicka ditt första kammaromfattande utskick — dina mottagare är bara ett klick bort.",
         "emptyTitle": "Inga utskick ännu",
         "emptyCta": "Skapa ditt första E-Blast",
         "quotaExhaustedTooltip": "Din E-Blast-kvot för {year} är förbrukad. Förnyas den 1 januari nästa år.",
@@ -2163,24 +2163,24 @@
       "subject": "Bekräftelse av återbetalning"
     },
     "broadcastApproved": {
-      "subject": "Ditt E-Blast har godkänts",
+      "subject": "Ditt utskick har godkänts",
       "greeting": "Hej {name},",
-      "body": "Ditt E-Blast \"{subject}\" har godkänts och kommer att skickas {scheduleHint}.",
+      "body": "Ditt utskick \"{subject}\" har godkänts och kommer att skickas {scheduleHint}.",
       "scheduleNow": "inom kort",
       "scheduleAt": "den {when}",
       "footer": "Du ser leveransresultaten på din förmånssida när utskicket är klart."
     },
     "broadcastRejected": {
-      "subject": "Ditt E-Blast har inte godkänts",
+      "subject": "Ditt utskick har inte godkänts",
       "greeting": "Hej {name},",
-      "body": "Ditt E-Blast \"{subject}\" har inte godkänts.",
+      "body": "Ditt utskick \"{subject}\" har inte godkänts.",
       "reasonHeading": "Anledning från din kammaradmin:",
       "footer": "Din reserverade kvot har frigjorts. Du är välkommen att skicka ett reviderat utskick."
     },
     "broadcastCancelled": {
-      "subject": "Ditt E-Blast har avbrutits",
+      "subject": "Ditt utskick har avbrutits",
       "greeting": "Hej {name},",
-      "body": "Ditt E-Blast \"{subject}\" har avbrutits.",
+      "body": "Ditt utskick \"{subject}\" har avbrutits.",
       "reasonHeading": "Anteckning om avbrott:",
       "footer": "Din reserverade kvot har frigjorts."
     }

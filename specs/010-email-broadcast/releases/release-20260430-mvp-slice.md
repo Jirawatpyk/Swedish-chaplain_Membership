@@ -98,7 +98,7 @@
 - US5 Public unsubscribe page — Phase 7
 - US6 Scheduled future-dated send improvements — Phase 8 (basic schedule path ships in US2)
 - F6 EventAttendees stub — F7 ships with stub returning `[]`; F6 swaps in real Drizzle adapter at F6 ship
-- F7 SV translations were originally `[F7-SV-REVIEW]` placeholders; auto-translated EN→SV via map during round-4 (256 keys). **Status as of 2026-04-30**: 0 placeholders remaining (`grep "F7-SV-REVIEW" src/i18n/messages/sv.json` returns 0); strings are production-shipped pending chamber TH/SV liaison content-quality sign-off at `/speckit.ship` gate
+- F7 SV translations were originally `[F7-SV-REVIEW]` placeholders; auto-translated EN→SV via map during round-4 (256 keys). **Status as of 2026-05-01**: 0 placeholders remaining + agent-driven content-quality liaison pass closed 10 high-priority issues (Manager-roll register fix x3, Släng/Kasta colloquialism x3, Ditt utskick gender-agreement in 3 emails x6, "markerade" terminology consistency, "Använd länk" semantic, "Varje adress" grammar, "som inte stöds" register, "Behåll utskick" disambiguation, "hann före dig" register). **S001 staff-review condition RESOLVED 2026-05-01**.
 - ~~isomorphic-dompurify ESM workaround~~ **RESOLVED 2026-04-30**: Node 22 LTS adoption removed all 4 layers (engines bumped, pnpm.overrides cleared, serverExternalPackages removed, dynamic imports reverted to static). Runbook `docs/runbooks/f7-dompurify-esm-workaround.md` marked RESOLVED for historical reference only
 ```
 
