@@ -11,9 +11,16 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
   getPlanForMember,
-  drizzlePlanRepo,
   type MemberPlanIdentityLookup,
 } from '@/modules/plans';
+// 2026-05-01 build-fix: `drizzlePlanRepo` was previously re-exported from
+// the F2 public barrel, but that pulled postgres + pino into Client
+// Components transitively (build broke on Module-not-found `fs`/`net`/
+// `tls`/`worker_threads`). The Infrastructure repo is imported directly
+// here at the F7 composition root — same escape-hatch pattern documented
+// in F5 page.tsx + sweep-stale-pending-refunds + receipt-pdf-reconcile.
+// eslint-disable-next-line no-restricted-imports
+import { planRepo as drizzlePlanRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { drizzleMemberRepo, asMemberId } from '@/modules/members';
 import type {
   PlansBridgePort,

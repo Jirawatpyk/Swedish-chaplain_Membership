@@ -277,6 +277,15 @@ export {
   type PlanLookupError,
 } from './application/get-plan-for-member';
 
-// F7 bridge — concrete `PlanRepo` instance for F7's `plans-bridge.ts`
-// composition root (T061). F7 invokes `getPlanForMember` through this repo.
-export { planRepo as drizzlePlanRepo } from './infrastructure/db/plan-repo';
+// F7 bridge — concrete `PlanRepo` instance moved out of the public barrel
+// 2026-05-01: Public barrel re-exporting Infrastructure caused the client
+// bundler to pull postgres + pino into Client Components
+// (`plan-form-wizard.tsx`, `new-plan-client.tsx`) which transitively import
+// from `@/modules/plans`. Build failed with Module-not-found on `fs`/`net`/
+// `tls`/`perf_hooks`/`worker_threads`. Constitution Principle III also
+// forbids Infrastructure leaks through Domain/Application barrels.
+//
+// F7's `broadcasts/infrastructure/plans-bridge.ts` now imports `planRepo`
+// directly with `eslint-disable-next-line no-restricted-imports` — same
+// composition-root escape-hatch pattern documented in F5 page.tsx +
+// sweep-stale-pending-refunds + receipt-pdf-reconcile.
