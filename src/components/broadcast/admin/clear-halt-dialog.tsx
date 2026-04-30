@@ -45,14 +45,19 @@ export function ClearHaltDialog({
   const [phrase, setPhrase] = useState<string>('');
   const [pending, startTransition] = useTransition();
 
-  // Review UX-C3: locale-aware case-insensitive comparison so admins
-  // typing "acme co., ltd" for `Acme Co., Ltd` aren't blocked by case
-  // mismatch — accent sensitivity remains (Thai/Swedish diacritics
-  // must match exactly).
-  const phraseValid =
-    phrase.trim().localeCompare(memberDisplayName.trim(), undefined, {
-      sensitivity: 'accent',
-    }) === 0;
+  // Review UX-C3 + UX-R2-2 (round-3): typed-phrase confirmation
+  // matches when the human-visible content matches — case + leading/
+  // trailing space + internal whitespace runs + punctuation are
+  // normalized away. Thai/Swedish diacritics still matter (different
+  // base characters → not a match) so a misspelling still blocks
+  // the destructive action.
+  const normalize = (s: string): string =>
+    s
+      .trim()
+      .replace(/[\s​-‍﻿]+/g, ' ') // collapse whitespace incl. zero-width
+      .replace(/[.,;:!?'"()\-—]/g, '') // strip common punctuation
+      .toLowerCase();
+  const phraseValid = normalize(phrase) === normalize(memberDisplayName);
 
   function onConfirm() {
     if (!phraseValid) return;

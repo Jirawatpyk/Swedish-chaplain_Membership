@@ -316,9 +316,16 @@ function isF7RouteErrorCode(kind: string): kind is F7RouteErrorCode {
 
 /**
  * Maps an Application-layer error kind to its (status, code) HTTP pair.
- * Unknown kinds fall through to 500 `internal_error` — route handlers
- * should map their domain-specific kinds before invoking this generic
- * fallback.
+ *
+ * Type safety: the `Record<F7RouteErrorCode, number>` map enforces at
+ * compile time that every code in the `F7RouteErrorCode` union has a
+ * status — adding a code to the union without a status is TS2741.
+ * However the function signature is `kind: string` — Application-layer
+ * errors that are NEW + not yet added to the union compile fine and
+ * silently fall through to 500. Application use-cases SHOULD widen the
+ * union when they add new error kinds; the TS2741 will then surface in
+ * this file. Route handlers should map their domain-specific kinds
+ * before invoking this generic fallback.
  */
 export function httpStatusForBroadcastError(kind: string): {
   readonly status: number;

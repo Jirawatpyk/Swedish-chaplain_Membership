@@ -84,10 +84,11 @@ export async function QueueTable({
     );
   }
 
-  // Smart-3 — SLA age badge thresholds. 48h target per spec FR-022.
+  // Smart-3 — SLA age badge thresholds. 48h review SLA target per spec
+  // FR-013 (Clarifications session Q2).
   // Server component runs once per request — `Date.now()` is the
-  // intended boundary value here. ESLint react-hooks/purity is overly
-  // strict for server components.
+  // intended request-boundary value. ESLint react-hooks/purity is
+  // designed for client render purity; safe here.
   // eslint-disable-next-line react-hooks/purity
   const nowMs = Date.now();
   const SLA_AMBER_HOURS = 24;
@@ -102,14 +103,18 @@ export async function QueueTable({
         ? Math.floor((nowMs - submittedDate.getTime()) / (60 * 60 * 1000))
         : null;
 
-    let ageBadgeLabel: string | null = null;
-    let ageBadgeVariant: 'amber' | 'red' | null = null;
+    // Type-3 (round-3) — single nullable struct so label+variant cannot drift.
+    let ageBadge: { label: string; variant: 'amber' | 'red' } | null = null;
     if (hoursWaiting !== null && hoursWaiting >= SLA_RED_HOURS) {
-      ageBadgeLabel = t('ageBadge.overdue', { hours: hoursWaiting });
-      ageBadgeVariant = 'red';
+      ageBadge = {
+        label: t('ageBadge.overdue', { hours: hoursWaiting }),
+        variant: 'red',
+      };
     } else if (hoursWaiting !== null && hoursWaiting >= SLA_AMBER_HOURS) {
-      ageBadgeLabel = t('ageBadge.aging', { hours: hoursWaiting });
-      ageBadgeVariant = 'amber';
+      ageBadge = {
+        label: t('ageBadge.aging', { hours: hoursWaiting }),
+        variant: 'amber',
+      };
     }
 
     const style = STATUS_STYLE[row.status];
@@ -124,8 +129,7 @@ export async function QueueTable({
       segmentLabel: row.segmentType,
       recipientCount: row.estimatedRecipientCount,
       submittedAtFormatted: submittedAt,
-      ageBadgeLabel,
-      ageBadgeVariant,
+      ageBadge,
       statusBadgeVariant: style.variant,
       statusBadgeLabel: tStatus(row.status),
       actionable: row.status === 'submitted',
@@ -150,6 +154,7 @@ export async function QueueTable({
         actions: t('columns.actions'),
         select: t('bulk.selectAria'),
         bulkApprove: t('bulk.approveSelected'),
+        bulkClear: t('bulk.clear'),
         bulkSelected: t('bulk.selected'),
         bulkSuccess: t('bulk.successAll'),
         bulkFailure: t('bulk.failureAll'),

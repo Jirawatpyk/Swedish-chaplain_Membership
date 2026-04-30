@@ -1314,6 +1314,7 @@
           "selectAria": "เลือก E-Blast",
           "selected": "เลือกแล้ว {count} รายการ",
           "approveSelected": "อนุมัติและส่งรายการที่เลือก",
+          "clear": "ล้างที่เลือก",
           "successAll": "อนุมัติ E-Blast ที่เลือกทั้งหมดสำเร็จ",
           "failureAll": "อนุมัติเป็นกลุ่มไม่สำเร็จ ลองใหม่หรืออนุมัติทีละรายการ",
           "partial": "สำเร็จ {ok} รายการ ล้มเหลว {fail} รายการ"
@@ -1369,6 +1370,8 @@
       "review": {
         "title": "ตรวจสอบ E-Blast",
         "subtitle": "ดูเนื้อหา + อนุมัติ ปฏิเสธ หรือยกเลิก",
+        "bodyRenderFailedTitle": "ไม่สามารถแสดงเนื้อหาอย่างปลอดภัย",
+        "bodyRenderFailedHint": "ระบบทำความสะอาด HTML ไม่สำเร็จ ปุ่มอนุมัติถูกระงับ กรุณาติดต่อทีมปฏิบัติการ",
         "fields": {
           "subject": "หัวข้อ",
           "body": "ข้อความ",
@@ -1390,7 +1393,8 @@
           "sent": "ส่งสำเร็จ",
           "failedToDispatch": "ส่งไม่สำเร็จ",
           "actorBy": "โดย {actor}",
-          "actorSystem": "ระบบ"
+          "actorSystem": "ระบบ",
+          "actorUnknown": "ผู้ใช้ที่ไม่ทราบ"
         }
       },
       "approveDialog": {

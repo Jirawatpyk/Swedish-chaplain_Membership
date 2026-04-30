@@ -12,7 +12,8 @@
  */
 import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { db } from '@/lib/db';
+import { runInTenant } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
 import { CheckCircle2, Circle } from 'lucide-react';
 
 interface AuditRow {
@@ -26,15 +27,24 @@ interface AuditRow {
 }
 
 function formatActor(row: AuditRow, t: (key: string) => string): string {
+  // IMP-4 (round-3) — guard against null/empty actorUserId. SQL coerces
+  // via COALESCE but historical rows or future malformed inserts could
+  // still arrive empty; render a stable label instead of crashing or
+  // returning empty string.
+  if (!row.actorUserId || row.actorUserId.length === 0) {
+    return t('actorUnknown');
+  }
   if (row.actorUserId.startsWith('system:')) {
     return t('actorSystem');
   }
   if (row.actorEmail !== null && row.actorEmail.length > 0) {
     return row.actorEmail;
   }
-  // Fallback: short id hash so SR users always have a stable identifier
-  // even when the join returned no row.
-  return row.actorUserId.slice(0, 8);
+  // UX-R2-8 (round-3) — when the LEFT JOIN didn't resolve (deleted user
+  // or cross-system actor), render a meaningful label. The 8-char hash
+  // was opaque to SR users (read letter-by-letter); 'actorUnknown' is
+  // honest. The full id stays in the title attribute for ops debugging.
+  return t('actorUnknown');
 }
 
 const RELEVANT_EVENTS = [
@@ -68,19 +78,29 @@ export async function AuditTimeline({
   // by the F1 barrel — Principle III preserves append-only ownership).
   // LEFT JOIN users to surface actor email for SR users (UX-C6 — "who
   // approved?"). System actors (`system:cron`) carry their literal
-  // string in actorUserId so the display falls back to that.
-  const rows = (await db.execute(sql`
-    SELECT al.event_type::text AS "eventType",
-           al.actor_user_id    AS "actorUserId",
-           al.timestamp        AS "timestamp",
-           u.email             AS "actorEmail"
-      FROM audit_log al
-      LEFT JOIN users u ON u.id::text = al.actor_user_id
-     WHERE al.tenant_id = ${tenantId}
-       AND al.payload->>'broadcastId' = ${broadcastId}
-       AND al.event_type::text = ANY(${sql.raw(`ARRAY[${RELEVANT_EVENTS.map((e) => `'${e}'`).join(', ')}]::text[]`)})
-     ORDER BY al.timestamp ASC
-  `)) as unknown as ReadonlyArray<AuditRow>;
+  // string in actorUserId so the display falls back to `t('actorSystem')`.
+  //
+  // CRIT-1 (round-3) — query goes through `runInTenant` so RLS+FORCE on
+  // `audit_log` applies (Constitution v1.4.0 Principle I two-layer
+  // isolation; the `WHERE al.tenant_id = ...` clause is the in-app
+  // filter; RLS is the database-layer enforcement).
+  // Simplify-S5 — native array binding (drizzle binds `string[]` as
+  // `text[]` parameter; safer than `sql.raw` quote-interpolation).
+  const tenantCtx = asTenantContext(tenantId);
+  const rows = (await runInTenant(tenantCtx, async (tx) =>
+    tx.execute(sql`
+      SELECT al.event_type::text                           AS "eventType",
+             COALESCE(al.actor_user_id, '')                AS "actorUserId",
+             al.timestamp                                  AS "timestamp",
+             u.email                                       AS "actorEmail"
+        FROM audit_log al
+        LEFT JOIN users u ON u.id::text = al.actor_user_id
+       WHERE al.tenant_id = ${tenantId}
+         AND al.payload->>'broadcastId' = ${broadcastId}
+         AND al.event_type::text = ANY(${RELEVANT_EVENTS as unknown as string[]})
+       ORDER BY al.timestamp ASC
+    `),
+  )) as unknown as ReadonlyArray<AuditRow>;
   const events = rows;
 
   const eventLabel: Record<string, string> = {
@@ -131,7 +151,9 @@ export async function AuditTimeline({
                     <span className="mx-1.5" aria-hidden="true">
                       ·
                     </span>
-                    <span>{t('actorBy', { actor: formatActor(r, t) })}</span>
+                    <span title={r.actorUserId || undefined}>
+                      {t('actorBy', { actor: formatActor(r, t) })}
+                    </span>
                   </p>
                 </div>
               </li>

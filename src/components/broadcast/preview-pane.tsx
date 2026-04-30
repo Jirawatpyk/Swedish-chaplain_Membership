@@ -24,7 +24,7 @@
  *
  * Re-renders are throttled by the parent's `useDeferredValue(bodyHtml)`.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 const PREVIEW_SANITIZER_CONFIG = Object.freeze({
@@ -85,6 +85,11 @@ export function PreviewPane({
   const [sanitised, setSanitised] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // UX-R2-3 (round-3) — only announce loading on the FIRST mount.
+  // Subsequent re-sanitisations (every keystroke via deferred bodyHtml)
+  // must NOT re-announce "Loading preview…" — SR users would hear it on
+  // every typed character.
+  const hasLoadedOnce = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +104,7 @@ export function PreviewPane({
         setSanitised(typeof out === 'string' ? out : '');
         setLoadError(null);
         setLoading(false);
+        hasLoadedOnce.current = true;
       } catch (e) {
         if (cancelled) return;
         const message = e instanceof Error ? e.message : 'unknown';
@@ -131,7 +137,8 @@ export function PreviewPane({
         <div
           className="prose prose-sm dark:prose-invert max-w-none px-3 py-3 text-xs text-muted-foreground"
           aria-busy="true"
-          aria-live="polite"
+          // Only announce on first mount to avoid keystroke-spam announcements.
+          {...(hasLoadedOnce.current ? {} : { 'aria-live': 'polite' as const })}
         >
           {t('previewLoading')}
         </div>

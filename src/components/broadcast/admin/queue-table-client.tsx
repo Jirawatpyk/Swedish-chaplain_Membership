@@ -13,6 +13,7 @@
  * or hold a locale instance — keeps the bundle small and SSR-friendly.
  */
 import { useMemo, useRef, useState, useTransition } from 'react';
+import { Clock, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -48,8 +49,15 @@ export interface EnrichedQueueRow {
   readonly segmentLabel: string;
   readonly recipientCount: number;
   readonly submittedAtFormatted: string;
-  readonly ageBadgeLabel: string | null;
-  readonly ageBadgeVariant: 'amber' | 'red' | null;
+  /**
+   * Type-3 (round-3) — single nullable struct so `(label, variant)`
+   * cannot drift apart. Null = no badge to render. Populated for
+   * `submitted` rows ≥24 h old (Smart-3 / FR-013 SLA).
+   */
+  readonly ageBadge: {
+    readonly label: string;
+    readonly variant: 'amber' | 'red';
+  } | null;
   readonly statusBadgeVariant: BadgeVariant;
   readonly statusBadgeClassName?: string;
   readonly statusBadgeLabel: string;
@@ -68,6 +76,7 @@ export interface QueueTableClientProps {
     readonly actions: string;
     readonly select: string;
     readonly bulkApprove: string;
+    readonly bulkClear: string;
     readonly bulkSelected: string;
     readonly bulkSuccess: string;
     readonly bulkFailure: string;
@@ -135,17 +144,23 @@ export function QueueTableClient({
               <span className="text-muted-foreground tabular-nums">
                 {row.submittedAtFormatted}
               </span>
-              {row.ageBadgeLabel ? (
+              {row.ageBadge ? (
                 <Badge
                   variant="outline"
                   className={cn(
-                    'self-start text-xs',
-                    row.ageBadgeVariant === 'red'
+                    'inline-flex items-center gap-1 self-start text-xs',
+                    row.ageBadge.variant === 'red'
                       ? 'border-destructive/40 bg-destructive/10 text-destructive'
                       : 'border-amber-400/40 bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200',
                   )}
                 >
-                  {row.ageBadgeLabel}
+                  {/* UX-R2-7 (round-3) — non-color signal for color-blind users */}
+                  {row.ageBadge.variant === 'red' ? (
+                    <AlertCircle className="h-3 w-3" aria-hidden="true" />
+                  ) : (
+                    <Clock className="h-3 w-3" aria-hidden="true" />
+                  )}
+                  {row.ageBadge.label}
                 </Badge>
               ) : null}
             </div>
@@ -222,6 +237,7 @@ export function QueueTableClient({
     return base;
   }, [columnLabels, readOnly]);
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table v8 hook
   const table = useReactTable({
     data: rows as EnrichedQueueRow[],
     columns,
@@ -242,44 +258,105 @@ export function QueueTableClient({
     enabled: shouldVirtualize,
   });
 
-  // Smart-2 — bulk-approve handler. Promise.allSettled keeps a single
-  // 5xx from blocking the rest. Toast summarises success/partial/total
-  // failure; router.refresh() re-fetches the queue rows from the server.
-  const selectedIds = useMemo(
-    () =>
-      table
-        .getSelectedRowModel()
-        .rows.map((r) => r.original.broadcastId),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rowSelection],
-  );
+  // Smart-2 — bulk-approve handler. Concurrency capped at BULK_CHUNK
+  // to avoid DB pool exhaustion on Neon serverless (~10 connections);
+  // each approve takes a `lockForUpdate` advisory lock + tx.
+  // Per-row failures are kept selected so the admin can retry without
+  // re-selecting (IMP-2 round-3).
+  const BULK_CHUNK = 5;
+  // Simplify-S3 (round-3) — derive in render; no useMemo + ESLint
+  // suppression. Selection size is bounded by visible rows; cost is
+  // negligible.
+  const selectedRows = table.getSelectedRowModel().rows;
+  const selectedIds = selectedRows.map((r) => r.original.broadcastId);
 
   const handleBulkApprove = (): void => {
     if (selectedIds.length === 0 || pending) return;
     startTransition(async () => {
-      const results = await Promise.allSettled(
-        selectedIds.map((id) =>
-          fetch(`/api/admin/broadcasts/${id}/approve`, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ decision: 'send_now' }),
-          }).then(async (res) => {
-            if (!res.ok) throw new Error(`status ${res.status}`);
-            return id;
+      type Outcome =
+        | { id: string; subject: string; ok: true }
+        | { id: string; subject: string; ok: false; status: number };
+      const outcomes: Outcome[] = [];
+
+      // IMP-1 round-3 — chunked Promise.allSettled. Each chunk awaits
+      // before the next so we never exceed BULK_CHUNK concurrent
+      // requests against the approve endpoint.
+      for (let i = 0; i < selectedRows.length; i += BULK_CHUNK) {
+        const chunk = selectedRows.slice(i, i + BULK_CHUNK);
+        const settled = await Promise.allSettled(
+          chunk.map(async (r) => {
+            const res = await fetch(
+              `/api/admin/broadcasts/${r.original.broadcastId}/approve`,
+              {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ decision: 'send_now' }),
+              },
+            );
+            return { res, original: r.original };
           }),
-        ),
-      );
-      const succeeded = results.filter((r) => r.status === 'fulfilled').length;
-      const failed = results.length - succeeded;
-      if (failed === 0) {
-        toast.success(columnLabels.bulkSuccess);
-      } else if (succeeded === 0) {
-        toast.error(columnLabels.bulkFailure);
-      } else {
-        toast.warning(columnLabels.bulkPartial.replace('{ok}', String(succeeded)).replace('{fail}', String(failed)));
+        );
+        for (const result of settled) {
+          if (result.status === 'fulfilled') {
+            const { res, original } = result.value;
+            outcomes.push(
+              res.ok
+                ? { id: original.broadcastId, subject: original.subject, ok: true }
+                : { id: original.broadcastId, subject: original.subject, ok: false, status: res.status },
+            );
+          } else {
+            // Network failure — id from chunk position
+            const idx = settled.indexOf(result);
+            const original = chunk[idx]?.original;
+            if (original) {
+              outcomes.push({
+                id: original.broadcastId,
+                subject: original.subject,
+                ok: false,
+                status: 0,
+              });
+            }
+          }
+        }
       }
-      setRowSelection({});
+
+      const failures = outcomes.filter((o): o is Extract<Outcome, { ok: false }> => !o.ok);
+      const succeeded = outcomes.length - failures.length;
+
+      if (failures.length === 0) {
+        toast.success(columnLabels.bulkSuccess);
+        setRowSelection({});
+      } else if (succeeded === 0) {
+        toast.error(columnLabels.bulkFailure, {
+          description: failures
+            .slice(0, 3)
+            .map((f) => `${f.subject} (${f.status || 'network'})`)
+            .join(', '),
+        });
+        // Keep failed rows selected so admin can retry without re-selecting
+      } else {
+        toast.warning(
+          columnLabels.bulkPartial
+            .replace('{ok}', String(succeeded))
+            .replace('{fail}', String(failures.length)),
+          {
+            description: failures
+              .slice(0, 3)
+              .map((f) => `${f.subject} (${f.status || 'network'})`)
+              .join(', '),
+          },
+        );
+        // Clear successful rows; keep failures selected.
+        const failedSet = new Set(failures.map((f) => f.id));
+        const nextSelection: RowSelectionState = {};
+        for (const row of selectedRows) {
+          if (failedSet.has(row.original.broadcastId)) {
+            nextSelection[row.id] = true;
+          }
+        }
+        setRowSelection(nextSelection);
+      }
       router.refresh();
     });
   };
@@ -307,36 +384,45 @@ export function QueueTableClient({
     </tr>
   );
 
-  const bulkBar = !readOnly && selectedIds.length > 0 ? (
-    <div
-      role="region"
-      aria-label={columnLabels.bulkSelected}
-      className="sticky top-0 z-20 mb-2 flex items-center justify-between gap-3 rounded-md border bg-primary/5 px-3 py-2"
-    >
-      <span className="text-sm font-medium">
-        {columnLabels.bulkSelected.replace('{count}', String(selectedIds.length))}
-      </span>
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setRowSelection({})}
-          disabled={pending}
-        >
-          {columnLabels.actions}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          onClick={handleBulkApprove}
-          disabled={pending}
-        >
-          {columnLabels.bulkApprove}
-        </Button>
+  // UX-R2-5 (round-3) — sticky bar uses CSS variable for the staff
+  // shell's PageHeader height so it doesn't slide UNDER the (higher
+  // z-index) shell header. Falls back to top-0 if the variable is
+  // not defined (e.g. portal contexts).
+  const bulkBar =
+    !readOnly && selectedIds.length > 0 ? (
+      <div
+        role="region"
+        aria-label={columnLabels.bulkSelected}
+        className="sticky z-20 mb-2 flex items-center justify-between gap-3 rounded-md border bg-primary/5 px-3 py-2"
+        style={{ top: 'var(--staff-shell-header-height, 0px)' }}
+      >
+        <span className="text-sm font-medium">
+          {columnLabels.bulkSelected.replace(
+            '{count}',
+            String(selectedIds.length),
+          )}
+        </span>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setRowSelection({})}
+            disabled={pending}
+          >
+            {columnLabels.bulkClear}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleBulkApprove}
+            disabled={pending}
+          >
+            {columnLabels.bulkApprove}
+          </Button>
+        </div>
       </div>
-    </div>
-  ) : null;
+    ) : null;
 
   if (!shouldVirtualize) {
     return (

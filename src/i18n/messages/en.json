@@ -1314,6 +1314,7 @@
           "selectAria": "Select broadcast",
           "selected": "{count} selected",
           "approveSelected": "Approve & send selected",
+          "clear": "Clear selection",
           "successAll": "All selected broadcasts approved.",
           "failureAll": "Bulk approve failed. Try again or approve individually.",
           "partial": "{ok} approved, {fail} failed."
@@ -1369,6 +1370,8 @@
       "review": {
         "title": "Broadcast review",
         "subtitle": "Inspect content + approve, reject, or cancel.",
+        "bodyRenderFailedTitle": "Body could not be rendered safely",
+        "bodyRenderFailedHint": "The sanitiser failed to process this broadcast. Approve is blocked — contact ops to investigate.",
         "fields": {
           "subject": "Subject",
           "body": "Message",
@@ -1390,7 +1393,8 @@
           "sent": "Sent",
           "failedToDispatch": "Dispatch failed",
           "actorBy": "by {actor}",
-          "actorSystem": "system"
+          "actorSystem": "system",
+          "actorUnknown": "unknown user"
         }
       },
       "approveDialog": {

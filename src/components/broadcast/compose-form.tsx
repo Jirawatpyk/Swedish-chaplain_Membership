@@ -18,7 +18,7 @@
  * `useDeferredValue(bodyHtml)` keeps the editor responsive while the
  * preview pane re-renders.
  */
-import { useDeferredValue, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -47,6 +47,46 @@ const SubmitSchema = z.object({
   bodyHtml: z.string().min(1).max(200 * 1024),
 });
 
+/**
+ * UX-R2-1 (round-3) — map server error code → focusable field so SR
+ * users hear the inline error AT the field, not just in a transient
+ * toast (WCAG 3.3.1 + 3.3.3).
+ */
+type ServerErrorField = 'subject' | 'body' | 'segment' | 'customList' | null;
+const ERROR_CODE_FIELD: Record<string, ServerErrorField> = {
+  broadcast_subject_too_long: 'subject',
+  broadcast_subject_empty: 'subject',
+  broadcast_body_too_large: 'body',
+  broadcast_body_unsafe_html: 'body',
+  broadcast_empty_segment_blocked: 'segment',
+  broadcast_audience_too_large: 'segment',
+  broadcast_custom_recipient_unknown: 'customList',
+  broadcast_custom_recipient_invalid_format: 'customList',
+  broadcast_custom_recipient_empty: 'customList',
+  broadcast_custom_recipient_too_many: 'customList',
+};
+
+/**
+ * Simplify-S4 (round-3) — switch instead of nested ternary
+ * (CLAUDE.md forbids nested ternaries in presentation layer).
+ */
+function buildSegmentPayload(
+  segment: SegmentPickerValue,
+  customLines: ReadonlyArray<string>,
+):
+  | { kind: 'tier'; tierCodes: ReadonlyArray<string> }
+  | { kind: 'custom'; emails: ReadonlyArray<string> }
+  | { kind: 'all_members' | 'event_attendees_last_90d' } {
+  switch (segment.kind) {
+    case 'tier':
+      return { kind: 'tier', tierCodes: segment.tierCodes };
+    case 'custom':
+      return { kind: 'custom', emails: customLines };
+    default:
+      return { kind: segment.kind };
+  }
+}
+
 export interface ComposeFormProps {
   readonly initialDraftId?: string | null;
   readonly initialSubject?: string;
@@ -74,8 +114,23 @@ export function ComposeForm({
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [quotaRefreshKey, setQuotaRefreshKey] = useState<number>(0);
+  const [serverError, setServerError] = useState<{
+    field: ServerErrorField;
+    message: string;
+  } | null>(null);
+
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const bodyContainerRef = useRef<HTMLDivElement>(null);
 
   const deferredBody = useDeferredValue(bodyHtml);
+
+  // UX-R2-1 — auto-focus the failing field when a server error arrives.
+  useEffect(() => {
+    if (serverError === null) return;
+    if (serverError.field === 'subject') subjectRef.current?.focus();
+    else if (serverError.field === 'body') bodyContainerRef.current?.focus();
+    // segment / customList are radio/textarea — toast suffices
+  }, [serverError]);
 
   const customLines = parseLines(customList);
   const validation = SubmitSchema.safeParse({ subject, bodyHtml });
@@ -95,17 +150,13 @@ export function ComposeForm({
   async function onSubmit() {
     if (submitting) return;
     setSubmitting(true);
+    setServerError(null);
     try {
       const body: Record<string, unknown> = {
         subject,
         bodyHtml,
         bodySource: bodyHtml,
-        segment:
-          segment.kind === 'tier'
-            ? { kind: 'tier' as const, tierCodes: segment.tierCodes }
-            : segment.kind === 'custom'
-              ? { kind: 'custom' as const, emails: customLines }
-              : { kind: segment.kind },
+        segment: buildSegmentPayload(segment, customLines),
         scheduledFor,
       };
       if (initialDraftId !== null) body['draftId'] = initialDraftId;
@@ -140,6 +191,8 @@ export function ComposeForm({
       } catch {
         msg = responseBody.error?.message ?? tErr('internal_error');
       }
+      // UX-R2-1: surface to the failing field; useEffect will focus.
+      setServerError({ field: ERROR_CODE_FIELD[code] ?? null, message: msg });
       toast.error(msg);
     } catch (e) {
       toast.error(
@@ -200,15 +253,34 @@ export function ComposeForm({
           <div className="space-y-2">
             <Label htmlFor="broadcast-subject">{t('fields.subject')}</Label>
             <Input
+              ref={subjectRef}
               id="broadcast-subject"
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={(e) => {
+                setSubject(e.target.value);
+                if (serverError?.field === 'subject') setServerError(null);
+              }}
               placeholder={t('fields.subjectPlaceholder')}
               maxLength={200}
               disabled={submitting}
-              aria-describedby="broadcast-subject-counter"
-              aria-invalid={subjectInvalid || undefined}
+              aria-describedby={
+                serverError?.field === 'subject'
+                  ? 'broadcast-subject-error broadcast-subject-counter'
+                  : 'broadcast-subject-counter'
+              }
+              aria-invalid={
+                subjectInvalid || serverError?.field === 'subject' || undefined
+              }
             />
+            {serverError?.field === 'subject' ? (
+              <p
+                id="broadcast-subject-error"
+                role="alert"
+                className="text-xs text-destructive"
+              >
+                {serverError.message}
+              </p>
+            ) : null}
             <p
               id="broadcast-subject-counter"
               className="text-xs text-muted-foreground"
@@ -236,17 +308,26 @@ export function ComposeForm({
           ) : null}
 
           <div
-            className="space-y-2"
-            aria-invalid={bodyInvalid || undefined}
+            ref={bodyContainerRef}
+            tabIndex={-1}
+            className="space-y-2 outline-none"
+            aria-invalid={bodyInvalid || serverError?.field === 'body' || undefined}
           >
             <Label id="broadcast-body-label">{t('fields.bodyLabel')}</Label>
             <TiptapEditor
               initialHtml={initialBodyHtml}
-              onChange={setBodyHtml}
+              onChange={(next) => {
+                setBodyHtml(next);
+                if (serverError?.field === 'body') setServerError(null);
+              }}
               disabled={submitting}
               labelledById="broadcast-body-label"
             />
-            {bodyInvalid ? (
+            {serverError?.field === 'body' ? (
+              <p className="text-xs text-destructive" role="alert">
+                {serverError.message}
+              </p>
+            ) : bodyInvalid ? (
               <p className="text-xs text-destructive" role="alert">
                 {tErr('broadcast_body_too_large')}
               </p>

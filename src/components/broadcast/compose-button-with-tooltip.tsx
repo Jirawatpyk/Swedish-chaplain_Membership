@@ -33,9 +33,15 @@ export function ComposeButtonWithTooltip({
             // `aria-disabled` instead of `disabled` so the tooltip can
             // still anchor to a focusable element. The button rejects
             // clicks via the no-op onClick.
+            // UX-R2-4 (round-3) — `aria-label` permanently combines the
+            // visible label + tooltip hint so SR users hear "Compose
+            // your first E-Blast — Renews January 1…" instead of
+            // bare "Compose, dimmed" (Radix Tooltip only adds the
+            // describedby relationship while open).
             <Button
               type="button"
               aria-disabled="true"
+              aria-label={`${label} — ${tooltipText}`}
               tabIndex={0}
               onClick={(e) => e.preventDefault()}
               className="cursor-not-allowed opacity-60"

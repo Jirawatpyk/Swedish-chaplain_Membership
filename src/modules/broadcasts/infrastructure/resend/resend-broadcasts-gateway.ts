@@ -24,6 +24,7 @@ import type {
   AudienceContact,
   BroadcastsGatewayPort,
   CreateBroadcastInput,
+  GatewayRetryableSubKind,
   RetrievedBroadcastResource,
 } from '../../application/ports/broadcasts-gateway-port';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
@@ -52,12 +53,12 @@ export type GatewayThrowableKind =
  * `subKind` distinguishes the underlying transport class for `retryable`
  * errors so OTel metrics + alerts can split network outage from server
  * 5xx (review I6 — 2026-04-30). Other kinds carry `subKind: 'api'`.
+ *
+ * Type-1 (round-3) — single source of truth: the port owns the union;
+ * the adapter aliases it to keep the existing public name but cannot
+ * drift out of sync.
  */
-export type GatewayThrowableSubKind =
-  | 'network'
-  | 'timeout'
-  | 'server_5xx'
-  | 'api';
+export type GatewayThrowableSubKind = GatewayRetryableSubKind;
 
 export class GatewayThrowable extends Error {
   readonly kind: GatewayThrowableKind;

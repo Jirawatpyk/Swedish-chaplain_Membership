@@ -345,11 +345,23 @@ export async function dispatchScheduledBroadcast(
         );
         // Fall through to permanent handler below.
       } else {
+        // IMP-5 (round-3) — idempotency_conflict post-send means Resend
+        // accepted a prior attempt's `sendBroadcast`. Recipients DID
+        // receive the email IF the prior attempt's `addContactsToAudience`
+        // completed in full. If a tick-1 chunk failed mid-population
+        // (network drop after chunk N of M), the original audience has
+        // fewer contacts than `recipientCount` — partial delivery.
+        // Verifying via `getAudienceContactCount` requires persisting the
+        // original audienceId between ticks (architectural change scoped
+        // to F7.1). For MVP, surface the partial-delivery risk in the
+        // log so ops can investigate when complaint-rate spikes.
         logger.warn(
           {
             tenantId: deps.tenant.slug,
             broadcastId: input.broadcastId as string,
             resendBroadcastId,
+            expectedRecipientCount: resolvedResult.value.estimatedCount,
+            note: 'recipients_may_be_partial_if_prior_attempt_failed_mid_addContacts',
           },
           'broadcasts.dispatch.idempotency_replay',
         );

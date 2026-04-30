@@ -10,6 +10,7 @@
  * `manager` role sees the banner but no clear-action button (read-only
  * per FR-014; conditional rendering at the call site).
  */
+import Link from 'next/link';
 import { ShieldAlert } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { ClearHaltDialog } from './clear-halt-dialog';
@@ -64,7 +65,15 @@ export async function HaltStateBanner({
                 className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-background/60 px-3 py-2 dark:bg-background/30"
               >
                 <div>
-                  <p className="text-sm font-medium">{m.displayName}</p>
+                  {/* Smart-G3 (round-3) — deep-link to F3 member detail
+                      so admin can investigate plan tier + activity
+                      history before clearing halt. */}
+                  <Link
+                    href={`/admin/members/${m.memberId}`}
+                    className="text-sm font-medium hover:underline focus-visible:underline"
+                  >
+                    {m.displayName}
+                  </Link>
                   <p className="text-xs text-muted-foreground">
                     {t('haltedSince', { date: fmt.format(m.haltedSinceAt) })}
                   </p>

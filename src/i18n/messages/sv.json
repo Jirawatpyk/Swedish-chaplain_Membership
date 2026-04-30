@@ -1314,6 +1314,7 @@
           "selectAria": "[F7-SV-REVIEW] Select broadcast",
           "selected": "[F7-SV-REVIEW] {count} selected",
           "approveSelected": "[F7-SV-REVIEW] Approve & send selected",
+          "clear": "[F7-SV-REVIEW] Clear selection",
           "successAll": "[F7-SV-REVIEW] All selected broadcasts approved.",
           "failureAll": "[F7-SV-REVIEW] Bulk approve failed. Try again or approve individually.",
           "partial": "[F7-SV-REVIEW] {ok} approved, {fail} failed."
@@ -1369,6 +1370,8 @@
       "review": {
         "title": "[F7-SV-REVIEW] Broadcast review",
         "subtitle": "[F7-SV-REVIEW] Inspect content + approve, reject, or cancel.",
+        "bodyRenderFailedTitle": "[F7-SV-REVIEW] Body could not be rendered safely",
+        "bodyRenderFailedHint": "[F7-SV-REVIEW] The sanitiser failed to process this broadcast. Approve is blocked — contact ops to investigate.",
         "fields": {
           "subject": "[F7-SV-REVIEW] Subject",
           "body": "[F7-SV-REVIEW] Message",
@@ -1390,7 +1393,8 @@
           "sent": "[F7-SV-REVIEW] Sent",
           "failedToDispatch": "[F7-SV-REVIEW] Dispatch failed",
           "actorBy": "[F7-SV-REVIEW] by {actor}",
-          "actorSystem": "[F7-SV-REVIEW] system"
+          "actorSystem": "[F7-SV-REVIEW] system",
+          "actorUnknown": "[F7-SV-REVIEW] unknown user"
         }
       },
       "approveDialog": {
