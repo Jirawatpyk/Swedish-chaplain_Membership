@@ -519,6 +519,27 @@
       "when": 1779148809000,
       "tag": "0073_notification_type_f7_extension",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1779235200000,
+      "tag": "0074_alter_broadcasts_plan_id_snapshot_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1779235260000,
+      "tag": "0075_alter_broadcasts_immutability_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1779321600000,
+      "tag": "0076_audit_log_f7_audience_drift",
+      "breakpoints": true
     }
   ]
 }
