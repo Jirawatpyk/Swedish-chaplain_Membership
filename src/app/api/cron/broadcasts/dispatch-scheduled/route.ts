@@ -5,13 +5,21 @@
  *
  * Auth: Bearer token via `CRON_SECRET` (matches F4 outbox-dispatch).
  *
- * Concurrency model (review C2 — 2026-04-30):
- *   - Eligible-row scan uses `FOR UPDATE SKIP LOCKED` so two overlapping
- *     ticks (cron-job.org retry storm or 5-min cadence collision)
- *     CANNOT both grab the same broadcast.
- *   - Per-row dispatch enters tenant-scoped tx via the use-case which
- *     internally acquires `pg_advisory_xact_lock('broadcasts:'+tenant+':'+id)`
- *     — closes the TOCTOU window between cron + manual admin send-now.
+ * Concurrency model (review C2 — 2026-04-30; clarified post-staff-review
+ * 2026-05-01):
+ *   - Eligible-row scan uses `FOR UPDATE SKIP LOCKED` to skip rows
+ *     ALREADY held by another concurrent scan. **The row lock is
+ *     released the moment `runInTenant` returns** (tx ends at line 69),
+ *     so SKIP LOCKED only protects against two ticks racing to read the
+ *     SAME eligibility batch — it does NOT protect the per-row dispatch
+ *     window against another tick that arrives after this one's tx
+ *     ended but before the dispatch use-case's own tx starts.
+ *   - The authoritative dispatch-time concurrency guard is the per-row
+ *     `pg_advisory_xact_lock('broadcasts:'+tenant+':'+id)` acquired
+ *     inside the use-case's `withTx` — that lock survives the entire
+ *     dispatch tx and is what closes the TOCTOU window between cron +
+ *     manual admin send-now. SKIP LOCKED here is a small additional
+ *     defence against eligible-scan duplication, not the primary guard.
  *
  * RLS context: the eligible scan runs with `runInTenant(tenant.slug)` so
  * RLS+FORCE policies apply (Constitution Principle I clause 1 — every

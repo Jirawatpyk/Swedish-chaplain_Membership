@@ -135,6 +135,7 @@ function makeRepo(opts: RepoOpts): {
         return makeBroadcast(status as BroadcastStatus, fields as Partial<Broadcast>);
       },
       async attachResendIds() {},
+      async attachAudienceId() {},
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };
       },

@@ -113,12 +113,15 @@ function makeRepo(opts: RepoOpts): {
   port: BroadcastsRepo;
   transitions: Array<{ status: string; fields: unknown }>;
   attachCalls: Array<{ audienceId: string; broadcastId: string }>;
+  attachAudienceCalls: Array<{ audienceId: string }>;
 } {
   const transitions: Array<{ status: string; fields: unknown }> = [];
   const attachCalls: Array<{ audienceId: string; broadcastId: string }> = [];
+  const attachAudienceCalls: Array<{ audienceId: string }> = [];
   return {
     transitions,
     attachCalls,
+    attachAudienceCalls,
     port: {
       async withTx(fn) {
         return fn(null);
@@ -147,6 +150,9 @@ function makeRepo(opts: RepoOpts): {
       },
       async attachResendIds(_tx, _t, _b, audienceId, resendBroadcastId) {
         attachCalls.push({ audienceId, broadcastId: resendBroadcastId });
+      },
+      async attachAudienceId(_tx, _t, _b, audienceId) {
+        attachAudienceCalls.push({ audienceId });
       },
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };
@@ -738,9 +744,9 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(sentEmails).toContain('two@example.com');
   });
 
-  // ---- Audience name uniqueness -------------------------------------
+  // ---- Audience name stability (orphan-prevention polish 2026-05-01) -
 
-  it('audience name includes broadcastId + timestamp for uniqueness', async () => {
+  it('audience name is deterministic per (tenantId, broadcastId) — no timestamp suffix so retries reuse', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -765,7 +771,73 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
       baseInput,
     );
     expect(gw.audienceCalls[0]).toContain(broadcastId as string);
-    expect(gw.audienceCalls[0]).toContain(String(FROZEN_NOW.getTime()));
+    expect(gw.audienceCalls[0]).toContain('test-tenant');
+    // No timestamp in name — stability lets retries reuse the same audience
+    // (orphan-prevention; persisted via attachAudienceId).
+    expect(gw.audienceCalls[0]).not.toContain(String(FROZEN_NOW.getTime()));
+  });
+
+  it('reuses persisted resendAudienceId on retry instead of creating a new audience', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      // Simulate a prior dispatch attempt that already persisted an
+      // audience id (post-staff-review polish 2026-05-01 orphan-prevention).
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+    });
+    const gw = makeGateway();
+    await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+      },
+      baseInput,
+    );
+    // createAudience MUST NOT be called when an existing audience id is present.
+    expect(gw.audienceCalls.length).toBe(0);
+    // attachAudienceId MUST NOT be called either (no new id to persist).
+    expect(repo.attachAudienceCalls.length).toBe(0);
+    // Subsequent calls (addContacts + createBroadcast + sendBroadcast)
+    // use the existing audience id.
+    expect(gw.contactsCalls[0]?.audienceId).toBe('aud-existing');
+  });
+
+  it('persists resendAudienceId immediately after createAudience succeeds', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway();
+    await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+      },
+      baseInput,
+    );
+    expect(repo.attachAudienceCalls.length).toBe(1);
+    expect(repo.attachAudienceCalls[0]?.audienceId).toBe('aud-fake-1');
   });
 
   // ---- estimatedRecipientCount written back -----------------------

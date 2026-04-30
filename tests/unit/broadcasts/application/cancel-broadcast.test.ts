@@ -138,6 +138,7 @@ function makeRepo(opts: RepoOpts): {
         return { ...(opts.existing as Broadcast), status };
       },
       async attachResendIds() {},
+      async attachAudienceId() {},
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };
       },

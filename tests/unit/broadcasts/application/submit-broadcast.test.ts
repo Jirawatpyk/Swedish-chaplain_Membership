@@ -206,6 +206,7 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
       return { ...makeBroadcast(base), status };
     },
     async attachResendIds() {},
+      async attachAudienceId() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
     },

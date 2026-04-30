@@ -269,13 +269,36 @@ export async function dispatchScheduledBroadcast(
   // Empty string sentinel means "not yet assigned" — used by the
   // idempotency_conflict handler to distinguish pre-send vs post-send
   // conflict (the latter is recoverable as success-replay).
-  let resendAudienceId = '';
+  //
+  // **Orphan-audience prevention** (post-staff-review polish 2026-05-01):
+  // If `broadcast.resendAudienceId` is already set, a prior dispatch
+  // attempt's `createAudience` succeeded but a downstream call failed
+  // (retryable). REUSE the existing audience instead of creating a
+  // duplicate orphan. The audience is persisted via `attachAudienceId`
+  // immediately after `createAudience` succeeds (a separate small tx)
+  // so a crash between that and `addContactsToAudience` does not leak.
+  // Audience name remains stable across retries (no timestamp suffix)
+  // for Resend dashboard searchability.
+  let resendAudienceId = broadcast.resendAudienceId ?? '';
   let resendBroadcastId = '';
   try {
-    const audienceResult = await deps.broadcastsGateway.createAudience(
-      `broadcast-${input.broadcastId}-${now.getTime()}`,
-    );
-    resendAudienceId = audienceResult.audienceId;
+    if (resendAudienceId === '') {
+      const audienceResult = await deps.broadcastsGateway.createAudience(
+        `broadcast-${deps.tenant.slug}-${input.broadcastId}`,
+      );
+      resendAudienceId = audienceResult.audienceId;
+      // Persist immediately so a retry after a downstream failure
+      // (addContactsToAudience / createBroadcast) reuses this audience
+      // instead of creating an orphan one.
+      await deps.broadcastsRepo.withTx(async (tx) => {
+        await deps.broadcastsRepo.attachAudienceId(
+          tx,
+          deps.tenant.slug,
+          input.broadcastId,
+          resendAudienceId,
+        );
+      });
+    }
 
     const contacts: ReadonlyArray<AudienceContact> = resolvedResult.value.recipients.map(
       (e) => ({ emailLower: e as string }),
@@ -458,7 +481,21 @@ export async function dispatchScheduledBroadcast(
             'broadcasts.dispatch.idempotency_replay',
           );
         }
-        // Treat as success — fall through to attach + transition.
+        // Treat as success — INTENTIONAL fall-through to Step 4
+        // (attach + transition). Control flow:
+        //   - kind === 'idempotency_conflict' so it skips the
+        //     `resource_missing` check below (line ~466).
+        //   - The permanent-handler condition at line ~489 is
+        //     `shape.kind !== 'idempotency_conflict' || resendBroadcastId === ''`
+        //     — both clauses are false here (kind matches AND id is set),
+        //     so the permanent handler is intentionally skipped.
+        //   - Execution exits the catch block and reaches Step 4.
+        //
+        // **Maintainer note**: if you add a NEW error kind whose handler
+        // sits between this point and line ~489, gate it on
+        // `shape.kind === '<new kind>'` to keep the success-replay path
+        // intact — DO NOT use `else if` chains that could capture this
+        // case by accident.
       }
     }
 

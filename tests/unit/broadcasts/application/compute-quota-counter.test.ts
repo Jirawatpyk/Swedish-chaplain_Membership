@@ -82,6 +82,9 @@ function makeBroadcastsRepo({
     async attachResendIds() {
       // no-op
     },
+    async attachAudienceId() {
+      // no-op
+    },
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
     },

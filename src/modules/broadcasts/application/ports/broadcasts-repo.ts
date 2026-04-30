@@ -154,6 +154,25 @@ export interface BroadcastsRepo {
   ): Promise<void>;
 
   /**
+   * Persist the `resend_audience_id` column ALONE, without changing
+   * `resend_broadcast_id` or status. Called immediately after
+   * `gateway.createAudience` succeeds during dispatch so a subsequent
+   * retry (after a partial failure on `addContactsToAudience` or
+   * `createBroadcast`) can REUSE the existing Resend audience instead
+   * of creating an orphan one.
+   *
+   * Idempotent: writing the same value twice is a no-op. Writing a
+   * different value is allowed (caller is the only writer per the
+   * dispatch advisory-lock invariant).
+   */
+  attachAudienceId(
+    tx: unknown,
+    tenantId: string,
+    broadcastId: BroadcastId,
+    resendAudienceId: string,
+  ): Promise<void>;
+
+  /**
    * List broadcasts for the admin queue / member history surfaces.
    */
   listByTenantStatus(

@@ -167,6 +167,7 @@ function makeRepo(opts: FixtureOpts): {
         return { ...makeBroadcast(last), status };
       },
       async attachResendIds() {},
+      async attachAudienceId() {},
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };
       },

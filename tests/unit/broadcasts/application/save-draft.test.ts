@@ -154,6 +154,7 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
       throw new Error('not used in save-draft tests');
     },
     async attachResendIds() {},
+      async attachAudienceId() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
     },

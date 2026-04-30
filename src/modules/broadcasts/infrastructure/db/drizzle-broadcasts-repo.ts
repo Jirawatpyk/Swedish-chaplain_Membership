@@ -391,6 +391,27 @@ export function makeDrizzleBroadcastsRepo(
         );
     },
 
+    async attachAudienceId(
+      txUnknown,
+      tenantIdArg: string,
+      broadcastId: BroadcastId,
+      resendAudienceId: string,
+    ): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await tx
+        .update(broadcasts)
+        .set({
+          resendAudienceId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+          ),
+        );
+    },
+
     async listByTenantStatus(
       tenantIdArg: string,
       opts: ListByTenantStatusOpts,

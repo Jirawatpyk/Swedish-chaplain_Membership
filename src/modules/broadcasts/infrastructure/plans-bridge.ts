@@ -19,7 +19,6 @@ import {
 // `tls`/`worker_threads`). The Infrastructure repo is imported directly
 // here at the F7 composition root — same escape-hatch pattern documented
 // in F5 page.tsx + sweep-stale-pending-refunds + receipt-pdf-reconcile.
-// eslint-disable-next-line no-restricted-imports
 import { planRepo as drizzlePlanRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { drizzleMemberRepo, asMemberId } from '@/modules/members';
 import type {

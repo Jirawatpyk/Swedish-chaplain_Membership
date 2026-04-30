@@ -148,6 +148,7 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
       return { ...(last as unknown as Broadcast), status } as Broadcast;
     },
     async attachResendIds() {},
+    async attachAudienceId() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
     },
