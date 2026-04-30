@@ -16,12 +16,19 @@ import { plansBridge } from './plans-bridge';
 import { eventAttendeesStub } from './event-attendees-stub';
 import { f7AuditAdapter } from './audit-adapter';
 import { broadcastsRateLimiter } from './rate-limiter';
+import { resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
 
 import type { ClockPort } from '../application/ports/clock-port';
 import type { SaveDraftDeps } from '../application/use-cases/save-draft';
 import type { SubmitBroadcastDeps } from '../application/use-cases/submit-broadcast';
 import type { ComputeQuotaDeps } from '../application/use-cases/compute-quota-counter';
 import type { EnforceTenantContextDeps } from '../application/use-cases/enforce-tenant-context';
+import type { ApproveBroadcastDeps } from '../application/use-cases/approve-broadcast';
+import type { RejectBroadcastDeps } from '../application/use-cases/reject-broadcast';
+import type { CancelBroadcastDeps } from '../application/use-cases/cancel-broadcast';
+import type { ProxySubmitBroadcastDeps } from '../application/use-cases/proxy-submit-broadcast';
+import type { ClearHaltDeps } from '../application/use-cases/clear-halt';
+import type { DispatchScheduledBroadcastDeps } from '../application/use-cases/dispatch-scheduled-broadcast';
 
 export const systemClock: ClockPort = {
   now: () => new Date(),
@@ -106,5 +113,83 @@ export function makeListSegmentDefinitionsDeps(tenantId: string): {
     tenantId,
     segmentDefinitionsRepo:
       makeDrizzleBroadcastSegmentDefinitionsRepo(tenantId),
+  };
+}
+
+// =====================================================================
+// Phase 4 US2 — admin review use-case factories
+// =====================================================================
+
+export function makeApproveBroadcastDeps(
+  tenantId: string,
+): ApproveBroadcastDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+export function makeRejectBroadcastDeps(
+  tenantId: string,
+): RejectBroadcastDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+export function makeCancelBroadcastDeps(
+  tenantId: string,
+): CancelBroadcastDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+export function makeProxySubmitBroadcastDeps(
+  tenantId: string,
+): ProxySubmitBroadcastDeps {
+  // Same shape as submit-broadcast deps; use case delegates to
+  // submitBroadcast under the hood.
+  return makeSubmitBroadcastDeps(tenantId);
+}
+
+export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    membersBridge,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * Wave 1 wires the cron worker against the gateway STUB. Wave 2 (T104)
+ * replaces the stub with the real Resend Broadcasts SDK adapter.
+ */
+export function makeDispatchScheduledBroadcastDeps(
+  tenantId: string,
+): DispatchScheduledBroadcastDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    broadcastsGateway: resendBroadcastsGateway,
+    membersBridge,
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    eventAttendees: eventAttendeesStub,
+    audit: f7AuditAdapter,
+    clock: systemClock,
   };
 }

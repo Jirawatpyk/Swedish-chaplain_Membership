@@ -512,6 +512,13 @@
       "when": 1779148808000,
       "tag": "0072_audit_log_f7_extension",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1779148809000,
+      "tag": "0073_notification_type_f7_extension",
+      "breakpoints": true
     }
   ]
 }

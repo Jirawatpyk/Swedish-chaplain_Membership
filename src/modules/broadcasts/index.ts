@@ -153,6 +153,46 @@ export {
   type ResolveSegmentOutput,
 } from './application/use-cases/resolve-segment-recipients';
 
+// --- Application use-cases (Phase 4 US2) ---------------------------------
+export {
+  approveBroadcast,
+  type ApproveBroadcastError,
+  type ApproveBroadcastInput,
+  type ApproveBroadcastOutput,
+  type ApproveDecision,
+} from './application/use-cases/approve-broadcast';
+export {
+  rejectBroadcast,
+  type RejectBroadcastError,
+  type RejectBroadcastInput,
+  type RejectBroadcastOutput,
+} from './application/use-cases/reject-broadcast';
+export {
+  cancelBroadcast,
+  type CancelActor,
+  type CancelBroadcastError,
+  type CancelBroadcastInput,
+  type CancelBroadcastOutput,
+} from './application/use-cases/cancel-broadcast';
+export {
+  proxySubmitBroadcast,
+  type ProxySubmitBroadcastError,
+  type ProxySubmitBroadcastInput,
+  type ProxySubmitBroadcastOutput,
+} from './application/use-cases/proxy-submit-broadcast';
+export {
+  clearHalt,
+  type ClearHaltError,
+  type ClearHaltInput,
+  type ClearHaltOutput,
+} from './application/use-cases/clear-halt';
+export {
+  dispatchScheduledBroadcast,
+  type DispatchScheduledBroadcastError,
+  type DispatchScheduledBroadcastInput,
+  type DispatchScheduledBroadcastOutput,
+} from './application/use-cases/dispatch-scheduled-broadcast';
+
 // --- Composition root factories (Phase 3) --------------------------------
 export {
   makeSaveDraftDeps,
@@ -162,4 +202,17 @@ export {
   makeGetBroadcastDeps,
   makeListSegmentDefinitionsDeps,
   systemClock,
+} from './infrastructure/broadcasts-deps';
+
+// --- Composition root factories (Phase 4 US2) ----------------------------
+// Note: Wave 1 wires factories to existing infrastructure. Resend
+// Broadcasts gateway adapter (Wave 2) replaces the stub gateway used
+// here for `makeDispatchScheduledBroadcastDeps`.
+export {
+  makeApproveBroadcastDeps,
+  makeRejectBroadcastDeps,
+  makeCancelBroadcastDeps,
+  makeProxySubmitBroadcastDeps,
+  makeClearHaltDeps,
+  makeDispatchScheduledBroadcastDeps,
 } from './infrastructure/broadcasts-deps';
