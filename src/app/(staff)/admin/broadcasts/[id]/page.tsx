@@ -13,6 +13,7 @@ import { makeGetBroadcastDeps, parseBroadcastId } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { dompurifySanitizer } from '@/modules/broadcasts';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.broadcasts.review');
@@ -67,7 +68,7 @@ export default async function AdminBroadcastDetailPage({
   // IMP-3 (round-3) — sanitiser failure returns a sentinel so staff
   // sees an explicit warning panel + Approve is blocked, not an empty
   // body indistinguishable from a whitespace-only draft.
-  const sanitisedBody = await renderTimeSanitise(broadcast.bodyHtml);
+  const sanitisedBody = renderTimeSanitise(broadcast.bodyHtml);
 
   return (
     <DetailContainer>
@@ -143,22 +144,18 @@ export default async function AdminBroadcastDetailPage({
 }
 
 /**
- * Render-time sanitisation helper (UX I14 + IMP-3 round-3). Lazy-loaded
- * so admin/portal SSR routes that don't render `dangerouslySetInnerHTML`
- * never pull the jsdom ESM chain (see `docs/runbooks/f7-dompurify-esm-workaround.md`).
+ * Render-time sanitisation helper (UX I14 + IMP-3 round-3).
  *
  * Returns a sentinel `{html, error}` so the caller can distinguish a
  * legitimately-empty body from a sanitiser failure — the latter shows
  * a `role="alert"` warning panel and BLOCKS the Approve button so staff
  * doesn't approve content they couldn't render safely.
  */
-async function renderTimeSanitise(
-  html: string,
-): Promise<{ readonly html: string; readonly error: boolean }> {
+function renderTimeSanitise(html: string): {
+  readonly html: string;
+  readonly error: boolean;
+} {
   try {
-    const { dompurifySanitizer } = await import(
-      '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer'
-    );
     return { html: dompurifySanitizer.sanitize(html), error: false };
   } catch (e) {
     logger.error(

@@ -16,32 +16,8 @@ import { plansBridge } from './plans-bridge';
 import { eventAttendeesStub } from './event-attendees-stub';
 import { f7AuditAdapter } from './audit-adapter';
 import { broadcastsRateLimiter } from './rate-limiter';
-import type { HtmlSanitizerPort } from '../application/ports/html-sanitizer-port';
-import type { BroadcastsGatewayPort } from '../application/ports/broadcasts-gateway-port';
-
-/**
- * Lazy-load adapters that pull in heavy ESM-only deps (`isomorphic-dompurify`
- * → `jsdom` → `@exodus/bytes`, `resend` SDK). Read-only routes (admin queue
- * list, broadcast detail page) MUST NOT trigger these imports — they would
- * crash SSR with `ERR_REQUIRE_ESM` on the dompurify chain.
- *
- * See `docs/runbooks/f7-dompurify-esm-workaround.md` for the full root
- * cause + 4-layer defence + removal criteria.
- */
-function loadDompurifySanitizer(): HtmlSanitizerPort {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { dompurifySanitizer } = require('./sanitizer/dompurify-sanitizer') as {
-    dompurifySanitizer: HtmlSanitizerPort;
-  };
-  return dompurifySanitizer;
-}
-function loadResendBroadcastsGateway(): BroadcastsGatewayPort {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { resendBroadcastsGateway } = require(
-    './resend/resend-broadcasts-gateway',
-  ) as { resendBroadcastsGateway: BroadcastsGatewayPort };
-  return resendBroadcastsGateway;
-}
+import { dompurifySanitizer } from './sanitizer/dompurify-sanitizer';
+import { resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
 
 import type { ClockPort } from '../application/ports/clock-port';
 import type { SaveDraftDeps } from '../application/use-cases/save-draft';
@@ -64,7 +40,7 @@ export function makeSaveDraftDeps(tenantId: string): SaveDraftDeps {
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    sanitizer: loadDompurifySanitizer(),
+    sanitizer: dompurifySanitizer,
     membersBridge,
     audit: f7AuditAdapter,
     clock: systemClock,
@@ -78,7 +54,7 @@ export function makeSubmitBroadcastDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    sanitizer: loadDompurifySanitizer(),
+    sanitizer: dompurifySanitizer,
     membersBridge,
     plansBridge,
     emailValidator: rfc5321EmailValidator,
@@ -201,8 +177,7 @@ export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {
 
 /**
  * Cron worker composition root. Wires the live Resend Broadcasts SDK
- * adapter (lazy-loaded so admin/portal SSR routes never pull the
- * dompurify ESM chain — see runbook ref above).
+ * adapter.
  *
  * `fromEmail` is sourced from `env.broadcasts.fromEmail` (zod-validated
  * at boot — refuses IANA reserved TLDs per review C1 — 2026-04-30) so
@@ -215,7 +190,7 @@ export function makeDispatchScheduledBroadcastDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    broadcastsGateway: loadResendBroadcastsGateway(),
+    broadcastsGateway: resendBroadcastsGateway,
     membersBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
     eventAttendees: eventAttendeesStub,

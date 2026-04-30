@@ -4,7 +4,7 @@
   "private": true,
   "description": "SweCham / TSCC Membership System — Thailand-Swedish Chamber of Commerce",
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=22.0.0"
   },
   "packageManager": "pnpm@10.0.0",
   "scripts": {
@@ -121,19 +121,6 @@
       "@node-rs/argon2",
       "sharp",
       "esbuild"
-    ],
-    "overrides": {
-      "//": "F7 — pinned per docs/runbooks/f7-dompurify-esm-workaround.md. Bumping these triggers ERR_REQUIRE_ESM on SSR via the @exodus/bytes ESM-only chain (Node 20). See runbook before changing.",
-      "jsdom": "25.0.1",
-      "html-encoding-sniffer": "4.0.0",
-      "whatwg-url": "14.2.0"
-    },
-    "peerDependencyRules": {
-      "allowedVersions": {
-        "jsdom": "*",
-        "html-encoding-sniffer": "*",
-        "whatwg-url": "*"
-      }
-    }
+    ]
   }
 }

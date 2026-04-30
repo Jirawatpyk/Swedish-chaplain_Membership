@@ -239,3 +239,8 @@ export type {
   MemberRecipient,
   MembersBridgePort,
 } from './application/ports/members-bridge-port';
+
+// DOMPurify sanitizer — exposed at the barrel because the admin broadcast
+// detail server component re-sanitises stored HTML at render time as a
+// defence-in-depth measure (UX I14 + IMP-3 round-3).
+export { dompurifySanitizer } from './infrastructure/sanitizer/dompurify-sanitizer';

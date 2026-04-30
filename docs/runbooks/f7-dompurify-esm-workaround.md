@@ -1,8 +1,16 @@
 # F7 — `isomorphic-dompurify` ESM/CJS interop workaround
 
-**Status**: ACTIVE workaround — 2026-04-30
+**Status**: ✅ **RESOLVED 2026-04-30** — Removal criterion #1 met (Node 22 LTS adoption).
+The 4-layer workaround was removed in commit `<HEAD>` after upgrading
+`engines.node: ">=22.0.0"`. Static imports + default `pnpm.overrides` (none)
++ no `serverExternalPackages` block now work natively because Node 22's
+`--experimental-require-module` is on by default. This document is
+preserved for **historical context** only — DO NOT re-apply the workaround
+unless the project ever rolls back to Node 20.
 
-**Affected**: F7 Email Broadcast (compose, submit, dispatch, admin review)
+**Original status (preserved)**: ACTIVE workaround — 2026-04-30
+
+**Affected (historically)**: F7 Email Broadcast (compose, submit, dispatch, admin review)
 
 **Symptom**:
 

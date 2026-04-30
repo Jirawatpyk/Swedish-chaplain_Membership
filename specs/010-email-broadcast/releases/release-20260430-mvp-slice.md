@@ -99,7 +99,7 @@
 - US6 Scheduled future-dated send improvements — Phase 8 (basic schedule path ships in US2)
 - F6 EventAttendees stub — F7 ships with stub returning `[]`; F6 swaps in real Drizzle adapter at F6 ship
 - F7 SV translations were originally `[F7-SV-REVIEW]` placeholders; auto-translated EN→SV via map during round-4 (256 keys). **Status as of 2026-04-30**: 0 placeholders remaining (`grep "F7-SV-REVIEW" src/i18n/messages/sv.json` returns 0); strings are production-shipped pending chamber TH/SV liaison content-quality sign-off at `/speckit.ship` gate
-- isomorphic-dompurify ESM workaround documented in `docs/runbooks/f7-dompurify-esm-workaround.md` — track upstream for removal
+- ~~isomorphic-dompurify ESM workaround~~ **RESOLVED 2026-04-30**: Node 22 LTS adoption removed all 4 layers (engines bumped, pnpm.overrides cleared, serverExternalPackages removed, dynamic imports reverted to static). Runbook `docs/runbooks/f7-dompurify-esm-workaround.md` marked RESOLVED for historical reference only
 ```
 
 ## Bugs caught + fixed during F7=true rollout
