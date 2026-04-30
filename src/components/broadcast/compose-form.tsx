@@ -116,9 +116,11 @@ export function ComposeForm({
       };
 
       if (res.ok && responseBody.broadcastId) {
-        toast.success(t('toast.submitted'));
+        toast.success(t('toast.submitted'), {
+          description: t('toast.submittedSlaHint'),
+        });
         setQuotaRefreshKey((n) => n + 1);
-        router.push(`/portal/benefits/e-blasts`);
+        router.push(`/portal/benefits/e-blasts?submitted=${responseBody.broadcastId}`);
         router.refresh();
         return;
       }

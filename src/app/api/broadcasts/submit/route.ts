@@ -24,6 +24,7 @@ import {
 import {
   errorResponse,
   httpStatusForBroadcastError,
+  resolveTenantDisplayName,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
 import { requireMemberContext } from '@/lib/member-context';
@@ -78,6 +79,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const deps = makeSubmitBroadcastDeps(ctx.tenant.slug);
+  const tenantDisplayName = await resolveTenantDisplayName(ctx.tenant.slug);
   const input: SubmitBroadcastInput = {
     memberId: ctx.member.memberId,
     submittedByUserId: ctx.current.user.id,
@@ -85,7 +87,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     ...(parsed.data.draftId !== undefined && {
       draftId: parsed.data.draftId,
     }),
-    tenantDisplayName: ctx.tenant.slug,
+    tenantDisplayName,
     subject: parsed.data.subject,
     bodySource: parsed.data.bodySource,
     bodyHtml: parsed.data.bodyHtml,

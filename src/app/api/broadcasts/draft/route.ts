@@ -19,6 +19,7 @@ import {
 import {
   errorResponse,
   httpStatusForBroadcastError,
+  resolveTenantDisplayName,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
 import { requireMemberContext } from '@/lib/member-context';
@@ -80,13 +81,14 @@ async function handle(
   }
 
   const deps = makeSaveDraftDeps(ctx.tenant.slug);
+  const tenantDisplayName = await resolveTenantDisplayName(ctx.tenant.slug);
   try {
     const result = await saveDraft(deps, {
       memberId: ctx.member.memberId,
       submittedByUserId: ctx.current.user.id,
       actorRole: 'member_self_service',
       memberPlanIdSnapshot: ctx.member.planId,
-      tenantDisplayName: ctx.tenant.slug,
+      tenantDisplayName,
       ...(parsed.data.draftId !== undefined && {
         draftId: parsed.data.draftId,
       }),

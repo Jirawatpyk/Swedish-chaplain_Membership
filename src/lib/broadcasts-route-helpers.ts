@@ -20,6 +20,7 @@
  * surfaced by `submitBroadcast`, `saveDraft`, and `computeQuotaCounter`.
  */
 import { NextResponse } from 'next/server';
+import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 
 /**
  * Closed union of every F7 route error code. Mirrors the union of
@@ -197,6 +198,34 @@ export function errorResponse(
     status,
     headers: baseHeaders(correlationId, extraHeaders),
   });
+}
+
+/**
+ * Resolve the tenant's display name for the broadcast `from_name` field.
+ *
+ * F4 tenant_invoice_settings carries the canonical legal name per tenant
+ * (e.g., "Swedish Chamber of Commerce" rather than the internal slug
+ * "swecham"). When the settings row is missing or the legal name is
+ * blank (early-tenant onboarding state), fall back to the tenant slug
+ * so dispatch is never blocked on cosmetic data.
+ *
+ * Cached per-request via the closure created in each route handler;
+ * no module-level cache (avoid stale display names after F4 settings
+ * upsert).
+ */
+export async function resolveTenantDisplayName(
+  tenantId: string,
+): Promise<string> {
+  try {
+    const settings = await drizzleTenantSettingsRepo.getForIssue(tenantId);
+    if (settings !== null && settings.identity.legal_name_en.length > 0) {
+      return settings.identity.legal_name_en;
+    }
+  } catch {
+    // Best-effort — never 5xx the broadcast submit because settings
+    // lookup failed. Fall through to slug.
+  }
+  return tenantId;
 }
 
 /**

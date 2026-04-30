@@ -1655,6 +1655,7 @@
         "toast": {
           "drafted": "Draft saved.",
           "submitted": "Submitted for admin review.",
+          "submittedSlaHint": "Admin review target: 48 hours.",
           "sanitiserStripped": "Some unsupported formatting was removed automatically.",
           "savingDraft": "Saving draft…",
           "submitting": "Submitting…",

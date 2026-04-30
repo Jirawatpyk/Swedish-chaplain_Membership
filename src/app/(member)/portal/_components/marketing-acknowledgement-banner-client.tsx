@@ -52,9 +52,15 @@ export function AcknowledgementBannerClient({
   function onAcknowledge() {
     startTransition(async () => {
       try {
+        const locale =
+          typeof document !== 'undefined'
+            ? document.documentElement.lang || 'en'
+            : 'en';
         await fetch('/api/portal/broadcasts/acknowledge', {
           method: 'POST',
           credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locale }),
         });
       } catch {
         // Best-effort — banner dismisses regardless; the user can

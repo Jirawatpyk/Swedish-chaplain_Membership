@@ -1655,6 +1655,7 @@
         "toast": {
           "drafted": "[F7-SV-REVIEW] Draft saved.",
           "submitted": "[F7-SV-REVIEW] Submitted for admin review.",
+          "submittedSlaHint": "[F7-SV-REVIEW] Admin review target: 48 hours.",
           "sanitiserStripped": "[F7-SV-REVIEW] Some unsupported formatting was removed automatically.",
           "savingDraft": "[F7-SV-REVIEW] Saving draft…",
           "submitting": "[F7-SV-REVIEW] Submitting…",

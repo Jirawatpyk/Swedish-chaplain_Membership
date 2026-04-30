@@ -63,6 +63,27 @@ describe('asQuotaCounter', () => {
     const result = asQuotaCounter({ used: 1.5, reserved: 0, cap: 6 });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('quota_counter.non_integer');
+    if (!result.ok && result.error.code === 'quota_counter.non_integer') {
+      expect(result.error.field).toBe('used');
+    }
+  });
+
+  it('returns non_integer for fractional reserved', () => {
+    const result = asQuotaCounter({ used: 0, reserved: 0.5, cap: 6 });
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.code === 'quota_counter.non_integer') {
+      expect(result.error.field).toBe('reserved');
+      expect(result.error.value).toBe(0.5);
+    }
+  });
+
+  it('returns non_integer for fractional cap', () => {
+    const result = asQuotaCounter({ used: 0, reserved: 0, cap: 6.5 });
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.code === 'quota_counter.non_integer') {
+      expect(result.error.field).toBe('cap');
+      expect(result.error.value).toBe(6.5);
+    }
   });
 
   it('boundary: used + reserved exactly equal to cap returns remaining = 0', () => {
