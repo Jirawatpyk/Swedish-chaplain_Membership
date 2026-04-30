@@ -505,6 +505,13 @@
       "when": 1779148807000,
       "tag": "0071_alter_members_add_broadcasts_acknowledged_at",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1779148808000,
+      "tag": "0072_audit_log_f7_extension",
+      "breakpoints": true
     }
   ]
 }

@@ -105,3 +105,61 @@ export {
   type F7AuditEvent,
   type F7AuditEventType,
 } from './application/ports/audit-port';
+
+// --- Application use-cases (Phase 3 US1) ---------------------------------
+// Per-story use-case functions + their Input/Output types. NOT ports
+// (Constitution Principle III — only Domain types + Application
+// functions cross the barrel).
+export {
+  saveDraft,
+  type SaveDraftError,
+  type SaveDraftInput,
+  type SaveDraftOutput,
+} from './application/use-cases/save-draft';
+export {
+  submitBroadcast,
+  type SubmitBroadcastError,
+  type SubmitBroadcastInput,
+  type SubmitBroadcastOutput,
+} from './application/use-cases/submit-broadcast';
+export {
+  computeQuotaCounter,
+  currentQuotaYear,
+  type ComputeQuotaError,
+  type ComputeQuotaInput,
+  type ComputeQuotaOutput,
+} from './application/use-cases/compute-quota-counter';
+export {
+  enforceTenantContext,
+  type CrossTenantProbeError,
+  type EnforceTenantContextInput,
+} from './application/use-cases/enforce-tenant-context';
+export {
+  sanitizeHtml,
+  type SanitizeHtmlError,
+  type SanitizeHtmlInput,
+  type SanitizeHtmlOutput,
+} from './application/use-cases/sanitize-html';
+export {
+  validateCustomRecipients,
+  type ValidateCustomRecipientsError,
+  type ValidateCustomRecipientsInput,
+  type ValidateCustomRecipientsOutput,
+} from './application/use-cases/validate-custom-recipients';
+export {
+  resolveSegmentRecipients,
+  type ResolveSegmentError,
+  type ResolveSegmentInput,
+  type ResolveSegmentOutput,
+} from './application/use-cases/resolve-segment-recipients';
+
+// --- Composition root factories (Phase 3) --------------------------------
+export {
+  makeSaveDraftDeps,
+  makeSubmitBroadcastDeps,
+  makeComputeQuotaDeps,
+  makeEnforceTenantContextDeps,
+  makeGetBroadcastDeps,
+  makeListSegmentDefinitionsDeps,
+  systemClock,
+} from './infrastructure/broadcasts-deps';

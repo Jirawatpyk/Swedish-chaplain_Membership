@@ -276,3 +276,7 @@ export {
   type MemberPlanIdentityLookup,
   type PlanLookupError,
 } from './application/get-plan-for-member';
+
+// F7 bridge — concrete `PlanRepo` instance for F7's `plans-bridge.ts`
+// composition root (T061). F7 invokes `getPlanForMember` through this repo.
+export { planRepo as drizzlePlanRepo } from './infrastructure/db/plan-repo';

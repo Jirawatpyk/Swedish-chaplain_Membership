@@ -177,22 +177,22 @@ description: "F7 — Email Broadcast (E-Blast) — TDD-ordered task list"
 
 ### Implementation for User Story 1
 
-- [ ] T057 [US1] Implement Domain `Broadcast` aggregate root in `src/modules/broadcasts/domain/broadcast.ts` — state machine with all 8 transitions + immutable-after-submit invariant + dual-actor field validation (Q12). Tests T038 + T041 GREEN.
-- [ ] T058 [US1] Implement Infrastructure DOMPurify sanitiser in `src/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer.ts` — wraps `isomorphic-dompurify` with explicit `ALLOWED_TAGS` + `ALLOWED_ATTR` per FR-002a. URL scheme allowlist `http:|https:|mailto:`. Determinism via DOMPurify config singleton. Test T042 + T047 GREEN.
-- [ ] T059 [US1] Implement Infrastructure email-validator in `src/modules/broadcasts/infrastructure/email-validator/rfc5321-email-validator.ts` — wraps `email-validator` package + lowercase+trim normalisation.
-- [ ] T060 [US1] Implement Infrastructure F3 bridge in `src/modules/broadcasts/infrastructure/members-bridge.ts` — concrete impl of `MembersBridgePort` calling F3 barrel exports from T029.
-- [ ] T061 [US1] Implement Infrastructure F2 bridge in `src/modules/broadcasts/infrastructure/plans-bridge.ts` — concrete impl of `PlansBridgePort` calling F2 barrel export from T030.
-- [ ] T062 [US1] Implement Infrastructure event-attendees stub in `src/modules/broadcasts/infrastructure/event-attendees-stub.ts` — `EventAttendeesRepository` returning `[]` (FR-015a / Q5). Test T050 GREEN.
-- [ ] T063 [US1] Implement Infrastructure broadcasts-repo + broadcast-segment-definitions-repo Drizzle adapters in `src/modules/broadcasts/infrastructure/db/`.
-- [ ] T064 [US1] Implement Application `sanitize-html.ts` use case wrapping `HtmlSanitizerPort`. Test T042 GREEN.
-- [ ] T065 [US1] Implement Application `validate-custom-recipients.ts` (FR-015d) wrapping `EmailValidatorPort` + `MembersBridgePort` + `EventAttendeesRepository` stub. Test T043 + T048 GREEN.
-- [ ] T066 [US1] Implement Application `resolve-segment-recipients.ts` (FR-015c + FR-015a + FR-016a + FR-017 + Q16 self-exclusion + Q8 primary-contact-only + member_missing_primary_contact emit). Test T044 + T049 + T050 GREEN.
-- [ ] T067 [US1] Implement Application `compute-quota-counter.ts` (FR-003 derived view). Test T046 GREEN.
-- [ ] T068 [US1] Implement Application `save-draft.ts` (FR-001) — upsert `broadcasts(status='draft')` + audit `broadcast_drafted` (one event per create; subsequent edits do NOT re-audit per FR-004).
-- [ ] T069 [US1] Implement Application `submit-broadcast.ts` (FR-002 + FR-003 + FR-005) — orchestrates: authz → 11 preconditions a–k → sanitiser → segment resolver → reservation insert → audit `broadcast_submitted` with `actor_role` + member_id + segment + estimated_count → enqueue admin notification via `EmailTransactionalPort` → commit. Test T045 + T051 GREEN.
-- [ ] T070 [US1] Implement Application `enforce-tenant-context.ts` helper — cross-tenant probe refusal returning 404 (FR-037) + `broadcast_cross_member_probe` audit.
-- [ ] T071 [US1] Wire RBAC in `src/modules/auth/rbac-guard.ts` extension — add `broadcasts:create_draft`, `broadcasts:submit`, `broadcasts:read_own`. Member role permitted; admin role permitted (for proxy); manager role denied.
-- [ ] T072 [US1] Add Upstash rate-limiter for submit endpoint — 10 submissions per member per rolling 24h (Spec § Assumptions). Test T056 GREEN.
+- [X] T057 [US1] Implement Domain `Broadcast` aggregate root in `src/modules/broadcasts/domain/broadcast.ts` — state machine with all 8 transitions + immutable-after-submit invariant + dual-actor field validation (Q12). Tests T038 + T041 GREEN.
+- [X] T058 [US1] Implement Infrastructure DOMPurify sanitiser in `src/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer.ts` — wraps `isomorphic-dompurify` with explicit `ALLOWED_TAGS` + `ALLOWED_ATTR` per FR-002a. URL scheme allowlist `http:|https:|mailto:`. Determinism via DOMPurify config singleton. Test T042 + T047 GREEN.
+- [X] T059 [US1] Implement Infrastructure email-validator in `src/modules/broadcasts/infrastructure/email-validator/rfc5321-email-validator.ts` — wraps `email-validator` package + lowercase+trim normalisation.
+- [X] T060 [US1] Implement Infrastructure F3 bridge in `src/modules/broadcasts/infrastructure/members-bridge.ts` — concrete impl of `MembersBridgePort` calling F3 barrel exports from T029.
+- [X] T061 [US1] Implement Infrastructure F2 bridge in `src/modules/broadcasts/infrastructure/plans-bridge.ts` — concrete impl of `PlansBridgePort` calling F2 barrel export from T030.
+- [X] T062 [US1] Implement Infrastructure event-attendees stub in `src/modules/broadcasts/infrastructure/event-attendees-stub.ts` — `EventAttendeesRepository` returning `[]` (FR-015a / Q5). Test T050 GREEN.
+- [X] T063 [US1] Implement Infrastructure broadcasts-repo + broadcast-segment-definitions-repo Drizzle adapters in `src/modules/broadcasts/infrastructure/db/`.
+- [X] T064 [US1] Implement Application `sanitize-html.ts` use case wrapping `HtmlSanitizerPort`. Test T042 GREEN.
+- [X] T065 [US1] Implement Application `validate-custom-recipients.ts` (FR-015d) wrapping `EmailValidatorPort` + `MembersBridgePort` + `EventAttendeesRepository` stub. Test T043 + T048 GREEN.
+- [X] T066 [US1] Implement Application `resolve-segment-recipients.ts` (FR-015c + FR-015a + FR-016a + FR-017 + Q16 self-exclusion + Q8 primary-contact-only + member_missing_primary_contact emit). Test T044 + T049 + T050 GREEN.
+- [X] T067 [US1] Implement Application `compute-quota-counter.ts` (FR-003 derived view). Test T046 GREEN.
+- [X] T068 [US1] Implement Application `save-draft.ts` (FR-001) — upsert `broadcasts(status='draft')` + audit `broadcast_drafted` (one event per create; subsequent edits do NOT re-audit per FR-004).
+- [X] T069 [US1] Implement Application `submit-broadcast.ts` (FR-002 + FR-003 + FR-005) — orchestrates: authz → 11 preconditions a–k → sanitiser → segment resolver → reservation insert → audit `broadcast_submitted` with `actor_role` + member_id + segment + estimated_count → enqueue admin notification via `EmailTransactionalPort` → commit. Test T045 + T051 GREEN.
+- [X] T070 [US1] Implement Application `enforce-tenant-context.ts` helper — cross-tenant probe refusal returning 404 (FR-037) + `broadcast_cross_member_probe` audit.
+- [X] T071 [US1] Wire RBAC in `src/modules/auth/rbac-guard.ts` extension — add `broadcasts:create_draft`, `broadcasts:submit`, `broadcasts:read_own`. Member role permitted; admin role permitted (for proxy); manager role denied.
+- [X] T072 [US1] Add Upstash rate-limiter for submit endpoint — 10 submissions per member per rolling 24h (Spec § Assumptions). Test T056 GREEN.
 
 ### API endpoints for US1
 

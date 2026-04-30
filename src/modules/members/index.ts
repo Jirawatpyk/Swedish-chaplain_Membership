@@ -360,3 +360,12 @@ export type {
   F7MemberRecipient,
   F7MemberHaltSummary,
 } from './application/ports/member-repo';
+
+// F7 bridge — concrete `MemberRepo` + `ContactRepo` instances for F7's
+// `members-bridge.ts` composition root. F7 invokes the F3 use-cases
+// above through these repos. Tenant scoping is applied inside the
+// repo's `runInTenant` calls.
+export { drizzleMemberRepo } from './infrastructure/db/drizzle-member-repo';
+export { drizzleContactRepo } from './infrastructure/db/drizzle-contact-repo';
+export type { MemberRepo, RepoError } from './application/ports/member-repo';
+export type { ContactRepo } from './application/ports/contact-repo';
