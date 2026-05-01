@@ -24,6 +24,19 @@ import { db, type TenantTx } from '@/lib/db';
 
 export const f7AuditAdapter: AuditPort = {
   async emit(txUnknown: unknown, event: AuditEmitInput): Promise<void> {
+    // Mutation-path invariant: a non-null tx MUST carry a non-null
+    // tenantId. RLS is bound on the tx's connection — emitting an
+    // audit row with tenant_id=NULL inside a tenant-bound tx would
+    // either be silently rejected by FORCE RLS or land the row in the
+    // wrong RLS slice. Fail fast at the adapter so the bug surfaces at
+    // the call site, not in a downstream RLS audit log scan.
+    if (txUnknown !== null && event.tenantId === null) {
+      throw new Error(
+        `f7AuditAdapter: mutation tx requires non-null tenantId ` +
+          `(eventType=${event.eventType}). Use tx=null for system audits.`,
+      );
+    }
+
     const tx = (txUnknown as TenantTx | null) ?? db;
     const requestId = event.requestId ?? 'no-request-id';
     const retentionYears = f7RetentionFor(event.eventType);
