@@ -81,8 +81,22 @@ export default async function BroadcastDetailPage(props: {
 
   // Validate ID shape early — invalid UUID = not found (no audit
   // emission; we cannot probe a non-existent row by an invalid id).
+  // Log at debug so a bot probing malformed IDs is observable in
+  // dashboards as a `bad_id_shape` probe-rate (correlates with the
+  // `not_found` enumeration log emitted by the use-case).
   const parsed = parseBroadcastId(id);
-  if (!parsed.ok) return notFound();
+  if (!parsed.ok) {
+    logger.debug(
+      {
+        tenantId: tenant.slug,
+        memberId,
+        rawId: id,
+        userId: session.user.id,
+      },
+      'broadcasts.detail_page.invalid_id_shape',
+    );
+    return notFound();
+  }
 
   const result = await getMemberBroadcast(
     makeGetMemberBroadcastDeps(tenant.slug),

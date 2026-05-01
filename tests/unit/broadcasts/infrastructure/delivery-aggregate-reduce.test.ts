@@ -3,7 +3,7 @@
  *
  * Round-2 review MED-tests-2: when a future enum value is added to
  * `broadcast_delivery_status` (e.g. `queued`, `opened`,
- * `unsubscribed`), the aggregator MUST emit `logger.warn` so the gap
+ * `unsubscribed`), the aggregator MUST emit `logger.error` so the gap
  * is observable in ops. A regression that drops the warn would
  * silently undercount totals.
  */
@@ -48,11 +48,11 @@ describe('reduceDeliveryAggregateRows', () => {
       complained: 0,
       sent: 5,
     });
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('emits logger.warn on unknown status (schema-drift guard)', () => {
-    vi.mocked(logger.warn).mockClear();
+  it('emits logger.error on unknown status (schema-drift guard)', () => {
+    vi.mocked(logger.error).mockClear();
     const out = reduceDeliveryAggregateRows(
       [
         { status: 'delivered', count: 1 },
@@ -70,9 +70,9 @@ describe('reduceDeliveryAggregateRows', () => {
       sent: 0,
     });
     expect(out).not.toHaveProperty('soft_bounced');
-    // logger.warn fires once per unknown row with the canonical msg key
-    expect(logger.warn).toHaveBeenCalledTimes(2);
-    const calls = vi.mocked(logger.warn).mock.calls;
+    // logger.error fires once per unknown row with the canonical msg key
+    expect(logger.error).toHaveBeenCalledTimes(2);
+    const calls = vi.mocked(logger.error).mock.calls;
     expect(calls[0]?.[1]).toBe('broadcasts.delivery_aggregate.unknown_status');
     expect(calls[1]?.[1]).toBe('broadcasts.delivery_aggregate.unknown_status');
     // Payload includes tenant + broadcast for ops triage

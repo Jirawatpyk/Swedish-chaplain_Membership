@@ -61,12 +61,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
 
     if (!result.ok) {
-      // Currently the only error variant from `acknowledgeBroadcastsTerms`
-      // is `ack.member_not_found` → 404 (anti-enumeration parity). If
-      // new variants are added to the use-case's discriminated error
-      // union, add explicit cases here — the unconditional 404 below
-      // would otherwise mask them.
-      return errorResponse(404, 'broadcast_not_found', correlationId);
+      // Exhaustive switch: TypeScript's `never` check at the default
+      // arm forces a compile error if a new variant is added to
+      // `AcknowledgeBroadcastsTermsError` without route-side handling
+      // — closes the silent-404 footgun.
+      switch (result.error.kind) {
+        case 'ack.member_not_found':
+          return errorResponse(404, 'broadcast_member_not_found', correlationId);
+        default: {
+          const _exhaustive: never = result.error.kind;
+          logger.error(
+            {
+              correlationId,
+              tenantId: ctx.tenant.slug,
+              memberId: ctx.member.memberId,
+              errorKind: _exhaustive,
+            },
+            'broadcasts.acknowledge.unhandled_error_variant',
+          );
+          return errorResponse(500, 'internal_error', correlationId);
+        }
+      }
     }
 
     if (result.value.kind === 'idempotent') {

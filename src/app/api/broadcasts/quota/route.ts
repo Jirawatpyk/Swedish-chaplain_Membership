@@ -30,19 +30,37 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       memberId: ctx.member.memberId,
     });
     if (!result.ok) {
-      if (result.error.kind === 'quota.member_not_found') {
-        return errorResponse(404, 'broadcast_not_found', correlationId);
+      // Exhaustive switch — keeps the error-code surface accurate
+      // (`broadcast_not_found` was misleading for a member-not-found
+      // probe; on-call would search for a missing broadcast).
+      switch (result.error.kind) {
+        case 'quota.member_not_found':
+          return errorResponse(404, 'broadcast_member_not_found', correlationId);
+        case 'quota.invariant_violation':
+          logger.error(
+            {
+              correlationId,
+              tenantId: ctx.tenant.slug,
+              memberId: ctx.member.memberId,
+              err: result.error,
+            },
+            'broadcasts.quota.invariant_violation',
+          );
+          return errorResponse(500, 'internal_error', correlationId);
+        default: {
+          const _exhaustive: never = result.error;
+          logger.error(
+            {
+              correlationId,
+              tenantId: ctx.tenant.slug,
+              memberId: ctx.member.memberId,
+              err: _exhaustive,
+            },
+            'broadcasts.quota.unhandled_error_variant',
+          );
+          return errorResponse(500, 'internal_error', correlationId);
+        }
       }
-      logger.error(
-        {
-          correlationId,
-          tenantId: ctx.tenant.slug,
-          memberId: ctx.member.memberId,
-          err: result.error,
-        },
-        'broadcasts.quota.invariant_violation',
-      );
-      return errorResponse(500, 'internal_error', correlationId);
     }
 
     const { counter, quotaYear, planCode, planId, nextResetAt, tenantTimezone } =

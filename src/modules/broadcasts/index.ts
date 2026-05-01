@@ -129,6 +129,7 @@ export {
 export {
   computeQuotaCounter,
   currentQuotaYear,
+  nextResetAtFor,
   type ComputeQuotaError,
   type ComputeQuotaInput,
   type ComputeQuotaOutput,

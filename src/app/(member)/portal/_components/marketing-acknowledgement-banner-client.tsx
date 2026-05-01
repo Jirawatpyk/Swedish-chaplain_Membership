@@ -29,6 +29,11 @@ export interface AcknowledgementBannerClientProps {
   readonly body: string;
   readonly acknowledge: string;
   readonly remindLater: string;
+  /** Server-resolved next-intl locale — recorded as the consent locale
+   *  on the audit row (GDPR Art. 7). Passed as a prop instead of read
+   *  from `document.documentElement.lang` so the consent reflects what
+   *  the user actually saw on the server-rendered page. */
+  readonly locale: 'en' | 'th' | 'sv';
 }
 
 export function AcknowledgementBannerClient({
@@ -36,6 +41,7 @@ export function AcknowledgementBannerClient({
   body,
   acknowledge,
   remindLater,
+  locale,
 }: AcknowledgementBannerClientProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.banner.acknowledgement');
   const [hidden, setHidden] = useState<boolean>(false);
@@ -53,10 +59,6 @@ export function AcknowledgementBannerClient({
 
   function onAcknowledge() {
     startTransition(async () => {
-      const locale =
-        typeof document !== 'undefined'
-          ? document.documentElement.lang || 'en'
-          : 'en';
       try {
         const res = await fetch('/api/portal/broadcasts/acknowledge', {
           method: 'POST',
@@ -65,25 +67,21 @@ export function AcknowledgementBannerClient({
           body: JSON.stringify({ locale }),
         });
         if (!res.ok) {
-          // Non-2xx — keep the banner mounted so the user can retry.
-          // Surface a localised error toast with retry hint per
-          // ux-standards.md § 4.2 (Toast for global / async errors)
-          // + GDPR Art. 7 consent integrity.
           toast.error(t('toastAcknowledgeFailed'), {
             description: t('toastAcknowledgeFailedHint'),
           });
           return;
         }
-        // Toast duration aligned to ux-standards.md § 5.1 (3s for
-        // success); sonner default is 4s.
         toast.success(t('toastAcknowledged'), { duration: 3000 });
         dismiss();
-      } catch {
+      } catch (e) {
+        // Bind the exception so the actual cause (TypeError, AbortError,
+        // CSP block, …) reaches the browser console / Sentry instead of
+        // disappearing into a generic "failed, retry" toast.
+        console.error('[broadcasts.acknowledge] network error', e);
         toast.error(t('toastAcknowledgeFailed'), {
           description: t('toastAcknowledgeFailedHint'),
         });
-        // Do not dismiss on network failure — same retry semantics as
-        // non-2xx response above.
       }
     });
   }

@@ -55,9 +55,11 @@ export function currentQuotaYear(
  * Start of next quota year expressed as UTC ISO 8601 (T127 contract field
  * `nextResetAt`). Quota year is the calendar year in `tenantTz`; the
  * reset boundary is `(quotaYear + 1)-01-01T00:00:00 [tenantTz]` projected
- * to UTC.
+ * to UTC. Exported so the presentation helper can re-export it instead
+ * of duplicating the js-joda math (single source of truth for the AS1
+ * "Next reset 1 January YYYY" microcopy + the API contract field).
  */
-function nextResetAtFor(quotaYear: number, tenantTz: IanaTimezone): string {
+export function nextResetAtFor(quotaYear: number, tenantTz: IanaTimezone | string): string {
   const zone = ZoneId.of(tenantTz);
   const localMidnight = LocalDateTime.of(quotaYear + 1, 1, 1, 0, 0, 0);
   const instant = localMidnight.atZone(zone).toInstant();

@@ -14,6 +14,9 @@
  * throws here.
  */
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { runInTenant, type TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { asTenantContext } from '@/modules/tenants';
 import {
   asBroadcastId,
   type Broadcast,
@@ -44,17 +47,27 @@ import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
  * updating this function would silently drop the count, so the
  * unknown-status path MUST emit `logger.warn` to surface the gap.
  */
-export function reduceDeliveryAggregateRows(
-  rows: ReadonlyArray<{ status: string; count: number }>,
-  ctx: { readonly tenantId: string; readonly broadcastId: string },
-): {
+type DeliveryAggregate = {
   delivered: number;
   bounced: number;
   softBounced: number;
   complained: number;
   sent: number;
-} {
-  const out = {
+};
+
+const DELIVERY_STATUS_TO_KEY: Record<string, keyof DeliveryAggregate> = {
+  delivered: 'delivered',
+  bounced: 'bounced',
+  soft_bounced: 'softBounced',
+  complained: 'complained',
+  sent: 'sent',
+};
+
+export function reduceDeliveryAggregateRows(
+  rows: ReadonlyArray<{ status: string; count: number }>,
+  ctx: { readonly tenantId: string; readonly broadcastId: string },
+): DeliveryAggregate {
+  const out: DeliveryAggregate = {
     delivered: 0,
     bounced: 0,
     softBounced: 0,
@@ -62,28 +75,26 @@ export function reduceDeliveryAggregateRows(
     sent: 0,
   };
   for (const r of rows) {
-    if (r.status === 'delivered') out.delivered = r.count;
-    else if (r.status === 'bounced') out.bounced = r.count;
-    else if (r.status === 'soft_bounced') out.softBounced = r.count;
-    else if (r.status === 'complained') out.complained = r.count;
-    else if (r.status === 'sent') out.sent = r.count;
-    else {
-      logger.warn(
-        {
-          tenantId: ctx.tenantId,
-          broadcastId: ctx.broadcastId,
-          status: r.status,
-          count: r.count,
-        },
-        'broadcasts.delivery_aggregate.unknown_status',
-      );
+    const key = DELIVERY_STATUS_TO_KEY[r.status];
+    if (key !== undefined) {
+      out[key] = r.count;
+      continue;
     }
+    // Unknown status = code/schema drift, not user data corruption.
+    // Use logger.error so the alert pipeline fires (warn is below
+    // the on-call threshold per docs/observability.md).
+    logger.error(
+      {
+        tenantId: ctx.tenantId,
+        broadcastId: ctx.broadcastId,
+        status: r.status,
+        count: r.count,
+      },
+      'broadcasts.delivery_aggregate.unknown_status',
+    );
   }
   return out;
 }
-import { runInTenant, type TenantTx } from '@/lib/db';
-import { logger } from '@/lib/logger';
-import { asTenantContext } from '@/modules/tenants';
 
 // ---------------------------------------------------------------------------
 // Row → Domain mapping

@@ -779,22 +779,45 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async updateBroadcastsAcknowledgedAtInTx(tx, memberId, timestamp) {
     try {
-      const beforeRows = await tx
-        .select({ ackAt: members.broadcastsAcknowledgedAt })
-        .from(members)
-        .where(eq(members.memberId, memberId))
-        .limit(1);
-      const previouslyNull =
-        beforeRows.length === 1 && beforeRows[0]!.ackAt === null;
-      const result = await tx
+      // Atomic single-statement: UPDATE ... WHERE broadcasts_acknowledged_at IS NULL
+      // produces exactly one fresh-acknowledgement row per concurrent
+      // call (the other call's WHERE clause no longer matches). Avoids
+      // the read-then-write race where two callers both observe `null`
+      // and both report `previouslyNull=true` (would emit duplicate
+      // `member_acknowledged_broadcasts_terms` audits).
+      const freshRows = await tx
         .update(members)
         .set({
           broadcastsAcknowledgedAt: timestamp,
           updatedAt: new Date(),
         })
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.memberId, memberId),
+            sql`${members.broadcastsAcknowledgedAt} IS NULL`,
+          ),
+        )
         .returning({ memberId: members.memberId });
-      return ok({ affected: result.length, previouslyNull });
+
+      if (freshRows.length === 1) {
+        return ok({ affected: 1, previouslyNull: true });
+      }
+
+      // No fresh transition — either the member doesn't exist, or
+      // they're already acked. Probe to discriminate so the caller can
+      // 404 vs return idempotent-ok. Preserve the original consent
+      // timestamp on re-ack (GDPR Art. 7 demonstrable consent — the
+      // first acknowledgement is the legal anchor; later clicks are
+      // re-affirmations and don't reset the column).
+      const existsRows = await tx
+        .select({ memberId: members.memberId })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      if (existsRows.length === 0) {
+        return ok({ affected: 0, previouslyNull: false });
+      }
+      return ok({ affected: 1, previouslyNull: false });
     } catch (e) {
       return err(unexpected(e));
     }

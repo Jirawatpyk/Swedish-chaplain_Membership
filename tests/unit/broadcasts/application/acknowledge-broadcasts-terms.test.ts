@@ -135,6 +135,35 @@ describe('acknowledgeBroadcastsTerms', () => {
     });
   });
 
+  it('Q19 per-tenant scope — acknowledging tenant A does not invoke bridge for tenant B (Round 4 H1)', async () => {
+    // Regression guard: a refactor that hoists the lookup key above
+    // the tenant context (e.g. global cache, badly-keyed memo) would
+    // make a SweCham acknowledgement auto-acknowledge JCC. Explicit
+    // assertion on the `tenantContext` argument forwarded to the bridge.
+    const tenantA = asTenantContext('swecham');
+    const tenantB = asTenantContext('jcc');
+    const bridgeCalls: Array<{ tenantSlug: string }> = [];
+    const audit: AuditPort = { emit: vi.fn<AuditPort['emit']>(async () => undefined) };
+    const membersBridge = partialBridge(async (ctx) => {
+      bridgeCalls.push({ tenantSlug: ctx.slug });
+      return ok(undefined);
+    });
+
+    const now = new Date('2026-05-01T05:00:00Z');
+
+    await acknowledgeBroadcastsTerms(
+      { tenant: tenantA, membersBridge, audit, clock: fixedClock(now) },
+      { memberId, actorUserId, locale: 'en', requestId },
+    );
+
+    expect(bridgeCalls).toEqual([{ tenantSlug: 'swecham' }]);
+    expect(bridgeCalls).not.toContainEqual({ tenantSlug: tenantB.slug });
+
+    // Audit row carries the acknowledging tenant only — never tenantB.
+    const emit = audit.emit as ReturnType<typeof vi.fn>;
+    expect(emit.mock.calls[0]![1].tenantId).toBe('swecham');
+  });
+
   it('happy path with audit failure — returns ok (consent column is source of truth)', async () => {
     const audit: AuditPort = {
       emit: vi.fn<AuditPort['emit']>(async () => {

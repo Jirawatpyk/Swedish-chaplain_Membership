@@ -247,6 +247,41 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
       expect(result.error.kind).toBe('quota.member_not_found');
     }
   });
+
+  it('Round 4 M4 — non-member_not_found plan error returns ok with zero counter (member exists, plan unresolved)', async () => {
+    // Branch coverage: `planLookup.ok=false` AND `error.kind !== 'plan_lookup.member_not_found'`.
+    // Source returns ok({zeroCounter, '', '', ...reset}) so the page renders
+    // 0/0 remaining without crashing. A regression that flips the condition
+    // would silently surface non-zero numbers from a stale plan.
+    const tenant = asTenantContext('test-tenant');
+    const plansBridge = {
+      async getPlanForMember() {
+        return err({ kind: 'plan_lookup.unexpected', cause: 'transport down' });
+      },
+    } as unknown as Parameters<typeof computeQuotaCounter>[0]['plansBridge'];
+    const broadcastsRepo = makeBroadcastsRepo();
+    const deps = {
+      tenant,
+      plansBridge,
+      broadcastsRepo,
+      clock: { now: () => new Date('2026-06-15T05:00:00Z') },
+    };
+
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.counter.cap).toBe(0);
+      expect(result.value.counter.used).toBe(0);
+      expect(result.value.counter.reserved).toBe(0);
+      expect(result.value.counter.remaining).toBe(0);
+      expect(result.value.planCode).toBe('');
+      expect(result.value.planId).toBe('');
+      // Reset trio still computed so the contract envelope is well-formed.
+      expect(result.value.quotaYear).toBe(2026);
+      expect(typeof result.value.nextResetAt).toBe('string');
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────

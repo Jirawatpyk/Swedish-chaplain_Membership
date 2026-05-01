@@ -41,7 +41,6 @@ import { asMemberId } from '@/modules/members';
 import type { IanaTimezone } from '@/modules/tenants';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
-  formatNextResetAt,
   intlLocale,
   shouldShowPlanChangedExplainer,
 } from './_helpers/quota-banner';
@@ -126,10 +125,10 @@ export default async function EblastsListPage(props: {
         tenantTimezone: v.tenantTimezone,
       };
 
-      // AS1 — reset-date copy localised via tenant tz year boundary.
-      const resetIso = formatNextResetAt(v.quotaYear, v.tenantTimezone);
+      // AS1 — use the use-case's `nextResetAt` directly (single source of
+      // truth shared with the API contract field).
       nextResetCopy = tQuota('nextReset', {
-        date: dateOnlyFormatter.format(new Date(resetIso)),
+        date: dateOnlyFormatter.format(new Date(v.nextResetAt)),
       });
 
       // AS2 — plan-changed explainer: read most-recent audit timestamp
@@ -190,23 +189,34 @@ export default async function EblastsListPage(props: {
       );
     }
 
-    const listResult = await listMemberBroadcasts(
-      makeListMemberBroadcastsDeps(tenant.slug),
-      { memberId, page: requestedPage, perPage: PER_PAGE },
-    );
-    pagination = {
-      page: listResult.page,
-      totalPages: listResult.totalPages,
-      total: listResult.total,
-    };
-    history = listResult.rows.map((b) => ({
-      broadcastId: b.broadcastId as string,
-      subject: b.subject,
-      status: b.status,
-      submittedAt: b.submittedAt,
-      sentAt: b.sentAt,
-      estimatedRecipientCount: b.estimatedRecipientCount,
-    }));
+    try {
+      const listResult = await listMemberBroadcasts(
+        makeListMemberBroadcastsDeps(tenant.slug),
+        { memberId, page: requestedPage, perPage: PER_PAGE },
+      );
+      pagination = {
+        page: listResult.page,
+        totalPages: listResult.totalPages,
+        total: listResult.total,
+      };
+      history = listResult.rows.map((b) => ({
+        broadcastId: b.broadcastId as string,
+        subject: b.subject,
+        status: b.status,
+        submittedAt: b.submittedAt,
+        sentAt: b.sentAt,
+        estimatedRecipientCount: b.estimatedRecipientCount,
+      }));
+    } catch (err) {
+      // History query failure must not crash the entire page — quota
+      // panel + reset-date are the primary surface; the table degrades
+      // to the AS4 empty-state. Log so a Neon outage / RLS regression
+      // is visible in the dashboards.
+      logger.error(
+        { err, tenantId: tenant.slug, memberId, page: requestedPage },
+        'broadcasts.benefits_page.list_history_failed',
+      );
+    }
   }
 
   const composeDisabled = quota !== null && quota.remaining === 0;

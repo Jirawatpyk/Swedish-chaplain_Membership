@@ -141,6 +141,45 @@ describe('getMemberBroadcast', () => {
     if (!result.ok) expect(result.error.kind).toBe('broadcast.not_found');
   });
 
+  it('Round 4 H2 — repo calls receive tenant.slug + memberId + broadcastId verbatim (cross-tenant safety)', async () => {
+    // Regression guard: a refactor that drops tenantId from the repo
+    // signature, or threads `''` / a wrong slug, would make a JCC member
+    // probe SweCham broadcasts. Both calls (findOwnedByMember +
+    // aggregateDeliveryCountsForBroadcast) MUST receive the acknowledging
+    // tenant slug.
+    const { audit } = makeAuditEmitMock();
+    const findOwned = vi.fn<BroadcastsRepo['findOwnedByMember']>(async () => ({
+      broadcast: {
+        tenantId: tenant.slug,
+        broadcastId,
+        requestedByMemberId: memberId,
+        subject: 'x',
+        bodyHtml: '<p/>',
+        status: 'sent',
+        estimatedRecipientCount: 1,
+      } as unknown as Broadcast,
+      probeKind: 'owned' as const,
+    }));
+    const aggregate = vi.fn<BroadcastsRepo['aggregateDeliveryCountsForBroadcast']>(
+      async () => ({
+        delivered: 0,
+        bounced: 0,
+        softBounced: 0,
+        complained: 0,
+        sent: 0,
+      }),
+    );
+    const broadcastsRepo = makeRepoMocks({ findOwned, aggregate });
+
+    await getMemberBroadcast(
+      { tenant, broadcastsRepo, audit },
+      { memberId, broadcastId, actorUserId, requestId },
+    );
+
+    expect(findOwned).toHaveBeenCalledWith(tenant.slug, memberId, broadcastId);
+    expect(aggregate).toHaveBeenCalledWith(tenant.slug, broadcastId);
+  });
+
   it('owned path — returns broadcast + DeliveryBreakdown with correct total', async () => {
     const { audit } = makeAuditEmitMock();
     const broadcast = {

@@ -158,6 +158,21 @@ describe('GET /api/broadcasts/quota — T127 RED (US3 contract)', () => {
     expect(res.status).toBe(404);
   });
 
+  it('Round 4 M1 — 403 when authenticated session is admin/manager (member-only route)', async () => {
+    // Regression guard: a refactor that removed the member-only guard
+    // would let admins/managers exercise quota math on members they
+    // don't represent — privacy hazard. Member-context guard is the
+    // single chokepoint; assert the contract route refuses non-member
+    // roles by surfacing the guard's 403 response verbatim.
+    requireMemberContextMock.mockResolvedValueOnce({
+      response: NextResponse.json({ error: 'forbidden_role' }, { status: 403 }),
+    });
+    const { GET } = await importRoute();
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(403);
+    expect(computeQuotaCounterMock).not.toHaveBeenCalled();
+  });
+
   it('500 when use-case returns quota.invariant_violation', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
     computeQuotaCounterMock.mockResolvedValueOnce(

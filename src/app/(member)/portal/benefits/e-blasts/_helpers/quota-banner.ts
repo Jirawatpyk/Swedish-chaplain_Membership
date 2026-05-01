@@ -9,30 +9,18 @@
  * server-component can stay thin and the tz / pagination math is
  * deterministic.
  */
-import { Instant, LocalDateTime, ZonedDateTime, ZoneId } from '@js-joda/core';
+import { Instant, ZonedDateTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
 import type { IanaTimezone } from '@/modules/tenants';
+import { nextResetAtFor } from '@/modules/broadcasts';
 
 /**
- * Start of `quotaYear + 1` in `tenantTz`, projected to UTC ISO 8601.
- *
- * Drives the AS1 "Next reset 1 January YYYY" microcopy and the contract
- * field `nextResetAt`. Throws on unknown IANA TZ identifiers so a typo
- * surfaces immediately rather than silently rendering UTC.
+ * Re-export of the canonical quota-reset formatter so the page helper
+ * stays the single import surface for the benefits page. The actual
+ * js-joda math lives in the Application use-case (single source of
+ * truth for the API contract field `nextResetAt` AND the AS1 microcopy).
  */
-export function formatNextResetAt(
-  quotaYear: number,
-  // Branded `IanaTimezone` widens to `string` for legacy callers
-  // (test fixtures pass `'UTC'` / `'Europe/Stockholm'` literals).
-  // Production callers pass the brand directly.
-  tenantTz: IanaTimezone | string,
-): string {
-  // ZoneId.of() throws on unknown ids — bubble the error.
-  const zone = ZoneId.of(tenantTz);
-  const localMidnight = LocalDateTime.of(quotaYear + 1, 1, 1, 0, 0, 0);
-  const instantMs = localMidnight.atZone(zone).toInstant().toEpochMilli();
-  return new Date(instantMs).toISOString();
-}
+export const formatNextResetAt = nextResetAtFor;
 
 /**
  * AS2 explainer-microcopy gate.

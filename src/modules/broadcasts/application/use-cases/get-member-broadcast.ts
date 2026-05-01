@@ -60,6 +60,22 @@ export async function getMemberBroadcast(
   );
 
   if (found.broadcast === null) {
+    if (found.probeKind === 'not_found') {
+      // Pure enumeration — UUID never existed in this tenant. No audit
+      // (we cannot probe a non-existent row), but log at info so a
+      // bot scanning UUIDs is visible in dashboards as a `not_found`
+      // probe-rate.
+      logger.info(
+        {
+          tenantId: deps.tenant.slug,
+          memberId: input.memberId,
+          broadcastId: input.broadcastId,
+          actorUserId: input.actorUserId,
+          requestId: input.requestId,
+        },
+        'broadcasts.enumeration_probe.not_found',
+      );
+    }
     if (found.probeKind === 'cross_member') {
       // Cross-member probe audit (Q19 + AS5 per-tenant scope). tx=null
       // → auto-commit. Failure is logged at error level so an audit-port

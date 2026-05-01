@@ -17,7 +17,7 @@
  * next portal session.
  */
 import { sql } from 'drizzle-orm';
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -93,12 +93,20 @@ export async function MarketingAcknowledgementBanner(): Promise<React.ReactEleme
   const t = await getTranslations(
     'portal.broadcasts.banner.acknowledgement',
   );
+  // Pass the server-resolved locale (next-intl `getLocale()`) as a
+  // prop so the consent record reflects what the user actually saw —
+  // not whatever `document.documentElement.lang` happens to be when
+  // the click handler fires (GDPR Art. 7 demonstrable consent).
+  const locale = await getLocale();
+  const ackLocale: 'en' | 'th' | 'sv' =
+    locale === 'th' || locale === 'sv' ? locale : 'en';
   return (
     <AcknowledgementBannerClient
       title={t('title')}
       body={t('body')}
       acknowledge={t('acknowledge')}
       remindLater={t('remindLater')}
+      locale={ackLocale}
     />
   );
 }
