@@ -100,13 +100,24 @@ export function reduceDeliveryAggregateRows(
 }
 
 /**
- * Probe `current_setting('app.current_tenant', TRUE)` on a tx handle to
+ * Best-effort tenant-context probe. Reads
+ * `current_setting('app.current_tenant', TRUE)` on a tx handle to
  * confirm the caller is inside a `runInTenant(ctx, …)` scope bound to
  * the expected tenant. Throws on missing/empty tenant context (caller
  * passed a bare `db` instead of a tx) OR on tenant mismatch (caller
- * borrowed a tx bound to a different tenant). Review ERR-H1 (round 2):
- * port-level enforcement of the tx-binding invariant the rowcount
- * assertions assume.
+ * borrowed a tx bound to a different tenant).
+ *
+ * Threat model (review ERR-L-R3-1, round 3): the probe is a
+ * COOPERATIVE-bug guard, NOT a security boundary. A malicious caller
+ * with raw SQL access could `SET LOCAL app.current_tenant` to spoof
+ * the probe — but no untrusted code path reaches these mutation sites
+ * in F7 (all callers go through the runInTenant + chamber_app role
+ * binding contract from `lib/db.ts`). The probe catches accidental
+ * misuse (caller passes bare `db` or wrong-tenant tx), not deliberate
+ * attack.
+ *
+ * For defence-in-depth security, the chamber_app role + RLS+FORCE
+ * policies on the underlying tables are the actual enforcement layer.
  */
 async function assertTenantBoundTx(
   tx: TenantTx,

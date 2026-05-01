@@ -170,20 +170,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     { tenantId: tenant.slug, ...summary },
     'cron.broadcasts.reconcile.tick_complete',
   );
-  // Review ERR-M1 + ERR-H2 (round 2): surface tick-level failures as
-  // non-2xx so the cron-job.org dashboard turns red (operator-facing
-  // alarm signal). Three escalation triggers:
-  //   - ANY uncaught_error → 500 (programmer bug, hard escalation)
-  //   - server_error > 0   → 500 (Result.err from the use-case)
-  //   - gateway_error > 0  → 500 (Resend outage; operator must check)
-  // Per-row try/catch already logged each error; this is the tick
-  // escalation hook. Symmetric coverage prevents the previous round's
-  // "gateway errors masked as 200" gap.
-  const hasFailures =
-    summary.uncaught_error > 0 ||
-    summary.server_error > 0 ||
-    summary.gateway_error > 0;
-  if (hasFailures) {
+
+  // Review ERR-H-R3-2 (round 3): split escalation between "harness
+  // should retry" (uncaught_error / server_error → 500) and
+  // "operator should look but harness MUST NOT retry"
+  // (gateway_error → 200 + dedicated alert log). cron-job.org retries
+  // 500 responses; returning 500 on a Resend outage caused duplicate
+  // reconcile attempts every retry tick (the per-row work was already
+  // done idempotently — the 500 just wasted compute and emitted
+  // duplicate audit rows). The next 15-min tick is the natural retry.
+  if (summary.gateway_error > 0) {
+    logger.error(
+      {
+        tenantId: tenant.slug,
+        gateway_error: summary.gateway_error,
+        processed: summary.processed,
+        // dedupeKey lets the alert pipeline coalesce a Resend-outage
+        // burst into one alert per tenant per outage window.
+        dedupeKey: `f7-reconcile-gateway-error:${tenant.slug}`,
+      },
+      'cron.broadcasts.reconcile.gateway_outage',
+    );
+  }
+
+  // Programmer bugs + use-case server errors → harness retry is
+  // appropriate (transient DB blip, in-process state issue). Per-row
+  // try/catch already logged + audited each row; this 500 is the
+  // tick-level escalation hook for cron-job.org dashboard.
+  if (summary.uncaught_error > 0 || summary.server_error > 0) {
     return NextResponse.json(summary, { status: 500 });
   }
   return NextResponse.json(summary, { status: 200 });

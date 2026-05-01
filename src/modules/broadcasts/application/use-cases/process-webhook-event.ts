@@ -527,16 +527,19 @@ export async function processWebhookEvent(
       });
     });
   } catch (e) {
-    // Review ERR-M2: log the full error before wrapping so the route
-    // log carries stack + cause + constructor name. Wrapping into a
-    // Result strips this info, but operators need it for triage on
-    // unexpected failures (RLS probe, DB drop, programmer bugs).
+    // Review ERR-M2 + ERR-L-R3-2 (round 3): log the full error before
+    // wrapping so the route log carries stack + cause + constructor
+    // name. Wrapping into a Result strips this info, but operators
+    // need it for triage on unexpected failures (RLS probe, DB drop,
+    // programmer bugs).
+    //
+    // Use pino's `err` field convention so its built-in error
+    // serialiser handles circular `cause` chains via `[Circular]`
+    // marker (e.g. AggregateError) instead of crashing JSON.stringify
+    // inside the log transport.
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
-        errName: e instanceof Error ? e.constructor.name : 'unknown',
-        stack: e instanceof Error ? e.stack : undefined,
-        cause: e instanceof Error ? (e as { cause?: unknown }).cause : undefined,
+        err: e,
         tenantId,
         broadcastId,
         eventId: event.id,

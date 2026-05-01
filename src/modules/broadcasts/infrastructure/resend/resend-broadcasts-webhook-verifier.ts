@@ -42,14 +42,26 @@ const TIMESTAMP_TOLERANCE_SECONDS = 5 * 60;
  * Map Resend webhook event types to our 5-status enum.
  * `email.delivery_delayed` → `soft_bounced` (Resend retries internally;
  * we record the signal for member-facing timeline + diagnostics).
+ *
+ * Review TYPES-#2 (round 3): declared `as const` so `ResendEventType`
+ * narrows to the literal-string union of keys instead of widening to
+ * `string`. A future Resend event type added without a corresponding
+ * map entry would silently fall through; this pattern surfaces it as
+ * a TS compile error wherever the lookup result is destructured.
  */
-const EVENT_TYPE_TO_DELIVERY_STATUS: Record<string, BroadcastDeliveryStatus> = {
+const EVENT_TYPE_TO_DELIVERY_STATUS = {
   'email.sent': 'sent',
   'email.delivered': 'delivered',
   'email.bounced': 'bounced',
   'email.delivery_delayed': 'soft_bounced',
   'email.complained': 'complained',
-};
+} as const satisfies Record<string, BroadcastDeliveryStatus>;
+
+type ResendEventType = keyof typeof EVENT_TYPE_TO_DELIVERY_STATUS;
+
+function isKnownResendEventType(t: string): t is ResendEventType {
+  return Object.hasOwn(EVENT_TYPE_TO_DELIVERY_STATUS, t);
+}
 
 interface ResendWebhookEnvelope {
   readonly type: string;
@@ -132,6 +144,20 @@ export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
     }
 
     const rawSecret = secret.startsWith('whsec_') ? secret.slice(6) : secret;
+    // Review ERR-M-R3-1 (round 3): defence-in-depth guard. `env.ts`
+    // zod schema requires `RESEND_BROADCASTS_WEBHOOK_SECRET` to be
+    // ≥32 bytes, so empty secret is impossible at boot. But if a
+    // future config-loader regression bypasses the zod check, an
+    // empty `rawSecret` would HMAC-over-empty-key all webhooks and
+    // surface as generic `bad_signature` audits with no hint that
+    // the secret is misconfigured. Throw `malformed` with an
+    // explicit reason so operators see the real cause.
+    if (rawSecret.length === 0) {
+      throw new WebhookSignatureError(
+        'malformed',
+        'webhook secret is empty after stripping whsec_ prefix — operator misconfiguration',
+      );
+    }
     const signedPayload = `${svixIdHeader}.${svixTimestampHeader}.${rawBody}`;
     const expected = createHmac('sha256', decodeBase64Loose(rawSecret))
       .update(signedPayload, 'utf8')
@@ -166,15 +192,19 @@ export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
       );
     }
 
-    // Use Object.hasOwn so a payload with `type: '__proto__'` /
-    // `'constructor'` returns undefined instead of leaking inherited
-    // prototype keys (review ERR-L2; defence in depth even though
-    // `Record<string, …>` does not place `Object.prototype` properties
-    // here today).
-    const status = Object.hasOwn(EVENT_TYPE_TO_DELIVERY_STATUS, parsed.type)
-      ? EVENT_TYPE_TO_DELIVERY_STATUS[parsed.type]
-      : undefined;
-    if (status === undefined || !isBroadcastDeliveryStatus(status)) {
+    // Type guard narrows `parsed.type` to the literal union of known
+    // event types; the `Object.hasOwn` check inside the predicate
+    // also defends against payloads with `type: '__proto__'` /
+    // `'constructor'` (review ERR-L2 + TYPES-#2 round 3).
+    if (!isKnownResendEventType(parsed.type)) {
+      throw new WebhookSignatureError(
+        'malformed',
+        `Unhandled Resend webhook event type: ${parsed.type}`,
+      );
+    }
+    const status: BroadcastDeliveryStatus =
+      EVENT_TYPE_TO_DELIVERY_STATUS[parsed.type];
+    if (!isBroadcastDeliveryStatus(status)) {
       throw new WebhookSignatureError(
         'malformed',
         `Unhandled Resend webhook event type: ${parsed.type}`,

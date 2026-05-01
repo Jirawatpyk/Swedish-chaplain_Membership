@@ -72,14 +72,15 @@ export type RetrieveBroadcastOutcome =
   | { readonly kind: 'not_found' };
 
 /**
- * Discriminated union for `getAudienceContactCount` (review TYPES-2 —
- * round 2). Mirrors `RetrieveBroadcastOutcome` for cross-port
- * consistency: "audience missing" is now first-class instead of a
- * nullable count.
+ * Discriminated union for `getAudienceContactCount` (review TYPES-2
+ * round 2 + TYPES-#4 round 3). Mirrors `RetrieveBroadcastOutcome` for
+ * cross-port consistency — both unions use the SAME `'not_found'`
+ * tail so callers can grep + reason about resource-missing semantics
+ * with one mental model.
  */
 export type GetAudienceContactCountOutcome =
   | { readonly kind: 'present'; readonly count: number }
-  | { readonly kind: 'audience_missing' };
+  | { readonly kind: 'not_found' };
 
 export interface BroadcastsGatewayPort {
   createAudience(name: string): Promise<{ readonly audienceId: string }>;

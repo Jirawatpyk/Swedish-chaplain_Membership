@@ -36,6 +36,32 @@ import type {
 } from '../application/ports/email-transactional-port';
 
 /**
+ * Runtime guard for `TenantTx` (review ERR-H-R3-1, round 3). The port
+ * signature accepts `unknown | null` (Constitution Principle III — port
+ * cannot import Drizzle types) so callers in any layer can pass any
+ * value. Without this guard a truthy non-tx handle would silently
+ * route through the type-cast fallback and execute the outbox INSERT
+ * on a wrong connection, breaking the AS3 atomicity guarantee.
+ *
+ * Duck-types on the existence of `.execute(sql)` — Drizzle's tx and the
+ * shared `db` both expose this method, but a plain object / number /
+ * string would fail the check and hit the explicit throw below.
+ */
+function assertTenantTxOrNull(tx: unknown | null): TenantTx | null {
+  if (tx === null || tx === undefined) return null;
+  if (
+    typeof tx === 'object' &&
+    tx !== null &&
+    typeof (tx as { execute?: unknown }).execute === 'function'
+  ) {
+    return tx as TenantTx;
+  }
+  throw new TypeError(
+    'EmailTransactionalPort.sendMemberEmail: `tx` must be a TenantTx (from broadcastsRepo.withTx) or null. Received a value that does not expose .execute().',
+  );
+}
+
+/**
  * F7 notification_type values supported by this adapter. MUST stay in
  * sync with the Postgres `notification_type` enum (migrations 0073 +
  * 0079). Drift is caught by
@@ -144,8 +170,13 @@ export const emailTransactionalBridge: EmailTransactionalPort = {
     // tx scope) so the outbox INSERT commits atomically with the
     // broadcast_sent audit + status transition. AS3 invariant: every
     // sending → sent transition MUST produce a summary email enqueue.
+    // Review ERR-H-R3-1 (round 3): runtime duck-type guard converts
+    // the port's `unknown | null` opacity into a verified TenantTx
+    // (or null), throwing on truthy non-tx handles instead of silently
+    // executing on the wrong connection.
+    const verifiedTx = assertTenantTxOrNull(tx);
     await enqueueOutboxRow(
-      tx as TenantTx | null,
+      verifiedTx,
       tenantCtx.slug,
       notificationType,
       input.to,

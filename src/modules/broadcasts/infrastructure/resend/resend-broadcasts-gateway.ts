@@ -333,7 +333,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       return { kind: 'present', count };
     } catch (e) {
       if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
-        return { kind: 'audience_missing' };
+        return { kind: 'not_found' };
       }
       throw e;
     }

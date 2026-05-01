@@ -145,7 +145,7 @@ function makeGateway(args: {
     async addContactsToAudience() { throw new Error('not used'); },
     async createBroadcast() { throw new Error('not used'); },
     async sendBroadcast() { throw new Error('not used'); },
-    async getAudienceContactCount() { return { kind: 'audience_missing' as const }; },
+    async getAudienceContactCount() { return { kind: 'not_found' as const }; },
     async retrieveBroadcast() {
       retrieveCalls++;
       if (args.retrieve instanceof Error) throw args.retrieve;
