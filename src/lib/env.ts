@@ -114,6 +114,30 @@ const schema = z.object({
       'TENANT_SLUG must be 1..63 chars of [a-z0-9-] (lowercase alphanumeric + hyphen)',
     ),
 
+  // Single-tenant deployment IANA timezone — drives F7 quota-year boundary
+  // math + reset-date microcopy. SweCham defaults to `Asia/Bangkok` per
+  // FR-006; a future Stockholm chamber would deploy a separate Vercel
+  // instance with `TENANT_TIMEZONE=Europe/Stockholm`. Validated at boot
+  // against the IANA registry via `Intl.DateTimeFormat` — invalid id
+  // throws RangeError, refusing to start the app rather than silently
+  // rendering UTC.
+  //
+  // F12-TODO: when multi-tenant-per-deployment ships, replace this env
+  // var with a `tenants.timezone` column read via TenantConfigPort.
+  TENANT_TIMEZONE: z
+    .string()
+    .default('Asia/Bangkok')
+    .superRefine((value, ctx) => {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: value });
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `TENANT_TIMEZONE must be a valid IANA timezone identifier (got "${value}")`,
+        });
+      }
+    }),
+
   // Dev-mode safety net: when TRUE, `assertTenantContextSet()` in `src/lib/db.ts`
   // throws a loud, stack-traced error if a query runs while
   // `current_setting('app.current_tenant', TRUE)` is NULL — prevents
@@ -456,6 +480,7 @@ export const env = {
   // when a real subdomain resolver replaces the constant.
   tenant: {
     slug: raw.TENANT_SLUG,
+    timezone: raw.TENANT_TIMEZONE,
     debugRlsState: raw.DEBUG_RLS_STATE,
     // T115t — Playwright throwaway-tenant harness. Guarded at boot
     // (refused in production, see validator above) + runtime-checked

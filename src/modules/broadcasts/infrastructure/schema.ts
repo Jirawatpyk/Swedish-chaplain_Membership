@@ -259,6 +259,16 @@ export const broadcasts = pgTable(
       table.status,
       table.requestedByMemberId,
     ),
+    // F7 US3 G2 — covering index for `listForMemberPaginated` (member
+    // benefits page history table). Match the query shape exactly so
+    // OFFSET pagination is O(perPage) regardless of tenant size.
+    // Migration 0077.
+    index('broadcasts_tenant_member_created_at_idx').on(
+      table.tenantId,
+      table.requestedByMemberId,
+      table.createdAt.desc(),
+      table.broadcastId.desc(),
+    ),
     index('broadcasts_tenant_submitted_at_idx')
       .on(table.tenantId, table.submittedAt.desc())
       .where(sql`status = 'submitted'`),

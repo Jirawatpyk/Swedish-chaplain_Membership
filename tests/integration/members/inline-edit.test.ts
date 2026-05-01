@@ -66,6 +66,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
       updateBroadcastsAcknowledgedAtInTx: vi.fn(),
       findPrimaryContactEmailInTx: vi.fn(),
       findMemberByPrimaryContactEmailInTx: vi.fn(),
+    findLastPlanChangedAt: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

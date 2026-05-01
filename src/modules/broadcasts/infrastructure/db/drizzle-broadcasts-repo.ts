@@ -14,6 +14,9 @@
  * throws here.
  */
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { runInTenant, type TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { asTenantContext } from '@/modules/tenants';
 import {
   asBroadcastId,
   type Broadcast,
@@ -29,9 +32,69 @@ import type {
 import {
   BroadcastConcurrentMutationError,
 } from '../../application/ports/broadcasts-repo';
-import { broadcasts, type BroadcastRow } from '../schema';
-import { runInTenant, type TenantTx } from '@/lib/db';
-import { asTenantContext } from '@/modules/tenants';
+import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
+
+/**
+ * @internal Exported solely for unit-test access
+ *   (tests/unit/broadcasts/infrastructure/delivery-aggregate-reduce.test.ts).
+ *   NOT part of the broadcasts barrel — do not import from outside this file.
+ *
+ * Reduces SQL `GROUP BY status` rows (snake_case status enum from
+ * `broadcast_deliveries`) into a camelCase shape at the Application
+ * boundary. Renaming `soft_bounced` → `softBounced` here keeps SQL
+ * naming inside Infrastructure (Constitution Principle III). Adding
+ * a future status enum value (e.g. `queued`, `opened`) without
+ * updating this function would silently drop the count, so the
+ * unknown-status path MUST emit `logger.warn` to surface the gap.
+ */
+type DeliveryAggregate = {
+  delivered: number;
+  bounced: number;
+  softBounced: number;
+  complained: number;
+  sent: number;
+};
+
+const DELIVERY_STATUS_TO_KEY: Record<string, keyof DeliveryAggregate> = {
+  delivered: 'delivered',
+  bounced: 'bounced',
+  soft_bounced: 'softBounced',
+  complained: 'complained',
+  sent: 'sent',
+};
+
+export function reduceDeliveryAggregateRows(
+  rows: ReadonlyArray<{ status: string; count: number }>,
+  ctx: { readonly tenantId: string; readonly broadcastId: string },
+): DeliveryAggregate {
+  const out: DeliveryAggregate = {
+    delivered: 0,
+    bounced: 0,
+    softBounced: 0,
+    complained: 0,
+    sent: 0,
+  };
+  for (const r of rows) {
+    const key = DELIVERY_STATUS_TO_KEY[r.status];
+    if (key !== undefined) {
+      out[key] = r.count;
+      continue;
+    }
+    // Unknown status = code/schema drift, not user data corruption.
+    // Use logger.error so the alert pipeline fires (warn is below
+    // the on-call threshold per docs/observability.md).
+    logger.error(
+      {
+        tenantId: ctx.tenantId,
+        broadcastId: ctx.broadcastId,
+        status: r.status,
+        count: r.count,
+      },
+      'broadcasts.delivery_aggregate.unknown_status',
+    );
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Row → Domain mapping
@@ -525,6 +588,109 @@ export function makeDrizzleBroadcastsRepo(
       throw new Error(
         'findByResendBroadcastIdBypassRls: deferred to F7 US4 (webhook handler). Not callable in US1 surface.',
       );
+    },
+
+    async listForMemberPaginated(
+      tenantIdArg: string,
+      memberId: string,
+      opts: { readonly page: number; readonly perPage: number },
+    ): Promise<{
+      readonly rows: ReadonlyArray<Broadcast>;
+      readonly total: number;
+      readonly totalPages: number;
+      readonly page: number;
+    }> {
+      const perPage = Math.max(1, Math.min(opts.perPage, 100));
+      return runInTenant(ctx, async (tx) => {
+        const baseWhere = and(
+          eq(broadcasts.tenantId, tenantIdArg),
+          eq(broadcasts.requestedByMemberId, memberId),
+        );
+
+        const totalRows = await tx
+          .select({ count: sql<number>`COUNT(*)::int` })
+          .from(broadcasts)
+          .where(baseWhere);
+        const total = totalRows[0]?.count ?? 0;
+
+        if (total === 0) {
+          return {
+            rows: [],
+            total: 0,
+            totalPages: 0,
+            page: 1,
+          };
+        }
+
+        const totalPages = Math.ceil(total / perPage);
+        const clampedPage = Math.max(1, Math.min(opts.page, totalPages));
+        const offset = (clampedPage - 1) * perPage;
+
+        const rows = await tx
+          .select()
+          .from(broadcasts)
+          .where(baseWhere)
+          .orderBy(desc(broadcasts.createdAt), desc(broadcasts.broadcastId))
+          .limit(perPage)
+          .offset(offset);
+
+        return {
+          rows: rows.map((r) => rowToBroadcast(r as BroadcastRow)),
+          total,
+          totalPages,
+          page: clampedPage,
+        };
+      });
+    },
+
+    async findOwnedByMember(tenantIdArg, memberId, broadcastId) {
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(broadcasts)
+          .where(
+            and(
+              eq(broadcasts.tenantId, tenantIdArg),
+              eq(broadcasts.broadcastId, broadcastId),
+            ),
+          )
+          .limit(1);
+
+        const row = rows[0];
+        if (row === undefined) {
+          return { broadcast: null, probeKind: 'not_found' as const };
+        }
+        if (row.requestedByMemberId !== memberId) {
+          return { broadcast: null, probeKind: 'cross_member' as const };
+        }
+        return {
+          broadcast: rowToBroadcast(row as BroadcastRow),
+          probeKind: 'owned' as const,
+        };
+      });
+    },
+
+    async aggregateDeliveryCountsForBroadcast(tenantIdArg, broadcastId) {
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select({
+            status: broadcastDeliveries.status,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(broadcastDeliveries)
+          .where(
+            and(
+              eq(broadcastDeliveries.tenantId, tenantIdArg),
+              eq(broadcastDeliveries.broadcastId, broadcastId),
+            ),
+          )
+          .groupBy(broadcastDeliveries.status);
+
+        return reduceDeliveryAggregateRows(rows, {
+          tenantId: tenantIdArg,
+          broadcastId: broadcastId as string,
+        });
+      });
     },
   };
 }

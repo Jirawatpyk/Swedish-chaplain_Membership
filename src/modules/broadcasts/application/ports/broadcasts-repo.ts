@@ -17,6 +17,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { MemberId } from '@/modules/members';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 
@@ -187,7 +188,7 @@ export interface BroadcastsRepo {
    */
   countForMemberQuota(
     tenantId: string,
-    memberId: string,
+    memberId: MemberId,
     quotaYear: number,
   ): Promise<{
     readonly submittedOrApproved: number;
@@ -204,4 +205,76 @@ export interface BroadcastsRepo {
   findByResendBroadcastIdBypassRls(
     resendBroadcastId: string,
   ): Promise<{ readonly tenantId: string; readonly broadcast: Broadcast } | null>;
+
+  /**
+   * F7 US3 read path — paginated history of a single member's own
+   * broadcasts ordered by `created_at DESC`. OFFSET-based for MVP
+   * simplicity; per-member dataset stays in the hundreds at the
+   * FR-016a 5,000/year tenant cap. Cursor migration is F7.1 polish.
+   */
+  listForMemberPaginated(
+    tenantId: string,
+    memberId: MemberId,
+    opts: { readonly page: number; readonly perPage: number },
+  ): Promise<{
+    readonly rows: ReadonlyArray<Broadcast>;
+    readonly total: number;
+    readonly totalPages: number;
+    readonly page: number;
+  }>;
+
+  /**
+   * F7 US3 — fetch a single broadcast iff the requesting member owns
+   * it. Returns a discriminated union so the `probeKind === 'owned'`
+   * branch carries a non-null `broadcast` at the type level (no
+   * runtime invariant required from callers):
+   *
+   *   - `{ probeKind: 'owned', broadcast: Broadcast }` → success
+   *   - `{ probeKind: 'not_found', broadcast: null }`  → row absent;
+   *                                                     no audit
+   *   - `{ probeKind: 'cross_member', broadcast: null }` → row exists
+   *                                                       but owned
+   *                                                       by another
+   *                                                       member;
+   *                                                       caller emits
+   *                                                       `broadcast_cross_member_probe`
+   *                                                       audit (Q19).
+   *
+   * The route still surfaces 404 for both 'not_found' and 'cross_member'
+   * (anti-enumeration); only the audit emission differs.
+   *
+   * Note on order: the JSDoc lists branches success-first for caller
+   * reading clarity. The Drizzle adapter evaluates them in the order
+   * `not_found` → `cross_member` → `owned` (early-return ladder by
+   * row presence + ownership check) — adapter ordering is internal
+   * and not part of this port's contract.
+   */
+  findOwnedByMember(
+    tenantId: string,
+    memberId: MemberId,
+    broadcastId: BroadcastId,
+  ): Promise<
+    | { readonly probeKind: 'owned'; readonly broadcast: Broadcast }
+    | { readonly probeKind: 'not_found'; readonly broadcast: null }
+    | { readonly probeKind: 'cross_member'; readonly broadcast: null }
+  >;
+
+  /**
+   * F7 US3 AS3 — aggregated delivery counts for a single broadcast.
+   * Reads `broadcast_deliveries` grouped by `status`; returns 0 for
+   * any status that has no rows so the caller can render
+   * "Delivered: 0 / Bounced: 0 / Complained: 0" deterministically.
+   * Returns camelCase (Application convention) — the Drizzle adapter
+   * does the SQL→object snake_case→camelCase rename at its boundary.
+   */
+  aggregateDeliveryCountsForBroadcast(
+    tenantId: string,
+    broadcastId: BroadcastId,
+  ): Promise<{
+    readonly delivered: number;
+    readonly bounced: number;
+    readonly softBounced: number;
+    readonly complained: number;
+    readonly sent: number;
+  }>;
 }

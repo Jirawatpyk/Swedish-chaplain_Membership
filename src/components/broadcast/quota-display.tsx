@@ -109,7 +109,7 @@ export function QuotaDisplay({
   const ariaValueNow = snap ? Math.min(snap.cap, snap.used + snap.reserved) : 0;
 
   return (
-    <Card aria-busy={loading}>
+    <Card aria-busy={loading} data-testid="quota-display">
       <CardContent className="space-y-3 pt-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="text-sm font-medium">

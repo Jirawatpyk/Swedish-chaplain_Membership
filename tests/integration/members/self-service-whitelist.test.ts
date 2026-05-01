@@ -95,6 +95,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
       ok({ affected: 0, previouslyNull: true }),
     findPrimaryContactEmailInTx: async () => ok(null),
     findMemberByPrimaryContactEmailInTx: async () => ok(null),
+    findLastPlanChangedAt: async () => ok(null),
   };
 
   const contactRepo: ContactRepo = {

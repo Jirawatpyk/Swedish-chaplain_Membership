@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { computeQuotaCounter } from '@/modules/broadcasts';
+import { asMemberId } from '@/modules/members';
 import { ok, err } from '@/lib/result';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
@@ -94,6 +95,15 @@ function makeBroadcastsRepo({
     async findByResendBroadcastIdBypassRls() {
       return null;
     },
+    async listForMemberPaginated() {
+      return { rows: [], total: 0, totalPages: 0, page: 1 };
+    },
+    async findOwnedByMember() {
+      return { broadcast: null, probeKind: 'not_found' as const };
+    },
+    async aggregateDeliveryCountsForBroadcast() {
+      return { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0 };
+    },
   };
 }
 
@@ -116,7 +126,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
 
   it('returns {used: 0, reserved: 0, remaining: 6, cap: 6} for never-used Premium member', async () => {
     const deps = makeDeps({ cap: 6, used: 0, reserved: 0 });
-    const result = await computeQuotaCounter(deps, { memberId: 'm-1' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.counter.used).toBe(0);
@@ -128,7 +138,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
 
   it('returns reserved counts from broadcasts in submitted + approved states', async () => {
     const deps = makeDeps({ cap: 6, used: 0, reserved: 2 });
-    const result = await computeQuotaCounter(deps, { memberId: 'm-1' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.counter.reserved).toBe(2);
@@ -138,7 +148,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
 
   it('returns used counts from broadcasts in sent state with quota_year_consumed = current year', async () => {
     const deps = makeDeps({ cap: 6, used: 3, reserved: 0 });
-    const result = await computeQuotaCounter(deps, { memberId: 'm-1' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.counter.used).toBe(3);
@@ -154,7 +164,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
       clockNow: new Date('2026-12-31T23:00:00Z'),
       cap: 6,
     });
-    const result = await computeQuotaCounter(deps, { memberId: 'm-1' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.quotaYear).toBe(2027);
@@ -166,7 +176,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
       clockNow: new Date('2026-06-15T12:00:00Z'),
       cap: 6,
     });
-    const result = await computeQuotaCounter(deps, { memberId: 'm-1' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.quotaYear).toBe(2026);
@@ -177,7 +187,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
 
   it('cap derived from plan.benefit_matrix.eblast_per_year via PlansBridgePort', async () => {
     const deps = makeDeps({ cap: 12 });
-    const result = await computeQuotaCounter(deps, { memberId: 'm-1' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.counter.cap).toBe(12);
@@ -186,7 +196,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
 
   it('returns cap=0 for free-tier members (eblast_per_year=0) → zeroQuota return', async () => {
     const deps = makeDeps({ cap: 0 });
-    const result = await computeQuotaCounter(deps, { memberId: 'm-1' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.counter.cap).toBe(0);
@@ -200,7 +210,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
 
   it('handles maximum-utilisation: used=cap, reserved=0, remaining=0', async () => {
     const deps = makeDeps({ cap: 6, used: 6, reserved: 0 });
-    const result = await computeQuotaCounter(deps, { memberId: 'm-1' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.counter.remaining).toBe(0);
@@ -209,7 +219,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
 
   it('handles split utilisation: used=2, reserved=1, remaining=cap-3', async () => {
     const deps = makeDeps({ cap: 6, used: 2, reserved: 1 });
-    const result = await computeQuotaCounter(deps, { memberId: 'm-1' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.counter.used).toBe(2);
@@ -220,7 +230,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
 
   it('over-subscription detected (used + reserved > cap) returns Result error', async () => {
     const deps = makeDeps({ cap: 6, used: 5, reserved: 3 });
-    const result = await computeQuotaCounter(deps, { memberId: 'm-1' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('quota.invariant_violation');
@@ -231,10 +241,85 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
 
   it('returns quota.member_not_found when plansBridge cannot resolve member', async () => {
     const deps = makeDeps({ memberFound: false });
-    const result = await computeQuotaCounter(deps, { memberId: 'unknown' });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('unknown') });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('quota.member_not_found');
     }
+  });
+
+  it('Round 4 M4 — non-member_not_found plan error returns ok with zero counter (member exists, plan unresolved)', async () => {
+    // Branch coverage: `planLookup.ok=false` AND `error.kind !== 'plan_lookup.member_not_found'`.
+    // Source returns ok({zeroCounter, '', '', ...reset}) so the page renders
+    // 0/0 remaining without crashing. A regression that flips the condition
+    // would silently surface non-zero numbers from a stale plan.
+    const tenant = asTenantContext('test-tenant');
+    const plansBridge = {
+      async getPlanForMember() {
+        return err({ kind: 'plan_lookup.unexpected', cause: 'transport down' });
+      },
+    } as unknown as Parameters<typeof computeQuotaCounter>[0]['plansBridge'];
+    const broadcastsRepo = makeBroadcastsRepo();
+    const deps = {
+      tenant,
+      plansBridge,
+      broadcastsRepo,
+      clock: { now: () => new Date('2026-06-15T05:00:00Z') },
+    };
+
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.counter.cap).toBe(0);
+      expect(result.value.counter.used).toBe(0);
+      expect(result.value.counter.reserved).toBe(0);
+      expect(result.value.counter.remaining).toBe(0);
+      expect(result.value.planCode).toBe('');
+      expect(result.value.planId).toBe('');
+      // Reset trio still computed so the contract envelope is well-formed.
+      expect(result.value.quotaYear).toBe(2026);
+      expect(typeof result.value.nextResetAt).toBe('string');
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// `currentQuotaYear` non-Bangkok-tz coverage. Round-4-era warn-path
+// for unknown-slug fallback was removed once `getTenantTimezone` was
+// migrated from the hard-coded slug map to an env-driven, boot-validated
+// IANA value (PR #18 follow-up — single TENANT_TIMEZONE per deployment).
+// ─────────────────────────────────────────────────────────────────────
+import { currentQuotaYear } from '@/modules/broadcasts';
+
+describe('currentQuotaYear — tenant timezone parameter', () => {
+  it('defaults to Asia/Bangkok when tenantTz omitted (legacy callers)', () => {
+    // 2026-12-31T20:00Z = 2027-01-01T03:00 ICT → year 2027
+    expect(currentQuotaYear(new Date('2026-12-31T20:00:00Z'))).toBe(2027);
+  });
+
+  it('threads explicit Asia/Bangkok timezone', () => {
+    expect(
+      currentQuotaYear(
+        new Date('2026-12-31T20:00:00Z'),
+        'Asia/Bangkok',
+      ),
+    ).toBe(2027);
+  });
+
+  it('threads explicit Europe/Stockholm — same instant, different year', () => {
+    // 2026-12-31T20:00Z = 2026-12-31T21:00 CET (Stockholm) → year 2026
+    expect(
+      currentQuotaYear(
+        new Date('2026-12-31T20:00:00Z'),
+        'Europe/Stockholm',
+      ),
+    ).toBe(2026);
+  });
+
+  it('threads explicit UTC', () => {
+    expect(
+      currentQuotaYear(new Date('2026-12-31T20:00:00Z'), 'UTC'),
+    ).toBe(2026);
   });
 });

@@ -13,9 +13,15 @@
  * calendar year's quota (not the next year's UTC slot).
  */
 import { ok, err, type Result } from '@/lib/result';
-import { Instant, ZonedDateTime, ZoneId } from '@js-joda/core';
+import { env } from '@/lib/env';
+import { Instant, LocalDateTime, ZonedDateTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
-import type { TenantContext } from '@/modules/tenants';
+import {
+  unsafeIanaTimezone,
+  type IanaTimezone,
+  type TenantContext,
+} from '@/modules/tenants';
+import type { MemberId } from '@/modules/members';
 import {
   asQuotaCounter,
   zeroQuota,
@@ -25,18 +31,42 @@ import {
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 
-const ASIA_BANGKOK = ZoneId.of('Asia/Bangkok');
-
-/** Calendar year in Asia/Bangkok timezone (FR-006/FR-007). */
-export function currentQuotaYear(now: Date): number {
+/**
+ * Calendar year in tenant timezone (FR-006/FR-007).
+ *
+ * Threads `tenantTz` through so quota-year math agrees with
+ * `nextResetAtFor` at the year boundary for any tenant timezone.
+ * `tenantTz` defaults to `Asia/Bangkok` for backwards compat with
+ * existing callers/tests that pass only `now` (e.g. F7 unit tests
+ * that don't have a tenant context handy).
+ */
+export function currentQuotaYear(
+  now: Date,
+  tenantTz: IanaTimezone | string = 'Asia/Bangkok',
+): number {
   return ZonedDateTime.ofInstant(
     Instant.ofEpochMilli(now.getTime()),
-    ASIA_BANGKOK,
+    ZoneId.of(tenantTz),
   ).year();
 }
 
+/**
+ * Start of next quota year expressed as UTC ISO 8601 (T127 contract field
+ * `nextResetAt`). Quota year is the calendar year in `tenantTz`; the
+ * reset boundary is `(quotaYear + 1)-01-01T00:00:00 [tenantTz]` projected
+ * to UTC. Exported so the presentation helper can re-export it instead
+ * of duplicating the js-joda math (single source of truth for the AS1
+ * "Next reset 1 January YYYY" microcopy + the API contract field).
+ */
+export function nextResetAtFor(quotaYear: number, tenantTz: IanaTimezone | string): string {
+  const zone = ZoneId.of(tenantTz);
+  const localMidnight = LocalDateTime.of(quotaYear + 1, 1, 1, 0, 0, 0);
+  const instant = localMidnight.atZone(zone).toInstant();
+  return new Date(instant.toEpochMilli()).toISOString();
+}
+
 export type ComputeQuotaError =
-  | { readonly kind: 'quota.member_not_found'; readonly memberId: string }
+  | { readonly kind: 'quota.member_not_found'; readonly memberId: MemberId }
   | {
       readonly kind: 'quota.invariant_violation';
       readonly cause: QuotaCounterError;
@@ -50,7 +80,7 @@ export interface ComputeQuotaDeps {
 }
 
 export interface ComputeQuotaInput {
-  readonly memberId: string;
+  readonly memberId: MemberId;
 }
 
 export interface ComputeQuotaOutput {
@@ -58,6 +88,16 @@ export interface ComputeQuotaOutput {
   readonly quotaYear: number;
   readonly planCode: string;
   readonly planId: string;
+  /** Start of next quota year in tenant tz, projected to UTC ISO 8601.
+   *  Drives the benefits-page "Next reset 1 January 2027" microcopy
+   *  (US3 AS1) and the contract field `nextResetAt` per
+   *  contracts/broadcasts-api.md § 1.7. */
+  readonly nextResetAt: string;
+  /** IANA timezone identifier — drives the contract field
+   *  `tenantTimezone` and lets the client format relative dates without
+   *  guessing the tenant's locale. Branded type guarantees the value
+   *  has been validated against the IANA tz registry. */
+  readonly tenantTimezone: IanaTimezone;
 }
 
 export async function computeQuotaCounter(
@@ -69,35 +109,41 @@ export async function computeQuotaCounter(
     input.memberId,
   );
 
+  // Early-return for member-not-found WITHOUT computing tenant-tz /
+  // quota-year — neither value is needed on this path.
+  if (!planLookup.ok && planLookup.error.kind === 'plan_lookup.member_not_found') {
+    return err({
+      kind: 'quota.member_not_found',
+      memberId: input.memberId,
+    });
+  }
+
+  // All remaining paths return ok and need the reset trio. Read the
+  // deployment's tenant tz from env (validated at boot against the
+  // IANA registry — boot fails fast on a bad TENANT_TIMEZONE rather
+  // than silently rendering UTC). The `deps.tenant.slug` parameter is
+  // not consulted today because each deployment serves a single tenant
+  // (MTA+STD); F12 multi-tenant-per-deployment will swap this read for
+  // a `TenantConfigPort` lookup keyed on slug.
+  const tenantTimezone = unsafeIanaTimezone(env.tenant.timezone);
+  const quotaYear = currentQuotaYear(deps.clock.now(), tenantTimezone);
+  const reset = {
+    quotaYear,
+    nextResetAt: nextResetAtFor(quotaYear, tenantTimezone),
+    tenantTimezone,
+  } as const;
+
   if (!planLookup.ok) {
-    if (planLookup.error.kind === 'plan_lookup.member_not_found') {
-      return err({
-        kind: 'quota.member_not_found',
-        memberId: input.memberId,
-      });
-    }
-    // Member exists but plan has 0 entitlement — still surface a counter
-    // so the benefits page can render "0 of 0 remaining" rather than
-    // crashing. Cap = 0; reserved/used = 0.
-    return ok({
-      counter: zeroQuota(0),
-      quotaYear: currentQuotaYear(deps.clock.now()),
-      planCode: '',
-      planId: '',
-    });
+    // Member exists but plan-lookup non-fatal error — surface a zero
+    // counter so the benefits page renders "0 of 0 remaining".
+    return ok({ counter: zeroQuota(0), planCode: '', planId: '', ...reset });
   }
 
-  const cap = planLookup.value.eblastPerYear;
+  const { planCode, planId, eblastPerYear: cap } = planLookup.value;
   if (cap === 0) {
-    return ok({
-      counter: zeroQuota(0),
-      quotaYear: currentQuotaYear(deps.clock.now()),
-      planCode: planLookup.value.planCode,
-      planId: planLookup.value.planId,
-    });
+    return ok({ counter: zeroQuota(0), planCode, planId, ...reset });
   }
 
-  const quotaYear = currentQuotaYear(deps.clock.now());
   const counts = await deps.broadcastsRepo.countForMemberQuota(
     deps.tenant.slug,
     input.memberId,
@@ -113,10 +159,5 @@ export async function computeQuotaCounter(
     return err({ kind: 'quota.invariant_violation', cause: built.error });
   }
 
-  return ok({
-    counter: built.value,
-    quotaYear,
-    planCode: planLookup.value.planCode,
-    planId: planLookup.value.planId,
-  });
+  return ok({ counter: built.value, planCode, planId, ...reset });
 }

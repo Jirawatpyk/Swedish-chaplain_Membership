@@ -71,7 +71,7 @@ function makeBridges(seed: SeedOpts = {}): {
       },
       async memberExistsInTenant() { return true; },
       async markBroadcastsAcknowledged() {
-        return ok(undefined);
+        return ok({ previouslyNull: true });
       },
     },
     eventAttendees: {

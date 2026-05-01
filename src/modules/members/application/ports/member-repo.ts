@@ -299,6 +299,28 @@ export interface MemberRepo {
       RepoError
     >
   >;
+
+  /**
+   * F7 US3 AS2 — most-recent `member_plan_changed` audit timestamp
+   * for a member, scoped to the tenant. Returns `null` when the
+   * member has no recorded plan changes (or the member doesn't
+   * exist in the tenant — caller treats both cases as "no
+   * explainer needed"). Read-only; does NOT need a tx parameter
+   * (audit_log is append-only and the read tolerates non-tx
+   * snapshots).
+   *
+   * Ordering: `ORDER BY "timestamp" DESC, id DESC`. The secondary
+   * `id DESC` is a stable selector for tied timestamps, NOT a
+   * proxy for insertion order — `audit_log.id` is UUID v4 random.
+   * Two `member_plan_changed` events sharing an exact-millisecond
+   * timestamp will pick a consistent row across reads, but it may
+   * not be the last-inserted one. Sub-millisecond ordering is
+   * undefined for this read.
+   */
+  findLastPlanChangedAt(
+    ctx: TenantContext,
+    memberId: MemberId,
+  ): Promise<Result<Date | null, RepoError>>;
 }
 
 // ---------------------------------------------------------------------------

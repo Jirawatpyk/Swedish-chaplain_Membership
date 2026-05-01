@@ -93,7 +93,7 @@ function makeMembersBridge(state: State): MembersBridgePort {
     },
     async memberExistsInTenant() { return true; },
     async markBroadcastsAcknowledged() {
-      return ok(undefined);
+      return ok({ previouslyNull: true });
     },
   };
 }
@@ -157,6 +157,15 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     },
     async findByResendBroadcastIdBypassRls() {
       return null;
+    },
+    async listForMemberPaginated() {
+      return { rows: [], total: 0, totalPages: 0, page: 1 };
+    },
+    async findOwnedByMember() {
+      return { broadcast: null, probeKind: 'not_found' as const };
+    },
+    async aggregateDeliveryCountsForBroadcast() {
+      return { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0 };
     },
   };
 }

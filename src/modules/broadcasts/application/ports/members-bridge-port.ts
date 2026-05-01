@@ -55,7 +55,23 @@ export type MemberHaltError =
 
 export type MarkAckError =
   | { readonly kind: 'mark_ack.member_not_found'; readonly memberId: string }
-  | { readonly kind: 'mark_ack.already_acknowledged' };
+  // Round 5 CRIT — surfaces F3 repo failures (RLS denial, Neon outage,
+  // statement timeout) so the route can return 500 + logger.error
+  // instead of silently 200-OK with `wasNew:false` (GDPR Art. 7 risk:
+  // banner dismisses but consent column never written).
+  | { readonly kind: 'mark_ack.repo_error'; readonly cause: unknown };
+
+/**
+ * Bridge success contract — the F7 use-case decides "fresh" vs
+ * "idempotent" purely on `previouslyNull`. Round-5 code-review CRIT
+ * found that returning bare `void` here collapsed both paths into
+ * one, making the use-case's `'idempotent'` branch dead and emitting
+ * a duplicate `member_acknowledged_broadcasts_terms` audit row on
+ * every re-ack. Fix: surface `previouslyNull` through the port.
+ */
+export interface MarkAckSuccess {
+  readonly previouslyNull: boolean;
+}
 
 export interface SegmentResolveParams {
   readonly tierCodes?: ReadonlyArray<string>;
@@ -142,5 +158,5 @@ export interface MembersBridgePort {
     tenantCtx: TenantContext,
     memberId: string,
     locale: 'en' | 'th' | 'sv',
-  ): Promise<Result<void, MarkAckError>>;
+  ): Promise<Result<MarkAckSuccess, MarkAckError>>;
 }

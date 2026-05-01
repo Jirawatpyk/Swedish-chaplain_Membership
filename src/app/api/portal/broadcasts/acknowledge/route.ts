@@ -4,20 +4,22 @@
  * Member CTA on the marketing-acknowledgement banner records GDPR Art. 7
  * demonstrable consent: sets `members.broadcasts_acknowledged_at = now()`
  * + emits `member_acknowledged_broadcasts_terms` audit row carrying the
- * locale the consent was shown in (compliance audit answer to "which
- * language was the user reading?").
+ * locale the consent was shown in.
  *
- * Wraps F3 `markBroadcastsAcknowledged` use-case (added in Batch C T029).
+ * Delegates to the `acknowledgeBroadcastsTerms` Application use-case so
+ * Presentation never reaches into Application internals (Constitution
+ * Principle III). The use-case owns the F3 bridge call + audit emit
+ * (with log+swallow on audit-only failure — see use-case header for
+ * the atomicity tradeoff).
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
-  markBroadcastsAcknowledged,
-  drizzleMemberRepo,
-  asMemberId,
-} from '@/modules/members';
-import { f7AuditAdapter } from '@/modules/broadcasts';
+  acknowledgeBroadcastsTerms,
+  makeAcknowledgeBroadcastsTermsDeps,
+} from '@/modules/broadcasts';
+import { asMemberId } from '@/modules/members';
 import {
   errorResponse,
   baseHeaders,
@@ -48,78 +50,80 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const locale = parsed.success ? (parsed.data.locale ?? 'en') : 'en';
 
   try {
-    const result = await markBroadcastsAcknowledged(
+    const result = await acknowledgeBroadcastsTerms(
+      makeAcknowledgeBroadcastsTermsDeps(ctx.tenant.slug),
       {
-        tenant: ctx.tenant,
-        memberRepo: drizzleMemberRepo,
-        clock: { now: () => new Date() },
+        memberId: asMemberId(ctx.member.memberId),
+        actorUserId: ctx.current.user.id,
+        locale,
+        requestId: correlationId,
       },
-      asMemberId(ctx.member.memberId),
     );
 
     if (!result.ok) {
-      // Idempotent — already-acknowledged is a 200 (banner dismissal
-      // doesn't need to re-emit audit).
-      if (
-        'code' in result.error &&
-        result.error.code === 'mark_ack.member_not_found'
-      ) {
-        return errorResponse(404, 'broadcast_not_found', correlationId);
+      // Exhaustive switch: TypeScript's `never` check at the default
+      // arm forces a compile error if a new variant is added to
+      // `AcknowledgeBroadcastsTermsError` without route-side handling
+      // — closes the silent-404 footgun.
+      switch (result.error.kind) {
+        case 'ack.member_not_found':
+          return errorResponse(404, 'broadcast_member_not_found', correlationId);
+        case 'ack.repo_error':
+          // Use-case already logged the cause; surface 500 so the
+          // banner stays mounted and the user retries instead of
+          // dismissing on a lost-consent silent success.
+          return errorResponse(500, 'internal_error', correlationId);
+        default: {
+          const _exhaustive: never = result.error;
+          logger.error(
+            {
+              correlationId,
+              tenantId: ctx.tenant.slug,
+              memberId: ctx.member.memberId,
+              errorVariant: _exhaustive,
+            },
+            'broadcasts.acknowledge.unhandled_error_variant',
+          );
+          return errorResponse(500, 'internal_error', correlationId);
+        }
       }
-      logger.warn(
+    }
+
+    if (result.value.kind === 'idempotent') {
+      // Log idempotent re-acks at debug level so the absence of an
+      // `acknowledgedAt` field in the response (intentional — F3
+      // bridge does not currently return the persisted column on
+      // already-acked path) is observable in ops dashboards. Future
+      // analytics consumers reading `acknowledgedAt` would otherwise
+      // see `undefined` silently. F7.1-TODO: extend F3 bridge to
+      // return the persisted timestamp on the idempotent path.
+      logger.debug(
         {
           correlationId,
           tenantId: ctx.tenant.slug,
           memberId: ctx.member.memberId,
-          err: result.error,
           locale,
         },
-        'broadcasts.acknowledge.member_repo_error',
+        'broadcasts.acknowledge.idempotent',
       );
-      return errorResponse(500, 'internal_error', correlationId);
-    }
-
-    // Round-4 CRIT-B: emit GDPR Art. 7 demonstrable-consent audit on
-    // first acknowledgement. Idempotent calls (already-acknowledged)
-    // skip re-emission so the audit log records the first consent
-    // event only — that's the durable evidence regulators ask for.
-    if (result.value.previouslyNull) {
-      try {
-        await f7AuditAdapter.emit(null, {
-          tenantId: ctx.tenant.slug,
-          eventType: 'member_acknowledged_broadcasts_terms',
-          actorUserId: ctx.current.user.id,
-          summary: `Member ${ctx.member.memberId} acknowledged broadcasts terms (locale: ${locale})`,
-          payload: {
-            memberId: ctx.member.memberId,
-            locale,
-            acknowledgedAt: result.value.acknowledgedAt.toISOString(),
-          },
-          requestId: correlationId,
-        });
-      } catch (auditErr) {
-        // Best-effort — never 5xx the request when the F3 column write
-        // already succeeded. logger.error so ops can backfill the
-        // audit row from the column timestamp if needed.
-        logger.error(
-          {
-            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-            correlationId,
-            tenantId: ctx.tenant.slug,
-            memberId: ctx.member.memberId,
-            locale,
-          },
-          'broadcasts.acknowledge.audit_emit_failed',
-        );
-      }
     }
 
     return NextResponse.json(
-      {
-        acknowledgedAt: result.value.acknowledgedAt.toISOString(),
-        wasNew: result.value.previouslyNull,
-        locale,
-      },
+      result.value.kind === 'fresh'
+        ? {
+            acknowledgedAt: result.value.acknowledgedAt.toISOString(),
+            wasNew: true,
+            locale,
+          }
+        : {
+            // Idempotent — the F3 column was already set on a prior
+            // request. Client doesn't need a timestamp to dismiss
+            // the banner; `wasNew: false` is the dismiss signal.
+            // `acknowledgedAt` is intentionally omitted (F7.1-TODO
+            // above).
+            wasNew: false,
+            locale,
+          },
       {
         status: 200,
         headers: baseHeaders(correlationId),

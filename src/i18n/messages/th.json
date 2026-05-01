@@ -1882,7 +1882,9 @@
         "exhausted": "โควตา E-Blast ของปี {year} ถูกใช้หมดแล้ว",
         "progressLabel": "โควตา E-Blast ที่ใช้ไป",
         "fetchError": "ไม่สามารถโหลดโควตาได้",
-        "retry": "ลองใหม่"
+        "retry": "ลองใหม่",
+        "nextReset": "รีเซ็ตโควตา {date}",
+        "planChangedExplainer": "เปลี่ยนแพ็กเกจเมื่อ {date} — โควตาปีนี้ใช้ตามแพ็กเกจใหม่"
       },
       "banner": {
         "acknowledgement": {
@@ -1890,7 +1892,10 @@
           "body": "การส่ง E-Blast เป็นการยืนยันว่าผู้รับยินยอมรับข้อมูลข่าวสารจากหอการค้า ผู้รับสามารถถอนความยินยอมรายบุคคลได้ตลอดเวลา",
           "acknowledge": "ฉันรับทราบ",
           "remindLater": "เตือนภายหลัง",
-          "closeLabel": "ปิดแบนเนอร์"
+          "closeLabel": "ปิดแบนเนอร์",
+          "toastAcknowledged": "บันทึกการยินยอมรับการสื่อสารทางการตลาดแล้ว",
+          "toastAcknowledgeFailed": "ไม่สามารถบันทึกการยินยอมได้",
+          "toastAcknowledgeFailedHint": "กรุณาลองใหม่ — แบนเนอร์ยังเปิดอยู่จนกว่าจะบันทึกสำเร็จ"
         }
       },
       "list": {
@@ -1916,7 +1921,43 @@
           "rejected": "ปฏิเสธ",
           "cancelled": "ยกเลิก",
           "failed_to_dispatch": "ส่งไม่สำเร็จ"
+        },
+        "pagination": {
+          "previous": "ก่อนหน้า",
+          "next": "ถัดไป",
+          "pageOf": "หน้า {page} จาก {total}",
+          "ariaLabel": "การแบ่งหน้าประวัติ E-Blast"
         }
+      },
+      "cmdk": {
+        "group": "E-Blast",
+        "compose": {
+          "title": "เขียน E-Blast"
+        },
+        "benefits": {
+          "title": "ดูโควตา E-Blast"
+        }
+      },
+      "detail": {
+        "title": "รายละเอียด E-Blast",
+        "subtitle": "หัวข้อ ผู้รับ และสรุปผลการจัดส่งของ E-Blast นี้",
+        "fields": {
+          "subject": "หัวข้อ",
+          "submittedAt": "ส่งเมื่อ",
+          "sentAt": "ส่งสำเร็จเมื่อ",
+          "status": "สถานะ",
+          "recipients": "ผู้รับ"
+        },
+        "delivery": {
+          "title": "สรุปผลการจัดส่ง",
+          "delivered": "ส่งสำเร็จ",
+          "bounced": "ตีกลับ",
+          "softBounced": "ตีกลับชั่วคราว",
+          "complained": "ร้องเรียน",
+          "sent": "อยู่ระหว่างส่ง",
+          "total": "ทั้งหมด"
+        },
+        "back": "กลับไปหน้า E-Blast"
       }
     },
     "profile": {

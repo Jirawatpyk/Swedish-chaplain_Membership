@@ -216,3 +216,131 @@ export async function clearF7HaltSeed(): Promise<void> {
     await sql.end({ timeout: 5 });
   }
 }
+
+/**
+ * F7 US3 AS2 seed — append a `member_plan_changed` audit row for the
+ * e2e-member, dated 90 days before now (well inside the current
+ * Bangkok-tz quota year for any reasonable test execution date).
+ *
+ * `audit_log` is append-only (migration 0001 trigger), so re-runs add
+ * a new row each time — the page's most-recent-row query
+ * (`ORDER BY "timestamp" DESC LIMIT 1`) always picks up the latest
+ * seed, keeping the assertion deterministic.
+ *
+ * Returns the inserted audit row id + the changed-at timestamp the
+ * caller asserts on. No cleanup function — the audit trail is part
+ * of the project's compliance evidence and rows accumulate harmlessly.
+ */
+export async function seedF7PlanChangedAudit(): Promise<{
+  readonly auditId: string;
+  readonly changedAt: Date;
+} | null> {
+  const dbUrl = process.env.DATABASE_URL;
+  const memberEmail = process.env.E2E_MEMBER_EMAIL;
+  if (!dbUrl || !memberEmail) {
+    console.warn(
+      '[e2e seed broadcasts] seedF7PlanChangedAudit skipped — DATABASE_URL or E2E_MEMBER_EMAIL missing',
+    );
+    return null;
+  }
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    const memberRows = await sql<Array<{ member_id: string }>>`
+      SELECT m.member_id::text AS member_id
+      FROM members m
+      JOIN contacts c ON c.member_id = m.member_id
+      JOIN users u ON u.id = c.linked_user_id
+      WHERE m.tenant_id = ${TENANT_ID} AND LOWER(u.email) = LOWER(${memberEmail})
+      LIMIT 1
+    `;
+    const member = memberRows[0];
+    if (!member) {
+      console.warn(
+        `[e2e seed broadcasts] seedF7PlanChangedAudit — e2e-member not found in tenant ${TENANT_ID}; skipping seed`,
+      );
+      return null;
+    }
+
+    const changedAt = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const inserted = await sql<Array<{ id: string }>>`
+      INSERT INTO audit_log (
+        event_type, actor_user_id, summary, request_id, tenant_id,
+        payload, "timestamp"
+      )
+      VALUES (
+        'member_plan_changed',
+        'system:e2e-seed',
+        ${'E2E seed — plan changed for ' + member.member_id},
+        ${'e2e-seed-' + Date.now()},
+        ${TENANT_ID},
+        ${sql.json({ memberId: member.member_id, fromPlanCode: 'regular_corporate', toPlanCode: 'premium_corporate' })},
+        ${changedAt.toISOString()}
+      )
+      RETURNING id::text AS id
+    `;
+    const row = inserted[0];
+    if (!row) {
+      console.warn(
+        '[e2e seed broadcasts] seedF7PlanChangedAudit — INSERT returned no rows; skipping',
+      );
+      return null;
+    }
+    console.log(
+      `[e2e seed broadcasts] OK member_plan_changed audit=${row.id} member=${member.member_id} changedAt=${changedAt.toISOString()}`,
+    );
+    return { auditId: row.id, changedAt };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * F7 US3 AS6/AS7 reset — clears `members.broadcasts_acknowledged_at`
+ * for the e2e-member so the Q15 banner re-renders on the next portal
+ * navigation. Used by AS6 (assert banner present) + AS7 (assert
+ * acknowledge → dismiss + audit) to prevent state pollution across
+ * browser projects (chromium → mobile-safari → mobile-chrome) where
+ * a successful AS7 in one project would leave the column set and
+ * subsequent project AS6 + AS7 runs would see no banner.
+ *
+ * Returns true if the column was reset; false if env vars missing
+ * (caller falls back to skipping the test).
+ */
+export async function resetF7AckSeed(): Promise<void> {
+  const dbUrl = process.env.DATABASE_URL;
+  const memberEmail = process.env.E2E_MEMBER_EMAIL;
+  if (!dbUrl || !memberEmail) {
+    // Fail loud — silent no-op would surface later as a confusing
+    // AS6/AS7 "banner not present" failure that's actually a CI
+    // misconfiguration. Per the project memory `feedback_skip_is_not_pass`,
+    // env-missing in a seed helper is a CI bug, not a test signal.
+    throw new Error(
+      'resetF7AckSeed: DATABASE_URL or E2E_MEMBER_EMAIL missing — refusing to no-op (would mask AS6/AS7 banner state).',
+    );
+  }
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    // Inner JOIN explicitly scopes contacts to the same tenant as the
+    // outer member row — defensive consistency with `seedF7Broadcasts`
+    // pattern (member_id is UUID-unique today, but multi-tenant
+    // schema treats `(tenant_id, member_id)` as the canonical PK).
+    await sql`
+      UPDATE members
+      SET broadcasts_acknowledged_at = NULL,
+          updated_at = NOW()
+      WHERE tenant_id = ${TENANT_ID}
+        AND member_id IN (
+          SELECT m.member_id
+          FROM members m
+          JOIN contacts c
+            ON c.member_id = m.member_id
+           AND c.tenant_id = m.tenant_id
+           AND c.tenant_id = ${TENANT_ID}
+          JOIN users u ON u.id = c.linked_user_id
+          WHERE LOWER(u.email) = LOWER(${memberEmail})
+        )
+    `;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}

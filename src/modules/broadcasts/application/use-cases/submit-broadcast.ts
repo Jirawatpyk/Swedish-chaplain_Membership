@@ -31,6 +31,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { asMemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
 import {
   asBroadcastId,
@@ -230,7 +231,7 @@ export async function submitBroadcast(
         broadcastsRepo: deps.broadcastsRepo,
         clock: deps.clock,
       },
-      { memberId: input.memberId },
+      { memberId: asMemberId(input.memberId) },
     );
     if (!quota.ok) {
       // Round-4 MED-D — counter internal error (DB blip) is NOT

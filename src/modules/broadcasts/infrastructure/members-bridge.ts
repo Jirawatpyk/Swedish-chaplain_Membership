@@ -36,6 +36,7 @@ import { unsafeBrandEmailLower } from '../domain/value-objects/email-lower';
 import type {
   ContactLookup,
   MarkAckError,
+  MarkAckSuccess,
   MemberHaltError,
   MemberHaltSummary,
   MemberRecipient,
@@ -189,7 +190,7 @@ export const membersBridge: MembersBridgePort = {
     tenantCtx: TenantContext,
     memberId: string,
     _locale: 'en' | 'th' | 'sv',
-  ): Promise<Result<void, MarkAckError>> {
+  ): Promise<Result<MarkAckSuccess, MarkAckError>> {
     const result = await f3MarkBroadcastsAcknowledged(
       {
         tenant: tenantCtx,
@@ -198,10 +199,28 @@ export const membersBridge: MembersBridgePort = {
       },
       asMemberId(memberId),
     );
-    if (result.ok) return ok(undefined);
+    if (result.ok) {
+      // Round 5 code-review CRIT — forward `previouslyNull` so the F7
+      // use-case can distinguish first consent from re-ack and emit
+      // exactly one `member_acknowledged_broadcasts_terms` audit row
+      // per member. Collapsing both paths to `ok(undefined)` made the
+      // 'idempotent' branch in the use-case dead code.
+      return ok({ previouslyNull: result.value.previouslyNull });
+    }
     if ('code' in result.error && result.error.code === 'mark_ack.member_not_found') {
       return err({ kind: 'mark_ack.member_not_found', memberId });
     }
-    return err({ kind: 'mark_ack.already_acknowledged' });
+    // Round 5 CRIT — F3 repo failures (RLS denial, Neon outage, statement
+    // timeout) surface as `repo.unexpected`. Surface as a distinct
+    // error variant so the route returns 500 + logger.error instead of
+    // silently 200-OK with `wasNew:false`.
+    if ('code' in result.error && result.error.code === 'repo.unexpected') {
+      return err({ kind: 'mark_ack.repo_error', cause: result.error.cause });
+    }
+    // Defence-in-depth: the F3 use-case's union currently covers only
+    // `mark_ack.member_not_found` + `repo.unexpected`. Any future variant
+    // would otherwise fall through silently. Treat as repo_error so the
+    // route returns 500 instead of swallowing.
+    return err({ kind: 'mark_ack.repo_error', cause: result.error });
   },
 };

@@ -1882,7 +1882,9 @@
         "exhausted": "All E-Blast quota for {year} has been used.",
         "progressLabel": "E-Blast quota used",
         "fetchError": "Could not load quota.",
-        "retry": "Retry"
+        "retry": "Retry",
+        "nextReset": "Renews {date}",
+        "planChangedExplainer": "Plan changed on {date} — current year quota reflects the new plan."
       },
       "banner": {
         "acknowledgement": {
@@ -1890,7 +1892,10 @@
           "body": "Submitting an E-Blast confirms recipients have agreed to receive your chamber's communications. You can revoke consent on a per-recipient basis at any time.",
           "acknowledge": "I acknowledge",
           "remindLater": "Remind me later",
-          "closeLabel": "Close banner"
+          "closeLabel": "Close banner",
+          "toastAcknowledged": "Marketing-communications consent recorded.",
+          "toastAcknowledgeFailed": "Could not record your acknowledgement.",
+          "toastAcknowledgeFailedHint": "Please try again — the banner stays open until consent is recorded."
         }
       },
       "list": {
@@ -1916,7 +1921,43 @@
           "rejected": "Rejected",
           "cancelled": "Cancelled",
           "failed_to_dispatch": "Failed"
+        },
+        "pagination": {
+          "previous": "Previous",
+          "next": "Next",
+          "pageOf": "Page {page} of {total}",
+          "ariaLabel": "Broadcast history pagination"
         }
+      },
+      "cmdk": {
+        "group": "Broadcasts",
+        "compose": {
+          "title": "Compose E-Blast"
+        },
+        "benefits": {
+          "title": "View E-Blast usage"
+        }
+      },
+      "detail": {
+        "title": "Broadcast detail",
+        "subtitle": "Subject, audience and delivery breakdown for this broadcast.",
+        "fields": {
+          "subject": "Subject",
+          "submittedAt": "Submitted",
+          "sentAt": "Sent",
+          "status": "Status",
+          "recipients": "Recipients"
+        },
+        "delivery": {
+          "title": "Delivery breakdown",
+          "delivered": "Delivered",
+          "bounced": "Bounced",
+          "softBounced": "Soft-bounced",
+          "complained": "Complained",
+          "sent": "Pending",
+          "total": "Total"
+        },
+        "back": "Back to broadcasts"
       }
     },
     "profile": {

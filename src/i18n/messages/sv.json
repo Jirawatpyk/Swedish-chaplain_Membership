@@ -1882,7 +1882,9 @@
         "exhausted": "Hela E-Blast-kvoten för {year} har använts.",
         "progressLabel": "E-Blast-kvot använd",
         "fetchError": "Kunde inte ladda kvot.",
-        "retry": "Försök igen"
+        "retry": "Försök igen",
+        "nextReset": "Återställs {date}",
+        "planChangedExplainer": "Plan ändrades {date} — årets kvot speglar den nya planen."
       },
       "banner": {
         "acknowledgement": {
@@ -1890,7 +1892,10 @@
           "body": "Att skicka in ett E-Blast bekräftar att mottagarna har samtyckt till att ta emot din kammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
           "acknowledge": "Jag bekräftar",
           "remindLater": "Påminn senare",
-          "closeLabel": "Stäng banner"
+          "closeLabel": "Stäng banner",
+          "toastAcknowledged": "Samtycke till marknadskommunikation registrerat.",
+          "toastAcknowledgeFailed": "Kunde inte registrera ditt samtycke.",
+          "toastAcknowledgeFailedHint": "Försök igen — bannern stannar kvar tills samtycket är registrerat."
         }
       },
       "list": {
@@ -1916,7 +1921,43 @@
           "rejected": "Avvisad",
           "cancelled": "Avbruten",
           "failed_to_dispatch": "Misslyckades"
+        },
+        "pagination": {
+          "previous": "Föregående",
+          "next": "Nästa",
+          "pageOf": "Sida {page} av {total}",
+          "ariaLabel": "Paginering för utskickshistorik"
         }
+      },
+      "cmdk": {
+        "group": "Utskick",
+        "compose": {
+          "title": "Skapa E-Blast"
+        },
+        "benefits": {
+          "title": "Visa E-Blast-användning"
+        }
+      },
+      "detail": {
+        "title": "Utskicksdetaljer",
+        "subtitle": "Ämne, mottagare och leveranssammanfattning för detta utskick.",
+        "fields": {
+          "subject": "Ämne",
+          "submittedAt": "Inskickad",
+          "sentAt": "Skickad",
+          "status": "Status",
+          "recipients": "Mottagare"
+        },
+        "delivery": {
+          "title": "Leveranssammanfattning",
+          "delivered": "Levererad",
+          "bounced": "Studsade",
+          "softBounced": "Mjuk studs",
+          "complained": "Klagomål",
+          "sent": "Väntar",
+          "total": "Totalt"
+        },
+        "back": "Tillbaka till utskick"
       }
     },
     "profile": {
