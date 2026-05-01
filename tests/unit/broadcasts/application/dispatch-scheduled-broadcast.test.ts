@@ -246,7 +246,10 @@ function makeGateway(opts: GatewayOpts = {}): {
         if (opts.throwOnGetAudienceContactCount) {
           maybeThrow(opts.throwOnGetAudienceContactCount);
         }
-        return opts.audienceContactCount ?? 2;
+        return {
+          kind: 'present' as const,
+          count: opts.audienceContactCount ?? 2,
+        };
       },
     },
   };

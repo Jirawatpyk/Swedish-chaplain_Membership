@@ -73,17 +73,25 @@ export type ReconcileStuckSendingError =
 
 /**
  * FR-028 / AS3 summary-email notification deps. Grouped together
- * (review TYPES recommendation) because the three fields are
+ * (review TYPES-1 + ERR-H3) because the three fields are
  * mutually-implied — sending a summary email requires looking up the
  * member's primary contact (`membersBridge`), reading delivered/bounced
- * counts (`deliveriesRepo`, optional fallback to zeros), and a transport
- * (`emailTransactional`). When omitted, the reconciliation path skips
- * the summary email entirely.
+ * counts (`deliveriesRepo`), and a transport (`emailTransactional`).
+ *
+ * `deliveriesRepo` is REQUIRED inside this group (review ERR-H3): a
+ * missing repo silently falls back to {0,0,0} aggregates, shipping a
+ * factually wrong "0% delivered" summary email. If a caller cannot
+ * provide deliveriesRepo, omit the entire `notification` group on
+ * `ReconcileStuckSendingDeps` so the email step is skipped cleanly.
+ *
+ * `emailTransactional` remains optional — the reconcile path may want
+ * the aggregate read for audit/observability without enqueueing an
+ * email (tests, dry-runs).
  */
 export interface ReconcileNotificationDeps {
   readonly membersBridge: MembersBridgePort;
+  readonly deliveriesRepo: BroadcastDeliveriesRepo;
   readonly emailTransactional?: EmailTransactionalPort;
-  readonly deliveriesRepo?: BroadcastDeliveriesRepo;
 }
 
 export interface ReconcileStuckSendingDeps {
@@ -264,12 +272,15 @@ async function markSent(
     if (deps.notification !== undefined) {
       const { membersBridge, emailTransactional, deliveriesRepo } =
         deps.notification;
-      const aggregate = deliveriesRepo
-        ? await deliveriesRepo.aggregateByBroadcast(
-            tenantId,
-            broadcast.broadcastId,
-          )
-        : { delivered: 0, bounced: 0, complained: 0 };
+      // deliveriesRepo is now required inside the notification group
+      // (review ERR-H3) so the summary email always carries truthful
+      // delivered/bounced/complained counts. The aggregate read is
+      // intentionally inside the same tx so RLS is enforced and the
+      // counts reflect the events committed in this same transaction.
+      const aggregate = await deliveriesRepo.aggregateByBroadcast(
+        tenantId,
+        broadcast.broadcastId,
+      );
       await enqueueDeliverySummaryEmail({
         tenant: deps.tenant,
         ...(emailTransactional !== undefined && { emailTransactional }),
@@ -283,7 +294,8 @@ async function markSent(
           complained: aggregate.complained,
         },
         estimatedRecipientCount: broadcast.estimatedRecipientCount,
-        viaReconciliation: true,
+        source: 'reconciliation',
+        tx,
       });
     }
 
@@ -372,3 +384,4 @@ function buildAudit(
 ) {
   return { eventType, ...rest };
 }
+

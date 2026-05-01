@@ -71,6 +71,16 @@ export type RetrieveBroadcastOutcome =
   | { readonly kind: 'present'; readonly resource: RetrievedBroadcastResource }
   | { readonly kind: 'not_found' };
 
+/**
+ * Discriminated union for `getAudienceContactCount` (review TYPES-2 —
+ * round 2). Mirrors `RetrieveBroadcastOutcome` for cross-port
+ * consistency: "audience missing" is now first-class instead of a
+ * nullable count.
+ */
+export type GetAudienceContactCountOutcome =
+  | { readonly kind: 'present'; readonly count: number }
+  | { readonly kind: 'audience_missing' };
+
 export interface BroadcastsGatewayPort {
   createAudience(name: string): Promise<{ readonly audienceId: string }>;
 
@@ -113,9 +123,10 @@ export interface BroadcastsGatewayPort {
    * `broadcast_resend_audience_drift` audit emission so ops can
    * investigate partial-delivery before the broadcast ships.
    *
-   * Returns `null` if the audience itself is missing (404).
+   * Returns a discriminated union: `present` with the count, or
+   * `audience_missing` when Resend reports 404 on the audience.
    */
   getAudienceContactCount(
     audienceId: string,
-  ): Promise<number | null>;
+  ): Promise<GetAudienceContactCountOutcome>;
 }

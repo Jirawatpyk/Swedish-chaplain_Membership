@@ -716,6 +716,70 @@ describe('process-webhook-event — terminal-state guard does NOT double-consume
   });
 });
 
+describe('process-webhook-event — dup-replay on already-sent broadcast (TEST-GAP closure)', () => {
+  it('idempotent replay (inserted=false) on a `sent` broadcast does NOT emit broadcast_concurrent_action_blocked (audit-spam guard)', async () => {
+    // Combines two terminal-guard conditions: the broadcast is already
+    // `sent` AND the upsert returns `inserted=false` (Resend re-delivered
+    // the same svix-id we already persisted). The late-event audit
+    // (ERR-H2) must fire ONLY on genuinely-new late events; replays
+    // must stay silent or audit_log floods on every Resend retry.
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({
+        status: 'sent',
+        sentAt: FROZEN_NOW,
+        quotaYearConsumed: 2026,
+        quotaConsumedAt: FROZEN_NOW,
+      }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [false], // ← replay on terminal broadcast
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 5,
+        bounced: 0,
+        softBounced: 0,
+        complained: 0,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      {
+        broadcastId,
+        event: buildEvent('delivered'),
+        requestId: null,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.kind).toBe('broadcast_terminal');
+    // Audit spam guard: no broadcast_concurrent_action_blocked on
+    // idempotent replay.
+    expect(
+      audit.emits.find(
+        (e) => e.eventType === 'broadcast_concurrent_action_blocked',
+      ),
+    ).toBeUndefined();
+    // Sanity: no transitions, no quota consumed.
+    expect(broadcasts.transitions).toHaveLength(0);
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_quota_consumed'),
+    ).toBeUndefined();
+  });
+});
+
 describe('process-webhook-event — defence-in-depth checks', () => {
   it('rejects malformed recipient email', async () => {
     const broadcasts = makeBroadcastsRepo({

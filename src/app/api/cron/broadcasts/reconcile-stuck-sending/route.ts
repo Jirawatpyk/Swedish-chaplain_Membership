@@ -170,11 +170,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     { tenantId: tenant.slug, ...summary },
     'cron.broadcasts.reconcile.tick_complete',
   );
-  // Review ERR-M1: surface uncaught-row failures as a non-2xx so the
-  // cron-job.org dashboard turns red (the operator-facing alarm signal).
-  // The per-row try/catch already logged each error; this is the
-  // tick-level escalation hook.
-  if (summary.uncaught_error > 0) {
+  // Review ERR-M1 + ERR-H2 (round 2): surface tick-level failures as
+  // non-2xx so the cron-job.org dashboard turns red (operator-facing
+  // alarm signal). Three escalation triggers:
+  //   - ANY uncaught_error → 500 (programmer bug, hard escalation)
+  //   - server_error > 0   → 500 (Result.err from the use-case)
+  //   - gateway_error > 0  → 500 (Resend outage; operator must check)
+  // Per-row try/catch already logged each error; this is the tick
+  // escalation hook. Symmetric coverage prevents the previous round's
+  // "gateway errors masked as 200" gap.
+  const hasFailures =
+    summary.uncaught_error > 0 ||
+    summary.server_error > 0 ||
+    summary.gateway_error > 0;
+  if (hasFailures) {
     return NextResponse.json(summary, { status: 500 });
   }
   return NextResponse.json(summary, { status: 200 });

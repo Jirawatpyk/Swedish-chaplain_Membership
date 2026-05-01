@@ -47,7 +47,8 @@ import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
  * naming inside Infrastructure (Constitution Principle III). Adding
  * a future status enum value (e.g. `queued`, `opened`) without
  * updating this function would silently drop the count, so the
- * unknown-status path MUST emit `logger.warn` to surface the gap.
+ * unknown-status path MUST emit `logger.error` to surface the gap
+ * (alert pipeline pages on error level, not warn).
  */
 type DeliveryAggregate = {
   delivered: number;
@@ -96,6 +97,36 @@ export function reduceDeliveryAggregateRows(
     );
   }
   return out;
+}
+
+/**
+ * Probe `current_setting('app.current_tenant', TRUE)` on a tx handle to
+ * confirm the caller is inside a `runInTenant(ctx, …)` scope bound to
+ * the expected tenant. Throws on missing/empty tenant context (caller
+ * passed a bare `db` instead of a tx) OR on tenant mismatch (caller
+ * borrowed a tx bound to a different tenant). Review ERR-H1 (round 2):
+ * port-level enforcement of the tx-binding invariant the rowcount
+ * assertions assume.
+ */
+async function assertTenantBoundTx(
+  tx: TenantTx,
+  expectedTenantId: string,
+  callerName: string,
+): Promise<void> {
+  const probe = (await tx.execute(
+    sql`SELECT current_setting('app.current_tenant', TRUE) AS current_tenant`,
+  )) as unknown as Array<{ current_tenant: string | null }>;
+  const currentTenant = probe[0]?.current_tenant ?? null;
+  if (currentTenant === null || currentTenant.length === 0) {
+    throw new Error(
+      `${callerName}: tx is NOT inside a runInTenant scope (app.current_tenant is unset). Refusing to mutate without tenant binding.`,
+    );
+  }
+  if (currentTenant !== expectedTenantId) {
+    throw new Error(
+      `${callerName}: tx tenant mismatch — repo bound to "${expectedTenantId}" but tx carries "${currentTenant}". Refusing to write to a different tenant's namespace.`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +490,12 @@ export function makeDrizzleBroadcastsRepo(
       resendBroadcastId: string,
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
+      // Review ERR-H1 (round 2): probe `current_tenant` BEFORE issuing
+      // the UPDATE so a caller passing a bare `db` handle (no tx
+      // binding, no RLS context) is rejected up-front rather than
+      // committing a wrong-rowcount mutation that the rowcount throw
+      // below cannot roll back.
+      await assertTenantBoundTx(tx, ctx.slug, 'attachResendIds');
       // Review ERR-M4: assert exactly one row was updated. A 0-row
       // update would leave the Resend resource orphaned (sent without
       // a local id linkage) — fail loud so the dispatcher rolls back
@@ -491,7 +528,9 @@ export function makeDrizzleBroadcastsRepo(
       resendAudienceId: string,
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
-      // Review ERR-M4: rowcount assertion (see attachResendIds).
+      // Review ERR-H1 (round 2) + ERR-M4: probe tx binding then assert
+      // rowcount.
+      await assertTenantBoundTx(tx, ctx.slug, 'attachAudienceId');
       const updated = await tx
         .update(broadcasts)
         .set({

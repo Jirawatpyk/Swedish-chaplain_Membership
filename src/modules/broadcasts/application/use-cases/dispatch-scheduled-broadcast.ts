@@ -380,9 +380,17 @@ export async function dispatchScheduledBroadcast(
         let actualCount: number | null = null;
         let countCheckFailed = false;
         try {
-          actualCount = await deps.broadcastsGateway.getAudienceContactCount(
-            resendAudienceId,
-          );
+          // Discriminated union (review TYPES-2): translate to the
+          // legacy `number | null` shape kept by this use-case so the
+          // downstream drift / unverifiable audit branches stay
+          // unchanged. `audience_missing` maps to null = no count
+          // available; `present` maps to the count.
+          const outcome =
+            await deps.broadcastsGateway.getAudienceContactCount(
+              resendAudienceId,
+            );
+          actualCount =
+            outcome.kind === 'present' ? outcome.count : null;
         } catch (countErr) {
           // Round-5 R5-S1 — when the count fetch fails on a non-404
           // (e.g. Resend 5xx, network), we cannot verify drift. Emit a

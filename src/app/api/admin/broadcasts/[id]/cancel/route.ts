@@ -77,17 +77,21 @@ export async function POST(
     try {
       const broadcast = result.value.broadcast;
       if (broadcast.replyToEmail.length > 0) {
-        await emailTransactionalBridge.sendMemberEmail(tenantCtx, {
-          to: broadcast.replyToEmail,
-          subject: 'Your E-Blast was cancelled',
-          templateKey: 'broadcast_cancelled',
-          payload: {
-            broadcastId: broadcast.broadcastId,
-            cancellationReason: parsed.data.cancellationReason,
-            cancelledByAdmin: true,
+        await emailTransactionalBridge.sendMemberEmail(
+          tenantCtx,
+          {
+            to: broadcast.replyToEmail,
+            subject: 'Your E-Blast was cancelled',
+            templateKey: 'broadcast_cancelled',
+            payload: {
+              broadcastId: broadcast.broadcastId,
+              cancellationReason: parsed.data.cancellationReason,
+              cancelledByAdmin: true,
+            },
+            locale: 'en',
           },
-          locale: 'en',
-        });
+          null,
+        );
       }
     } catch (e) {
       logger.warn(

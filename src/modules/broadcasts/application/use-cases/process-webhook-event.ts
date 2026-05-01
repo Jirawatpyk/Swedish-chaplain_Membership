@@ -22,10 +22,11 @@
  *      (FR-007 — quota is recorded in the calendar year of `sentAt` in
  *      `tenantTimezone`).
  *
- * The `tenantId` comes pre-resolved from the route handler's bypass-RLS
- * lookup against `findByResendBroadcastIdBypassRls`. This use-case
- * trusts that input — cross-tenant safety is re-asserted by the
- * tx-binding probe in `BroadcastsRepo.withTx` (existing pattern).
+ * The `tenantId` comes pre-resolved from the route handler's call to
+ * `resolveTenantByResendBroadcastId` (which wraps the bypass-RLS repo
+ * lookup). This use-case trusts that input — cross-tenant safety is
+ * re-asserted by the tx-binding probe in `BroadcastsRepo.withTx`
+ * (existing pattern).
  *
  * Pure Application — only Domain types + ports.
  */
@@ -510,7 +511,8 @@ export async function processWebhookEvent(
               broadcastSubject: fresh.subject,
               aggregate: agg,
               estimatedRecipientCount: fresh.estimatedRecipientCount,
-              viaReconciliation: false,
+              source: 'webhook',
+              tx,
             });
           }
         }
@@ -525,6 +527,22 @@ export async function processWebhookEvent(
       });
     });
   } catch (e) {
+    // Review ERR-M2: log the full error before wrapping so the route
+    // log carries stack + cause + constructor name. Wrapping into a
+    // Result strips this info, but operators need it for triage on
+    // unexpected failures (RLS probe, DB drop, programmer bugs).
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        errName: e instanceof Error ? e.constructor.name : 'unknown',
+        stack: e instanceof Error ? e.stack : undefined,
+        cause: e instanceof Error ? (e as { cause?: unknown }).cause : undefined,
+        tenantId,
+        broadcastId,
+        eventId: event.id,
+      },
+      'broadcasts.process_webhook.uncaught',
+    );
     return err({
       kind: 'process_webhook.server_error',
       message: e instanceof Error ? e.message : 'unknown error',
@@ -607,11 +625,22 @@ export async function enqueueDeliverySummaryEmail(args: {
   readonly aggregate: { delivered: number; bounced: number; complained: number };
   readonly estimatedRecipientCount: number;
   /**
-   * `true` when called from the 24h reconciliation cron — surfaces in
-   * the outbox payload so the dispatcher can render a slightly
-   * different "(reconciled at timeout)" subject line.
+   * Discriminator — `'webhook'` when called from `processWebhookEvent`
+   * (sending → sent on terminal-event completion), `'reconciliation'`
+   * when called from `reconcileStuckSending` (24h timeout). Surfaces
+   * in the outbox payload so the dispatcher can render the appropriate
+   * subject line ("(reconciled at timeout)" suffix on the latter).
    */
-  readonly viaReconciliation: boolean;
+  readonly source: 'webhook' | 'reconciliation';
+  /**
+   * Caller's tx handle (review ERR-C1). When the outbox INSERT MUST
+   * commit atomically with the broadcast_sent transition, pass the
+   * `withTx` callback's tx. The webhook + reconcile paths both call
+   * inside a `broadcastsRepo.withTx` scope so this is non-null in
+   * production; tests may pass `null` to enqueue on an autocommit
+   * connection.
+   */
+  readonly tx: unknown | null;
 }): Promise<void> {
   if (args.emailTransactional === undefined) return;
 
@@ -649,26 +678,31 @@ export async function enqueueDeliverySummaryEmail(args: {
   const deliveryRate =
     total > 0 ? Math.round((args.aggregate.delivered / total) * 1000) / 10 : 0;
   try {
-    await args.emailTransactional.sendMemberEmail(args.tenant, {
-      to: memberEmail,
-      subject: args.broadcastSubject,
-      templateKey: 'broadcast_delivered',
-      payload: {
-        broadcastId: args.broadcastId,
-        broadcastSubject: args.broadcastSubject,
-        delivered: args.aggregate.delivered,
-        bounced: args.aggregate.bounced,
-        complained: args.aggregate.complained,
-        total,
-        deliveryRate,
-        viaReconciliation: args.viaReconciliation,
+    await args.emailTransactional.sendMemberEmail(
+      args.tenant,
+      {
+        to: memberEmail,
+        subject: args.broadcastSubject,
+        templateKey: 'broadcast_delivered',
+        payload: {
+          broadcastId: args.broadcastId,
+          broadcastSubject: args.broadcastSubject,
+          delivered: args.aggregate.delivered,
+          bounced: args.aggregate.bounced,
+          complained: args.aggregate.complained,
+          total,
+          deliveryRate,
+          source: args.source,
+          viaReconciliation: args.source === 'reconciliation',
+        },
+        // Locale resolution: deferred to the F4 outbox dispatcher which
+        // will look up `members.preferred_locale` at render time. We
+        // pass 'en' as the enqueue-time fallback (dispatcher overrides
+        // when the member row carries a non-default preference).
+        locale: 'en',
       },
-      // Locale resolution: deferred to the F4 outbox dispatcher which
-      // will look up `members.preferred_locale` at render time. We
-      // pass 'en' as the enqueue-time fallback (dispatcher overrides
-      // when the member row carries a non-default preference).
-      locale: 'en',
-    });
+      args.tx,
+    );
   } catch (e) {
     logger.error(
       {

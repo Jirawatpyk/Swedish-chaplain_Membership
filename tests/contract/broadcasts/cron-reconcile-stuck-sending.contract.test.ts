@@ -179,7 +179,7 @@ describe('cron reconcile-stuck-sending — wire contract', () => {
     expect(body.uncaught_error).toBe(0);
   });
 
-  it('valid bearer + use-case returns gateway_error → 200 + counter (does NOT escalate to 500)', async () => {
+  it('valid bearer + use-case returns gateway_error → 500 (review ERR-H2 symmetric escalation)', async () => {
     runInTenantMock.mockImplementation(async (_ctx, fn) => fn({
       execute: async () => [{ broadcast_id: 'b1' }],
     }));
@@ -192,7 +192,11 @@ describe('cron reconcile-stuck-sending — wire contract', () => {
     const res = await POST(
       makeRequest({ auth: 'Bearer test-cron-secret' }),
     );
-    expect(res.status).toBe(200);
+    // Review ERR-H2 (round 2): gateway_error / server_error / uncaught_error
+    // ALL escalate to 500 so the cron-job.org dashboard turns red
+    // symmetrically — the previous round only escalated uncaught_error,
+    // masking gateway outages as 200.
+    expect(res.status).toBe(500);
     const body = (await res.json()) as Record<string, number>;
     expect(body.gateway_error).toBe(1);
     expect(body.uncaught_error).toBe(0);

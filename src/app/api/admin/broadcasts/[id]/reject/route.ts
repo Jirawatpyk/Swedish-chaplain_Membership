@@ -77,16 +77,20 @@ export async function POST(
     try {
       const broadcast = result.value.broadcast;
       if (broadcast.replyToEmail.length > 0) {
-        await emailTransactionalBridge.sendMemberEmail(tenantCtx, {
-          to: broadcast.replyToEmail,
-          subject: 'Your E-Blast was not approved',
-          templateKey: 'broadcast_rejected',
-          payload: {
-            broadcastId: broadcast.broadcastId,
-            rejectionReason: parsed.data.rejectionReason,
+        await emailTransactionalBridge.sendMemberEmail(
+          tenantCtx,
+          {
+            to: broadcast.replyToEmail,
+            subject: 'Your E-Blast was not approved',
+            templateKey: 'broadcast_rejected',
+            payload: {
+              broadcastId: broadcast.broadcastId,
+              rejectionReason: parsed.data.rejectionReason,
+            },
+            locale: 'en',
           },
-          locale: 'en',
-        });
+          null,
+        );
       }
     } catch (e) {
       // Review I5 — see approve/route.ts for rationale. Note: the

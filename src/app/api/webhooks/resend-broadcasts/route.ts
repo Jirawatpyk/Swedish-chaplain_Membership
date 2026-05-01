@@ -132,33 +132,30 @@ async function auditSignatureReject(
     `);
   } catch (e) {
     // Review ERR-L1: emit a dedicated log channel
-    // (`broadcasts.webhook.audit_reject_db_failure`) so the alert
-    // pipeline can pick up sustained sig-reject audit-write loss as a
-    // distinct signal from the generic `audit_reject_failed`. If
-    // Postgres is down, every signature rejection becomes invisible in
-    // audit_log; we MUST surface that as its own paging metric so
-    // on-call sees "sig-rejects are happening but audit-rail is broken"
-    // — separate from "audit-rail is healthy and rejecting genuine
-    // attacks." Both logs fire on this path so legacy dashboards keep
+    // (`broadcasts.webhook.audit_reject_db_failure`) ALONGSIDE the
+    // generic `audit_reject_failed` so an alert rule can be wired
+    // without code change to distinguish "audit-rail is broken"
+    // (sig-reject DB write failing) from the generic catch-all. No
+    // alert rule consumes this channel today — wiring it is a runbook
+    // task. Both logs fire on this path so legacy dashboards keep
     // working.
-    logger.error(
-      {
-        err: e instanceof Error ? e.constructor.name : 'unknown',
-        reason,
-        requestId,
-        correlationId,
-      },
-      'broadcasts.webhook.audit_reject_failed',
-    );
-    logger.error(
-      {
-        err: e instanceof Error ? e.constructor.name : 'unknown',
-        reason,
-        requestId,
-        correlationId,
-      },
-      'broadcasts.webhook.audit_reject_db_failure',
-    );
+    //
+    // Review ERR-M1 (round 3): emit a stable `dedupeKey` on both
+    // channels so the alert rule can group + rate-limit at the
+    // pipeline side WITHOUT in-process state. Format: `f7-audit-reject:`
+    // + reason — collapses a Postgres outage flood (e.g. 50 retries
+    // × N concurrent webhooks) to one alert per (reason × outage
+    // window) instead of 50× duplicates.
+    const dedupeKey = `f7-audit-reject:${reason}`;
+    const errShape = {
+      err: e instanceof Error ? e.constructor.name : 'unknown',
+      reason,
+      requestId,
+      correlationId,
+      dedupeKey,
+    };
+    logger.error(errShape, 'broadcasts.webhook.audit_reject_failed');
+    logger.error(errShape, 'broadcasts.webhook.audit_reject_db_failure');
   }
 }
 

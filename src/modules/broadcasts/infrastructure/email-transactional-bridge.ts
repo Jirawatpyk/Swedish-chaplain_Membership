@@ -40,20 +40,22 @@ import type {
  * sync with the Postgres `notification_type` enum (migrations 0073 +
  * 0079). Drift is caught by
  * `tests/integration/broadcasts/notification-type-parity.test.ts`
- * which compares this union against `pg_enum` rows on live Neon.
+ * which compares this list against `pg_enum` rows on live Neon.
+ *
+ * Single source of truth (review TYPES suggestion #2): the array is
+ * the canonical list and the union is derived from it via
+ * `(typeof F7_NOTIFICATION_TYPES)[number]`. This eliminates the
+ * array-vs-union drift dimension that `as const satisfies` would still
+ * leave open. Mirrors the `F7_AUDIT_EVENT_TYPES` pattern in audit-port.ts.
  */
-export type F7NotificationType =
-  | 'broadcast_approved_notification'
-  | 'broadcast_rejected_notification'
-  | 'broadcast_cancelled_notification'
-  | 'broadcast_delivered_notification';
-
-export const F7_NOTIFICATION_TYPES: ReadonlyArray<F7NotificationType> = [
+export const F7_NOTIFICATION_TYPES = [
   'broadcast_approved_notification',
   'broadcast_rejected_notification',
   'broadcast_cancelled_notification',
   'broadcast_delivered_notification',
-];
+] as const;
+
+export type F7NotificationType = (typeof F7_NOTIFICATION_TYPES)[number];
 
 /** Resolve the F7 notification_type from the templateKey discriminator. */
 function resolveNotificationType(templateKey: string): F7NotificationType {
@@ -125,6 +127,7 @@ export const emailTransactionalBridge: EmailTransactionalPort = {
   async sendMemberEmail(
     tenantCtx: TenantContext,
     input: SendEmailInput,
+    tx: unknown | null,
   ): Promise<void> {
     const notificationType = resolveNotificationType(input.templateKey);
     // payload travels into context_data so the F4 cron dispatcher can
@@ -137,8 +140,12 @@ export const emailTransactionalBridge: EmailTransactionalPort = {
       subject: input.subject,
       ...input.payload,
     };
+    // Review ERR-C1: thread caller's tx (when inside a broadcastsRepo
+    // tx scope) so the outbox INSERT commits atomically with the
+    // broadcast_sent audit + status transition. AS3 invariant: every
+    // sending → sent transition MUST produce a summary email enqueue.
     await enqueueOutboxRow(
-      null,
+      tx as TenantTx | null,
       tenantCtx.slug,
       notificationType,
       input.to,

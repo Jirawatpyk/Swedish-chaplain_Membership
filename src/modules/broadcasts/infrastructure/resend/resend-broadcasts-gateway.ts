@@ -25,6 +25,7 @@ import type {
   BroadcastsGatewayPort,
   CreateBroadcastInput,
   GatewayRetryableSubKind,
+  GetAudienceContactCountOutcome,
   RetrievedBroadcastResource,
   RetrieveBroadcastOutcome,
 } from '../../application/ports/broadcasts-gateway-port';
@@ -304,13 +305,15 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     );
   },
 
-  async getAudienceContactCount(audienceId: string): Promise<number | null> {
-    // F7.1-IMP5 — query Resend for the contact count on an audience.
-    // The SDK exposes `contacts.list(audienceId)` (paginated). For
-    // MVP we list and return `data.length`; a future optimisation
-    // could use a head-only endpoint when Resend provides one.
+  async getAudienceContactCount(
+    audienceId: string,
+  ): Promise<GetAudienceContactCountOutcome> {
+    // IMP-5 — query Resend for the contact count on an audience. The
+    // SDK exposes `contacts.list(audienceId)` (paginated). For MVP we
+    // list and return `data.length`; a future optimisation could use a
+    // head-only endpoint when Resend provides one.
     try {
-      return await withRetry(
+      const count = await withRetry(
         async () => {
           const sdk = client();
           const result = (await sdk.contacts.list({ audienceId })) as ResendSdkResponse<{
@@ -327,9 +330,10 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
         },
         { method: 'getAudienceContactCount' },
       );
+      return { kind: 'present', count };
     } catch (e) {
       if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
-        return null;
+        return { kind: 'audience_missing' };
       }
       throw e;
     }

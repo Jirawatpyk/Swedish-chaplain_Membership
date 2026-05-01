@@ -70,19 +70,25 @@ function decodeBase64Loose(raw: string): Buffer {
   // Svix secrets ship as base64; if a tenant rotated to a non-base64
   // shared secret, fall back to UTF-8 bytes so the HMAC still works.
   // Both forms are constant-time-compared downstream.
-  // Review ERR-H3: log decode failures so secret-rotation paste errors
-  // (operator typed a non-base64 value) are diagnosable. Length-only —
-  // never the secret value.
-  try {
-    const buf = Buffer.from(raw, 'base64');
-    if (buf.length > 0) return buf;
-  } catch (e) {
+  //
+  // Review ERR-M3 (round 2): `Buffer.from(raw, 'base64')` does NOT
+  // throw on malformed base64 — it silently returns a partially-decoded
+  // buffer. Probe via round-trip equality so a paste error during
+  // secret rotation surfaces as a fall-back-to-UTF-8 with a logger
+  // signal, instead of producing a wrong-length buffer that yields
+  // `bad_signature` audits with no actionable diagnostic.
+  const decoded = Buffer.from(raw, 'base64');
+  if (decoded.length > 0) {
+    const reEncoded = decoded.toString('base64').replace(/=+$/, '');
+    const normalised = raw.replace(/=+$/, '');
+    if (reEncoded === normalised) {
+      return decoded;
+    }
+    // Round-trip mismatch → not valid base64 (paste error during
+    // secret rotation, or operator pasted an already-utf8 value).
     logger.warn(
-      {
-        secretLen: raw.length,
-        err: e instanceof Error ? e.constructor.name : 'unknown',
-      },
-      'broadcasts.webhook.secret_base64_decode_failed_falling_back_utf8',
+      { secretLen: raw.length },
+      'broadcasts.webhook.secret_base64_round_trip_mismatch_falling_back_utf8',
     );
   }
   return Buffer.from(raw, 'utf8');
