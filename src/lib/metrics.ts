@@ -37,7 +37,6 @@ import {
   type Meter,
   type ObservableGauge,
 } from '@opentelemetry/api';
-import { logger } from '@/lib/logger';
 
 const METER_NAME = 'swecham.platform';
 
@@ -738,10 +737,16 @@ function safeMetric(fn: () => void): void {
   try {
     fn();
   } catch (e) {
-    logger.warn(
-      { err: (e as Error).message },
-      'metrics_emit_failed_swallowed',
-    );
+    // Use console.warn (NOT pino logger) so this file stays client-safe
+    // — `paymentsMetrics` is imported by F5 PromptPay client components
+    // (promptpay-panel.tsx) and pino's worker_threads dep would break
+    // the Turbopack browser bundle. Last-resort signal-loss swallow;
+    // the structured-logger upgrade can come from observability rules
+    // that scrape browser/Node consoles uniformly.
+    // eslint-disable-next-line no-console
+    console.warn('metrics_emit_failed_swallowed', {
+      err: (e as Error).message,
+    });
   }
 }
 
