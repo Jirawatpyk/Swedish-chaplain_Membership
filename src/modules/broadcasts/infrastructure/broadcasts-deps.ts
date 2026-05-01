@@ -11,6 +11,7 @@ import { makeDrizzleBroadcastsRepo } from './db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
 import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator';
+import { emailTransactionalBridge } from './email-transactional-bridge';
 import { membersBridge } from './members-bridge';
 import { plansBridge } from './plans-bridge';
 import { eventAttendeesStub } from './event-attendees-stub';
@@ -18,8 +19,12 @@ import { f7AuditAdapter } from './audit-adapter';
 import { broadcastsRateLimiter } from './rate-limiter';
 import { dompurifySanitizer } from './sanitizer/dompurify-sanitizer';
 import { resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
+import { resendBroadcastsWebhookVerifier } from './resend/resend-broadcasts-webhook-verifier';
+import { makeDrizzleBroadcastDeliveriesRepo } from './db/drizzle-broadcast-deliveries-repo';
 
 import type { ClockPort } from '../application/ports/clock-port';
+import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
+import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
 import type { SaveDraftDeps } from '../application/use-cases/save-draft';
 import type { SubmitBroadcastDeps } from '../application/use-cases/submit-broadcast';
 import type { ComputeQuotaDeps } from '../application/use-cases/compute-quota-counter';
@@ -237,5 +242,77 @@ export function makeListMemberBroadcastsDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+  };
+}
+
+// =====================================================================
+// Phase 7 US5 — Webhook ingest + 24h reconciliation factories
+// =====================================================================
+
+export function makeProcessWebhookEventDeps(
+  tenantId: string,
+): ProcessWebhookEventDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    deliveriesRepo: makeDrizzleBroadcastDeliveriesRepo(tenantId),
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    membersBridge,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+    emailTransactional: emailTransactionalBridge,
+  };
+}
+
+export function makeReconcileStuckSendingDeps(
+  tenantId: string,
+): ReconcileStuckSendingDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    broadcastsGateway: resendBroadcastsGateway,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+    notification: {
+      membersBridge,
+      emailTransactional: emailTransactionalBridge,
+      deliveriesRepo: makeDrizzleBroadcastDeliveriesRepo(tenantId),
+    },
+  };
+}
+
+/**
+ * Webhook signature verifier — exposed at the composition root for the
+ * route handler. The verifier is stateless; tests inject a stub via the
+ * ports module rather than swapping the singleton.
+ */
+export { resendBroadcastsWebhookVerifier };
+
+/**
+ * F7 webhook resolver — pre-tenant lookup. Mirrors F5
+ * `resolveTenantByProcessorAccountId`. Reads via the schema-owner role
+ * which has BYPASSRLS so the tenant id can be located before
+ * `app.current_tenant` is bound. Idempotent: returns `null` for
+ * unknown ids; the route handler 200-OKs to prevent Resend retry storm.
+ */
+export async function resolveTenantByResendBroadcastId(
+  resendBroadcastId: string,
+): Promise<{
+  readonly tenantId: string;
+  readonly broadcastId: string;
+} | null> {
+  // Build a temporary repo bound to a placeholder slug — the bypass
+  // method ignores the `tenantId` ctx (it is the cross-tenant
+  // resolution path). We use a known-valid slug to satisfy the
+  // constructor's `asTenantContext` invariant.
+  const placeholderRepo = makeDrizzleBroadcastsRepo('lookup');
+  const lookup =
+    await placeholderRepo.findByResendBroadcastIdBypassRls(resendBroadcastId);
+  if (lookup === null) return null;
+  return {
+    tenantId: lookup.tenantId,
+    broadcastId: lookup.broadcast.broadcastId,
   };
 }

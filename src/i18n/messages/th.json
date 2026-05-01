@@ -1469,6 +1469,31 @@
         "clearHalted": "คลายล็อกแล้ว สมาชิกส่ง E-Blast ใหม่ได้",
         "concurrentRace": "ผู้ดูแลคนอื่นดำเนินการก่อนหน้านี้แล้ว กำลังรีเฟรช…",
         "error": "ดำเนินการไม่สำเร็จ กรุณาลองใหม่"
+      },
+      "deliverySummary": {
+        "heading": "สรุปการส่ง",
+        "description": "เหตุการณ์การส่งต่อผู้รับแต่ละราย บันทึกจาก Resend",
+        "totalRecipients": "ผู้รับ: {count}",
+        "delivered": "ส่งถึงแล้ว: {count}",
+        "bounced": "ตีกลับ: {count}",
+        "softBounced": "ตีกลับชั่วคราว: {count}",
+        "complained": "รายงานสแปม: {count}",
+        "sent": "ส่งออก (Resend รับแล้ว): {count}",
+        "deliveryRate": "อัตราส่งสำเร็จ: {rate}%",
+        "complaintRate": "อัตรารายงานสแปม: {rate}%",
+        "stillSending": "กำลังส่ง — ได้รับเหตุการณ์ปลายทางแล้ว {received} จาก {expected}",
+        "completed": "เสร็จสิ้นเมื่อ {sentAt}",
+        "reconciledNote": "เสร็จสิ้นผ่านการตรวจสอบใน 24 ชม. (ไม่ได้รับเหตุการณ์ผู้รับจาก Resend แต่ทรัพยากรยืนยันว่ายังอยู่)",
+        "reconcileFailedNote": "ทำเครื่องหมายว่า failed_to_dispatch เมื่อตรวจสอบใน 24 ชม. — ทรัพยากร Resend หายไป"
+      },
+      "complaintRateBreach": {
+        "bannerTitle": "ตรวจพบอัตรารายงานสแปมเกินเกณฑ์",
+        "bannerBody": "E-Blast {broadcastSubject} จาก {memberName} เกินเกณฑ์รายงานสแปมต่อ broadcast 5% ระบบล็อกการส่งของสมาชิกอัตโนมัติ รอผู้ดูแลตรวจสอบ",
+        "complaintRateLabel": "อัตรารายงานสแปม: {rate}%",
+        "thresholdLabel": "เกณฑ์: 5%",
+        "viewBroadcast": "ดู E-Blast",
+        "viewHaltedMembers": "ดูสมาชิกที่ถูกล็อก",
+        "ackHelp": "การปลดล็อกเป็นการดำเนินการของผู้ดูแลโดยเจตนา ตรวจสอบเนื้อหาและการตีกลับก่อนปลดล็อก"
       }
     },
     "refund": {
@@ -2224,6 +2249,17 @@
       "body": "E-Blast \"{subject}\" ของคุณถูกยกเลิก",
       "reasonHeading": "หมายเหตุการยกเลิก:",
       "footer": "โควตาที่จองไว้ได้รับการคืนแล้ว"
+    },
+    "broadcastDelivered": {
+      "subject": "ส่ง E-Blast \"{subject}\" สำเร็จแล้ว",
+      "greeting": "สวัสดีค่ะ/ครับ,",
+      "summaryIntro": "นี่คือสรุปการส่ง E-Blast ของคุณ:",
+      "deliveredCount": "ส่งถึงแล้ว: {count} จาก {total}",
+      "bouncedCount": "ตีกลับ: {count}",
+      "complainedCount": "รายงานสแปม: {count}",
+      "deliveryRate": "อัตราส่งสำเร็จ: {rate}%",
+      "footer": "ดูข้อมูลเพิ่มเติมได้ที่หน้าสิทธิประโยชน์",
+      "viewBenefitsCta": "ดูสิทธิประโยชน์และประวัติ"
     }
   }
 }

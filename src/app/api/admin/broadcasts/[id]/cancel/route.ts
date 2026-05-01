@@ -77,20 +77,30 @@ export async function POST(
     try {
       const broadcast = result.value.broadcast;
       if (broadcast.replyToEmail.length > 0) {
-        await emailTransactionalBridge.sendMemberEmail(tenantCtx, {
-          to: broadcast.replyToEmail,
-          subject: 'Your E-Blast was cancelled',
-          templateKey: 'broadcast_cancelled',
-          payload: {
-            broadcastId: broadcast.broadcastId,
-            cancellationReason: parsed.data.cancellationReason,
-            cancelledByAdmin: true,
+        await emailTransactionalBridge.sendMemberEmail(
+          tenantCtx,
+          {
+            to: broadcast.replyToEmail,
+            subject: 'Your E-Blast was cancelled',
+            templateKey: 'broadcast_cancelled',
+            payload: {
+              broadcastId: broadcast.broadcastId,
+              cancellationReason: parsed.data.cancellationReason,
+              cancelledByAdmin: true,
+            },
+            locale: 'en',
           },
-          locale: 'en',
-        });
+          null,
+        );
       }
     } catch (e) {
-      logger.warn(
+      // Review I5 (consistency with approve + reject siblings) — emit
+      // at error severity so log-aggregation alerts can enumerate
+      // "cancellations where the member never got told." The cancel
+      // itself succeeded (audit `broadcast_cancelled` already fired
+      // inside the use-case) — this is a notification-side
+      // best-effort failure that needs ops visibility for backfill.
+      logger.error(
         {
           err: e instanceof Error ? e.message : String(e),
           correlationId,

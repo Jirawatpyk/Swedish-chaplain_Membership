@@ -67,9 +67,20 @@ export interface BroadcastDeliveriesRepo {
    * Per-broadcast aggregation — `(tenant_id, broadcast_id, status)`
    * index. Powers admin-queue + broadcast-detail page delivery
    * summary widget.
+   *
+   * `tx` (review PR #19 stale-read fix) — when caller is inside a
+   * `broadcastsRepo.withTx` scope, pass the transaction handle so the
+   * SELECT runs on the SAME connection as the in-flight upsert and
+   * sees the just-inserted row. Without this, Postgres READ COMMITTED
+   * isolation hides the uncommitted INSERT from a separate connection,
+   * causing the per-broadcast complaint-rate auto-halt (FR-027) and
+   * the `terminalCount >= estimatedRecipientCount` completion check
+   * to read a stale snapshot — undershooting by one event each time.
+   * Pass `null` for read-path queries (admin-queue / detail-widget).
    */
   aggregateByBroadcast(
     tenantId: string,
     broadcastId: BroadcastId,
+    tx: unknown | null,
   ): Promise<BroadcastDeliveryAggregate>;
 }

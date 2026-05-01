@@ -31,11 +31,32 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | F5 stale-refund sweep | `POST /api/cron/sweep-stale-pending-refunds` | `0 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [stale-pending-refund-sweep.md](./stale-pending-refund-sweep.md) |
 | F4 outbox purge | `POST /api/cron/outbox-purge` | `15 20 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | (in `vercel.json`) |
 | F4 receipt-pdf reconcile | `POST /api/internal/cron/receipt-pdf-reconcile` | `30 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [receipt-pdf-permanently-failed.md](./receipt-pdf-permanently-failed.md) |
-| **F7 broadcasts dispatch** | **`POST /api/cron/broadcasts/dispatch-scheduled`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7) |
+| **F7 broadcasts dispatch** | **`POST /api/cron/broadcasts/dispatch-scheduled`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 dispatch) |
+| **F7 reconcile-stuck-sending** | **`POST /api/cron/broadcasts/reconcile-stuck-sending`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reconcile) |
 
 **Daily-cadence jobs** stay in `vercel.json` (the 1×/day limit
 accommodates them). **5-minute-cadence jobs** are mandatory cron-job.org
 externals on Hobby.
+
+## Retry policy contract (READ BEFORE CONFIGURING ANY F7 JOB)
+
+cron-job.org defaults to **retry-on-non-2xx with exponential backoff**.
+For F7 jobs, **disable failure-retry** in the cron-job.org config —
+both endpoints distinguish "harness should retry" from "operator
+should look but harness MUST NOT retry":
+
+| HTTP code | Meaning | Operator action |
+|-----------|---------|-----------------|
+| 200 + `gateway_error > 0` in body | Resend outage. Per-row reconcile already done idempotently. Next 15-min tick is the natural retry. | Check Resend status page; alert pipeline pages on the dedicated `cron.broadcasts.reconcile.gateway_outage` log channel |
+| 500 + `uncaught_error > 0` | Programmer bug or transient DB blip | Harness MAY retry; investigate next morning if persistent |
+| 500 + `server_error > 0` | Use-case Result.err (transition guard, RLS probe, etc.) | Harness MAY retry; investigate stack trace in logs |
+| 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org headers |
+| 503 | `FEATURE_F7_BROADCASTS=false` | Expected during dark-launch; do nothing |
+
+**Why disable failure-retry**: cron-job.org's default retry storm
+(every 30s for 1 hour) on a 500 response would hammer the endpoint
+during a Resend outage. The 15-min cadence already provides natural
+retry; the 500 status is purely a dashboard-paint-red signal.
 
 ## F7 — broadcasts/dispatch-scheduled (NEW — F7 ship)
 

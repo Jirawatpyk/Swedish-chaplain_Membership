@@ -240,13 +240,16 @@ function makeGateway(opts: GatewayOpts = {}): {
         maybeThrow(opts.throwOnSend);
       },
       async retrieveBroadcast() {
-        return null;
+        return { kind: 'not_found' as const };
       },
       async getAudienceContactCount() {
         if (opts.throwOnGetAudienceContactCount) {
           maybeThrow(opts.throwOnGetAudienceContactCount);
         }
-        return opts.audienceContactCount ?? 2;
+        return {
+          kind: 'present' as const,
+          count: opts.audienceContactCount ?? 2,
+        };
       },
     },
   };
@@ -1024,5 +1027,65 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     );
     expect(unverifiableEvent).toBeDefined();
     expect(unverifiableEvent?.payload['errorReason']).toContain('503');
+  });
+
+  it('TEST-G3 — getAudienceContactCount returns {kind:"audience_missing"} → drift check skipped (no audit, no crash)', async () => {
+    // Round 3 review TYPES-2: getAudienceContactCount is a discriminated
+    // union {kind:'present',count}|{kind:'audience_missing'}. Lock the
+    // positive `audience_missing` outcome path: caller translates to
+    // `actualCount = null`, drift-check branch is skipped (no
+    // broadcast_resend_audience_drift OR broadcast_resend_drift_check_unverifiable
+    // emitted), broadcast still advances to sending.
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway();
+    const gwPort = {
+      ...gw.port,
+      async sendBroadcast() {
+        // Simulate idempotency replay so the count-check branch runs.
+        throw {
+          kind: 'idempotency_conflict',
+          reason: 'duplicate idempotency key',
+        };
+      },
+      async getAudienceContactCount() {
+        return { kind: 'not_found' as const };
+      },
+    };
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gwPort,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    // audience_missing means we cannot verify drift; this matches the
+    // "actualCount === null" branch and SHOULD NOT emit either drift
+    // audit. (The `unverifiable` audit only fires on a thrown error,
+    // not on the discriminated union's missing branch.)
+    expect(
+      audit.emits.find(
+        (e) => e.eventType === 'broadcast_resend_audience_drift',
+      ),
+    ).toBeUndefined();
+    expect(
+      audit.emits.find(
+        (e) => e.eventType === 'broadcast_resend_drift_check_unverifiable',
+      ),
+    ).toBeUndefined();
   });
 });

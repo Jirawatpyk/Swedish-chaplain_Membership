@@ -7,15 +7,15 @@
  * sanitiser-boundary discipline.
  *
  * Workflow per broadcast (FR-020 + US2 send-now path):
- *   1. `createAudience(name)` — fresh audience per broadcast (MVP);
- *      F7.1 may switch to persistent-per-segment for cost optimisation
+ *   1. `createAudience(name)` — fresh audience per broadcast
  *   2. `addContactsToAudience(audienceId, contacts)` — paginated if
  *      recipients > 100 (Resend per-call limit)
  *   3. `createBroadcast(input)` — registers the broadcast resource
  *   4. `sendBroadcast(broadcastId, idempotencyKey)` — fires the dispatch
  *
  * Reconciliation path (T161 R2-NEW-3 — 24h stuck-`sending` recovery):
- *   - `retrieveBroadcast(broadcastId)` returns `{status}` allowing the
+ *   - `retrieveBroadcast(broadcastId)` returns a discriminated union
+ *     (`{kind:'present',resource}|{kind:'not_found'}`) allowing the
  *     reconcile job to detect Resend-side resource missing →
  *     emits `broadcast_resend_resource_missing` audit
  *
@@ -60,6 +60,28 @@ export interface RetrievedBroadcastResource {
   readonly sentAt: string | null;
 }
 
+/**
+ * Discriminated union for `retrieveBroadcast` (review TYPES
+ * recommendation). Replaces `T | null` so the caller cannot mistake
+ * "404 not found" for "transient null" — explicit `kind` means a
+ * future "soft delete" or "in-tombstone" Resend status can extend the
+ * union without breaking call sites.
+ */
+export type RetrieveBroadcastOutcome =
+  | { readonly kind: 'present'; readonly resource: RetrievedBroadcastResource }
+  | { readonly kind: 'not_found' };
+
+/**
+ * Discriminated union for `getAudienceContactCount` (review TYPES-2
+ * round 2 + TYPES-#4 round 3). Mirrors `RetrieveBroadcastOutcome` for
+ * cross-port consistency — both unions use the SAME `'not_found'`
+ * tail so callers can grep + reason about resource-missing semantics
+ * with one mental model.
+ */
+export type GetAudienceContactCountOutcome =
+  | { readonly kind: 'present'; readonly count: number }
+  | { readonly kind: 'not_found' };
+
 export interface BroadcastsGatewayPort {
   createAudience(name: string): Promise<{ readonly audienceId: string }>;
 
@@ -86,13 +108,13 @@ export interface BroadcastsGatewayPort {
 
   /**
    * Retrieve a broadcast resource — used by the 24h stuck-`sending`
-   * reconciliation job (T161). Returns `null` if the resource is
-   * missing on Resend (emits `broadcast_resend_resource_missing`
-   * downstream).
+   * reconciliation job (T161). Returns a discriminated union: `present`
+   * with the resource, or `not_found` when Resend reports 404 (emits
+   * `broadcast_resend_resource_missing` downstream).
    */
   retrieveBroadcast(
     broadcastId: string,
-  ): Promise<RetrievedBroadcastResource | null>;
+  ): Promise<RetrieveBroadcastOutcome>;
 
   /**
    * Round-4 IMP-5 — count contacts present in a Resend audience. Used
@@ -102,9 +124,10 @@ export interface BroadcastsGatewayPort {
    * `broadcast_resend_audience_drift` audit emission so ops can
    * investigate partial-delivery before the broadcast ships.
    *
-   * Returns `null` if the audience itself is missing (404).
+   * Returns a discriminated union: `present` with the count, or
+   * `audience_missing` when Resend reports 404 on the audience.
    */
   getAudienceContactCount(
     audienceId: string,
-  ): Promise<number | null>;
+  ): Promise<GetAudienceContactCountOutcome>;
 }

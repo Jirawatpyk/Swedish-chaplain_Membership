@@ -103,17 +103,21 @@ export async function POST(
       const broadcast = result.value.broadcast;
       const replyTo = broadcast.replyToEmail;
       if (replyTo.length > 0) {
-        await emailTransactionalBridge.sendMemberEmail(tenantCtx, {
-          to: replyTo,
-          subject: 'Your E-Blast was approved',
-          templateKey: 'broadcast_approved',
-          payload: {
-            broadcastId: broadcast.broadcastId,
-            decision: decision.mode,
-            scheduledFor: result.value.scheduledFor.toISOString(),
+        await emailTransactionalBridge.sendMemberEmail(
+          tenantCtx,
+          {
+            to: replyTo,
+            subject: 'Your E-Blast was approved',
+            templateKey: 'broadcast_approved',
+            payload: {
+              broadcastId: broadcast.broadcastId,
+              decision: decision.mode,
+              scheduledFor: result.value.scheduledFor.toISOString(),
+            },
+            locale: 'en',
           },
-          locale: 'en',
-        });
+          null,
+        );
       }
     } catch (e) {
       // Review I5 — emit at error severity so log-aggregation alerts

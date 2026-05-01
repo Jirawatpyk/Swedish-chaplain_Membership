@@ -25,7 +25,9 @@ import type {
   BroadcastsGatewayPort,
   CreateBroadcastInput,
   GatewayRetryableSubKind,
+  GetAudienceContactCountOutcome,
   RetrievedBroadcastResource,
+  RetrieveBroadcastOutcome,
 } from '../../application/ports/broadcasts-gateway-port';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
 
@@ -303,13 +305,15 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     );
   },
 
-  async getAudienceContactCount(audienceId: string): Promise<number | null> {
-    // F7.1-IMP5 — query Resend for the contact count on an audience.
-    // The SDK exposes `contacts.list(audienceId)` (paginated). For
-    // MVP we list and return `data.length`; a future optimisation
-    // could use a head-only endpoint when Resend provides one.
+  async getAudienceContactCount(
+    audienceId: string,
+  ): Promise<GetAudienceContactCountOutcome> {
+    // IMP-5 — query Resend for the contact count on an audience. The
+    // SDK exposes `contacts.list(audienceId)` (paginated). For MVP we
+    // list and return `data.length`; a future optimisation could use a
+    // head-only endpoint when Resend provides one.
     try {
-      return await withRetry(
+      const count = await withRetry(
         async () => {
           const sdk = client();
           const result = (await sdk.contacts.list({ audienceId })) as ResendSdkResponse<{
@@ -326,9 +330,10 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
         },
         { method: 'getAudienceContactCount' },
       );
+      return { kind: 'present', count };
     } catch (e) {
       if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
-        return null;
+        return { kind: 'not_found' };
       }
       throw e;
     }
@@ -336,10 +341,10 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
 
   async retrieveBroadcast(
     broadcastId: string,
-  ): Promise<RetrievedBroadcastResource | null> {
+  ): Promise<RetrieveBroadcastOutcome> {
     try {
-      return await withRetry(
-        async () => {
+      const resource = await withRetry(
+        async (): Promise<RetrievedBroadcastResource | null> => {
           const sdk = client();
           const result = (await sdk.broadcasts.get(broadcastId)) as ResendSdkResponse<{
             id: string;
@@ -362,9 +367,11 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
         },
         { method: 'retrieveBroadcast' },
       );
+      if (resource === null) return { kind: 'not_found' };
+      return { kind: 'present', resource };
     } catch (e) {
       if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
-        return null;
+        return { kind: 'not_found' };
       }
       throw e;
     }

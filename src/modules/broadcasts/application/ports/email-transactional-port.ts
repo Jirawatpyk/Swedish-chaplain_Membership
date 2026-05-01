@@ -40,9 +40,18 @@ export interface EmailTransactionalPort {
   /**
    * Send a notification to the member who originated the broadcast.
    * Implementation uses `members.primary_contact_email` as `to`.
+   *
+   * `tx` (review ERR-C1) — when caller is inside a `broadcastsRepo.withTx`
+   * scope, pass the transaction handle so the outbox INSERT participates
+   * in the same atomic write. A tx-scoped enqueue + commit guarantees
+   * the AS3 invariant ("every sending → sent transition produces a
+   * summary email") cannot be broken by an outbox INSERT failing AFTER
+   * the broadcast_sent audit committed. Pass `null` for standalone
+   * outbox inserts (read-path notifications, admin-side).
    */
   sendMemberEmail(
     tenantCtx: TenantContext,
     input: SendEmailInput,
+    tx: unknown | null,
   ): Promise<void>;
 }
