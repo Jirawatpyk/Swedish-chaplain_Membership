@@ -7,6 +7,7 @@
  */
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
 import { makeDrizzleBroadcastsRepo } from './db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
@@ -205,7 +206,21 @@ export async function makeDispatchScheduledBroadcastDeps(
   const { resolveTenantDisplayName } = await import(
     '@/lib/broadcasts-route-helpers'
   );
-  const tenantDisplayName = await resolveTenantDisplayName(tenantId);
+  // Best-effort: a tenant-settings outage MUST NOT wedge the cron loop
+  // in `approved` indefinitely (the row would never reach the use-case
+  // body and so the `broadcast_failed_to_dispatch` audit would never
+  // fire). Fall back to the tenant id as a degraded display name so
+  // dispatch still proceeds with an observable signal.
+  let tenantDisplayName: string;
+  try {
+    tenantDisplayName = await resolveTenantDisplayName(tenantId);
+  } catch (e) {
+    logger.error(
+      { err: (e as Error).message, tenantId },
+      'broadcast_dispatch_tenant_displayname_lookup_failed',
+    );
+    tenantDisplayName = tenantId;
+  }
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
@@ -224,12 +239,16 @@ export async function makeDispatchScheduledBroadcastDeps(
 /**
  * Static per-tenant default locale (F12 white-label scope will move
  * this to tenant settings). Used by the dispatch composition root + the
- * public unsubscribe page's locale-resolution fallback.
+ * public unsubscribe page's locale-resolution fallback. Unknown tenant
+ * ids fall through to `'en'` — the default-of-defaults.
  */
+const TENANT_DEFAULT_LOCALE: Readonly<Record<string, 'en' | 'th' | 'sv'>> = {
+  swecham: 'th',
+  jcc: 'en',
+};
+
 export function tenantDefaultLocaleFor(tenantId: string): 'en' | 'th' | 'sv' {
-  if (tenantId === 'swecham') return 'th';
-  if (tenantId === 'jcc') return 'en';
-  return 'en';
+  return TENANT_DEFAULT_LOCALE[tenantId] ?? 'en';
 }
 
 // =====================================================================

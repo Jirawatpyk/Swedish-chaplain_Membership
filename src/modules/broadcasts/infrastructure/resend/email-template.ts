@@ -47,6 +47,8 @@
 import enMessages from '@/i18n/messages/en.json' with { type: 'json' };
 import thMessages from '@/i18n/messages/th.json' with { type: 'json' };
 import svMessages from '@/i18n/messages/sv.json' with { type: 'json' };
+import { logger } from '@/lib/logger';
+import type { TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { EmailLower } from '../../domain/value-objects/email-lower';
 import { unsubscribeTokenSigner } from '../unsubscribe-token/hmac-signer';
@@ -100,9 +102,12 @@ function fillTemplate(template: string, vars: Record<string, string>): string {
  * field. The footer's primary unsubscribe CTA points to Resend's
  * hosted page via the merge tag (per-recipient substitution). The
  * `physicalAddress` line satisfies CAN-SPAM / PDPA marketing-mail
- * disclosure expectations (we don't ship a postal address yet — that
- * is F12 white-label scope; the tenant display name acts as the
- * minimum identifier today).
+ * disclosure expectations.
+ *
+ * TODO(F12): replace the synthetic "{tenantDisplayName}, address on file"
+ * placeholder with a real postal address surfaced by tenant settings
+ * once F12 white-label ships. Until then the tenant display name acts
+ * as the minimum identifier per CAN-SPAM § 5(a)(5).
  *
  * The member-authored `bodyHtml` MUST already be sanitised by the
  * Application-layer DOMPurify pass before reaching this renderer — we
@@ -116,7 +121,17 @@ export interface RenderBroadcastHtmlInput {
 }
 
 export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
-  const f = FOOTER_STRINGS[input.locale];
+  // Defensive lookup: TS already pins `input.locale` to BroadcastLocale,
+  // but `noUncheckedIndexedAccess: true` requires a runtime fallback so a
+  // future i18n-key rename surfaces as a logged degrade-to-EN rather than
+  // a TypeError inside the Resend gateway's withRetry wrapper.
+  const f = FOOTER_STRINGS[input.locale] ?? FOOTER_STRINGS.en;
+  if (FOOTER_STRINGS[input.locale] === undefined) {
+    logger.error(
+      { locale: input.locale },
+      'broadcast_template_locale_fallback_to_en',
+    );
+  }
   const safeSubject = escapeHtml(input.subject);
   const safeTenantName = escapeHtml(input.tenantDisplayName);
 
@@ -165,7 +180,7 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
  * `localhost:3100`.
  */
 export interface SignUnsubscribeUrlInput {
-  readonly tenantId: string;
+  readonly tenantId: TenantSlug;
   readonly broadcastId: BroadcastId;
   readonly emailLower: EmailLower;
   readonly tenantHost: string;

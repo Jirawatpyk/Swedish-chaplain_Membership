@@ -25,8 +25,9 @@ import {
 } from '@/modules/broadcasts/infrastructure/unsubscribe-token/hmac-signer';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
+import { unsafeBrandTenantSlug } from '@/modules/tenants';
 
-const TENANT_ID = 'test-tenant';
+const TENANT_ID = unsafeBrandTenantSlug('test-tenant');
 const broadcastId = asBroadcastId('33333333-3333-3333-3333-333333333333');
 const recipient = unsafeBrandEmailLower('alice@example.com');
 

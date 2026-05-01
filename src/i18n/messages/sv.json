@@ -2270,21 +2270,28 @@
   },
   "public": {
     "unsubscribe": {
+      "metaTitle": "Avregistrera",
+      "fallbackChamberName": "kammaren",
       "success": {
         "heading": "Avregistrerad",
         "body": "Du har avregistrerats från {tenantDisplayName} marknadsutskick. Du kommer inte längre att få E-Blasts.",
         "transactional": "Du fortsätter att ta emot transaktionsmejl (lösenordsåterställning, fakturakvitton, förnyelsepåminnelser) kopplade till ditt konto, om sådana finns.",
-        "contact": "Om du avregistrerade av misstag, kontakta {supportEmail}."
+        "contact": "Om du avregistrerade av misstag, kontakta <email></email>."
       },
       "already": {
         "heading": "Redan avregistrerad",
         "body": "Din e-postadress finns redan på spärrlistan för {tenantDisplayName}. Ingen ytterligare åtgärd krävs.",
-        "contact": "Om du vill börja ta emot utskick igen, kontakta {supportEmail}."
+        "contact": "Om du vill börja ta emot utskick igen, kontakta <email></email>."
       },
       "invalid": {
         "heading": "Länken är ogiltig",
-        "body": "Denna avregistreringslänk är ogiltig eller har gått ut. Den kan ha modifierats eller tillhöra en annan organisation.",
-        "contact": "Kontakta {supportEmail} för att tas bort från utskick."
+        "body": "Denna avregistreringslänk är ogiltig eller har gått ut. Det kan bero på att länken kopierats felaktigt, eller på att du klickar på ett äldre mejl.",
+        "contact": "Kontakta <email></email> så tar vi bort din e-post manuellt."
+      },
+      "error": {
+        "heading": "Tillfälligt fel",
+        "body": "Vi kunde inte registrera din avregistrering just nu på grund av ett tillfälligt systemfel. Din avregistrering har INTE registrerats — försök länken igen om några minuter.",
+        "contact": "Om problemet kvarstår, kontakta <email></email> så tar vi bort din e-post manuellt."
       }
     }
   }

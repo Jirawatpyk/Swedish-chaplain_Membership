@@ -14,14 +14,7 @@
  * Token shape carries `tenantId + broadcastId + emailLower + lang` so the
  * verifier can return the email + locale without a DB lookup. The URL is
  * private to the recipient (per-recipient body); the HMAC defeats forgery
- * + tampering. NOTE: design-doc `contracts/unsubscribe-public.md § 2`
- * proposes a sha256(tenant_id+":"+email_lower) hash variant for extra
- * privacy (defends against URL leakage via Referer headers). We carry
- * the email directly here to match the pre-existing
- * `UnsubscribeTokenPort` shape (which `verify()` returns `emailLower`
- * directly, implying the token must carry it). The hash variant + a
- * `findRecipientByEmailHash` repo method is a documented future
- * enhancement (F7.1).
+ * + tampering.
  *
  * Pure Infrastructure — only `node:crypto` + `@/lib/env` imports. No
  * framework / ORM / Application-port imports.
@@ -30,6 +23,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
+import { unsafeBrandTenantSlug, type TenantSlug } from '@/modules/tenants';
 import {
   asBroadcastId,
   type BroadcastId,
@@ -83,6 +77,25 @@ function isLang(v: unknown): v is 'en' | 'th' | 'sv' {
   return v === 'en' || v === 'th' || v === 'sv';
 }
 
+/**
+ * Decode + JSON-parse the b64url payload segment. Returns `null` on any
+ * structural failure. Shared by `verify()` and `peekTokenTenantId()` so the
+ * two parsers cannot diverge — the defence-in-depth `payload.tenantId !==
+ * tenantId` check in the route uses that invariant.
+ */
+function parsePayloadSegment(b64Payload: string): Record<string, unknown> | null {
+  const buf = base64urlDecode(b64Payload);
+  if (buf === null) return null;
+  try {
+    const raw = JSON.parse(buf.toString('utf-8'));
+    return typeof raw === 'object' && raw !== null
+      ? (raw as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export const unsubscribeTokenSigner: UnsubscribeTokenPort = {
   sign(payload: UnsubscribeTokenPayload): string {
     const raw: RawPayload = {
@@ -119,37 +132,17 @@ export const unsubscribeTokenSigner: UnsubscribeTokenPort = {
     if (expectedMac.length !== providedMac.length) {
       return err({ kind: 'token.bad_signature' });
     }
-    const aBuf = Buffer.from(expectedMac);
-    const bBuf = Buffer.from(providedMac);
-    if (!timingSafeEqual(aBuf, bBuf)) {
+    if (!timingSafeEqual(Buffer.from(expectedMac), Buffer.from(providedMac))) {
       return err({ kind: 'token.bad_signature' });
     }
 
     // HMAC valid → safe to parse payload (constant-time was performed
     // before any parse work).
-    const payloadBuf = base64urlDecode(b64Payload);
-    if (payloadBuf === null) {
-      return err({
-        kind: 'token.invalid_payload',
-        reason: 'payload_not_base64url',
-      });
-    }
-
-    let raw: unknown;
-    try {
-      raw = JSON.parse(payloadBuf.toString('utf-8'));
-    } catch (e) {
-      logger.warn(
-        { err: (e as Error).message },
-        'unsubscribe_token_payload_not_json',
-      );
+    const r = parsePayloadSegment(b64Payload);
+    if (r === null) {
+      logger.warn({}, 'unsubscribe_token_payload_not_parseable');
       return err({ kind: 'token.invalid_payload', reason: 'not_json' });
     }
-
-    if (typeof raw !== 'object' || raw === null) {
-      return err({ kind: 'token.invalid_payload', reason: 'not_object' });
-    }
-    const r = raw as Record<string, unknown>;
     if (r.v !== 1) {
       return err({ kind: 'token.invalid_payload', reason: 'bad_version' });
     }
@@ -169,7 +162,7 @@ export const unsubscribeTokenSigner: UnsubscribeTokenPort = {
     }
 
     const result: UnsubscribeTokenPayload = {
-      tenantId: r.tid as string,
+      tenantId: unsafeBrandTenantSlug(r.tid as string),
       broadcastId: bidParsed as BroadcastId,
       emailLower: unsafeBrandEmailLower((r.eml as string).toLowerCase()),
       ...(lang ? { lang } : {}),
@@ -179,26 +172,29 @@ export const unsubscribeTokenSigner: UnsubscribeTokenPort = {
 };
 
 /**
- * Test helper — parse the b64 payload WITHOUT verifying HMAC. Used by
- * the route handler to extract `tenantId` BEFORE binding the RLS context
- * (pre-tenant resolver). The HMAC is then verified under the resolved
- * tenant context. Returns `null` on any structural failure — caller must
- * treat null as an invalid token (audit + render fallback page).
+ * Pre-tenant resolver — parses the b64 payload WITHOUT verifying HMAC.
+ * Production callers (the public `/unsubscribe/[token]` route) use this
+ * to extract `tenantId` BEFORE binding the RLS context, then call
+ * `verify()` under the resolved tenant. Returns `null` on any structural
+ * failure — caller MUST treat null as an invalid token (audit + render
+ * fallback page).
  *
- * NEVER trust the returned payload until `verify()` has been called.
+ * Security note: this function is the narrowest possible RLS-bypass
+ * window — it reads only the unsigned `tid` claim, never trusts other
+ * payload fields, and is followed immediately by an HMAC `verify()` pass
+ * under the bound tenant. NEVER expose other payload fields from this
+ * function and NEVER use the returned tid for anything other than RLS
+ * binding.
  */
-export function peekTokenTenantId(token: string): string | null {
+export function peekTokenTenantId(token: string): TenantSlug | null {
   if (typeof token !== 'string') return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   const [version, b64Payload] = parts as [string, string, string];
   if (version !== TOKEN_VERSION) return null;
-  const buf = base64urlDecode(b64Payload);
-  if (buf === null) return null;
-  try {
-    const raw = JSON.parse(buf.toString('utf-8')) as { tid?: unknown };
-    return typeof raw.tid === 'string' && raw.tid.length > 0 ? raw.tid : null;
-  } catch {
-    return null;
-  }
+  const r = parsePayloadSegment(b64Payload);
+  if (r === null) return null;
+  return typeof r.tid === 'string' && r.tid.length > 0
+    ? unsafeBrandTenantSlug(r.tid)
+    : null;
 }

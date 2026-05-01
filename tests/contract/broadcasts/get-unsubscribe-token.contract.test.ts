@@ -22,6 +22,12 @@ const verifyMock = vi.fn();
 const dbExecuteMock = vi.fn();
 const resolveTenantDisplayNameMock = vi.fn();
 const runInTenantMock = vi.fn();
+const headersMock = vi.fn<() => Promise<Map<string, string>>>(
+  async () => new Map(),
+);
+
+const unsubscribesCountMock = vi.fn();
+const unsubscribePageTtfbMsMock = vi.fn();
 
 const envMock = {
   broadcasts: {
@@ -32,8 +38,10 @@ const envMock = {
 vi.mock('@/lib/env', () => ({ env: envMock }));
 vi.mock('@/lib/metrics', () => ({
   broadcastsMetrics: {
-    unsubscribesCount: vi.fn(),
-    unsubscribePageTtfbMs: vi.fn(),
+    unsubscribesCount: (...a: unknown[]) => unsubscribesCountMock(...a),
+    unsubscribePageTtfbMs: (...a: unknown[]) =>
+      unsubscribePageTtfbMsMock(...a),
+    auditEmitFailed: vi.fn(),
   },
 }));
 vi.mock('@/lib/logger', () => ({
@@ -59,6 +67,8 @@ vi.mock('@/modules/broadcasts', () => ({
     unsubscribeRecipientMock(...args),
   makeUnsubscribeRecipientDeps: vi.fn(() => ({})),
   peekTokenTenantId: (...args: unknown[]) => peekTokenTenantIdMock(...args),
+  tenantDefaultLocaleFor: (tenantId: string) =>
+    tenantId === 'swecham' ? 'th' : 'en',
   unsubscribeTokenSigner: {
     sign: vi.fn(),
     verify: (...args: unknown[]) => verifyMock(...args),
@@ -69,10 +79,14 @@ vi.mock('@/modules/broadcasts', () => ({
   },
 }));
 vi.mock('next-intl/server', () => ({
-  getTranslations: vi.fn(async () => (key: string) => key),
+  getTranslations: vi.fn(async () => {
+    const t = (key: string) => key;
+    t.rich = (key: string) => key;
+    return t;
+  }),
 }));
 vi.mock('next/headers', () => ({
-  headers: vi.fn(async () => new Map()),
+  headers: () => headersMock(),
 }));
 
 async function importPage() {
@@ -91,6 +105,10 @@ beforeEach(() => {
   dbExecuteMock.mockReset();
   resolveTenantDisplayNameMock.mockReset();
   runInTenantMock.mockReset();
+  headersMock.mockReset();
+  unsubscribesCountMock.mockReset();
+  unsubscribePageTtfbMsMock.mockReset();
+  headersMock.mockResolvedValue(new Map());
 
   // Default happy-path stubs
   peekTokenTenantIdMock.mockReturnValue(VALID_TENANT);
@@ -270,5 +288,185 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
 
     // Use-case still invoked despite limiter outage.
     expect(unsubscribeRecipientMock).toHaveBeenCalledTimes(1);
+  });
+
+  // F1 verify-fix: assert metrics emission on success
+  it('success → unsubscribesCount{outcome:success} + ttfb histogram emitted', async () => {
+    const { default: Page } = await importPage();
+    await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(unsubscribesCountMock).toHaveBeenCalledWith(VALID_TENANT, 'success');
+    expect(unsubscribePageTtfbMsMock).toHaveBeenCalledTimes(1);
+    expect(unsubscribePageTtfbMsMock.mock.calls[0]![0]).toBe(VALID_TENANT);
+    expect(typeof unsubscribePageTtfbMsMock.mock.calls[0]![1]).toBe('number');
+  });
+
+  it('idempotent replay → unsubscribesCount{outcome:already}', async () => {
+    unsubscribeRecipientMock.mockResolvedValueOnce(
+      ok({
+        wasNew: false,
+        tenantDisplayName: 'Test Chamber',
+        tenantSupportEmail: 'broadcasts@swecham.example',
+        unsubscribedAt: new Date(),
+      }),
+    );
+    const { default: Page } = await importPage();
+    await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(unsubscribesCountMock).toHaveBeenCalledWith(VALID_TENANT, 'already');
+  });
+
+  it('verify failure → unsubscribesCount{outcome:invalid}', async () => {
+    verifyMock.mockReturnValueOnce({
+      ok: false,
+      error: { kind: 'token.bad_signature' },
+    });
+    const { default: Page } = await importPage();
+    await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(unsubscribesCountMock).toHaveBeenCalledWith(VALID_TENANT, 'invalid');
+  });
+
+  it('rate-limit exceeded → unsubscribesCount{outcome:rate_limited}', async () => {
+    rateLimitCheckMock.mockResolvedValueOnce({
+      ok: false as unknown as true,
+      error: { kind: 'rate_limit_exceeded', retryAfterSeconds: 60, key: 'k' },
+    } as unknown as { ok: true; value: true });
+    const { default: Page } = await importPage();
+    await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(unsubscribesCountMock).toHaveBeenCalledWith(null, 'rate_limited');
+  });
+
+  // C2 verify-fix: repo_error renders error-state, not invalid
+  it('use-case repo_error → unsubscribesCount{outcome:repo_error} + render distinct from invalid', async () => {
+    unsubscribeRecipientMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'unsubscribe.repo_error', cause: new Error('boom') },
+    });
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(node).toBeDefined();
+    expect(unsubscribesCountMock).toHaveBeenCalledWith(
+      VALID_TENANT,
+      'repo_error',
+    );
+    // MUST NOT also report 'invalid' for the same render.
+    const calls = unsubscribesCountMock.mock.calls.map((c) => c[1]);
+    expect(calls).not.toContain('invalid');
+  });
+
+  // C1 verify-fix: unhandled throw inside runInTenant collapses to error state
+  it('runInTenant throw → unsubscribesCount{outcome:unhandled_error}, never throws', async () => {
+    runInTenantMock.mockImplementationOnce(async () => {
+      throw new Error('Neon connection refused');
+    });
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(node).toBeDefined();
+    expect(unsubscribesCountMock).toHaveBeenCalledWith(
+      VALID_TENANT,
+      'unhandled_error',
+    );
+  });
+
+  // I3 verify-fix: locale resolution priority chain
+  it('locale: token.lang wins over conflicting query.lang', async () => {
+    // verifyMock default already returns lang: 'th'
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({ lang: 'en' }),
+    });
+    // lang attribute on <main> reflects resolved locale; we expect 'th'
+    expect((node as unknown as { props: { lang: string } }).props.lang).toBe(
+      'th',
+    );
+  });
+
+  it('locale: query.lang used when token has no lang claim', async () => {
+    verifyMock.mockReturnValueOnce(
+      ok({
+        tenantId: VALID_TENANT,
+        broadcastId: VALID_BROADCAST,
+        emailLower: VALID_EMAIL,
+      }),
+    );
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({ lang: 'sv' }),
+    });
+    expect((node as unknown as { props: { lang: string } }).props.lang).toBe(
+      'sv',
+    );
+  });
+
+  it('locale: Accept-Language used when neither token.lang nor query.lang present', async () => {
+    verifyMock.mockReturnValueOnce(
+      ok({
+        tenantId: VALID_TENANT,
+        broadcastId: VALID_BROADCAST,
+        emailLower: VALID_EMAIL,
+      }),
+    );
+    headersMock.mockResolvedValueOnce(
+      new Map([['accept-language', 'sv-SE,sv;q=0.9,en;q=0.8']]),
+    );
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    expect((node as unknown as { props: { lang: string } }).props.lang).toBe(
+      'sv',
+    );
+  });
+
+  it('locale: tenant default used when no token.lang, no query.lang, no Accept-Language', async () => {
+    verifyMock.mockReturnValueOnce(
+      ok({
+        tenantId: 'swecham', // tenant default = 'th' per TENANT_DEFAULT_LOCALE
+        broadcastId: VALID_BROADCAST,
+        emailLower: VALID_EMAIL,
+      }),
+    );
+    peekTokenTenantIdMock.mockReturnValueOnce('swecham');
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    expect((node as unknown as { props: { lang: string } }).props.lang).toBe(
+      'th',
+    );
+  });
+
+  // I4: rate-limit key shape contract
+  it('rate-limit called with documented (key, max, window) contract', async () => {
+    const { default: Page } = await importPage();
+    await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(rateLimitCheckMock).toHaveBeenCalledWith(
+      expect.stringMatching(/^unsubscribe:/),
+      20,
+      300,
+    );
   });
 });

@@ -289,6 +289,7 @@ export type {
 // --- Composition root factories (Phase 6 US4) ----------------------------
 export {
   makeUnsubscribeRecipientDeps,
+  tenantDefaultLocaleFor,
   unsubscribeTokenSigner,
 } from './infrastructure/broadcasts-deps';
 export { peekTokenTenantId } from './infrastructure/unsubscribe-token/hmac-signer';

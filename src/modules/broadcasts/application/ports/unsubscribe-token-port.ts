@@ -20,21 +20,40 @@
  * Pure interface — no framework imports (Constitution Principle III).
  */
 import type { Result } from '@/lib/result';
+import type { TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { EmailLower } from '../../domain/value-objects/email-lower';
 
 export interface UnsubscribeTokenPayload {
-  readonly tenantId: string;
+  readonly tenantId: TenantSlug;
   readonly broadcastId: BroadcastId;
   readonly emailLower: EmailLower;
   readonly lang?: 'en' | 'th' | 'sv';
 }
 
+/**
+ * Discrete reasons for `token.invalid_payload` errors. Kept as a literal
+ * union so the route handler's switch is exhaustive and audit-payload
+ * cardinality is bounded (no caller-supplied free-form strings).
+ */
+export type TokenInvalidPayloadReason =
+  | 'payload_not_base64url'
+  | 'not_json'
+  | 'not_object'
+  | 'bad_version'
+  | 'missing_tid'
+  | 'missing_bid'
+  | 'missing_eml'
+  | 'bad_lang';
+
 export type TokenVerifyError =
   | { readonly kind: 'token.malformed'; readonly raw: string }
   | { readonly kind: 'token.unsupported_version'; readonly version: string }
   | { readonly kind: 'token.bad_signature' }
-  | { readonly kind: 'token.invalid_payload'; readonly reason: string };
+  | {
+      readonly kind: 'token.invalid_payload';
+      readonly reason: TokenInvalidPayloadReason;
+    };
 
 export interface UnsubscribeTokenPort {
   /**

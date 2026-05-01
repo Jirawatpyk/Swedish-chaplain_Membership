@@ -23,6 +23,12 @@ export {
   type TenantContext,
 } from './domain/tenant-context';
 
+export {
+  asTenantSlug,
+  unsafeBrandTenantSlug,
+  InvalidTenantSlugStringError,
+  type TenantSlug,
+} from './domain/tenant-slug';
 
 export {
   asIanaTimezone,

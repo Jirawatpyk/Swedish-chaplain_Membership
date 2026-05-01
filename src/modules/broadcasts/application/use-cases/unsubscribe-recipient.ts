@@ -28,25 +28,34 @@
 import { err, ok, type Result } from '@/lib/result';
 import { sha256Hex } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
-import type { TenantContext } from '@/modules/tenants';
+import { broadcastsMetrics } from '@/lib/metrics';
+import type { TenantContext, TenantSlug } from '@/modules/tenants';
 
 import type { BroadcastId } from '../../domain/broadcast';
 import type { EmailLower } from '../../domain/value-objects/email-lower';
 
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
-import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
+import type {
+  MarketingUnsubscribesRepo,
+  UpsertSuppressionResult,
+} from '../ports/marketing-unsubscribes-repo';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { ClockPort } from '../ports/clock-port';
 
 export interface UnsubscribeRecipientInput {
-  readonly tenantId: string;
+  readonly tenantId: TenantSlug;
   readonly broadcastId: BroadcastId;
   readonly emailLower: EmailLower;
   /** Raw token plaintext — hashed by this use-case before persisting. */
   readonly tokenPlaintext: string;
   readonly requestId: string | null;
-  /** Optional recipient feedback box content (≤500 chars). MVP: always null. */
+  /**
+   * Optional recipient feedback (≤500 chars; truncated at this boundary).
+   * Persisted to `marketing_unsubscribes.reason_text`. The public
+   * `/unsubscribe/[token]` route currently passes `null`; admin-driven
+   * manual suppression paths may populate this field.
+   */
   readonly reasonText: string | null;
 }
 
@@ -152,7 +161,7 @@ export async function unsubscribeRecipient(
       // Continue with memberId=null.
     }
 
-    let upsertResult: Awaited<ReturnType<MarketingUnsubscribesRepo['upsert']>>;
+    let upsertResult: UpsertSuppressionResult;
     try {
       upsertResult = await deps.marketingUnsubscribes.upsert(tx, {
         tenantId: input.tenantId,
@@ -170,6 +179,7 @@ export async function unsubscribeRecipient(
     // Audit emit — only on first (idempotent replays MUST NOT
     // re-audit, per FR-030).
     if (upsertResult.wasNew) {
+      const emailHash = sha256Hex(`${input.tenantId}:${input.emailLower}`);
       try {
         await deps.audit.emit(tx, {
           eventType: 'broadcast_unsubscribed',
@@ -177,7 +187,7 @@ export async function unsubscribeRecipient(
           summary: `Recipient unsubscribed from broadcast ${input.broadcastId}`,
           payload: {
             broadcastId: sourceBroadcastId,
-            emailHash: sha256Hex(`${input.tenantId}:${input.emailLower}`),
+            emailHash,
             memberId,
             sourceTokenHash: tokenHash,
             reason: 'recipient_initiated',
@@ -188,10 +198,10 @@ export async function unsubscribeRecipient(
         await deps.audit.emit(tx, {
           eventType: 'broadcast_suppression_applied',
           actorUserId: 'system:public_unsubscribe',
-          summary: `Suppression applied for ${sha256Hex(`${input.tenantId}:${input.emailLower}`).slice(0, 12)} (recipient_initiated)`,
+          summary: `Suppression applied for ${emailHash.slice(0, 12)} (recipient_initiated)`,
           payload: {
             broadcastId: sourceBroadcastId,
-            emailHash: sha256Hex(`${input.tenantId}:${input.emailLower}`),
+            emailHash,
             memberId,
             reason: 'recipient_initiated',
           },
@@ -201,10 +211,20 @@ export async function unsubscribeRecipient(
       } catch (cause) {
         // Audit failure during a successful suppression is observable
         // but MUST NOT roll back the suppression row — GDPR Art. 21
-        // overrides operational signal loss.
+        // overrides operational signal loss. Both audit events are
+        // counted as missing because either or both may have failed
+        // (the catch wraps the pair).
         logger.error(
           { err: (cause as Error).message, broadcastId: sourceBroadcastId },
           'unsubscribe_audit_emit_failed_post_upsert',
+        );
+        broadcastsMetrics.auditEmitFailed(
+          'broadcast_unsubscribed',
+          input.tenantId,
+        );
+        broadcastsMetrics.auditEmitFailed(
+          'broadcast_suppression_applied',
+          input.tenantId,
         );
       }
     }

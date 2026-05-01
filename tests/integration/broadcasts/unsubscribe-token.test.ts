@@ -37,6 +37,7 @@ import {
 } from '@/modules/broadcasts/infrastructure/unsubscribe-token/hmac-signer';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
+import { unsafeBrandTenantSlug } from '@/modules/tenants';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
@@ -179,7 +180,7 @@ describe('F7 public unsubscribe integration (T138)', () => {
 
   function signValidToken(): string {
     return unsubscribeTokenSigner.sign({
-      tenantId: tenant.ctx.slug,
+      tenantId: unsafeBrandTenantSlug(tenant.ctx.slug),
       broadcastId: asBroadcastId(broadcastId),
       emailLower: unsafeBrandEmailLower(contactEmailLower),
       lang: 'en',
@@ -217,11 +218,23 @@ describe('F7 public unsubscribe integration (T138)', () => {
     expect(unsubAudits.length).toBeGreaterThanOrEqual(1);
     expect(unsubAudits[0]!.retention_years).toBe(5);
 
+    // Verify-fix I5: audit payload MUST hash PII, not log it raw.
+    // sha256 hex = 64 lowercase hex chars; raw email or token would not.
+    const unsubPayload = unsubAudits[0]!.payload;
+    expect(unsubPayload['emailHash']).toMatch(/^[a-f0-9]{64}$/);
+    expect(unsubPayload['sourceTokenHash']).toMatch(/^[a-f0-9]{64}$/);
+    // Defence: raw PII MUST NOT appear in payload under any key.
+    const payloadJson = JSON.stringify(unsubPayload);
+    expect(payloadJson).not.toContain(contactEmailLower);
+
     const suppressionAudits = await fetchAuditRowsForTenant(
       tenant.ctx.slug,
       'broadcast_suppression_applied',
     );
     expect(suppressionAudits.length).toBeGreaterThanOrEqual(1);
+    const supPayload = suppressionAudits[0]!.payload;
+    expect(supPayload['emailHash']).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(supPayload)).not.toContain(contactEmailLower);
   });
 
   it('idempotent replay → no duplicate row + no duplicate broadcast_unsubscribed audit', async () => {
@@ -411,7 +424,7 @@ describe('F7 public unsubscribe integration (T138)', () => {
       // `tenant_mismatch` guard + RLS-bound deps prevent the row
       // landing in tenant A's slice.)
       const crossTenantToken = unsubscribeTokenSigner.sign({
-        tenantId: tenantB.ctx.slug,
+        tenantId: unsafeBrandTenantSlug(tenantB.ctx.slug),
         broadcastId: asBroadcastId(broadcastIdB),
         emailLower: unsafeBrandEmailLower(contactEmailLower),
         lang: 'en',

@@ -21,7 +21,7 @@ import {
   unsubscribeRecipient,
   type UnsubscribeRecipientDeps,
 } from '@/modules/broadcasts/application/use-cases/unsubscribe-recipient';
-import { asTenantContext } from '@/modules/tenants';
+import { asTenantContext, unsafeBrandTenantSlug } from '@/modules/tenants';
 import {
   asBroadcastId,
   type Broadcast,
@@ -36,7 +36,8 @@ import type {
 } from '@/modules/broadcasts/application/ports/marketing-unsubscribes-repo';
 import type { MembersBridgePort } from '@/modules/broadcasts/application/ports/members-bridge-port';
 
-const TENANT_SLUG = 'test-tenant';
+const TENANT_SLUG = unsafeBrandTenantSlug('test-tenant');
+const OTHER_TENANT = unsafeBrandTenantSlug('other-tenant');
 const tenantCtx = asTenantContext(TENANT_SLUG);
 const broadcastId = asBroadcastId('33333333-3333-3333-3333-333333333333');
 const recipient = unsafeBrandEmailLower('alice@example.com');
@@ -196,7 +197,7 @@ describe('unsubscribeRecipient (T137)', () => {
   it('tenant mismatch returns unsubscribe.tenant_mismatch and never touches repo', async () => {
     const deps = makeDeps();
     const result = await unsubscribeRecipient(deps, {
-      tenantId: 'OTHER_TENANT',
+      tenantId: OTHER_TENANT,
       broadcastId,
       emailLower: recipient,
       tokenPlaintext: 'v1.fake.fakemac',
@@ -227,6 +228,8 @@ describe('unsubscribeRecipient (T137)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe('unsubscribe.repo_error');
+    // Atomicity: audit MUST NOT have been emitted when the upsert failed.
+    expect(deps.audit.emit).not.toHaveBeenCalled();
   });
 
   it('member lookup throw → memberId is null but row + audits still emitted', async () => {
@@ -283,6 +286,28 @@ describe('unsubscribeRecipient (T137)', () => {
       reasonText: longText,
     });
     const upsertCall = (deps.marketingUnsubscribes.upsert as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(upsertCall.reasonText).toHaveLength(500);
+  });
+
+  // Verify-fix: ensure truncation preserves the START of the string, not
+  // the end (a regression to `.slice(-500)` would silently drop user-
+  // supplied feedback prefix and pass the previous length-only assertion).
+  it('reasonText truncation preserves start-of-string content', async () => {
+    const deps = makeDeps();
+    const distinctive = 'BEGIN_FEEDBACK_';
+    const longText = distinctive + 'x'.repeat(600);
+    await unsubscribeRecipient(deps, {
+      tenantId: TENANT_SLUG,
+      broadcastId,
+      emailLower: recipient,
+      tokenPlaintext: 'v1.fake.fakemac',
+      requestId: 'req-8',
+      reasonText: longText,
+    });
+    const upsertCall = (deps.marketingUnsubscribes.upsert as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect((upsertCall.reasonText as string).startsWith(distinctive)).toBe(
+      true,
+    );
     expect(upsertCall.reasonText).toHaveLength(500);
   });
 });

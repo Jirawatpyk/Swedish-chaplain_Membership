@@ -723,17 +723,26 @@ export const broadcastsMetrics = {
   /**
    * `broadcasts.unsubscribes{tenant, outcome}` — counter incremented on
    * every public unsubscribe-page render. `outcome` distinguishes:
-   *   - `success`        → first-time unsubscribe (suppression row inserted)
-   *   - `already`        → idempotent replay (no row mutation, FR-030)
-   *   - `invalid`        → token verification failed (audit emitted)
-   *   - `rate_limited`   → request rejected by IP rate limit (CHK-anti-enum)
-   * Two convergent rates:
+   *   - `success`         → first-time unsubscribe (suppression row inserted)
+   *   - `already`         → idempotent replay (no row mutation, FR-030)
+   *   - `invalid`         → token verification failed (audit emitted)
+   *   - `rate_limited`    → request rejected by IP rate limit (CHK-anti-enum)
+   *   - `repo_error`      → suppression upsert failed; user shown retry-state
+   *   - `unhandled_error` → caught throw outside the use-case (DB outage, etc.)
+   * Convergent alert rates:
    *   1. `success` count = real unsubscribe volume (alert: spike >5 σ)
    *   2. `invalid` rate >5/min = possible token-enumeration attack (E1 mitigation)
+   *   3. `repo_error` + `unhandled_error` any non-zero = stop-the-line
    */
   unsubscribesCount(
     tenantId: string | null,
-    outcome: 'success' | 'already' | 'invalid' | 'rate_limited',
+    outcome:
+      | 'success'
+      | 'already'
+      | 'invalid'
+      | 'rate_limited'
+      | 'repo_error'
+      | 'unhandled_error',
   ): void {
     counter(
       'broadcasts_unsubscribes_total',
@@ -756,5 +765,19 @@ export const broadcastsMetrics = {
       'Public unsubscribe page TTFB, p95 target 400ms (SLO-F7-006)',
       'ms',
     ).record(ms, { tenant: tenantId ?? 'unknown' });
+  },
+
+  /**
+   * Mirrors `authMetrics.auditMissing` — incremented when an expected audit
+   * event fails to commit (use-case succeeded but `audit.emit` threw, or
+   * a transient error swallowed elsewhere). Any non-zero rate sustained for
+   * 5 minutes pages on-call (signal-loss on a Principle I append-only
+   * surface).
+   */
+  auditEmitFailed(eventType: string, tenantId: string | null): void {
+    counter(
+      'broadcasts_audit_emit_failed_total',
+      'Expected broadcasts audit events that failed to commit',
+    ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
   },
 } as const;
