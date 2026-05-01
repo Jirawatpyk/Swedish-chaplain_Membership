@@ -31,6 +31,7 @@ import {
 } from '../../application/ports/broadcasts-repo';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
 
 // ---------------------------------------------------------------------------
@@ -586,7 +587,7 @@ export function makeDrizzleBroadcastsRepo(
       broadcastId: BroadcastId,
     ): Promise<{
       readonly broadcast: Broadcast | null;
-      readonly probeKind: 'not_found' | 'cross_member';
+      readonly probeKind: 'owned' | 'not_found' | 'cross_member';
     }> {
       return runInTenant(ctx, async (tx) => {
         const rows = await tx
@@ -609,7 +610,7 @@ export function makeDrizzleBroadcastsRepo(
         }
         return {
           broadcast: rowToBroadcast(row as BroadcastRow),
-          probeKind: 'not_found',
+          probeKind: 'owned',
         };
       });
     },
@@ -652,6 +653,21 @@ export function makeDrizzleBroadcastsRepo(
           else if (r.status === 'soft_bounced') out.soft_bounced = r.count;
           else if (r.status === 'complained') out.complained = r.count;
           else if (r.status === 'sent') out.sent = r.count;
+          else {
+            // Schema drift guard — a future delivery_status enum value
+            // (e.g., `queued`, `opened`, `unsubscribed`) added without
+            // updating this aggregator would be silently dropped from
+            // the totals. Warn so the gap is observable in ops dashboards.
+            logger.warn(
+              {
+                tenantId: tenantIdArg,
+                broadcastId,
+                status: r.status,
+                count: r.count,
+              },
+              'broadcasts.delivery_aggregate.unknown_status',
+            );
+          }
         }
         return out;
       });

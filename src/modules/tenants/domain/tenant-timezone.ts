@@ -17,23 +17,27 @@
  * read-only TenantConfigPort once F12 SaaS-multi-tenant lands.
  */
 
-const TENANT_TIMEZONES: Readonly<Record<string, string>> = Object.freeze({
-  swecham: 'Asia/Bangkok',
+import { unsafeIanaTimezone, type IanaTimezone } from './iana-timezone';
+
+const TENANT_TIMEZONES: Readonly<Record<string, IanaTimezone>> = Object.freeze({
+  swecham: unsafeIanaTimezone('Asia/Bangkok'),
 });
 
 /** Constitution § Hosting deviation places SweCham primary in Singapore;
  * member-facing display + quota math run in Asia/Bangkok per FR-006. */
-const DEFAULT_TIMEZONE = 'Asia/Bangkok';
+const DEFAULT_TIMEZONE: IanaTimezone = unsafeIanaTimezone('Asia/Bangkok');
 
 /**
- * Returns the IANA timezone identifier for the given tenant slug.
+ * Returns the IANA timezone identifier for the given tenant slug as a
+ * branded `IanaTimezone`. Build-time-known mapping → no validation
+ * overhead at call time.
  *
  * Unknown slugs fall back to the project default rather than throwing —
- * this avoids regressing benefit-dashboard renders for tenants that get
+ * this avoids regressing benefit-dashboard renders for tenants
  * onboarded ahead of an explicit map entry. Onboarding a new tenant
- * should still update this map so the future config-table migration
- * preserves the same timezone.
+ * should still update this map so the future F12 config-table
+ * migration preserves the same timezone.
  */
-export function getTenantTimezone(tenantSlug: string): string {
+export function getTenantTimezone(tenantSlug: string): IanaTimezone {
   return TENANT_TIMEZONES[tenantSlug] ?? DEFAULT_TIMEZONE;
 }

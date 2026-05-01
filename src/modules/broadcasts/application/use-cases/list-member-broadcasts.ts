@@ -7,6 +7,7 @@
  * port-routed pagination.
  */
 import type { TenantContext } from '@/modules/tenants';
+import type { MemberId } from '@/modules/members';
 import type { Broadcast } from '../../domain/broadcast';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 
@@ -16,7 +17,7 @@ export interface ListMemberBroadcastsDeps {
 }
 
 export interface ListMemberBroadcastsInput {
-  readonly memberId: string;
+  readonly memberId: MemberId;
   readonly page: number;
   readonly perPage: number;
 }

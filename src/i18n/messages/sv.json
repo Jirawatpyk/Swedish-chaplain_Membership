@@ -1883,7 +1883,7 @@
         "progressLabel": "E-Blast-kvot använd",
         "fetchError": "Kunde inte ladda kvot.",
         "retry": "Försök igen",
-        "nextReset": "Nästa återställning {date}",
+        "nextReset": "Förnyas {date}",
         "planChangedExplainer": "Plan ändrades {date} — årets kvot speglar den nya planen."
       },
       "banner": {
@@ -1892,7 +1892,10 @@
           "body": "Att skicka in ett E-Blast bekräftar att mottagarna har samtyckt till att ta emot din kammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
           "acknowledge": "Jag bekräftar",
           "remindLater": "Påminn senare",
-          "closeLabel": "Stäng banner"
+          "closeLabel": "Stäng banner",
+          "toastAcknowledged": "Samtycke till marknadskommunikation registrerat.",
+          "toastAcknowledgeFailed": "Kunde inte registrera ditt samtycke.",
+          "toastAcknowledgeFailedHint": "Försök igen — bannern stannar kvar tills samtycket är registrerat."
         }
       },
       "list": {
@@ -1924,6 +1927,15 @@
           "next": "Nästa",
           "pageOf": "Sida {page} av {total}",
           "ariaLabel": "Paginering för utskickshistorik"
+        }
+      },
+      "cmdk": {
+        "group": "Utskick",
+        "compose": {
+          "title": "Skapa E-Blast"
+        },
+        "benefits": {
+          "title": "Öppna förmånspanel"
         }
       },
       "detail": {

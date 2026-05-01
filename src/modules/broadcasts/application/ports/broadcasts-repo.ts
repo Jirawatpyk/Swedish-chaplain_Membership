@@ -224,9 +224,18 @@ export interface BroadcastsRepo {
 
   /**
    * F7 US3 — fetch a single broadcast iff the requesting member owns
-   * it. Returns `probeKind` so the use-case can emit
-   * `broadcast_cross_member_probe` (Q19) when ownership mismatches;
-   * the route still surfaces 404 in both cases (anti-enumeration).
+   * it. The `probeKind` discriminator drives the use-case:
+   *
+   *   - `'owned'`         → success; `broadcast` is non-null
+   *   - `'not_found'`     → row absent; `broadcast` is null; no audit
+   *   - `'cross_member'`  → row exists but owned by another member;
+   *                         `broadcast` is null; use-case emits
+   *                         `broadcast_cross_member_probe` audit
+   *                         (Q19 per-tenant scope)
+   *
+   * The route still surfaces 404 for both `'not_found'` and
+   * `'cross_member'` (anti-enumeration); only the audit emission
+   * differs between them.
    */
   findOwnedByMember(
     tenantId: string,
@@ -234,7 +243,7 @@ export interface BroadcastsRepo {
     broadcastId: BroadcastId,
   ): Promise<{
     readonly broadcast: Broadcast | null;
-    readonly probeKind: 'not_found' | 'cross_member';
+    readonly probeKind: 'owned' | 'not_found' | 'cross_member';
   }>;
 
   /**

@@ -24,10 +24,10 @@
  *
  * a11y CHK042: banner dismissal returns focus to the original trigger.
  */
-import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import { seedF7PlanChangedAudit } from './helpers/broadcasts-seed';
+import { signInAsMember as signIn } from './helpers/member-sign-in';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
@@ -51,26 +51,6 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     const seed = await seedF7PlanChangedAudit();
     if (seed) planChangedAt = seed.changedAt;
   });
-
-  async function signIn(page: Page): Promise<void> {
-    await page.goto('/portal/sign-in');
-    const emailInput = page.locator('input#email');
-    const passwordInput = page.locator('input#password');
-    await emailInput.click();
-    await emailInput.fill(MEMBER_EMAIL!);
-    await expect(emailInput).toHaveValue(MEMBER_EMAIL!);
-    await passwordInput.click();
-    await passwordInput.fill(MEMBER_PASSWORD!);
-    await expect(passwordInput).toHaveValue(MEMBER_PASSWORD!);
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(
-      (u) => {
-        const p = new URL(u).pathname;
-        return /^\/portal(\/|$)/.test(p) && !p.startsWith('/portal/sign-in');
-      },
-      { timeout: 15_000 },
-    );
-  }
 
   // ── AS1 ────────────────────────────────────────────────────────────
   test('AS1 — benefits page shows quota counters + Next-reset date copy', async ({
@@ -121,26 +101,40 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
       'beforeAll seed for member_plan_changed audit row failed — DATABASE_URL missing or member lookup failed',
     );
 
+    // Pin NEXT_LOCALE=en BEFORE sign-in so the page renders the EN
+    // microcopy regardless of the test member's preferred_language.
+    // The page reads `getLocale()` server-side which honours this
+    // cookie via next-intl's middleware. addCookies needs domain +
+    // path (not url) because the browser hasn't navigated yet.
+    const baseUrl = process.env.E2E_BASE_URL ?? 'http://localhost:3100';
+    const baseHost = new URL(baseUrl).hostname;
+    await page.context().addCookies([
+      {
+        name: 'NEXT_LOCALE',
+        value: 'en',
+        domain: baseHost,
+        path: '/',
+      },
+    ]);
+
     await signIn(page);
     await page.goto('/portal/benefits/e-blasts');
 
-    // The explainer testid is conditionally rendered. With the seeded
-    // audit row inside the current Bangkok-tz quota year, it MUST be
-    // present (count=1) and visible.
     const el = page.getByTestId('quota-plan-changed-explainer');
     await expect(el).toHaveCount(1);
     await expect(el).toBeVisible();
 
-    // Assert the localised microcopy template — the placeholder `{date}`
-    // should be filled with a long-format date matching `planChangedAt`.
-    // Locale used by the page is `en` for the Playwright signed-in
-    // session (chromium / mobile-chrome / mobile-safari default).
+    // Assert microcopy template + exact date. The page formats the
+    // date with the EN locale (cookie-pinned above). The seeded
+    // `planChangedAt` is a UTC instant; the page renders it in the
+    // tenant timezone (Asia/Bangkok per `getTenantTimezone('swecham')`).
+    // Build the expected string with the same locale + tenant tz so
+    // the assertion is stable regardless of CI runner timezone.
     const text = await el.innerText();
     expect(text).toMatch(/Plan changed on .+/i);
-    // The localised microcopy uses Intl.DateTimeFormat dateStyle:'long'.
-    // Compare against a derived expected string for the seed date.
     const expectedDate = new Intl.DateTimeFormat('en', {
       dateStyle: 'long',
+      timeZone: 'Asia/Bangkok',
     }).format(planChangedAt!);
     expect(text).toContain(expectedDate);
   });
@@ -229,11 +223,18 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     //     the inline subject field marker — both must be absent.
     expect(body).not.toContain('data-testid="delivery-breakdown"');
     expect(body).not.toContain('data-testid="delivery-delivered-count"');
-    // (4) Response MUST render the not-found UI. The localised
-    //     `errors.notFound` copy is the canonical signal that
-    //     `notFound()` fired and the segment-level `not-found.tsx`
-    //     handled it.
-    expect(body).toContain("We couldn't find what you were looking for");
+    // (4) Response MUST signal not-found at the framework level. Next.js
+    //     streams the not-found body via RSC chunks (so the segment-level
+    //     `data-testid="broadcast-not-found"` arrives in a later chunk,
+    //     not the initial HTML shell). Assert the stable framework
+    //     markers Next.js writes into the document head + RSC payload:
+    //       - <meta name="next-error" content="not-found">
+    //       - data-dgst="NEXT_HTTP_ERROR_FALLBACK;404" (RSC error boundary)
+    //     Both are framework-controlled (not localised), so they're
+    //     stable across locales + copy-edits.
+    expect(body).toMatch(
+      /<meta\s+name="next-error"\s+content="not-found"|NEXT_HTTP_ERROR_FALLBACK;404/,
+    );
 
     // (5) HTTP status: production deploys return 404 directly. Next.js
     //     16 dev-mode RSC streaming commits response headers before

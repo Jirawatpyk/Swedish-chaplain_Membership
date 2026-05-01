@@ -19,10 +19,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
+import { ArrowLeft } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
@@ -57,7 +59,23 @@ export default async function BroadcastDetailPage(props: {
     tenant,
     session.user.id,
   );
-  if (!memberLookup.ok) return notFound();
+  if (!memberLookup.ok) {
+    // 404 covers both "user has no member row" (legitimate) and "DB
+    // outage" (incident). Discriminate via the error code so a real
+    // outage is logged rather than masked as a routine not-found —
+    // anti-enumeration response stays the same either way.
+    if (memberLookup.error.code !== 'repo.not_found') {
+      logger.error(
+        {
+          err: memberLookup.error,
+          tenantId: tenant.slug,
+          userId: session.user.id,
+        },
+        'broadcasts.detail_page.member_lookup_unexpected_error',
+      );
+    }
+    return notFound();
+  }
   const memberId = memberLookup.value.memberId;
 
   // Validate ID shape early — invalid UUID = not found (no audit
@@ -94,11 +112,20 @@ export default async function BroadcastDetailPage(props: {
         href="/portal/benefits/e-blasts"
         className={buttonVariants({ variant: 'ghost', size: 'sm' })}
       >
-        ← {t('back')}
+        <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
+        {t('back')}
       </Link>
 
-      <section className="mt-6 space-y-3 rounded-md border p-4">
-        <h2 className="text-sm font-semibold">{t('fields.subject')}</h2>
+      <section
+        aria-labelledby="broadcast-detail-fields-heading"
+        className="mt-6 space-y-3 rounded-md border p-4"
+      >
+        <h2
+          id="broadcast-detail-fields-heading"
+          className="text-sm font-semibold"
+        >
+          {t('fields.subject')}
+        </h2>
         <p className="text-base">{broadcast.subject}</p>
         <dl className="grid grid-cols-2 gap-3 pt-2 text-sm">
           <div>
@@ -139,14 +166,19 @@ export default async function BroadcastDetailPage(props: {
       </section>
 
       {/* AS3 — Delivery breakdown (delivered / bounced / complained /
-          soft-bounced / pending / total). All testids present so T129
-          can assert independently of seed data. */}
+          soft-bounced / sent / total). Exposes testids for T129; uses
+          aria-labelledby (not aria-label) so the visible h2 is the
+          single accessible name (avoids SR double-announce — WCAG
+          1.3.1 + 4.1.2). */}
       <section
         data-testid="delivery-breakdown"
-        aria-label={t('delivery.title')}
+        aria-labelledby="delivery-breakdown-heading"
         className="mt-6 grid grid-cols-2 gap-3 rounded-md border p-4 sm:grid-cols-3"
       >
-        <h2 className="col-span-full text-sm font-semibold">
+        <h2
+          id="delivery-breakdown-heading"
+          className="col-span-full text-sm font-semibold"
+        >
           {t('delivery.title')}
         </h2>
         <DeliveryStat
@@ -166,13 +198,13 @@ export default async function BroadcastDetailPage(props: {
         />
         <DeliveryStat
           label={t('delivery.softBounced')}
-          value={delivery.soft_bounced}
+          value={delivery.softBounced}
           testId="delivery-soft-bounced-count"
         />
         <DeliveryStat
           label={t('delivery.sent')}
           value={delivery.sent}
-          testId="delivery-pending-count"
+          testId="delivery-sent-count"
         />
         <DeliveryStat
           label={t('delivery.total')}
@@ -193,10 +225,21 @@ function DeliveryStat({
   value: number;
   testId: string;
 }): React.ReactElement {
+  // `aria-labelledby` ties the value <p> to its label so screen readers
+  // announce "Delivered: 128" rather than the orphan number first
+  // (WCAG SC 1.3.2 meaningful sequence).
+  const labelId = `${testId}-label`;
   return (
     <div data-testid={testId} className="space-y-1">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
+      <p id={labelId} className="text-xs text-muted-foreground">
+        {label}
+      </p>
+      <p
+        className="text-2xl font-semibold tabular-nums"
+        aria-labelledby={labelId}
+      >
+        {value}
+      </p>
     </div>
   );
 }

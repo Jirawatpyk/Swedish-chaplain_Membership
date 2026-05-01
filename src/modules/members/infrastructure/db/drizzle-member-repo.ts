@@ -876,7 +876,7 @@ export const drizzleMemberRepo: MemberRepo = {
            WHERE tenant_id = ${ctx.slug}
              AND event_type = 'member_plan_changed'
              AND payload ->> 'memberId' = ${memberId as string}
-           ORDER BY "timestamp" DESC
+           ORDER BY "timestamp" DESC, id DESC
            LIMIT 1
         `),
       );

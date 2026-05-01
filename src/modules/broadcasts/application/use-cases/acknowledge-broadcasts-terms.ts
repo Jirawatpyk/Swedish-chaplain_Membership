@@ -11,21 +11,30 @@
  * from the first acknowledgment; emitting it twice would create
  * misleading consent records).
  *
- * Atomicity: F3 use-case + F7 audit emit run in two phases (F3 first,
- * F7 audit second) — F3's tx is closed before the F7 audit fires. This
- * is acceptable for a write-once consent event because the F3 column
- * change is the legal source of truth; an audit-log write failure
- * downgrades observability but does not invalidate the consent.
+ * Atomicity tradeoff: F3 use-case + F7 audit emit run in two phases (F3
+ * first, F7 audit second) — F3's tx is closed before the F7 audit fires.
+ * The F3 column change is the **legal source of truth** for consent.
+ * If the audit emit fails AFTER the F3 column commits, we **swallow the
+ * audit failure to a logger.error and still return ok** — surfacing the
+ * audit-emit error to the route would force the client to display an
+ * error banner for a successfully-recorded consent, AND a retry would
+ * hit the F3 idempotent path which skips the audit emit, leaving the
+ * audit row permanently missing. Best-effort audit + observability log
+ * is the only consistent semantic; a future audit-row-backfill cron can
+ * recover from logger entries if needed.
  */
-import { err, ok, type Result } from '@/lib/result';
+import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
+import type { MemberId } from '@/modules/members';
 import type { AuditPort } from '../ports/audit-port';
 import { f7RetentionFor } from '../ports/audit-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 
-export type AcknowledgeBroadcastsTermsError =
-  | { readonly kind: 'ack.member_not_found'; readonly memberId: string }
-  | { readonly kind: 'ack.server_error'; readonly message: string };
+export type AcknowledgeBroadcastsTermsError = {
+  readonly kind: 'ack.member_not_found';
+  readonly memberId: MemberId;
+};
 
 export interface AcknowledgeBroadcastsTermsDeps {
   readonly tenant: TenantContext;
@@ -35,7 +44,7 @@ export interface AcknowledgeBroadcastsTermsDeps {
 }
 
 export interface AcknowledgeBroadcastsTermsInput {
-  readonly memberId: string;
+  readonly memberId: MemberId;
   readonly actorUserId: string;
   readonly locale: 'en' | 'th' | 'sv';
   readonly requestId: string | null;
@@ -65,7 +74,7 @@ export async function acknowledgeBroadcastsTerms(
         memberId: input.memberId,
       });
     }
-    // Already acknowledged — idempotent success, NO audit emit.
+    // Already acknowledged — idempotent success.
     return ok({
       alreadyAcknowledged: true,
       acknowledgedAt: deps.clock.now(),
@@ -74,9 +83,12 @@ export async function acknowledgeBroadcastsTerms(
 
   const acknowledgedAt = deps.clock.now();
 
-  // Q15 audit emit. tx=null → adapter writes on auto-commit; matches
-  // F4 read-path probe convention. Loss of a single audit row is
-  // tolerable; the F3 column change is the consent source of truth.
+  // Q15 audit emit (the F3 column change is the legal source of truth;
+  // see header doc for the atomicity tradeoff). tx=null → adapter writes
+  // on auto-commit. Failure is logged as `ack.audit_emit_failed` so a
+  // future backfill cron can reconstruct missing audit rows from the
+  // logged correlationId + memberId, but the consent itself is
+  // already-and-permanently recorded.
   try {
     await deps.audit.emit(null, {
       tenantId: deps.tenant.slug,
@@ -93,10 +105,19 @@ export async function acknowledgeBroadcastsTerms(
       },
     });
   } catch (e) {
-    return err({
-      kind: 'ack.server_error',
-      message: e instanceof Error ? e.message : 'audit emit failed',
-    });
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: deps.tenant.slug,
+        memberId: input.memberId,
+        userId: input.actorUserId,
+        bannerLocale: input.locale,
+        acknowledgedAt: acknowledgedAt.toISOString(),
+        requestId: input.requestId,
+      },
+      'broadcasts.acknowledge.audit_emit_failed',
+    );
+    // Fall through to ok() — the F3 column already records consent.
   }
 
   return ok({ alreadyAcknowledged: false, acknowledgedAt });

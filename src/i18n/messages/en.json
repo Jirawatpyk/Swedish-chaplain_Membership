@@ -1883,7 +1883,7 @@
         "progressLabel": "E-Blast quota used",
         "fetchError": "Could not load quota.",
         "retry": "Retry",
-        "nextReset": "Next reset {date}",
+        "nextReset": "Renews {date}",
         "planChangedExplainer": "Plan changed on {date} — current year quota reflects the new plan."
       },
       "banner": {
@@ -1892,7 +1892,10 @@
           "body": "Submitting an E-Blast confirms recipients have agreed to receive your chamber's communications. You can revoke consent on a per-recipient basis at any time.",
           "acknowledge": "I acknowledge",
           "remindLater": "Remind me later",
-          "closeLabel": "Close banner"
+          "closeLabel": "Close banner",
+          "toastAcknowledged": "Marketing-communications consent recorded.",
+          "toastAcknowledgeFailed": "Could not record your acknowledgement.",
+          "toastAcknowledgeFailedHint": "Please try again — the banner stays open until consent is recorded."
         }
       },
       "list": {
@@ -1924,6 +1927,15 @@
           "next": "Next",
           "pageOf": "Page {page} of {total}",
           "ariaLabel": "Broadcast history pagination"
+        }
+      },
+      "cmdk": {
+        "group": "Broadcasts",
+        "compose": {
+          "title": "Compose E-Blast"
+        },
+        "benefits": {
+          "title": "Open benefits dashboard"
         }
       },
       "detail": {

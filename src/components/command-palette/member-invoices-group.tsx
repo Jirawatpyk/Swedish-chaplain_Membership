@@ -71,6 +71,7 @@ export function MemberCommandPalette({
   currentUserRole,
 }: MemberCommandPaletteProps) {
   const t = useTranslations('portal.payment.cmdkPay');
+  const tBcast = useTranslations('portal.broadcasts.cmdk');
   const locale = useLocale();
   const router = useRouter();
 
@@ -192,6 +193,32 @@ export function MemberCommandPalette({
           {showAllPaidEmpty && (
             <CommandEmpty>{t('allPaidHint')}</CommandEmpty>
           )}
+          {/* F7 US3 Smart Feature #4 — Broadcasts entries: always
+              shown so members can deep-link to compose / benefits
+              dashboard regardless of invoice state. Uses a separate
+              CommandGroup so the "Payments" group stays focused. */}
+          <CommandGroup heading={tBcast('group')}>
+            <CommandItem
+              value={`compose e-blast broadcast ${tBcast('compose.title')}`}
+              onSelect={() => {
+                handleOpenChange(false);
+                router.push('/portal/broadcasts/new');
+              }}
+              data-testid="cmdk-broadcasts-compose"
+            >
+              <span className="truncate">{tBcast('compose.title')}</span>
+            </CommandItem>
+            <CommandItem
+              value={`benefits dashboard e-blast quota ${tBcast('benefits.title')}`}
+              onSelect={() => {
+                handleOpenChange(false);
+                router.push('/portal/benefits/e-blasts');
+              }}
+              data-testid="cmdk-broadcasts-benefits"
+            >
+              <span className="truncate">{tBcast('benefits.title')}</span>
+            </CommandItem>
+          </CommandGroup>
           {rows.length > 0 && (
             <CommandGroup heading={t('group')}>
               {rows.map((row) => {

@@ -24,3 +24,10 @@ export {
 } from './domain/tenant-context';
 
 export { getTenantTimezone } from './domain/tenant-timezone';
+
+export {
+  asIanaTimezone,
+  unsafeIanaTimezone,
+  type IanaTimezone,
+  type IanaTimezoneError,
+} from './domain/iana-timezone';

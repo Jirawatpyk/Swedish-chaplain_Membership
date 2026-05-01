@@ -10,7 +10,9 @@
  * server-component does ONE awaited orchestration call instead of two.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
+import type { MemberId } from '@/modules/members';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
 import { f7RetentionFor } from '../ports/audit-port';
@@ -23,7 +25,7 @@ export type GetMemberBroadcastError = {
 export interface DeliveryBreakdown {
   readonly delivered: number;
   readonly bounced: number;
-  readonly soft_bounced: number;
+  readonly softBounced: number;
   readonly complained: number;
   readonly sent: number;
   readonly total: number;
@@ -36,7 +38,7 @@ export interface GetMemberBroadcastDeps {
 }
 
 export interface GetMemberBroadcastInput {
-  readonly memberId: string;
+  readonly memberId: MemberId;
   readonly broadcastId: BroadcastId;
   readonly actorUserId: string;
   readonly requestId: string | null;
@@ -59,8 +61,11 @@ export async function getMemberBroadcast(
 
   if (found.broadcast === null) {
     if (found.probeKind === 'cross_member') {
-      // Best-effort cross-member probe audit (Q19 + AS5 per-tenant
-      // scope). tx=null → auto-commit; loss is tolerable.
+      // Cross-member probe audit (Q19 + AS5 per-tenant scope). tx=null
+      // → auto-commit. Failure is logged at error level so an audit-port
+      // outage during attack-traffic is observable rather than silently
+      // swallowed (probe-detection observability matters most exactly
+      // when probes arrive in volume).
       try {
         await deps.audit.emit(null, {
           tenantId: deps.tenant.slug,
@@ -74,8 +79,20 @@ export async function getMemberBroadcast(
             retentionYears: f7RetentionFor('broadcast_cross_member_probe'),
           },
         });
-      } catch {
-        // Swallow — probe audit is best-effort, not on the success path.
+      } catch (e) {
+        logger.error(
+          {
+            err: e instanceof Error ? e.message : String(e),
+            tenantId: deps.tenant.slug,
+            memberId: input.memberId,
+            broadcastId: input.broadcastId,
+            actorUserId: input.actorUserId,
+            requestId: input.requestId,
+          },
+          'broadcasts.cross_member_probe.audit_emit_failed',
+        );
+        // Continue to err() — anti-enumeration response (404) is
+        // preserved at the HTTP boundary regardless of audit success.
       }
     }
     return err({ kind: 'broadcast.not_found' });
@@ -95,6 +112,13 @@ export async function getMemberBroadcast(
 
   return ok({
     broadcast: found.broadcast,
-    delivery: { ...counts, total },
+    delivery: {
+      delivered: counts.delivered,
+      bounced: counts.bounced,
+      softBounced: counts.soft_bounced,
+      complained: counts.complained,
+      sent: counts.sent,
+      total,
+    },
   });
 }

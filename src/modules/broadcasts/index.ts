@@ -6,9 +6,13 @@
  * deep imports into ./domain/**, ./application/**, ./infrastructure/**
  * from outside the module.
  *
- * This barrel currently exposes the Domain types + constants emitted
- * by Phase 2 Foundational Batch A (T020 + T024–T028). Use cases, route
- * handlers, and Infrastructure adapters arrive in subsequent batches.
+ * Exposes Domain types + Application use-cases for Phase 3 US1
+ * (compose + submit), Phase 4 US2 (admin review + dispatch), and
+ * Phase 5 US3 (member quota dashboard + history + Q15 banner). A
+ * small set of Infrastructure adapters is exposed only when callers
+ * cross use-case boundaries — e.g. the admin review route notifies
+ * members via `emailTransactionalBridge` AFTER the use-case
+ * completes, outside the use-case's port boundary.
  *
  * Constitution Principle III (NON-NEGOTIABLE): only Domain types +
  * Application audit-event types are exported. Drizzle Row types,

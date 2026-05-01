@@ -1883,7 +1883,7 @@
         "progressLabel": "โควตา E-Blast ที่ใช้ไป",
         "fetchError": "ไม่สามารถโหลดโควตาได้",
         "retry": "ลองใหม่",
-        "nextReset": "รีเซ็ตครั้งถัดไป {date}",
+        "nextReset": "ต่ออายุโควตา {date}",
         "planChangedExplainer": "เปลี่ยนแพ็กเกจเมื่อ {date} — โควตาปีนี้ใช้ตามแพ็กเกจใหม่"
       },
       "banner": {
@@ -1892,7 +1892,10 @@
           "body": "การส่ง E-Blast เป็นการยืนยันว่าผู้รับยินยอมรับข้อมูลข่าวสารจากหอการค้า ผู้รับสามารถถอนความยินยอมรายบุคคลได้ตลอดเวลา",
           "acknowledge": "ฉันรับทราบ",
           "remindLater": "เตือนภายหลัง",
-          "closeLabel": "ปิดแบนเนอร์"
+          "closeLabel": "ปิดแบนเนอร์",
+          "toastAcknowledged": "บันทึกการยินยอมรับการสื่อสารทางการตลาดแล้ว",
+          "toastAcknowledgeFailed": "ไม่สามารถบันทึกการยินยอมได้",
+          "toastAcknowledgeFailedHint": "กรุณาลองใหม่ — แบนเนอร์ยังเปิดอยู่จนกว่าจะบันทึกสำเร็จ"
         }
       },
       "list": {
@@ -1924,6 +1927,15 @@
           "next": "ถัดไป",
           "pageOf": "หน้า {page} จาก {total}",
           "ariaLabel": "การแบ่งหน้าประวัติ E-Blast"
+        }
+      },
+      "cmdk": {
+        "group": "E-Blast",
+        "compose": {
+          "title": "เขียน E-Blast"
+        },
+        "benefits": {
+          "title": "เปิดแดชบอร์ดสิทธิประโยชน์"
         }
       },
       "detail": {

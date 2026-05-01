@@ -48,6 +48,7 @@ import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { asMemberId, type MemberId } from '@/modules/members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -92,7 +93,7 @@ function percentile(samples: number[], p: number): number {
 describe.skipIf(!RUN_PERF)('F7 US3 perf — benefits page (E1, RUN_PERF=1)', () => {
   let tenant: TestTenant;
   let user: TestUser;
-  let memberId: string;
+  let memberId: MemberId;
   let firstBroadcastId: string;
 
   beforeAll(async () => {
@@ -101,7 +102,7 @@ describe.skipIf(!RUN_PERF)('F7 US3 perf — benefits page (E1, RUN_PERF=1)', () 
 
     const planId = `perf-plan-${randomUUID().slice(0, 6)}`;
     const memberUuid = randomUUID();
-    memberId = memberUuid;
+    memberId = asMemberId(memberUuid);
 
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(tenantInvoiceSettings).values({

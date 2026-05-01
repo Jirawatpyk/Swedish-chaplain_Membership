@@ -28,6 +28,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { QuotaDisplay } from '@/components/broadcast/quota-display';
 import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
+import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
@@ -137,6 +138,20 @@ export default async function EblastsListPage(props: {
         tenant,
         asMemberId(memberId),
       );
+      if (!planLookup.ok) {
+        // Real DB error must not silently masquerade as "no plan
+        // change". Log so an audit-log read regression is observable;
+        // continue with `null` so the explainer is suppressed (graceful
+        // degradation — the page still renders with the quota panel).
+        logger.error(
+          {
+            err: planLookup.error,
+            tenantId: tenant.slug,
+            memberId,
+          },
+          'broadcasts.benefits_page.find_last_plan_changed_at_failed',
+        );
+      }
       const lastPlanChangedAt = planLookup.ok ? planLookup.value : null;
       if (
         shouldShowPlanChangedExplainer(
@@ -145,10 +160,33 @@ export default async function EblastsListPage(props: {
           v.tenantTimezone,
         )
       ) {
+        // Format the plan-changed date in the tenant timezone so the
+        // microcopy reads "Plan changed on <Bangkok-day>" regardless
+        // of where the server is running.
+        const planChangedFormatter = new Intl.DateTimeFormat(
+          locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
+          { dateStyle: 'long', timeZone: v.tenantTimezone },
+        );
         planChangedExplainer = tQuota('planChangedExplainer', {
-          date: dateOnlyFormatter.format(lastPlanChangedAt!),
+          date: planChangedFormatter.format(lastPlanChangedAt!),
         });
       }
+    } else {
+      // Quota query failure must not silently render zero counters
+      // with the Compose CTA enabled. Log + render the page with
+      // `quota=null` (the quota panel handles its own error state via
+      // `<QuotaDisplay initial={null}>`); the Compose CTA stays
+      // enabled because the spec mandates the benefit is observable
+      // even when the count is unknown — the submit endpoint itself
+      // re-validates quota at the boundary (defence in depth).
+      logger.error(
+        {
+          err: quotaResult.error,
+          tenantId: tenant.slug,
+          memberId,
+        },
+        'broadcasts.benefits_page.compute_quota_counter_failed',
+      );
     }
 
     const listResult = await listMemberBroadcasts(
@@ -306,43 +344,56 @@ export default async function EblastsListPage(props: {
         </section>
       )}
 
-      {/* Server-driven pagination (T128 / T129). */}
+      {/* Server-driven pagination (T128 / T129). At edges, render a
+          disabled <span> instead of an <a href="#"> — clicking
+          href="#" scrolls to top of page (unexpected on mobile) and
+          aria-disabled on <a> doesn't actually prevent navigation. */}
       {pagination.totalPages > 1 ? (
         <nav
           data-testid="broadcast-history-pagination"
           aria-label={tPagination('ariaLabel')}
           className="mt-4 flex items-center justify-between text-sm"
         >
-          <Link
-            href={
-              pagination.page > 1
-                ? `/portal/benefits/e-blasts?page=${pagination.page - 1}`
-                : '#'
-            }
-            aria-disabled={pagination.page <= 1}
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
-            data-testid="pagination-prev"
-          >
-            {tPagination('previous')}
-          </Link>
+          {pagination.page > 1 ? (
+            <Link
+              href={`/portal/benefits/e-blasts?page=${pagination.page - 1}`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              data-testid="pagination-prev"
+            >
+              {tPagination('previous')}
+            </Link>
+          ) : (
+            <span
+              aria-disabled="true"
+              data-testid="pagination-prev"
+              className={`${buttonVariants({ variant: 'outline', size: 'sm' })} cursor-not-allowed opacity-50 pointer-events-none`}
+            >
+              {tPagination('previous')}
+            </span>
+          )}
           <span className="text-muted-foreground">
             {tPagination('pageOf', {
               page: pagination.page,
               total: pagination.totalPages,
             })}
           </span>
-          <Link
-            href={
-              pagination.page < pagination.totalPages
-                ? `/portal/benefits/e-blasts?page=${pagination.page + 1}`
-                : '#'
-            }
-            aria-disabled={pagination.page >= pagination.totalPages}
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
-            data-testid="pagination-next"
-          >
-            {tPagination('next')}
-          </Link>
+          {pagination.page < pagination.totalPages ? (
+            <Link
+              href={`/portal/benefits/e-blasts?page=${pagination.page + 1}`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              data-testid="pagination-next"
+            >
+              {tPagination('next')}
+            </Link>
+          ) : (
+            <span
+              aria-disabled="true"
+              data-testid="pagination-next"
+              className={`${buttonVariants({ variant: 'outline', size: 'sm' })} cursor-not-allowed opacity-50 pointer-events-none`}
+            >
+              {tPagination('next')}
+            </span>
+          )}
         </nav>
       ) : null}
     </DetailContainer>

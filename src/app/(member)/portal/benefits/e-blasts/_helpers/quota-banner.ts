@@ -19,7 +19,14 @@ import '@js-joda/timezone';
  * field `nextResetAt`. Throws on unknown IANA TZ identifiers so a typo
  * surfaces immediately rather than silently rendering UTC.
  */
-export function formatNextResetAt(quotaYear: number, tenantTz: string): string {
+export function formatNextResetAt(
+  quotaYear: number,
+  // Accept raw string for legacy callers (test fixtures pass `'UTC'`,
+  // `'Europe/Stockholm'` literals); the branded `IanaTimezone` widens
+  // to `string` naturally so production callers passing the brand
+  // type-check too.
+  tenantTz: string,
+): string {
   // ZoneId.of() throws on unknown ids — bubble the error.
   const zone = ZoneId.of(tenantTz);
   const localMidnight = LocalDateTime.of(quotaYear + 1, 1, 1, 0, 0, 0);
