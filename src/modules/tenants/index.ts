@@ -23,7 +23,6 @@ export {
   type TenantContext,
 } from './domain/tenant-context';
 
-export { getTenantTimezone } from './domain/tenant-timezone';
 
 export {
   asIanaTimezone,

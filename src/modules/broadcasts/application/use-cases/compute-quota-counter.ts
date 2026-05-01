@@ -13,10 +13,11 @@
  * calendar year's quota (not the next year's UTC slot).
  */
 import { ok, err, type Result } from '@/lib/result';
+import { env } from '@/lib/env';
 import { Instant, LocalDateTime, ZonedDateTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
 import {
-  getTenantTimezone,
+  unsafeIanaTimezone,
   type IanaTimezone,
   type TenantContext,
 } from '@/modules/tenants';
@@ -117,12 +118,14 @@ export async function computeQuotaCounter(
     });
   }
 
-  // All remaining paths return ok and need the reset trio. The
-  // `getTenantTimezone` helper now reads `env.tenant.timezone` (validated
-  // at boot against the IANA registry), so unknown-slug fallback +
-  // observability warn are no longer needed — boot fails fast on a
-  // bad TENANT_TIMEZONE rather than silently rendering UTC.
-  const tenantTimezone = getTenantTimezone(deps.tenant.slug);
+  // All remaining paths return ok and need the reset trio. Read the
+  // deployment's tenant tz from env (validated at boot against the
+  // IANA registry — boot fails fast on a bad TENANT_TIMEZONE rather
+  // than silently rendering UTC). The `deps.tenant.slug` parameter is
+  // not consulted today because each deployment serves a single tenant
+  // (MTA+STD); F12 multi-tenant-per-deployment will swap this read for
+  // a `TenantConfigPort` lookup keyed on slug.
+  const tenantTimezone = unsafeIanaTimezone(env.tenant.timezone);
   const quotaYear = currentQuotaYear(deps.clock.now(), tenantTimezone);
   const reset = {
     quotaYear,
