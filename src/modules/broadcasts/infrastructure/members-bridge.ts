@@ -202,6 +202,13 @@ export const membersBridge: MembersBridgePort = {
     if ('code' in result.error && result.error.code === 'mark_ack.member_not_found') {
       return err({ kind: 'mark_ack.member_not_found', memberId });
     }
+    // Round 5 CRIT — F3 repo failures (RLS denial, Neon outage, statement
+    // timeout) come through as `repo.unexpected`. Mapping them to
+    // `already_acknowledged` would silently 200-OK the request and lose
+    // the GDPR Art. 7 consent. Surface as a distinct error variant.
+    if ('code' in result.error && result.error.code === 'repo.unexpected') {
+      return err({ kind: 'mark_ack.repo_error', cause: result.error.cause });
+    }
     return err({ kind: 'mark_ack.already_acknowledged' });
   },
 };

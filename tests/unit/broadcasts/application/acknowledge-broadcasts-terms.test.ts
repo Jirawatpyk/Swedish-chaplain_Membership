@@ -135,6 +135,40 @@ describe('acknowledgeBroadcastsTerms', () => {
     });
   });
 
+  it('Round 5 CRIT — F3 repo failure surfaces as ack.repo_error (no silent 200-OK with lost consent)', async () => {
+    // Regression guard: a refactor that re-collapsed `mark_ack.repo_error`
+    // into `mark_ack.already_acknowledged` would silently 200-OK a DB
+    // outage during consent write — GDPR Art. 7 risk.
+    const audit: AuditPort = { emit: vi.fn<AuditPort['emit']>(async () => undefined) };
+    const membersBridge = partialBridge(async () =>
+      err({
+        kind: 'mark_ack.repo_error' as const,
+        cause: new Error('Neon: connection terminated'),
+      }),
+    );
+
+    const r = await acknowledgeBroadcastsTerms(
+      {
+        tenant,
+        membersBridge,
+        audit,
+        clock: fixedClock(new Date('2026-05-01T05:00:00Z')),
+      },
+      { memberId, actorUserId, locale: 'en', requestId },
+    );
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('ack.repo_error');
+      if (r.error.kind === 'ack.repo_error') {
+        expect(r.error.cause).toBeInstanceOf(Error);
+      }
+    }
+    // Audit MUST NOT fire on a repo failure — the F3 column was never
+    // written, so emitting an audit row would corrupt the consent trail.
+    expect(audit.emit).not.toHaveBeenCalled();
+  });
+
   it('Q19 per-tenant scope — acknowledging tenant A does not invoke bridge for tenant B (Round 4 H1)', async () => {
     // Regression guard: a refactor that hoists the lookup key above
     // the tenant context (e.g. global cache, badly-keyed memo) would

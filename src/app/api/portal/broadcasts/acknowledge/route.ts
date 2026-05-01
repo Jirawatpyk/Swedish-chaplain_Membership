@@ -68,14 +68,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       switch (result.error.kind) {
         case 'ack.member_not_found':
           return errorResponse(404, 'broadcast_member_not_found', correlationId);
+        case 'ack.repo_error':
+          // Use-case already logged the cause; surface 500 so the
+          // banner stays mounted and the user retries instead of
+          // dismissing on a lost-consent silent success.
+          return errorResponse(500, 'internal_error', correlationId);
         default: {
-          const _exhaustive: never = result.error.kind;
+          const _exhaustive: never = result.error;
           logger.error(
             {
               correlationId,
               tenantId: ctx.tenant.slug,
               memberId: ctx.member.memberId,
-              errorKind: _exhaustive,
+              errorVariant: _exhaustive,
             },
             'broadcasts.acknowledge.unhandled_error_variant',
           );

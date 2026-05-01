@@ -55,7 +55,12 @@ export type MemberHaltError =
 
 export type MarkAckError =
   | { readonly kind: 'mark_ack.member_not_found'; readonly memberId: string }
-  | { readonly kind: 'mark_ack.already_acknowledged' };
+  | { readonly kind: 'mark_ack.already_acknowledged' }
+  // Round 5 CRIT — surfaces F3 repo failures (RLS denial, Neon outage,
+  // statement timeout) so the route can return 500 + logger.error
+  // instead of silently 200-OK with `wasNew:false` (GDPR Art. 7 risk:
+  // banner dismisses but consent column never written).
+  | { readonly kind: 'mark_ack.repo_error'; readonly cause: unknown };
 
 export interface SegmentResolveParams {
   readonly tierCodes?: ReadonlyArray<string>;

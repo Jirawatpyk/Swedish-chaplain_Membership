@@ -31,10 +31,17 @@ import type { AuditPort } from '../ports/audit-port';
 import { f7RetentionFor } from '../ports/audit-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 
-export type AcknowledgeBroadcastsTermsError = {
-  readonly kind: 'ack.member_not_found';
-  readonly memberId: MemberId;
-};
+export type AcknowledgeBroadcastsTermsError =
+  | {
+      readonly kind: 'ack.member_not_found';
+      readonly memberId: MemberId;
+    }
+  // Round 5 CRIT — F3 repo failure surfaces here so the route can
+  // 500 + logger.error instead of silently 200-OK with a lost consent.
+  | {
+      readonly kind: 'ack.repo_error';
+      readonly cause: unknown;
+    };
 
 export interface AcknowledgeBroadcastsTermsDeps {
   readonly tenant: TenantContext;
@@ -80,6 +87,25 @@ export async function acknowledgeBroadcastsTerms(
         kind: 'ack.member_not_found',
         memberId: input.memberId,
       });
+    }
+    if (result.error.kind === 'mark_ack.repo_error') {
+      // Round 5 CRIT — propagate so the route returns 500. The audit
+      // row was never written, the F3 column was never set; the user
+      // MUST see an error toast and retry.
+      logger.error(
+        {
+          err:
+            result.error.cause instanceof Error
+              ? result.error.cause.message
+              : String(result.error.cause),
+          tenantId: deps.tenant.slug,
+          memberId: input.memberId,
+          userId: input.actorUserId,
+          requestId: input.requestId,
+        },
+        'broadcasts.acknowledge.repo_error',
+      );
+      return err({ kind: 'ack.repo_error', cause: result.error.cause });
     }
     // Already acknowledged — idempotent success. No `acknowledgedAt`
     // field because we'd be returning `clock.now()`, which is NOT
