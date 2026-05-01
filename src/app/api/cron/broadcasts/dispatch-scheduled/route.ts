@@ -99,7 +99,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     uncaught_error: 0,
   };
 
-  const deps = makeDispatchScheduledBroadcastDeps(tenant.slug);
+  const deps = await makeDispatchScheduledBroadcastDeps(tenant.slug);
   for (const row of eligible) {
     summary.processed++;
     try {

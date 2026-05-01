@@ -2260,6 +2260,32 @@
       "deliveryRate": "Leveransfrekvens: {rate}%",
       "footer": "Detaljerad statistik finns på din förmånssida.",
       "viewBenefitsCta": "Visa förmåner + historik"
+    },
+    "broadcastFooter": {
+      "receivedBecause": "Du tar emot detta mejl eftersom du är kontakt hos en medlem i {tenantDisplayName}.",
+      "unsubscribeCta": "Avregistrera",
+      "unsubscribeSuffix": "från dessa utskick när som helst.",
+      "physicalAddress": "Skickat av {tenantDisplayName}."
+    }
+  },
+  "public": {
+    "unsubscribe": {
+      "success": {
+        "heading": "Avregistrerad",
+        "body": "Du har avregistrerats från {tenantDisplayName} marknadsutskick. Du kommer inte längre att få E-Blasts.",
+        "transactional": "Du fortsätter att ta emot transaktionsmejl (lösenordsåterställning, fakturakvitton, förnyelsepåminnelser) kopplade till ditt konto, om sådana finns.",
+        "contact": "Om du avregistrerade av misstag, kontakta {supportEmail}."
+      },
+      "already": {
+        "heading": "Redan avregistrerad",
+        "body": "Din e-postadress finns redan på spärrlistan för {tenantDisplayName}. Ingen ytterligare åtgärd krävs.",
+        "contact": "Om du vill börja ta emot utskick igen, kontakta {supportEmail}."
+      },
+      "invalid": {
+        "heading": "Länken är ogiltig",
+        "body": "Denna avregistreringslänk är ogiltig eller har gått ut. Den kan ha modifierats eller tillhöra en annan organisation.",
+        "contact": "Kontakta {supportEmail} för att tas bort från utskick."
+      }
     }
   }
 }

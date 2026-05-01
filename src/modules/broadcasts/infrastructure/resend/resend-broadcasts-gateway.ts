@@ -30,6 +30,7 @@ import type {
   RetrieveBroadcastOutcome,
 } from '../../application/ports/broadcasts-gateway-port';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
+import { renderBroadcastHtml } from './email-template';
 
 const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
 const CONTACTS_CHUNK_SIZE = 100;
@@ -251,11 +252,21 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     return withRetry(
       async () => {
         const sdk = client();
+        // T147 — wrap the sanitised inner body with the chamber-branded
+        // shell + locale-aware footer (FR-029). The footer carries the
+        // unsubscribe CTA via Resend's `{{{RESEND_UNSUBSCRIBE_URL}}}`
+        // merge tag — Resend substitutes per-recipient at send time.
+        const wrappedHtml = renderBroadcastHtml({
+          subject: input.subject,
+          bodyHtml: input.htmlBody,
+          tenantDisplayName: input.tenantDisplayName,
+          locale: input.locale,
+        });
         const result = (await sdk.broadcasts.create({
           audienceId: input.audienceId,
           from: `${input.fromName} <${input.fromEmail}>`,
           subject: input.subject,
-          html: input.htmlBody,
+          html: wrappedHtml,
           replyTo: input.replyToEmail,
           name: input.broadcastNameForResendDashboard,
         })) as ResendSdkResponse<{ id: string }>;

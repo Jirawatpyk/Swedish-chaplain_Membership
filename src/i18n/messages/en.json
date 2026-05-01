@@ -2260,6 +2260,32 @@
       "deliveryRate": "Delivery rate: {rate}%",
       "footer": "Detailed metrics are available on your benefits page.",
       "viewBenefitsCta": "View benefits + history"
+    },
+    "broadcastFooter": {
+      "receivedBecause": "You are receiving this email because you are a contact at a member of {tenantDisplayName}.",
+      "unsubscribeCta": "Unsubscribe",
+      "unsubscribeSuffix": "from these broadcasts at any time.",
+      "physicalAddress": "Sent by {tenantDisplayName}."
+    }
+  },
+  "public": {
+    "unsubscribe": {
+      "success": {
+        "heading": "Unsubscribed",
+        "body": "You have been unsubscribed from {tenantDisplayName} marketing broadcasts. You will no longer receive E-Blasts.",
+        "transactional": "You will continue to receive transactional emails (password resets, invoice receipts, renewal reminders) related to your account, if any.",
+        "contact": "If you unsubscribed by mistake, please contact {supportEmail}."
+      },
+      "already": {
+        "heading": "Already unsubscribed",
+        "body": "Your email is already on our suppression list for {tenantDisplayName}. No further action needed.",
+        "contact": "If you would like to receive broadcasts again, please contact {supportEmail}."
+      },
+      "invalid": {
+        "heading": "Link is invalid",
+        "body": "This unsubscribe link is invalid or expired. It may have been tampered with, or it may belong to a different tenant.",
+        "contact": "Please contact {supportEmail} to be removed from broadcasts."
+      }
     }
   }
 }

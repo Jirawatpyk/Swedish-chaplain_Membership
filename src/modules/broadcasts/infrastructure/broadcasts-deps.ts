@@ -21,10 +21,12 @@ import { dompurifySanitizer } from './sanitizer/dompurify-sanitizer';
 import { resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
 import { resendBroadcastsWebhookVerifier } from './resend/resend-broadcasts-webhook-verifier';
 import { makeDrizzleBroadcastDeliveriesRepo } from './db/drizzle-broadcast-deliveries-repo';
+import { unsubscribeTokenSigner } from './unsubscribe-token/hmac-signer';
 
 import type { ClockPort } from '../application/ports/clock-port';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
 import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
+import type { UnsubscribeRecipientDeps } from '../application/use-cases/unsubscribe-recipient';
 import type { SaveDraftDeps } from '../application/use-cases/save-draft';
 import type { SubmitBroadcastDeps } from '../application/use-cases/submit-broadcast';
 import type { ComputeQuotaDeps } from '../application/use-cases/compute-quota-counter';
@@ -190,11 +192,20 @@ export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {
  * `fromEmail` is sourced from `env.broadcasts.fromEmail` (zod-validated
  * at boot — refuses IANA reserved TLDs per review C1 — 2026-04-30) so
  * this factory cannot accidentally dispatch from a placeholder address.
+ *
+ * `tenantDisplayName` + `locale` are resolved per-call via the F7
+ * route helpers (no per-tenant settings table for support email yet —
+ * F12 scope). MVP: locale defaults to the static tenant default
+ * resolved by `tenantDefaultLocaleFor(...)` below.
  */
-export function makeDispatchScheduledBroadcastDeps(
+export async function makeDispatchScheduledBroadcastDeps(
   tenantId: string,
-): DispatchScheduledBroadcastDeps {
+): Promise<DispatchScheduledBroadcastDeps> {
   const tenant = asTenantContext(tenantId);
+  const { resolveTenantDisplayName } = await import(
+    '@/lib/broadcasts-route-helpers'
+  );
+  const tenantDisplayName = await resolveTenantDisplayName(tenantId);
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
@@ -205,7 +216,20 @@ export function makeDispatchScheduledBroadcastDeps(
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,
+    tenantDisplayName,
+    locale: tenantDefaultLocaleFor(tenantId),
   };
+}
+
+/**
+ * Static per-tenant default locale (F12 white-label scope will move
+ * this to tenant settings). Used by the dispatch composition root + the
+ * public unsubscribe page's locale-resolution fallback.
+ */
+export function tenantDefaultLocaleFor(tenantId: string): 'en' | 'th' | 'sv' {
+  if (tenantId === 'swecham') return 'th';
+  if (tenantId === 'jcc') return 'en';
+  return 'en';
 }
 
 // =====================================================================
@@ -289,6 +313,43 @@ export function makeReconcileStuckSendingDeps(
  * ports module rather than swapping the singleton.
  */
 export { resendBroadcastsWebhookVerifier };
+
+// =====================================================================
+// Phase 6 US4 — Public unsubscribe + suppression factories
+// =====================================================================
+
+/**
+ * Build deps for `unsubscribeRecipient` use-case. Tenant display name is
+ * resolved per-call via the existing F4 tenant-invoice-settings shim
+ * (mirrors the submit/draft routes); support email defaults to the
+ * chamber's verified Resend `fromEmail` until a per-tenant support
+ * mailbox is added (F12 white-label config).
+ */
+export function makeUnsubscribeRecipientDeps(
+  tenantId: string,
+  tenantDisplayName: string,
+  tenantSupportEmail: string,
+): UnsubscribeRecipientDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    membersBridge,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+    tenantDisplayName,
+    tenantSupportEmail,
+  };
+}
+
+/**
+ * Public unsubscribe-token signer — exposed at the barrel because the
+ * dispatch path (Resend gateway / email-template renderer) calls
+ * `sign(...)` per recipient when stamping out per-recipient HTML bodies
+ * (T147). The verifier side is reached through the same singleton.
+ */
+export { unsubscribeTokenSigner };
 
 /**
  * F7 webhook resolver — pre-tenant lookup. Mirrors F5

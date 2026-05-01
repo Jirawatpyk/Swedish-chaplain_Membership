@@ -704,3 +704,57 @@ export const paymentsMetrics = {
     );
   },
 } as const;
+
+// --- F7 broadcasts metrics (Phase 6 / US4 + Phase 9 anchor) ---------------------
+//
+// FR-035 declares 16 F7 metrics (compose, queue, webhook, dispatch, unsubscribe).
+// This block ships the **public unsubscribe surface** subset emitted at US4
+// implementation time so SLO-F7-006 (`p95 unsubscribe page TTFB < 400ms`) can
+// be measured immediately. The remaining metrics (compose TTFB, queue list,
+// webhook handler, etc.) are wired progressively as their owning surfaces
+// are observed in production — full catalogue lands at Phase 9 T172.
+//
+// Cardinality ceilings:
+//   - `tenant` ∈ small-cardinality slug set (≤ a few hundred over project lifetime)
+//   - `outcome` ∈ {success, already, invalid, rate_limited} — bounded enum
+//   - NO recipient-email or member-id labels (FR-042 forbidden in logs/metrics)
+
+export const broadcastsMetrics = {
+  /**
+   * `broadcasts.unsubscribes{tenant, outcome}` — counter incremented on
+   * every public unsubscribe-page render. `outcome` distinguishes:
+   *   - `success`        → first-time unsubscribe (suppression row inserted)
+   *   - `already`        → idempotent replay (no row mutation, FR-030)
+   *   - `invalid`        → token verification failed (audit emitted)
+   *   - `rate_limited`   → request rejected by IP rate limit (CHK-anti-enum)
+   * Two convergent rates:
+   *   1. `success` count = real unsubscribe volume (alert: spike >5 σ)
+   *   2. `invalid` rate >5/min = possible token-enumeration attack (E1 mitigation)
+   */
+  unsubscribesCount(
+    tenantId: string | null,
+    outcome: 'success' | 'already' | 'invalid' | 'rate_limited',
+  ): void {
+    counter(
+      'broadcasts_unsubscribes_total',
+      'Public unsubscribe page outcome — paired with `outcome` label',
+    ).add(1, {
+      tenant: tenantId ?? 'unknown',
+      outcome,
+    });
+  },
+
+  /**
+   * `broadcasts.unsubscribe_page_ttfb_seconds{tenant}` — histogram of
+   * the public unsubscribe-page server-render duration. SLO-F7-006
+   * target: p95 < 400 ms. Sampled at every render, including
+   * invalid-token + rate-limited paths (those should be cheap).
+   */
+  unsubscribePageTtfbMs(tenantId: string | null, ms: number): void {
+    histogram(
+      'broadcasts_unsubscribe_page_ttfb_ms',
+      'Public unsubscribe page TTFB, p95 target 400ms (SLO-F7-006)',
+      'ms',
+    ).record(ms, { tenant: tenantId ?? 'unknown' });
+  },
+} as const;
