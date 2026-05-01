@@ -78,11 +78,16 @@ export type ReconcileStuckSendingError =
  * member's primary contact (`membersBridge`), reading delivered/bounced
  * counts (`deliveriesRepo`), and a transport (`emailTransactional`).
  *
- * `deliveriesRepo` is REQUIRED inside this group (review ERR-H3): a
- * missing repo silently falls back to {0,0,0} aggregates, shipping a
- * factually wrong "0% delivered" summary email. If a caller cannot
- * provide deliveriesRepo, omit the entire `notification` group on
- * `ReconcileStuckSendingDeps` so the email step is skipped cleanly.
+ * Group-presence contract (review ERR-H3 + PR #19 doc tighten): the
+ * entire `notification` group is opt-in (parent type marks it
+ * `notification?`). When the group IS supplied, `deliveriesRepo` MUST
+ * be supplied alongside `membersBridge` — both are required fields of
+ * `ReconcileNotificationDeps`. The previous shape allowed a partial
+ * group with `deliveriesRepo` optional, which silently fell back to
+ * {0,0,0} aggregates and shipped a factually wrong "0% delivered"
+ * summary email. If a caller cannot supply `deliveriesRepo`, OMIT THE
+ * ENTIRE GROUP (`notification: undefined`) so the email step skips
+ * cleanly — do NOT supply `notification` with only `membersBridge`.
  *
  * `emailTransactional` remains optional — the reconcile path may want
  * the aggregate read for audit/observability without enqueueing an
@@ -280,6 +285,7 @@ async function markSent(
       const aggregate = await deliveriesRepo.aggregateByBroadcast(
         tenantId,
         broadcast.broadcastId,
+        tx,
       );
       await enqueueDeliverySummaryEmail({
         tenant: deps.tenant,

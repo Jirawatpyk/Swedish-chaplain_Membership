@@ -94,7 +94,13 @@ export async function POST(
         );
       }
     } catch (e) {
-      logger.warn(
+      // Review I5 (consistency with approve + reject siblings) — emit
+      // at error severity so log-aggregation alerts can enumerate
+      // "cancellations where the member never got told." The cancel
+      // itself succeeded (audit `broadcast_cancelled` already fired
+      // inside the use-case) — this is a notification-side
+      // best-effort failure that needs ops visibility for backfill.
+      logger.error(
         {
           err: e instanceof Error ? e.message : String(e),
           correlationId,

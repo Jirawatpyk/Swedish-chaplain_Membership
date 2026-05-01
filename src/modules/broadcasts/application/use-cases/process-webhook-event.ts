@@ -373,6 +373,7 @@ export async function processWebhookEvent(
           const agg = await deps.deliveriesRepo.aggregateByBroadcast(
             tenantId,
             broadcastId,
+            tx,
           );
           const terminalCount = agg.delivered + agg.bounced + agg.complained;
           const SMALL_N_NOISE_FLOOR = 20;
@@ -434,6 +435,7 @@ export async function processWebhookEvent(
         const agg = await deps.deliveriesRepo.aggregateByBroadcast(
           tenantId,
           broadcastId,
+          tx,
         );
         const terminalCount = agg.delivered + agg.bounced + agg.complained;
         if (terminalCount >= fresh.estimatedRecipientCount) {

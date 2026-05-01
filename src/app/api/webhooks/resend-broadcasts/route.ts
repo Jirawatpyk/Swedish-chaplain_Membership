@@ -10,17 +10,21 @@
  * Stripe-Signature):
  *
  *   1. Pre-guard: reject `Content-Length > 64 KiB` BEFORE buffering
- *      (defence against memory-exhaustion DoS).
+ *      (defence against memory-exhaustion DoS) → 413 `body_too_large`.
  *   2. Read svix-signature / svix-id / svix-timestamp headers. Missing
  *      any → 401 + audit `broadcast_webhook_signature_rejected`. Body
  *      is NOT read (verify-before-parse invariant).
- *   3. Read raw body via `request.text()`.
+ *   3. Read raw body via `request.text()`. Realised-size > 64 KiB →
+ *      413 `body_too_large` + audit (covers chunked / no-Content-Length).
  *   4. `webhookVerifier.constructEvent(...)` — Svix HMAC-SHA256.
  *      Throws `WebhookSignatureError{kind}` on any failure → 401 +
  *      audit with the kind as reason.
  *   5. Resolve tenant via `resend_broadcast_id` lookup (BYPASS RLS;
- *      schema owner). Unknown id → 200 OK + log + no audit (do NOT
- *      teach attackers which broadcast ids exist via timing).
+ *      schema owner). Unknown id → 200 OK + log + NULL-tenant audit
+ *      `broadcast_webhook_signature_rejected` with
+ *      `reason: 'unknown_resend_broadcast_id'` (review ERR-C1: forensic
+ *      trail per FR-024). Both known + unknown paths return 200 with
+ *      similar latency so the audit does not leak existence via timing.
  *   6. Build per-tenant deps + dispatch to `processWebhookEvent`.
  *   7. Result.ok → 200 `{received:true}`; Result.err → 500 (Resend
  *      retries with exponential backoff via Svix).
@@ -218,7 +222,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return jsonFeatureDisabled(correlationId);
   }
 
-  // Step 2 FIRST — read headers before reading body.
+  // Step 1 — content-length pre-guard (BEFORE buffering body).
+  // Defence against memory-exhaustion DoS — reject oversized payloads
+  // before any allocation. Header reads below are O(1) memory.
+  const contentLengthHeader = request.headers.get('content-length');
+  if (contentLengthHeader !== null) {
+    const declared = Number.parseInt(contentLengthHeader, 10);
+    if (!Number.isFinite(declared) || declared > MAX_WEBHOOK_BODY_BYTES) {
+      await auditSignatureReject('body_too_large', requestId, correlationId);
+      return jsonUnauthorized('body_too_large', correlationId);
+    }
+  }
+
+  // Step 2 — read svix-* headers (verify-before-parse: reject missing
+  // headers before reading body so a malformed-header attacker cannot
+  // even force the body buffer allocation).
   const svixSig = request.headers.get('svix-signature');
   const svixId = request.headers.get('svix-id');
   const svixTimestamp = request.headers.get('svix-timestamp');
@@ -232,16 +250,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   ) {
     await auditSignatureReject('missing_header', requestId, correlationId);
     return jsonUnauthorized('missing_header', correlationId);
-  }
-
-  // Step 1 — content-length guard.
-  const contentLengthHeader = request.headers.get('content-length');
-  if (contentLengthHeader !== null) {
-    const declared = Number.parseInt(contentLengthHeader, 10);
-    if (!Number.isFinite(declared) || declared > MAX_WEBHOOK_BODY_BYTES) {
-      await auditSignatureReject('body_too_large', requestId, correlationId);
-      return jsonUnauthorized('body_too_large', correlationId);
-    }
   }
 
   // Step 3 — raw body (HMAC over raw bytes).
@@ -260,8 +268,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return jsonUnauthorized('bad_signature', correlationId);
   }
   if (rawBody.length > MAX_WEBHOOK_BODY_BYTES) {
+    // Review PR #19 round-4: realised-body-size enforcement returns
+    // 413 (NOT 401) so chunked / no-Content-Length requests get the
+    // same ERR-C2 semantics as the pre-guard above.
     await auditSignatureReject('body_too_large', requestId, correlationId);
-    return jsonUnauthorized('bad_signature', correlationId);
+    return jsonUnauthorized('body_too_large', correlationId);
   }
 
   // Step 4 — Svix HMAC verify.
