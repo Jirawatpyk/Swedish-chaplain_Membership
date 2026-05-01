@@ -52,6 +52,8 @@ class WebhookSignatureErrorStub extends Error {
     this.kind = kind;
   }
 }
+const f7AuditEmitMock = vi.fn().mockResolvedValue(undefined);
+
 vi.mock('@/modules/broadcasts', () => ({
   asBroadcastId: (raw: string) => raw,
   processWebhookEvent: (...args: unknown[]) =>
@@ -63,6 +65,9 @@ vi.mock('@/modules/broadcasts', () => ({
     constructEvent: (...args: unknown[]) => constructEventMock(...args),
   },
   WebhookSignatureError: WebhookSignatureErrorStub,
+  f7AuditAdapter: {
+    emit: (...args: unknown[]) => f7AuditEmitMock(...args),
+  },
 }));
 
 const VALID_BROADCAST_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -120,6 +125,8 @@ beforeEach(() => {
   constructEventMock.mockReset();
   dbExecuteMock.mockReset();
   dbExecuteMock.mockResolvedValue([]);
+  f7AuditEmitMock.mockReset();
+  f7AuditEmitMock.mockResolvedValue(undefined);
   resolveTenantByResendBroadcastIdMock.mockResolvedValue({
     tenantId: 'test-tenant',
     broadcastId: VALID_BROADCAST_ID,
@@ -173,7 +180,7 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
     expect(res.status).toBe(401);
     expect((await res.json()).error.code).toBe('missing_header');
     expect(processWebhookEventMock).not.toHaveBeenCalled();
-    expect(dbExecuteMock).toHaveBeenCalledTimes(1);
+    expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
   });
 
   it('invalid signature → 401 bad_signature + audit reject', async () => {
@@ -186,7 +193,7 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
     expect(res.status).toBe(401);
     expect((await res.json()).error.code).toBe('bad_signature');
     expect(processWebhookEventMock).not.toHaveBeenCalled();
-    expect(dbExecuteMock).toHaveBeenCalledTimes(1);
+    expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
   });
 
   it('content-length > 64 KiB → 413 body_too_large (DoS pre-guard, review ERR-C2)', async () => {
@@ -219,7 +226,7 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
     expect(constructEventMock).not.toHaveBeenCalled();
     expect(processWebhookEventMock).not.toHaveBeenCalled();
     // Audit row written with reason=feature_disabled.
-    expect(dbExecuteMock).toHaveBeenCalledTimes(1);
+    expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
   });
 
   it('unknown resend_broadcast_id → 200 OK + NULL-tenant audit (review ERR-C1)', async () => {
@@ -234,7 +241,7 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
     // post-archive event is forensically discoverable per FR-024.
     // Tenant is unknown at this stage so the row carries NULL tenant +
     // reason=unknown_resend_broadcast_id.
-    expect(dbExecuteMock).toHaveBeenCalledTimes(1);
+    expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
   });
 
   it('use-case error → 500 dispatch_failed (Resend retries)', async () => {

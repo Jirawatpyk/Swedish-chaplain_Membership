@@ -44,14 +44,13 @@ import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
   asBroadcastId,
+  f7AuditAdapter,
   makeProcessWebhookEventDeps,
   processWebhookEvent,
   resendBroadcastsWebhookVerifier,
   resolveTenantByResendBroadcastId,
   WebhookSignatureError,
 } from '@/modules/broadcasts';
-import { db } from '@/lib/db';
-import { sql } from 'drizzle-orm';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -110,11 +109,14 @@ function jsonInternalError(
 }
 
 /**
- * Insert a `broadcast_webhook_signature_rejected` audit row directly
- * via the audit_log table. Tenant is unknown at sig-reject time so we
- * use a `system:webhook` actor and a NULL tenant. Best-effort: a
- * Postgres failure is logged and swallowed so the webhook still returns
- * 401 (signed-payload tampering MUST always fail closed).
+ * Emit a `broadcast_webhook_signature_rejected` audit row via the typed
+ * F7 adapter. Tenant is unknown at sig-reject time so we pass `tx=null`
+ * (system path, auto-commit) + `tenantId=null`. Best-effort: a Postgres
+ * failure is logged and swallowed so the webhook still returns 401
+ * (signed-payload tampering MUST always fail closed). Routing through
+ * the typed adapter (matches PR #20 typed-emit pattern) makes
+ * `event_type` + retention compile-time-checked rather than a free-form
+ * SQL literal.
  */
 async function auditSignatureReject(
   reason: string,
@@ -122,18 +124,14 @@ async function auditSignatureReject(
   correlationId: string,
 ): Promise<void> {
   try {
-    await db.execute(sql`
-      INSERT INTO audit_log
-        (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
-      VALUES
-        ('broadcast_webhook_signature_rejected'::audit_event_type,
-         'system:webhook',
-         ${`Resend Broadcasts webhook rejected: ${reason}`},
-         ${requestId},
-         ${JSON.stringify({ reason, correlationId })}::jsonb,
-         NULL,
-         5)
-    `);
+    await f7AuditAdapter.emit(null, {
+      eventType: 'broadcast_webhook_signature_rejected',
+      actorUserId: 'system:webhook',
+      summary: `Resend Broadcasts webhook rejected: ${reason}`,
+      payload: { reason, correlationId },
+      tenantId: null,
+      requestId,
+    });
   } catch (e) {
     // Review ERR-L1: emit a dedicated log channel
     // (`broadcasts.webhook.audit_reject_db_failure`) ALONGSIDE the
@@ -178,23 +176,19 @@ async function auditUnknownResendBroadcast(
   correlationId: string,
 ): Promise<void> {
   try {
-    await db.execute(sql`
-      INSERT INTO audit_log
-        (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
-      VALUES
-        ('broadcast_webhook_signature_rejected'::audit_event_type,
-         'system:webhook',
-         ${`Resend Broadcasts webhook for unknown broadcast id (${resendBroadcastId})`},
-         ${requestId},
-         ${JSON.stringify({
-           reason: 'unknown_resend_broadcast_id',
-           resendBroadcastId,
-           eventType,
-           correlationId,
-         })}::jsonb,
-         NULL,
-         5)
-    `);
+    await f7AuditAdapter.emit(null, {
+      eventType: 'broadcast_webhook_signature_rejected',
+      actorUserId: 'system:webhook',
+      summary: `Resend Broadcasts webhook for unknown broadcast id (${resendBroadcastId})`,
+      payload: {
+        reason: 'unknown_resend_broadcast_id',
+        resendBroadcastId,
+        eventType,
+        correlationId,
+      },
+      tenantId: null,
+      requestId,
+    });
   } catch (e) {
     logger.error(
       {
