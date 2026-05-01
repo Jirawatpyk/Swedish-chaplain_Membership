@@ -29,6 +29,16 @@ import { makeDrizzleTenantPaymentSettingsRepo } from '@/modules/payments/infrast
 export { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 export type { ActorRef } from '@/modules/auth/domain/audit-event';
 
+// Re-export the F5 typed audit adapter + retention-year helper through
+// the same `src/lib/` composition boundary so route handlers can emit
+// F5 audit rows via the typed `F5AuditEvent` shape (compile-time
+// `eventType` ↔ `payload` cohesion + explicit `retentionYears`)
+// instead of falling back to the F1 generic `auditRepo.append`. Adopted
+// post-PR #20 review for the rate-limit emit sites — closes the
+// "typed payload contract isn't load-bearing" follow-up.
+export { f5AuditAdapter } from '@/modules/payments/infrastructure/audit/drizzle-payments-audit';
+export { retentionFor as f5RetentionFor } from '@/modules/payments/application/ports/audit-port';
+
 /**
  * Look up the tenant that owns a Stripe connected-account id.
  * Returns `null` when no tenant row maps to the account (webhook from

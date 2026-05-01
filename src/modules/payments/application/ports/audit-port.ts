@@ -87,7 +87,16 @@ export type F5AuditEventType =
   // mid-webhook Stripe SDK outages). Distinct event so audit-log
   // queries unambiguously separate "Stripe blip" from "permanent
   // state acknowledgement" forensic classes.
-  | 'payment_acknowledged_terminal_state';
+  | 'payment_acknowledged_terminal_state'
+  // Migration 0043 — Threat F-09 forensic trail for rate-limit hits
+  // on the payment initiate / cancel routes. Surfaced to the F5 typed
+  // audit port via parity test (PR follow-up to PR #19). Routes
+  // currently emit via the F1 generic `auditRepo.append` path; including
+  // these in the F5 typed union future-proofs migration to the F5
+  // typed-emitter path AND closes the audit_event_type ↔ F5AuditEventType
+  // drift surface caught by `tests/integration/payments/audit-event-type-parity.test.ts`.
+  | 'payment_initiate_rate_limited'
+  | 'payment_cancel_rate_limited';
 
 /**
  * R2 TD-13 (2026-04-27): typed payload shape per event type.
@@ -270,6 +279,11 @@ export interface F5AuditPayloadByType {
     runbook_url: string;
   };
   payment_acknowledged_terminal_state: Record<string, unknown>;
+  // Migration 0043 — F-09 rate-limit forensic events. Permissive shape
+  // because the F1 generic auditRepo.append path doesn't carry F5-typed
+  // payload fields today (only summary + actorUserId + requestId).
+  payment_initiate_rate_limited: Record<string, unknown>;
+  payment_cancel_rate_limited: Record<string, unknown>;
 }
 
 /**
@@ -355,6 +369,9 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // (Stripe charge already exists; admin may need to manually adjust
   // F4 invoice state).
   payment_acknowledged_terminal_state: 10,
+  // Migration 0043 — operational rate-limit events; 5y retention.
+  payment_initiate_rate_limited: 5,
+  payment_cancel_rate_limited: 5,
 };
 
 /**
