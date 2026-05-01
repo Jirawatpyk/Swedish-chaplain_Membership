@@ -54,7 +54,14 @@ export default defineConfig({
   verbose: true,
   strict: true,
   migrations: {
-    table: 'drizzle_migrations',
-    schema: 'public',
+    // Canonical journal: matches `drizzle-orm/postgres-js/migrator`'s
+    // default that `pnpm db:migrate` (scripts/run-migrations.ts) uses.
+    // Previously pointed at `public.drizzle_migrations` (drizzle-kit
+    // default) which created a SECOND journal table that was always
+    // empty — `drizzle-kit migrate` would re-apply already-applied
+    // migrations and crash on duplicate enum/table errors. Unified
+    // 2026-05-01 so both tools see the same applied set.
+    table: '__drizzle_migrations',
+    schema: 'drizzle',
   },
 });
