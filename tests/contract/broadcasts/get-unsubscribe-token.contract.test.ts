@@ -81,7 +81,15 @@ vi.mock('@/modules/broadcasts', () => ({
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn(async () => {
     const t = (key: string) => key;
-    t.rich = (key: string) => key;
+    // Real-ish rich mock: invoke each tag callback so the resulting
+    // React tree carries the rendered <a> elements. Returns an array
+    // with the key string + each tag's rendered output so assertions
+    // can inspect both the i18n lookup and the rich element output.
+    t.rich = (key: string, tags?: Record<string, () => unknown>) => {
+      const out: unknown[] = [key];
+      if (tags) for (const fn of Object.values(tags)) out.push(fn());
+      return out;
+    };
     return t;
   }),
 }));
@@ -468,5 +476,43 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
       20,
       300,
     );
+  });
+
+  // R3 verify-fix: assert the mailto anchor actually renders inside the
+  // success contact line. The rich callback must produce an <a href="mailto:…">
+  // element — a regression that strips the rich placeholder would silently
+  // collapse to plain text and break the WCAG SC 2.5.8 touch-target affordance.
+  it('success render: contact line emits <a href="mailto:..."> via t.rich callback', async () => {
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    const tree = JSON.stringify(node);
+    expect(tree).toContain('mailto:broadcasts@swecham.example');
+    // `getTranslations({namespace: 'public.unsubscribe'})` returns relative
+    // keys, so the rendered string is `success.contact` not the full path.
+    expect(tree).toContain('success.contact');
+  });
+
+  // R4 verify-fix: assert error-state JSX is distinct from invalid-state.
+  // Both states currently use `state: 'error' | 'invalid'` discriminator;
+  // a regression mapping repo_error → invalid template would lose the
+  // "please try again" recovery affordance.
+  it('repo_error render: error.* i18n keys (not invalid.*) reach the JSX', async () => {
+    unsubscribeRecipientMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'unsubscribe.repo_error', cause: new Error('boom') },
+    });
+    const { default: Page } = await importPage();
+    const node = await Page({
+      params: Promise.resolve({ token: VALID_TOKEN }),
+      searchParams: Promise.resolve({}),
+    });
+    const tree = JSON.stringify(node);
+    expect(tree).toContain('error.heading');
+    expect(tree).toContain('error.body');
+    // MUST NOT bleed the invalid state into the error render.
+    expect(tree).not.toContain('invalid.heading');
   });
 });

@@ -37,7 +37,6 @@ import {
 } from '@/modules/broadcasts/infrastructure/unsubscribe-token/hmac-signer';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
-import { unsafeBrandTenantSlug } from '@/modules/tenants';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
@@ -180,7 +179,7 @@ describe('F7 public unsubscribe integration (T138)', () => {
 
   function signValidToken(): string {
     return unsubscribeTokenSigner.sign({
-      tenantId: unsafeBrandTenantSlug(tenant.ctx.slug),
+      tenantId: tenant.ctx.slug,
       broadcastId: asBroadcastId(broadcastId),
       emailLower: unsafeBrandEmailLower(contactEmailLower),
       lang: 'en',
@@ -424,7 +423,7 @@ describe('F7 public unsubscribe integration (T138)', () => {
       // `tenant_mismatch` guard + RLS-bound deps prevent the row
       // landing in tenant A's slice.)
       const crossTenantToken = unsubscribeTokenSigner.sign({
-        tenantId: unsafeBrandTenantSlug(tenantB.ctx.slug),
+        tenantId: tenantB.ctx.slug,
         broadcastId: asBroadcastId(broadcastIdB),
         emailLower: unsafeBrandEmailLower(contactEmailLower),
         lang: 'en',

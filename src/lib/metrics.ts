@@ -2,13 +2,14 @@
  * OpenTelemetry metrics (T180, docs/observability.md § 4).
  *
  * Single metrics façade for ALL bounded contexts (F1 auth, F3 outbox,
- * F4 invoicing, F5 payments). Originally scoped to F1 auth only
- * (hence the historical `METER_NAME='swecham.auth'`); CR-8 review
- * 2026-04-27 renamed to `swecham.platform` so the meter accurately
- * reflects scope across F1+F3+F4+F5 instruments. Sub-namespaces
- * (`auth_*`, `outbox_*`, `invoicing_*`, `payments_*`) are encoded in
- * each instrument name, not in separate Meters — this keeps a single
- * scrape pipeline and avoids meter-resolution duplication.
+ * F4 invoicing, F5 payments, F7 broadcasts). Originally scoped to F1
+ * auth only (hence the historical `METER_NAME='swecham.auth'`); CR-8
+ * review 2026-04-27 renamed to `swecham.platform` so the meter
+ * accurately reflects scope across F1+F3+F4+F5+F7 instruments.
+ * Sub-namespaces (`auth_*`, `outbox_*`, `invoicing_*`, `payments_*`,
+ * `broadcasts_*`) are encoded in each instrument name, not in separate
+ * Meters — this keeps a single scrape pipeline and avoids
+ * meter-resolution duplication.
  *
  * Implementation:
  *   - `@opentelemetry/api` `metrics` API — vendor-neutral; the
@@ -36,6 +37,7 @@ import {
   type Meter,
   type ObservableGauge,
 } from '@opentelemetry/api';
+import { logger } from '@/lib/logger';
 
 const METER_NAME = 'swecham.platform';
 
@@ -716,8 +718,32 @@ export const paymentsMetrics = {
 //
 // Cardinality ceilings:
 //   - `tenant` ∈ small-cardinality slug set (≤ a few hundred over project lifetime)
-//   - `outcome` ∈ {success, already, invalid, rate_limited} — bounded enum
+//   - `outcome` ∈ {success, already, invalid, rate_limited, repo_error,
+//     unhandled_error} — bounded enum
+//   - `event_type` (auditEmitFailed) ∈ {broadcast_unsubscribed,
+//     broadcast_suppression_applied, …} — bounded enum from the F7 audit
+//     event-type union
 //   - NO recipient-email or member-id labels (FR-042 forbidden in logs/metrics)
+
+/**
+ * Swallow OTel emission failures. The `@opentelemetry/api` calls usually
+ * no-op when no SDK is registered, but `@vercel/otel` exporter init can
+ * throw on first record under transient pipeline misconfiguration. The
+ * F7 unsubscribe page is a GDPR Art. 21 surface where signal loss is
+ * preferable to a 500 — prior commit added the page-level guard; this
+ * helper closes the remaining gap (metric emission between the
+ * use-case commit and the return).
+ */
+function safeMetric(fn: () => void): void {
+  try {
+    fn();
+  } catch (e) {
+    logger.warn(
+      { err: (e as Error).message },
+      'metrics_emit_failed_swallowed',
+    );
+  }
+}
 
 export const broadcastsMetrics = {
   /**
@@ -744,12 +770,14 @@ export const broadcastsMetrics = {
       | 'repo_error'
       | 'unhandled_error',
   ): void {
-    counter(
-      'broadcasts_unsubscribes_total',
-      'Public unsubscribe page outcome — paired with `outcome` label',
-    ).add(1, {
-      tenant: tenantId ?? 'unknown',
-      outcome,
+    safeMetric(() => {
+      counter(
+        'broadcasts_unsubscribes_total',
+        'Public unsubscribe page outcome — paired with `outcome` label',
+      ).add(1, {
+        tenant: tenantId ?? 'unknown',
+        outcome,
+      });
     });
   },
 
@@ -760,11 +788,13 @@ export const broadcastsMetrics = {
    * invalid-token + rate-limited paths (those should be cheap).
    */
   unsubscribePageTtfbMs(tenantId: string | null, ms: number): void {
-    histogram(
-      'broadcasts_unsubscribe_page_ttfb_ms',
-      'Public unsubscribe page TTFB, p95 target 400ms (SLO-F7-006)',
-      'ms',
-    ).record(ms, { tenant: tenantId ?? 'unknown' });
+    safeMetric(() => {
+      histogram(
+        'broadcasts_unsubscribe_page_ttfb_ms',
+        'Public unsubscribe page TTFB, p95 target 400ms (SLO-F7-006)',
+        'ms',
+      ).record(ms, { tenant: tenantId ?? 'unknown' });
+    });
   },
 
   /**
@@ -775,9 +805,11 @@ export const broadcastsMetrics = {
    * surface).
    */
   auditEmitFailed(eventType: string, tenantId: string | null): void {
-    counter(
-      'broadcasts_audit_emit_failed_total',
-      'Expected broadcasts audit events that failed to commit',
-    ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
+    safeMetric(() => {
+      counter(
+        'broadcasts_audit_emit_failed_total',
+        'Expected broadcasts audit events that failed to commit',
+      ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
+    });
   },
 } as const;

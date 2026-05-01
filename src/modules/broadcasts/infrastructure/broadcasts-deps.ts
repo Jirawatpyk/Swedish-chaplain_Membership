@@ -98,9 +98,10 @@ export function makeEnforceTenantContextDeps(
 }
 
 /**
- * Lookup a single broadcast for a member detail page (used by
- * `GET /api/broadcasts/[id]`). Combines `findById` + tenant-context
- * enforcement.
+ * Composition root for the member-facing broadcast detail route
+ * (`GET /api/broadcasts/[id]`). Returns the broadcasts repo + the
+ * tenant-context enforcer the route uses to bind RLS and resolve the
+ * member-actor before dispatching to the use-case.
  */
 export function makeGetBroadcastDeps(tenantId: string): {
   readonly tenantId: string;

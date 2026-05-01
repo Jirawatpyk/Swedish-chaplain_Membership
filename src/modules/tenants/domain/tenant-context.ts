@@ -32,8 +32,14 @@
 // `TenantContext` value is the `asTenantContext` constructor below.
 const tenantContextBrand = Symbol('TenantContext');
 
+import { unsafeBrandTenantSlug, type TenantSlug } from './tenant-slug';
+
 export type TenantContext = {
-  readonly slug: string;
+  /**
+   * Tenant identifier as a branded `TenantSlug`. APIs that take a
+   * `TenantSlug` accept `tenant.slug` directly without unsafe coercion.
+   */
+  readonly slug: TenantSlug;
   readonly [tenantContextBrand]: true;
 };
 
@@ -59,7 +65,10 @@ export function asTenantContext(slug: string): TenantContext {
   if (typeof slug !== 'string' || !SLUG_PATTERN.test(slug)) {
     throw new InvalidTenantSlugError(slug);
   }
-  return { slug, [tenantContextBrand]: true } as TenantContext;
+  return {
+    slug: unsafeBrandTenantSlug(slug),
+    [tenantContextBrand]: true,
+  } as TenantContext;
 }
 
 /** Slug pattern exported for shared validators (env.ts, seed scripts). */

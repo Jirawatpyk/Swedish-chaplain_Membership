@@ -34,12 +34,13 @@ export interface UnsubscribeTokenPayload {
 /**
  * Discrete reasons for `token.invalid_payload` errors. Kept as a literal
  * union so the route handler's switch is exhaustive and audit-payload
- * cardinality is bounded (no caller-supplied free-form strings).
+ * cardinality is bounded (no caller-supplied free-form strings). Only
+ * reasons actually emitted by the signer appear here; structural-parse
+ * failures (b64-decode, JSON-parse, non-object) collapse into `not_json`
+ * via the shared `parsePayloadSegment` helper.
  */
 export type TokenInvalidPayloadReason =
-  | 'payload_not_base64url'
   | 'not_json'
-  | 'not_object'
   | 'bad_version'
   | 'missing_tid'
   | 'missing_bid'

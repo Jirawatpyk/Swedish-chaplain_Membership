@@ -85,6 +85,14 @@ interface PageProps {
  * is per-recipient PII proxy. A search-engine crawl would leak the token
  * into archive caches. Title is intentionally generic — the per-state
  * heading lives in the page body, not the tab.
+ *
+ * Title is English-only here because Next.js `metadata` is exported
+ * synchronously (no async locale resolution). A locale-aware title would
+ * require `generateMetadata` which would re-resolve params/headers and
+ * cost p95 budget on a SLO-F7-006 < 400ms surface; the per-state heading
+ * inside the body already gives the recipient localised context. The
+ * `public.unsubscribe.metaTitle` i18n keys are reserved for a future
+ * `generateMetadata` migration if the trade-off changes.
  */
 export const metadata: Metadata = {
   title: 'Unsubscribe',
@@ -415,7 +423,7 @@ export default async function UnsubscribePage({
   const mailtoLink = (): React.ReactNode => (
     <a
       href={`mailto:${supportEmail}`}
-      className="font-medium text-foreground underline underline-offset-4 hover:text-primary focus:text-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      className="inline-block py-1 font-medium text-foreground underline underline-offset-4 hover:text-primary focus:text-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
     >
       {supportEmail}
     </a>
@@ -424,28 +432,23 @@ export default async function UnsubscribePage({
   // Per-state visual cue so recipients can tell success / already /
   // invalid / error apart in a glance — important on mobile where the
   // heading text + colour may be the only differentiation.
-  const stateIcon =
-    outcome.state === 'success' ? (
-      <CheckCircle2
-        className="mx-auto mb-4 h-12 w-12 text-green-600 dark:text-green-400"
-        aria-hidden="true"
-      />
-    ) : outcome.state === 'already' ? (
-      <Info
-        className="mx-auto mb-4 h-12 w-12 text-muted-foreground"
-        aria-hidden="true"
-      />
-    ) : outcome.state === 'error' ? (
-      <AlertCircle
-        className="mx-auto mb-4 h-12 w-12 text-yellow-600 dark:text-yellow-400"
-        aria-hidden="true"
-      />
-    ) : (
-      <XCircle
-        className="mx-auto mb-4 h-12 w-12 text-muted-foreground"
-        aria-hidden="true"
-      />
-    );
+  const STATE_ICON: Record<
+    UnsubscribeOutcome['state'],
+    { readonly Icon: typeof CheckCircle2; readonly className: string }
+  > = {
+    success: {
+      Icon: CheckCircle2,
+      className: 'text-green-600 dark:text-green-400',
+    },
+    already: { Icon: Info, className: 'text-muted-foreground' },
+    error: {
+      Icon: AlertCircle,
+      className: 'text-yellow-600 dark:text-yellow-400',
+    },
+    invalid: { Icon: XCircle, className: 'text-muted-foreground' },
+  };
+  const { Icon: StateIcon, className: stateIconColor } =
+    STATE_ICON[outcome.state];
 
   // Container deviation note: `max-w-md` (28rem) is narrower than the
   // ux-standards § 18 `FormContainer` (42rem) because this is a
@@ -459,18 +462,21 @@ export default async function UnsubscribePage({
       className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center p-6 text-center"
     >
       <article className="w-full rounded-lg border border-border bg-card p-8 shadow-sm">
-        {stateIcon}
+        <StateIcon
+          className={`mx-auto mb-4 h-12 w-12 ${stateIconColor}`}
+          aria-hidden="true"
+        />
         {outcome.state === 'success' ? (
           <>
             <h1 className="mb-4 text-2xl font-semibold">
               {t('success.heading')}
             </h1>
-            <p className="mb-3 text-base text-muted-foreground">
+            <p className="mb-3 text-base text-foreground">
               {t('success.body', {
                 tenantDisplayName: outcome.tenantDisplayName,
               })}
             </p>
-            <p className="mb-3 text-base text-muted-foreground">
+            <p className="mb-3 text-base text-foreground">
               {t('success.transactional')}
             </p>
             <p className="text-sm text-muted-foreground">
@@ -482,7 +488,7 @@ export default async function UnsubscribePage({
             <h1 className="mb-4 text-2xl font-semibold">
               {t('already.heading')}
             </h1>
-            <p className="mb-3 text-base text-muted-foreground">
+            <p className="mb-3 text-base text-foreground">
               {t('already.body', {
                 tenantDisplayName: outcome.tenantDisplayName,
               })}
@@ -496,7 +502,7 @@ export default async function UnsubscribePage({
             <h1 className="mb-4 text-2xl font-semibold">
               {t('error.heading')}
             </h1>
-            <p className="mb-3 text-base text-muted-foreground">
+            <p className="mb-3 text-base text-foreground">
               {t('error.body')}
             </p>
             <p className="text-sm text-muted-foreground">
@@ -508,7 +514,7 @@ export default async function UnsubscribePage({
             <h1 className="mb-4 text-2xl font-semibold">
               {t('invalid.heading')}
             </h1>
-            <p className="mb-3 text-base text-muted-foreground">
+            <p className="mb-3 text-base text-foreground">
               {t('invalid.body')}
             </p>
             <p className="text-sm text-muted-foreground">
