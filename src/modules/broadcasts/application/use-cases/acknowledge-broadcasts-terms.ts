@@ -107,11 +107,24 @@ export async function acknowledgeBroadcastsTerms(
       );
       return err({ kind: 'ack.repo_error', cause: result.error.cause });
     }
-    // Already acknowledged — idempotent success. No `acknowledgedAt`
-    // field because we'd be returning `clock.now()`, which is NOT
-    // the persisted consent timestamp; the discriminant tells the
-    // caller "this was a no-op; if you need the original timestamp,
-    // read it from the F3 member record separately".
+    // Exhaustiveness — `MarkAckError` currently has only the two arms
+    // above; if a new variant lands without route-side handling, this
+    // compile-time check forces it to be addressed.
+    const _exhaustive: never = result.error;
+    return err({ kind: 'ack.repo_error', cause: _exhaustive });
+  }
+
+  // Round 5 code-review CRIT — gate audit emit + 'fresh' kind on
+  // `previouslyNull` from the bridge so a re-ack does NOT write a
+  // duplicate `member_acknowledged_broadcasts_terms` row with a
+  // wrong `acknowledgedAt: clock.now()` payload (GDPR Art. 7 first-
+  // consent anchor must remain the legal record).
+  if (!result.value.previouslyNull) {
+    // Idempotent re-ack — F3 column already set on a prior request.
+    // No `acknowledgedAt` field because returning `clock.now()` would
+    // misrepresent the persisted consent timestamp; the discriminant
+    // tells the caller "this was a no-op; the original timestamp lives
+    // on the F3 member record".
     return ok({ kind: 'idempotent' });
   }
 

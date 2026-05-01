@@ -129,7 +129,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     },
     async memberExistsInTenant() { return true; },
     async markBroadcastsAcknowledged() {
-      return ok(undefined);
+      return ok({ previouslyNull: true });
     },
   };
 }

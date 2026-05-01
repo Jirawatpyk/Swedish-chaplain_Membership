@@ -85,7 +85,13 @@ export default async function EblastsListPage(props: {
   const memberId = memberLookup.ok ? memberLookup.value.memberId : null;
 
   const searchParams = await props.searchParams;
-  const requestedPage = Math.max(1, Number(searchParams.page ?? '1') || 1);
+  // Cap the requested page so unbounded `?page=99999999` URLs don't
+  // round-trip an extra COUNT(*) query through the repo before
+  // clamping. 1,000 pages × 10 per page = 10k broadcasts is well past
+  // the FR-016a 5k/year/tenant cap (per-member subset stays in the
+  // hundreds), so any value beyond is necessarily a probe / typo.
+  const rawPage = Number(searchParams.page ?? '1') || 1;
+  const requestedPage = Math.min(1_000, Math.max(1, rawPage));
 
   let quota: {
     used: number;
@@ -154,6 +160,7 @@ export default async function EblastsListPage(props: {
       }
       const lastPlanChangedAt = planLookup.ok ? planLookup.value : null;
       if (
+        lastPlanChangedAt !== null &&
         shouldShowPlanChangedExplainer(
           lastPlanChangedAt,
           v.quotaYear,
@@ -162,13 +169,14 @@ export default async function EblastsListPage(props: {
       ) {
         // Format the plan-changed date in the tenant timezone so the
         // microcopy reads "Plan changed on <Bangkok-day>" regardless
-        // of where the server is running.
+        // of where the server is running. Explicit null-guard above
+        // replaces the prior `lastPlanChangedAt!` non-null assertion.
         const planChangedFormatter = new Intl.DateTimeFormat(
           intlLocale(locale),
           { dateStyle: 'long', timeZone: v.tenantTimezone },
         );
         planChangedExplainer = tQuota('planChangedExplainer', {
-          date: planChangedFormatter.format(lastPlanChangedAt!),
+          date: planChangedFormatter.format(lastPlanChangedAt),
         });
       }
     } else {

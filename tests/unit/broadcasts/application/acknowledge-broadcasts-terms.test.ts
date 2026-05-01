@@ -81,10 +81,14 @@ describe('acknowledgeBroadcastsTerms', () => {
     expect(audit.emit).not.toHaveBeenCalled();
   });
 
-  it('already-acknowledged — idempotent ok with alreadyAcknowledged=true; NO audit emit', async () => {
+  it('idempotent re-ack (previouslyNull=false) — returns kind:idempotent; NO audit emit', async () => {
+    // Round 5 code-review CRIT regression guard — the bridge MUST forward
+    // `previouslyNull` from F3 so the use-case can choose 'idempotent'
+    // vs 'fresh'. A regression that returned `ok({ previouslyNull: true })`
+    // for a re-ack would write a duplicate audit row.
     const audit: AuditPort = { emit: vi.fn<AuditPort['emit']>(async () => undefined) };
     const membersBridge = partialBridge(async () =>
-      err({ kind: 'mark_ack.already_acknowledged' as const }),
+      ok({ previouslyNull: false }),
     );
 
     const r = await acknowledgeBroadcastsTerms(
@@ -105,7 +109,9 @@ describe('acknowledgeBroadcastsTerms', () => {
   it('happy path — emits audit with full payload (Q15 demonstrable consent)', async () => {
     const emit = vi.fn<AuditPort['emit']>(async () => undefined);
     const audit: AuditPort = { emit };
-    const membersBridge = partialBridge(async () => ok(undefined));
+    const membersBridge = partialBridge(async () =>
+      ok({ previouslyNull: true }),
+    );
     const now = new Date('2026-05-01T05:00:00Z');
 
     const r = await acknowledgeBroadcastsTerms(
@@ -180,7 +186,7 @@ describe('acknowledgeBroadcastsTerms', () => {
     const audit: AuditPort = { emit: vi.fn<AuditPort['emit']>(async () => undefined) };
     const membersBridge = partialBridge(async (ctx) => {
       bridgeCalls.push({ tenantSlug: ctx.slug });
-      return ok(undefined);
+      return ok({ previouslyNull: true });
     });
 
     const now = new Date('2026-05-01T05:00:00Z');
@@ -204,7 +210,9 @@ describe('acknowledgeBroadcastsTerms', () => {
         throw new Error('audit transport down');
       }),
     };
-    const membersBridge = partialBridge(async () => ok(undefined));
+    const membersBridge = partialBridge(async () =>
+      ok({ previouslyNull: true }),
+    );
     const now = new Date('2026-05-01T05:00:00Z');
 
     const r = await acknowledgeBroadcastsTerms(

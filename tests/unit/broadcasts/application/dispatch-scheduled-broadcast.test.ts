@@ -279,7 +279,7 @@ function makeMembersBridge(opts: {
     },
     async memberExistsInTenant() { return true; },
     async markBroadcastsAcknowledged() {
-      return ok(undefined);
+      return ok({ previouslyNull: true });
     },
   };
 }

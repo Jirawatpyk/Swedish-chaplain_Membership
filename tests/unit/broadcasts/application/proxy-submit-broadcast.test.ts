@@ -114,7 +114,7 @@ function makeMembersBridge(opts: FixtureOpts): MembersBridgePort {
       return opts.memberExists ?? true;
     },
     async markBroadcastsAcknowledged() {
-      return ok(undefined);
+      return ok({ previouslyNull: true });
     },
   };
 }
