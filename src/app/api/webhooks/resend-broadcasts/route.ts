@@ -73,12 +73,25 @@ function jsonOk(correlationId: string): NextResponse {
 }
 
 function jsonUnauthorized(
-  code: 'missing_header' | 'bad_signature',
+  code: 'missing_header' | 'bad_signature' | 'body_too_large',
   correlationId: string,
 ): NextResponse {
+  // 413 Payload Too Large for the size guard so Resend / proxies
+  // surface the real failure mode; signature/format failures stay 401.
+  const status = code === 'body_too_large' ? 413 : 401;
   return NextResponse.json(
     { error: { code } },
-    { status: 401, headers: baseHeaders(correlationId) },
+    { status, headers: baseHeaders(correlationId) },
+  );
+}
+
+function jsonFeatureDisabled(correlationId: string): NextResponse {
+  // 410 Gone (NOT 503) so Svix backoff treats it as terminal and
+  // stops the 3-day retry storm. Audit row makes the rejection
+  // observable to ops when the kill-switch flips.
+  return NextResponse.json(
+    { error: { code: 'feature_disabled' } },
+    { status: 410, headers: baseHeaders(correlationId) },
   );
 }
 
@@ -130,16 +143,64 @@ async function auditSignatureReject(
   }
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
-  if (!env.features.f7Broadcasts) {
-    return NextResponse.json(
-      { error: { code: 'feature_disabled' } },
-      { status: 503 },
+/**
+ * Insert a `broadcast_webhook_signature_rejected` audit row when a
+ * signature-verified webhook arrives for a `resend_broadcast_id` that
+ * does NOT match any persisted broadcast (review ERR-C1). Used in lieu
+ * of a dedicated audit event type to keep migrations out of the hotfix
+ * — the `reason: 'unknown_resend_broadcast_id'` field is the forensic
+ * marker. Same NULL-tenant + 5y-retention shape as `auditSignatureReject`.
+ */
+async function auditUnknownResendBroadcast(
+  resendBroadcastId: string,
+  eventType: string,
+  requestId: string,
+  correlationId: string,
+): Promise<void> {
+  try {
+    await db.execute(sql`
+      INSERT INTO audit_log
+        (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+      VALUES
+        ('broadcast_webhook_signature_rejected'::audit_event_type,
+         'system:webhook',
+         ${`Resend Broadcasts webhook for unknown broadcast id (${resendBroadcastId})`},
+         ${requestId},
+         ${JSON.stringify({
+           reason: 'unknown_resend_broadcast_id',
+           resendBroadcastId,
+           eventType,
+           correlationId,
+         })}::jsonb,
+         NULL,
+         5)
+    `);
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.constructor.name : 'unknown',
+        resendBroadcastId,
+        eventType,
+        requestId,
+        correlationId,
+      },
+      'broadcasts.webhook.audit_unknown_id_failed',
     );
   }
+}
 
+export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
   const correlationId = randomUUID();
+
+  if (!env.features.f7Broadcasts) {
+    // ERR-M3 (review): emit audit so the kill-switch flip is observable
+    // and ops can tell "real Resend traffic was rejected" from
+    // "no traffic arrived." Tenant unknown at this stage → NULL tenant
+    // sig-reject row (same shape as missing-header).
+    await auditSignatureReject('feature_disabled', requestId, correlationId);
+    return jsonFeatureDisabled(correlationId);
+  }
 
   // Step 2 FIRST — read headers before reading body.
   const svixSig = request.headers.get('svix-signature');
@@ -163,7 +224,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const declared = Number.parseInt(contentLengthHeader, 10);
     if (!Number.isFinite(declared) || declared > MAX_WEBHOOK_BODY_BYTES) {
       await auditSignatureReject('body_too_large', requestId, correlationId);
-      return jsonUnauthorized('bad_signature', correlationId);
+      return jsonUnauthorized('body_too_large', correlationId);
     }
   }
 
@@ -218,7 +279,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (lookup === null) {
       // Unknown broadcast id — could be a legacy dispatch from a
       // prior tenant whose row has been archived, or a misrouted
-      // event. 200 OK so Resend does not retry-storm.
+      // event from a leaked secret. 200 OK so Resend does not
+      // retry-storm, but emit a NULL-tenant audit row so the event
+      // is forensically discoverable per FR-024 (review ERR-C1).
       logger.warn(
         {
           resendBroadcastId: verified.data.broadcastId,
@@ -227,6 +290,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           correlationId,
         },
         'broadcasts.webhook.unknown_resend_broadcast_id',
+      );
+      await auditUnknownResendBroadcast(
+        verified.data.broadcastId,
+        verified.type,
+        requestId,
+        correlationId,
       );
       return jsonOk(correlationId);
     }

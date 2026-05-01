@@ -10,8 +10,10 @@
  * Tenant scoping: every read/write goes through `runInTenant(ctx, fn)`
  * which sets `chamber_app` role + `app.current_tenant` for RLS.
  *
- * `findByResendBroadcastIdBypassRls` is a US4 webhook concern; stub
- * throws here.
+ * `findByResendBroadcastIdBypassRls` is the US5 webhook pre-tenant
+ * resolver — uses the default `db` (BYPASS-RLS schema-owner connection)
+ * because the route handler does not yet know which tenant owns the
+ * incoming `resend_broadcast_id`.
  */
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
@@ -159,15 +161,33 @@ function encodeCursor(submittedAt: Date | null, broadcastId: string): string {
 function decodeCursor(
   cursor: string,
 ): { submittedAt: Date | null; broadcastId: string } | null {
+  // Review ERR-H4: log decode failures (length-only, never the cursor
+  // bytes — they may carry tenant ids in clear text). Returning null
+  // keeps the existing "tampered cursor → reset to first page"
+  // behavior; the log makes deliberate tampering distinguishable from
+  // a genuine race against pagination state.
   try {
     const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
     const [iso, broadcastId] = decoded.split('|');
-    if (broadcastId === undefined) return null;
+    if (broadcastId === undefined) {
+      logger.warn(
+        { cursorLen: cursor.length },
+        'broadcasts.repo.cursor_decode_missing_broadcast_id',
+      );
+      return null;
+    }
     return {
       submittedAt: iso === '' || iso === undefined ? null : new Date(iso),
       broadcastId,
     };
-  } catch {
+  } catch (e) {
+    logger.warn(
+      {
+        cursorLen: cursor.length,
+        err: e instanceof Error ? e.constructor.name : 'unknown',
+      },
+      'broadcasts.repo.cursor_decode_threw',
+    );
     return null;
   }
 }
@@ -439,7 +459,11 @@ export function makeDrizzleBroadcastsRepo(
       resendBroadcastId: string,
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
-      await tx
+      // Review ERR-M4: assert exactly one row was updated. A 0-row
+      // update would leave the Resend resource orphaned (sent without
+      // a local id linkage) — fail loud so the dispatcher rolls back
+      // and the operator sees the broken broadcast id.
+      const updated = await tx
         .update(broadcasts)
         .set({
           resendAudienceId,
@@ -451,7 +475,13 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
           ),
+        )
+        .returning({ broadcastId: broadcasts.broadcastId });
+      if (updated.length !== 1) {
+        throw new Error(
+          `attachResendIds: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
         );
+      }
     },
 
     async attachAudienceId(
@@ -461,7 +491,8 @@ export function makeDrizzleBroadcastsRepo(
       resendAudienceId: string,
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
-      await tx
+      // Review ERR-M4: rowcount assertion (see attachResendIds).
+      const updated = await tx
         .update(broadcasts)
         .set({
           resendAudienceId,
@@ -472,7 +503,13 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
           ),
+        )
+        .returning({ broadcastId: broadcasts.broadcastId });
+      if (updated.length !== 1) {
+        throw new Error(
+          `attachAudienceId: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
         );
+      }
     },
 
     async listByTenantStatus(

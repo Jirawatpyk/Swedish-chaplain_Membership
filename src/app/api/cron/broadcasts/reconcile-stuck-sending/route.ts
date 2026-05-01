@@ -170,5 +170,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     { tenantId: tenant.slug, ...summary },
     'cron.broadcasts.reconcile.tick_complete',
   );
+  // Review ERR-M1: surface uncaught-row failures as a non-2xx so the
+  // cron-job.org dashboard turns red (the operator-facing alarm signal).
+  // The per-row try/catch already logged each error; this is the
+  // tick-level escalation hook.
+  if (summary.uncaught_error > 0) {
+    return NextResponse.json(summary, { status: 500 });
+  }
   return NextResponse.json(summary, { status: 200 });
 }

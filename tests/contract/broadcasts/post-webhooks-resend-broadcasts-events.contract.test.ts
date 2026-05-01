@@ -189,7 +189,7 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
     expect(dbExecuteMock).toHaveBeenCalledTimes(1);
   });
 
-  it('content-length > 64 KiB → 401 (DoS pre-guard)', async () => {
+  it('content-length > 64 KiB → 413 body_too_large (DoS pre-guard, review ERR-C2)', async () => {
     const route = await importRoute();
     const res = await route.POST(
       makeRequest({
@@ -198,23 +198,31 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
       }),
     );
 
-    expect(res.status).toBe(401);
+    // Review ERR-C2: distinct response code from bad_signature so ops
+    // can distinguish DoS attempts from secret-rotation gaps.
+    expect(res.status).toBe(413);
+    expect((await res.json()).error.code).toBe('body_too_large');
     expect(constructEventMock).not.toHaveBeenCalled();
     expect(processWebhookEventMock).not.toHaveBeenCalled();
   });
 
-  it('kill-switch off → 503 feature_disabled', async () => {
+  it('kill-switch off → 410 feature_disabled + audit (review ERR-M3)', async () => {
     envMock.features.f7Broadcasts = false;
     const route = await importRoute();
     const res = await route.POST(makeRequest({ body: '{}' }));
 
-    expect(res.status).toBe(503);
+    // Review ERR-M3: 410 Gone (NOT 503) so Svix backoff treats the
+    // rejection as terminal; audit row makes the kill-switch flip
+    // observable to ops.
+    expect(res.status).toBe(410);
     expect((await res.json()).error.code).toBe('feature_disabled');
     expect(constructEventMock).not.toHaveBeenCalled();
     expect(processWebhookEventMock).not.toHaveBeenCalled();
+    // Audit row written with reason=feature_disabled.
+    expect(dbExecuteMock).toHaveBeenCalledTimes(1);
   });
 
-  it('unknown resend_broadcast_id → 200 OK (no retry storm)', async () => {
+  it('unknown resend_broadcast_id → 200 OK + NULL-tenant audit (review ERR-C1)', async () => {
     constructEventMock.mockReturnValue(buildVerifiedEvent('delivered'));
     resolveTenantByResendBroadcastIdMock.mockResolvedValue(null);
     const route = await importRoute();
@@ -222,6 +230,11 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
 
     expect(res.status).toBe(200);
     expect(processWebhookEventMock).not.toHaveBeenCalled();
+    // Review ERR-C1: an audit row MUST be emitted so the misrouted /
+    // post-archive event is forensically discoverable per FR-024.
+    // Tenant is unknown at this stage so the row carries NULL tenant +
+    // reason=unknown_resend_broadcast_id.
+    expect(dbExecuteMock).toHaveBeenCalledTimes(1);
   });
 
   it('use-case error → 500 dispatch_failed (Resend retries)', async () => {

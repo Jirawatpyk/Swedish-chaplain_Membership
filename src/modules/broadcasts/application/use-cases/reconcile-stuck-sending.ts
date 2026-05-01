@@ -222,7 +222,7 @@ async function markSent(
       },
       requestId,
     });
-    await deps.audit.emit(tx, audit('broadcast_sent', {
+    await deps.audit.emit(tx, buildAudit('broadcast_sent', {
       tenantId,
       actorUserId: 'system:reconcile-cron',
       summary: `Broadcast ${broadcast.broadcastId} transitioned to sent via 24h reconciliation`,
@@ -234,7 +234,7 @@ async function markSent(
       },
       requestId,
     }));
-    await deps.audit.emit(tx, audit('broadcast_quota_consumed', {
+    await deps.audit.emit(tx, buildAudit('broadcast_quota_consumed', {
       tenantId,
       actorUserId: 'system:reconcile-cron',
       summary: `Quota slot consumed for broadcast ${broadcast.broadcastId} (year ${quotaYear})`,
@@ -313,7 +313,7 @@ async function markFailedToDispatch(
         failureReason: reason,
       },
     );
-    await deps.audit.emit(tx, audit('broadcast_resend_resource_missing', {
+    await deps.audit.emit(tx, buildAudit('broadcast_resend_resource_missing', {
       tenantId,
       actorUserId: 'system:reconcile-cron',
       summary: `Resend resource missing for broadcast ${broadcast.broadcastId} at 24h reconciliation — marking failed_to_dispatch`,
@@ -326,7 +326,7 @@ async function markFailedToDispatch(
       },
       requestId,
     }));
-    await deps.audit.emit(tx, audit('broadcast_failed_to_dispatch', {
+    await deps.audit.emit(tx, buildAudit('broadcast_failed_to_dispatch', {
       tenantId,
       actorUserId: 'system:reconcile-cron',
       summary: `Broadcast ${broadcast.broadcastId} failed_to_dispatch via 24h reconciliation (${reason})`,
@@ -346,7 +346,11 @@ async function markFailedToDispatch(
   });
 }
 
-function audit(
+// Review ERR-M2: renamed from `audit` to `buildAudit` so it does not
+// shadow `deps.audit` — a future contributor calling `audit.emit`
+// without `deps.` would otherwise get a runtime TypeError caught by
+// the outer try/catch and surfaced as `reconcile.server_error`.
+function buildAudit(
   eventType: F7AuditEventType,
   rest: {
     readonly tenantId: string;

@@ -68,8 +68,6 @@ import { currentQuotaYear } from './compute-quota-counter';
 // 5% per-broadcast complaint-rate threshold (Clarifications Q14 / SC-005 (b)).
 const COMPLAINT_RATE_HALT_THRESHOLD = 0.05;
 
-// `crypto.randomUUID` is available in Node 20+ via the global. Avoid
-// depending on a Node import here to keep the use-case framework-free.
 function newDeliveryId(): BroadcastDeliveryId {
   return asBroadcastDeliveryId(globalThis.crypto.randomUUID());
 }
@@ -176,7 +174,34 @@ export async function processWebhookEvent(
           errorMessage: event.data.errorMessage ?? null,
           bounceType: event.data.bounceType ?? null,
         };
-        await deps.deliveriesRepo.upsertByResendEventId(tx, deliveryInput);
+        const upsert = await deps.deliveriesRepo.upsertByResendEventId(
+          tx,
+          deliveryInput,
+        );
+        // Review ERR-H2: emit `broadcast_concurrent_action_blocked` only
+        // for genuinely-new late events (not idempotent replays). This
+        // makes "Resend kept firing complaints after we marked the
+        // broadcast sent/cancelled" observable in `audit_log` — a
+        // compliance-relevant signal that was previously silent.
+        if (upsert.inserted) {
+          await deps.audit.emit(
+            tx,
+            f7Audit({
+              eventType: 'broadcast_concurrent_action_blocked',
+              tenantId,
+              actorUserId: 'system:resend-webhook',
+              summary: `Late ${event.data.status} event arrived for broadcast ${broadcastId} already in terminal status ${fresh.status}`,
+              payload: {
+                broadcastId,
+                terminalStatus: fresh.status,
+                lateEventStatus: event.data.status,
+                resendEventId: event.id,
+                recipientEmailHashed: hashRecipient(recipientLower.value),
+              },
+              requestId: input.requestId,
+            }),
+          );
+        }
         return ok({
           kind: 'broadcast_terminal' as const,
           broadcastId,
@@ -523,18 +548,17 @@ function f7Audit(args: {
 }
 
 /**
- * SHA-256 hash of the lowercased recipient email — audit log MUST NEVER
- * carry raw recipient emails per FR-042 + privacy.md. Hashing inside
- * the use-case keeps the redaction invariant at the Application
- * boundary (a future logger leak would still be safe at the audit row
- * because raw email never enters the payload).
+ * Non-reversible-from-raw-scan hash of the lowercased recipient email
+ * for audit-payload redaction. Audit log MUST NEVER carry raw recipient
+ * emails (FR-042 + privacy.md). Hashing inside the use-case keeps the
+ * redaction invariant at the Application boundary.
  *
- * Synchronous SHA-256 via Web Crypto subtle is async; for audit-payload
- * hashing we use a fast non-cryptographic FNV-style hash (audit row is
- * not cryptographically queried; it just needs to be non-reversible by
- * an attacker who reads the audit log). For PII-grade hashing the
- * `marketing_unsubscribes` cascade uses Node `createHash('sha256')` at
- * the Infrastructure boundary (suppression list).
+ * NOTE: FNV-1a is **not** cryptographically one-way — a known small
+ * recipient set is brute-forceable by precomputing hashes. We use it
+ * only to defeat passive `SELECT … FROM audit_log` reads (operator
+ * accident, dump leak). PII-grade hashing for the `marketing_unsubscribes`
+ * suppression list uses Node `createHash('sha256')` at the
+ * Infrastructure boundary.
  */
 function hashRecipient(emailLower: EmailLower): string {
   // FNV-1a 64-bit (deterministic, framework-free, no PII reversal).
@@ -551,9 +575,9 @@ function hashRecipient(emailLower: EmailLower): string {
  * Enqueue the FR-028 / AS3 transactional summary email at the
  * `sending → sent` transition. Best-effort — failures are logged and
  * swallowed so the webhook ingest does not 5xx Resend on a transient
- * outbox-write outage. Re-exported via `markSentAndEnqueueSummary`
- * for the reconciliation path so the two `markSent` sites share one
- * implementation.
+ * outbox-write outage. The reconciliation path uses the sibling
+ * `enqueueSummaryEmailForReconcile` (exported below) so both
+ * sent-transition sites share one implementation.
  */
 async function enqueueDeliverySummaryEmail(args: {
   readonly deps: ProcessWebhookEventDeps;
@@ -565,25 +589,45 @@ async function enqueueDeliverySummaryEmail(args: {
   readonly estimatedRecipientCount: number;
 }): Promise<void> {
   if (args.deps.emailTransactional === undefined) return;
+
+  // Review ERR-H1: split try/catch so the failure-mode log accurately
+  // names the broken layer. Conflating member-lookup (DB / RLS / bridge)
+  // with outbox-insert (notifications_outbox / dispatcher) made on-call
+  // diagnose the wrong system.
+  let memberEmail: string | null;
   try {
-    const memberEmail = await args.deps.membersBridge.getMemberPrimaryContact(
+    memberEmail = await args.deps.membersBridge.getMemberPrimaryContact(
       args.deps.tenant,
       args.memberId,
     );
-    if (memberEmail === null) {
-      logger.warn(
-        {
-          tenantId: args.tenantId,
-          broadcastId: args.broadcastId,
-          memberId: args.memberId,
-        },
-        'broadcasts.delivered_email.skipped_no_primary_contact',
-      );
-      return;
-    }
-    const total = args.estimatedRecipientCount;
-    const deliveryRate =
-      total > 0 ? Math.round((args.aggregate.delivered / total) * 1000) / 10 : 0;
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: args.tenantId,
+        broadcastId: args.broadcastId,
+        memberId: args.memberId,
+      },
+      'broadcasts.delivered_email.member_lookup_failed',
+    );
+    return;
+  }
+  if (memberEmail === null) {
+    logger.warn(
+      {
+        tenantId: args.tenantId,
+        broadcastId: args.broadcastId,
+        memberId: args.memberId,
+      },
+      'broadcasts.delivered_email.skipped_no_primary_contact',
+    );
+    return;
+  }
+
+  const total = args.estimatedRecipientCount;
+  const deliveryRate =
+    total > 0 ? Math.round((args.aggregate.delivered / total) * 1000) / 10 : 0;
+  try {
     await args.deps.emailTransactional.sendMemberEmail(args.deps.tenant, {
       to: memberEmail,
       subject: args.broadcastSubject,
@@ -646,25 +690,42 @@ export async function enqueueSummaryEmailForReconcile(args: {
   readonly estimatedRecipientCount: number;
 }): Promise<void> {
   if (args.emailTransactional === undefined) return;
+
+  // Review ERR-H1: split member-lookup vs outbox-insert error reporting.
+  let memberEmail: string | null;
   try {
-    const memberEmail = await args.membersBridge.getMemberPrimaryContact(
+    memberEmail = await args.membersBridge.getMemberPrimaryContact(
       args.tenant,
       args.memberId,
     );
-    if (memberEmail === null) {
-      logger.warn(
-        {
-          tenantId: args.tenant.slug,
-          broadcastId: args.broadcastId,
-          memberId: args.memberId,
-        },
-        'broadcasts.delivered_email.skipped_no_primary_contact',
-      );
-      return;
-    }
-    const total = args.estimatedRecipientCount;
-    const deliveryRate =
-      total > 0 ? Math.round((args.aggregate.delivered / total) * 1000) / 10 : 0;
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: args.tenant.slug,
+        broadcastId: args.broadcastId,
+        memberId: args.memberId,
+      },
+      'broadcasts.delivered_email.member_lookup_failed',
+    );
+    return;
+  }
+  if (memberEmail === null) {
+    logger.warn(
+      {
+        tenantId: args.tenant.slug,
+        broadcastId: args.broadcastId,
+        memberId: args.memberId,
+      },
+      'broadcasts.delivered_email.skipped_no_primary_contact',
+    );
+    return;
+  }
+
+  const total = args.estimatedRecipientCount;
+  const deliveryRate =
+    total > 0 ? Math.round((args.aggregate.delivered / total) * 1000) / 10 : 0;
+  try {
     await args.emailTransactional.sendMemberEmail(args.tenant, {
       to: memberEmail,
       subject: args.broadcastSubject,

@@ -14,6 +14,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '../../domain/broadcast';
 import {
@@ -170,7 +171,23 @@ export function makeDrizzleBroadcastDeliveriesRepo(
           const key = STATUS_TO_AGG_KEY[r.status];
           if (key !== undefined) {
             buckets[key] = r.count;
+            continue;
           }
+          // Review ERR-M5: schema/code drift surface — a future enum
+          // value (queued, opened, …) silently dropping out of the
+          // aggregate corrupts the completion-check arithmetic. Log
+          // at error so the alert pipeline fires (per
+          // docs/observability.md). Mirrors `reduceDeliveryAggregateRows`
+          // in the sibling broadcasts repo.
+          logger.error(
+            {
+              tenantId: tenantIdArg,
+              broadcastId,
+              status: r.status,
+              count: r.count,
+            },
+            'broadcasts.deliveries.aggregate.unknown_status',
+          );
         }
         return { broadcastId, ...buckets };
       });

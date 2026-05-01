@@ -506,6 +506,216 @@ describe('process-webhook-event (T150 GREEN)', () => {
   });
 });
 
+describe('process-webhook-event — per-broadcast complaint-rate auto-halt (FR-027 / Q14 / SC-005(b))', () => {
+  // Review TEST-1: closes the gap where the 20-event small-N noise
+  // floor + 5% threshold + setMemberHalt cascade were unasserted.
+
+  it('crosses 20-event floor + >5% rate → setMemberHalt called + breach audit emitted', async () => {
+    // 21 terminal events (1 complaint + 20 delivered) → 1/21 ≈ 4.76%
+    // — below 5%, halt should NOT fire (boundary check below).
+    // For a positive halt: 22 terminals (2 complaints + 20 delivered)
+    // → 2/22 ≈ 9.1% AND ≥20 events → halt fires.
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({ estimatedRecipientCount: 100 }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 20,
+        bounced: 0,
+        softBounced: 0,
+        complained: 2,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+
+    await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      {
+        broadcastId,
+        event: buildEvent('complained'),
+        requestId: null,
+      },
+    );
+
+    expect(members.haltCalls).toHaveLength(1);
+    expect(members.haltCalls[0]).toEqual({
+      memberId: '44444444-4444-4444-4444-444444444444',
+      halted: true,
+    });
+    const breach = audit.emits.find(
+      (e) => e.eventType === 'broadcast_complaint_rate_per_broadcast_breach',
+    );
+    expect(breach).toBeDefined();
+    expect(breach?.payload['recipientsAtBreach']).toBe(22);
+  });
+
+  it('below 20-event noise floor → halt does NOT fire even at 100% complaint rate', async () => {
+    // 5 terminals all complaints (100%) — n<20 → no halt.
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({ estimatedRecipientCount: 100 }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 0,
+        bounced: 0,
+        softBounced: 0,
+        complained: 5,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+
+    await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      {
+        broadcastId,
+        event: buildEvent('complained'),
+        requestId: null,
+      },
+    );
+
+    // Suppression still applies (the spec'd cascade is independent of
+    // the halt cascade) — but member halt MUST NOT fire below the floor.
+    expect(members.haltCalls).toHaveLength(0);
+    expect(
+      audit.emits.find(
+        (e) => e.eventType === 'broadcast_complaint_rate_per_broadcast_breach',
+      ),
+    ).toBeUndefined();
+    // Suppression IS still recorded.
+    expect(unsub.upserts).toHaveLength(1);
+  });
+
+  it('above noise floor but ≤5% rate → halt does NOT fire (boundary)', async () => {
+    // 21 terminals (1 complaint + 20 delivered) → 1/21 ≈ 4.76% — under
+    // 5%, halt MUST NOT fire even though n ≥ 20.
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({ estimatedRecipientCount: 100 }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 20,
+        bounced: 0,
+        softBounced: 0,
+        complained: 1,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+
+    await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      {
+        broadcastId,
+        event: buildEvent('complained'),
+        requestId: null,
+      },
+    );
+
+    expect(members.haltCalls).toHaveLength(0);
+    expect(
+      audit.emits.find(
+        (e) => e.eventType === 'broadcast_complaint_rate_per_broadcast_breach',
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe('process-webhook-event — terminal-state guard does NOT double-consume quota (TEST-1 lock)', () => {
+  it('event arriving after broadcast already sent does NOT re-emit broadcast_quota_consumed', async () => {
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({
+        status: 'sent',
+        sentAt: FROZEN_NOW,
+        quotaYearConsumed: 2026,
+        quotaConsumedAt: FROZEN_NOW,
+      }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 99,
+        bounced: 0,
+        softBounced: 0,
+        complained: 0,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+
+    await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      {
+        broadcastId,
+        event: buildEvent('delivered'),
+        requestId: null,
+      },
+    );
+
+    // Locks the FR-028 "do not double-consume quota" invariant.
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_quota_consumed'),
+    ).toBeUndefined();
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_sent'),
+    ).toBeUndefined();
+    // ERR-H2: late-event audit IS emitted for forensic visibility.
+    expect(
+      audit.emits.find(
+        (e) => e.eventType === 'broadcast_concurrent_action_blocked',
+      ),
+    ).toBeDefined();
+  });
+});
+
 describe('process-webhook-event — defence-in-depth checks', () => {
   it('rejects malformed recipient email', async () => {
     const broadcasts = makeBroadcastsRepo({

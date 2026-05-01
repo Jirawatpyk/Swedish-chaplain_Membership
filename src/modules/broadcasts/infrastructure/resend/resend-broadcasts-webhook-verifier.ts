@@ -25,6 +25,7 @@
  * Pure Infrastructure — only Node `crypto` imports. No framework.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { logger } from '@/lib/logger';
 import {
   WebhookSignatureError,
   type VerifiedBroadcastEvent,
@@ -69,11 +70,20 @@ function decodeBase64Loose(raw: string): Buffer {
   // Svix secrets ship as base64; if a tenant rotated to a non-base64
   // shared secret, fall back to UTF-8 bytes so the HMAC still works.
   // Both forms are constant-time-compared downstream.
+  // Review ERR-H3: log decode failures so secret-rotation paste errors
+  // (operator typed a non-base64 value) are diagnosable. Length-only —
+  // never the secret value.
   try {
     const buf = Buffer.from(raw, 'base64');
     if (buf.length > 0) return buf;
-  } catch {
-    /* fall through */
+  } catch (e) {
+    logger.warn(
+      {
+        secretLen: raw.length,
+        err: e instanceof Error ? e.constructor.name : 'unknown',
+      },
+      'broadcasts.webhook.secret_base64_decode_failed_falling_back_utf8',
+    );
   }
   return Buffer.from(raw, 'utf8');
 }
@@ -150,7 +160,14 @@ export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
       );
     }
 
-    const status = EVENT_TYPE_TO_DELIVERY_STATUS[parsed.type];
+    // Use Object.hasOwn so a payload with `type: '__proto__'` /
+    // `'constructor'` returns undefined instead of leaking inherited
+    // prototype keys (review ERR-L2; defence in depth even though
+    // `Record<string, …>` does not place `Object.prototype` properties
+    // here today).
+    const status = Object.hasOwn(EVENT_TYPE_TO_DELIVERY_STATUS, parsed.type)
+      ? EVENT_TYPE_TO_DELIVERY_STATUS[parsed.type]
+      : undefined;
     if (status === undefined || !isBroadcastDeliveryStatus(status)) {
       throw new WebhookSignatureError(
         'malformed',
