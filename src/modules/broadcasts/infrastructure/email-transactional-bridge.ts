@@ -37,7 +37,8 @@ import type {
 type F7NotificationType =
   | 'broadcast_approved_notification'
   | 'broadcast_rejected_notification'
-  | 'broadcast_cancelled_notification';
+  | 'broadcast_cancelled_notification'
+  | 'broadcast_delivered_notification';
 
 /** Resolve the F7 notification_type from the templateKey discriminator. */
 function resolveNotificationType(templateKey: string): F7NotificationType {
@@ -48,9 +49,13 @@ function resolveNotificationType(templateKey: string): F7NotificationType {
       return 'broadcast_rejected_notification';
     case 'broadcast_cancelled':
       return 'broadcast_cancelled_notification';
+    case 'broadcast_delivered':
+      // FR-028 / AS3 — summary email enqueued at sending → sent transition
+      // (both webhook-driven completion + 24h reconciliation paths).
+      return 'broadcast_delivered_notification';
     default:
       throw new Error(
-        `email-transactional-bridge: unknown templateKey "${templateKey}" — must be one of broadcast_{approved,rejected,cancelled}`,
+        `email-transactional-bridge: unknown templateKey "${templateKey}" — must be one of broadcast_{approved,rejected,cancelled,delivered}`,
       );
   }
 }

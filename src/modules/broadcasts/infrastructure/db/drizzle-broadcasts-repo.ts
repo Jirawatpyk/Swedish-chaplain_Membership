@@ -14,7 +14,7 @@
  * throws here.
  */
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { runInTenant, type TenantTx } from '@/lib/db';
+import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
 import {
@@ -581,13 +581,27 @@ export function makeDrizzleBroadcastsRepo(
     },
 
     async findByResendBroadcastIdBypassRls(
-      _resendBroadcastId: string,
+      resendBroadcastId: string,
     ): Promise<
       { readonly tenantId: string; readonly broadcast: Broadcast } | null
     > {
-      throw new Error(
-        'findByResendBroadcastIdBypassRls: deferred to F7 US4 (webhook handler). Not callable in US1 surface.',
-      );
+      // Webhook pre-tenant resolution path (FR-024 / T160). Reads via
+      // the default `db` connection — the schema owner has BYPASSRLS
+      // and is the only role that can locate the row before
+      // `app.current_tenant` is bound. The route handler MUST re-enter
+      // `runInTenant(ctx, ...)` for every downstream write so RLS+FORCE
+      // applies to the rest of the transaction (Constitution Principle I
+      // clause 1). Best-effort lookup: returns `null` for unknown ids.
+      const [row] = await db
+        .select()
+        .from(broadcasts)
+        .where(eq(broadcasts.resendBroadcastId, resendBroadcastId))
+        .limit(1);
+      if (row === undefined) return null;
+      return {
+        tenantId: row.tenantId,
+        broadcast: rowToBroadcast(row as BroadcastRow),
+      };
     },
 
     async listForMemberPaginated(

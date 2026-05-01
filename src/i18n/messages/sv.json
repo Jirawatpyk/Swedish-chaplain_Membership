@@ -1469,6 +1469,31 @@
         "clearHalted": "Spärr hävd. Medlemmen kan skicka nya utskick.",
         "concurrentRace": "En annan administratör hann före dig. Uppdaterar…",
         "error": "Åtgärden misslyckades. Försök igen."
+      },
+      "deliverySummary": {
+        "heading": "Leveranssammanfattning",
+        "description": "Per-mottagar-händelser registrerade från Resend.",
+        "totalRecipients": "Mottagare: {count}",
+        "delivered": "Levererade: {count}",
+        "bounced": "Studsade: {count}",
+        "softBounced": "Tillfälligt studsade: {count}",
+        "complained": "Spam-anmälningar: {count}",
+        "sent": "Skickade (bekräftade av Resend): {count}",
+        "deliveryRate": "Leveransfrekvens: {rate}%",
+        "complaintRate": "Spam-anmälningsfrekvens: {rate}%",
+        "stillSending": "Skickar fortfarande — {received} av {expected} slutgiltiga händelser mottagna.",
+        "completed": "Slutförd {sentAt}.",
+        "reconciledNote": "Slutförd via 24h-avstämning (inga mottagar-händelser från Resend, men resursen är verifierad).",
+        "reconcileFailedNote": "Markerad som failed_to_dispatch vid 24h-avstämning — Resend-resurs saknas."
+      },
+      "complaintRateBreach": {
+        "bannerTitle": "Spam-anmälningsfrekvens överskriden",
+        "bannerBody": "Utskick {broadcastSubject} från {memberName} överskred 5%-tröskeln för spam-anmälningar per utskick. Medlemmen är automatiskt spärrad i väntan på din granskning.",
+        "complaintRateLabel": "Spam-anmälningsfrekvens: {rate}%",
+        "thresholdLabel": "Tröskel: 5%",
+        "viewBroadcast": "Visa utskick",
+        "viewHaltedMembers": "Visa spärrade medlemmar",
+        "ackHelp": "Att häva spärren är en avsiktlig administratörsåtgärd. Granska utskickets innehåll och studsar innan du häver."
       }
     },
     "refund": {
@@ -2224,6 +2249,17 @@
       "body": "Ditt utskick \"{subject}\" har avbrutits.",
       "reasonHeading": "Anteckning om avbrott:",
       "footer": "Din reserverade kvot har frigjorts."
+    },
+    "broadcastDelivered": {
+      "subject": "Ditt utskick \"{subject}\" har levererats",
+      "greeting": "Hej,",
+      "summaryIntro": "Här är leveranssammanfattningen för ditt utskick:",
+      "deliveredCount": "Levererade: {count} av {total}",
+      "bouncedCount": "Studsade: {count}",
+      "complainedCount": "Spam-anmälningar: {count}",
+      "deliveryRate": "Leveransfrekvens: {rate}%",
+      "footer": "Detaljerad statistik finns på din förmånssida.",
+      "viewBenefitsCta": "Visa förmåner + historik"
     }
   }
 }

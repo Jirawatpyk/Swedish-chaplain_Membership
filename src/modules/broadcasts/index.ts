@@ -246,6 +246,44 @@ export {
   makeListMemberBroadcastsDeps,
 } from './infrastructure/broadcasts-deps';
 
+// --- Application use-cases (Phase 7 US5) ---------------------------------
+export {
+  processWebhookEvent,
+  type ProcessWebhookEventDeps,
+  type ProcessWebhookEventError,
+  type ProcessWebhookEventInput,
+  type ProcessWebhookEventOutcome,
+} from './application/use-cases/process-webhook-event';
+export {
+  reconcileStuckSending,
+  type ReconcileStuckSendingDeps,
+  type ReconcileStuckSendingError,
+  type ReconcileStuckSendingInput,
+  type ReconcileStuckSendingOutcome,
+} from './application/use-cases/reconcile-stuck-sending';
+
+// --- Composition root factories (Phase 7 US5) ----------------------------
+export {
+  makeProcessWebhookEventDeps,
+  makeReconcileStuckSendingDeps,
+  resendBroadcastsWebhookVerifier,
+  resolveTenantByResendBroadcastId,
+} from './infrastructure/broadcasts-deps';
+
+// --- Application port — webhook verifier (Phase 7 US5) -------------------
+// Exposed at the barrel because the webhook route handler imports
+// `WebhookSignatureError` to discriminate signature-verification kinds
+// for audit emit. `WebhookVerifierPort` interface is intentionally NOT
+// exported (verify finding G2 — 2026-05-01): no caller outside
+// `src/modules/broadcasts/**` constructs the port type directly. The
+// production verifier is a Domain-typed singleton; tests inject stubs
+// via the module-level `vi.mock` of `@/modules/broadcasts` rather than
+// re-implementing the port shape.
+export {
+  WebhookSignatureError,
+  type VerifiedBroadcastEvent,
+} from './application/ports/webhook-verifier-port';
+
 // --- Infrastructure adapters consumed by routes (Phase 4 US2) ------------
 // EmailTransactionalPort impl is exposed at the barrel because admin
 // review API routes (approve/reject/cancel) trigger member notifications
