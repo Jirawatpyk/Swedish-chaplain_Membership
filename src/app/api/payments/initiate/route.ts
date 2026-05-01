@@ -42,7 +42,11 @@ import {
   errorResponse,
 } from '@/lib/payments-route-helpers';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
-import { auditRepo, type ActorRef } from '@/lib/stripe-webhook-deps';
+import {
+  f5AuditAdapter,
+  f5RetentionFor,
+  type ActorRef,
+} from '@/lib/stripe-webhook-deps';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -166,12 +170,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Threat F-09 — emit an append-only audit row so spamming cancel/
     // initiate leaves a forensic trail. Best-effort: never 5xx the
     // route because the audit write failed.
+    //
+    // Migrated post-PR #20 review from F1 generic `auditRepo.append`
+    // to F5 typed `f5AuditAdapter.emit` so the typed payload contract
+    // (`F5AuditPayloadByType['payment_initiate_rate_limited']`) +
+    // explicit retentionYears become load-bearing. `tx: null` matches
+    // the existing F5 best-effort emit pattern (e.g. cross-tenant
+    // probe at initiate-payment.ts:283) for forensic events that must
+    // survive caller's tx rollback.
     try {
-      await auditRepo.append({
+      await f5AuditAdapter.emit(null, {
+        tenantId: tenantCtx.slug,
+        requestId,
         eventType: 'payment_initiate_rate_limited',
         actorUserId: actorUserId as ActorRef,
         summary: `payments.initiate rate-limited for tenant=${tenantCtx.slug}`,
-        requestId,
+        payload: {},
+        retentionYears: f5RetentionFor('payment_initiate_rate_limited'),
       });
     } catch (e) {
       logger.error(
