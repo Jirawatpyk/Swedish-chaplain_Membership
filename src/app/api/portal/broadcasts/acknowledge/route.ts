@@ -61,9 +61,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
 
     if (!result.ok) {
-      // Single error variant: ack.member_not_found. Map to 404
-      // (anti-enumeration parity with other member-scoped routes).
+      // Currently the only error variant from `acknowledgeBroadcastsTerms`
+      // is `ack.member_not_found` → 404 (anti-enumeration parity). If
+      // new variants are added to the use-case's discriminated error
+      // union, add explicit cases here — the unconditional 404 below
+      // would otherwise mask them.
       return errorResponse(404, 'broadcast_not_found', correlationId);
+    }
+
+    if (result.value.kind === 'idempotent') {
+      // Log idempotent re-acks at debug level so the absence of an
+      // `acknowledgedAt` field in the response (intentional — F3
+      // bridge does not currently return the persisted column on
+      // already-acked path) is observable in ops dashboards. Future
+      // analytics consumers reading `acknowledgedAt` would otherwise
+      // see `undefined` silently. F7.1-TODO: extend F3 bridge to
+      // return the persisted timestamp on the idempotent path.
+      logger.debug(
+        {
+          correlationId,
+          tenantId: ctx.tenant.slug,
+          memberId: ctx.member.memberId,
+          locale,
+        },
+        'broadcasts.acknowledge.idempotent',
+      );
     }
 
     return NextResponse.json(
@@ -77,6 +99,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // Idempotent — the F3 column was already set on a prior
             // request. Client doesn't need a timestamp to dismiss
             // the banner; `wasNew: false` is the dismiss signal.
+            // `acknowledgedAt` is intentionally omitted (F7.1-TODO
+            // above).
             wasNew: false,
             locale,
           },

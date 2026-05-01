@@ -8,7 +8,12 @@
  *     don't break silently on rename)
  */
 import { describe, expect, it } from 'vitest';
-import { asIanaTimezone, unsafeIanaTimezone } from '@/modules/tenants';
+import {
+  asIanaTimezone,
+  getTenantTimezone,
+  hasExplicitTenantTimezone,
+  unsafeIanaTimezone,
+} from '@/modules/tenants';
 
 describe('asIanaTimezone (parse-do-not-validate constructor)', () => {
   it.each([
@@ -38,6 +43,27 @@ describe('asIanaTimezone (parse-do-not-validate constructor)', () => {
       }
     },
   );
+});
+
+describe('hasExplicitTenantTimezone (Application-layer fallback gate)', () => {
+  it('returns true for known tenant slug (swecham)', () => {
+    expect(hasExplicitTenantTimezone('swecham')).toBe(true);
+  });
+
+  it.each(['unknown-tenant', '', '__proto__', 'constructor'])(
+    'returns false for unknown / unsafe slug %s',
+    (slug) => {
+      expect(hasExplicitTenantTimezone(slug)).toBe(false);
+    },
+  );
+
+  it('getTenantTimezone returns DEFAULT for unknown slug (fallback contract)', () => {
+    // The Application-layer caller (`compute-quota-counter.ts`) gates
+    // a `logger.warn` on `hasExplicitTenantTimezone === false`. Verify
+    // the value returned for the unknown slug matches the documented
+    // Asia/Bangkok fallback so the warn payload is meaningful.
+    expect(getTenantTimezone('unknown-tenant')).toBe('Asia/Bangkok');
+  });
 });
 
 describe('unsafeIanaTimezone (build-time-known cast)', () => {

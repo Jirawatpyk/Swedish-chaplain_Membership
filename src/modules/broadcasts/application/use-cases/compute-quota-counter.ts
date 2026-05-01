@@ -22,7 +22,7 @@ import {
   type IanaTimezone,
   type TenantContext,
 } from '@/modules/tenants';
-import { asMemberId } from '@/modules/members';
+import type { MemberId } from '@/modules/members';
 import {
   asQuotaCounter,
   zeroQuota,
@@ -65,7 +65,7 @@ function nextResetAtFor(quotaYear: number, tenantTz: IanaTimezone): string {
 }
 
 export type ComputeQuotaError =
-  | { readonly kind: 'quota.member_not_found'; readonly memberId: string }
+  | { readonly kind: 'quota.member_not_found'; readonly memberId: MemberId }
   | {
       readonly kind: 'quota.invariant_violation';
       readonly cause: QuotaCounterError;
@@ -79,7 +79,7 @@ export interface ComputeQuotaDeps {
 }
 
 export interface ComputeQuotaInput {
-  readonly memberId: string;
+  readonly memberId: MemberId;
 }
 
 export interface ComputeQuotaOutput {
@@ -147,7 +147,7 @@ export async function computeQuotaCounter(
 
   const counts = await deps.broadcastsRepo.countForMemberQuota(
     deps.tenant.slug,
-    asMemberId(input.memberId),
+    input.memberId,
     quotaYear,
   );
 

@@ -74,7 +74,9 @@ export function AcknowledgementBannerClient({
           });
           return;
         }
-        toast.success(t('toastAcknowledged'));
+        // Toast duration aligned to ux-standards.md § 5.1 (3s for
+        // success); sonner default is 4s.
+        toast.success(t('toastAcknowledged'), { duration: 3000 });
         dismiss();
       } catch {
         toast.error(t('toastAcknowledgeFailed'), {
@@ -108,7 +110,7 @@ export function AcknowledgementBannerClient({
               {title}
             </h2>
             <p className="text-sm text-muted-foreground">{body}</p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 size="sm"

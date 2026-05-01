@@ -268,8 +268,8 @@ export default async function EblastsListPage(props: {
           className="mt-6 flex flex-col items-center gap-3 rounded-md border px-4 py-12 text-center"
         >
           <div className="rounded-full bg-muted p-3">
-            {/* Icon area follows ux-standards.md § 3.1 empty-state size. */}
-            <Mail className="h-10 w-10 text-muted-foreground" aria-hidden="true" />
+            {/* Icon size 48×48 per ux-standards.md § 13 empty-state spec. */}
+            <Mail className="h-12 w-12 text-muted-foreground" aria-hidden="true" />
           </div>
           <p className="text-sm font-medium">{t('emptyTitle')}</p>
           <p className="max-w-md text-xs text-muted-foreground">{t('empty')}</p>

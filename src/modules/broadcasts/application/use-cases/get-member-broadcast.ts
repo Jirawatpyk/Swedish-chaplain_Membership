@@ -106,19 +106,12 @@ export async function getMemberBroadcast(
   const total =
     counts.delivered +
     counts.bounced +
-    counts.soft_bounced +
+    counts.softBounced +
     counts.complained +
     counts.sent;
 
   return ok({
     broadcast: found.broadcast,
-    delivery: {
-      delivered: counts.delivered,
-      bounced: counts.bounced,
-      softBounced: counts.soft_bounced,
-      complained: counts.complained,
-      sent: counts.sent,
-      total,
-    },
+    delivery: { ...counts, total },
   });
 }

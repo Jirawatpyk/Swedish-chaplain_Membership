@@ -242,6 +242,12 @@ export interface BroadcastsRepo {
    *
    * The route still surfaces 404 for both 'not_found' and 'cross_member'
    * (anti-enumeration); only the audit emission differs.
+   *
+   * Note on order: the JSDoc lists branches success-first for caller
+   * reading clarity. The Drizzle adapter evaluates them in the order
+   * `not_found` → `cross_member` → `owned` (early-return ladder by
+   * row presence + ownership check) — adapter ordering is internal
+   * and not part of this port's contract.
    */
   findOwnedByMember(
     tenantId: string,
@@ -258,6 +264,8 @@ export interface BroadcastsRepo {
    * Reads `broadcast_deliveries` grouped by `status`; returns 0 for
    * any status that has no rows so the caller can render
    * "Delivered: 0 / Bounced: 0 / Complained: 0" deterministically.
+   * Returns camelCase (Application convention) — the Drizzle adapter
+   * does the SQL→object snake_case→camelCase rename at its boundary.
    */
   aggregateDeliveryCountsForBroadcast(
     tenantId: string,
@@ -265,7 +273,7 @@ export interface BroadcastsRepo {
   ): Promise<{
     readonly delivered: number;
     readonly bounced: number;
-    readonly soft_bounced: number;
+    readonly softBounced: number;
     readonly complained: number;
     readonly sent: number;
   }>;

@@ -32,12 +32,17 @@ import {
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 
 /**
- * Reduce SQL `GROUP BY status` rows into a `DeliveryBreakdown`-shaped
- * object (snake_case at the infra boundary). Exported for unit-testing
- * the schema-drift guard in isolation — adding a future delivery
- * status enum value (e.g. `queued`, `opened`) without updating this
- * function would silently drop the count, so the unknown-status path
- * MUST emit `logger.warn` to surface the gap in ops dashboards.
+ * @internal Exported solely for unit-test access
+ *   (tests/unit/broadcasts/infrastructure/delivery-aggregate-reduce.test.ts).
+ *   NOT part of the broadcasts barrel — do not import from outside this file.
+ *
+ * Reduces SQL `GROUP BY status` rows (snake_case status enum from
+ * `broadcast_deliveries`) into a camelCase shape at the Application
+ * boundary. Renaming `soft_bounced` → `softBounced` here keeps SQL
+ * naming inside Infrastructure (Constitution Principle III). Adding
+ * a future status enum value (e.g. `queued`, `opened`) without
+ * updating this function would silently drop the count, so the
+ * unknown-status path MUST emit `logger.warn` to surface the gap.
  */
 export function reduceDeliveryAggregateRows(
   rows: ReadonlyArray<{ status: string; count: number }>,
@@ -45,21 +50,21 @@ export function reduceDeliveryAggregateRows(
 ): {
   delivered: number;
   bounced: number;
-  soft_bounced: number;
+  softBounced: number;
   complained: number;
   sent: number;
 } {
   const out = {
     delivered: 0,
     bounced: 0,
-    soft_bounced: 0,
+    softBounced: 0,
     complained: 0,
     sent: 0,
   };
   for (const r of rows) {
     if (r.status === 'delivered') out.delivered = r.count;
     else if (r.status === 'bounced') out.bounced = r.count;
-    else if (r.status === 'soft_bounced') out.soft_bounced = r.count;
+    else if (r.status === 'soft_bounced') out.softBounced = r.count;
     else if (r.status === 'complained') out.complained = r.count;
     else if (r.status === 'sent') out.sent = r.count;
     else {
@@ -654,16 +659,7 @@ export function makeDrizzleBroadcastsRepo(
       });
     },
 
-    async aggregateDeliveryCountsForBroadcast(
-      tenantIdArg: string,
-      broadcastId: BroadcastId,
-    ): Promise<{
-      readonly delivered: number;
-      readonly bounced: number;
-      readonly soft_bounced: number;
-      readonly complained: number;
-      readonly sent: number;
-    }> {
+    async aggregateDeliveryCountsForBroadcast(tenantIdArg, broadcastId) {
       return runInTenant(ctx, async (tx) => {
         const rows = await tx
           .select({

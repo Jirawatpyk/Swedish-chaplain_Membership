@@ -171,7 +171,7 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
       return { broadcast: null, probeKind: 'not_found' as const };
     },
     async aggregateDeliveryCountsForBroadcast() {
-      return { delivered: 0, bounced: 0, soft_bounced: 0, complained: 0, sent: 0 };
+      return { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0 };
     },
   };
 }

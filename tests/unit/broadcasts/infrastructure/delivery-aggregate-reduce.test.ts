@@ -24,7 +24,7 @@ describe('reduceDeliveryAggregateRows', () => {
     expect(out).toEqual({
       delivered: 0,
       bounced: 0,
-      soft_bounced: 0,
+      softBounced: 0,
       complained: 0,
       sent: 0,
     });
@@ -44,7 +44,7 @@ describe('reduceDeliveryAggregateRows', () => {
     expect(out).toEqual({
       delivered: 128,
       bounced: 1,
-      soft_bounced: 2,
+      softBounced: 2,
       complained: 0,
       sent: 5,
     });
@@ -65,10 +65,11 @@ describe('reduceDeliveryAggregateRows', () => {
     expect(out.delivered).toBe(1);
     expect(out).toMatchObject({
       bounced: 0,
-      soft_bounced: 0,
+      softBounced: 0,
       complained: 0,
       sent: 0,
     });
+    expect(out).not.toHaveProperty('soft_bounced');
     // logger.warn fires once per unknown row with the canonical msg key
     expect(logger.warn).toHaveBeenCalledTimes(2);
     const calls = vi.mocked(logger.warn).mock.calls;

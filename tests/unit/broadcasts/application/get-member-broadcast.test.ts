@@ -67,7 +67,7 @@ function makeRepoMocks(opts: {
       (async () => ({
         delivered: 0,
         bounced: 0,
-        soft_bounced: 0,
+        softBounced: 0,
         complained: 0,
         sent: 0,
       })),
@@ -159,7 +159,7 @@ describe('getMemberBroadcast', () => {
       aggregate: async () => ({
         delivered: 128,
         bounced: 1,
-        soft_bounced: 1,
+        softBounced: 1,
         complained: 0,
         sent: 0,
       }),

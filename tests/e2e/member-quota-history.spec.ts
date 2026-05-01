@@ -1,15 +1,13 @@
 /**
- * T129 — RED E2E: member quota + history surface (US3 AS1–AS9).
+ * T129 E2E — member quota + history surface (US3 AS1–AS9).
  *
  * Spec authority: spec.md US3 + Clarifications Q15 (banner trigger),
  * Q19 (per-tenant banner scope), checklists/a11y.md CHK042 (banner
  * dismissal focus return).
  *
- * RED FIRST: the assertions below describe DOM markers and behaviours
- * that the Phase 5 implementation will add. The current Wave-6 e-blasts
- * page is a slim adjacent surface (T053) without quota-reset banner,
- * plan-changed explainer, history pagination, or the Q15 banner — so
- * every test in this file is expected to fail until T130–T135 land.
+ * Authored RED-FIRST against the unimplemented page; GREEN once
+ * Phase 5 (T130–T135) shipped. Markers `[RED — T129/...]` retained
+ * inline for traceability to the original failing-test commit.
  *
  * Scenarios covered (AS-mapped):
  *   AS1 — quota counters + reset-date copy + history table render.
@@ -249,103 +247,103 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     expect([200, 404]).toContain(status);
   });
 
-  // ── AS6 + AS7 + AS8 + a11y CHK042 ─────────────────────────────────
-  // Reset `broadcasts_acknowledged_at = NULL` before each banner test
-  // so AS6+AS7 work across re-runs and across browser projects (a
-  // successful AS7 in chromium would otherwise leave the column set,
-  // making AS6 in mobile-safari/mobile-chrome see an empty banner).
-  test.beforeEach(async ({}, info) => {
-    if (
-      info.title.startsWith('AS6 ') ||
-      info.title.startsWith('AS7 ') ||
-      info.title.startsWith('AS8 ') ||
-      info.title.startsWith('a11y CHK042')
-    ) {
+  // ── AS6 + AS7 + AS8 + a11y CHK042 banner tests ─────────────────────
+  // Wrapped in a sub-describe so the `beforeEach` reset is scoped
+  // structurally — no brittle `info.title.startsWith(...)` match.
+  test.describe('Acknowledgement banner (AS6 + AS7 + AS8 + a11y CHK042)', () => {
+    // Reset `broadcasts_acknowledged_at = NULL` before each test so
+    // every browser project (chromium → mobile-safari → mobile-chrome)
+    // exercises the fresh banner path. Without this, a successful
+    // AS7 acknowledge in chromium would leave the column set and
+    // subsequent project AS6 runs would see no banner.
+    test.beforeEach(async () => {
       await resetF7AckSeed();
-    }
-  });
+    });
 
-  test('AS6 — Q15 acknowledgement banner appears for unacknowledged paying-tier member', async ({
-    page,
-  }) => {
-    await signIn(page);
-    await page.goto('/portal');
-    // After `resetF7AckSeed`, banner MUST be present.
-    await expect(
-      page.getByTestId('broadcasts-acknowledge-banner'),
-    ).toHaveCount(1);
-  });
+    test('AS6 — Q15 acknowledgement banner appears for unacknowledged paying-tier member', async ({
+      page,
+    }) => {
+      await signIn(page);
+      await page.goto('/portal');
+      await expect(
+        page.getByTestId('broadcasts-acknowledge-banner'),
+      ).toHaveCount(1);
+    });
 
-  // ── AS7 ────────────────────────────────────────────────────────────
-  test('AS7 — Acknowledge dismisses banner + shows success toast (GDPR consent)', async ({
-    page,
-  }) => {
-    await signIn(page);
-    await page.goto('/portal');
-    const banner = page.getByTestId('broadcasts-acknowledge-banner');
-    // After `resetF7AckSeed`, banner MUST be present.
-    await expect(banner).toBeVisible();
+    test('AS7 — Acknowledge dismisses banner + shows success toast (GDPR consent)', async ({
+      page,
+    }) => {
+      await signIn(page);
+      await page.goto('/portal');
+      const banner = page.getByTestId('broadcasts-acknowledge-banner');
+      // After `resetF7AckSeed`, banner MUST be present.
+      await expect(banner).toBeVisible();
 
-    // Listen for the API request so we can assert the route was hit
-    // (defence-in-depth: the toast alone could be faked client-side).
-    const ackRequest = page.waitForResponse(
-      (res) =>
-        res.url().includes('/api/portal/broadcasts/acknowledge') &&
-        res.request().method() === 'POST',
-    );
+      // Listen for the API request so we can assert the route was hit
+      // (defence-in-depth: the toast alone could be faked client-side).
+      const ackRequest = page.waitForResponse(
+        (res) =>
+          res.url().includes('/api/portal/broadcasts/acknowledge') &&
+          res.request().method() === 'POST',
+      );
 
-    await page
-      .getByTestId('banner-acknowledge-cta')
-      .click();
+      await page
+        .getByTestId('banner-acknowledge-cta')
+        .click();
 
-    const res = await ackRequest;
-    // 200 OK is the success contract. Don't assert response shape
-    // beyond status — the F7 audit emit + locale-passing semantics
-    // are exercised at the unit-test level
-    // (`acknowledge-broadcasts-terms.test.ts`).
-    expect(res.status()).toBe(200);
+      const res = await ackRequest;
+      // 200 OK is the success contract. Don't assert response shape
+      // beyond status — the F7 audit emit + locale-passing semantics
+      // are exercised at the unit-test level
+      // (`acknowledge-broadcasts-terms.test.ts`).
+      expect(res.status()).toBe(200);
 
-    // Banner must dismiss after successful ack.
-    await expect(banner).toBeHidden();
+      // Banner must dismiss after successful ack.
+      await expect(banner).toBeHidden();
 
-    // Success toast (sonner) — match the localised text inside any
-    // visible role="status" / aria-live region. Sonner auto-dismisses
-    // after 4s, so use a short polling waitFor that catches the toast
-    // during its visible window. Best-effort because sonner's exact
-    // markup varies across versions; the localised copy is the stable
-    // signal that toast.success(t('toastAcknowledged')) fired.
-    await expect(
-      page.getByText(/consent recorded|บันทึก|registrerat/i).first(),
-    ).toBeVisible({ timeout: 4_000 });
-  });
+      // Success toast (sonner) — match the localised text inside any
+      // visible role="status" / aria-live region. Sonner auto-dismisses
+      // after 4s, so use a short polling waitFor that catches the toast
+      // during its visible window. Best-effort because sonner's exact
+      // markup varies across versions; the localised copy is the stable
+      // signal that toast.success(t('toastAcknowledged')) fired.
+      // 8s timeout — sonner default auto-dismisses after 4s but the
+      // CI cold-start render + signIn redirect can eat the first 1–2s
+      // of the visibility window. Tighter than the global 30s test
+      // timeout but loose enough to avoid the round-2 4s flake.
+      await expect(
+        page.getByText(/consent recorded|บันทึก|registrerat/i).first(),
+      ).toBeVisible({ timeout: 8_000 });
+    });
 
-  test('AS8 — Remind me later dismisses banner for page-load only (no audit, banner returns next sign-in)', async ({
-    page,
-  }) => {
-    await signIn(page);
-    await page.goto('/portal');
-    const banner = page.getByTestId('broadcasts-acknowledge-banner');
-    if ((await banner.count()) === 0) return;
-    await banner.getByTestId('banner-remind-later').click();
-    await expect(banner).toBeHidden();
-  });
+    test('AS8 — Remind me later dismisses banner for page-load only (no audit, banner returns next sign-in)', async ({
+      page,
+    }) => {
+      await signIn(page);
+      await page.goto('/portal');
+      const banner = page.getByTestId('broadcasts-acknowledge-banner');
+      await expect(banner).toBeVisible();
+      await banner.getByTestId('banner-remind-later').click();
+      await expect(banner).toBeHidden();
+    });
 
-  test('a11y CHK042 — banner dismissal returns focus to the anchor', async ({
-    page,
-  }) => {
-    await signIn(page);
-    await page.goto('/portal');
-    const banner = page.getByTestId('broadcasts-acknowledge-banner');
-    if ((await banner.count()) === 0) return;
-    // Use Remind-Later as the dismiss CTA (the X close button was
-    // removed in round 2 — Remind-Later is the canonical no-consent
-    // dismiss path).
-    await banner.getByTestId('banner-remind-later').click();
-    const focused = await page.evaluate(
-      () => document.activeElement?.getAttribute('data-testid') ?? null,
-    );
-    expect(focused).toBe('banner-return-focus-anchor');
-  });
+    test('a11y CHK042 — banner dismissal returns focus to the anchor', async ({
+      page,
+    }) => {
+      await signIn(page);
+      await page.goto('/portal');
+      const banner = page.getByTestId('broadcasts-acknowledge-banner');
+      await expect(banner).toBeVisible();
+      // Use Remind-Later as the dismiss CTA (the X close button was
+      // removed in round 2 — Remind-Later is the canonical no-consent
+      // dismiss path).
+      await banner.getByTestId('banner-remind-later').click();
+      const focused = await page.evaluate(
+        () => document.activeElement?.getAttribute('data-testid') ?? null,
+      );
+      expect(focused).toBe('banner-return-focus-anchor');
+    });
+  }); // end Acknowledgement banner sub-describe
 
   // ── H5 — Command Palette F7 entries (Smart Feature #4) ─────────────
   test('Command palette: ⌘K opens, "Compose E-Blast" + "View E-Blast usage" entries are clickable', async ({

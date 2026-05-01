@@ -240,7 +240,7 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
     expect(counts).toEqual({
       delivered: 0,
       bounced: 0,
-      soft_bounced: 0,
+      softBounced: 0,
       complained: 0,
       sent: 0,
     });
@@ -300,7 +300,7 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
     expect(counts).toEqual({
       delivered: 0,
       bounced: 0,
-      soft_bounced: 0,
+      softBounced: 0,
       complained: 0,
       sent: 0,
     });

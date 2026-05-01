@@ -32,6 +32,7 @@ import {
   makeGetMemberBroadcastDeps,
   parseBroadcastId,
 } from '@/modules/broadcasts';
+import { intlLocale } from '@/app/(member)/portal/benefits/e-blasts/_helpers/quota-banner';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { randomUUID } from 'node:crypto';
 
@@ -99,10 +100,10 @@ export default async function BroadcastDetailPage(props: {
   const t = await getTranslations('portal.broadcasts.detail');
   const tStatus = await getTranslations('portal.broadcasts.list.status');
   const locale = await getLocale();
-  const dateFormatter = new Intl.DateTimeFormat(
-    locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
-    { dateStyle: 'medium', timeStyle: 'short' },
-  );
+  const dateFormatter = new Intl.DateTimeFormat(intlLocale(locale), {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 
   return (
     <DetailContainer>

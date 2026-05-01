@@ -306,12 +306,24 @@ export async function seedF7PlanChangedAudit(): Promise<{
  * Returns true if the column was reset; false if env vars missing
  * (caller falls back to skipping the test).
  */
-export async function resetF7AckSeed(): Promise<boolean> {
+export async function resetF7AckSeed(): Promise<void> {
   const dbUrl = process.env.DATABASE_URL;
   const memberEmail = process.env.E2E_MEMBER_EMAIL;
-  if (!dbUrl || !memberEmail) return false;
+  if (!dbUrl || !memberEmail) {
+    // Fail loud — silent no-op would surface later as a confusing
+    // AS6/AS7 "banner not present" failure that's actually a CI
+    // misconfiguration. Per the project memory `feedback_skip_is_not_pass`,
+    // env-missing in a seed helper is a CI bug, not a test signal.
+    throw new Error(
+      'resetF7AckSeed: DATABASE_URL or E2E_MEMBER_EMAIL missing — refusing to no-op (would mask AS6/AS7 banner state).',
+    );
+  }
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   try {
+    // Inner JOIN explicitly scopes contacts to the same tenant as the
+    // outer member row — defensive consistency with `seedF7Broadcasts`
+    // pattern (member_id is UUID-unique today, but multi-tenant
+    // schema treats `(tenant_id, member_id)` as the canonical PK).
     await sql`
       UPDATE members
       SET broadcasts_acknowledged_at = NULL,
@@ -320,12 +332,14 @@ export async function resetF7AckSeed(): Promise<boolean> {
         AND member_id IN (
           SELECT m.member_id
           FROM members m
-          JOIN contacts c ON c.member_id = m.member_id
+          JOIN contacts c
+            ON c.member_id = m.member_id
+           AND c.tenant_id = m.tenant_id
+           AND c.tenant_id = ${TENANT_ID}
           JOIN users u ON u.id = c.linked_user_id
           WHERE LOWER(u.email) = LOWER(${memberEmail})
         )
     `;
-    return true;
   } finally {
     await sql.end({ timeout: 5 });
   }
