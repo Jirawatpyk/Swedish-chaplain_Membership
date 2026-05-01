@@ -38,12 +38,10 @@
  */
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
-import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getTranslations } from 'next-intl/server';
 import { AlertCircle, CheckCircle2, Info, XCircle } from 'lucide-react';
 
-import { db } from '@/lib/db';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { isLocale, type Locale } from '@/i18n/config';
@@ -51,6 +49,7 @@ import { asTenantContext } from '@/modules/tenants';
 import {
   asBroadcastId,
   broadcastsRateLimiter,
+  f7AuditAdapter,
   makeUnsubscribeRecipientDeps,
   peekTokenTenantId,
   tenantDefaultLocaleFor,
@@ -151,22 +150,23 @@ async function emitInvalidTokenAudit(
   sourceIp: string,
   requestId: string,
 ): Promise<void> {
-  // Best-effort: write the audit row through the system db handle (no
-  // tenant context if we couldn't resolve one). NULL tenant is allowed
-  // by the audit_log schema for cross-tenant signals like sig-rejects.
+  // Routes through the typed F7 audit adapter (consistent with
+  // PR #20's typed-emit pattern + Constitution Principle III barrel
+  // discipline) rather than a raw `db.execute(sql\`INSERT…\`)`. The
+  // adapter accepts `tx=null` for pre-tenant pathways and falls back
+  // to the system `db` handle, and `f7RetentionFor(eventType)` derives
+  // the 5y retention from the typed event union — so a future spec
+  // amendment promoting any F7 event to 10y propagates here without
+  // a hardcoded literal at the call site.
   try {
-    await db.execute(sql`
-      INSERT INTO audit_log
-        (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
-      VALUES
-        ('broadcast_unsubscribe_token_invalid'::audit_event_type,
-         'system:public_unsubscribe',
-         ${`Public unsubscribe rejected: ${failureReason}`},
-         ${requestId},
-         ${JSON.stringify({ failureReason, sourceIp })}::jsonb,
-         ${tenantId},
-         5)
-    `);
+    await f7AuditAdapter.emit(null, {
+      eventType: 'broadcast_unsubscribe_token_invalid',
+      actorUserId: 'system:public_unsubscribe',
+      summary: `Public unsubscribe rejected: ${failureReason}`,
+      payload: { failureReason, sourceIp },
+      tenantId,
+      requestId,
+    });
   } catch (e) {
     logger.error(
       { err: (e as Error).message, failureReason, requestId },

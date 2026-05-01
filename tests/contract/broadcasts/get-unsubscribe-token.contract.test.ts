@@ -20,6 +20,7 @@ const unsubscribeRecipientMock = vi.fn();
 const peekTokenTenantIdMock = vi.fn();
 const verifyMock = vi.fn();
 const dbExecuteMock = vi.fn();
+const f7AuditEmitMock = vi.fn();
 const resolveTenantDisplayNameMock = vi.fn();
 const runInTenantMock = vi.fn();
 const headersMock = vi.fn<() => Promise<Map<string, string>>>(
@@ -77,6 +78,9 @@ vi.mock('@/modules/broadcasts', () => ({
     checkLimit: (key: string, limit: number, windowSeconds: number) =>
       rateLimitCheckMock(key, limit, windowSeconds),
   },
+  f7AuditAdapter: {
+    emit: (...args: unknown[]) => f7AuditEmitMock(...args),
+  },
 }));
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn(async () => {
@@ -111,6 +115,8 @@ beforeEach(() => {
   peekTokenTenantIdMock.mockReset();
   verifyMock.mockReset();
   dbExecuteMock.mockReset();
+  f7AuditEmitMock.mockReset();
+  f7AuditEmitMock.mockResolvedValue(undefined);
   resolveTenantDisplayNameMock.mockReset();
   runInTenantMock.mockReset();
   headersMock.mockReset();
@@ -174,7 +180,7 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
     });
 
     expect(unsubscribeRecipientMock).not.toHaveBeenCalled();
-    expect(dbExecuteMock).toHaveBeenCalled();
+    expect(f7AuditEmitMock).toHaveBeenCalled();
   });
 
   it('verify failure (bad signature) → use-case NOT invoked + invalid-token audit written', async () => {
@@ -190,7 +196,7 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
     });
 
     expect(unsubscribeRecipientMock).not.toHaveBeenCalled();
-    expect(dbExecuteMock).toHaveBeenCalled();
+    expect(f7AuditEmitMock).toHaveBeenCalled();
   });
 
   it('use-case error (e.g. repo_error) → page renders invalid state without crashing', async () => {
@@ -258,7 +264,7 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
       searchParams: Promise.resolve({}),
     });
     expect(unsubscribeRecipientMock).not.toHaveBeenCalled();
-    expect(dbExecuteMock).toHaveBeenCalled();
+    expect(f7AuditEmitMock).toHaveBeenCalled();
   });
 
   // E1 — verify-fix: anti-enumeration rate limit
@@ -281,7 +287,7 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
     expect(unsubscribeRecipientMock).not.toHaveBeenCalled();
     expect(peekTokenTenantIdMock).not.toHaveBeenCalled();
     expect(verifyMock).not.toHaveBeenCalled();
-    expect(dbExecuteMock).toHaveBeenCalled();
+    expect(f7AuditEmitMock).toHaveBeenCalled();
   });
 
   // E1 — verify-fix: rate-limiter outage fail-open per Complexity Tracking entry

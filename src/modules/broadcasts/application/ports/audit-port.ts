@@ -134,7 +134,15 @@ export interface F7AuditEvent {
 }
 
 export interface AuditEmitInput extends F7AuditEvent {
-  readonly tenantId: string;
+  /**
+   * Tenant slug. `null` is permitted ONLY for pre-tenant audit paths
+   * where the route has not (or cannot) bind a tenant context — e.g.
+   * the public unsubscribe page on a malformed token, or the Resend
+   * webhook handler on a signature-reject before the audience-id
+   * lookup runs. The `audit_log.tenant_id` column is nullable for this
+   * exact reason. Mutation paths MUST always pass a non-null slug.
+   */
+  readonly tenantId: string | null;
   readonly requestId: string | null;
 }
 
