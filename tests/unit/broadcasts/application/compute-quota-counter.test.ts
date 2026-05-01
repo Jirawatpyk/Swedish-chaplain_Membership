@@ -285,8 +285,10 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// Round-3 M1 / M2 — `currentQuotaYear` non-Bangkok-tz coverage +
-// `hasExplicitTenantTimezone` warn-path coverage.
+// `currentQuotaYear` non-Bangkok-tz coverage. Round-4-era warn-path
+// for unknown-slug fallback was removed once `getTenantTimezone` was
+// migrated from the hard-coded slug map to an env-driven, boot-validated
+// IANA value (PR #18 follow-up — single TENANT_TIMEZONE per deployment).
 // ─────────────────────────────────────────────────────────────────────
 import { currentQuotaYear } from '@/modules/broadcasts';
 

@@ -11,7 +11,6 @@ import { describe, expect, it } from 'vitest';
 import {
   asIanaTimezone,
   getTenantTimezone,
-  hasExplicitTenantTimezone,
   unsafeIanaTimezone,
 } from '@/modules/tenants';
 
@@ -45,25 +44,21 @@ describe('asIanaTimezone (parse-do-not-validate constructor)', () => {
   );
 });
 
-describe('hasExplicitTenantTimezone (Application-layer fallback gate)', () => {
-  it('returns true for known tenant slug (swecham)', () => {
-    expect(hasExplicitTenantTimezone('swecham')).toBe(true);
+describe('getTenantTimezone (env-driven, MTA+STD)', () => {
+  it('returns the env.tenant.timezone value regardless of slug', () => {
+    // Test fixture sets `TENANT_TIMEZONE=Asia/Bangkok`. The slug is
+    // informational only — every deployment serves one tenant whose
+    // tz lives on env. F12 multi-tenant migration will swap this for
+    // a per-slug config-port read.
+    expect(getTenantTimezone('swecham')).toBe('Asia/Bangkok');
   });
 
-  it.each(['unknown-tenant', '', '__proto__', 'constructor'])(
-    'returns false for unknown / unsafe slug %s',
+  it.each(['unknown-tenant', '', 'jcc', 'future-stockholm'])(
+    'returns the same env value for any slug (%s) — no per-slug map',
     (slug) => {
-      expect(hasExplicitTenantTimezone(slug)).toBe(false);
+      expect(getTenantTimezone(slug)).toBe('Asia/Bangkok');
     },
   );
-
-  it('getTenantTimezone returns DEFAULT for unknown slug (fallback contract)', () => {
-    // The Application-layer caller (`compute-quota-counter.ts`) gates
-    // a `logger.warn` on `hasExplicitTenantTimezone === false`. Verify
-    // the value returned for the unknown slug matches the documented
-    // Asia/Bangkok fallback so the warn payload is meaningful.
-    expect(getTenantTimezone('unknown-tenant')).toBe('Asia/Bangkok');
-  });
 });
 
 describe('unsafeIanaTimezone (build-time-known cast)', () => {
