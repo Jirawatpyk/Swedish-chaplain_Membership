@@ -98,7 +98,7 @@ describe('acknowledgeBroadcastsTerms', () => {
     );
 
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.alreadyAcknowledged).toBe(true);
+    if (r.ok) expect(r.value.kind).toBe('idempotent');
     expect(audit.emit).not.toHaveBeenCalled();
   });
 
@@ -115,8 +115,10 @@ describe('acknowledgeBroadcastsTerms', () => {
 
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.value.alreadyAcknowledged).toBe(false);
-      expect(r.value.acknowledgedAt).toEqual(now);
+      expect(r.value.kind).toBe('fresh');
+      if (r.value.kind === 'fresh') {
+        expect(r.value.acknowledgedAt).toEqual(now);
+      }
     }
     expect(emit).toHaveBeenCalledTimes(1);
     const event = emit.mock.calls[0]![1];
@@ -149,8 +151,10 @@ describe('acknowledgeBroadcastsTerms', () => {
 
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.value.alreadyAcknowledged).toBe(false);
-      expect(r.value.acknowledgedAt).toEqual(now);
+      expect(r.value.kind).toBe('fresh');
+      if (r.value.kind === 'fresh') {
+        expect(r.value.acknowledgedAt).toEqual(now);
+      }
     }
   });
 });

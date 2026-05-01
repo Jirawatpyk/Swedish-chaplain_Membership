@@ -50,10 +50,17 @@ export interface AcknowledgeBroadcastsTermsInput {
   readonly requestId: string | null;
 }
 
-export interface AcknowledgeBroadcastsTermsOutput {
-  readonly alreadyAcknowledged: boolean;
-  readonly acknowledgedAt: Date;
-}
+/**
+ * Discriminated union — the `acknowledgedAt` on the `'fresh'` variant
+ * is the truthful consent timestamp; the `'idempotent'` variant has no
+ * timestamp because the F3 bridge does not currently return the
+ * persisted column on the already-acknowledged path. Callers that
+ * need the original timestamp must read it separately from the F3
+ * member record (or the F3 bridge can be extended to return it).
+ */
+export type AcknowledgeBroadcastsTermsOutput =
+  | { readonly kind: 'fresh'; readonly acknowledgedAt: Date }
+  | { readonly kind: 'idempotent' };
 
 export async function acknowledgeBroadcastsTerms(
   deps: AcknowledgeBroadcastsTermsDeps,
@@ -74,11 +81,12 @@ export async function acknowledgeBroadcastsTerms(
         memberId: input.memberId,
       });
     }
-    // Already acknowledged — idempotent success.
-    return ok({
-      alreadyAcknowledged: true,
-      acknowledgedAt: deps.clock.now(),
-    });
+    // Already acknowledged — idempotent success. No `acknowledgedAt`
+    // field because we'd be returning `clock.now()`, which is NOT
+    // the persisted consent timestamp; the discriminant tells the
+    // caller "this was a no-op; if you need the original timestamp,
+    // read it from the F3 member record separately".
+    return ok({ kind: 'idempotent' });
   }
 
   const acknowledgedAt = deps.clock.now();
@@ -120,5 +128,5 @@ export async function acknowledgeBroadcastsTerms(
     // Fall through to ok() — the F3 column already records consent.
   }
 
-  return ok({ alreadyAcknowledged: false, acknowledgedAt });
+  return ok({ kind: 'fresh', acknowledgedAt });
 }

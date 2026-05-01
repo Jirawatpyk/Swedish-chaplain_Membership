@@ -17,6 +17,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { MemberId } from '@/modules/members';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 
@@ -187,7 +188,7 @@ export interface BroadcastsRepo {
    */
   countForMemberQuota(
     tenantId: string,
-    memberId: string,
+    memberId: MemberId,
     quotaYear: number,
   ): Promise<{
     readonly submittedOrApproved: number;
@@ -213,7 +214,7 @@ export interface BroadcastsRepo {
    */
   listForMemberPaginated(
     tenantId: string,
-    memberId: string,
+    memberId: MemberId,
     opts: { readonly page: number; readonly perPage: number },
   ): Promise<{
     readonly rows: ReadonlyArray<Broadcast>;
@@ -224,27 +225,33 @@ export interface BroadcastsRepo {
 
   /**
    * F7 US3 — fetch a single broadcast iff the requesting member owns
-   * it. The `probeKind` discriminator drives the use-case:
+   * it. Returns a discriminated union so the `probeKind === 'owned'`
+   * branch carries a non-null `broadcast` at the type level (no
+   * runtime invariant required from callers):
    *
-   *   - `'owned'`         → success; `broadcast` is non-null
-   *   - `'not_found'`     → row absent; `broadcast` is null; no audit
-   *   - `'cross_member'`  → row exists but owned by another member;
-   *                         `broadcast` is null; use-case emits
-   *                         `broadcast_cross_member_probe` audit
-   *                         (Q19 per-tenant scope)
+   *   - `{ probeKind: 'owned', broadcast: Broadcast }` → success
+   *   - `{ probeKind: 'not_found', broadcast: null }`  → row absent;
+   *                                                     no audit
+   *   - `{ probeKind: 'cross_member', broadcast: null }` → row exists
+   *                                                       but owned
+   *                                                       by another
+   *                                                       member;
+   *                                                       caller emits
+   *                                                       `broadcast_cross_member_probe`
+   *                                                       audit (Q19).
    *
-   * The route still surfaces 404 for both `'not_found'` and
-   * `'cross_member'` (anti-enumeration); only the audit emission
-   * differs between them.
+   * The route still surfaces 404 for both 'not_found' and 'cross_member'
+   * (anti-enumeration); only the audit emission differs.
    */
   findOwnedByMember(
     tenantId: string,
-    memberId: string,
+    memberId: MemberId,
     broadcastId: BroadcastId,
-  ): Promise<{
-    readonly broadcast: Broadcast | null;
-    readonly probeKind: 'owned' | 'not_found' | 'cross_member';
-  }>;
+  ): Promise<
+    | { readonly probeKind: 'owned'; readonly broadcast: Broadcast }
+    | { readonly probeKind: 'not_found'; readonly broadcast: null }
+    | { readonly probeKind: 'cross_member'; readonly broadcast: null }
+  >;
 
   /**
    * F7 US3 AS3 — aggregated delivery counts for a single broadcast.

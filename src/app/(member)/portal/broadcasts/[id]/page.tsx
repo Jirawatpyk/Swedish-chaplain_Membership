@@ -225,21 +225,14 @@ function DeliveryStat({
   value: number;
   testId: string;
 }): React.ReactElement {
-  // `aria-labelledby` ties the value <p> to its label so screen readers
-  // announce "Delivered: 128" rather than the orphan number first
-  // (WCAG SC 1.3.2 meaningful sequence).
-  const labelId = `${testId}-label`;
+  // `<dl>/<dt>/<dd>` carries the term/definition association at the
+  // semantic level — screen readers announce "Delivered: 128" as a
+  // unit (WCAG SC 1.3.2 meaningful sequence). Same pattern as the
+  // sibling broadcast-detail-fields section above.
   return (
-    <div data-testid={testId} className="space-y-1">
-      <p id={labelId} className="text-xs text-muted-foreground">
-        {label}
-      </p>
-      <p
-        className="text-2xl font-semibold tabular-nums"
-        aria-labelledby={labelId}
-      >
-        {value}
-      </p>
-    </div>
+    <dl data-testid={testId} className="space-y-1">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-2xl font-semibold tabular-nums">{value}</dd>
+    </dl>
   );
 }

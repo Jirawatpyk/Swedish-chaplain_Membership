@@ -2,6 +2,13 @@
  * Shared sign-in flow for member-portal E2E tests. Reuses the
  * `E2E_MEMBER_EMAIL` + `E2E_MEMBER_PASSWORD` env credentials.
  *
+ * **Caller contract**: callers MUST guard the suite with
+ * `test.skip(!process.env.E2E_MEMBER_EMAIL || !process.env.E2E_MEMBER_PASSWORD, ...)`
+ * BEFORE invoking this helper. Without env credentials this helper
+ * throws — propagating as a confusing test-runner error rather than
+ * a clean skip. The throw is intentional fail-loud behaviour for
+ * misconfigured CI environments.
+ *
  * Resolution semantics:
  *   - WebKit (mobile-safari) flakes when `.fill()` races autofill
  *     heuristics — click + fill + assert before submit.

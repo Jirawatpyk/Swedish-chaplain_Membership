@@ -1883,7 +1883,7 @@
         "progressLabel": "โควตา E-Blast ที่ใช้ไป",
         "fetchError": "ไม่สามารถโหลดโควตาได้",
         "retry": "ลองใหม่",
-        "nextReset": "ต่ออายุโควตา {date}",
+        "nextReset": "รีเซ็ตโควตา {date}",
         "planChangedExplainer": "เปลี่ยนแพ็กเกจเมื่อ {date} — โควตาปีนี้ใช้ตามแพ็กเกจใหม่"
       },
       "banner": {
@@ -1935,7 +1935,7 @@
           "title": "เขียน E-Blast"
         },
         "benefits": {
-          "title": "เปิดแดชบอร์ดสิทธิประโยชน์"
+          "title": "ดูโควตา E-Blast"
         }
       },
       "detail": {

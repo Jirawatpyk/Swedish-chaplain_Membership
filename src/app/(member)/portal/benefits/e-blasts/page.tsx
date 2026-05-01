@@ -8,7 +8,7 @@
  * selection guideline — this is a content-detail surface, not a
  * data table. Cache Components migration deferred to F7.1; this page
  * uses the segment-level `revalidate` option for a 60-second perf
- * staleness budget per perf.md CHK056.
+ * staleness budget per plan.md § Cold-start, caching, & memoisation (CHK056).
  *
  * Pagination: server-driven `?page=N` URL parameter, OFFSET-based via
  * `BroadcastsRepo.listForMemberPaginated`. 10 rows per page.
@@ -38,13 +38,15 @@ import {
   makeListMemberBroadcastsDeps,
 } from '@/modules/broadcasts';
 import { asMemberId } from '@/modules/members';
+import type { IanaTimezone } from '@/modules/tenants';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   formatNextResetAt,
+  intlLocale,
   shouldShowPlanChangedExplainer,
 } from './_helpers/quota-banner';
 
-/** 60-second segment-level revalidate per perf.md CHK056 — full Cache
+/** 60-second segment-level revalidate per plan.md § Cold-start, caching, & memoisation (CHK056) — full Cache
  *  Components migration is F7.1 polish (D5 of plan). */
 export const revalidate = 60;
 
@@ -66,14 +68,13 @@ export default async function EblastsListPage(props: {
     'portal.broadcasts.list.pagination',
   );
   const locale = await getLocale();
-  const dateFormatter = new Intl.DateTimeFormat(
-    locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
-    { dateStyle: 'medium', timeStyle: 'short' },
-  );
-  const dateOnlyFormatter = new Intl.DateTimeFormat(
-    locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
-    { dateStyle: 'long' },
-  );
+  const dateFormatter = new Intl.DateTimeFormat(intlLocale(locale), {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  const dateOnlyFormatter = new Intl.DateTimeFormat(intlLocale(locale), {
+    dateStyle: 'long',
+  });
 
   const session = await requireSession('member');
   const tenant = resolveTenantFromRequest();
@@ -94,7 +95,7 @@ export default async function EblastsListPage(props: {
     cap: number;
     quotaYear: number;
     nextResetAt: string;
-    tenantTimezone: string;
+    tenantTimezone: IanaTimezone;
   } | null = null;
   let nextResetCopy: string | null = null;
   let planChangedExplainer: string | null = null;
@@ -164,7 +165,7 @@ export default async function EblastsListPage(props: {
         // microcopy reads "Plan changed on <Bangkok-day>" regardless
         // of where the server is running.
         const planChangedFormatter = new Intl.DateTimeFormat(
-          locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
+          intlLocale(locale),
           { dateStyle: 'long', timeZone: v.tenantTimezone },
         );
         planChangedExplainer = tQuota('planChangedExplainer', {
@@ -267,7 +268,8 @@ export default async function EblastsListPage(props: {
           className="mt-6 flex flex-col items-center gap-3 rounded-md border px-4 py-12 text-center"
         >
           <div className="rounded-full bg-muted p-3">
-            <Mail className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+            {/* Icon area follows ux-standards.md § 3.1 empty-state size. */}
+            <Mail className="h-10 w-10 text-muted-foreground" aria-hidden="true" />
           </div>
           <p className="text-sm font-medium">{t('emptyTitle')}</p>
           <p className="max-w-md text-xs text-muted-foreground">{t('empty')}</p>

@@ -19,7 +19,7 @@
  * is always a known element.
  */
 import { useRef, useState, useTransition } from 'react';
-import { ShieldCheck, X } from 'lucide-react';
+import { Loader2, ShieldCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,6 @@ export interface AcknowledgementBannerClientProps {
   readonly body: string;
   readonly acknowledge: string;
   readonly remindLater: string;
-  readonly closeLabel: string;
 }
 
 export function AcknowledgementBannerClient({
@@ -37,7 +36,6 @@ export function AcknowledgementBannerClient({
   body,
   acknowledge,
   remindLater,
-  closeLabel,
 }: AcknowledgementBannerClientProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.banner.acknowledgement');
   const [hidden, setHidden] = useState<boolean>(false);
@@ -69,7 +67,8 @@ export function AcknowledgementBannerClient({
         if (!res.ok) {
           // Non-2xx — keep the banner mounted so the user can retry.
           // Surface a localised error toast with retry hint per
-          // ux-standards.md § 5.1 + GDPR Art. 7 consent integrity.
+          // ux-standards.md § 4.2 (Toast for global / async errors)
+          // + GDPR Art. 7 consent integrity.
           toast.error(t('toastAcknowledgeFailed'), {
             description: t('toastAcknowledgeFailedHint'),
           });
@@ -117,6 +116,12 @@ export function AcknowledgementBannerClient({
                 disabled={pending}
                 data-testid="banner-acknowledge-cta"
               >
+                {pending ? (
+                  <Loader2
+                    className="mr-2 h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : null}
                 {acknowledge}
               </Button>
               <Button
@@ -131,15 +136,6 @@ export function AcknowledgementBannerClient({
               </Button>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={dismiss}
-            aria-label={closeLabel}
-            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded hover:bg-amber-100 dark:hover:bg-amber-900/40"
-            data-testid="banner-dismiss"
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
         </div>
       )}
       {/* a11y CHK042 — focus anchor stays mounted ACROSS the hidden

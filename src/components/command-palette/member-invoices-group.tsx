@@ -193,32 +193,11 @@ export function MemberCommandPalette({
           {showAllPaidEmpty && (
             <CommandEmpty>{t('allPaidHint')}</CommandEmpty>
           )}
-          {/* F7 US3 Smart Feature #4 — Broadcasts entries: always
-              shown so members can deep-link to compose / benefits
-              dashboard regardless of invoice state. Uses a separate
-              CommandGroup so the "Payments" group stays focused. */}
-          <CommandGroup heading={tBcast('group')}>
-            <CommandItem
-              value={`compose e-blast broadcast ${tBcast('compose.title')}`}
-              onSelect={() => {
-                handleOpenChange(false);
-                router.push('/portal/broadcasts/new');
-              }}
-              data-testid="cmdk-broadcasts-compose"
-            >
-              <span className="truncate">{tBcast('compose.title')}</span>
-            </CommandItem>
-            <CommandItem
-              value={`benefits dashboard e-blast quota ${tBcast('benefits.title')}`}
-              onSelect={() => {
-                handleOpenChange(false);
-                router.push('/portal/benefits/e-blasts');
-              }}
-              data-testid="cmdk-broadcasts-benefits"
-            >
-              <span className="truncate">{tBcast('benefits.title')}</span>
-            </CommandItem>
-          </CommandGroup>
+          {/* Payments group rendered FIRST when the member has
+              outstanding invoices — pay-now is high-urgency relative
+              to the low-frequency Broadcasts entries (quota-limited).
+              When `rows.length === 0`, Broadcasts becomes the top
+              group naturally. */}
           {rows.length > 0 && (
             <CommandGroup heading={t('group')}>
               {rows.map((row) => {
@@ -248,6 +227,31 @@ export function MemberCommandPalette({
               })}
             </CommandGroup>
           )}
+          {/* F7 US3 Smart Feature #4 — Broadcasts entries: always
+              shown so members can deep-link to compose / benefits
+              dashboard regardless of invoice state. */}
+          <CommandGroup heading={tBcast('group')}>
+            <CommandItem
+              value={`compose e-blast broadcast ${tBcast('compose.title')}`}
+              onSelect={() => {
+                handleOpenChange(false);
+                router.push('/portal/broadcasts/new');
+              }}
+              data-testid="cmdk-broadcasts-compose"
+            >
+              <span className="truncate">{tBcast('compose.title')}</span>
+            </CommandItem>
+            <CommandItem
+              value={`view e-blast usage benefits quota ${tBcast('benefits.title')}`}
+              onSelect={() => {
+                handleOpenChange(false);
+                router.push('/portal/benefits/e-blasts');
+              }}
+              data-testid="cmdk-broadcasts-benefits"
+            >
+              <span className="truncate">{tBcast('benefits.title')}</span>
+            </CommandItem>
+          </CommandGroup>
         </CommandList>
       </Command>
     </CommandDialog>

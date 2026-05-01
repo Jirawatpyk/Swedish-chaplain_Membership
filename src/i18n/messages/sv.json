@@ -1883,7 +1883,7 @@
         "progressLabel": "E-Blast-kvot använd",
         "fetchError": "Kunde inte ladda kvot.",
         "retry": "Försök igen",
-        "nextReset": "Förnyas {date}",
+        "nextReset": "Återställs {date}",
         "planChangedExplainer": "Plan ändrades {date} — årets kvot speglar den nya planen."
       },
       "banner": {
@@ -1935,7 +1935,7 @@
           "title": "Skapa E-Blast"
         },
         "benefits": {
-          "title": "Öppna förmånspanel"
+          "title": "Visa E-Blast-användning"
         }
       },
       "detail": {

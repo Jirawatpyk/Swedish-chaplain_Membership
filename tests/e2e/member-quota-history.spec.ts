@@ -26,7 +26,10 @@
  */
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
-import { seedF7PlanChangedAudit } from './helpers/broadcasts-seed';
+import {
+  resetF7AckSeed,
+  seedF7PlanChangedAudit,
+} from './helpers/broadcasts-seed';
 import { signInAsMember as signIn } from './helpers/member-sign-in';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
@@ -247,23 +250,73 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   });
 
   // ── AS6 + AS7 + AS8 + a11y CHK042 ─────────────────────────────────
+  // Reset `broadcasts_acknowledged_at = NULL` before each banner test
+  // so AS6+AS7 work across re-runs and across browser projects (a
+  // successful AS7 in chromium would otherwise leave the column set,
+  // making AS6 in mobile-safari/mobile-chrome see an empty banner).
+  test.beforeEach(async ({}, info) => {
+    if (
+      info.title.startsWith('AS6 ') ||
+      info.title.startsWith('AS7 ') ||
+      info.title.startsWith('AS8 ') ||
+      info.title.startsWith('a11y CHK042')
+    ) {
+      await resetF7AckSeed();
+    }
+  });
+
   test('AS6 — Q15 acknowledgement banner appears for unacknowledged paying-tier member', async ({
     page,
   }) => {
     await signIn(page);
     await page.goto('/portal');
-    // [RED — T129/AS6] Banner present when broadcasts_acknowledged_at IS NULL.
+    // After `resetF7AckSeed`, banner MUST be present.
+    await expect(
+      page.getByTestId('broadcasts-acknowledge-banner'),
+    ).toHaveCount(1);
+  });
+
+  // ── AS7 ────────────────────────────────────────────────────────────
+  test('AS7 — Acknowledge dismisses banner + shows success toast (GDPR consent)', async ({
+    page,
+  }) => {
+    await signIn(page);
+    await page.goto('/portal');
     const banner = page.getByTestId('broadcasts-acknowledge-banner');
-    if ((await banner.count()) === 0) {
-      test
-        .info()
-        .annotations.push({
-          type: 'skip-reason',
-          description:
-            'Member already acknowledged — AS6 only RED-asserts banner exists in DOM contract.',
-        });
-    }
-    await expect(banner).toHaveCount(1);
+    // After `resetF7AckSeed`, banner MUST be present.
+    await expect(banner).toBeVisible();
+
+    // Listen for the API request so we can assert the route was hit
+    // (defence-in-depth: the toast alone could be faked client-side).
+    const ackRequest = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/portal/broadcasts/acknowledge') &&
+        res.request().method() === 'POST',
+    );
+
+    await page
+      .getByTestId('banner-acknowledge-cta')
+      .click();
+
+    const res = await ackRequest;
+    // 200 OK is the success contract. Don't assert response shape
+    // beyond status — the F7 audit emit + locale-passing semantics
+    // are exercised at the unit-test level
+    // (`acknowledge-broadcasts-terms.test.ts`).
+    expect(res.status()).toBe(200);
+
+    // Banner must dismiss after successful ack.
+    await expect(banner).toBeHidden();
+
+    // Success toast (sonner) — match the localised text inside any
+    // visible role="status" / aria-live region. Sonner auto-dismisses
+    // after 4s, so use a short polling waitFor that catches the toast
+    // during its visible window. Best-effort because sonner's exact
+    // markup varies across versions; the localised copy is the stable
+    // signal that toast.success(t('toastAcknowledged')) fired.
+    await expect(
+      page.getByText(/consent recorded|บันทึก|registrerat/i).first(),
+    ).toBeVisible({ timeout: 4_000 });
   });
 
   test('AS8 — Remind me later dismisses banner for page-load only (no audit, banner returns next sign-in)', async ({
@@ -273,27 +326,47 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     await page.goto('/portal');
     const banner = page.getByTestId('broadcasts-acknowledge-banner');
     if ((await banner.count()) === 0) return;
-    await banner.getByRole('button', { name: /remind me later|เตือนภายหลัง|påminn/i }).click();
+    await banner.getByTestId('banner-remind-later').click();
     await expect(banner).toBeHidden();
   });
 
-  test('a11y CHK042 — banner dismissal returns focus to the trigger element', async ({
+  test('a11y CHK042 — banner dismissal returns focus to the anchor', async ({
     page,
   }) => {
     await signIn(page);
     await page.goto('/portal');
     const banner = page.getByTestId('broadcasts-acknowledge-banner');
     if ((await banner.count()) === 0) return;
-    const dismissBtn = banner.getByRole('button', {
-      name: /dismiss|close|ปิด|stäng/i,
-    });
-    if ((await dismissBtn.count()) === 0) return;
-    // Trigger is the menu button that opened the banner — implementation
-    // MUST return focus to data-testid="banner-return-focus-anchor".
-    await dismissBtn.click();
+    // Use Remind-Later as the dismiss CTA (the X close button was
+    // removed in round 2 — Remind-Later is the canonical no-consent
+    // dismiss path).
+    await banner.getByTestId('banner-remind-later').click();
     const focused = await page.evaluate(
       () => document.activeElement?.getAttribute('data-testid') ?? null,
     );
     expect(focused).toBe('banner-return-focus-anchor');
+  });
+
+  // ── H5 — Command Palette F7 entries (Smart Feature #4) ─────────────
+  test('Command palette: ⌘K opens, "Compose E-Blast" + "View E-Blast usage" entries are clickable', async ({
+    page,
+  }) => {
+    await signIn(page);
+    await page.goto('/portal');
+
+    // Open ⌘K palette.
+    const isMac = process.platform === 'darwin';
+    await page.keyboard.press(isMac ? 'Meta+k' : 'Control+k');
+
+    const composeEntry = page.getByTestId('cmdk-broadcasts-compose');
+    const benefitsEntry = page.getByTestId('cmdk-broadcasts-benefits');
+    await expect(composeEntry).toBeVisible({ timeout: 5_000 });
+    await expect(benefitsEntry).toBeVisible();
+
+    // Click "View E-Blast usage" → navigates to /portal/benefits/e-blasts.
+    await benefitsEntry.click();
+    await page.waitForURL(/\/portal\/benefits\/e-blasts(?:\?|$)/, {
+      timeout: 10_000,
+    });
   });
 });

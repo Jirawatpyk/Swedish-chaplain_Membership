@@ -237,7 +237,12 @@ export async function seedF7PlanChangedAudit(): Promise<{
 } | null> {
   const dbUrl = process.env.DATABASE_URL;
   const memberEmail = process.env.E2E_MEMBER_EMAIL;
-  if (!dbUrl || !memberEmail) return null;
+  if (!dbUrl || !memberEmail) {
+    console.warn(
+      '[e2e seed broadcasts] seedF7PlanChangedAudit skipped — DATABASE_URL or E2E_MEMBER_EMAIL missing',
+    );
+    return null;
+  }
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   try {
     const memberRows = await sql<Array<{ member_id: string }>>`
@@ -249,7 +254,12 @@ export async function seedF7PlanChangedAudit(): Promise<{
       LIMIT 1
     `;
     const member = memberRows[0];
-    if (!member) return null;
+    if (!member) {
+      console.warn(
+        `[e2e seed broadcasts] seedF7PlanChangedAudit — e2e-member not found in tenant ${TENANT_ID}; skipping seed`,
+      );
+      return null;
+    }
 
     const changedAt = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
     const inserted = await sql<Array<{ id: string }>>`
@@ -269,11 +279,53 @@ export async function seedF7PlanChangedAudit(): Promise<{
       RETURNING id::text AS id
     `;
     const row = inserted[0];
-    if (!row) return null;
+    if (!row) {
+      console.warn(
+        '[e2e seed broadcasts] seedF7PlanChangedAudit — INSERT returned no rows; skipping',
+      );
+      return null;
+    }
     console.log(
       `[e2e seed broadcasts] OK member_plan_changed audit=${row.id} member=${member.member_id} changedAt=${changedAt.toISOString()}`,
     );
     return { auditId: row.id, changedAt };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * F7 US3 AS6/AS7 reset — clears `members.broadcasts_acknowledged_at`
+ * for the e2e-member so the Q15 banner re-renders on the next portal
+ * navigation. Used by AS6 (assert banner present) + AS7 (assert
+ * acknowledge → dismiss + audit) to prevent state pollution across
+ * browser projects (chromium → mobile-safari → mobile-chrome) where
+ * a successful AS7 in one project would leave the column set and
+ * subsequent project AS6 + AS7 runs would see no banner.
+ *
+ * Returns true if the column was reset; false if env vars missing
+ * (caller falls back to skipping the test).
+ */
+export async function resetF7AckSeed(): Promise<boolean> {
+  const dbUrl = process.env.DATABASE_URL;
+  const memberEmail = process.env.E2E_MEMBER_EMAIL;
+  if (!dbUrl || !memberEmail) return false;
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    await sql`
+      UPDATE members
+      SET broadcasts_acknowledged_at = NULL,
+          updated_at = NOW()
+      WHERE tenant_id = ${TENANT_ID}
+        AND member_id IN (
+          SELECT m.member_id
+          FROM members m
+          JOIN contacts c ON c.member_id = m.member_id
+          JOIN users u ON u.id = c.linked_user_id
+          WHERE LOWER(u.email) = LOWER(${memberEmail})
+        )
+    `;
+    return true;
   } finally {
     await sql.end({ timeout: 5 });
   }

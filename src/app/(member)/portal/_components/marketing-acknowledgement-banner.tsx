@@ -99,7 +99,6 @@ export async function MarketingAcknowledgementBanner(): Promise<React.ReactEleme
       body={t('body')}
       acknowledge={t('acknowledge')}
       remindLater={t('remindLater')}
-      closeLabel={t('closeLabel')}
     />
   );
 }

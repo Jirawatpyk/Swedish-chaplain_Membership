@@ -126,6 +126,13 @@ const messages = {
         allPaidHint: "No pending invoices — you're all paid up ✨",
       },
     },
+    broadcasts: {
+      cmdk: {
+        group: 'Broadcasts',
+        compose: { title: 'Compose E-Blast' },
+        benefits: { title: 'View E-Blast usage' },
+      },
+    },
   },
 };
 
@@ -205,7 +212,13 @@ describe('<MemberCommandPalette>', () => {
         ).toBeTruthy(),
       { timeout: 1500 },
     );
-    expect(screen.getByTestId('cmd-heading').textContent).toBe('Payments');
+    // Two headings exist now ("Payments" + "Broadcasts" — F7 US3 added
+    // the Broadcasts group). Assert "Payments" appears among them.
+    const headingTexts = screen
+      .getAllByTestId('cmd-heading')
+      .map((el) => el.textContent);
+    expect(headingTexts).toContain('Payments');
+    expect(headingTexts).toContain('Broadcasts');
   });
 
   it('navigates to /portal/invoices/<id>?pay=1 on select (FR-025c)', async () => {

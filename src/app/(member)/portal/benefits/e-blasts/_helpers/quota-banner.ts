@@ -11,6 +11,7 @@
  */
 import { Instant, LocalDateTime, ZonedDateTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
+import type { IanaTimezone } from '@/modules/tenants';
 
 /**
  * Start of `quotaYear + 1` in `tenantTz`, projected to UTC ISO 8601.
@@ -21,11 +22,10 @@ import '@js-joda/timezone';
  */
 export function formatNextResetAt(
   quotaYear: number,
-  // Accept raw string for legacy callers (test fixtures pass `'UTC'`,
-  // `'Europe/Stockholm'` literals); the branded `IanaTimezone` widens
-  // to `string` naturally so production callers passing the brand
-  // type-check too.
-  tenantTz: string,
+  // Branded `IanaTimezone` widens to `string` for legacy callers
+  // (test fixtures pass `'UTC'` / `'Europe/Stockholm'` literals).
+  // Production callers pass the brand directly.
+  tenantTz: IanaTimezone | string,
 ): string {
   // ZoneId.of() throws on unknown ids — bubble the error.
   const zone = ZoneId.of(tenantTz);
@@ -46,7 +46,7 @@ export function formatNextResetAt(
 export function shouldShowPlanChangedExplainer(
   planChangedAt: Date | null,
   quotaYear: number,
-  tenantTz: string,
+  tenantTz: IanaTimezone | string,
 ): boolean {
   if (planChangedAt === null) return false;
   const zone = ZoneId.of(tenantTz);
@@ -55,6 +55,18 @@ export function shouldShowPlanChangedExplainer(
     zone,
   ).year();
   return yearAtChange === quotaYear;
+}
+
+/**
+ * Map next-intl locale → BCP 47 tag for `Intl.DateTimeFormat`.
+ *
+ * Thai dates display in Buddhist Era (BE = CE + 543) on member-facing
+ * surfaces per CLAUDE.md Conventions; the `u-ca-buddhist` Unicode
+ * extension toggles ICU's Buddhist calendar without changing the
+ * stored UTC value. Other locales pass through unchanged.
+ */
+export function intlLocale(locale: string): string {
+  return locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
 }
 
 export interface HistoryPage<T> {

@@ -16,6 +16,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
+import { sql } from 'drizzle-orm';
 import { broadcasts, broadcastDeliveries } from '@/modules/broadcasts/infrastructure/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -46,8 +47,8 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
   let tenantA: TestTenant;
   let tenantB: TestTenant;
   let user: TestUser;
-  let aMemberId: string;
-  let bMemberId: string;
+  let aMemberIdRaw: string;
+  let bMemberIdRaw: string;
   let aBroadcastId: string;
   let bBroadcastId: string;
 
@@ -63,8 +64,8 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
     ]) {
       const planId = `us3-iso-${randomUUID().slice(0, 8)}`;
       const memberUuid = randomUUID();
-      if (label === 'a') aMemberId = memberUuid;
-      else bMemberId = memberUuid;
+      if (label === 'a') aMemberIdRaw = memberUuid;
+      else bMemberIdRaw = memberUuid;
 
       await runInTenant(t.ctx, async (tx) => {
         await tx.insert(tenantInvoiceSettings).values({
@@ -179,7 +180,7 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
     // explicit WHERE filter should both prevent leak. Expect empty.
     const result = await repoA.listForMemberPaginated(
       tenantA.ctx.slug,
-      bMemberId,
+      asMemberId(bMemberIdRaw),
       { page: 1, perPage: 10 },
     );
     expect(result.rows).toHaveLength(0);
@@ -190,7 +191,7 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
     const repoA = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
     const result = await repoA.listForMemberPaginated(
       tenantA.ctx.slug,
-      aMemberId,
+      asMemberId(aMemberIdRaw),
       { page: 1, perPage: 10 },
     );
     expect(result.total).toBe(1);
@@ -202,13 +203,18 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
     const repoA = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
     const result = await repoA.findOwnedByMember(
       tenantA.ctx.slug,
-      aMemberId,
+      asMemberId(aMemberIdRaw),
       asBroadcastId(bBroadcastId),
     );
     // Cross-tenant row is invisible under RLS → repo sees absent row
     // → probeKind:'not_found' (NOT 'cross_member', because the
     // broadcast row is fully RLS-hidden, not just owned by another
     // member in the same tenant).
+    //
+    // **RLS-leak invariant**: if a future RLS misconfiguration lets
+    // tenantA see tenantB's broadcasts, this assertion will fail with
+    // probeKind === 'cross_member' (row visible but ownership
+    // mismatch). Treat that as a P0 security regression.
     expect(result.broadcast).toBeNull();
     expect(result.probeKind).toBe('not_found');
   });
@@ -217,7 +223,7 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
     const repoA = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
     const result = await repoA.findOwnedByMember(
       tenantA.ctx.slug,
-      aMemberId,
+      asMemberId(aMemberIdRaw),
       asBroadcastId(aBroadcastId),
     );
     expect(result.broadcast).not.toBeNull();
@@ -255,29 +261,35 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
     // Seed a second broadcast in tenantA with NO delivery rows.
     const emptyBroadcastId = randomUUID();
     const planRows = await runInTenant(tenantA.ctx, async (tx) =>
-      tx.execute<{ plan_id: string }>(
-        `SELECT plan_id FROM membership_plans WHERE tenant_id = '${tenantA.ctx.slug}' LIMIT 1` as never,
+      tx.execute(
+        sql`SELECT plan_id FROM membership_plans WHERE tenant_id = ${tenantA.ctx.slug} LIMIT 1`,
       ),
     );
     const planId = (planRows as unknown as Array<{ plan_id: string }>)[0]
       ?.plan_id;
-    await db.insert(broadcasts).values({
-      tenantId: tenantA.ctx.slug,
-      broadcastId: emptyBroadcastId,
-      requestedByMemberId: aMemberId,
-      requestedByMemberPlanIdSnapshot: planId ?? '',
-      submittedByUserId: user.userId,
-      actorRole: 'member_self_service',
-      subject: 'Empty deliveries',
-      bodyHtml: '<p>x</p>',
-      bodySource: 'plain',
-      fromName: 'Iso Co a',
-      replyToEmail: 'iso@example.com',
-      segmentType: 'all_members',
-      estimatedRecipientCount: 0,
-      status: 'draft',
-      retentionYears: 5,
-    });
+    // Seed via runInTenant so RLS+FORCE applies (consistent with the
+    // beforeAll member/plan inserts; only the broadcasts/deliveries
+    // beforeAll inserts use BYPASS-RLS because broadcast_deliveries
+    // is append-only-trigger-protected).
+    await runInTenant(tenantA.ctx, async (tx) =>
+      tx.insert(broadcasts).values({
+        tenantId: tenantA.ctx.slug,
+        broadcastId: emptyBroadcastId,
+        requestedByMemberId: aMemberIdRaw,
+        requestedByMemberPlanIdSnapshot: planId ?? '',
+        submittedByUserId: user.userId,
+        actorRole: 'member_self_service',
+        subject: 'Empty deliveries',
+        bodyHtml: '<p>x</p>',
+        bodySource: 'plain',
+        fromName: 'Iso Co a',
+        replyToEmail: 'iso@example.com',
+        segmentType: 'all_members',
+        estimatedRecipientCount: 0,
+        status: 'draft',
+        retentionYears: 5,
+      }),
+    );
 
     const counts = await repoA.aggregateDeliveryCountsForBroadcast(
       tenantA.ctx.slug,
@@ -301,7 +313,7 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
     // audit_log scoped via the explicit `tenant_id = ${ctx.slug}` filter.
     const result = await drizzleMemberRepo.findLastPlanChangedAt(
       tenantA.ctx,
-      asMemberId(bMemberId),
+      asMemberId(bMemberIdRaw),
     );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value).toBeNull();
@@ -310,7 +322,7 @@ describe('F7 US3 Tenant isolation — new repo methods (Principle I clause 3)', 
   it('findLastPlanChangedAt — own member returns the seeded timestamp', async () => {
     const result = await drizzleMemberRepo.findLastPlanChangedAt(
       tenantA.ctx,
-      asMemberId(aMemberId),
+      asMemberId(aMemberIdRaw),
     );
     expect(result.ok).toBe(true);
     if (result.ok) {

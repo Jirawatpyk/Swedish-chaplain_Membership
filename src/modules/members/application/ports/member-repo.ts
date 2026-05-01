@@ -308,6 +308,14 @@ export interface MemberRepo {
    * explainer needed"). Read-only; does NOT need a tx parameter
    * (audit_log is append-only and the read tolerates non-tx
    * snapshots).
+   *
+   * Ordering: `ORDER BY "timestamp" DESC, id DESC`. The secondary
+   * `id DESC` is a stable selector for tied timestamps, NOT a
+   * proxy for insertion order — `audit_log.id` is UUID v4 random.
+   * Two `member_plan_changed` events sharing an exact-millisecond
+   * timestamp will pick a consistent row across reads, but it may
+   * not be the last-inserted one. Sub-millisecond ordering is
+   * undefined for this read.
    */
   findLastPlanChangedAt(
     ctx: TenantContext,

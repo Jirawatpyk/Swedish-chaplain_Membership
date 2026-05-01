@@ -30,6 +30,52 @@ import {
   BroadcastConcurrentMutationError,
 } from '../../application/ports/broadcasts-repo';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
+
+/**
+ * Reduce SQL `GROUP BY status` rows into a `DeliveryBreakdown`-shaped
+ * object (snake_case at the infra boundary). Exported for unit-testing
+ * the schema-drift guard in isolation — adding a future delivery
+ * status enum value (e.g. `queued`, `opened`) without updating this
+ * function would silently drop the count, so the unknown-status path
+ * MUST emit `logger.warn` to surface the gap in ops dashboards.
+ */
+export function reduceDeliveryAggregateRows(
+  rows: ReadonlyArray<{ status: string; count: number }>,
+  ctx: { readonly tenantId: string; readonly broadcastId: string },
+): {
+  delivered: number;
+  bounced: number;
+  soft_bounced: number;
+  complained: number;
+  sent: number;
+} {
+  const out = {
+    delivered: 0,
+    bounced: 0,
+    soft_bounced: 0,
+    complained: 0,
+    sent: 0,
+  };
+  for (const r of rows) {
+    if (r.status === 'delivered') out.delivered = r.count;
+    else if (r.status === 'bounced') out.bounced = r.count;
+    else if (r.status === 'soft_bounced') out.soft_bounced = r.count;
+    else if (r.status === 'complained') out.complained = r.count;
+    else if (r.status === 'sent') out.sent = r.count;
+    else {
+      logger.warn(
+        {
+          tenantId: ctx.tenantId,
+          broadcastId: ctx.broadcastId,
+          status: r.status,
+          count: r.count,
+        },
+        'broadcasts.delivery_aggregate.unknown_status',
+      );
+    }
+  }
+  return out;
+}
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
@@ -581,14 +627,7 @@ export function makeDrizzleBroadcastsRepo(
       });
     },
 
-    async findOwnedByMember(
-      tenantIdArg: string,
-      memberId: string,
-      broadcastId: BroadcastId,
-    ): Promise<{
-      readonly broadcast: Broadcast | null;
-      readonly probeKind: 'owned' | 'not_found' | 'cross_member';
-    }> {
+    async findOwnedByMember(tenantIdArg, memberId, broadcastId) {
       return runInTenant(ctx, async (tx) => {
         const rows = await tx
           .select()
@@ -603,14 +642,14 @@ export function makeDrizzleBroadcastsRepo(
 
         const row = rows[0];
         if (row === undefined) {
-          return { broadcast: null, probeKind: 'not_found' };
+          return { broadcast: null, probeKind: 'not_found' as const };
         }
         if (row.requestedByMemberId !== memberId) {
-          return { broadcast: null, probeKind: 'cross_member' };
+          return { broadcast: null, probeKind: 'cross_member' as const };
         }
         return {
           broadcast: rowToBroadcast(row as BroadcastRow),
-          probeKind: 'owned',
+          probeKind: 'owned' as const,
         };
       });
     },
@@ -640,36 +679,10 @@ export function makeDrizzleBroadcastsRepo(
           )
           .groupBy(broadcastDeliveries.status);
 
-        const out = {
-          delivered: 0,
-          bounced: 0,
-          soft_bounced: 0,
-          complained: 0,
-          sent: 0,
-        };
-        for (const r of rows) {
-          if (r.status === 'delivered') out.delivered = r.count;
-          else if (r.status === 'bounced') out.bounced = r.count;
-          else if (r.status === 'soft_bounced') out.soft_bounced = r.count;
-          else if (r.status === 'complained') out.complained = r.count;
-          else if (r.status === 'sent') out.sent = r.count;
-          else {
-            // Schema drift guard — a future delivery_status enum value
-            // (e.g., `queued`, `opened`, `unsubscribed`) added without
-            // updating this aggregator would be silently dropped from
-            // the totals. Warn so the gap is observable in ops dashboards.
-            logger.warn(
-              {
-                tenantId: tenantIdArg,
-                broadcastId,
-                status: r.status,
-                count: r.count,
-              },
-              'broadcasts.delivery_aggregate.unknown_status',
-            );
-          }
-        }
-        return out;
+        return reduceDeliveryAggregateRows(rows, {
+          tenantId: tenantIdArg,
+          broadcastId: broadcastId as string,
+        });
       });
     },
   };

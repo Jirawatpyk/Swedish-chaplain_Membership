@@ -13,13 +13,16 @@
  * calendar year's quota (not the next year's UTC slot).
  */
 import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import { Instant, LocalDateTime, ZonedDateTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
 import {
   getTenantTimezone,
+  hasExplicitTenantTimezone,
   type IanaTimezone,
   type TenantContext,
 } from '@/modules/tenants';
+import { asMemberId } from '@/modules/members';
 import {
   asQuotaCounter,
   zeroQuota,
@@ -29,22 +32,22 @@ import {
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 
-const ASIA_BANGKOK = ZoneId.of('Asia/Bangkok');
-
 /**
- * Calendar year in Asia/Bangkok timezone (FR-006/FR-007).
+ * Calendar year in tenant timezone (FR-006/FR-007).
  *
- * MVP scope: Bangkok is hard-coded because SweCham is the only
- * deployed tenant. The intended F12 multi-tenant signature is
- * `currentQuotaYear(now, tenantTz)` — for non-Bangkok tenants this
- * function will disagree with `nextResetAtFor(quotaYear, tenantTz)`
- * across the year boundary. F12-TODO: tenantize this signature when
- * the second tenant onboards.
+ * Threads `tenantTz` through so quota-year math agrees with
+ * `nextResetAtFor` at the year boundary for any tenant timezone.
+ * `tenantTz` defaults to `Asia/Bangkok` for backwards compat with
+ * existing callers/tests that pass only `now` (e.g. F7 unit tests
+ * that don't have a tenant context handy).
  */
-export function currentQuotaYear(now: Date): number {
+export function currentQuotaYear(
+  now: Date,
+  tenantTz: IanaTimezone | string = 'Asia/Bangkok',
+): number {
   return ZonedDateTime.ofInstant(
     Instant.ofEpochMilli(now.getTime()),
-    ASIA_BANGKOK,
+    ZoneId.of(tenantTz),
   ).year();
 }
 
@@ -100,37 +103,41 @@ export async function computeQuotaCounter(
   deps: ComputeQuotaDeps,
   input: ComputeQuotaInput,
 ): Promise<Result<ComputeQuotaOutput, ComputeQuotaError>> {
-  // Hoist tenant tz + quota year + reset-at once — all 3 OK-paths
-  // share identical values for these fields. Single `clock.now()`
-  // call also keeps the test fixtures deterministic.
+  const planLookup = await deps.plansBridge.getPlanForMember(
+    deps.tenant,
+    input.memberId,
+  );
+
+  // Early-return for member-not-found WITHOUT computing tenant-tz /
+  // quota-year — neither value is needed on this path.
+  if (!planLookup.ok && planLookup.error.kind === 'plan_lookup.member_not_found') {
+    return err({
+      kind: 'quota.member_not_found',
+      memberId: input.memberId,
+    });
+  }
+
+  // All remaining paths return ok and need the reset trio. Compute
+  // once here so the F12 fallback warn fires on every path that
+  // could be misconfigured.
   const tenantTimezone = getTenantTimezone(deps.tenant.slug);
-  const quotaYear = currentQuotaYear(deps.clock.now());
+  if (!hasExplicitTenantTimezone(deps.tenant.slug)) {
+    logger.warn(
+      { tenantSlug: deps.tenant.slug, fallback: tenantTimezone },
+      'tenants.timezone.unknown_slug_fallback',
+    );
+  }
+  const quotaYear = currentQuotaYear(deps.clock.now(), tenantTimezone);
   const reset = {
     quotaYear,
     nextResetAt: nextResetAtFor(quotaYear, tenantTimezone),
     tenantTimezone,
   } as const;
 
-  const planLookup = await deps.plansBridge.getPlanForMember(
-    deps.tenant,
-    input.memberId,
-  );
-
   if (!planLookup.ok) {
-    if (planLookup.error.kind === 'plan_lookup.member_not_found') {
-      return err({
-        kind: 'quota.member_not_found',
-        memberId: input.memberId,
-      });
-    }
-    // Member exists but plan has 0 entitlement — surface a zero counter
-    // so the benefits page renders "0 of 0 remaining" rather than crashing.
-    return ok({
-      counter: zeroQuota(0),
-      planCode: '',
-      planId: '',
-      ...reset,
-    });
+    // Member exists but plan-lookup non-fatal error — surface a zero
+    // counter so the benefits page renders "0 of 0 remaining".
+    return ok({ counter: zeroQuota(0), planCode: '', planId: '', ...reset });
   }
 
   const { planCode, planId, eblastPerYear: cap } = planLookup.value;
@@ -140,7 +147,7 @@ export async function computeQuotaCounter(
 
   const counts = await deps.broadcastsRepo.countForMemberQuota(
     deps.tenant.slug,
-    input.memberId,
+    asMemberId(input.memberId),
     quotaYear,
   );
 

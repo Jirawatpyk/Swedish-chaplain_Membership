@@ -19,25 +19,38 @@
 
 import { unsafeIanaTimezone, type IanaTimezone } from './iana-timezone';
 
-const TENANT_TIMEZONES: Readonly<Record<string, IanaTimezone>> = Object.freeze({
-  swecham: unsafeIanaTimezone('Asia/Bangkok'),
-});
-
 /** Constitution § Hosting deviation places SweCham primary in Singapore;
  * member-facing display + quota math run in Asia/Bangkok per FR-006. */
-const DEFAULT_TIMEZONE: IanaTimezone = unsafeIanaTimezone('Asia/Bangkok');
+const ASIA_BANGKOK: IanaTimezone = unsafeIanaTimezone('Asia/Bangkok');
+
+const TENANT_TIMEZONES: Readonly<Record<string, IanaTimezone>> = Object.freeze({
+  swecham: ASIA_BANGKOK,
+});
+
+const DEFAULT_TIMEZONE: IanaTimezone = ASIA_BANGKOK;
 
 /**
  * Returns the IANA timezone identifier for the given tenant slug as a
  * branded `IanaTimezone`. Build-time-known mapping → no validation
  * overhead at call time.
  *
- * Unknown slugs fall back to the project default rather than throwing —
- * this avoids regressing benefit-dashboard renders for tenants
- * onboarded ahead of an explicit map entry. Onboarding a new tenant
- * should still update this map so the future F12 config-table
- * migration preserves the same timezone.
+ * Unknown slugs fall back to the project default — avoids regressing
+ * benefit-dashboard renders for tenants onboarded ahead of an explicit
+ * map entry. **Hazard**: a future Stockholm/EU tenant onboarded BEFORE
+ * its map entry lands silently gets `Asia/Bangkok` quota-year math —
+ * quota windows would reset on Thai New Year, not the EU tenant's
+ * local fiscal boundary. F12 multi-tenant config migration MUST run
+ * before any non-SweCham tenant goes live. The Application-layer
+ * caller in `compute-quota-counter.ts` logs a warn on the fallback
+ * path so the misconfiguration is observable in prod logs.
  */
 export function getTenantTimezone(tenantSlug: string): IanaTimezone {
   return TENANT_TIMEZONES[tenantSlug] ?? DEFAULT_TIMEZONE;
+}
+
+/** True iff the slug has an explicit map entry — Application-layer
+ *  callers use this to gate fallback logging without coupling Domain
+ *  to a logger import (Constitution Principle III). */
+export function hasExplicitTenantTimezone(tenantSlug: string): boolean {
+  return Object.prototype.hasOwnProperty.call(TENANT_TIMEZONES, tenantSlug);
 }
