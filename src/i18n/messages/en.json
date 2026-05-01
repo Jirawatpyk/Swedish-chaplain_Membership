@@ -1882,7 +1882,9 @@
         "exhausted": "All E-Blast quota for {year} has been used.",
         "progressLabel": "E-Blast quota used",
         "fetchError": "Could not load quota.",
-        "retry": "Retry"
+        "retry": "Retry",
+        "nextReset": "Next reset {date}",
+        "planChangedExplainer": "Plan changed on {date} — current year quota reflects the new plan."
       },
       "banner": {
         "acknowledgement": {
@@ -1916,7 +1918,34 @@
           "rejected": "Rejected",
           "cancelled": "Cancelled",
           "failed_to_dispatch": "Failed"
+        },
+        "pagination": {
+          "previous": "Previous",
+          "next": "Next",
+          "pageOf": "Page {page} of {total}",
+          "ariaLabel": "Broadcast history pagination"
         }
+      },
+      "detail": {
+        "title": "Broadcast detail",
+        "subtitle": "Subject, audience and delivery breakdown for this broadcast.",
+        "fields": {
+          "subject": "Subject",
+          "submittedAt": "Submitted",
+          "sentAt": "Sent",
+          "status": "Status",
+          "recipients": "Recipients"
+        },
+        "delivery": {
+          "title": "Delivery breakdown",
+          "delivered": "Delivered",
+          "bounced": "Bounced",
+          "softBounced": "Soft-bounced",
+          "complained": "Complained",
+          "sent": "Pending",
+          "total": "Total"
+        },
+        "back": "Back to broadcasts"
       }
     },
     "profile": {

@@ -204,4 +204,53 @@ export interface BroadcastsRepo {
   findByResendBroadcastIdBypassRls(
     resendBroadcastId: string,
   ): Promise<{ readonly tenantId: string; readonly broadcast: Broadcast } | null>;
+
+  /**
+   * F7 US3 read path — paginated history of a single member's own
+   * broadcasts ordered by `created_at DESC`. OFFSET-based for MVP
+   * simplicity; per-member dataset stays in the hundreds at the
+   * FR-016a 5,000/year tenant cap. Cursor migration is F7.1 polish.
+   */
+  listForMemberPaginated(
+    tenantId: string,
+    memberId: string,
+    opts: { readonly page: number; readonly perPage: number },
+  ): Promise<{
+    readonly rows: ReadonlyArray<Broadcast>;
+    readonly total: number;
+    readonly totalPages: number;
+    readonly page: number;
+  }>;
+
+  /**
+   * F7 US3 — fetch a single broadcast iff the requesting member owns
+   * it. Returns `probeKind` so the use-case can emit
+   * `broadcast_cross_member_probe` (Q19) when ownership mismatches;
+   * the route still surfaces 404 in both cases (anti-enumeration).
+   */
+  findOwnedByMember(
+    tenantId: string,
+    memberId: string,
+    broadcastId: BroadcastId,
+  ): Promise<{
+    readonly broadcast: Broadcast | null;
+    readonly probeKind: 'not_found' | 'cross_member';
+  }>;
+
+  /**
+   * F7 US3 AS3 — aggregated delivery counts for a single broadcast.
+   * Reads `broadcast_deliveries` grouped by `status`; returns 0 for
+   * any status that has no rows so the caller can render
+   * "Delivered: 0 / Bounced: 0 / Complained: 0" deterministically.
+   */
+  aggregateDeliveryCountsForBroadcast(
+    tenantId: string,
+    broadcastId: BroadcastId,
+  ): Promise<{
+    readonly delivered: number;
+    readonly bounced: number;
+    readonly soft_bounced: number;
+    readonly complained: number;
+    readonly sent: number;
+  }>;
 }

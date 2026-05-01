@@ -214,6 +214,33 @@ export {
   makeDispatchScheduledBroadcastDeps,
 } from './infrastructure/broadcasts-deps';
 
+// --- Application use-cases (Phase 5 US3) ---------------------------------
+export {
+  acknowledgeBroadcastsTerms,
+  type AcknowledgeBroadcastsTermsError,
+  type AcknowledgeBroadcastsTermsInput,
+  type AcknowledgeBroadcastsTermsOutput,
+} from './application/use-cases/acknowledge-broadcasts-terms';
+export {
+  getMemberBroadcast,
+  type DeliveryBreakdown,
+  type GetMemberBroadcastError,
+  type GetMemberBroadcastInput,
+  type GetMemberBroadcastOutput,
+} from './application/use-cases/get-member-broadcast';
+export {
+  listMemberBroadcasts,
+  type ListMemberBroadcastsInput,
+  type ListMemberBroadcastsOutput,
+} from './application/use-cases/list-member-broadcasts';
+
+// --- Composition root factories (Phase 5 US3) ----------------------------
+export {
+  makeAcknowledgeBroadcastsTermsDeps,
+  makeGetMemberBroadcastDeps,
+  makeListMemberBroadcastsDeps,
+} from './infrastructure/broadcasts-deps';
+
 // --- Infrastructure adapters consumed by routes (Phase 4 US2) ------------
 // EmailTransactionalPort impl is exposed at the barrel because admin
 // review API routes (approve/reject/cancel) trigger member notifications

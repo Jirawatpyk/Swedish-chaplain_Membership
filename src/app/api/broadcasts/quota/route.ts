@@ -45,7 +45,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return errorResponse(500, 'internal_error', correlationId);
     }
 
-    const { counter, quotaYear, planCode, planId } = result.value;
+    const { counter, quotaYear, planCode, planId, nextResetAt, tenantTimezone } =
+      result.value;
 
     // Smart-4: humanize planCode to a display name (e.g.,
     // "premium_corporate" → "Premium Corporate"). Avoids extending the
@@ -69,6 +70,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         reserved: counter.reserved,
         remaining: counter.remaining,
         cap: counter.cap,
+        nextResetAt,
+        tenantTimezone,
       },
       {
         status: 200,

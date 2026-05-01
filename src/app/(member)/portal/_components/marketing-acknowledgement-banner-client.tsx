@@ -29,23 +29,19 @@ export function AcknowledgementBannerClient({
   acknowledge,
   remindLater,
   closeLabel,
-}: AcknowledgementBannerClientProps): React.ReactElement | null {
+}: AcknowledgementBannerClientProps): React.ReactElement {
   const [hidden, setHidden] = useState<boolean>(false);
   const [pending, startTransition] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
-
-  if (hidden) return null;
+  const focusAnchorRef = useRef<HTMLSpanElement>(null);
 
   function dismiss() {
-    // Move focus BEFORE unmount so the screen reader is on a known
-    // anchor when the banner element is removed from the DOM.
-    const banner = ref.current;
-    const next = banner?.nextElementSibling as HTMLElement | null;
-    if (next?.focus) {
-      next.focus();
-    } else {
-      document.body.focus();
-    }
+    // Move focus to the persistent anchor BEFORE unmount so the
+    // screen reader stays on a known element after the banner is
+    // removed (a11y CHK042). The anchor stays mounted across the
+    // hidden state so document.activeElement is still the anchor
+    // after the React commit.
+    focusAnchorRef.current?.focus();
     setHidden(true);
   }
 
@@ -72,47 +68,66 @@ export function AcknowledgementBannerClient({
   }
 
   return (
-    <div
-      ref={ref}
-      role="region"
-      aria-label={title}
-      className="mx-auto my-4 flex max-w-(--layout-max-width-detail) items-start gap-4 rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/40"
-    >
-      <ShieldCheck
-        className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300"
+    <>
+      {hidden ? null : (
+      <div
+        ref={ref}
+        role="region"
+        aria-label={title}
+        data-testid="broadcasts-acknowledge-banner"
+        className="mx-auto my-4 flex max-w-(--layout-max-width-detail) items-start gap-4 rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/40"
+      >
+        <ShieldCheck
+          className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300"
+          aria-hidden="true"
+        />
+        <div className="flex-1 space-y-2">
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <p className="text-sm text-muted-foreground">{body}</p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={onAcknowledge}
+              disabled={pending}
+              data-testid="banner-acknowledge-cta"
+            >
+              {acknowledge}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={dismiss}
+              disabled={pending}
+              data-testid="banner-remind-later"
+            >
+              {remindLater}
+            </Button>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label={closeLabel}
+          className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded hover:bg-amber-100 dark:hover:bg-amber-900/40"
+          data-testid="banner-dismiss"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+      )}
+      {/* a11y CHK042 — focus anchor stays mounted ACROSS the hidden
+          state so `document.activeElement` after dismiss remains a
+          known element rather than the document body (focus return
+          requirement). */}
+      <span
+        ref={focusAnchorRef}
+        tabIndex={-1}
+        data-testid="banner-return-focus-anchor"
+        className="sr-only"
         aria-hidden="true"
       />
-      <div className="flex-1 space-y-2">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <p className="text-sm text-muted-foreground">{body}</p>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            size="sm"
-            onClick={onAcknowledge}
-            disabled={pending}
-          >
-            {acknowledge}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={dismiss}
-            disabled={pending}
-          >
-            {remindLater}
-          </Button>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={dismiss}
-        aria-label={closeLabel}
-        className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded hover:bg-amber-100 dark:hover:bg-amber-900/40"
-      >
-        <X className="h-4 w-4" aria-hidden="true" />
-      </button>
-    </div>
+    </>
   );
 }

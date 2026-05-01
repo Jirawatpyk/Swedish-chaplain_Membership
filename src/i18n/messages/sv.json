@@ -1882,7 +1882,9 @@
         "exhausted": "Hela E-Blast-kvoten för {year} har använts.",
         "progressLabel": "E-Blast-kvot använd",
         "fetchError": "Kunde inte ladda kvot.",
-        "retry": "Försök igen"
+        "retry": "Försök igen",
+        "nextReset": "Nästa återställning {date}",
+        "planChangedExplainer": "Plan ändrades {date} — årets kvot speglar den nya planen."
       },
       "banner": {
         "acknowledgement": {
@@ -1916,7 +1918,34 @@
           "rejected": "Avvisad",
           "cancelled": "Avbruten",
           "failed_to_dispatch": "Misslyckades"
+        },
+        "pagination": {
+          "previous": "Föregående",
+          "next": "Nästa",
+          "pageOf": "Sida {page} av {total}",
+          "ariaLabel": "Paginering för utskickshistorik"
         }
+      },
+      "detail": {
+        "title": "Utskicksdetaljer",
+        "subtitle": "Ämne, mottagare och leveranssammanfattning för detta utskick.",
+        "fields": {
+          "subject": "Ämne",
+          "submittedAt": "Inskickad",
+          "sentAt": "Skickad",
+          "status": "Status",
+          "recipients": "Mottagare"
+        },
+        "delivery": {
+          "title": "Leveranssammanfattning",
+          "delivered": "Levererad",
+          "bounced": "Studsade",
+          "softBounced": "Mjuk studs",
+          "complained": "Klagomål",
+          "sent": "Väntar",
+          "total": "Totalt"
+        },
+        "back": "Tillbaka till utskick"
       }
     },
     "profile": {

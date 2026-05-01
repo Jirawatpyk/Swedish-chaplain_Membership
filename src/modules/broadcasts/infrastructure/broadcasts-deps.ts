@@ -30,6 +30,9 @@ import type { CancelBroadcastDeps } from '../application/use-cases/cancel-broadc
 import type { ProxySubmitBroadcastDeps } from '../application/use-cases/proxy-submit-broadcast';
 import type { ClearHaltDeps } from '../application/use-cases/clear-halt';
 import type { DispatchScheduledBroadcastDeps } from '../application/use-cases/dispatch-scheduled-broadcast';
+import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
+import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
+import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
 
 export const systemClock: ClockPort = {
   now: () => new Date(),
@@ -197,5 +200,42 @@ export function makeDispatchScheduledBroadcastDeps(
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,
+  };
+}
+
+// =====================================================================
+// Phase 5 US3 — member quota + history surface use-case factories
+// =====================================================================
+
+export function makeAcknowledgeBroadcastsTermsDeps(
+  tenantId: string,
+): AcknowledgeBroadcastsTermsDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    membersBridge,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+export function makeGetMemberBroadcastDeps(
+  tenantId: string,
+): GetMemberBroadcastDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    audit: f7AuditAdapter,
+  };
+}
+
+export function makeListMemberBroadcastsDeps(
+  tenantId: string,
+): ListMemberBroadcastsDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
   };
 }

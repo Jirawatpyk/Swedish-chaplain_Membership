@@ -22,3 +22,5 @@ export {
   TENANT_SLUG_PATTERN,
   type TenantContext,
 } from './domain/tenant-context';
+
+export { getTenantTimezone } from './domain/tenant-timezone';
