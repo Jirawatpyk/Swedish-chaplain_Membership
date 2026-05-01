@@ -216,3 +216,65 @@ export async function clearF7HaltSeed(): Promise<void> {
     await sql.end({ timeout: 5 });
   }
 }
+
+/**
+ * F7 US3 AS2 seed — append a `member_plan_changed` audit row for the
+ * e2e-member, dated 90 days before now (well inside the current
+ * Bangkok-tz quota year for any reasonable test execution date).
+ *
+ * `audit_log` is append-only (migration 0001 trigger), so re-runs add
+ * a new row each time — the page's most-recent-row query
+ * (`ORDER BY "timestamp" DESC LIMIT 1`) always picks up the latest
+ * seed, keeping the assertion deterministic.
+ *
+ * Returns the inserted audit row id + the changed-at timestamp the
+ * caller asserts on. No cleanup function — the audit trail is part
+ * of the project's compliance evidence and rows accumulate harmlessly.
+ */
+export async function seedF7PlanChangedAudit(): Promise<{
+  readonly auditId: string;
+  readonly changedAt: Date;
+} | null> {
+  const dbUrl = process.env.DATABASE_URL;
+  const memberEmail = process.env.E2E_MEMBER_EMAIL;
+  if (!dbUrl || !memberEmail) return null;
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    const memberRows = await sql<Array<{ member_id: string }>>`
+      SELECT m.member_id::text AS member_id
+      FROM members m
+      JOIN contacts c ON c.member_id = m.member_id
+      JOIN users u ON u.id = c.linked_user_id
+      WHERE m.tenant_id = ${TENANT_ID} AND LOWER(u.email) = LOWER(${memberEmail})
+      LIMIT 1
+    `;
+    const member = memberRows[0];
+    if (!member) return null;
+
+    const changedAt = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const inserted = await sql<Array<{ id: string }>>`
+      INSERT INTO audit_log (
+        event_type, actor_user_id, summary, request_id, tenant_id,
+        payload, "timestamp"
+      )
+      VALUES (
+        'member_plan_changed',
+        'system:e2e-seed',
+        ${'E2E seed — plan changed for ' + member.member_id},
+        ${'e2e-seed-' + Date.now()},
+        ${TENANT_ID},
+        ${sql.json({ memberId: member.member_id, fromPlanCode: 'regular_corporate', toPlanCode: 'premium_corporate' })},
+        ${changedAt.toISOString()}
+      )
+      RETURNING id::text AS id
+    `;
+    const row = inserted[0];
+    if (!row) return null;
+    console.log(
+      `[e2e seed broadcasts] OK member_plan_changed audit=${row.id} member=${member.member_id} changedAt=${changedAt.toISOString()}`,
+    );
+    return { auditId: row.id, changedAt };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}

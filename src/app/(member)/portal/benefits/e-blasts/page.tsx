@@ -20,7 +20,6 @@
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { Mail } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
@@ -29,7 +28,6 @@ import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { QuotaDisplay } from '@/components/broadcast/quota-display';
 import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
-import { runInTenant } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
@@ -38,6 +36,7 @@ import {
   makeComputeQuotaDeps,
   makeListMemberBroadcastsDeps,
 } from '@/modules/broadcasts';
+import { asMemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   formatNextResetAt,
@@ -131,26 +130,14 @@ export default async function EblastsListPage(props: {
         date: dateOnlyFormatter.format(new Date(resetIso)),
       });
 
-      // AS2 — plan-changed explainer: small audit-log read. Direct SQL
-      // (architectural deviation noted in plan.md § Complexity Tracking
-      // — F2 doesn't expose `lastPlanChangedAt` on the member entity
-      // and adding a dedicated port surface for one-line read is over-
-      // engineering for MVP).
-      const planChangeRows = (await runInTenant(tenant, async (tx) =>
-        tx.execute(sql`
-          SELECT "timestamp" AS changed_at
-            FROM audit_log
-           WHERE tenant_id = ${tenant.slug}
-             AND event_type = 'member_plan_changed'
-             AND payload ->> 'memberId' = ${memberId}
-           ORDER BY "timestamp" DESC
-           LIMIT 1
-        `),
-      )) as unknown as Array<{ changed_at: Date }>;
-      const lastPlanChangedAt =
-        planChangeRows[0]?.changed_at != null
-          ? new Date(planChangeRows[0].changed_at)
-          : null;
+      // AS2 — plan-changed explainer: read most-recent audit timestamp
+      // via the F3 `findLastPlanChangedAt` port (Constitution Principle
+      // III — Presentation never reaches into infrastructure directly).
+      const planLookup = await membersDeps.memberRepo.findLastPlanChangedAt(
+        tenant,
+        asMemberId(memberId),
+      );
+      const lastPlanChangedAt = planLookup.ok ? planLookup.value : null;
       if (
         shouldShowPlanChangedExplainer(
           lastPlanChangedAt,

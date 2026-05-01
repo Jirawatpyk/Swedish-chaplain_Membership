@@ -299,6 +299,20 @@ export interface MemberRepo {
       RepoError
     >
   >;
+
+  /**
+   * F7 US3 AS2 — most-recent `member_plan_changed` audit timestamp
+   * for a member, scoped to the tenant. Returns `null` when the
+   * member has no recorded plan changes (or the member doesn't
+   * exist in the tenant — caller treats both cases as "no
+   * explainer needed"). Read-only; does NOT need a tx parameter
+   * (audit_log is append-only and the read tolerates non-tx
+   * snapshots).
+   */
+  findLastPlanChangedAt(
+    ctx: TenantContext,
+    memberId: MemberId,
+  ): Promise<Result<Date | null, RepoError>>;
 }
 
 // ---------------------------------------------------------------------------

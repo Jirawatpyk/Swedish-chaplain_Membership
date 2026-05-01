@@ -27,6 +27,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { seedF7PlanChangedAudit } from './helpers/broadcasts-seed';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
@@ -39,8 +40,16 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     'Set E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD',
   );
 
+  /** D2 — seeded once for the whole describe so AS2 can assert the
+   *  localised plan-changed-mid-year explainer microcopy with a known
+   *  date. audit_log is append-only; new rows just become the latest
+   *  on subsequent runs. */
+  let planChangedAt: Date | null = null;
+
   test.beforeAll(async () => {
     await clearE2ERateLimits();
+    const seed = await seedF7PlanChangedAudit();
+    if (seed) planChangedAt = seed.changedAt;
   });
 
   async function signIn(page: Page): Promise<void> {
@@ -107,19 +116,33 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   test('AS2 — plan-changed-mid-year explainer microcopy renders when plan changed', async ({
     page,
   }) => {
+    test.skip(
+      planChangedAt === null,
+      'beforeAll seed for member_plan_changed audit row failed — DATABASE_URL missing or member lookup failed',
+    );
+
     await signIn(page);
     await page.goto('/portal/benefits/e-blasts');
-    // The explainer is conditionally rendered (only when an audit row
-    // for `member_plan_changed` exists inside the current quota year).
-    // For test members without a recent plan change, the testid is
-    // legitimately absent — assert that count is either 0 (not
-    // applicable) or 1 (visible with the localised microcopy).
+
+    // The explainer testid is conditionally rendered. With the seeded
+    // audit row inside the current Bangkok-tz quota year, it MUST be
+    // present (count=1) and visible.
     const el = page.getByTestId('quota-plan-changed-explainer');
-    const count = await el.count();
-    expect(count === 0 || count === 1).toBe(true);
-    if (count === 1) {
-      await expect(el).toBeVisible();
-    }
+    await expect(el).toHaveCount(1);
+    await expect(el).toBeVisible();
+
+    // Assert the localised microcopy template — the placeholder `{date}`
+    // should be filled with a long-format date matching `planChangedAt`.
+    // Locale used by the page is `en` for the Playwright signed-in
+    // session (chromium / mobile-chrome / mobile-safari default).
+    const text = await el.innerText();
+    expect(text).toMatch(/Plan changed on .+/i);
+    // The localised microcopy uses Intl.DateTimeFormat dateStyle:'long'.
+    // Compare against a derived expected string for the seed date.
+    const expectedDate = new Intl.DateTimeFormat('en', {
+      dateStyle: 'long',
+    }).format(planChangedAt!);
+    expect(text).toContain(expectedDate);
   });
 
   // ── AS3 ────────────────────────────────────────────────────────────
@@ -180,28 +203,46 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     // browser follows the response to a rendered error page. fetch()
     // surfaces the raw status code that the spec specifies.
     const FAKE_ID = '00000000-0000-0000-0000-000000000000';
-    const status = await page.evaluate(async (id) => {
-      const res = await fetch(`/portal/broadcasts/${id}`, {
-        method: 'GET',
-        credentials: 'same-origin',
-        redirect: 'manual',
-      });
-      return res.status;
-    }, FAKE_ID);
-    // Spec AS5 anti-enumeration: any 404 (not 403/200/500). In Next.js
-    // App-Router dev mode, soft-navigation may report 200 for the
-    // rendered not-found page; accept both 404 (server) and 200-with-
-    // not-found-content as long as it is NOT 403 (which would leak
-    // existence). Production deploys return 404 directly.
-    expect([404, 200]).toContain(status);
+    // Use Playwright's API request (shares the browser context's
+    // cookies for auth) — bypasses Next.js App Router dev-mode
+    // soft-navigation that can mask `notFound()` 404 responses with
+    // a 200 when the browser follows the response to the rendered
+    // not-found page. The API client returns the raw HTTP status the
+    // server sent, matching what production behaviour would be.
+    const apiResponse = await page.context().request.get(
+      `/portal/broadcasts/${FAKE_ID}`,
+      { failOnStatusCode: false, maxRedirects: 0 },
+    );
+    const status = apiResponse.status();
+    const body = await apiResponse.text();
+
+    // Strict anti-enumeration assertions per AS5 spec intent:
+    //
+    // (1) MUST NOT be 403 — that would leak existence semantics
+    //     (the contract is that absent rows + cross-member probes are
+    //     indistinguishable from the caller's perspective).
     expect(status).not.toBe(403);
-    if (status === 200) {
-      // When dev-mode soft-renders the not-found page with 200, the
-      // detail-page testid `delivery-breakdown` MUST be absent —
-      // proves the not-found branch fired.
-      await page.goto(`/portal/broadcasts/${FAKE_ID}`);
-      await expect(page.getByTestId('delivery-breakdown')).toHaveCount(0);
-    }
+    // (2) MUST NOT be 5xx — that would be a server bug, not a probe.
+    expect(status).toBeLessThan(500);
+    // (3) Response MUST NOT render the detail-page content. The test
+    //     uses the canonical detail testid (`delivery-breakdown`) +
+    //     the inline subject field marker — both must be absent.
+    expect(body).not.toContain('data-testid="delivery-breakdown"');
+    expect(body).not.toContain('data-testid="delivery-delivered-count"');
+    // (4) Response MUST render the not-found UI. The localised
+    //     `errors.notFound` copy is the canonical signal that
+    //     `notFound()` fired and the segment-level `not-found.tsx`
+    //     handled it.
+    expect(body).toContain("We couldn't find what you were looking for");
+
+    // (5) HTTP status: production deploys return 404 directly. Next.js
+    //     16 dev-mode RSC streaming commits response headers before
+    //     `notFound()` resolves, so dev-server responses can carry 200
+    //     while still rendering the not-found UI (the body assertions
+    //     above prove the not-found branch fired). Accept either —
+    //     production CI runs `pnpm build && pnpm start` to assert
+    //     strict 404 (tracked separately as a /speckit.ship pre-flight).
+    expect([200, 404]).toContain(status);
   });
 
   // ── AS6 + AS7 + AS8 + a11y CHK042 ─────────────────────────────────

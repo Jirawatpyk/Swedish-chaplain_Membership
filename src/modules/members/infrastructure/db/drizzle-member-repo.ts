@@ -863,4 +863,29 @@ export const drizzleMemberRepo: MemberRepo = {
       return err(unexpected(e));
     }
   },
+
+  async findLastPlanChangedAt(
+    ctx: TenantContext,
+    memberId: MemberId,
+  ): Promise<Result<Date | null, RepoError>> {
+    try {
+      const rows = await runInTenant(ctx, async (tx) =>
+        tx.execute(sql`
+          SELECT "timestamp" AS changed_at
+            FROM audit_log
+           WHERE tenant_id = ${ctx.slug}
+             AND event_type = 'member_plan_changed'
+             AND payload ->> 'memberId' = ${memberId as string}
+           ORDER BY "timestamp" DESC
+           LIMIT 1
+        `),
+      );
+      const arr = rows as unknown as Array<{ changed_at: Date | null }>;
+      const row = arr[0];
+      if (!row || row.changed_at == null) return ok(null);
+      return ok(new Date(row.changed_at));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
 };

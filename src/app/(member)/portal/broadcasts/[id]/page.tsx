@@ -26,14 +26,19 @@ import { buttonVariants } from '@/components/ui/button';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
-  asBroadcastId,
   getMemberBroadcast,
   makeGetMemberBroadcastDeps,
+  parseBroadcastId,
 } from '@/modules/broadcasts';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { randomUUID } from 'node:crypto';
 
-export const revalidate = 60;
+/* The detail page is per-(tenant, member, broadcastId) — caching across
+ * users doesn't apply, and the route depends on the member-scoped
+ * `runInTenant` lookup. Force dynamic rendering so `notFound()` returns
+ * a true HTTP 404 (Next.js 16 sets static-cache responses to 200 even
+ * when the rendered body is the not-found UI; AS5 spec mandates 404). */
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.broadcasts.detail');
@@ -52,27 +57,24 @@ export default async function BroadcastDetailPage(props: {
     tenant,
     session.user.id,
   );
-  if (!memberLookup.ok) notFound();
+  if (!memberLookup.ok) return notFound();
   const memberId = memberLookup.value.memberId;
 
-  // Validate ID shape early — invalid UUID = not found (no audit).
-  let broadcastId: ReturnType<typeof asBroadcastId>;
-  try {
-    broadcastId = asBroadcastId(id);
-  } catch {
-    notFound();
-  }
+  // Validate ID shape early — invalid UUID = not found (no audit
+  // emission; we cannot probe a non-existent row by an invalid id).
+  const parsed = parseBroadcastId(id);
+  if (!parsed.ok) return notFound();
 
   const result = await getMemberBroadcast(
     makeGetMemberBroadcastDeps(tenant.slug),
     {
       memberId,
-      broadcastId,
+      broadcastId: parsed.value,
       actorUserId: session.user.id,
       requestId: randomUUID(),
     },
   );
-  if (!result.ok) notFound();
+  if (!result.ok) return notFound();
 
   const { broadcast, delivery } = result.value;
 
