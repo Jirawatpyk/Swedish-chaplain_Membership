@@ -2,13 +2,14 @@
  * OpenTelemetry metrics (T180, docs/observability.md § 4).
  *
  * Single metrics façade for ALL bounded contexts (F1 auth, F3 outbox,
- * F4 invoicing, F5 payments). Originally scoped to F1 auth only
- * (hence the historical `METER_NAME='swecham.auth'`); CR-8 review
- * 2026-04-27 renamed to `swecham.platform` so the meter accurately
- * reflects scope across F1+F3+F4+F5 instruments. Sub-namespaces
- * (`auth_*`, `outbox_*`, `invoicing_*`, `payments_*`) are encoded in
- * each instrument name, not in separate Meters — this keeps a single
- * scrape pipeline and avoids meter-resolution duplication.
+ * F4 invoicing, F5 payments, F7 broadcasts). Originally scoped to F1
+ * auth only (hence the historical `METER_NAME='swecham.auth'`); CR-8
+ * review 2026-04-27 renamed to `swecham.platform` so the meter
+ * accurately reflects scope across F1+F3+F4+F5+F7 instruments.
+ * Sub-namespaces (`auth_*`, `outbox_*`, `invoicing_*`, `payments_*`,
+ * `broadcasts_*`) are encoded in each instrument name, not in separate
+ * Meters — this keeps a single scrape pipeline and avoids
+ * meter-resolution duplication.
  *
  * Implementation:
  *   - `@opentelemetry/api` `metrics` API — vendor-neutral; the
@@ -702,5 +703,118 @@ export const paymentsMetrics = {
       { tenant: tenantId },
       count,
     );
+  },
+} as const;
+
+// --- F7 broadcasts metrics (Phase 6 / US4 + Phase 9 anchor) ---------------------
+//
+// FR-035 declares 16 F7 metrics (compose, queue, webhook, dispatch, unsubscribe).
+// This block ships the **public unsubscribe surface** subset emitted at US4
+// implementation time so SLO-F7-006 (`p95 unsubscribe page TTFB < 400ms`) can
+// be measured immediately. The remaining metrics (compose TTFB, queue list,
+// webhook handler, etc.) are wired progressively as their owning surfaces
+// are observed in production — full catalogue lands at Phase 9 T172.
+//
+// Cardinality ceilings:
+//   - `tenant` ∈ small-cardinality slug set (≤ a few hundred over project lifetime)
+//   - `outcome` ∈ {success, already, invalid, rate_limited, repo_error,
+//     unhandled_error} — bounded enum
+//   - `event_type` (auditEmitFailed) ∈ {broadcast_unsubscribed,
+//     broadcast_suppression_applied, …} — bounded enum from the F7 audit
+//     event-type union
+//   - NO recipient-email or member-id labels (FR-042 forbidden in logs/metrics)
+
+/**
+ * Swallow OTel emission failures. The `@opentelemetry/api` calls usually
+ * no-op when no SDK is registered, but `@vercel/otel` exporter init can
+ * throw on first record under transient pipeline misconfiguration. The
+ * F7 unsubscribe page is a GDPR Art. 21 surface where signal loss is
+ * preferable to a 500 — prior commit added the page-level guard; this
+ * helper closes the remaining gap (metric emission between the
+ * use-case commit and the return).
+ */
+function safeMetric(fn: () => void): void {
+  try {
+    fn();
+  } catch (e) {
+    // Use console.warn (NOT pino logger) so this file stays client-safe
+    // — `paymentsMetrics` is imported by F5 PromptPay client components
+    // (promptpay-panel.tsx) and pino's worker_threads dep would break
+    // the Turbopack browser bundle. Last-resort signal-loss swallow;
+    // the structured-logger upgrade can come from observability rules
+    // that scrape browser/Node consoles uniformly.
+    // eslint-disable-next-line no-console
+    console.warn('metrics_emit_failed_swallowed', {
+      err: (e as Error).message,
+    });
+  }
+}
+
+export const broadcastsMetrics = {
+  /**
+   * `broadcasts.unsubscribes{tenant, outcome}` — counter incremented on
+   * every public unsubscribe-page render. `outcome` distinguishes:
+   *   - `success`         → first-time unsubscribe (suppression row inserted)
+   *   - `already`         → idempotent replay (no row mutation, FR-030)
+   *   - `invalid`         → token verification failed (audit emitted)
+   *   - `rate_limited`    → request rejected by IP rate limit (CHK-anti-enum)
+   *   - `repo_error`      → suppression upsert failed; user shown retry-state
+   *   - `unhandled_error` → caught throw outside the use-case (DB outage, etc.)
+   * Convergent alert rates:
+   *   1. `success` count = real unsubscribe volume (alert: spike >5 σ)
+   *   2. `invalid` rate >5/min = possible token-enumeration attack (E1 mitigation)
+   *   3. `repo_error` + `unhandled_error` any non-zero = stop-the-line
+   */
+  unsubscribesCount(
+    tenantId: string | null,
+    outcome:
+      | 'success'
+      | 'already'
+      | 'invalid'
+      | 'rate_limited'
+      | 'repo_error'
+      | 'unhandled_error',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_unsubscribes_total',
+        'Public unsubscribe page outcome — paired with `outcome` label',
+      ).add(1, {
+        tenant: tenantId ?? 'unknown',
+        outcome,
+      });
+    });
+  },
+
+  /**
+   * `broadcasts.unsubscribe_page_ttfb_seconds{tenant}` — histogram of
+   * the public unsubscribe-page server-render duration. SLO-F7-006
+   * target: p95 < 400 ms. Sampled at every render, including
+   * invalid-token + rate-limited paths (those should be cheap).
+   */
+  unsubscribePageTtfbMs(tenantId: string | null, ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'broadcasts_unsubscribe_page_ttfb_ms',
+        'Public unsubscribe page TTFB, p95 target 400ms (SLO-F7-006)',
+        'ms',
+      ).record(ms, { tenant: tenantId ?? 'unknown' });
+    });
+  },
+
+  /**
+   * Mirrors `authMetrics.auditMissing` — incremented when an expected audit
+   * event fails to commit (use-case succeeded but `audit.emit` threw, or
+   * a transient error swallowed elsewhere). Any non-zero rate sustained for
+   * 5 minutes pages on-call (signal-loss on a Principle I append-only
+   * surface).
+   */
+  auditEmitFailed(eventType: string, tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audit_emit_failed_total',
+        'Expected broadcasts audit events that failed to commit',
+      ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
+    });
   },
 } as const;

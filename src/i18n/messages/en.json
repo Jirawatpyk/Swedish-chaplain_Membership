@@ -2260,6 +2260,39 @@
       "deliveryRate": "Delivery rate: {rate}%",
       "footer": "Detailed metrics are available on your benefits page.",
       "viewBenefitsCta": "View benefits + history"
+    },
+    "broadcastFooter": {
+      "receivedBecause": "You are receiving this email because you are a contact at a member of {tenantDisplayName}.",
+      "unsubscribeCta": "Unsubscribe",
+      "unsubscribeSuffix": "from these broadcasts at any time.",
+      "physicalAddress": "Sent by {tenantDisplayName}."
+    }
+  },
+  "public": {
+    "unsubscribe": {
+      "metaTitle": "Unsubscribe",
+      "fallbackChamberName": "the chamber",
+      "success": {
+        "heading": "Unsubscribed",
+        "body": "You have been unsubscribed from {tenantDisplayName} marketing broadcasts. You will no longer receive E-Blasts.",
+        "transactional": "You will continue to receive transactional emails (password resets, invoice receipts, renewal reminders) related to your account, if any.",
+        "contact": "If you unsubscribed by mistake, please contact <email></email>."
+      },
+      "already": {
+        "heading": "Already unsubscribed",
+        "body": "Your email is already on our suppression list for {tenantDisplayName}. No further action needed.",
+        "contact": "If you would like to receive broadcasts again, please contact <email></email>."
+      },
+      "invalid": {
+        "heading": "Link is invalid",
+        "body": "This unsubscribe link is invalid or expired. This can happen if the link was copied incorrectly, or if you are clicking an older email.",
+        "contact": "Please contact <email></email> and we will remove your email manually."
+      },
+      "error": {
+        "heading": "Temporary error",
+        "body": "We could not record your unsubscribe right now due to a temporary system error. Your unsubscribe was NOT recorded — please try the link again in a few minutes.",
+        "contact": "If the problem persists, please contact <email></email> and we will remove your email manually."
+      }
     }
   }
 }

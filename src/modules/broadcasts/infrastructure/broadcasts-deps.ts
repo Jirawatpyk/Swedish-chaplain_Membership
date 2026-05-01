@@ -7,6 +7,7 @@
  */
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
 import { makeDrizzleBroadcastsRepo } from './db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
@@ -21,10 +22,12 @@ import { dompurifySanitizer } from './sanitizer/dompurify-sanitizer';
 import { resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
 import { resendBroadcastsWebhookVerifier } from './resend/resend-broadcasts-webhook-verifier';
 import { makeDrizzleBroadcastDeliveriesRepo } from './db/drizzle-broadcast-deliveries-repo';
+import { unsubscribeTokenSigner } from './unsubscribe-token/hmac-signer';
 
 import type { ClockPort } from '../application/ports/clock-port';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
 import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
+import type { UnsubscribeRecipientDeps } from '../application/use-cases/unsubscribe-recipient';
 import type { SaveDraftDeps } from '../application/use-cases/save-draft';
 import type { SubmitBroadcastDeps } from '../application/use-cases/submit-broadcast';
 import type { ComputeQuotaDeps } from '../application/use-cases/compute-quota-counter';
@@ -95,9 +98,10 @@ export function makeEnforceTenantContextDeps(
 }
 
 /**
- * Lookup a single broadcast for a member detail page (used by
- * `GET /api/broadcasts/[id]`). Combines `findById` + tenant-context
- * enforcement.
+ * Composition root for the member-facing broadcast detail route
+ * (`GET /api/broadcasts/[id]`). Returns the broadcasts repo + the
+ * tenant-context enforcer the route uses to bind RLS and resolve the
+ * member-actor before dispatching to the use-case.
  */
 export function makeGetBroadcastDeps(tenantId: string): {
   readonly tenantId: string;
@@ -190,11 +194,34 @@ export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {
  * `fromEmail` is sourced from `env.broadcasts.fromEmail` (zod-validated
  * at boot — refuses IANA reserved TLDs per review C1 — 2026-04-30) so
  * this factory cannot accidentally dispatch from a placeholder address.
+ *
+ * `tenantDisplayName` + `locale` are resolved per-call via the F7
+ * route helpers (no per-tenant settings table for support email yet —
+ * F12 scope). MVP: locale defaults to the static tenant default
+ * resolved by `tenantDefaultLocaleFor(...)` below.
  */
-export function makeDispatchScheduledBroadcastDeps(
+export async function makeDispatchScheduledBroadcastDeps(
   tenantId: string,
-): DispatchScheduledBroadcastDeps {
+): Promise<DispatchScheduledBroadcastDeps> {
   const tenant = asTenantContext(tenantId);
+  const { resolveTenantDisplayName } = await import(
+    '@/lib/broadcasts-route-helpers'
+  );
+  // Best-effort: a tenant-settings outage MUST NOT wedge the cron loop
+  // in `approved` indefinitely (the row would never reach the use-case
+  // body and so the `broadcast_failed_to_dispatch` audit would never
+  // fire). Fall back to the tenant id as a degraded display name so
+  // dispatch still proceeds with an observable signal.
+  let tenantDisplayName: string;
+  try {
+    tenantDisplayName = await resolveTenantDisplayName(tenantId);
+  } catch (e) {
+    logger.error(
+      { err: (e as Error).message, tenantId },
+      'broadcast_dispatch_tenant_displayname_lookup_failed',
+    );
+    tenantDisplayName = tenantId;
+  }
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
@@ -205,7 +232,24 @@ export function makeDispatchScheduledBroadcastDeps(
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,
+    tenantDisplayName,
+    locale: tenantDefaultLocaleFor(tenantId),
   };
+}
+
+/**
+ * Static per-tenant default locale (F12 white-label scope will move
+ * this to tenant settings). Used by the dispatch composition root + the
+ * public unsubscribe page's locale-resolution fallback. Unknown tenant
+ * ids fall through to `'en'` — the default-of-defaults.
+ */
+const TENANT_DEFAULT_LOCALE: Readonly<Record<string, 'en' | 'th' | 'sv'>> = {
+  swecham: 'th',
+  jcc: 'en',
+};
+
+export function tenantDefaultLocaleFor(tenantId: string): 'en' | 'th' | 'sv' {
+  return TENANT_DEFAULT_LOCALE[tenantId] ?? 'en';
 }
 
 // =====================================================================
@@ -289,6 +333,43 @@ export function makeReconcileStuckSendingDeps(
  * ports module rather than swapping the singleton.
  */
 export { resendBroadcastsWebhookVerifier };
+
+// =====================================================================
+// Phase 6 US4 — Public unsubscribe + suppression factories
+// =====================================================================
+
+/**
+ * Build deps for `unsubscribeRecipient` use-case. Tenant display name is
+ * resolved per-call via the existing F4 tenant-invoice-settings shim
+ * (mirrors the submit/draft routes); support email defaults to the
+ * chamber's verified Resend `fromEmail` until a per-tenant support
+ * mailbox is added (F12 white-label config).
+ */
+export function makeUnsubscribeRecipientDeps(
+  tenantId: string,
+  tenantDisplayName: string,
+  tenantSupportEmail: string,
+): UnsubscribeRecipientDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    membersBridge,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+    tenantDisplayName,
+    tenantSupportEmail,
+  };
+}
+
+/**
+ * Public unsubscribe-token signer — exposed at the barrel because the
+ * dispatch path (Resend gateway / email-template renderer) calls
+ * `sign(...)` per recipient when stamping out per-recipient HTML bodies
+ * (T147). The verifier side is reached through the same singleton.
+ */
+export { unsubscribeTokenSigner };
 
 /**
  * F7 webhook resolver — pre-tenant lookup. Mirrors F5

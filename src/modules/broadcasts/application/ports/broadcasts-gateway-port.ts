@@ -47,11 +47,27 @@ export interface AudienceContact {
 export interface CreateBroadcastInput {
   readonly audienceId: string;
   readonly subject: string;
+  /**
+   * Sanitised, member-authored inner HTML — the gateway adapter wraps
+   * this in a chamber-branded shell + locale-aware footer carrying the
+   * unsubscribe CTA before submitting to the upstream provider
+   * (T147 — F7 US4 / FR-029). Callers MUST NOT pre-wrap; double-wrap
+   * would corrupt the unsubscribe merge tag.
+   */
   readonly htmlBody: string;
   readonly fromName: string;
   readonly fromEmail: string;
   readonly replyToEmail: string;
   readonly broadcastNameForResendDashboard: string;
+  /**
+   * Recipient locale used to render the footer strings (T147 — F7 US4).
+   * Resolved by the dispatch use-case from the tenant default until F12
+   * adds per-tenant + per-recipient locale columns. Required so the
+   * footer's bilingual unsubscribe CTA matches the body language.
+   */
+  readonly locale: 'en' | 'th' | 'sv';
+  /** Tenant display name for the chamber-branded header + footer. */
+  readonly tenantDisplayName: string;
 }
 
 export interface RetrievedBroadcastResource {

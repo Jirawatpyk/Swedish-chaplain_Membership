@@ -80,6 +80,19 @@ export interface DispatchScheduledBroadcastDeps {
    * `env.broadcasts.fromEmail` (review C1 — 2026-04-30).
    */
   readonly fromEmail: string;
+  /**
+   * Display name of the dispatching tenant — rendered into the email
+   * footer chrome (T147 — F7 US4 / FR-029). Composition root resolves
+   * via `resolveTenantDisplayName(...)` and passes per-call.
+   */
+  readonly tenantDisplayName: string;
+  /**
+   * Recipient locale used by the email-template renderer to fill the
+   * footer's bilingual unsubscribe CTA + receivedBecause line. MVP:
+   * tenant default ('th' for SweCham; 'en' for JCC). F12 white-label
+   * config will replace this with per-tenant + per-recipient locale.
+   */
+  readonly locale: 'en' | 'th' | 'sv';
 }
 
 export interface DispatchScheduledBroadcastInput {
@@ -316,6 +329,8 @@ export async function dispatchScheduledBroadcast(
       fromEmail: deps.fromEmail,
       replyToEmail: broadcast.replyToEmail,
       broadcastNameForResendDashboard: `${broadcast.fromName} — ${broadcast.subject.slice(0, 60)}`,
+      tenantDisplayName: deps.tenantDisplayName,
+      locale: deps.locale,
     });
     resendBroadcastId = createResult.broadcastId;
 

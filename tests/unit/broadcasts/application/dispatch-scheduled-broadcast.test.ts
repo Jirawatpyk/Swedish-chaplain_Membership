@@ -367,6 +367,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -411,6 +413,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -437,6 +441,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -462,6 +468,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -496,6 +504,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -537,6 +547,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -578,6 +590,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -612,6 +626,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -661,6 +677,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -709,6 +727,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -748,6 +768,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -779,6 +801,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -812,6 +836,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -845,6 +871,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -879,6 +907,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -913,6 +943,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -968,6 +1000,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -1016,6 +1050,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );
@@ -1069,6 +1105,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         audit: audit.port,
         clock,
         fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
       },
       baseInput,
     );

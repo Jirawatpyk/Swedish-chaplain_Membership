@@ -1,12 +1,18 @@
 /**
  * `Plan` — the authoritative in-code representation of a membership plan.
  *
- * See data-model.md § 2.1. Branded types (`PlanSlug`, `PlanYear`,
- * `TenantSlug`) prevent accidentally passing a raw string / number at
- * API boundaries or between tenants.
+ * See data-model.md § 2.1. Branded types `PlanSlug` + `PlanYear` prevent
+ * accidentally passing a raw string / number at API boundaries.
+ * `TenantSlug` is re-exported from `@/modules/tenants` so all features
+ * share a single nominal type (deleted the local duplicate brand
+ * 2026-05-02 — F2 and F7 had separate `Symbol('TenantSlug')` brands
+ * that were structurally compatible but nominally distinct, blocking
+ * cross-feature passing without unsafe casts).
  *
  * This file is pure Domain — no framework imports.
  */
+
+import { asTenantSlug, type TenantSlug } from '@/modules/tenants';
 
 import type { BenefitMatrix } from './benefit-matrix';
 import type { LocaleText } from './locale-text';
@@ -15,11 +21,11 @@ import type { LocaleText } from './locale-text';
 
 const planSlugBrand = Symbol('PlanSlug');
 const planYearBrand = Symbol('PlanYear');
-const tenantSlugBrand = Symbol('TenantSlug');
 
 export type PlanSlug = string & { readonly [planSlugBrand]: true };
 export type PlanYear = number & { readonly [planYearBrand]: true };
-export type TenantSlug = string & { readonly [tenantSlugBrand]: true };
+export type { TenantSlug };
+export { asTenantSlug };
 
 /** Construct a validated `PlanSlug` — 1..63 chars of `[a-z0-9-]`. */
 export function asPlanSlug(value: string): PlanSlug {
@@ -37,14 +43,6 @@ export function asPlanYear(value: number): PlanYear {
     );
   }
   return value as PlanYear;
-}
-
-/** Construct a validated `TenantSlug` — matches TENANT_SLUG_PATTERN. */
-export function asTenantSlug(value: string): TenantSlug {
-  if (typeof value !== 'string' || !/^[a-z0-9-]{1,63}$/.test(value)) {
-    throw new Error(`Invalid tenant slug: ${JSON.stringify(value)}`);
-  }
-  return value as TenantSlug;
 }
 
 // --- Classification enums -----------------------------------------------------

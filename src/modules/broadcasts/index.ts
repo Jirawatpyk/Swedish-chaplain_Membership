@@ -270,6 +270,31 @@ export {
   resolveTenantByResendBroadcastId,
 } from './infrastructure/broadcasts-deps';
 
+// --- Application use-cases (Phase 6 US4) ---------------------------------
+export {
+  unsubscribeRecipient,
+  type UnsubscribeRecipientDeps,
+  type UnsubscribeRecipientError,
+  type UnsubscribeRecipientInput,
+  type UnsubscribeRecipientOutput,
+} from './application/use-cases/unsubscribe-recipient';
+
+// --- Application port — unsubscribe token (Phase 6 US4) ------------------
+export type {
+  TokenVerifyError,
+  UnsubscribeTokenPayload,
+  UnsubscribeTokenPort,
+} from './application/ports/unsubscribe-token-port';
+
+// --- Composition root factories (Phase 6 US4) ----------------------------
+export {
+  makeUnsubscribeRecipientDeps,
+  tenantDefaultLocaleFor,
+  unsubscribeTokenSigner,
+} from './infrastructure/broadcasts-deps';
+export { peekTokenTenantId } from './infrastructure/unsubscribe-token/hmac-signer';
+export { broadcastsRateLimiter } from './infrastructure/rate-limiter';
+
 // --- Application port — webhook verifier (Phase 7 US5) -------------------
 // Exposed at the barrel because the webhook route handler imports
 // `WebhookSignatureError` to discriminate signature-verification kinds

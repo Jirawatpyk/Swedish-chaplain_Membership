@@ -134,7 +134,17 @@ export interface F7AuditEvent {
 }
 
 export interface AuditEmitInput extends F7AuditEvent {
-  readonly tenantId: string;
+  /**
+   * Tenant slug. `null` is permitted ONLY for pre-tenant audit paths
+   * where the route has not (or cannot) bind a tenant context — e.g.
+   * the public unsubscribe page on a malformed token, or the Resend
+   * webhook handler on a signature-reject before the audience-id
+   * lookup runs. The `audit_log.tenant_id` column is nullable for this
+   * exact reason. Mutation paths MUST always pass a non-null slug —
+   * the runtime adapter (`f7AuditAdapter`) asserts this invariant when
+   * `tx !== null` (a mutation tx + null tenant is a programmer error).
+   */
+  readonly tenantId: string | null;
   readonly requestId: string | null;
 }
 
@@ -144,9 +154,17 @@ export interface AuditEmitInput extends F7AuditEvent {
  * `tx` semantics (mirrors F4 + F5):
  *   - **Mutation path**: pass the Drizzle tx handle. Audit row lands
  *     in the same transaction (Constitution Principle I clause 3
- *     atomicity).
+ *     atomicity). The adapter asserts `tenantId !== null` when a
+ *     non-null tx is passed (mutation tx + null tenant = programmer
+ *     error; the row would land in the wrong RLS slice).
  *   - **Read-path probe** (cross-tenant-probe audits): pass `null`.
  *     Adapter writes on auto-commit; probe loss is best-effort.
+ *
+ * Note: function-overload signatures encoding the (tx, tenantId)
+ * invariant at compile time were considered but rejected because
+ * vitest's `vi.fn()` mock typings collide with overloaded interface
+ * signatures across ~12 test files. Runtime assertion in the adapter
+ * provides equivalent fail-fast behaviour without the test churn.
  */
 export interface AuditPort {
   emit(tx: unknown, event: AuditEmitInput): Promise<void>;

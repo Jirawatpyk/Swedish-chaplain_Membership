@@ -30,6 +30,17 @@ export interface NewSuppressionInput {
   readonly sourceTokenHash: string | null;
 }
 
+/**
+ * Result of an idempotent `upsert(...)`. `wasNew` distinguishes a
+ * first-time suppression (caller emits audit) from an idempotent replay
+ * (caller skips audit per FR-030). Named so use-cases don't need to
+ * spell out `Awaited<ReturnType<...>>` shapes.
+ */
+export interface UpsertSuppressionResult {
+  readonly wasNew: boolean;
+  readonly suppression: MarketingUnsubscribe;
+}
+
 export interface MarketingUnsubscribesRepo {
   /**
    * Idempotent insert via `ON CONFLICT (tenant_id, email_lower)
@@ -44,10 +55,7 @@ export interface MarketingUnsubscribesRepo {
   upsert(
     tx: unknown,
     input: NewSuppressionInput,
-  ): Promise<{
-    readonly wasNew: boolean;
-    readonly suppression: MarketingUnsubscribe;
-  }>;
+  ): Promise<UpsertSuppressionResult>;
 
   findByEmailLower(
     tenantId: string,
