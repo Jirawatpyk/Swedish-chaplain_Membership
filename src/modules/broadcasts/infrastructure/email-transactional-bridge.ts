@@ -26,10 +26,27 @@
  *   - null tx → standalone INSERT on `db` (auto-commit), used for
  *     read-path notifications outside a financial tx
  */
+import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { db, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
+
+/**
+ * SHA-256 truncated to 12 hex chars of the lowercased recipient email
+ * for log redaction (review PR #19 security follow-up). The previous
+ * `input.to.slice(0, 6)` was a 6-char plaintext prefix — borderline PII
+ * for a small-tenant deployment (~131 members) where prefixes like
+ * `j.doe@` directly identify a member. SHA-256 is one-way at all preimage
+ * spaces; truncating to 12 hex chars keeps the log compact while
+ * preserving cross-event correlation (same email → same prefix).
+ */
+function recipientLogHash(rawEmail: string): string {
+  return createHash('sha256')
+    .update(rawEmail.toLowerCase(), 'utf8')
+    .digest('hex')
+    .slice(0, 12);
+}
 import type {
   EmailTransactionalPort,
   SendEmailInput,
@@ -143,7 +160,7 @@ export const emailTransactionalBridge: EmailTransactionalPort = {
       {
         tenantId: tenantCtx.slug,
         templateKey: input.templateKey,
-        toHash: input.to.slice(0, 6),
+        toHash: recipientLogHash(input.to),
         locale: input.locale,
       },
       'broadcasts.admin_notification.deferred',
@@ -187,7 +204,7 @@ export const emailTransactionalBridge: EmailTransactionalPort = {
       {
         tenantId: tenantCtx.slug,
         notificationType,
-        toHash: input.to.slice(0, 6),
+        toHash: recipientLogHash(input.to),
         locale: input.locale,
       },
       'broadcasts.member_notification.enqueued',
