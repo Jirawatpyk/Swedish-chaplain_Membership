@@ -26,6 +26,7 @@ import type {
   CreateBroadcastInput,
   GatewayRetryableSubKind,
   RetrievedBroadcastResource,
+  RetrieveBroadcastOutcome,
 } from '../../application/ports/broadcasts-gateway-port';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
 
@@ -336,10 +337,10 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
 
   async retrieveBroadcast(
     broadcastId: string,
-  ): Promise<RetrievedBroadcastResource | null> {
+  ): Promise<RetrieveBroadcastOutcome> {
     try {
-      return await withRetry(
-        async () => {
+      const resource = await withRetry(
+        async (): Promise<RetrievedBroadcastResource | null> => {
           const sdk = client();
           const result = (await sdk.broadcasts.get(broadcastId)) as ResendSdkResponse<{
             id: string;
@@ -362,9 +363,11 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
         },
         { method: 'retrieveBroadcast' },
       );
+      if (resource === null) return { kind: 'not_found' };
+      return { kind: 'present', resource };
     } catch (e) {
       if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
-        return null;
+        return { kind: 'not_found' };
       }
       throw e;
     }

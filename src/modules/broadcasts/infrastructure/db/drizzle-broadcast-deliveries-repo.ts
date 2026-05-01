@@ -47,22 +47,6 @@ function rowToDelivery(row: BroadcastDeliveryRow): BroadcastDelivery {
   };
 }
 
-type MutableAggregateBuckets = {
-  sent: number;
-  delivered: number;
-  bounced: number;
-  softBounced: number;
-  complained: number;
-};
-
-const STATUS_TO_AGG_KEY: Record<string, keyof MutableAggregateBuckets> = {
-  sent: 'sent',
-  delivered: 'delivered',
-  bounced: 'bounced',
-  soft_bounced: 'softBounced',
-  complained: 'complained',
-};
-
 export function makeDrizzleBroadcastDeliveriesRepo(
   tenantId: string,
 ): BroadcastDeliveriesRepo {
@@ -160,36 +144,60 @@ export function makeDrizzleBroadcastDeliveriesRepo(
           status: string;
           count: number;
         }>;
-        const buckets: MutableAggregateBuckets = {
-          sent: 0,
-          delivered: 0,
-          bounced: 0,
-          softBounced: 0,
-          complained: 0,
-        };
+        // Explicit switch: each status enum value maps to ONE counter
+        // — no intermediate mutable type, no Record-key indirection,
+        // and TypeScript exhaustiveness on the BroadcastDeliveryStatus
+        // union via the unknown-status fallthrough below.
+        let sent = 0;
+        let delivered = 0;
+        let bounced = 0;
+        let softBounced = 0;
+        let complained = 0;
         for (const r of rows) {
-          const key = STATUS_TO_AGG_KEY[r.status];
-          if (key !== undefined) {
-            buckets[key] = r.count;
-            continue;
+          switch (r.status) {
+            case 'sent':
+              sent = r.count;
+              break;
+            case 'delivered':
+              delivered = r.count;
+              break;
+            case 'bounced':
+              bounced = r.count;
+              break;
+            case 'soft_bounced':
+              softBounced = r.count;
+              break;
+            case 'complained':
+              complained = r.count;
+              break;
+            default:
+              // Review ERR-M5: schema/code drift surface — a future
+              // enum value (queued, opened, …) silently dropping out
+              // of the aggregate corrupts the completion-check
+              // arithmetic. Log at error so the alert pipeline fires
+              // (per docs/observability.md). Mirrors
+              // `reduceDeliveryAggregateRows` in the sibling
+              // broadcasts repo.
+              logger.error(
+                {
+                  tenantId: tenantIdArg,
+                  broadcastId,
+                  status: r.status,
+                  count: r.count,
+                },
+                'broadcasts.deliveries.aggregate.unknown_status',
+              );
+              break;
           }
-          // Review ERR-M5: schema/code drift surface — a future enum
-          // value (queued, opened, …) silently dropping out of the
-          // aggregate corrupts the completion-check arithmetic. Log
-          // at error so the alert pipeline fires (per
-          // docs/observability.md). Mirrors `reduceDeliveryAggregateRows`
-          // in the sibling broadcasts repo.
-          logger.error(
-            {
-              tenantId: tenantIdArg,
-              broadcastId,
-              status: r.status,
-              count: r.count,
-            },
-            'broadcasts.deliveries.aggregate.unknown_status',
-          );
         }
-        return { broadcastId, ...buckets };
+        return {
+          broadcastId,
+          sent,
+          delivered,
+          bounced,
+          softBounced,
+          complained,
+        };
       });
     },
   };

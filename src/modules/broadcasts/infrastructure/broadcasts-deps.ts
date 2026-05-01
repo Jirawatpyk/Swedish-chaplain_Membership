@@ -275,9 +275,11 @@ export function makeReconcileStuckSendingDeps(
     broadcastsGateway: resendBroadcastsGateway,
     audit: f7AuditAdapter,
     clock: systemClock,
-    deliveriesRepo: makeDrizzleBroadcastDeliveriesRepo(tenantId),
-    membersBridge,
-    emailTransactional: emailTransactionalBridge,
+    notification: {
+      membersBridge,
+      emailTransactional: emailTransactionalBridge,
+      deliveriesRepo: makeDrizzleBroadcastDeliveriesRepo(tenantId),
+    },
   };
 }
 

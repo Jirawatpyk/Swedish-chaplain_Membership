@@ -39,7 +39,7 @@ import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 
 import { currentQuotaYear } from './compute-quota-counter';
-import { enqueueSummaryEmailForReconcile } from './process-webhook-event';
+import { enqueueDeliverySummaryEmail } from './process-webhook-event';
 
 const STUCK_SENDING_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
@@ -71,6 +71,21 @@ export type ReconcileStuckSendingError =
       readonly message: string;
     };
 
+/**
+ * FR-028 / AS3 summary-email notification deps. Grouped together
+ * (review TYPES recommendation) because the three fields are
+ * mutually-implied — sending a summary email requires looking up the
+ * member's primary contact (`membersBridge`), reading delivered/bounced
+ * counts (`deliveriesRepo`, optional fallback to zeros), and a transport
+ * (`emailTransactional`). When omitted, the reconciliation path skips
+ * the summary email entirely.
+ */
+export interface ReconcileNotificationDeps {
+  readonly membersBridge: MembersBridgePort;
+  readonly emailTransactional?: EmailTransactionalPort;
+  readonly deliveriesRepo?: BroadcastDeliveriesRepo;
+}
+
 export interface ReconcileStuckSendingDeps {
   readonly tenant: TenantContext;
   readonly broadcastsRepo: BroadcastsRepo;
@@ -78,21 +93,13 @@ export interface ReconcileStuckSendingDeps {
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   /**
-   * Optional aggregate read (post-transition only) so the FR-028
-   * summary email carries delivered/bounced/complained counts
-   * accumulated from whatever webhook events DID arrive before the
-   * 24h timeout fired. Reads via the same repo the webhook path uses
-   * (`runInTenant`-scoped). When omitted (legacy callers, tests) the
-   * email is sent with zero counts.
+   * Optional grouped notification deps — when present, the
+   * reconciliation `markSent` path enqueues the FR-028 / AS3 summary
+   * email. Best-effort: failures are logged and swallowed (mirrors the
+   * webhook path). When omitted (legacy callers, tests), the email
+   * step is skipped entirely.
    */
-  readonly deliveriesRepo?: BroadcastDeliveriesRepo;
-  readonly membersBridge?: MembersBridgePort;
-  /**
-   * Optional — when present, the reconciliation `markSent` path
-   * enqueues the FR-028 / AS3 member summary email. Best-effort:
-   * failures are logged and swallowed (mirrors the webhook path).
-   */
-  readonly emailTransactional?: EmailTransactionalPort;
+  readonly notification?: ReconcileNotificationDeps;
 }
 
 export interface ReconcileStuckSendingInput {
@@ -147,9 +154,9 @@ export async function reconcileStuckSending(
       );
     }
 
-    let resource;
+    let outcome;
     try {
-      resource = await deps.broadcastsGateway.retrieveBroadcast(
+      outcome = await deps.broadcastsGateway.retrieveBroadcast(
         broadcast.resendBroadcastId,
       );
     } catch (e) {
@@ -159,7 +166,7 @@ export async function reconcileStuckSending(
       });
     }
 
-    if (resource === null) {
+    if (outcome.kind === 'not_found') {
       // Admin deleted in Resend dashboard, OR Resend purged the
       // resource. No recipients received → no quota consumption.
       return await markFailedToDispatch(
@@ -251,20 +258,22 @@ async function markSent(
     // FR-028 / AS3 — enqueue the summary email at the reconciliation
     // sent-transition path. Best-effort. Aggregate count is read AFTER
     // the audits are emitted so even a transient deliveriesRepo failure
-    // doesn't block the audit trail.
-    if (deps.membersBridge !== undefined) {
-      const aggregate = deps.deliveriesRepo
-        ? await deps.deliveriesRepo.aggregateByBroadcast(
+    // doesn't block the audit trail. Uses the SHARED helper from
+    // process-webhook-event.ts (single source of truth — review SIMPLIFY
+    // consolidation, 2026-05-01).
+    if (deps.notification !== undefined) {
+      const { membersBridge, emailTransactional, deliveriesRepo } =
+        deps.notification;
+      const aggregate = deliveriesRepo
+        ? await deliveriesRepo.aggregateByBroadcast(
             tenantId,
             broadcast.broadcastId,
           )
         : { delivered: 0, bounced: 0, complained: 0 };
-      await enqueueSummaryEmailForReconcile({
+      await enqueueDeliverySummaryEmail({
         tenant: deps.tenant,
-        ...(deps.emailTransactional !== undefined && {
-          emailTransactional: deps.emailTransactional,
-        }),
-        membersBridge: deps.membersBridge,
+        ...(emailTransactional !== undefined && { emailTransactional }),
+        membersBridge,
         broadcastId: broadcast.broadcastId,
         memberId: broadcast.requestedByMemberId,
         broadcastSubject: broadcast.subject,
@@ -274,6 +283,7 @@ async function markSent(
           complained: aggregate.complained,
         },
         estimatedRecipientCount: broadcast.estimatedRecipientCount,
+        viaReconciliation: true,
       });
     }
 

@@ -240,7 +240,7 @@ function makeGateway(opts: GatewayOpts = {}): {
         maybeThrow(opts.throwOnSend);
       },
       async retrieveBroadcast() {
-        return null;
+        return { kind: 'not_found' as const };
       },
       async getAudienceContactCount() {
         if (opts.throwOnGetAudienceContactCount) {

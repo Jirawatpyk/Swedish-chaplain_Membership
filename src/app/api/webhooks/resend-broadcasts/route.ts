@@ -131,6 +131,16 @@ async function auditSignatureReject(
          5)
     `);
   } catch (e) {
+    // Review ERR-L1: emit a dedicated log channel
+    // (`broadcasts.webhook.audit_reject_db_failure`) so the alert
+    // pipeline can pick up sustained sig-reject audit-write loss as a
+    // distinct signal from the generic `audit_reject_failed`. If
+    // Postgres is down, every signature rejection becomes invisible in
+    // audit_log; we MUST surface that as its own paging metric so
+    // on-call sees "sig-rejects are happening but audit-rail is broken"
+    // — separate from "audit-rail is healthy and rejecting genuine
+    // attacks." Both logs fire on this path so legacy dashboards keep
+    // working.
     logger.error(
       {
         err: e instanceof Error ? e.constructor.name : 'unknown',
@@ -139,6 +149,15 @@ async function auditSignatureReject(
         correlationId,
       },
       'broadcasts.webhook.audit_reject_failed',
+    );
+    logger.error(
+      {
+        err: e instanceof Error ? e.constructor.name : 'unknown',
+        reason,
+        requestId,
+        correlationId,
+      },
+      'broadcasts.webhook.audit_reject_db_failure',
     );
   }
 }

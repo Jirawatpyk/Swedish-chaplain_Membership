@@ -149,7 +149,11 @@ function makeGateway(args: {
     async retrieveBroadcast() {
       retrieveCalls++;
       if (args.retrieve instanceof Error) throw args.retrieve;
-      return args.retrieve;
+      // Test fixture compatibility: keep `retrieve: null|Resource` API
+      // for ergonomics, translate to the new discriminated union at
+      // the boundary so we don't churn 8 call sites.
+      if (args.retrieve === null) return { kind: 'not_found' as const };
+      return { kind: 'present' as const, resource: args.retrieve };
     },
   };
   return { port, retrieveCalls: counter.retrieveCalls };
@@ -271,9 +275,11 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
         broadcastsGateway: gateway.port,
         audit: audit.port,
         clock: { now: () => FROZEN_NOW },
-        emailTransactional: email.port,
-        membersBridge: makeMembersBridge(),
-        deliveriesRepo: makeDeliveriesRepo(),
+        notification: {
+          emailTransactional: email.port,
+          membersBridge: makeMembersBridge(),
+          deliveriesRepo: makeDeliveriesRepo(),
+        },
       },
       { broadcastId, requestId: 'req-3' },
     );
@@ -311,9 +317,11 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
         broadcastsGateway: gateway.port,
         audit: audit.port,
         clock: { now: () => FROZEN_NOW },
-        emailTransactional: email.port,
-        membersBridge: makeMembersBridge(),
-        deliveriesRepo: makeDeliveriesRepo(),
+        notification: {
+          emailTransactional: email.port,
+          membersBridge: makeMembersBridge(),
+          deliveriesRepo: makeDeliveriesRepo(),
+        },
       },
       { broadcastId, requestId: 'req-4' },
     );
@@ -423,9 +431,11 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
         broadcastsGateway: gateway.port,
         audit: audit.port,
         clock: { now: () => FROZEN_NOW },
-        // emailTransactional intentionally omitted
-        membersBridge: makeMembersBridge(),
-        deliveriesRepo: makeDeliveriesRepo(),
+        notification: {
+          // emailTransactional intentionally omitted
+          membersBridge: makeMembersBridge(),
+          deliveriesRepo: makeDeliveriesRepo(),
+        },
       },
       { broadcastId, requestId: null },
     );

@@ -495,15 +495,22 @@ export async function processWebhookEvent(
             // tx-committed sent transition + audit rows. Mirrors the
             // F4 receipt-email pattern (ship the state change first,
             // notify second; the dispatcher cron will retry the
-            // outbox row on transient outages).
+            // outbox row on transient outages). Uses the shared
+            // `enqueueDeliverySummaryEmail` helper so both the webhook
+            // and reconciliation paths emit through one implementation
+            // (review SIMPLIFY consolidation, 2026-05-01).
             await enqueueDeliverySummaryEmail({
-              deps,
-              tenantId,
+              tenant: deps.tenant,
+              ...(deps.emailTransactional !== undefined && {
+                emailTransactional: deps.emailTransactional,
+              }),
+              membersBridge: deps.membersBridge,
               broadcastId,
               memberId: fresh.requestedByMemberId,
               broadcastSubject: fresh.subject,
               aggregate: agg,
               estimatedRecipientCount: fresh.estimatedRecipientCount,
+              viaReconciliation: false,
             });
           }
         }
@@ -572,114 +579,25 @@ function hashRecipient(emailLower: EmailLower): string {
 }
 
 /**
- * Enqueue the FR-028 / AS3 transactional summary email at the
- * `sending → sent` transition. Best-effort — failures are logged and
- * swallowed so the webhook ingest does not 5xx Resend on a transient
- * outbox-write outage. The reconciliation path uses the sibling
- * `enqueueSummaryEmailForReconcile` (exported below) so both
- * sent-transition sites share one implementation.
- */
-async function enqueueDeliverySummaryEmail(args: {
-  readonly deps: ProcessWebhookEventDeps;
-  readonly tenantId: string;
-  readonly broadcastId: BroadcastId;
-  readonly memberId: string;
-  readonly broadcastSubject: string;
-  readonly aggregate: { delivered: number; bounced: number; complained: number };
-  readonly estimatedRecipientCount: number;
-}): Promise<void> {
-  if (args.deps.emailTransactional === undefined) return;
-
-  // Review ERR-H1: split try/catch so the failure-mode log accurately
-  // names the broken layer. Conflating member-lookup (DB / RLS / bridge)
-  // with outbox-insert (notifications_outbox / dispatcher) made on-call
-  // diagnose the wrong system.
-  let memberEmail: string | null;
-  try {
-    memberEmail = await args.deps.membersBridge.getMemberPrimaryContact(
-      args.deps.tenant,
-      args.memberId,
-    );
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: args.tenantId,
-        broadcastId: args.broadcastId,
-        memberId: args.memberId,
-      },
-      'broadcasts.delivered_email.member_lookup_failed',
-    );
-    return;
-  }
-  if (memberEmail === null) {
-    logger.warn(
-      {
-        tenantId: args.tenantId,
-        broadcastId: args.broadcastId,
-        memberId: args.memberId,
-      },
-      'broadcasts.delivered_email.skipped_no_primary_contact',
-    );
-    return;
-  }
-
-  const total = args.estimatedRecipientCount;
-  const deliveryRate =
-    total > 0 ? Math.round((args.aggregate.delivered / total) * 1000) / 10 : 0;
-  try {
-    await args.deps.emailTransactional.sendMemberEmail(args.deps.tenant, {
-      to: memberEmail,
-      subject: args.broadcastSubject,
-      templateKey: 'broadcast_delivered',
-      payload: {
-        broadcastId: args.broadcastId,
-        broadcastSubject: args.broadcastSubject,
-        delivered: args.aggregate.delivered,
-        bounced: args.aggregate.bounced,
-        complained: args.aggregate.complained,
-        total,
-        deliveryRate,
-      },
-      // Locale resolution: deferred to the F4 outbox dispatcher which
-      // will look up `members.preferred_locale` at render time. We
-      // pass 'en' as the enqueue-time fallback (dispatcher overrides
-      // when the member row carries a non-default preference).
-      locale: 'en',
-    });
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: args.tenantId,
-        broadcastId: args.broadcastId,
-        memberId: args.memberId,
-      },
-      'broadcasts.delivered_email.enqueue_failed',
-    );
-  }
-}
-
-/**
- * Public helper exported for reuse by `reconcile-stuck-sending.ts` so
- * both sent-transition paths emit the FR-028 summary email through
- * one implementation. The reconcile use-case has its own deps shape
- * (no `deliveriesRepo`) so the helper takes the email port + members
- * bridge directly rather than the full `ProcessWebhookEventDeps`.
+ * Single FR-028 / AS3 transactional summary-email enqueue helper used
+ * by BOTH the webhook completion path (process-webhook-event) and the
+ * 24h reconciliation path (reconcile-stuck-sending). Best-effort:
+ * failures are logged and swallowed so the caller's tx-committed sent
+ * transition + audit rows are NOT rolled back on a transient outbox
+ * outage (mirrors the F4 receipt-email pattern).
  *
- * Architectural note (verify-gate finding G3, 2026-05-01): the cross-
- * use-case import (`reconcile-stuck-sending.ts` → `process-webhook-event.ts`)
- * is INTENTIONAL — splitting this helper into a third utility module
- * would be premature abstraction per Constitution Principle X
- * (Simplicity). The shared logic is small (~30 LoC), exclusively
- * called from these two sent-transition sites, and centralising
- * payload shape + locale fallback + best-effort error handling in
- * ONE place beats indirection across three files. Future contributors:
- * if a third sent-transition path emerges (e.g. F8 admin manual-mark-sent),
- * promote this helper to `src/modules/broadcasts/application/services/`
- * — until then, single source of truth wins over module split.
+ * Member-lookup failure and outbox-insert failure are reported through
+ * distinct log channels (review ERR-H1) so on-call diagnoses the right
+ * system: `broadcasts.delivered_email.member_lookup_failed` vs
+ * `broadcasts.delivered_email.enqueue_failed`.
+ *
+ * Exported (rather than file-local) for the reconciliation path —
+ * keeping ONE implementation here beats duplicating the
+ * member-lookup → payload-build → enqueue pipeline across two files.
+ * If a third sent-transition path emerges (e.g. F8 admin manual-mark-sent),
+ * promote to `src/modules/broadcasts/application/services/`.
  */
-export async function enqueueSummaryEmailForReconcile(args: {
+export async function enqueueDeliverySummaryEmail(args: {
   readonly tenant: TenantContext;
   readonly emailTransactional?: EmailTransactionalPort;
   readonly membersBridge: MembersBridgePort;
@@ -688,10 +606,15 @@ export async function enqueueSummaryEmailForReconcile(args: {
   readonly broadcastSubject: string;
   readonly aggregate: { delivered: number; bounced: number; complained: number };
   readonly estimatedRecipientCount: number;
+  /**
+   * `true` when called from the 24h reconciliation cron — surfaces in
+   * the outbox payload so the dispatcher can render a slightly
+   * different "(reconciled at timeout)" subject line.
+   */
+  readonly viaReconciliation: boolean;
 }): Promise<void> {
   if (args.emailTransactional === undefined) return;
 
-  // Review ERR-H1: split member-lookup vs outbox-insert error reporting.
   let memberEmail: string | null;
   try {
     memberEmail = await args.membersBridge.getMemberPrimaryContact(
@@ -738,8 +661,12 @@ export async function enqueueSummaryEmailForReconcile(args: {
         complained: args.aggregate.complained,
         total,
         deliveryRate,
-        viaReconciliation: true,
+        viaReconciliation: args.viaReconciliation,
       },
+      // Locale resolution: deferred to the F4 outbox dispatcher which
+      // will look up `members.preferred_locale` at render time. We
+      // pass 'en' as the enqueue-time fallback (dispatcher overrides
+      // when the member row carries a non-default preference).
       locale: 'en',
     });
   } catch (e) {
