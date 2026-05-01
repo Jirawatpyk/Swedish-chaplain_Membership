@@ -60,9 +60,13 @@ export async function getMemberBroadcast(
   );
 
   if (found.broadcast === null) {
-    // Exhaustiveness over `probeKind` — if the repo discriminator ever
-    // gains a new arm without use-case handling, the compile-time
-    // never-check at the bottom of this block fails the build.
+    // Exhaustiveness over `probeKind` is enforced at the type level by
+    // the discriminated union returned from `findOwnedByMember`: the
+    // `broadcast === null` narrowing here forces `probeKind` to be
+    // `'not_found' | 'cross_member'` only (the `'owned'` arm carries a
+    // non-null broadcast and is handled below). Adding a new
+    // null-broadcast variant to the port type would surface as a TS
+    // narrowing error on the if/else-if branches.
     if (found.probeKind === 'not_found') {
       // Pure enumeration — UUID never existed in this tenant. No audit
       // (we cannot probe a non-existent row), but log at info so a
@@ -113,12 +117,6 @@ export async function getMemberBroadcast(
         // preserved at the HTTP boundary regardless of audit success.
       }
     }
-    // Exhaustiveness over `probeKind` is enforced by the discriminated
-    // union on `findOwnedByMember` — the 'owned' arm carries a non-null
-    // broadcast (handled below), so when `found.broadcast === null` the
-    // `probeKind` union is `{'not_found' | 'cross_member'}`. Adding a new
-    // null-broadcast variant to the port type would surface as a TS
-    // exhaustiveness error here.
     return err({ kind: 'broadcast.not_found' });
   }
 

@@ -6,10 +6,13 @@
  * `markBroadcastsAcknowledged` bridge + emits the
  * `member_acknowledged_broadcasts_terms` F7 audit event.
  *
- * Idempotent: re-acknowledgment returns `{ alreadyAcknowledged: true }`
- * with no audit emission (the event-type already lives in the audit log
+ * Idempotent: re-acknowledgment returns `{ kind: 'idempotent' }` with
+ * no audit emission (the event-type already lives in the audit log
  * from the first acknowledgment; emitting it twice would create
- * misleading consent records).
+ * misleading consent records). The `'fresh' | 'idempotent'` discriminant
+ * is gated on the bridge's `previouslyNull` flag so concurrent re-acks
+ * never emit a duplicate `member_acknowledged_broadcasts_terms` row
+ * (PR #18 code-review CRIT — bridge previously collapsed both paths).
  *
  * Atomicity tradeoff: F3 use-case + F7 audit emit run in two phases (F3
  * first, F7 audit second) — F3's tx is closed before the F7 audit fires.
