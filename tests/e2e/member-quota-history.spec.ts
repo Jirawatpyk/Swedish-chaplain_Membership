@@ -352,13 +352,23 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     await signIn(page);
     await page.goto('/portal');
 
+    // Wait for the body's keyboard listener to mount before pressing
+    // Cmd/Ctrl+K — the palette is registered in a client component,
+    // and on cold-start renders the listener may not be attached yet
+    // when the test fires the keypress (5s timeout flake on retry #1
+    // green). Settle on `domcontentloaded`-equivalent network idle.
+    await page.waitForLoadState('networkidle');
+
     // Open ⌘K palette.
     const isMac = process.platform === 'darwin';
     await page.keyboard.press(isMac ? 'Meta+k' : 'Control+k');
 
     const composeEntry = page.getByTestId('cmdk-broadcasts-compose');
     const benefitsEntry = page.getByTestId('cmdk-broadcasts-benefits');
-    await expect(composeEntry).toBeVisible({ timeout: 5_000 });
+    // 10s timeout — bumped from 5s to absorb cold-start chunk loads
+    // (palette + cmdk + lucide icons are split into separate chunks
+    // per Next.js 16 default; first invocation pays the network cost).
+    await expect(composeEntry).toBeVisible({ timeout: 10_000 });
     await expect(benefitsEntry).toBeVisible();
 
     // Click "View E-Blast usage" → navigates to /portal/benefits/e-blasts.
