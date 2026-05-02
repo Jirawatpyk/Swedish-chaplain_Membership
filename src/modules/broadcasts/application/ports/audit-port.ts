@@ -144,11 +144,92 @@ export function isF7AuditEventType(
 }
 
 /**
+ * Round 5 review type-design — per-event payload shapes for the
+ * highest-leverage F7 audit events. The full DU (all 41 event types)
+ * is deliberately NOT enforced through the port signature because it
+ * would require simultaneous rewrite of ~50 emit sites + ~70 test
+ * fixtures, and the carve-outs needed for trace-replay test fixtures
+ * would weaken the type guarantee anyway.
+ *
+ * Instead we ship a STRUCTURAL contract (this mapped type) that
+ * dashboards / runbooks / future typed-emit helpers can reference —
+ * covering the 8 most security-critical events whose payload shape is
+ * load-bearing for cross-tenant / GDPR / quota forensics. Other events
+ * keep the wide `Record<string, unknown>` shape and rely on emit-site
+ * tests as the authoritative payload contract (per CLAUDE.md
+ * test-first principle).
+ *
+ * If a new event needs typed-payload enforcement, add it to this map
+ * AND a `F7AuditPayloadFor<E>` derivation in the typed-emit helper
+ * (`emitTyped` below).
+ */
+export interface F7AuditPayloadShapes {
+  readonly broadcast_submitted: {
+    readonly broadcastId: string;
+    readonly actorRole: 'member_self_service' | 'admin_proxy';
+    readonly segmentType: string;
+    readonly estimatedRecipientCount: number;
+  };
+  readonly broadcast_cancelled: {
+    readonly broadcastId: string;
+    readonly actorKind: 'member' | 'admin' | 'system';
+    readonly actorRole: 'member_self_service' | 'admin_proxy' | 'system';
+    readonly cancellationReason: string | null;
+    readonly cancelledAt: string;
+  };
+  readonly broadcast_unsubscribed: {
+    readonly recipientEmailHashed: string;
+    readonly broadcastId: string | null;
+    readonly tokenHash: string;
+  };
+  readonly broadcast_suppression_applied: {
+    readonly recipientEmailHashed: string;
+    readonly source: 'webhook_bounce' | 'webhook_complaint' | 'public_unsubscribe';
+  };
+  readonly broadcast_quota_consumed: {
+    readonly broadcastId: string;
+    readonly quotaYearConsumed: number;
+    readonly recipientCount: number;
+  };
+  readonly broadcast_cross_tenant_probe: {
+    readonly probedTenantId: string;
+    readonly probedBroadcastId: string;
+  };
+  readonly broadcast_cross_member_probe: {
+    readonly probedMemberId: string;
+    readonly probedBroadcastId: string;
+  };
+  readonly broadcast_webhook_signature_rejected: {
+    readonly reason:
+      | 'feature_disabled'
+      | 'body_too_large'
+      | 'missing_header'
+      | 'bad_signature';
+  };
+}
+
+/**
+ * Mapped type — `F7AuditPayloadFor<'broadcast_submitted'>` resolves to
+ * the per-event payload shape, defaulting to the wide
+ * `Record<string, unknown>` for events not yet in `F7AuditPayloadShapes`.
+ */
+export type F7AuditPayloadFor<E extends F7AuditEventType> =
+  E extends keyof F7AuditPayloadShapes
+    ? F7AuditPayloadShapes[E]
+    : Record<string, unknown>;
+
+/**
  * F7 audit event payload contract. F7 emit sites populate `payload`
  * with event-specific fields per data-model.md § 6 (e.g.,
  * `broadcast_submitted` carries `broadcastId`, `segmentType`,
- * `estimatedRecipientCount`, etc.). Strict per-event payload typing
- * is deferred to Phase 3+ (per-story emit sites).
+ * `estimatedRecipientCount`, etc.).
+ *
+ * The structural payload contract is `F7AuditPayloadShapes` /
+ * `F7AuditPayloadFor<E>` above (Round 5 type-design). The port keeps
+ * the wide `Record<string, unknown>` payload field for back-compat
+ * with the ~50 untyped emit sites; new emit sites SHOULD migrate to
+ * the typed helper once a per-event entry is added to
+ * `F7AuditPayloadShapes`.
  */
 export interface F7AuditEvent {
   readonly eventType: F7AuditEventType;

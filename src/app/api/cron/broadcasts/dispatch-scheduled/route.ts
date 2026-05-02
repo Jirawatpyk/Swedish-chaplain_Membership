@@ -140,6 +140,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // The span wraps the entire eligible-row loop so per-broadcast
   // dispatch sub-spans (created inside the use-case via Drizzle/fetch
   // auto-instr) hang as children of this root.
+  //
+  // Round 5 R5-CRON-B — span lifecycle wrapped in try/finally so a
+  // synchronous throw from `makeDispatchScheduledBroadcastDeps` or
+  // any code between span-create and `cronSpan.end()` (logger
+  // formatter, etc.) does not leak the span and stall the trace
+  // exporter.
   const cronSpan = broadcastsTracer().startSpan('cron_dispatch_scheduled', {
     attributes: {
       'tenant.id': tenant.slug,
@@ -147,93 +153,99 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     },
   });
 
-  const deps = await makeDispatchScheduledBroadcastDeps(tenant.slug);
-  for (const row of eligible) {
-    summary.processed++;
-    try {
-      const result = await dispatchScheduledBroadcast(deps, {
-        broadcastId: asBroadcastId(row.broadcast_id),
-      });
-      if (result.ok) {
-        summary.succeeded++;
-        continue;
-      }
-      switch (result.error.kind) {
-        case 'gateway_retryable':
-          summary.retryable++;
-          logger.warn(
-            {
-              tenantId: tenant.slug,
-              broadcastId: row.broadcast_id,
-              subKind: result.error.subKind,
-              reason: result.error.reason,
-            },
-            'cron.broadcasts.dispatch.retryable',
-          );
-          break;
-        case 'broadcast_resend_resource_missing':
-          summary.resource_missing++;
-          logger.error(
-            {
-              tenantId: tenant.slug,
-              broadcastId: row.broadcast_id,
-              resourceType: result.error.resourceType,
-              resourceId: result.error.resourceId,
-            },
-            'cron.broadcasts.dispatch.resend_resource_missing',
-          );
-          break;
-        case 'broadcast_failed_to_dispatch':
-        case 'broadcast_audience_post_suppression_empty':
-          summary.permanent_failed++;
-          break;
-        default: {
-          // Round-4 HIGH-D + Round-5 R5-CRON — unknown error kind goes
-          // to the dedicated `unknown_error` counter (was the
-          // benign-sounding `skipped` bucket; renamed so dashboards
-          // alert on the right class).
-          summary.unknown_error++;
-          const errKind = (result.error as { kind?: string }).kind ?? 'unknown';
-          logger.error(
-            {
-              tenantId: tenant.slug,
-              broadcastId: row.broadcast_id,
-              errorKind: errKind,
-            },
-            'cron.broadcasts.dispatch.unknown_error_kind',
-          );
+  try {
+    const deps = await makeDispatchScheduledBroadcastDeps(tenant.slug);
+    for (const row of eligible) {
+      summary.processed++;
+      try {
+        const result = await dispatchScheduledBroadcast(deps, {
+          broadcastId: asBroadcastId(row.broadcast_id),
+        });
+        if (result.ok) {
+          summary.succeeded++;
+          continue;
         }
+        switch (result.error.kind) {
+          case 'gateway_retryable':
+            summary.retryable++;
+            logger.warn(
+              {
+                tenantId: tenant.slug,
+                broadcastId: row.broadcast_id,
+                subKind: result.error.subKind,
+                reason: result.error.reason,
+              },
+              'cron.broadcasts.dispatch.retryable',
+            );
+            break;
+          case 'broadcast_resend_resource_missing':
+            summary.resource_missing++;
+            logger.error(
+              {
+                tenantId: tenant.slug,
+                broadcastId: row.broadcast_id,
+                resourceType: result.error.resourceType,
+                resourceId: result.error.resourceId,
+              },
+              'cron.broadcasts.dispatch.resend_resource_missing',
+            );
+            break;
+          case 'broadcast_failed_to_dispatch':
+          case 'broadcast_audience_post_suppression_empty':
+            summary.permanent_failed++;
+            break;
+          default: {
+            // Round-4 HIGH-D + Round-5 R5-CRON — unknown error kind
+            // goes to the dedicated `unknown_error` counter AND emits
+            // a metric (R5-CRON-A) so dashboards alert on the right
+            // class without scraping JSON response bodies.
+            summary.unknown_error++;
+            broadcastsMetrics.cronUnknownErrorCount(tenant.slug);
+            const errKind = (result.error as { kind?: string }).kind ?? 'unknown';
+            logger.error(
+              {
+                tenantId: tenant.slug,
+                broadcastId: row.broadcast_id,
+                errorKind: errKind,
+              },
+              'cron.broadcasts.dispatch.unknown_error_kind',
+            );
+          }
+        }
+      } catch (e) {
+        // Review #13: uncaught throws (e.g., programming bugs) must be
+        // distinguishable from handled permanent failures so dashboards
+        // alert on the right class. The broadcast row stays 'approved'
+        // but the next tick will hit the same bug — alert immediately.
+        // Round 5 R5-CRON-A — also emit dedicated metric counter.
+        summary.uncaught_error++;
+        broadcastsMetrics.cronUncaughtErrorCount(tenant.slug);
+        logger.error(
+          {
+            err: e instanceof Error ? e.message : String(e),
+            stack: e instanceof Error ? e.stack : undefined,
+            tenantId: tenant.slug,
+            broadcastId: row.broadcast_id,
+          },
+          'cron.broadcasts.dispatch.uncaught_error',
+        );
       }
-    } catch (e) {
-      // Review #13: uncaught throws (e.g., programming bugs) must be
-      // distinguishable from handled permanent failures so dashboards
-      // alert on the right class. The broadcast row stays 'approved'
-      // but the next tick will hit the same bug — alert immediately.
-      summary.uncaught_error++;
-      logger.error(
-        {
-          err: e instanceof Error ? e.message : String(e),
-          stack: e instanceof Error ? e.stack : undefined,
-          tenantId: tenant.slug,
-          broadcastId: row.broadcast_id,
-        },
-        'cron.broadcasts.dispatch.uncaught_error',
-      );
     }
-  }
 
-  logger.info(
-    { tenantId: tenant.slug, ...summary },
-    'cron.broadcasts.dispatch.tick_complete',
-  );
-  cronSpan.setAttribute('cron.processed', summary.processed);
-  cronSpan.setAttribute('cron.succeeded', summary.succeeded);
-  if (summary.uncaught_error > 0 || summary.unknown_error > 0) {
-    cronSpan.setStatus({
-      code: SpanStatusCode.ERROR,
-      message: `errors: uncaught=${summary.uncaught_error} unknown=${summary.unknown_error}`,
-    });
+    logger.info(
+      { tenantId: tenant.slug, ...summary },
+      'cron.broadcasts.dispatch.tick_complete',
+    );
+    cronSpan.setAttribute('cron.processed', summary.processed);
+    cronSpan.setAttribute('cron.succeeded', summary.succeeded);
+    if (summary.uncaught_error > 0 || summary.unknown_error > 0) {
+      cronSpan.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: `errors: uncaught=${summary.uncaught_error} unknown=${summary.unknown_error}`,
+      });
+    }
+    return NextResponse.json(summary, { status: 200 });
+  } finally {
+    cronSpan.end();
   }
-  cronSpan.end();
-  return NextResponse.json(summary, { status: 200 });
 }

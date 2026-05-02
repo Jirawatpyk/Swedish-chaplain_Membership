@@ -23,7 +23,13 @@
  * in spans, swap to `cryptoHash('sha256', tenantId)` at the call
  * site — but no F5 use-case needs that today.
  */
-import { trace, type Tracer } from '@opentelemetry/api';
+import {
+  SpanStatusCode,
+  trace,
+  type Attributes,
+  type Span,
+  type Tracer,
+} from '@opentelemetry/api';
 
 const TRACER_NAME = 'swecham.payments';
 
@@ -56,4 +62,50 @@ export function broadcastsTracer(): Tracer {
     cachedBroadcastsTracer = trace.getTracer(BROADCASTS_TRACER_NAME, '1.0.0');
   }
   return cachedBroadcastsTracer;
+}
+
+/**
+ * Round 5 simplification — span lifecycle helper.
+ *
+ * Wraps `tracer.startSpan(name, {attributes}) → fn(span) → catch:
+ * setStatus(ERROR) + recordException + rethrow → finally: span.end()`.
+ * Removes the duplicated try/catch/finally boilerplate that started
+ * showing up at the F7 webhook, cron, and unsubscribe entrypoints.
+ *
+ * Why a generic helper rather than a class: the OTel API is
+ * pure-functional + the helper has no state of its own. A
+ * higher-order function keeps the call site terse:
+ *
+ * ```ts
+ * return withSpan(broadcastsTracer(), 'webhook_receive_resend', { 'tenant.id': t }, async (span) => {
+ *   span.setAttribute('broadcasts.outcome', 'success');
+ *   return jsonOk();
+ * });
+ * ```
+ *
+ * The helper does NOT swallow errors — exceptions still propagate so
+ * the route handler / cron loop can convert them into HTTP 5xx + log
+ * entries as before. We just guarantee `span.end()` runs even on a
+ * synchronous throw inside the callback (was a Round 5 R5-CRON-B
+ * leak risk before this helper existed).
+ */
+export async function withSpan<T>(
+  tracer: Tracer,
+  name: string,
+  attributes: Attributes,
+  fn: (span: Span) => Promise<T>,
+): Promise<T> {
+  const span = tracer.startSpan(name, { attributes });
+  try {
+    return await fn(span);
+  } catch (e) {
+    span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: e instanceof Error ? e.message : String(e),
+    });
+    if (e instanceof Error) span.recordException(e);
+    throw e;
+  } finally {
+    span.end();
+  }
 }

@@ -259,4 +259,32 @@ describe('F7 webhook idempotency integration (T152)', () => {
     const statuses = rows.map((r) => r.status).sort();
     expect(statuses).toEqual(['bounced', 'delivered']);
   });
+
+  it('FR-025 dedup mechanism is the (tenant_id, resend_event_id) UNIQUE INDEX, not application-layer (Round 5)', async () => {
+    // Round 5 review fix — pin the actual deduplication mechanism by
+    // querying pg_indexes. A future repo refactor that drops the unique
+    // index in favour of an Application-layer existence check would
+    // silently regress idempotency under high-concurrency replays
+    // (advisory-lock-free retry storms during Resend outages).
+    const indexRows = await runInTenant(tenant.ctx, async (tx) => {
+      return tx.execute<{ indexname: string; indexdef: string }>(
+        ('SELECT indexname, indexdef FROM pg_indexes ' +
+          "WHERE tablename = 'broadcast_deliveries'") as unknown as never,
+      );
+    });
+    const rows = indexRows as unknown as ReadonlyArray<{
+      indexname: string;
+      indexdef: string;
+    }>;
+    const dedupIndex = rows.find(
+      (r) =>
+        r.indexdef.includes('UNIQUE') &&
+        r.indexdef.includes('tenant_id') &&
+        r.indexdef.includes('resend_event_id'),
+    );
+    expect(
+      dedupIndex,
+      'broadcast_deliveries must have a UNIQUE index on (tenant_id, resend_event_id) for FR-025 idempotency',
+    ).toBeDefined();
+  });
 });

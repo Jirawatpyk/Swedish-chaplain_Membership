@@ -10,7 +10,37 @@ import {
   asBroadcastSegmentDefinitionId,
   type BroadcastSegmentDefinition,
   type BroadcastSegmentDefinitionId,
+  type BroadcastSegmentDefinitionParams,
 } from '../../domain/recipient-segment';
+
+/**
+ * Round 5 review type-design — narrow Drizzle's `unknown`/JSONB params
+ * shape to the bounded `BroadcastSegmentDefinitionParams` DU. Foreign
+ * keys / runtime drift fall into `null` rather than mistyped object
+ * casts. The schema seeds only `tier` (with `tierCodes`) and `custom`
+ * (with `emails`) so any other shape is treated as legacy and ignored.
+ */
+function parseSegmentDefinitionParams(
+  raw: unknown,
+): BroadcastSegmentDefinitionParams {
+  if (raw === null || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  if (Array.isArray(obj['tierCodes'])) {
+    return {
+      tierCodes: (obj['tierCodes'] as unknown[]).filter(
+        (x): x is string => typeof x === 'string',
+      ),
+    };
+  }
+  if (Array.isArray(obj['emails'])) {
+    return {
+      emails: (obj['emails'] as unknown[]).filter(
+        (x): x is string => typeof x === 'string',
+      ),
+    };
+  }
+  return null;
+}
 import type { BroadcastSegmentDefinitionsRepo } from '../../application/ports/broadcast-segment-definitions-repo';
 import {
   broadcastSegmentDefinitions,
@@ -27,7 +57,7 @@ function rowToDefinition(
     definitionId: asBroadcastSegmentDefinitionId(row.definitionId),
     segmentType: row.segmentType,
     displayLabelI18nKey: row.displayLabelI18nKey,
-    params: (row.params as Record<string, unknown> | null) ?? null,
+    params: parseSegmentDefinitionParams(row.params),
     enabled: row.enabled,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

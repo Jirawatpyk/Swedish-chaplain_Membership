@@ -242,6 +242,28 @@ export async function archiveMember(
             deps.tenant.slug,
             'unexpected_error',
           );
+        } else if (cascadeResult.outcome === 'cascade_partial_failure') {
+          // Round 5 review fix — partial cascade is now a first-class
+          // signal at the port level. The per-broadcast
+          // `unexpected_error` metric was already emitted inside the
+          // F7 use-case loop (so dashboards alert), but until now the
+          // F3 caller had no visibility — the cleanup runbook had to
+          // diff cascadeOutcome metric against archive-member call
+          // count. Now we record a structured log keyed by `memberId`
+          // so ops can grep which member's archive ended in partial
+          // cascade and re-attempt cancellation for the stuck rows.
+          logger.error(
+            {
+              tenantId: deps.tenant.slug,
+              memberId,
+              requestId: meta.requestId,
+              cancelledCount: cascadeResult.cancelledCount,
+              skippedConcurrentCount: cascadeResult.skippedConcurrentCount,
+              unexpectedErrorCount: cascadeResult.unexpectedErrorCount,
+              cascade: 'f7_in_flight_broadcast_cancel',
+            },
+            'archive-member: broadcasts cascade partial — some broadcasts remain in flight',
+          );
         }
       } catch (cascadeErr) {
         // Adapter is supposed to translate failures to

@@ -61,6 +61,18 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
       );
       return { outcome: 'cascade_failed' };
     }
+    // Round 5 review fix — translate per-broadcast unexpected-error
+    // signal from the use-case into the third port-level outcome
+    // variant so the F3 caller can audit a partial cascade explicitly,
+    // not only via metric.
+    if (result.value.unexpectedErrorCount > 0) {
+      return {
+        outcome: 'cascade_partial_failure',
+        cancelledCount: result.value.cancelledCount,
+        skippedConcurrentCount: result.value.skippedConcurrentCount,
+        unexpectedErrorCount: result.value.unexpectedErrorCount,
+      };
+    }
     return {
       outcome: 'ok',
       cancelledCount: result.value.cancelledCount,

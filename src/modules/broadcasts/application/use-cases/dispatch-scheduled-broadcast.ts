@@ -151,6 +151,29 @@ function buildIdempotencyKey(tenantId: string, broadcastId: string): string {
   return `broadcast-${tenantId}-${broadcastId}`;
 }
 
+type DispatchFailureReason =
+  | 'resend_5xx'
+  | 'resend_429'
+  | 'resend_403'
+  | 'app_error'
+  | 'timeout';
+
+/**
+ * Map a free-text dispatch `phase` label to the bounded
+ * `broadcasts.failed_to_dispatch.count` failure_reason enum. Round 5
+ * simplification — extracted from a 4-level nested ternary. The phase
+ * strings come from `classifyThrown` + caller call-sites; the matcher
+ * is order-sensitive (more specific Resend HTTP-code phases first,
+ * generic timeout next, app_error catch-all last).
+ */
+function phaseToFailureReason(phase: string): DispatchFailureReason {
+  if (phase.includes('429')) return 'resend_429';
+  if (phase.includes('403')) return 'resend_403';
+  if (phase.includes('5xx') || phase.includes('server')) return 'resend_5xx';
+  if (phase.includes('timeout')) return 'timeout';
+  return 'app_error';
+}
+
 /**
  * Helper: transition a broadcast to `failed_to_dispatch` + emit a
  * matching audit event in a single tx. On cleanup failure, log loudly
@@ -201,18 +224,15 @@ async function failDispatchAndAudit(
       // T172 — emit-site wiring (Phase 9). failure_reason maps phase
       // strings to the bounded enum used by the
       // broadcasts.failed_to_dispatch.count counter.
+      // Round 5 simplification — replace the 4-level nested ternary with
+      // a small helper that early-returns. CLAUDE.md forbids nested
+      // ternaries; this also gives the helper a name visible in stack
+      // traces if the mapping ever throws.
       if (eventType === 'broadcast_failed_to_dispatch') {
-        const failureReason: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' =
-          phase.includes('429')
-            ? 'resend_429'
-            : phase.includes('403')
-              ? 'resend_403'
-              : phase.includes('5xx') || phase.includes('server')
-                ? 'resend_5xx'
-                : phase.includes('timeout')
-                  ? 'timeout'
-                  : 'app_error';
-        broadcastsMetrics.failedToDispatchCount(deps.tenant.slug, failureReason);
+        broadcastsMetrics.failedToDispatchCount(
+          deps.tenant.slug,
+          phaseToFailureReason(phase),
+        );
       }
       broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
     });

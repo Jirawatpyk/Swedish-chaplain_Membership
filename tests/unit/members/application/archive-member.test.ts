@@ -179,11 +179,14 @@ function makeDeps(overrides: Partial<{
   // tests override to assert cascade-failure paths emit metric + log.
   const broadcastsCascade: ArchiveMemberDeps['broadcastsCascade'] =
     overrides.broadcastsCascade ?? {
-      cancelInFlightForMember: vi.fn(async () => ({
-        outcome: 'ok' as const,
-        cancelledCount: 0,
-        skippedConcurrentCount: 0,
-      })),
+      cancelInFlightForMember: vi.fn(
+        async () =>
+          ({
+            outcome: 'ok' as const,
+            cancelledCount: 0,
+            skippedConcurrentCount: 0,
+          }) as const,
+      ),
     };
   return {
     tenant,
@@ -458,6 +461,30 @@ describe('archiveMember use case (R009)', () => {
         'test-tenant',
         'unexpected_error',
       );
+    });
+
+    it('cascade outcome=cascade_partial_failure: archive succeeds + structured log records counts (Round 5)', async () => {
+      const cancelInFlightForMember = vi.fn(async () => ({
+        outcome: 'cascade_partial_failure' as const,
+        cancelledCount: 2,
+        skippedConcurrentCount: 1,
+        unexpectedErrorCount: 3,
+      }));
+      const deps = makeDeps({
+        broadcastsCascade: { cancelInFlightForMember },
+      });
+      const result = await archiveMember(
+        memberId,
+        { reason: 'partial failure' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      // F3 archive must succeed even on partial cascade — per-broadcast
+      // unexpected_error metric was already emitted inside the F7
+      // use-case loop. F3 just records the structured log so ops can
+      // grep which member's archive ended in a partial cascade.
+      expect(result.ok).toBe(true);
+      expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -148,17 +148,20 @@ export interface SubmitBroadcastOutput {
   readonly reviewSlaTargetHours: number;
 }
 
-/** Helper: emit a precondition-rejection audit on a standalone tx. */
 /**
  * T172 (Phase 9) — map F7 audit event type to the bounded
  * `submit_precondition_blocked` enum used by the submit-funnel
  * counter. Returning `null` for non-precondition events skips the
  * metric emission (e.g. `broadcast_submitted` on the success path
  * is counted by `submitCount` instead).
+ *
+ * Round 5 simplification — switch replaced with a const lookup table.
+ * `satisfies Partial<Record<…, …>>` lets TS verify every key is a
+ * valid `F7AuditEventType` and the union of values still matches the
+ * bounded precondition enum without the 11-line return-type literal.
+ * Adding a new precondition is one line, not three.
  */
-function preconditionFromEvent(
-  eventType: F7AuditEventType,
-):
+type SubmitPrecondition =
   | 'quota_exhausted'
   | 'empty_segment'
   | 'rate_limit_exceeded'
@@ -169,34 +172,32 @@ function preconditionFromEvent(
   | 'audience_too_large'
   | 'custom_recipient_unknown'
   | 'member_missing_primary_contact_email'
-  | 'member_halted_pending_review'
-  | null {
-  switch (eventType) {
-    case 'broadcast_quota_blocked':
-      return 'quota_exhausted';
-    case 'broadcast_empty_segment_blocked':
-      return 'empty_segment';
-    case 'broadcast_rate_limit_exceeded':
-      return 'rate_limit_exceeded';
-    case 'broadcast_not_in_plan':
-      return 'plan_no_eblast';
-    case 'broadcast_subject_too_long':
-      return 'subject_too_long';
-    case 'broadcast_body_too_large':
-      return 'body_too_large';
-    case 'broadcast_body_unsafe_html':
-      return 'body_unsafe_html';
-    case 'broadcast_audience_too_large':
-      return 'audience_too_large';
-    case 'broadcast_custom_recipient_unknown':
-      return 'custom_recipient_unknown';
-    case 'broadcast_member_missing_primary_contact_email':
-      return 'member_missing_primary_contact_email';
-    case 'broadcast_member_halted_pending_review':
-      return 'member_halted_pending_review';
-    default:
-      return null;
-  }
+  | 'member_halted_pending_review';
+
+const PRECONDITION_BY_EVENT = {
+  broadcast_quota_blocked: 'quota_exhausted',
+  broadcast_empty_segment_blocked: 'empty_segment',
+  broadcast_rate_limit_exceeded: 'rate_limit_exceeded',
+  broadcast_not_in_plan: 'plan_no_eblast',
+  broadcast_subject_too_long: 'subject_too_long',
+  broadcast_body_too_large: 'body_too_large',
+  broadcast_body_unsafe_html: 'body_unsafe_html',
+  broadcast_audience_too_large: 'audience_too_large',
+  broadcast_custom_recipient_unknown: 'custom_recipient_unknown',
+  broadcast_member_missing_primary_contact_email:
+    'member_missing_primary_contact_email',
+  broadcast_member_halted_pending_review: 'member_halted_pending_review',
+} as const satisfies Partial<Record<F7AuditEventType, SubmitPrecondition>>;
+
+/** Helper: emit a precondition-rejection audit on a standalone tx. */
+function preconditionFromEvent(
+  eventType: F7AuditEventType,
+): SubmitPrecondition | null {
+  return (
+    (PRECONDITION_BY_EVENT as Partial<Record<F7AuditEventType, SubmitPrecondition>>)[
+      eventType
+    ] ?? null
+  );
 }
 
 async function emitReject(

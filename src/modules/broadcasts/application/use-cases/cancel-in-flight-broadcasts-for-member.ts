@@ -12,10 +12,17 @@
  * `status IN ('submitted', 'approved')`:
  *   1. transition to `status='cancelled'`,
  *      `cancelled_by_user_id = NULL` (system-initiated),
- *      `cancellation_reason = 'originator_member_deleted'`.
- *   2. emit `broadcast_cancelled` audit with `actor_role = 'system'`
- *      so audit-log dashboards can distinguish member-self / admin /
- *      system cancellations.
+ *      `cancellation_reason = input.cancellationReason ??
+ *      'originator_member_deleted'` — F3 callers may pass
+ *      `'gdpr_erasure_request'` (Art. 17) or `'pdpa_deletion_request'`
+ *      (PDPA §33) for compliance-differentiated forensic trails.
+ *   2. emit `broadcast_cancelled` audit. `actorUserId` falls back to
+ *      `input.initiatedByUserId ?? 'system'` so the F3 admin who
+ *      triggered the archive/erasure is recorded as the audit actor;
+ *      `actor_role = 'system'` regardless because the cancel itself is
+ *      system-initiated (the member account is the SUBJECT, not the
+ *      actor). Summary text is templated off the reason so audit
+ *      dashboards read distinctly between archive vs GDPR vs PDPA.
  *   3. release the quota reservation (derived count drops naturally
  *      from the FR-003 query because the broadcast leaves the
  *      `submitted`/`approved` set).
@@ -96,6 +103,15 @@ export interface CancelInFlightForMemberInput {
 export interface CancelInFlightForMemberOutput {
   readonly cancelledCount: number;
   readonly skippedConcurrentCount: number;
+  /**
+   * Round 5 review fix — surface per-broadcast unexpected errors to F3
+   * callers. Previously this count was only logged + emitted as a metric
+   * inside the loop, so the F3 cascade adapter saw `outcome: 'ok'` even
+   * when 5/5 broadcasts hit `unexpected_error`. Now F3 can branch on
+   * this count and translate it to `'cascade_partial_failure'` so a
+   * partial cascade is auditable in the F3 caller, not just dashboards.
+   */
+  readonly unexpectedErrorCount: number;
 }
 
 export interface CancelInFlightForMemberDeps {
@@ -106,6 +122,17 @@ export interface CancelInFlightForMemberDeps {
 
 const SYSTEM_ACTOR_USER_ID = 'system';
 const DEFAULT_REASON = 'originator_member_deleted';
+
+function cascadeReasonSummary(reason: CascadeCancellationReason): string {
+  switch (reason) {
+    case 'gdpr_erasure_request':
+      return 'GDPR Art. 17 erasure of originator member';
+    case 'pdpa_deletion_request':
+      return 'PDPA §33 deletion of originator member';
+    case 'originator_member_deleted':
+      return 'originator member archived';
+  }
+}
 
 export async function cancelInFlightBroadcastsForMember(
   deps: CancelInFlightForMemberDeps,
@@ -124,7 +151,11 @@ export async function cancelInFlightBroadcastsForMember(
       );
 
     if (inFlight.length === 0) {
-      return ok({ cancelledCount: 0, skippedConcurrentCount: 0 });
+      return ok({
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        unexpectedErrorCount: 0,
+      });
     }
 
     let cancelledCount = 0;
@@ -155,7 +186,12 @@ export async function cancelInFlightBroadcastsForMember(
             tenantId: input.tenant.slug,
             eventType: 'broadcast_cancelled',
             actorUserId: input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
-            summary: `Broadcast ${broadcast.broadcastId} cancelled — originator member archived/erased`,
+            // Round 5 review fix — template summary off the reason so
+            // GDPR Art. 17 vs PDPA §33 vs default archive read
+            // distinctly in the audit-log dashboard. Maps each enum
+            // value to its compliance-friendly phrasing rather than
+            // hardcoding "archived/erased" for all three.
+            summary: `Broadcast ${broadcast.broadcastId} cancelled — ${cascadeReasonSummary(reason)}`,
             payload: {
               broadcastId: broadcast.broadcastId,
               actorKind: 'system',
@@ -270,7 +306,7 @@ export async function cancelInFlightBroadcastsForMember(
       'broadcasts.cascade.completed',
     );
 
-    return ok({ cancelledCount, skippedConcurrentCount });
+    return ok({ cancelledCount, skippedConcurrentCount, unexpectedErrorCount });
   } catch (e) {
     return err({
       kind: 'cascade.server_error',

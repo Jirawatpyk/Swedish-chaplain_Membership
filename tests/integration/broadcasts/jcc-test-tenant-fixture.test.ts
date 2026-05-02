@@ -172,7 +172,7 @@ describe('T179 — JCC-test tenant fixture (multi-tenant readiness invariant)', 
       );
       expect(result.ok).toBe(true);
       expect(result).toEqual(
-        ok({ cancelledCount: 1, skippedConcurrentCount: 0 }),
+        ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0 }),
       );
 
       // Invariant: every repo + audit call carries the SAME tenant slug.

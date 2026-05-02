@@ -25,10 +25,12 @@
 export {
   asBroadcastId,
   parseBroadcastId,
+  phaseOf,
   type Broadcast,
   type BroadcastActorRole,
   type BroadcastId,
   type BroadcastIdError,
+  type BroadcastPhase,
 } from './domain/broadcast';
 export {
   asBroadcastDeliveryId,
@@ -50,6 +52,7 @@ export {
   type BroadcastSegmentDefinition,
   type BroadcastSegmentDefinitionId,
   type BroadcastSegmentDefinitionIdError,
+  type BroadcastSegmentDefinitionParams,
   type RecipientSegment,
 } from './domain/recipient-segment';
 
@@ -109,6 +112,8 @@ export {
   isF7AuditEventType,
   type F7AuditEvent,
   type F7AuditEventType,
+  type F7AuditPayloadFor,
+  type F7AuditPayloadShapes,
 } from './application/ports/audit-port';
 
 // --- Application use-cases (Phase 3 US1) ---------------------------------

@@ -42,7 +42,7 @@ describe('f7BroadcastsCascadeAdapter (G4)', () => {
 
   it('translates use-case ok → outcome="ok" with counts forwarded', async () => {
     cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
-      ok({ cancelledCount: 3, skippedConcurrentCount: 1 }),
+      ok({ cancelledCount: 3, skippedConcurrentCount: 1, unexpectedErrorCount: 0 }),
     );
     const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(
       tenant,
@@ -61,7 +61,7 @@ describe('f7BroadcastsCascadeAdapter (G4)', () => {
 
   it('translates use-case ok with zero in-flight → outcome="ok" + zeros', async () => {
     cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
-      ok({ cancelledCount: 0, skippedConcurrentCount: 0 }),
+      ok({ cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0 }),
     );
     const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(
       tenant,
@@ -75,6 +75,25 @@ describe('f7BroadcastsCascadeAdapter (G4)', () => {
     if (result.outcome !== 'ok') return;
     expect(result.cancelledCount).toBe(0);
     expect(result.skippedConcurrentCount).toBe(0);
+  });
+
+  it('translates use-case ok with unexpectedErrorCount > 0 → outcome="cascade_partial_failure" (Round 5 signal-loss closed)', async () => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({ cancelledCount: 2, skippedConcurrentCount: 1, unexpectedErrorCount: 3 }),
+    );
+    const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(
+      tenant,
+      memberId,
+      {
+        initiatedByUserId: 'admin-7',
+        requestId: 'req-7',
+      },
+    );
+    expect(result.outcome).toBe('cascade_partial_failure');
+    if (result.outcome !== 'cascade_partial_failure') return;
+    expect(result.cancelledCount).toBe(2);
+    expect(result.skippedConcurrentCount).toBe(1);
+    expect(result.unexpectedErrorCount).toBe(3);
   });
 
   it('translates use-case err → outcome="cascade_failed" (no counts in DU branch — signal-loss closed)', async () => {
@@ -108,7 +127,7 @@ describe('f7BroadcastsCascadeAdapter (G4)', () => {
 
   it('omits cancellationReason when caller passes undefined (exactOptionalPropertyTypes)', async () => {
     cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
-      ok({ cancelledCount: 0, skippedConcurrentCount: 0 }),
+      ok({ cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0 }),
     );
     await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
       initiatedByUserId: null,

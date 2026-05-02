@@ -996,6 +996,39 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts.cron.unknown_error.count{tenant}` — Round 5 R5-CRON-A:
+   * dispatch use-case returned a Result.err of an unrecognised `kind`.
+   * Indicates an enum drift between use-case error union and route
+   * handler — should be 0 in steady state. Any non-zero rate pages
+   * on-call so dashboards detect the mismatch immediately rather than
+   * scraping JSON response bodies.
+   */
+  cronUnknownErrorCount(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_cron_unknown_error_count',
+        'Cron tick unknown Result.err.kind — alert on any non-zero rate',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts.cron.uncaught_error.count{tenant}` — Round 5 R5-CRON-A:
+   * dispatch use-case threw outside the Result envelope (programming
+   * bug, infra outage, or unhandled adapter error). The broadcast row
+   * stays `approved` and the next tick will hit the same bug — alert
+   * immediately rather than waiting for log-scrape.
+   */
+  cronUncaughtErrorCount(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_cron_uncaught_error_count',
+        'Cron tick uncaught throw — alert on any non-zero rate',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * `broadcasts.webhook.receive.count{tenant, event_type}` — per-event
    * ingest rate. Pre-tenant (signature-rejected) emits use
    * `tenant='unresolved'`.

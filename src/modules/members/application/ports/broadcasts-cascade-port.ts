@@ -74,24 +74,32 @@ export interface BroadcastsCascadePort {
 /**
  * Discriminated union over the F3↔F7 cascade outcome (Round 2 review
  * type-design fix — flat record allowed nonsensical states like
- * `{cancelledCount: 5, outcome: 'cascade_failed'}`).
+ * `{cancelledCount: 5, outcome: 'cascade_failed'}`; Round 5 review fix —
+ * added `'cascade_partial_failure'` so per-broadcast unexpected-error
+ * failures are surfaced to the F3 caller for audit visibility, not just
+ * to the metric pipeline).
  *
- *   - `'ok'`             → cascade ran. Counts may legitimately be 0
- *                          when the member had no in-flight broadcasts.
- *                          Per-broadcast `unexpected_error` failures
- *                          inside the use-case still report `'ok'` here
- *                          (the cascade ran end-to-end); the
- *                          authoritative failure signal in that case is
- *                          the per-broadcast `broadcasts.cascade.outcome`
- *                          metric (see `BroadcastsCascadeOutcomeMetric`),
- *                          NOT this port-level discriminator.
- *   - `'cascade_failed'` → the F7 cascade use-case ITSELF errored before
- *                          it could iterate broadcasts (e.g. listing
- *                          query threw). Counts are not surfaced. F3
- *                          archival is still allowed to commit (cascade
- *                          is best-effort).
+ *   - `'ok'`                       → cascade ran end-to-end. Counts may
+ *                                    legitimately be 0 when the member had
+ *                                    no in-flight broadcasts.
+ *   - `'cascade_partial_failure'`  → cascade iterated all broadcasts but
+ *                                    one or more rows hit unexpected
+ *                                    errors (`unexpectedErrorCount > 0`).
+ *                                    Other broadcasts may still have
+ *                                    cancelled (`cancelledCount`) or
+ *                                    skipped due to concurrent races
+ *                                    (`skippedConcurrentCount`). F3
+ *                                    archival still commits; a follow-up
+ *                                    audit row records which member's
+ *                                    cascade was partial so the cleanup
+ *                                    runbook can re-attempt cancellation.
+ *   - `'cascade_failed'`           → the F7 cascade use-case ITSELF errored
+ *                                    before it could iterate broadcasts
+ *                                    (e.g. listing query threw). Counts are
+ *                                    not surfaced. F3 archival still
+ *                                    commits (cascade is best-effort).
  *
- * NOTE: this two-value port-level outcome is deliberately distinct
+ * NOTE: this three-value port-level outcome is deliberately distinct
  * from the three-value `BroadcastsCascadeOutcomeMetric` (per-broadcast
  * label) — see `src/lib/metrics.ts cascadeOutcome` JSDoc. Port = adapter
  * rollup; metric = per-row classification.
@@ -101,5 +109,11 @@ export type CascadeResult =
       readonly outcome: 'ok';
       readonly cancelledCount: number;
       readonly skippedConcurrentCount: number;
+    }
+  | {
+      readonly outcome: 'cascade_partial_failure';
+      readonly cancelledCount: number;
+      readonly skippedConcurrentCount: number;
+      readonly unexpectedErrorCount: number;
     }
   | { readonly outcome: 'cascade_failed' };

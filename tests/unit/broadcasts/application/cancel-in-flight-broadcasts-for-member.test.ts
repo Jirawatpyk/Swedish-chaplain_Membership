@@ -108,6 +108,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
     if (!result.ok) return;
     expect(result.value.cancelledCount).toBe(2);
     expect(result.value.skippedConcurrentCount).toBe(0);
+    expect(result.value.unexpectedErrorCount).toBe(0);
     const cancelledCalls = cascadeOutcomeSpy.mock.calls.filter(
       (c) => c[1] === 'cancelled',
     );
@@ -128,6 +129,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
     if (!result.ok) return;
     expect(result.value.cancelledCount).toBe(0);
     expect(result.value.skippedConcurrentCount).toBe(0);
+    expect(result.value.unexpectedErrorCount).toBe(0);
     expect(cascadeOutcomeSpy).not.toHaveBeenCalled();
   });
 
@@ -157,6 +159,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
     if (!result.ok) return;
     expect(result.value.cancelledCount).toBe(1);
     expect(result.value.skippedConcurrentCount).toBe(1);
+    expect(result.value.unexpectedErrorCount).toBe(0);
     expect(
       cascadeOutcomeSpy.mock.calls.some((c) => c[1] === 'concurrent_skip'),
     ).toBe(true);
@@ -191,6 +194,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
     // Second row still cancels — best-effort cascade.
     expect(result.value.cancelledCount).toBe(1);
     expect(result.value.skippedConcurrentCount).toBe(0);
+    expect(result.value.unexpectedErrorCount).toBe(1);
     expect(
       cascadeOutcomeSpy.mock.calls.some((c) => c[1] === 'unexpected_error'),
     ).toBe(true);
