@@ -307,3 +307,51 @@ describe('F5 redactPanValues recursive walk (T032)', () => {
     expect(redactPanValues(42n)).toBe(42n);
   });
 });
+
+describe('F7 unsubscribe-token redaction (Round 3 T-F7-07)', () => {
+  // Build a minimal pino logger mirroring the prod redact config.
+  function captureLog(log: Record<string, unknown>): string {
+    const chunks: string[] = [];
+    const logger = pino(
+      {
+        level: 'info',
+        redact: { paths: REDACT_PATHS, censor: '[REDACTED]', remove: false },
+      },
+      {
+        write(chunk: string) {
+          chunks.push(chunk);
+        },
+      } as unknown as NodeJS.WritableStream,
+    );
+    logger.info(log, 'test');
+    return chunks.join('');
+  }
+
+  it('redacts top-level tokenPlaintext (Round 3 T-F7-07 — UnsubscribeRecipientInput field)', () => {
+    const out = captureLog({
+      tokenPlaintext: 'v1.eyJ0aWQiOiJ0ZW5hbnQifQ.deadbeefcafe',
+      msg: 'test',
+    });
+    expect(out).toContain('[REDACTED]');
+    expect(out).not.toContain('v1.eyJ0aWQiOiJ0ZW5hbnQifQ.deadbeefcafe');
+  });
+
+  it('redacts nested *.tokenPlaintext (depth 2)', () => {
+    const out = captureLog({
+      input: { tokenPlaintext: 'v1.payload.signature' },
+      msg: 'test',
+    });
+    expect(out).toContain('[REDACTED]');
+    expect(out).not.toContain('v1.payload.signature');
+  });
+
+  it('redacts unsubscribeToken alongside tokenPlaintext (both shapes covered)', () => {
+    const out = captureLog({
+      unsubscribeToken: 'v1.aaa.bbb',
+      tokenPlaintext: 'v1.ccc.ddd',
+      msg: 'test',
+    });
+    expect(out).not.toContain('v1.aaa.bbb');
+    expect(out).not.toContain('v1.ccc.ddd');
+  });
+});

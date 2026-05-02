@@ -534,7 +534,7 @@
         "columns": {
           "company": "Företag",
           "country": "Land",
-          "plan": "Plan",
+          "plan": "Paket",
           "year": "År",
           "primaryContact": "Primär kontakt",
           "status": "Status",
@@ -575,7 +575,7 @@
           "contacts": "Kontakter",
           "primary": "Primär kontakt",
           "secondary": "Övriga kontakter",
-          "plan": "Plan",
+          "plan": "Paket",
           "audit": "Senaste aktivitet"
         },
         "fields": {
@@ -586,8 +586,8 @@
           "description": "Beskrivning",
           "foundedYear": "Grundat",
           "turnoverThb": "Årsomsättning (THB)",
-          "planId": "Plan-ID",
-          "planYear": "Planår",
+          "planId": "Paket-ID",
+          "planYear": "Paketår",
           "registrationDate": "Registreringsdatum",
           "registrationFeePaid": "Registreringsavgift",
           "registrationFeePaidYes": "Betald",
@@ -602,7 +602,7 @@
           "phone": "Telefon",
           "roleTitle": "Roll",
           "preferredLanguage": "Föredraget språk",
-          "plan": "Plan"
+          "plan": "Paket"
         },
         "copy": {
           "copyMemberId": "Kopiera medlems-ID",
@@ -622,7 +622,7 @@
           "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Klicka på Lägg till kontakt för att skapa en sekundär kontakt med den nya personens uppgifter och använd sedan Befordra för att göra dem till den nya primära. Den gamla primära nedgraderas automatiskt."
         },
         "portal": {
-          "linked": "Portalanslutning"
+          "linked": "Portalansluten"
         },
         "editCta": "Redigera"
       },
@@ -721,9 +721,9 @@
           "description": "Beskrivning",
           "foundedYear": "Grundat år",
           "turnoverThb": "Årsomsättning (THB)",
-          "plan": "Plan",
-          "planPlaceholder": "Välj plan…",
-          "planYear": "Planår",
+          "plan": "Paket",
+          "planPlaceholder": "Välj paket…",
+          "planYear": "Paketår",
           "registrationDate": "Registreringsdatum",
           "firstName": "Förnamn",
           "lastName": "Efternamn",
@@ -1129,8 +1129,8 @@
         "fields": {
           "memberId": "Medlem",
           "memberIdHelp": "Klistra in medlems-UUID. Väljare kommer senare.",
-          "planId": "Plan",
-          "planYear": "Planår"
+          "planId": "Paket",
+          "planYear": "Paketår"
         },
         "memberPicker": {
           "placeholder": "Välj medlem…",
@@ -1169,7 +1169,7 @@
         },
         "fields": {
           "memberId": "Medlem",
-          "plan": "Plan / år",
+          "plan": "Paket / år",
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
           "subtotal": "Delsumma",
@@ -1234,7 +1234,7 @@
         "issuing": "Utfärdar…",
         "success": "Fakturan utfärdad",
         "cancel": "Avbryt",
-        "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan **inte ångras** — för att annullera måste en kreditnota utfärdas.",
+        "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan inte ångras — för att annullera måste en kreditnota utfärdas.",
         "errors": {
           "failed": "Kunde inte utfärda",
           "codeFallback": "Felkod: {code}",
@@ -1651,7 +1651,7 @@
       "settings": "Inställningar",
       "settingsInvoices": "Fakturainställningar",
       "sections": {
-        "main": "Huvud",
+        "main": "Allmänt",
         "settings": "Inställningar"
       },
       "collapse": "Fäll ihop sidofältet",
@@ -1770,7 +1770,7 @@
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
           "paidDate": "Betald",
-          "planYear": "Planår"
+          "planYear": "Paketår"
         },
         "lines": {
           "description": "Beskrivning",
@@ -2035,7 +2035,7 @@
         "country": "Land",
         "website": "Webbplats",
         "description": "Beskrivning",
-        "planYear": "Planår",
+        "planYear": "Paketår",
         "registrationDate": "Registreringsdatum",
         "status": "Status"
       },
@@ -2211,7 +2211,7 @@
         "placeholder": "Sök dina fakturor…",
         "label": "Betala faktura {invoiceNumber} · {amount}",
         "emptyHint": "Inga fakturor att betala",
-        "allPaidHint": "Inga väntande fakturor — du är i kapp."
+        "allPaidHint": "Inga obetalda fakturor — allt är betalt."
       }
     }
   },
@@ -2229,7 +2229,7 @@
       "contact_removed": "Kontakt borttagen",
       "member_self_updated": "Profil uppdaterad av medlem",
       "member_self_update_forbidden": "Otillåten självuppdatering blockerad",
-      "member_cross_tenant_probe": "Korsklientförsök upptäckt",
+      "member_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation",
       "plan_bundle_changed": "Paketgrupp ändrad",
       "member_contact_email_changed": "Kontaktens e-postadress ändrad",
       "user_sessions_revoked": "Sessioner återkallade",
@@ -2250,7 +2250,7 @@
     "page": "Sida {page}"
   },
   "shared": {
-    "loaded": "Laddat"
+    "loaded": "Innehåll laddat"
   },
   "email": {
     "invoiceIssued": {
@@ -2280,7 +2280,7 @@
       "subject": "Ditt utskick har avbrutits",
       "greeting": "Hej {name},",
       "body": "Ditt utskick \"{subject}\" har avbrutits.",
-      "reasonHeading": "Notering om avbokning:",
+      "reasonHeading": "Notering om avbrytning:",
       "footer": "Din reserverade kvot har frigjorts."
     },
     "broadcastDelivered": {
@@ -2314,11 +2314,11 @@
   },
   "public": {
     "unsubscribe": {
-      "metaTitle": "Avregistrera",
+      "metaTitle": "Avregistrering",
       "fallbackChamberName": "kammaren",
       "success": {
         "heading": "Avregistrerad",
-        "body": "Du har avregistrerats från {tenantDisplayName} marknadsutskick. Du kommer inte längre att få E-Blasts.",
+        "body": "Du har avregistrerats från {tenantDisplayName} marknadsutskick. Du kommer inte längre att få marknadsutskick.",
         "transactional": "Du fortsätter att ta emot transaktionsmejl (lösenordsåterställning, fakturakvitton, förnyelsepåminnelser) kopplade till ditt konto, om sådana finns.",
         "contact": "Om du avregistrerade av misstag, kontakta <email></email>."
       },

@@ -747,6 +747,10 @@ export async function dispatchScheduledBroadcast(
               'broadcasts.dispatch.unverifiable_audit_emit_failed',
             );
           }
+          // Round 3 observability G2 — emit metric so the catalogued
+          // alert at observability.md § 22.3 (drift_check_unverifiable
+          // > 1 / 1h → alarm) actually has a data source.
+          broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
         }
         if (actualCount !== null && actualCount !== expectedCount) {
           // Audience drift detected — emit audit + log error so ops
@@ -789,6 +793,10 @@ export async function dispatchScheduledBroadcast(
             },
             'broadcasts.dispatch.audience_drift_detected',
           );
+          // Round 3 observability G2 — emit metric so the catalogued
+          // alert at observability.md § 22.3 (audience_drift_detected
+          // > 0 / 24h → page) actually has a data source.
+          broadcastsMetrics.audienceDriftDetected(deps.tenant.slug);
         } else if (!countCheckFailed) {
           logger.warn(
             {

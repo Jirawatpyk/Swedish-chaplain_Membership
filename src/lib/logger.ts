@@ -368,6 +368,14 @@ export const REDACT_PATHS = [
   '*.unsubscribe_token',
   'unsubscribeToken',
   '*.unsubscribeToken',
+  // Round 3 security review T-F7-07 — `tokenPlaintext` is the exact
+  // field name on `UnsubscribeRecipientInput`. Without this entry, a
+  // future contributor logging the input struct (e.g. `logger.error(input,
+  // ...)`) would leak the raw HMAC-signed token. Tokens have no expiry
+  // (FR-030 / GDPR Art. 21) so a single leak grants permanent
+  // suppression-trigger ability for that recipient.
+  'tokenPlaintext',
+  '*.tokenPlaintext',
 ];
 
 /**

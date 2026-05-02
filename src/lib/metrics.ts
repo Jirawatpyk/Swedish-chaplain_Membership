@@ -1181,6 +1181,29 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts.dispatch_failure_rate{tenant}` — gauge, 0..1 ratio of
+   * `failed_to_dispatch` over `failed_to_dispatch + sent + sending` in
+   * the most recent 1-hour rolling window keyed on `sending_started_at`.
+   *
+   * Round 3 observability G1+G5 fix — alert at observability.md § 22.3
+   * `> 0.10 (10%) → page` (Resend incident / app bug). Emitted by the
+   * `broadcasts-gauges` cron alongside `queue_pending` +
+   * `stuck_sending_count`. With no traffic the rolling-window query
+   * returns no rows and the gauge is not sampled (no false positives
+   * from quiet tenants).
+   */
+  dispatchFailureRate(tenantId: string, rate: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_dispatch_failure_rate',
+        'Rolling 1h failed_to_dispatch / dispatched ratio (alert >0.10)',
+        { tenant: tenantId },
+        rate,
+      );
+    });
+  },
+
+  /**
    * `broadcasts.cascade.outcome{tenant, outcome}` — F3 archival/erasure
    * cascade outcome counter. Per-broadcast classification (see
    * `BroadcastsCascadeOutcomeMetric`):
