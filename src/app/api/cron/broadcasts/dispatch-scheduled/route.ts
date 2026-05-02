@@ -44,6 +44,13 @@ import { logger } from '@/lib/logger';
 
 const MAX_PER_TICK = 50;
 
+// Parity with reconcile + prune cron routes: pin Node.js runtime
+// explicitly. verifyCronBearer + Drizzle/Neon + advisory locks all
+// require Node APIs (node:crypto, pg net socket); a future Edge default
+// would silently break dispatch.
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Verify-fix R3 (Code-M2, 2026-05-02): constant-time Bearer check
   // via shared `verifyCronBearer` helper (matches F4 outbox + F5
