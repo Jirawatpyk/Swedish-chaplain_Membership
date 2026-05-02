@@ -344,3 +344,62 @@ export async function resetF7AckSeed(): Promise<void> {
     await sql.end({ timeout: 5 });
   }
 }
+
+/**
+ * Verify-fix R4 (Simplify-#1, 2026-05-02) — extracted from
+ * `tests/e2e/scheduled-send-cron.spec.ts` + `broadcast-cancel-too-late.spec.ts`
+ * (was duplicated byte-identical across both).
+ *
+ * Resets e2e-member's broadcast history so the test starts with a
+ * fresh 1/1 quota slot. AS2 requires `failed_to_dispatch` rows to
+ * HOLD their quota reservation indefinitely (so admin can re-trigger
+ * manually) — but in CI/dev that means a single failed run pollutes
+ * subsequent runs forever. This helper wipes ALL broadcasts owned by
+ * e2e-member regardless of status (BYPASSRLS via raw `postgres`).
+ *
+ * Audit rows are append-only and survive — the wipe only touches
+ * `broadcasts` + `broadcast_deliveries` (FK cascade via temporary
+ * trigger disable, mirrors `tests/integration/helpers/test-tenant.ts`).
+ *
+ * Skips silently if `DATABASE_URL` is missing.
+ */
+export async function wipeE2EMemberBroadcasts(): Promise<void> {
+  const dbUrl = process.env.DATABASE_URL;
+  const memberEmail = process.env.E2E_MEMBER_EMAIL;
+  const tenantId = process.env.E2E_TENANT_SLUG ?? 'swecham';
+  if (!dbUrl || !memberEmail) return;
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    const memberRows = await sql<Array<{ member_id: string }>>`
+      SELECT m.member_id::text AS member_id
+      FROM users u
+      JOIN contacts c
+        ON c.linked_user_id = u.id AND c.tenant_id = ${tenantId}
+      JOIN members m
+        ON m.member_id = c.member_id AND m.tenant_id = ${tenantId}
+      WHERE u.email = ${memberEmail}
+      LIMIT 1
+    `;
+    const memberId = memberRows[0]?.member_id;
+    if (!memberId) return;
+    await sql`
+      ALTER TABLE broadcast_deliveries DISABLE TRIGGER broadcast_deliveries_no_delete
+    `;
+    await sql`
+      DELETE FROM broadcast_deliveries
+      WHERE broadcast_id IN (
+        SELECT broadcast_id FROM broadcasts
+        WHERE requested_by_member_id = ${memberId}::uuid
+      )
+    `;
+    await sql`
+      ALTER TABLE broadcast_deliveries ENABLE TRIGGER broadcast_deliveries_no_delete
+    `;
+    await sql`
+      DELETE FROM broadcasts
+      WHERE requested_by_member_id = ${memberId}::uuid
+    `;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}

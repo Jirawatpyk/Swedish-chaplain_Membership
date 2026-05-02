@@ -95,6 +95,7 @@ function makeMembersBridge(state: State): MembersBridgePort {
     async markBroadcastsAcknowledged() {
       return ok({ previouslyNull: true });
     },
+    async getMemberPreferredLocale() { return null; },
   };
 }
 

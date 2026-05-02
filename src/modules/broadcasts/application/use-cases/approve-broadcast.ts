@@ -19,14 +19,19 @@
  * member-notification outbox enqueue inside single tx.
  */
 import { err, ok, type Result } from '@/lib/result';
-import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
-
-export type NotificationLocale = 'en' | 'th' | 'sv';
+import type { MembersBridgePort } from '../ports/members-bridge-port';
+import { enqueueBroadcastMemberNotification } from '../enqueue-member-notification';
+// Verify-fix R4 (Types-#1, 2026-05-02): re-export canonical `Locale`
+// from `@/i18n/config` instead of duplicating the union literal in
+// every use-case file. Single source of truth; adding a 4th locale
+// (e.g. `de`) now requires touching ONE file.
+import type { Locale } from '@/i18n/config';
+export type NotificationLocale = Locale;
 
 const MIN_SCHEDULE_LEAD_MS = 5 * 60 * 1000;
 
@@ -62,6 +67,13 @@ export interface ApproveBroadcastDeps {
    * compile; production composition root always supplies it.
    */
   readonly emailTransactional?: EmailTransactionalPort;
+  /**
+   * Verify-fix R4 (Types-#6, 2026-05-02) — used to resolve member's
+   * preferred locale (`getMemberPreferredLocale`); falls back to
+   * `notificationLocale` input → `'en'` if both null. Optional for
+   * test back-compat.
+   */
+  readonly membersBridge?: MembersBridgePort;
 }
 
 export interface ApproveBroadcastInput {
@@ -136,6 +148,7 @@ export async function approveBroadcast(
             approvedByUserId: input.actorUserId,
             scheduledFor,
           },
+          'submitted', // R4 Types-#5 — race-guard against concurrent action
         );
       } catch {
         const refresh = await deps.broadcastsRepo.findByIdInTx(
@@ -176,13 +189,34 @@ export async function approveBroadcast(
       // FR-002 precondition j) NOT current `members.primary_contact_email`
       // — preserves the "the email goes to whoever submitted, even if
       // they later changed their primary contact" semantics.
-      if (deps.emailTransactional && approved.replyToEmail.length > 0) {
-        await enqueueApprovedNotification({
+      //
+      // Verify-fix R4 (Simplify-#2): uses shared
+      // `enqueueBroadcastMemberNotification` helper (was 3 near-
+      // identical helpers across approve/reject/cancel; now one).
+      // Verify-fix R4 (Types-#6): locale resolution priority chain
+      // `memberPreferred ?? notificationLocale (route default) ?? 'en'`.
+      // Best-effort lookup — bridge throw → falls through to next.
+      if (deps.emailTransactional) {
+        let memberPreferred: 'en' | 'th' | 'sv' | null = null;
+        if (deps.membersBridge) {
+          try {
+            memberPreferred = await deps.membersBridge.getMemberPreferredLocale(
+              deps.tenant,
+              approved.requestedByMemberId,
+            );
+          } catch {
+            // Best-effort — fall through to tenant default
+          }
+        }
+        await enqueueBroadcastMemberNotification({
           tenant: deps.tenant,
           emailTransactional: deps.emailTransactional,
           broadcast: approved,
-          scheduledFor,
-          locale: input.notificationLocale ?? 'en',
+          variant: {
+            templateKey: 'broadcast_approved',
+            scheduledForIso: scheduledFor.toISOString(),
+          },
+          locale: memberPreferred ?? input.notificationLocale ?? 'en',
           tx,
         });
       }
@@ -202,43 +236,6 @@ export async function approveBroadcast(
   }
 }
 
-/**
- * G2 closure helper — enqueue the post-approval member notification.
- * Best-effort: failures are logged + swallowed.
- */
-async function enqueueApprovedNotification(args: {
-  readonly tenant: TenantContext;
-  readonly emailTransactional: EmailTransactionalPort;
-  readonly broadcast: Broadcast;
-  readonly scheduledFor: Date;
-  readonly locale: NotificationLocale;
-  readonly tx: unknown;
-}): Promise<void> {
-  try {
-    await args.emailTransactional.sendMemberEmail(
-      args.tenant,
-      {
-        to: args.broadcast.replyToEmail,
-        subject: args.broadcast.subject,
-        templateKey: 'broadcast_approved',
-        payload: {
-          broadcastId: args.broadcast.broadcastId,
-          broadcastSubject: args.broadcast.subject,
-          memberDisplayName: args.broadcast.fromName,
-          scheduledForIso: args.scheduledFor.toISOString(),
-        },
-        locale: args.locale,
-      },
-      args.tx,
-    );
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: args.tenant.slug,
-        broadcastId: args.broadcast.broadcastId as string,
-      },
-      'broadcasts.approved_email.enqueue_failed',
-    );
-  }
-}
+// Verify-fix R4 (Simplify-#2, 2026-05-02): local enqueueApprovedNotification
+// helper removed — replaced by shared `enqueueBroadcastMemberNotification`
+// in `../enqueue-member-notification.ts`.

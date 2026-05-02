@@ -473,6 +473,16 @@
         "sourceYearEmpty": "Inga paket hittades för {sourceYear}."
       }
     },
+    "membersPreferredLocale": {
+      "title": "Språk för aviseringar",
+      "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på \"Använd kammarstandard\" för att följa kammarens inställning.",
+      "useTenantDefault": "Använd kammarstandard",
+      "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
+      "save": "Spara",
+      "savedToast": "Aviseringsspråk uppdaterat.",
+      "errorToast": "Kunde inte spara inställningen. Försök igen.",
+      "loading": "Läser in…"
+    },
     "members": {
       "title": "Medlemmar",
       "overrideReason": {
@@ -1690,6 +1700,20 @@
     "loadingForm": "Laddar formulär"
   },
   "portal": {
+    "preferredLocale": {
+      "title": "Språk för aviseringar",
+      "description": "Välj språket för de mejl du får (utskicksgodkännanden, fakturor, lösenordsåterställning). Lämna på \"Använd kammarstandard\" för att följa kammarens inställning.",
+      "useTenantDefault": "Använd kammarstandard",
+      "options": {
+        "en": "English",
+        "th": "ไทย",
+        "sv": "Svenska"
+      },
+      "save": "Spara inställning",
+      "savedToast": "Aviseringsspråk uppdaterat.",
+      "errorToast": "Kunde inte spara inställningen. Försök igen.",
+      "loading": "Läser in…"
+    },
     "invoices": {
       "title": "Fakturor",
       "subtitle": "Ditt företags fakturor och skattekvitton.",

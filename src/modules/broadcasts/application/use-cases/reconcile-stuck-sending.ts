@@ -227,6 +227,7 @@ async function markSent(
         quotaYearConsumed: quotaYear,
         quotaConsumedAt: now,
       },
+      'sending', // R4 Types-#5 — reconcile only fires on 'sending' rows
     );
 
     await deps.audit.emit(tx, {
@@ -340,6 +341,7 @@ async function markFailedToDispatch(
         failedToDispatchAt: now,
         failureReason: reason,
       },
+      'sending', // R4 Types-#5 — reconcile only fires on 'sending' rows
     );
     await deps.audit.emit(tx, buildAudit('broadcast_resend_resource_missing', {
       tenantId,

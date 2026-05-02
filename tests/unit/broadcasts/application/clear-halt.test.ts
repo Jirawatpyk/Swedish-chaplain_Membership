@@ -81,6 +81,7 @@ function makeMembersBridge(opts: {
       async markBroadcastsAcknowledged() {
         return ok({ previouslyNull: true });
       },
+      async getMemberPreferredLocale() { return null; },
     },
   };
 }

@@ -505,6 +505,7 @@ export async function submitBroadcast(
           submittedAt: now,
           estimatedRecipientCount: resolved.value.estimatedCount,
         },
+        'draft', // R4 Types-#5 — race-guard
       );
 
       // Atomic audit emit (same tx)

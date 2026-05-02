@@ -33,6 +33,7 @@ vi.mock('@/modules/broadcasts', () => ({
     UUID_RE.test(id)
       ? { ok: true, value: id }
       : { ok: false, error: { kind: 'invalid_uuid' } },
+  tenantDefaultLocaleFor: () => 'en',
   emailTransactionalBridge: {
     sendMemberEmail: (...args: unknown[]) => sendMemberEmailMock(...args),
   },
@@ -149,7 +150,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
     expect(typeof body.rejectedAt).toBe('string');
   });
 
-  it('200 happy: triggers best-effort member notification email with verbatim reason', async () => {
+  it('200 happy: passes verbatim rejectionReason to use-case (use-case enqueues notification IN-TX per G2)', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminCtx);
     rejectBroadcastMock.mockResolvedValueOnce(
       ok({
@@ -162,11 +163,15 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
       rejectionReason: 'Verbatim reason here',
     });
     await POST(req, ctx);
-    expect(sendMemberEmailMock).toHaveBeenCalledTimes(1);
-    const callArgs = (sendMemberEmailMock.mock.calls[0] as unknown[])?.[1] as
-      | { payload: { rejectionReason: string } }
+    // R4 verify-fix Simplify-#2 — route no longer enqueues post-tx;
+    // shared `enqueueMemberNotification` helper inside the use-case
+    // emits the outbox row IN-TX. Contract here = use-case received
+    // the verbatim rejectionReason from the request body.
+    expect(rejectBroadcastMock).toHaveBeenCalledTimes(1);
+    const useCaseInput = (rejectBroadcastMock.mock.calls[0] as unknown[])?.[1] as
+      | { rejectionReason: string }
       | undefined;
-    expect(callArgs?.payload.rejectionReason).toBe('Verbatim reason here');
+    expect(useCaseInput?.rejectionReason).toBe('Verbatim reason here');
   });
 
   it('400 invalid_body: empty rejectionReason fails zod min(1)', async () => {

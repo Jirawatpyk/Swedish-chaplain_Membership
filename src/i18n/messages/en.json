@@ -473,6 +473,16 @@
         "sourceYearEmpty": "No plans found for {sourceYear}."
       }
     },
+    "membersPreferredLocale": {
+      "title": "Notification language",
+      "description": "Override the language this member receives transactional emails in (broadcast approvals, invoices, etc.). Leave on \"Use chamber default\" to follow the tenant default.",
+      "useTenantDefault": "Use chamber default",
+      "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
+      "save": "Save preference",
+      "savedToast": "Notification language updated.",
+      "errorToast": "Could not save preference. Please try again.",
+      "loading": "Loading…"
+    },
     "members": {
       "title": "Members",
       "overrideReason": {
@@ -1690,6 +1700,20 @@
     "loadingForm": "Loading form"
   },
   "portal": {
+    "preferredLocale": {
+      "title": "Notification language",
+      "description": "Choose the language for the emails you receive (broadcast approvals, invoices, password resets). Leave on \"Use chamber default\" to follow your chamber's setting.",
+      "useTenantDefault": "Use chamber default",
+      "options": {
+        "en": "English",
+        "th": "ไทย",
+        "sv": "Svenska"
+      },
+      "save": "Save preference",
+      "savedToast": "Notification language updated.",
+      "errorToast": "Could not save preference. Please try again.",
+      "loading": "Loading…"
+    },
     "invoices": {
       "title": "Invoices",
       "subtitle": "Your company's invoices and tax receipts.",

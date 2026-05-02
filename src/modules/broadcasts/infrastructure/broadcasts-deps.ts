@@ -145,6 +145,9 @@ export function makeApproveBroadcastDeps(
     clock: systemClock,
     // G2 closure (verify-fix 2026-05-02 — US2 wire-up).
     emailTransactional: emailTransactionalBridge,
+    // R4 Types-#6 — member-preferred-locale lookup (today returns
+    // null; future-extensibility for F12 white-label).
+    membersBridge,
   };
 }
 
@@ -159,6 +162,9 @@ export function makeRejectBroadcastDeps(
     clock: systemClock,
     // G2 closure (verify-fix 2026-05-02 — US2 wire-up).
     emailTransactional: emailTransactionalBridge,
+    // R4 Types-#6 — member-preferred-locale lookup (today returns
+    // null; future-extensibility for F12 white-label).
+    membersBridge,
   };
 }
 
@@ -173,6 +179,9 @@ export function makeCancelBroadcastDeps(
     clock: systemClock,
     // G2 closure (verify-fix 2026-05-02 — US2 wire-up).
     emailTransactional: emailTransactionalBridge,
+    // R4 Types-#6 — member-preferred-locale lookup (today returns
+    // null; future-extensibility for F12 white-label).
+    membersBridge,
   };
 }
 

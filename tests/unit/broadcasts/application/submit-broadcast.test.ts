@@ -131,6 +131,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     async markBroadcastsAcknowledged() {
       return ok({ previouslyNull: true });
     },
+    async getMemberPreferredLocale() { return null; },
   };
 }
 

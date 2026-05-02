@@ -181,6 +181,14 @@ async function failDispatchAndAudit(
         input.broadcastId,
         'failed_to_dispatch',
         { failedToDispatchAt: now, failureReason: reason },
+        // R4 Types-#5 — failDispatchAndAudit is only invoked from the
+        // dispatch use-case after `lockForUpdate('approved')` confirmed
+        // the row was 'approved' at scan time. If a concurrent admin
+        // cancelled in between, the conditional UPDATE returns 0 rows
+        // → BroadcastConcurrentMutationError → caught by the outer
+        // try/catch + logged as cleanup_failed (acceptable: the cancel
+        // succeeded, our terminal-fail intent was correctly skipped).
+        'approved',
       );
       await deps.audit.emit(tx, {
         tenantId: deps.tenant.slug,
@@ -530,19 +538,28 @@ export async function dispatchScheduledBroadcast(
         (shape.subKind as 'network' | 'timeout' | 'server_5xx' | 'api') ?? 'api';
       const reason = shape.reason ?? 'retryable';
 
-      const pastBudget =
-        broadcast.scheduledFor !== null &&
-        now.getTime() - broadcast.scheduledFor.getTime() > RETRY_BUDGET_MS;
+      // Verify-fix R4 (Simplify-#4, 2026-05-02): hoist scheduledFor +
+      // elapsedMs locals so subsequent uses don't need `!` non-null
+      // assertions (previously 4 instances). pastBudget definition
+      // narrows scheduledFor to non-null implicitly, but TS doesn't
+      // propagate that narrowing across the if-block boundary.
+      const scheduledFor = broadcast.scheduledFor;
+      const elapsedMs =
+        scheduledFor !== null ? now.getTime() - scheduledFor.getTime() : 0;
+      const pastBudget = scheduledFor !== null && elapsedMs > RETRY_BUDGET_MS;
 
       if (pastBudget) {
+        // scheduledFor is non-null here by pastBudget definition; type
+        // narrowing requires re-assignment to the locally-bound const.
+        const scheduledForIso = scheduledFor.toISOString();
         logger.error(
           {
             tenantId: deps.tenant.slug,
             broadcastId: input.broadcastId as string,
             subKind,
             reason,
-            scheduledFor: broadcast.scheduledFor!.toISOString(),
-            elapsedMs: now.getTime() - broadcast.scheduledFor!.getTime(),
+            scheduledFor: scheduledForIso,
+            elapsedMs,
             severity: 'critical',
           },
           'broadcasts.dispatch.retry_budget_exhausted',
@@ -564,8 +581,8 @@ export async function dispatchScheduledBroadcast(
             reason: budgetReason,
             subKind,
             originalReason: reason,
-            scheduledFor: broadcast.scheduledFor!.toISOString(),
-            elapsedMs: now.getTime() - broadcast.scheduledFor!.getTime(),
+            scheduledFor: scheduledForIso,
+            elapsedMs,
             failedAt: now.toISOString(),
           },
           'retry_budget_exhausted',

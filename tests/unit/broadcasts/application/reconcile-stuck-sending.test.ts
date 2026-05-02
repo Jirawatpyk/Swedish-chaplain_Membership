@@ -198,6 +198,7 @@ function makeMembersBridge(): MembersBridgePort {
     async getMembersHaltedInTenant() { return []; },
     async setMemberHalt() { return ok(undefined); },
     async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },
+    async getMemberPreferredLocale() { return null; },
   };
 }
 

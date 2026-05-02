@@ -149,6 +149,26 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
     }
   });
 
+  it('R4 Tests-Gap#3: AS4 — cancelled broadcast does NOT count toward reserved (quota released)', async () => {
+    // Verify-fix R4 (2026-05-02): spec AS4 (line 326) explicitly says
+    // "the quota reservation is released" on cancel. The repo SQL
+    // (`drizzle-broadcasts-repo.ts:667`) does NOT include 'cancelled'
+    // in the reserved-status set — but that contract is invisible
+    // unless a test asserts it. Mirrors the failed_to_dispatch
+    // assertion from Tests-Gap#1: contract locked at the use-case
+    // boundary so a future SQL refactor can't silently break AS4.
+    const deps = makeDeps({ cap: 6, used: 0, reserved: 0 });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // After cancel, the row is in 'cancelled' status which is NOT in
+      // the reserved set (excluded from `IN ('submitted', 'approved',
+      // 'failed_to_dispatch')`). reserved = 0, full quota available.
+      expect(result.value.counter.reserved).toBe(0);
+      expect(result.value.counter.remaining).toBe(6);
+    }
+  });
+
   it('R3 Tests-Gap#1: failed_to_dispatch holds the reservation slot per spec AS2', async () => {
     // Verify-fix R3 (2026-05-02): spec.md US6 AS2 (line 324) requires
     // `failed_to_dispatch` to HOLD the quota slot indefinitely (admin

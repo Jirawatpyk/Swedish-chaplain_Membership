@@ -94,6 +94,8 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     updateBroadcastsAcknowledgedAtInTx: async () =>
       ok({ affected: 0, previouslyNull: true }),
     findPrimaryContactEmailInTx: async () => ok(null),
+    findPreferredLocaleInTx: async () => ok(null),
+    updatePreferredLocaleInTx: async () => ok({ affected: 0, previousValue: null }),
     findMemberByPrimaryContactEmailInTx: async () => ok(null),
     findLastPlanChangedAt: async () => ok(null),
   };

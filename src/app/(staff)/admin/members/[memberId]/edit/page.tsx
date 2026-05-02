@@ -31,6 +31,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EditMemberClient } from '@/components/members/edit-member-client';
+import { AdminPreferredLocaleCard } from '@/components/admin/admin-preferred-locale-card';
 import type { PlanOption } from '@/components/members/member-form';
 
 const UUID_RE =
@@ -111,6 +112,11 @@ export default async function EditMemberPage({ params }: PageProps) {
           </Link>
         }
       />
+      {/* R4 Types-#6 (2026-05-02) — preferred-locale picker section.
+          Card chrome + i18n title rendered inside the client component
+          via useTranslations('admin.membersPreferredLocale'). */}
+      <AdminPreferredLocaleCard memberId={member.memberId} />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{member.companyName}</CardTitle>

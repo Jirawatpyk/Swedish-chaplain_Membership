@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
+import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
@@ -27,6 +28,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function MemberAccountPage() {
   const { user } = await requireSession('member');
   const t = await getTranslations('auth.changePassword');
+  const tLocale = await getTranslations('portal.preferredLocale');
   const tShell = await getTranslations('shell.roleBadge');
 
   return (
@@ -46,6 +48,16 @@ export default async function MemberAccountPage() {
         </CardHeader>
         <CardContent>
           <ChangePasswordForm />
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>{tLocale('title')}</CardTitle>
+          <CardDescription>{tLocale('description')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PreferredLocaleForm />
         </CardContent>
       </Card>
     </FormContainer>

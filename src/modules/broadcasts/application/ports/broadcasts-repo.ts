@@ -133,16 +133,21 @@ export interface BroadcastsRepo {
    * transition via the Domain `transition()` policy. Adapter sets
    * the corresponding lifecycle timestamp + actor field per status.
    *
-   * **G1 closure (verify-fix 2026-05-02)** — when `expectedFromStatus`
-   * is supplied, the UPDATE adds `AND status = expectedFromStatus` to
-   * its WHERE clause. If 0 rows are updated (the row's status drifted
-   * since the caller read it — TOCTOU window between cron eligibility
-   * scan + dispatch transition), the adapter throws
-   * `BroadcastConcurrentMutationError`. Callers who do external work
-   * between read + write (e.g., dispatch use-case calling Resend
-   * outside the tx) should pass `expectedFromStatus` to close the
-   * race window. Existing call sites that omit it preserve the
-   * original unconditional-UPDATE behaviour.
+   * **`expectedFromStatus` is REQUIRED** (verify-fix R4 / Types-#5,
+   * 2026-05-02): the UPDATE adds `AND status = expectedFromStatus`
+   * to its WHERE clause. If 0 rows are updated (the row's status
+   * drifted since the caller read it — TOCTOU window between cron
+   * eligibility scan + dispatch transition, OR concurrent admin
+   * action), the adapter throws `BroadcastConcurrentMutationError`.
+   *
+   * Safe-by-default API: every caller MUST think about which source
+   * state they expect. Previously this was an optional positional
+   * parameter with unconditional-UPDATE default — the agent review
+   * flagged that as an anti-pattern (optional positional that
+   * silently changes SQL semantics; new transitions risked unsafe
+   * default). Required now: callers who don't have a source state
+   * to verify either (a) don't need this method, or (b) should
+   * acquire one via `lockForUpdate()` first.
    */
   applyTransition(
     tx: unknown,
@@ -150,7 +155,7 @@ export interface BroadcastsRepo {
     broadcastId: BroadcastId,
     target: BroadcastStatus,
     fields: Partial<Broadcast>,
-    expectedFromStatus?: BroadcastStatus,
+    expectedFromStatus: BroadcastStatus,
   ): Promise<Broadcast>;
 
   /**

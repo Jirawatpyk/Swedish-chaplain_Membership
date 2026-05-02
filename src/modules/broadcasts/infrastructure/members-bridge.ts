@@ -25,6 +25,7 @@ import {
   asMemberId,
   getMembersBySegment as f3GetMembersBySegment,
   getMemberPrimaryContact as f3GetMemberPrimaryContact,
+  getMemberPreferredLocale as f3GetMemberPreferredLocale,
   lookupContactEmailInTenant as f3LookupContactEmailInTenant,
   lookupMemberPrimaryContactEmailInTenant as f3LookupMemberPrimaryContactEmailInTenant,
   getMembersHaltedInTenant as f3GetMembersHaltedInTenant,
@@ -222,5 +223,28 @@ export const membersBridge: MembersBridgePort = {
     // would otherwise fall through silently. Treat as repo_error so the
     // route returns 500 instead of swallowing.
     return err({ kind: 'mark_ack.repo_error', cause: result.error });
+  },
+
+  /**
+   * Verify-fix R4 (Types-#6, 2026-05-02) — read `members.preferred_locale`
+   * via F3 `getMemberPreferredLocale` use-case. Returns null when the
+   * member has no preference set OR the lookup errored — both paths
+   * are equivalent at the call site (route falls back to tenant
+   * default locale either way), so we collapse `Result.err` to null
+   * here rather than propagate the error.
+   *
+   * Migration 0082 added the column + CHECK constraint. NULL is the
+   * default for legacy rows; admin sets per-member via the F3 edit
+   * screen (TODO post-F12 white-label).
+   */
+  async getMemberPreferredLocale(
+    tenantCtx: TenantContext,
+    memberId: string,
+  ): Promise<'en' | 'th' | 'sv' | null> {
+    const result = await f3GetMemberPreferredLocale(
+      { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
+      asMemberId(memberId),
+    );
+    return result.ok ? result.value : null;
   },
 };

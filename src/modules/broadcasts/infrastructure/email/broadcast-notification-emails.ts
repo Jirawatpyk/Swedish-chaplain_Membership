@@ -48,7 +48,10 @@ import svMessages from '@/i18n/messages/sv.json' with { type: 'json' };
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 
-export type BroadcastNotificationLocale = 'en' | 'th' | 'sv';
+// Verify-fix R4 (Types-#1, 2026-05-02): canonical `Locale` from
+// `@/i18n/config` — was a 4th independent declaration before.
+import type { Locale } from '@/i18n/config';
+export type BroadcastNotificationLocale = Locale;
 
 export interface BuiltEmail {
   readonly subject: string;

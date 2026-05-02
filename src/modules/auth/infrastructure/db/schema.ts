@@ -120,6 +120,9 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'auto_email_delivery_failed',
   // --- Hybrid A+B duplicate-email handling — added by migration 0032 ---
   'contact_linked_to_user',
+  // --- F3 R4 verify-fix Types-#6 (2026-05-02) — preferred_locale write
+  //     path emits this audit event (admin + member-self routes). ---
+  'member_preferred_locale_changed',
   // --- F5 online-payment events (16) — added by migration 0040 ---
   'payment_initiated',
   'payment_succeeded',

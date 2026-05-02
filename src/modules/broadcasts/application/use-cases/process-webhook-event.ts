@@ -455,6 +455,7 @@ export async function processWebhookEvent(
                 quotaYearConsumed: quotaYear,
                 quotaConsumedAt: now,
               },
+              'sending', // R4 Types-#5 — webhook only fires on 'sending' rows
             );
             transitionedToSent = true;
 

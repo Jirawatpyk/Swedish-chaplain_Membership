@@ -46,7 +46,9 @@ export type F3AuditEventType =
   | 'invitation_bounced'
   | 'bulk_action_rate_limit_exceeded'
   | 'member_portal_invite_queued'
-  | 'contact_linked_to_user';
+  | 'contact_linked_to_user'
+  // R4 verify-fix Types-#6 (2026-05-02) — preferred_locale write path.
+  | 'member_preferred_locale_changed';
 
 // F7 cross-module event types (`broadcast_member_dispatch_resumed` +
 // `member_acknowledged_broadcasts_terms`) are NOT in this union —

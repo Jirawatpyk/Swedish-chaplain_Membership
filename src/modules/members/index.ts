@@ -326,6 +326,26 @@ export {
 } from './application/use-cases/get-member-primary-contact';
 
 export {
+  getMemberPreferredLocale,
+  type GetMemberPreferredLocaleDeps,
+  type LocaleLiteral,
+} from './application/use-cases/get-member-preferred-locale';
+
+export {
+  setMemberPreferredLocale,
+  type SetMemberPreferredLocaleActor,
+  type SetMemberPreferredLocaleDeps,
+  type SetMemberPreferredLocaleError,
+  type SetMemberPreferredLocaleInput,
+  type SetMemberPreferredLocaleOutcome,
+} from './application/use-cases/set-member-preferred-locale';
+
+// R4 Types-#6 — F3 adapters needed by routes that wire the
+// `setMemberPreferredLocale` use-case (admin + member self-service).
+export { drizzleMemberRepo as f3DrizzleMemberRepo } from './infrastructure/db/drizzle-member-repo';
+export { drizzleAuditAdapter as f3DrizzleAuditAdapter } from './infrastructure/audit/audit-adapter';
+
+export {
   lookupContactEmailInTenant,
   type ContactEmailLookupResult,
   type LookupContactEmailInTenantDeps,

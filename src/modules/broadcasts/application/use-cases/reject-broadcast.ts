@@ -13,14 +13,16 @@
  */
 import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
-import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
-
-export type NotificationLocale = 'en' | 'th' | 'sv';
+import type { MembersBridgePort } from '../ports/members-bridge-port';
+import { enqueueBroadcastMemberNotification } from '../enqueue-member-notification';
+// Verify-fix R4 (Types-#1, 2026-05-02) — see approve-broadcast.ts.
+import type { Locale } from '@/i18n/config';
+export type NotificationLocale = Locale;
 
 const MIN_REASON_LENGTH = 1;
 const MAX_REASON_LENGTH = 2000;
@@ -49,6 +51,8 @@ export interface RejectBroadcastDeps {
   readonly clock: { now(): Date };
   /** G2 closure (verify-fix 2026-05-02) — best-effort post-rejection email. */
   readonly emailTransactional?: EmailTransactionalPort;
+  /** R4 Types-#6 — see approve-broadcast.ts. */
+  readonly membersBridge?: MembersBridgePort;
 }
 
 export interface RejectBroadcastInput {
@@ -119,6 +123,7 @@ export async function rejectBroadcast(
             rejectedByUserId: input.actorUserId,
             rejectionReason: input.rejectionReason,
           },
+          'submitted', // R4 Types-#5 — race-guard against concurrent action
         );
       } catch {
         const refresh = await deps.broadcastsRepo.findByIdInTx(
@@ -151,13 +156,29 @@ export async function rejectBroadcast(
       // G2 closure (verify-fix 2026-05-02) — VERBATIM rejection reason
       // travels in the email payload (FR-012). Audit retains hash only.
       // Recipient = `replyToEmail` (immutable submit-time snapshot).
-      if (deps.emailTransactional && rejected.replyToEmail.length > 0) {
-        await enqueueRejectedNotification({
+      // Verify-fix R4 (Simplify-#2 + Types-#6): shared helper +
+      // member-preferred-locale chain.
+      if (deps.emailTransactional) {
+        let memberPreferred: 'en' | 'th' | 'sv' | null = null;
+        if (deps.membersBridge) {
+          try {
+            memberPreferred = await deps.membersBridge.getMemberPreferredLocale(
+              deps.tenant,
+              rejected.requestedByMemberId,
+            );
+          } catch {
+            // Best-effort
+          }
+        }
+        await enqueueBroadcastMemberNotification({
           tenant: deps.tenant,
           emailTransactional: deps.emailTransactional,
           broadcast: rejected,
-          rejectionReason: input.rejectionReason,
-          locale: input.notificationLocale ?? 'en',
+          variant: {
+            templateKey: 'broadcast_rejected',
+            rejectionReason: input.rejectionReason,
+          },
+          locale: memberPreferred ?? input.notificationLocale ?? 'en',
           tx,
         });
       }
@@ -175,39 +196,5 @@ export async function rejectBroadcast(
   }
 }
 
-async function enqueueRejectedNotification(args: {
-  readonly tenant: TenantContext;
-  readonly emailTransactional: EmailTransactionalPort;
-  readonly broadcast: Broadcast;
-  readonly rejectionReason: string;
-  readonly locale: NotificationLocale;
-  readonly tx: unknown;
-}): Promise<void> {
-  try {
-    await args.emailTransactional.sendMemberEmail(
-      args.tenant,
-      {
-        to: args.broadcast.replyToEmail,
-        subject: args.broadcast.subject,
-        templateKey: 'broadcast_rejected',
-        payload: {
-          broadcastId: args.broadcast.broadcastId,
-          broadcastSubject: args.broadcast.subject,
-          memberDisplayName: args.broadcast.fromName,
-          rejectionReason: args.rejectionReason,
-        },
-        locale: args.locale,
-      },
-      args.tx,
-    );
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: args.tenant.slug,
-        broadcastId: args.broadcast.broadcastId as string,
-      },
-      'broadcasts.rejected_email.enqueue_failed',
-    );
-  }
-}
+// Verify-fix R4 (Simplify-#2, 2026-05-02): local enqueueRejectedNotification
+// helper removed — replaced by shared `enqueueBroadcastMemberNotification`.

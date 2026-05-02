@@ -23,6 +23,9 @@ import type { Page } from '@playwright/test';
 import postgres from 'postgres';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+// Verify-fix R4 (Simplify-#1, 2026-05-02) — extracted to helpers
+// (was duplicated byte-identical with scheduled-send-cron.spec.ts).
+import { wipeE2EMemberBroadcasts } from './helpers/broadcasts-seed';
 
 /**
  * Bypass for AS6 testing — production cron + Resend dispatch land in
@@ -37,51 +40,6 @@ import { clearE2ERateLimits } from './helpers/rate-limit';
  * mirrors `tests/e2e/helpers/broadcasts-seed.ts` pattern. Skips if
  * `DATABASE_URL` is missing (CI without DB access).
  */
-/**
- * See `scheduled-send-cron.spec.ts wipeE2EMemberBroadcasts` JSDoc.
- * Resets e2e-member's broadcast history so the quota slot is free.
- */
-async function wipeE2EMemberBroadcasts(): Promise<void> {
-  const dbUrl = process.env.DATABASE_URL;
-  const memberEmail = process.env.E2E_MEMBER_EMAIL;
-  const tenantId = process.env.E2E_TENANT_SLUG ?? 'swecham';
-  if (!dbUrl || !memberEmail) return;
-  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
-  try {
-    const memberRows = await sql<Array<{ member_id: string }>>`
-      SELECT m.member_id::text AS member_id
-      FROM users u
-      JOIN contacts c
-        ON c.linked_user_id = u.id AND c.tenant_id = ${tenantId}
-      JOIN members m
-        ON m.member_id = c.member_id AND m.tenant_id = ${tenantId}
-      WHERE u.email = ${memberEmail}
-      LIMIT 1
-    `;
-    const memberId = memberRows[0]?.member_id;
-    if (!memberId) return;
-    await sql`
-      ALTER TABLE broadcast_deliveries DISABLE TRIGGER broadcast_deliveries_no_delete
-    `;
-    await sql`
-      DELETE FROM broadcast_deliveries
-      WHERE broadcast_id IN (
-        SELECT broadcast_id FROM broadcasts
-        WHERE requested_by_member_id = ${memberId}::uuid
-      )
-    `;
-    await sql`
-      ALTER TABLE broadcast_deliveries ENABLE TRIGGER broadcast_deliveries_no_delete
-    `;
-    await sql`
-      DELETE FROM broadcasts
-      WHERE requested_by_member_id = ${memberId}::uuid
-    `;
-  } finally {
-    await sql.end({ timeout: 5 });
-  }
-}
-
 async function forceBroadcastToSending(broadcastId: string): Promise<boolean> {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) return false;
