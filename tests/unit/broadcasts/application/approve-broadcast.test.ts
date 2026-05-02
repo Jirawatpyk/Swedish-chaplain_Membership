@@ -280,6 +280,74 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });
 
+  // ===== R5 verify-fix Tests-H5 (2026-05-02) — locale chain =====
+  // Spec: `memberPreferred ?? input.notificationLocale ?? 'en'`.
+  // Locks the per-recipient locale resolution that motivated the
+  // entire Types-#6 OPTION B chain (F3 schema → bridge → use-case).
+
+  it('locale chain: memberPreferred WINS over input.notificationLocale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue('sv'),
+    } as unknown as Parameters<typeof approveBroadcast>[0]['membersBridge'];
+    await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(email.memberCalls[0]?.locale).toBe('sv');
+  });
+
+  it('locale chain: memberPreferred null → falls back to input.notificationLocale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
+    } as unknown as Parameters<typeof approveBroadcast>[0]['membersBridge'];
+    await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(email.memberCalls[0]?.locale).toBe('th');
+  });
+
+  it('locale chain: both null → final fallback to "en"', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
+    } as unknown as Parameters<typeof approveBroadcast>[0]['membersBridge'];
+    await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      baseInput, // no notificationLocale
+    );
+    expect(email.memberCalls[0]?.locale).toBe('en');
+  });
+
   // ---- send_now path ---------------------------------------------------
 
   it('happy send_now: applyTransition(approved, scheduledFor=now) + audit broadcast_approved', async () => {

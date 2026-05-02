@@ -1712,7 +1712,8 @@
       "save": "Save preference",
       "savedToast": "Notification language updated.",
       "errorToast": "Could not save preference. Please try again.",
-      "loading": "Loading…"
+      "loading": "Loading…",
+      "loadError": "Could not load your current preference. Please refresh the page and try again."
     },
     "invoices": {
       "title": "Invoices",

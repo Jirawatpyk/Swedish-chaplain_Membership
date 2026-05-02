@@ -13,6 +13,7 @@
  */
 import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
@@ -166,7 +167,16 @@ export async function rejectBroadcast(
               deps.tenant,
               rejected.requestedByMemberId,
             );
-          } catch {
+          } catch (e) {
+            logger.warn(
+              {
+                err: e instanceof Error ? e.message : String(e),
+                tenantId: deps.tenant.slug,
+                memberId: rejected.requestedByMemberId,
+                useCase: 'reject-broadcast',
+              },
+              'broadcasts.locale_resolve_failed',
+            );
             // Best-effort
           }
         }

@@ -13,12 +13,16 @@
  */
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '../../domain/member';
 import type { AuditPort } from '../ports/audit-port';
 import type { MemberRepo } from '../ports/member-repo';
 
-export type LocaleLiteral = 'en' | 'th' | 'sv';
+// R5 verify-fix Types-#H8 (2026-05-02): alias canonical Locale instead
+// of duplicating the union literal. Adding a 4th locale in
+// `src/i18n/config.ts` now propagates here automatically.
+export type LocaleLiteral = import('@/i18n/config').Locale;
 
 export type SetMemberPreferredLocaleActor =
   | { readonly kind: 'admin'; readonly userId: string }
@@ -97,6 +101,19 @@ export async function setMemberPreferredLocale(
       });
     });
   } catch (e) {
+    // R5 verify-fix Errors-H4 (2026-05-02): log at error before
+    // returning structured result. Defends against callers that wrap
+    // the use-case without logging at their own boundary (e.g. CLI
+    // scripts, future cron). The HTTP routes also log on `!result.ok`
+    // — duplicate is acceptable; missing log is not.
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: deps.tenant.slug,
+        memberId: input.memberId,
+      },
+      'members.set_preferred_locale.unexpected',
+    );
     return err({ kind: 'repo_error', cause: e });
   }
 }

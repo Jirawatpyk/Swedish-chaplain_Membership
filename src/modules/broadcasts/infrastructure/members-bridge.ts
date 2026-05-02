@@ -18,6 +18,7 @@
  * (architectural deviation documented in plan.md § Complexity Tracking).
  */
 import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import {
   drizzleMemberRepo,
@@ -226,16 +227,17 @@ export const membersBridge: MembersBridgePort = {
   },
 
   /**
-   * Verify-fix R4 (Types-#6, 2026-05-02) — read `members.preferred_locale`
-   * via F3 `getMemberPreferredLocale` use-case. Returns null when the
-   * member has no preference set OR the lookup errored — both paths
-   * are equivalent at the call site (route falls back to tenant
-   * default locale either way), so we collapse `Result.err` to null
-   * here rather than propagate the error.
+   * R5 verify-fix Errors-C2 (2026-05-02) — read `members.preferred_locale`
+   * via F3 `getMemberPreferredLocale` use-case. Best-effort: F3 lookup
+   * errors are LOGGED at warn (forensic trail for ops on Neon outage /
+   * RLS denial / schema drift) then collapsed to null so the broadcast
+   * dispatch path falls back to the tenant default locale rather than
+   * blocking on a degraded sub-system.
    *
-   * Migration 0082 added the column + CHECK constraint. NULL is the
-   * default for legacy rows; admin sets per-member via the F3 edit
-   * screen (TODO post-F12 white-label).
+   * Admin sets via AdminPreferredLocaleCard on /admin/members/[id]/edit;
+   * member sets via PreferredLocaleForm on /portal/account. Migration
+   * 0082 added the column + CHECK constraint; NULL is the default for
+   * legacy rows.
    */
   async getMemberPreferredLocale(
     tenantCtx: TenantContext,
@@ -245,6 +247,17 @@ export const membersBridge: MembersBridgePort = {
       { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
       asMemberId(memberId),
     );
-    return result.ok ? result.value : null;
+    if (!result.ok) {
+      logger.warn(
+        {
+          err: result.error,
+          tenantId: tenantCtx.slug,
+          memberId,
+        },
+        'broadcasts.members_bridge.preferred_locale_lookup_failed',
+      );
+      return null;
+    }
+    return result.value;
   },
 };

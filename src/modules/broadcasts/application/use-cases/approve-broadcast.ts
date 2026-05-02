@@ -19,6 +19,7 @@
  * member-notification outbox enqueue inside single tx.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
@@ -204,8 +205,19 @@ export async function approveBroadcast(
               deps.tenant,
               approved.requestedByMemberId,
             );
-          } catch {
-            // Best-effort — fall through to tenant default
+          } catch (e) {
+            // R5 verify-fix Errors-H3 (2026-05-02): log before swallow
+            // so a degraded membersBridge produces a forensic trail
+            // (was empty catch, locale downgrade was invisible).
+            logger.warn(
+              {
+                err: e instanceof Error ? e.message : String(e),
+                tenantId: deps.tenant.slug,
+                memberId: approved.requestedByMemberId,
+                useCase: 'approve-broadcast',
+              },
+              'broadcasts.locale_resolve_failed',
+            );
           }
         }
         await enqueueBroadcastMemberNotification({

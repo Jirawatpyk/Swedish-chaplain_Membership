@@ -10,8 +10,10 @@
  * Idempotent: same value → 200 OK + `{outcome: 'unchanged'}` (no
  * audit emit).
  *
- * The member sees their next email notification (broadcast or other
- * F3+F4+F7 transactional surface) in the new locale.
+ * F7 broadcast notifications honor this preference (approve/reject/
+ * cancel/delivered/failed-to-dispatch). F3/F4 transactional surfaces
+ * still use the tenant default; threading the locale chain into those
+ * is post-MVP.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';

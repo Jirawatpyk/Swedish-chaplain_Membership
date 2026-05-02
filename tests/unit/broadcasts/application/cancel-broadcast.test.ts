@@ -330,6 +330,70 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     );
   });
 
+  // ===== R5 verify-fix Tests-H5 (2026-05-02) — locale chain =====
+  it('locale chain: memberPreferred WINS over input.notificationLocale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing: makeBroadcast('submitted') });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue('sv'),
+    } as unknown as Parameters<typeof cancelBroadcast>[0]['membersBridge'];
+    await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(email.memberCalls[0]?.locale).toBe('sv');
+  });
+
+  it('locale chain: memberPreferred null → falls back to input.notificationLocale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing: makeBroadcast('submitted') });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
+    } as unknown as Parameters<typeof cancelBroadcast>[0]['membersBridge'];
+    await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(email.memberCalls[0]?.locale).toBe('th');
+  });
+
+  it('locale chain: both null → final fallback to "en"', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing: makeBroadcast('submitted') });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
+    } as unknown as Parameters<typeof cancelBroadcast>[0]['membersBridge'];
+    await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      baseInput,
+    );
+    expect(email.memberCalls[0]?.locale).toBe('en');
+  });
+
   // ---- Cutoff (FR-004a) ------------------------------------------------
 
   it.each<BroadcastStatus>([

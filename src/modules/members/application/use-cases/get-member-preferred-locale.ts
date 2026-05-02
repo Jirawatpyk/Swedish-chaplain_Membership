@@ -30,7 +30,8 @@ export type GetMemberPreferredLocaleDeps = {
   readonly memberRepo: MemberRepo;
 };
 
-export type LocaleLiteral = 'en' | 'th' | 'sv';
+// R5 verify-fix Types-#H8 (2026-05-02): alias canonical Locale.
+export type LocaleLiteral = import('@/i18n/config').Locale;
 
 export async function getMemberPreferredLocale(
   deps: GetMemberPreferredLocaleDeps,

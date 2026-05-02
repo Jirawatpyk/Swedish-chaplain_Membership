@@ -220,8 +220,16 @@ export async function cancelBroadcast(
               deps.tenant,
               cancelled.requestedByMemberId,
             );
-          } catch {
-            // Best-effort
+          } catch (e) {
+            logger.warn(
+              {
+                err: e instanceof Error ? e.message : String(e),
+                tenantId: deps.tenant.slug,
+                memberId: cancelled.requestedByMemberId,
+                useCase: 'cancel-broadcast',
+              },
+              'broadcasts.locale_resolve_failed',
+            );
           }
         }
         await enqueueBroadcastMemberNotification({

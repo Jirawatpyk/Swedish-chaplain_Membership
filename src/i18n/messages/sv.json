@@ -1712,7 +1712,8 @@
       "save": "Spara inställning",
       "savedToast": "Aviseringsspråk uppdaterat.",
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
-      "loading": "Läser in…"
+      "loading": "Läser in…",
+      "loadError": "Kunde inte läsa in din nuvarande inställning. Uppdatera sidan och försök igen."
     },
     "invoices": {
       "title": "Fakturor",

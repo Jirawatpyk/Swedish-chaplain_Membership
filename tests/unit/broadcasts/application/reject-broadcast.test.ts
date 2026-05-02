@@ -340,6 +340,70 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     }
   });
 
+  // ===== R5 verify-fix Tests-H5 (2026-05-02) — locale chain =====
+  it('locale chain: memberPreferred WINS over input.notificationLocale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue('sv'),
+    } as unknown as Parameters<typeof rejectBroadcast>[0]['membersBridge'];
+    await rejectBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(email.memberCalls[0]?.locale).toBe('sv');
+  });
+
+  it('locale chain: memberPreferred null → falls back to input.notificationLocale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
+    } as unknown as Parameters<typeof rejectBroadcast>[0]['membersBridge'];
+    await rejectBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(email.memberCalls[0]?.locale).toBe('th');
+  });
+
+  it('locale chain: both null → final fallback to "en"', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
+    } as unknown as Parameters<typeof rejectBroadcast>[0]['membersBridge'];
+    await rejectBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      baseInput,
+    );
+    expect(email.memberCalls[0]?.locale).toBe('en');
+  });
+
   // ---- Reason validation -------------------------------------------------
 
   it('rejects empty rejectionReason → broadcast_rejection_reason_required', async () => {

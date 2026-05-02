@@ -3,8 +3,9 @@
 -- Adds a per-member preferred locale for transactional notifications.
 -- F7 (Email Broadcast) uses this so SweCham members who prefer Swedish
 -- get email notifications in `sv` instead of the tenant default `th`.
--- F3 admin UI for setting this lands post-F12 white-label phase; for
--- now NULL = "use tenant default locale" (resolved by routes via
+-- Both surfaces ship in F7 R4: AdminPreferredLocaleCard on
+-- /admin/members/[id]/edit + PreferredLocaleForm on /portal/account.
+-- NULL = "use tenant default locale" (resolved by routes via
 -- `tenantDefaultLocaleFor(...)` chained after `getMemberPreferredLocale`).
 --
 -- Allowed values match the canonical `Locale` union in

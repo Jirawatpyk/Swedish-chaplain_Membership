@@ -1,11 +1,17 @@
 /**
- * R4 verify-fix Types-#6 (2026-05-02) — admin locale picker for a
+ * R5 verify-fix UX-H1+B2+M2 (2026-05-02) — admin locale picker for a
  * specific member.
  *
- * Mirrors the portal `PreferredLocaleForm` but PATCHes the admin
- * route at `/api/admin/members/[id]/preferred-locale` and seeds the
- * initial value from server-side props (avoids an extra GET roundtrip
- * since the parent page already has the member loaded).
+ * Mirrors the portal `PreferredLocaleForm`:
+ *  - PATCHes /api/admin/members/[id]/preferred-locale
+ *  - Seeds initial value from server prop (parent already loaded
+ *    `member.preferredLocale` via `getMember` — no extra GET roundtrip
+ *    on screen mount)
+ *  - Visually-hidden aria-live region announces save outcome to SRs
+ *  - Button shows Loader2 spinner during in-flight PATCH
+ *
+ * Closes the R4 data-loss footgun (admin clicked Save without seeing
+ * the current value → silently reset member's preference to null).
  */
 'use client';
 
@@ -13,6 +19,7 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 
@@ -20,19 +27,23 @@ type PreferredLocale = 'en' | 'th' | 'sv' | null;
 
 export interface AdminPreferredLocaleCardProps {
   readonly memberId: string;
+  readonly initialValue: PreferredLocale;
 }
 
 export function AdminPreferredLocaleCard({
   memberId,
+  initialValue,
 }: AdminPreferredLocaleCardProps): ReactElement {
   const t = useTranslations('admin.membersPreferredLocale');
-  // MVP — admin picks fresh value each visit. The PATCH route is
-  // idempotent on same value (returns `outcome.kind === 'unchanged'`,
-  // no audit emit). When the Member domain entity gains the
-  // preferredLocale field (F12 white-label phase), seed initial value
-  // from server props instead of starting at null.
-  const [value, setValue] = useState<PreferredLocale>(null);
+  const titleId = `admin-preferred-locale-title-${memberId}`;
+  const [value, setValue] = useState<PreferredLocale>(initialValue);
   const [saving, setSaving] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
+
+  function announce(msg: string) {
+    setAnnouncement(msg);
+    setTimeout(() => setAnnouncement(''), 3000);
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -49,11 +60,14 @@ export function AdminPreferredLocaleCard({
       );
       if (res.ok) {
         toast.success(t('savedToast'));
+        announce(t('savedToast'));
       } else {
         toast.error(t('errorToast'));
+        announce(t('errorToast'));
       }
     } catch {
       toast.error(t('errorToast'));
+      announce(t('errorToast'));
     } finally {
       setSaving(false);
     }
@@ -61,40 +75,46 @@ export function AdminPreferredLocaleCard({
 
   return (
     <div className="rounded-lg border bg-card text-card-foreground mb-6 p-6">
-      <h3 className="text-base font-semibold leading-none tracking-tight">
+      <h3
+        id={titleId}
+        className="text-base font-semibold leading-none tracking-tight"
+      >
         {t('title')}
       </h3>
       <p className="text-muted-foreground mt-1.5 text-sm">{t('description')}</p>
       <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-        <fieldset className="space-y-2">
-          <legend className="sr-only">{t('title')}</legend>
-        {(['__null', 'en', 'th', 'sv'] as const).map((opt) => {
-          const optValue: PreferredLocale = opt === '__null' ? null : opt;
-          const id = `admin-preferred-locale-${memberId}-${opt}`;
-          const label =
-            opt === '__null' ? t('useTenantDefault') : t(`options.${opt}`);
-          return (
-            <div key={opt} className="flex items-center gap-2">
-              <input
-                type="radio"
-                id={id}
-                name={`preferredLocale-${memberId}`}
-                value={opt}
-                checked={value === optValue}
-                onChange={() => setValue(optValue)}
-                className="h-4 w-4"
-                disabled={saving}
-              />
-              <Label htmlFor={id} className="cursor-pointer">
-                {label}
-              </Label>
-            </div>
-          );
-        })}
+        <fieldset className="space-y-2" aria-labelledby={titleId}>
+          {(['__null', 'en', 'th', 'sv'] as const).map((opt) => {
+            const optValue: PreferredLocale = opt === '__null' ? null : opt;
+            const id = `admin-preferred-locale-${memberId}-${opt}`;
+            const label =
+              opt === '__null' ? t('useTenantDefault') : t(`options.${opt}`);
+            return (
+              <div key={opt} className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  id={id}
+                  name={`preferredLocale-${memberId}`}
+                  value={opt}
+                  checked={value === optValue}
+                  onChange={() => setValue(optValue)}
+                  className="h-4 w-4"
+                  disabled={saving}
+                />
+                <Label htmlFor={id} className="cursor-pointer">
+                  {label}
+                </Label>
+              </div>
+            );
+          })}
         </fieldset>
         <Button type="submit" disabled={saving}>
+          {saving && <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />}
           {t('save')}
         </Button>
+        <span role="status" aria-live="polite" className="sr-only">
+          {announcement}
+        </span>
       </form>
     </div>
   );
