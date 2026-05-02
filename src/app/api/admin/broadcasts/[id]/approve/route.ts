@@ -16,9 +16,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
   approveBroadcast,
-  emailTransactionalBridge,
   makeApproveBroadcastDeps,
   parseBroadcastId,
+  tenantDefaultLocaleFor,
   type ApproveBroadcastError,
 } from '@/modules/broadcasts';
 import {
@@ -93,50 +93,15 @@ export async function POST(
       actorUserId: ctx.current.user.id,
       decision,
       requestId: ctx.requestId,
+      // E1 closure (verify-fix 2026-05-02) — tenant default locale
+      // for the post-approval member notification email. F12
+      // white-label scope will replace with per-recipient locale.
+      // Use-case enqueues IN-TX so audit + outbox commit atomically;
+      // route no longer enqueues post-tx (G2 single-source-of-truth).
+      notificationLocale: tenantDefaultLocaleFor(tenantCtx.slug),
     });
     if (!result.ok) {
       return mapApproveError(result.error, correlationId);
-    }
-
-    // Best-effort member email
-    try {
-      const broadcast = result.value.broadcast;
-      const replyTo = broadcast.replyToEmail;
-      if (replyTo.length > 0) {
-        await emailTransactionalBridge.sendMemberEmail(
-          tenantCtx,
-          {
-            to: replyTo,
-            subject: 'Your E-Blast was approved',
-            templateKey: 'broadcast_approved',
-            payload: {
-              broadcastId: broadcast.broadcastId,
-              decision: decision.mode,
-              scheduledFor: result.value.scheduledFor.toISOString(),
-            },
-            locale: 'en',
-          },
-          null,
-        );
-      }
-    } catch (e) {
-      // Review I5 — emit at error severity so log-aggregation alerts
-      // can enumerate "approvals where the member never got told." The
-      // approval itself succeeded (audit `broadcast_approved` already
-      // fired inside the use-case) — this is a notification-side
-      // best-effort failure that needs ops visibility for backfill.
-      logger.error(
-        {
-          err: e instanceof Error ? e.message : String(e),
-          correlationId,
-          tenantId: tenantCtx.slug,
-          broadcastId: parsedId.value as string,
-          recipient: result.value.broadcast.replyToEmail,
-          templateKey: 'broadcast_approved',
-          severity: 'notification_email',
-        },
-        'broadcasts.approve.member_email_enqueue_failed',
-      );
     }
 
     return NextResponse.json(

@@ -433,6 +433,27 @@ Test additions: D1 file (8 cases) brings broadcasts unit suite from 387 → 395 
 
 **Checkpoint US6**: Scheduled future-dated sends work via cron-job.org 5-min trigger. Concurrent-worker idempotency guaranteed.
 
+### Verify-fix carry-forward (Phase 8, 2026-05-02)
+
+Closes all 6 findings from `/speckit.verify.run` Phase 8 round 1 + 3 findings from round 2. No deferrals per "ทำให้จบใน 7 ไม่ defer ทั้งหมด".
+
+**Round 1 (commit `6fc0cfc`)**:
+
+- [X] **E1 (HIGH)** — AS1 audit payload extended with `scheduledFor + actualSendAt + delaySeconds` (was missing per spec.md US6 AS1 line 323).
+- [X] **D1 (MEDIUM)** — Happy-path unit test asserts the AS1 payload shape; future drops caught at test time.
+- [X] **E2 (MEDIUM)** — New OTel counter `broadcasts.dispatch_budget_exhausted{tenant, sub_kind}` + alert rule documented in `docs/observability.md` § F7 metrics catalogue.
+- [X] **E3 (LOW)** — No action; cron-tick re-attempt model already documented in spec.md FR-021 implementation note.
+- [X] **G1 (LOW)** — `BroadcastsRepo.applyTransition` accepts optional `expectedFromStatus?: BroadcastStatus`; dispatch use-case passes `'approved'` to close TOCTOU race window between cron eligibility scan + transition. Throws `BroadcastConcurrentMutationError` on race loss → mapped to `broadcast_invalid_state_transition`. T165 parallel test now asserts exactly 1 success + 1 invalid-state.
+- [X] **G2 (LOW)** — 3 missing F7 transactional notifications wired end-to-end (broadcast_approved/rejected/cancelled_notification render branches in F4 outbox dispatcher + 3 build helpers + use-case enqueue).
+
+**Round 2 (commit pending — verify-fix re-pass)**:
+
+- [X] **D1 round 2 (MEDIUM)** — G2 wiring lacked unit-test coverage. Added 9 cases (3 per use-case) covering: enqueue with locale + payload; default locale fallback; emailTransactional throw → audit + transition still complete (best-effort guard). Tests at `tests/unit/broadcasts/application/{approve,reject,cancel}-broadcast.test.ts`.
+- [X] **E1 round 2 (LOW)** — Notification locale was hardcoded `'en'`; now threaded via new `notificationLocale?: NotificationLocale` field on `Approve/Reject/CancelBroadcastInput`. Routes resolve via `tenantDefaultLocaleFor(tenantSlug)` (SweCham → th, JCC → en). F12 white-label scope will replace with per-recipient locale.
+- [X] **F1 round 2 (LOW)** — Verify-fix work now tracked in tasks.md (this section); mirrors Phase 6 US4 verify-fix bookkeeping pattern.
+
+**Round 2 architectural cleanup** (caught during E1 fix): admin routes (approve/reject/cancel) had their own post-tx `emailTransactionalBridge.sendMemberEmail` calls that DUPLICATED the use-case-side enqueue introduced in G2 (would cause 2 emails per action). Removed all 3 route-level enqueue blocks; use-case is now the single source of truth (in-tx atomic with audit + outbox). Member-self-cancel route — which previously had NO enqueue path — now also gets a confirmation email (gap fix, free side-effect of single-source-of-truth refactor). Recipient resolution moved from `getMemberPrimaryContact()` lookup to `broadcast.replyToEmail` (immutable submit-time snapshot per FR-002 precondition j).
+
 ---
 
 ## Phase 9: Cross-cutting Observability + Security + Compliance

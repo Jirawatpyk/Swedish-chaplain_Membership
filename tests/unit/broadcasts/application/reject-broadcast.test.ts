@@ -25,6 +25,41 @@ import type {
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import type {
+  EmailTransactionalPort,
+  SendEmailInput,
+} from '@/modules/broadcasts/application/ports/email-transactional-port';
+
+interface MemberCallRecord {
+  to: string;
+  subject: string;
+  templateKey: string;
+  payload: Record<string, unknown>;
+  locale: string;
+}
+
+function makeEmail(opts: { shouldThrow?: boolean } = {}): {
+  port: EmailTransactionalPort;
+  memberCalls: Array<MemberCallRecord>;
+} {
+  const memberCalls: Array<MemberCallRecord> = [];
+  return {
+    memberCalls,
+    port: {
+      async sendAdminNotification() {},
+      async sendMemberEmail(_ctx, input: SendEmailInput) {
+        if (opts.shouldThrow) throw new Error('outbox INSERT failed');
+        memberCalls.push({
+          to: input.to,
+          subject: input.subject,
+          templateKey: input.templateKey,
+          payload: input.payload,
+          locale: input.locale,
+        });
+      },
+    },
+  };
+}
 
 const useCasePath = resolve(
   __dirname,
@@ -179,6 +214,70 @@ beforeEach(() => vi.useFakeTimers({ now: FROZEN_NOW }));
 afterEach(() => vi.useRealTimers());
 
 describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
+  // ===== D1 closure (verify-fix 2026-05-02) — G2 notification tests =====
+
+  it('D1 G2: sendMemberEmail enqueued with VERBATIM rejection reason in payload + tenant locale threaded', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const result = await rejectBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      { ...baseInput, notificationLocale: 'sv' },
+    );
+    expect(result.ok).toBe(true);
+    expect(email.memberCalls).toHaveLength(1);
+    const call = email.memberCalls[0]!;
+    expect(call.templateKey).toBe('broadcast_rejected');
+    expect(call.locale).toBe('sv');
+    // VERBATIM reason in payload (FR-012); audit retains hash-only
+    expect(call.payload['rejectionReason']).toBe(baseInput.rejectionReason);
+    const evt = audit.emits.find((e) => e.eventType === 'broadcast_rejected');
+    expect((evt?.payload as { rejectionReasonHash?: string }).rejectionReasonHash).toBeTruthy();
+    // Audit MUST NOT contain raw reason (FR-012)
+    expect(JSON.stringify(evt?.payload)).not.toContain(baseInput.rejectionReason);
+  });
+
+  it('D1 G2: notificationLocale defaults to "en" when input field omitted', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    await rejectBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(email.memberCalls[0]?.locale).toBe('en');
+  });
+
+  it('D1 G2: emailTransactional throws → audit + transition still complete', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail({ shouldThrow: true });
+    const result = await rejectBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_rejected')).toBeDefined();
+  });
+
   it('use-case module exists', async () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });

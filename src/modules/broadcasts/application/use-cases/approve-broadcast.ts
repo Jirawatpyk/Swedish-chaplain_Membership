@@ -24,8 +24,9 @@ import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
-import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
+
+export type NotificationLocale = 'en' | 'th' | 'sv';
 
 const MIN_SCHEDULE_LEAD_MS = 5 * 60 * 1000;
 
@@ -52,18 +53,13 @@ export interface ApproveBroadcastDeps {
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
   /**
-   * G2 closure (verify-fix 2026-05-02 — US2 wire-up) — used to look
-   * up the originating member's primary contact email + display name
-   * for the post-approval member notification. Optional: when omitted,
-   * the email enqueue is skipped (used by tests + legacy callers).
-   */
-  readonly membersBridge?: MembersBridgePort;
-  /**
-   * G2 closure — `EmailTransactionalPort` for enqueuing the
-   * post-approval member notification (templateKey
-   * `broadcast_approved` → notification_type
-   * `broadcast_approved_notification`). Best-effort: failures are
-   * logged but do NOT block the transition + audit.
+   * G2 closure (verify-fix 2026-05-02 — US2 wire-up) —
+   * `EmailTransactionalPort` for enqueuing the post-approval member
+   * notification (templateKey `broadcast_approved` →
+   * notification_type `broadcast_approved_notification`). Best-effort:
+   * failures are logged but do NOT block the transition + audit.
+   * Optional so legacy unit tests that omit notification scope still
+   * compile; production composition root always supplies it.
    */
   readonly emailTransactional?: EmailTransactionalPort;
 }
@@ -73,6 +69,12 @@ export interface ApproveBroadcastInput {
   readonly actorUserId: string;
   readonly decision: ApproveDecision;
   readonly requestId: string | null;
+  /**
+   * E1 closure (verify-fix 2026-05-02) — locale for the post-approval
+   * member notification email. Route resolves from admin session OR
+   * tenant default. Optional for back-compat with legacy callers.
+   */
+  readonly notificationLocale?: NotificationLocale;
 }
 
 export interface ApproveBroadcastOutput {
@@ -165,15 +167,22 @@ export async function approveBroadcast(
       // G2 closure (verify-fix 2026-05-02 — US2 wire-up) — enqueue the
       // post-approval member notification email IN-TX so the
       // notifications_outbox INSERT commits atomically with the
-      // status transition + audit. Best-effort: lookup or enqueue
-      // failures are logged but do NOT roll back the transition.
-      if (deps.emailTransactional && deps.membersBridge) {
+      // status transition + audit. Single enqueue site (use-case)
+      // prevents the double-send footgun where both the route + the
+      // use-case might enqueue. Routes pass `notificationLocale`;
+      // missing → 'en' fallback.
+      //
+      // Recipient = `replyToEmail` (immutable submit-time snapshot per
+      // FR-002 precondition j) NOT current `members.primary_contact_email`
+      // — preserves the "the email goes to whoever submitted, even if
+      // they later changed their primary contact" semantics.
+      if (deps.emailTransactional && approved.replyToEmail.length > 0) {
         await enqueueApprovedNotification({
           tenant: deps.tenant,
-          membersBridge: deps.membersBridge,
           emailTransactional: deps.emailTransactional,
           broadcast: approved,
           scheduledFor,
+          locale: input.notificationLocale ?? 'en',
           tx,
         });
       }
@@ -195,49 +204,21 @@ export async function approveBroadcast(
 
 /**
  * G2 closure helper — enqueue the post-approval member notification.
- * Best-effort: failures are logged + swallowed (mirrors the dispatch
- * use-case's `enqueueDispatchFailureNotification`).
+ * Best-effort: failures are logged + swallowed.
  */
 async function enqueueApprovedNotification(args: {
   readonly tenant: TenantContext;
-  readonly membersBridge: MembersBridgePort;
   readonly emailTransactional: EmailTransactionalPort;
   readonly broadcast: Broadcast;
   readonly scheduledFor: Date;
+  readonly locale: NotificationLocale;
   readonly tx: unknown;
 }): Promise<void> {
-  let memberEmail: string | null;
-  try {
-    memberEmail = await args.membersBridge.getMemberPrimaryContact(
-      args.tenant,
-      args.broadcast.requestedByMemberId,
-    );
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: args.tenant.slug,
-        broadcastId: args.broadcast.broadcastId as string,
-      },
-      'broadcasts.approved_email.member_lookup_failed',
-    );
-    return;
-  }
-  if (memberEmail === null) {
-    logger.warn(
-      {
-        tenantId: args.tenant.slug,
-        broadcastId: args.broadcast.broadcastId as string,
-      },
-      'broadcasts.approved_email.skipped_no_primary_contact',
-    );
-    return;
-  }
   try {
     await args.emailTransactional.sendMemberEmail(
       args.tenant,
       {
-        to: memberEmail,
+        to: args.broadcast.replyToEmail,
         subject: args.broadcast.subject,
         templateKey: 'broadcast_approved',
         payload: {
@@ -246,7 +227,7 @@ async function enqueueApprovedNotification(args: {
           memberDisplayName: args.broadcast.fromName,
           scheduledForIso: args.scheduledFor.toISOString(),
         },
-        locale: 'en',
+        locale: args.locale,
       },
       args.tx,
     );

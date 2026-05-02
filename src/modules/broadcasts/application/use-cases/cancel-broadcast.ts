@@ -24,8 +24,9 @@ import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
-import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
+
+export type NotificationLocale = 'en' | 'th' | 'sv';
 
 const MAX_REASON_LENGTH = 500;
 
@@ -51,9 +52,7 @@ export interface CancelBroadcastDeps {
   readonly broadcastsRepo: BroadcastsRepo;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
-  /** G2 closure (verify-fix 2026-05-02 — US2 wire-up). */
-  readonly membersBridge?: MembersBridgePort;
-  /** G2 closure — best-effort post-cancel member email. */
+  /** G2 closure (verify-fix 2026-05-02) — best-effort post-cancel email. */
   readonly emailTransactional?: EmailTransactionalPort;
 }
 
@@ -62,6 +61,8 @@ export interface CancelBroadcastInput {
   readonly actor: CancelActor;
   readonly cancellationReason: string | null;
   readonly requestId: string | null;
+  /** E1 closure (verify-fix 2026-05-02) — locale for notification email. */
+  readonly notificationLocale?: NotificationLocale;
 }
 
 export interface CancelBroadcastOutput {
@@ -191,17 +192,17 @@ export async function cancelBroadcast(
       });
 
       // G2 closure (verify-fix 2026-05-02 — US2 wire-up) — notify the
-      // originating member. For self-cancel paths the member receives
-      // a confirmation; for admin-cancel paths the member learns
-      // their broadcast was stopped + the (admin-supplied)
-      // cancellation reason.
-      if (deps.emailTransactional && deps.membersBridge) {
+      // originating member. For self-cancel: confirmation. For
+      // admin-cancel: the member learns their broadcast was stopped
+      // + the (admin-supplied) cancellation reason.
+      // Recipient = `replyToEmail` (immutable submit-time snapshot).
+      if (deps.emailTransactional && cancelled.replyToEmail.length > 0) {
         await enqueueCancelledNotification({
           tenant: deps.tenant,
-          membersBridge: deps.membersBridge,
           emailTransactional: deps.emailTransactional,
           broadcast: cancelled,
           cancellationReason: input.cancellationReason,
+          locale: input.notificationLocale ?? 'en',
           tx,
         });
       }
@@ -218,44 +219,17 @@ export async function cancelBroadcast(
 
 async function enqueueCancelledNotification(args: {
   readonly tenant: TenantContext;
-  readonly membersBridge: MembersBridgePort;
   readonly emailTransactional: EmailTransactionalPort;
   readonly broadcast: Broadcast;
   readonly cancellationReason: string | null;
+  readonly locale: NotificationLocale;
   readonly tx: unknown;
 }): Promise<void> {
-  let memberEmail: string | null;
-  try {
-    memberEmail = await args.membersBridge.getMemberPrimaryContact(
-      args.tenant,
-      args.broadcast.requestedByMemberId,
-    );
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: args.tenant.slug,
-        broadcastId: args.broadcast.broadcastId as string,
-      },
-      'broadcasts.cancelled_email.member_lookup_failed',
-    );
-    return;
-  }
-  if (memberEmail === null) {
-    logger.warn(
-      {
-        tenantId: args.tenant.slug,
-        broadcastId: args.broadcast.broadcastId as string,
-      },
-      'broadcasts.cancelled_email.skipped_no_primary_contact',
-    );
-    return;
-  }
   try {
     await args.emailTransactional.sendMemberEmail(
       args.tenant,
       {
-        to: memberEmail,
+        to: args.broadcast.replyToEmail,
         subject: args.broadcast.subject,
         templateKey: 'broadcast_cancelled',
         payload: {
@@ -264,7 +238,7 @@ async function enqueueCancelledNotification(args: {
           memberDisplayName: args.broadcast.fromName,
           cancellationReason: args.cancellationReason,
         },
-        locale: 'en',
+        locale: args.locale,
       },
       args.tx,
     );

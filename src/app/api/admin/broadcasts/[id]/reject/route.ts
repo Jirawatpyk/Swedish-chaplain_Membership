@@ -10,10 +10,10 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
-  emailTransactionalBridge,
   makeRejectBroadcastDeps,
   parseBroadcastId,
   rejectBroadcast,
+  tenantDefaultLocaleFor,
   type RejectBroadcastError,
 } from '@/modules/broadcasts';
 import {
@@ -68,47 +68,13 @@ export async function POST(
       actorUserId: ctx.current.user.id,
       rejectionReason: parsed.data.rejectionReason,
       requestId: ctx.requestId,
+      // E1 closure (verify-fix 2026-05-02) — single-source-of-truth
+      // enqueue lives inside the use-case (in-tx atomic with audit).
+      // Route no longer post-tx enqueues.
+      notificationLocale: tenantDefaultLocaleFor(tenantCtx.slug),
     });
     if (!result.ok) {
       return mapRejectError(result.error, correlationId);
-    }
-
-    // Best-effort member email with VERBATIM reason (FR-012)
-    try {
-      const broadcast = result.value.broadcast;
-      if (broadcast.replyToEmail.length > 0) {
-        await emailTransactionalBridge.sendMemberEmail(
-          tenantCtx,
-          {
-            to: broadcast.replyToEmail,
-            subject: 'Your E-Blast was not approved',
-            templateKey: 'broadcast_rejected',
-            payload: {
-              broadcastId: broadcast.broadcastId,
-              rejectionReason: parsed.data.rejectionReason,
-            },
-            locale: 'en',
-          },
-          null,
-        );
-      }
-    } catch (e) {
-      // Review I5 — see approve/route.ts for rationale. Note: the
-      // verbatim rejection reason is in the email payload but is NOT
-      // logged here (FR-012 keeps reason out of audit; sha256(reason)
-      // is in the use-case's `broadcast_rejected` payload already).
-      logger.error(
-        {
-          err: e instanceof Error ? e.message : String(e),
-          correlationId,
-          tenantId: tenantCtx.slug,
-          broadcastId: parsedId.value as string,
-          recipient: result.value.broadcast.replyToEmail,
-          templateKey: 'broadcast_rejected',
-          severity: 'notification_email',
-        },
-        'broadcasts.reject.member_email_enqueue_failed',
-      );
     }
 
     return NextResponse.json(

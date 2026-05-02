@@ -144,7 +144,6 @@ export function makeApproveBroadcastDeps(
     audit: f7AuditAdapter,
     clock: systemClock,
     // G2 closure (verify-fix 2026-05-02 — US2 wire-up).
-    membersBridge,
     emailTransactional: emailTransactionalBridge,
   };
 }
@@ -159,7 +158,6 @@ export function makeRejectBroadcastDeps(
     audit: f7AuditAdapter,
     clock: systemClock,
     // G2 closure (verify-fix 2026-05-02 — US2 wire-up).
-    membersBridge,
     emailTransactional: emailTransactionalBridge,
   };
 }
@@ -174,7 +172,6 @@ export function makeCancelBroadcastDeps(
     audit: f7AuditAdapter,
     clock: systemClock,
     // G2 closure (verify-fix 2026-05-02 — US2 wire-up).
-    membersBridge,
     emailTransactional: emailTransactionalBridge,
   };
 }

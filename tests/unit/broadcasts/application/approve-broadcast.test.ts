@@ -22,6 +22,45 @@ import type {
 } from '@/modules/broadcasts/application/ports/audit-port';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import type {
+  EmailTransactionalPort,
+  SendEmailInput,
+} from '@/modules/broadcasts/application/ports/email-transactional-port';
+
+interface MemberCallRecord {
+  to: string;
+  subject: string;
+  templateKey: string;
+  payload: Record<string, unknown>;
+  locale: string;
+  txWasSupplied: boolean;
+}
+
+function makeEmail(opts: { shouldThrow?: boolean } = {}): {
+  port: EmailTransactionalPort;
+  memberCalls: Array<MemberCallRecord>;
+} {
+  const memberCalls: Array<MemberCallRecord> = [];
+  return {
+    memberCalls,
+    port: {
+      async sendAdminNotification() {},
+      async sendMemberEmail(_ctx, input: SendEmailInput, tx) {
+        if (opts.shouldThrow) {
+          throw new Error('outbox INSERT failed');
+        }
+        memberCalls.push({
+          to: input.to,
+          subject: input.subject,
+          templateKey: input.templateKey,
+          payload: input.payload,
+          locale: input.locale,
+          txWasSupplied: tx !== null && tx !== undefined,
+        });
+      },
+    },
+  };
+}
 
 const useCasePath = resolve(
   __dirname,
@@ -174,6 +213,69 @@ beforeEach(() => vi.useFakeTimers({ now: FROZEN_NOW }));
 afterEach(() => vi.useRealTimers());
 
 describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
+  // ===== D1 closure (verify-fix 2026-05-02) — G2 notification tests =====
+
+  it('D1 G2: emailTransactional.sendMemberEmail enqueued IN-TX with correct payload + locale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const result = await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(result.ok).toBe(true);
+    expect(email.memberCalls).toHaveLength(1);
+    const call = email.memberCalls[0]!;
+    expect(call.to).toBe('me@example.com'); // replyToEmail snapshot
+    expect(call.templateKey).toBe('broadcast_approved');
+    expect(call.locale).toBe('th');
+    expect(call.payload['broadcastId']).toBe(broadcastId);
+    expect(call.payload['broadcastSubject']).toBe('Welcome');
+    expect(call.payload['scheduledForIso']).toBe(FROZEN_NOW.toISOString());
+  });
+
+  it('D1 G2: notificationLocale defaults to "en" when input field omitted', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      baseInput, // no notificationLocale
+    );
+    expect(email.memberCalls[0]?.locale).toBe('en');
+  });
+
+  it('D1 G2: emailTransactional throws → audit + transition still complete (best-effort guard)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail({ shouldThrow: true });
+    const result = await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_approved')).toBeDefined();
+    expect(repo.transitions[0]?.status).toBe('approved');
+  });
+
   it('use-case module exists', async () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });
