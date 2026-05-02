@@ -189,6 +189,9 @@ function makeRepo(opts: FixtureOpts): {
       async aggregateDeliveryCountsForBroadcast() {
         return { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0 };
       },
+      async pruneExpiredDrafts() {
+        return { prunedCount: 0 };
+      },
     },
   };
 }

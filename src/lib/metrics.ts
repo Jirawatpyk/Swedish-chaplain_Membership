@@ -743,7 +743,6 @@ function safeMetric(fn: () => void): void {
     // the Turbopack browser bundle. Last-resort signal-loss swallow;
     // the structured-logger upgrade can come from observability rules
     // that scrape browser/Node consoles uniformly.
-    // eslint-disable-next-line no-console
     console.warn('metrics_emit_failed_swallowed', {
       err: (e as Error).message,
     });

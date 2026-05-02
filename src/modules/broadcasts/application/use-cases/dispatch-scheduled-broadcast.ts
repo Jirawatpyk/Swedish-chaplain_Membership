@@ -39,8 +39,31 @@ import type {
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
+import type { PlansBridgePort } from '../ports/plans-bridge-port';
+import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import { resolveSegmentRecipients } from './resolve-segment-recipients';
 import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
+
+/**
+ * FR-021 retry budget — total wall-clock window from `scheduled_for`
+ * during which retryable failures keep the row in 'approved' for the
+ * cron handler to re-attempt every 5 min. Once the budget is exhausted,
+ * the next retryable failure transitions the row to `failed_to_dispatch`
+ * + emits the FR-021 / AS2 transactional notification to the member.
+ *
+ * Slice D (Phase 8 — 2026-05-02): the budget is enforced inside the
+ * `gateway_retryable` branch of the dispatch use-case, NOT in a separate
+ * "stuck-approved" reconciler. This keeps the dispatch path
+ * self-contained (mirrors the F4 outbox dispatcher's per-attempt
+ * permanent-fail decision) and avoids a second cron worker. The
+ * downside: if Resend stays UP but the cron worker is offline for >1h
+ * (cron-job.org outage), the row stays 'approved' until the next tick;
+ * the budget only fires when WE attempt and Resend rejects. That edge
+ * is acceptable because cron-job.org outages are rare and the next
+ * tick will either succeed (budget moot) or fail and trigger terminal
+ * transition.
+ */
+const RETRY_BUDGET_MS = 60 * 60 * 1000;
 
 export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
@@ -93,6 +116,23 @@ export interface DispatchScheduledBroadcastDeps {
    * config will replace this with per-tenant + per-recipient locale.
    */
   readonly locale: 'en' | 'th' | 'sv';
+  /**
+   * Slice B (Phase 8) — used at successful sending transition to
+   * compare originating member's CURRENT plan vs the snapshot taken at
+   * submit time (`requestedByMemberPlanIdSnapshot`). On mismatch OR
+   * current-plan lookup failure, emit `broadcast_sent_with_expired_member_plan`
+   * audit (forensic only — dispatch still proceeds per AS5).
+   */
+  readonly plansBridge: PlansBridgePort;
+  /**
+   * Slice E (Phase 8) — used to enqueue the FR-021 / AS2 transactional
+   * notification email when dispatch enters a terminal failure state
+   * (1-hour budget exhausted OR permanent failure). Best-effort: failures
+   * inside the enqueue are logged but do NOT block the terminal-fail
+   * transition + audit (mirrors the US5 `enqueueDeliverySummaryEmail`
+   * graceful-degrade pattern).
+   */
+  readonly emailTransactional: EmailTransactionalPort;
 }
 
 export interface DispatchScheduledBroadcastInput {
@@ -115,6 +155,12 @@ function buildIdempotencyKey(tenantId: string, broadcastId: string): string {
  * matching audit event in a single tx. On cleanup failure, log loudly
  * (review E1) so ops can reconcile manually — silent swallow leaves
  * the row stuck in 'approved' with no audit trail.
+ *
+ * Slice E (Phase 8): when `broadcast` is supplied and the failure
+ * eventType is the FR-021 / AS2 terminal-fail kind, enqueue the
+ * dispatch-failure transactional notification email AFTER the tx
+ * commits (best-effort, failures logged + swallowed so the audit
+ * trail remains the source of truth).
  */
 async function failDispatchAndAudit(
   deps: DispatchScheduledBroadcastDeps,
@@ -124,6 +170,7 @@ async function failDispatchAndAudit(
   eventType: 'broadcast_failed_to_dispatch' | 'broadcast_resend_resource_missing',
   payload: Record<string, unknown>,
   phase: string,
+  broadcast: Broadcast | null = null,
 ): Promise<void> {
   try {
     await deps.broadcastsRepo.withTx(async (tx) => {
@@ -155,6 +202,104 @@ async function failDispatchAndAudit(
         phase,
       },
       'broadcasts.dispatch.cleanup_failed',
+    );
+    return; // Don't enqueue notification if the transition itself failed
+  }
+
+  // Slice E (FR-021 / AS2) — enqueue dispatch-failure transactional
+  // notification email AFTER the tx commits. Best-effort: any failure
+  // (member primary email lookup / outbox INSERT) is logged but does
+  // NOT roll back the failed_to_dispatch transition. The audit trail
+  // is the source of truth.
+  if (broadcast !== null && eventType === 'broadcast_failed_to_dispatch') {
+    await enqueueDispatchFailureNotification({
+      deps,
+      broadcast,
+      reason,
+      now,
+    });
+  }
+}
+
+/**
+ * Slice E (Phase 8) — enqueue the FR-021 / AS2 transactional
+ * notification email informing the originating member that their
+ * scheduled broadcast did not go out. Quota reservation is preserved;
+ * member can re-schedule from the admin queue.
+ *
+ * Best-effort: member-lookup failures + missing primary contact are
+ * logged but skipped (NOT thrown). The terminal-fail transition + audit
+ * are already committed by the time this runs. Mirrors the US5
+ * `enqueueDeliverySummaryEmail` graceful-degrade pattern.
+ */
+export async function enqueueDispatchFailureNotification(args: {
+  readonly deps: DispatchScheduledBroadcastDeps;
+  readonly broadcast: Broadcast;
+  readonly reason: string;
+  readonly now: Date;
+}): Promise<void> {
+  const { deps, broadcast, reason, now } = args;
+
+  let memberEmail: string | null;
+  try {
+    memberEmail = await deps.membersBridge.getMemberPrimaryContact(
+      deps.tenant,
+      broadcast.requestedByMemberId,
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: deps.tenant.slug,
+        broadcastId: broadcast.broadcastId as string,
+        memberId: broadcast.requestedByMemberId,
+      },
+      'broadcasts.dispatch_failure_email.member_lookup_failed',
+    );
+    return;
+  }
+
+  if (memberEmail === null) {
+    logger.warn(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: broadcast.broadcastId as string,
+        memberId: broadcast.requestedByMemberId,
+      },
+      'broadcasts.dispatch_failure_email.skipped_no_primary_contact',
+    );
+    return;
+  }
+
+  try {
+    await deps.emailTransactional.sendMemberEmail(
+      deps.tenant,
+      {
+        to: memberEmail,
+        subject: broadcast.subject,
+        templateKey: 'broadcast_failed_to_dispatch',
+        payload: {
+          broadcastId: broadcast.broadcastId,
+          broadcastSubject: broadcast.subject,
+          tenantDisplayName: deps.tenantDisplayName,
+          scheduledFor:
+            broadcast.scheduledFor !== null
+              ? broadcast.scheduledFor.toISOString()
+              : now.toISOString(),
+          reason,
+        },
+        locale: deps.locale,
+      },
+      null,
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: deps.tenant.slug,
+        broadcastId: broadcast.broadcastId as string,
+      },
+      'broadcasts.dispatch_failure_email.enqueue_failed',
     );
   }
 }
@@ -260,7 +405,7 @@ export async function dispatchScheduledBroadcast(
 
   if (!resolvedResult.ok) {
     // Audience evaporated post-suppression — transition to
-    // failed_to_dispatch + emit audit + member notification at route layer.
+    // failed_to_dispatch + emit audit + Slice E member notification.
     await failDispatchAndAudit(
       deps,
       input,
@@ -273,6 +418,7 @@ export async function dispatchScheduledBroadcast(
         failedAt: now.toISOString(),
       },
       'audience_post_suppression_empty',
+      broadcast,
     );
     return err({ kind: 'broadcast_audience_post_suppression_empty' });
   }
@@ -342,22 +488,72 @@ export async function dispatchScheduledBroadcast(
     const shape = classifyThrown(e);
 
     // ---- Retryable: row stays 'approved' for next tick ---------------
+    // Slice D (Phase 8 — FR-021 / AS2 1h retry budget): if the broadcast
+    // is past its 1-hour budget from `scheduled_for`, this retryable
+    // failure converts to a TERMINAL `broadcast_failed_to_dispatch` —
+    // we stop attempting + transition + emit AS2 member notification
+    // email. Within budget: original behaviour (row stays 'approved'
+    // for the next 5-min cron tick).
     if (shape.kind === 'retryable') {
       const subKind =
         (shape.subKind as 'network' | 'timeout' | 'server_5xx' | 'api') ?? 'api';
+      const reason = shape.reason ?? 'retryable';
+
+      const pastBudget =
+        broadcast.scheduledFor !== null &&
+        now.getTime() - broadcast.scheduledFor.getTime() > RETRY_BUDGET_MS;
+
+      if (pastBudget) {
+        logger.error(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            subKind,
+            reason,
+            scheduledFor: broadcast.scheduledFor!.toISOString(),
+            elapsedMs: now.getTime() - broadcast.scheduledFor!.getTime(),
+            severity: 'critical',
+          },
+          'broadcasts.dispatch.retry_budget_exhausted',
+        );
+        const budgetReason = `retry_budget_exhausted_after_1h:${subKind}:${reason}`;
+        await failDispatchAndAudit(
+          deps,
+          input,
+          now,
+          budgetReason,
+          'broadcast_failed_to_dispatch',
+          {
+            broadcastId: input.broadcastId,
+            reason: budgetReason,
+            subKind,
+            originalReason: reason,
+            scheduledFor: broadcast.scheduledFor!.toISOString(),
+            elapsedMs: now.getTime() - broadcast.scheduledFor!.getTime(),
+            failedAt: now.toISOString(),
+          },
+          'retry_budget_exhausted',
+          broadcast,
+        );
+        return err({
+          kind: 'broadcast_failed_to_dispatch',
+          reason: budgetReason,
+        });
+      }
+
       logger.warn(
         {
           tenantId: deps.tenant.slug,
           broadcastId: input.broadcastId as string,
           subKind,
-          reason: shape.reason ?? 'retryable',
+          reason,
         },
         'broadcasts.dispatch.gateway_retryable',
       );
       return err({
         kind: 'gateway_retryable',
         subKind,
-        reason: shape.reason ?? 'retryable',
+        reason,
       });
     }
 
@@ -523,6 +719,12 @@ export async function dispatchScheduledBroadcast(
     }
 
     // ---- Resource missing: 404 from Resend ---------------------------
+    // NOTE: resource_missing emits a different audit event type
+    // (`broadcast_resend_resource_missing`) so the dispatch-failure
+    // notification email is NOT enqueued here — only `broadcast_failed_to_dispatch`
+    // event-type triggers the Slice E email. resource_missing is an
+    // ops-side issue (admin manually deleted Resend resource) requiring
+    // admin action, not member notification.
     if (shape.kind === 'resource_missing') {
       await failDispatchAndAudit(
         deps,
@@ -537,6 +739,7 @@ export async function dispatchScheduledBroadcast(
           failedAt: now.toISOString(),
         },
         'resend_resource_missing',
+        broadcast,
       );
       return err({
         kind: 'broadcast_resend_resource_missing',
@@ -563,6 +766,7 @@ export async function dispatchScheduledBroadcast(
           failedAt: now.toISOString(),
         },
         'permanent_failure',
+        broadcast,
       );
       return err({ kind: 'broadcast_failed_to_dispatch', reason });
     }
@@ -604,6 +808,25 @@ export async function dispatchScheduledBroadcast(
       });
       return transitioned;
     });
+
+    // Slice B (Phase 8 — T171 / AS5) — forensic audit when the
+    // originating member's CURRENT plan no longer matches the snapshot
+    // taken at submit time. The broadcast is dispatched ANYWAY because
+    // entitlement was confirmed at submit + approve (per AS5 the tenant
+    // accepted the obligation). The audit gives admins observability
+    // for the "member upgraded → broadcast went out as if they still
+    // had the lower tier" or "member downgraded between approve + send"
+    // edge case.
+    //
+    // Best-effort: lookup failures (Neon outage, plan-bridge throw)
+    // are logged but do NOT roll back the successful sending transition.
+    await emitExpiredPlanAuditIfApplicable({
+      deps,
+      broadcast,
+      sentBroadcast: sentRow,
+      now,
+    });
+
     return ok({
       broadcast: sentRow,
       resendAudienceId,
@@ -636,6 +859,79 @@ export async function dispatchScheduledBroadcast(
         e instanceof Error ? e.message : 'unknown'
       }`,
     });
+  }
+}
+
+/**
+ * Slice B (Phase 8 — T171 / AS5) — emit `broadcast_sent_with_expired_member_plan`
+ * audit when the originating member's CURRENT plan differs from the
+ * snapshot at submit time, OR the current plan no longer entitles
+ * (PlansBridge returns error). Forensic only — never throws, never
+ * blocks dispatch (lookup failures are swallowed with a logger.error).
+ */
+async function emitExpiredPlanAuditIfApplicable(args: {
+  readonly deps: DispatchScheduledBroadcastDeps;
+  readonly broadcast: Broadcast;
+  readonly sentBroadcast: Broadcast;
+  readonly now: Date;
+}): Promise<void> {
+  const { deps, broadcast } = args;
+
+  let planLookup;
+  try {
+    planLookup = await deps.plansBridge.getPlanForMember(
+      deps.tenant,
+      broadcast.requestedByMemberId,
+    );
+  } catch (e) {
+    // Plan-bridge threw (Neon outage, repository bug). Forensic audit
+    // is best-effort; log + skip without blocking the dispatch result.
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: deps.tenant.slug,
+        broadcastId: broadcast.broadcastId as string,
+        memberId: broadcast.requestedByMemberId,
+      },
+      'broadcasts.dispatch.expired_plan_check_threw',
+    );
+    return;
+  }
+
+  const noLongerEntitled = !planLookup.ok;
+  const planChanged =
+    planLookup.ok &&
+    planLookup.value.planId !== broadcast.requestedByMemberPlanIdSnapshot;
+
+  if (!noLongerEntitled && !planChanged) {
+    return; // No expired-plan condition; no audit emit
+  }
+
+  try {
+    await deps.audit.emit(null, {
+      tenantId: deps.tenant.slug,
+      eventType: 'broadcast_sent_with_expired_member_plan',
+      actorUserId: 'system:cron',
+      summary: `Broadcast ${broadcast.broadcastId} dispatched despite member plan change since submit`,
+      payload: {
+        broadcastId: broadcast.broadcastId,
+        memberId: broadcast.requestedByMemberId,
+        planAtSubmit: broadcast.requestedByMemberPlanIdSnapshot,
+        planAtDispatch: planLookup.ok ? planLookup.value.planId : null,
+        planLookupError: planLookup.ok ? null : planLookup.error.kind,
+        currentlyEntitled: planLookup.ok,
+      },
+      requestId: null,
+    });
+  } catch (auditErr) {
+    logger.error(
+      {
+        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        tenantId: deps.tenant.slug,
+        broadcastId: broadcast.broadcastId as string,
+      },
+      'broadcasts.dispatch.expired_plan_audit_emit_failed',
+    );
   }
 }
 

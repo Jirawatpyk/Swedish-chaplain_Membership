@@ -190,6 +190,23 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   // under `runInTenant(payload.tenantId)`. Worker idempotency lives
   // in the use-case (`receipt_pdf_status='pending'` guard). ---
   'receipt_pdf_render',
+  // --- F7 migration 0073 (US2): admin-review lifecycle notifications.
+  // Enum values exist in Postgres but no use-case enqueues them in MVP
+  // (admin-review currently emits AUDIT only — no member email yet).
+  // Listed here to keep the TS union in parity with pg_enum. ---
+  'broadcast_approved_notification',
+  'broadcast_rejected_notification',
+  'broadcast_cancelled_notification',
+  // --- F7 migration 0079 (US5): delivery summary email at sending →
+  // sent transition (webhook + 24h reconcile). Enqueued by
+  // `enqueueDeliverySummaryEmail`; rendered by F4 dispatcher's
+  // `broadcast_delivered_notification` branch. ---
+  'broadcast_delivered_notification',
+  // --- F7 migration 0080 (US6 / Phase 8): dispatch-failure transactional
+  // email enqueued from `enqueueDispatchFailureNotification` when the
+  // 1-hour retry budget is exhausted OR a permanent failure transitions
+  // the broadcast to `failed_to_dispatch` (FR-021 / AS2). ---
+  'broadcast_failed_to_dispatch_notification',
 ]);
 
 export const outboxStatusEnum = pgEnum('outbox_status', [

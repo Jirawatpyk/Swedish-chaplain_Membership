@@ -68,6 +68,10 @@ import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/v
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 /* eslint-enable no-restricted-imports */
 import { renderReceiptPdf, makeRenderReceiptPdfDeps } from '@/modules/invoicing';
+import {
+  buildBroadcastDeliveredEmail,
+  buildBroadcastFailedToDispatchEmail,
+} from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { sql as sqlTag } from 'drizzle-orm';
@@ -219,6 +223,60 @@ async function buildPayload(
         );
         return null;
       }
+    }
+    case 'broadcast_delivered_notification': {
+      // F7 US5 — FR-028 / AS3 delivery summary email enqueued at the
+      // sending → sent transition (webhook-driven completion AND 24h
+      // reconciliation paths). context_data fields populated by
+      // `enqueueDeliverySummaryEmail` in process-webhook-event.ts.
+      const broadcastId = typeof ctx.broadcastId === 'string' ? ctx.broadcastId : '';
+      const broadcastSubject =
+        typeof ctx.broadcastSubject === 'string' ? ctx.broadcastSubject : '';
+      const delivered = typeof ctx.delivered === 'number' ? ctx.delivered : 0;
+      const bounced = typeof ctx.bounced === 'number' ? ctx.bounced : 0;
+      const complained = typeof ctx.complained === 'number' ? ctx.complained : 0;
+      const total = typeof ctx.total === 'number' ? ctx.total : 0;
+      const deliveryRate =
+        typeof ctx.deliveryRate === 'number' ? ctx.deliveryRate : 0;
+      if (!broadcastId || !broadcastSubject) return null;
+      return buildBroadcastDeliveredEmail({
+        toEmail: row.toEmail,
+        broadcastId,
+        broadcastSubject,
+        delivered,
+        bounced,
+        complained,
+        total,
+        deliveryRate,
+        locale,
+      });
+    }
+    case 'broadcast_failed_to_dispatch_notification': {
+      // F7 US6 / Phase 8 — FR-021 / AS2 dispatch-failure transactional
+      // email enqueued from `enqueueDispatchFailureNotification` in
+      // dispatch-scheduled-broadcast.ts (1h budget exhausted OR
+      // permanent failure path). context_data carries the broadcast
+      // identifiers + scheduled-for + reason; the build helper renders
+      // the bilingual member-facing copy with the admin-rescheduling
+      // CTA + reservation-preserved reassurance.
+      const broadcastId = typeof ctx.broadcastId === 'string' ? ctx.broadcastId : '';
+      const broadcastSubject =
+        typeof ctx.broadcastSubject === 'string' ? ctx.broadcastSubject : '';
+      const tenantDisplayName =
+        typeof ctx.tenantDisplayName === 'string' ? ctx.tenantDisplayName : '';
+      const scheduledFor =
+        typeof ctx.scheduledFor === 'string' ? ctx.scheduledFor : '';
+      const reason = typeof ctx.reason === 'string' ? ctx.reason : 'unknown';
+      if (!broadcastId || !broadcastSubject || !tenantDisplayName) return null;
+      return buildBroadcastFailedToDispatchEmail({
+        toEmail: row.toEmail,
+        broadcastId,
+        broadcastSubject,
+        tenantDisplayName,
+        scheduledFor,
+        reason,
+        locale,
+      });
     }
     default:
       return null;

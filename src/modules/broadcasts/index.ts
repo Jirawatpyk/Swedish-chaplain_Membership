@@ -193,10 +193,16 @@ export {
 } from './application/use-cases/clear-halt';
 export {
   dispatchScheduledBroadcast,
+  enqueueDispatchFailureNotification,
   type DispatchScheduledBroadcastError,
   type DispatchScheduledBroadcastInput,
   type DispatchScheduledBroadcastOutput,
 } from './application/use-cases/dispatch-scheduled-broadcast';
+export {
+  pruneExpiredDrafts,
+  type PruneExpiredDraftsError,
+  type PruneExpiredDraftsOutput,
+} from './application/use-cases/prune-expired-drafts';
 
 // --- Composition root factories (Phase 3) --------------------------------
 export {
@@ -217,6 +223,7 @@ export {
   makeProxySubmitBroadcastDeps,
   makeClearHaltDeps,
   makeDispatchScheduledBroadcastDeps,
+  makePruneExpiredDraftsDeps,
 } from './infrastructure/broadcasts-deps';
 
 // --- Application use-cases (Phase 5 US3) ---------------------------------
@@ -339,3 +346,16 @@ export type {
 // detail server component re-sanitises stored HTML at render time as a
 // defence-in-depth measure (UX I14 + IMP-3 round-3).
 export { dompurifySanitizer } from './infrastructure/sanitizer/dompurify-sanitizer';
+
+// F7 transactional notification email builders (Phase 8 — 2026-05-02).
+// Exposed at the barrel because the F4 cron outbox-dispatcher
+// (`/api/cron/outbox-dispatch`) renders broadcast_*_notification rows
+// outside the F7 use-case boundary — same pattern as F1+F4 build
+// helpers (`buildInvitationEmail`, `buildInvoiceAutoEmail`).
+export {
+  buildBroadcastDeliveredEmail,
+  buildBroadcastFailedToDispatchEmail,
+  type BuildBroadcastDeliveredEmailInput,
+  type BuildBroadcastFailedToDispatchEmailInput,
+  type BroadcastNotificationLocale,
+} from './infrastructure/email/broadcast-notification-emails';

@@ -33,6 +33,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | F4 receipt-pdf reconcile | `POST /api/internal/cron/receipt-pdf-reconcile` | `30 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [receipt-pdf-permanently-failed.md](./receipt-pdf-permanently-failed.md) |
 | **F7 broadcasts dispatch** | **`POST /api/cron/broadcasts/dispatch-scheduled`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 dispatch) |
 | **F7 reconcile-stuck-sending** | **`POST /api/cron/broadcasts/reconcile-stuck-sending`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reconcile) |
+| **F7 prune-expired-drafts** | **`POST /api/cron/broadcasts/prune-expired-drafts`** | **`30 4 * * *`** (daily 04:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 prune-drafts) |
 
 **Daily-cadence jobs** stay in `vercel.json` (the 1×/day limit
 accommodates them). **5-minute-cadence jobs** are mandatory cron-job.org
@@ -118,6 +119,66 @@ The F7 endpoint mutates DB state (transitions broadcast rows from
 `approved → sending` and emits audit events). REST convention
 reserves GET for safe/idempotent reads. `cron-job.org` supports both;
 choose POST per HTTP semantics.
+
+## F7 — broadcasts/prune-expired-drafts (NEW — F7 US6 / Phase 8)
+
+Daily housekeeping cron deleting `broadcasts WHERE status='draft' AND
+updated_at < NOW() - INTERVAL '30 days'` per FR-001a (US1 AS3 draft
+restoration window). Drafts are user-controlled scratch space; pruning
+emits NO audit event (preserves the FR-001 "drafts do NOT consume or
+reserve quota" invariant).
+
+Members are NOT notified of impending draft expiry in MVP — a "your
+draft will expire in N days" toast remains in scope for a future
+polish iteration but is intentionally not part of F7 MVP.
+
+### Setup steps (one-time, reproducible)
+
+1. Sign in to https://cron-job.org with the SweCham ops account.
+2. Create new cron-job:
+   - **Title**: `Chamber-OS · broadcasts.prune-expired-drafts`
+   - **URL**: `https://swecham.zyncdata.app/api/cron/broadcasts/prune-expired-drafts`
+   - **Schedule**: `30 4 * * *` (every day at 04:30 UTC = 11:30 ICT —
+     low-traffic window for SweCham; chosen to avoid overlapping with
+     the 5-min dispatch tick boundary). Schedule is **flexible** — the
+     30-day cutoff has 24h tolerance so a missed daily tick is not a
+     correctness issue (next tick catches up).
+   - **Request method**: POST
+   - **Headers**:
+     - `Authorization: Bearer <CRON_SECRET>` — value reused from F4/F5/F7-other
+   - **Notifications**: enable email on consecutive failures (3 → maintainer
+     email)
+   - **Timeout**: 30 seconds (single tenant DELETE statement; expected
+     row count well under 1k for SweCham scale)
+   - **Disable failure-retry** per § "Retry policy contract" — daily
+     cadence is the natural retry; a missed day is not a blocker.
+3. Click **Run** to verify a 200 OK response with payload:
+
+   ```json
+   {
+     "tenantId": "swecham",
+     "prunedCount": 0,
+     "cutoff": "2026-04-02T04:30:00.000Z",
+     "durationMs": 42
+   }
+   ```
+
+   - `prunedCount: 0` is the expected steady state (drafts older than
+     30 days are rare on a healthy deployment)
+   - `cutoff` is the timestamp threshold passed to the DELETE; sanity
+     check that it is exactly 30 days before the request time
+   - `durationMs` should stay under 1s; if it climbs, investigate
+     missing index or unbounded draft growth
+
+### On-call response
+
+| HTTP code | Meaning | Operator action |
+|-----------|---------|-----------------|
+| 200 + `prunedCount: 0` | Healthy steady state | None |
+| 200 + `prunedCount > 100` | Unusual draft churn — investigate which member is creating drafts that age out | Query `SELECT requested_by_member_id, COUNT(*) FROM broadcasts WHERE status='draft' GROUP BY 1 ORDER BY 2 DESC LIMIT 10` for outliers |
+| 500 + body contains `prune.server_error` | DB outage or RLS misconfiguration. Drafts NOT pruned this tick. | Investigate next morning; harness will retry on next daily tick — no action needed within 24h |
+| 503 | `FEATURE_F7_BROADCASTS=false` | Expected during dark-launch; do nothing |
+| 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org headers |
 
 ## Secret rotation
 

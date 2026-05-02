@@ -277,4 +277,24 @@ export interface BroadcastsRepo {
     readonly complained: number;
     readonly sent: number;
   }>;
+
+  /**
+   * F7 US6 / Phase 8 — T171a draft-expiry prune (FR-001a).
+   *
+   * Deletes rows in `broadcasts` where `tenant_id = $1`,
+   * `status = 'draft'`, AND `updated_at < $2`. Returns the count of
+   * deleted rows for cron observability. NO audit event (per FR-001a
+   * — drafts are user-controlled scratch space; preserving the
+   * "drafts do NOT consume or reserve quota" invariant means the
+   * prune is invisible).
+   *
+   * Tenant isolation: enforced at the SQL level (`WHERE tenant_id = $1`)
+   * AND defence-in-depth via `assertTenantBoundTx` in the adapter so
+   * a different `runInTenant` context cannot accidentally prune
+   * another tenant's drafts (Constitution Principle I clause 1+2).
+   */
+  pruneExpiredDrafts(
+    tenantId: string,
+    olderThan: Date,
+  ): Promise<{ readonly prunedCount: number }>;
 }

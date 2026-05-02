@@ -2261,6 +2261,17 @@
       "footer": "Detaljerad statistik finns på din förmånssida.",
       "viewBenefitsCta": "Visa förmåner + historik"
     },
+    "broadcastFailedToDispatch": {
+      "subject": "Ditt schemalagda utskick \"{subject}\" gick inte iväg",
+      "greeting": "Hej,",
+      "body1": "Vi kunde inte skicka ditt schemalagda utskick för {tenantDisplayName}.",
+      "scheduledForLabel": "Ursprungligen schemalagt till: {scheduledFor}",
+      "failureReasonLabel": "Orsak: {reason}",
+      "body2": "Vår leveranstjänst var oåtkomlig i mer än en timme, så vi slutade försöka för att inte skicka utskicket vid en oväntad tidpunkt.",
+      "reassurance": "Din utskickskvot har INTE förbrukats och är fortfarande reserverad. Du kan schemalägga om samma utskick från administrationskön, eller låta din kammaradministratör skicka det manuellt.",
+      "ctaRescheduleLabel": "Öppna utskicksdetaljer",
+      "footerSignOff": "Om du behöver hjälp, vänligen kontakta din kammaradministratör."
+    },
     "broadcastFooter": {
       "receivedBecause": "Du tar emot detta mejl eftersom du är kontakt hos en medlem i {tenantDisplayName}.",
       "unsubscribeCta": "Avregistrera",

@@ -38,6 +38,7 @@ import type { CancelBroadcastDeps } from '../application/use-cases/cancel-broadc
 import type { ProxySubmitBroadcastDeps } from '../application/use-cases/proxy-submit-broadcast';
 import type { ClearHaltDeps } from '../application/use-cases/clear-halt';
 import type { DispatchScheduledBroadcastDeps } from '../application/use-cases/dispatch-scheduled-broadcast';
+import type { PruneExpiredDraftsDeps } from '../application/use-cases/prune-expired-drafts';
 import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
@@ -234,6 +235,33 @@ export async function makeDispatchScheduledBroadcastDeps(
     fromEmail: env.broadcasts.fromEmail,
     tenantDisplayName,
     locale: tenantDefaultLocaleFor(tenantId),
+    // Phase 8 Slice B (T171 / AS5) — used to compare originating
+    // member's CURRENT plan vs the snapshot at submit time, emitting
+    // `broadcast_sent_with_expired_member_plan` audit on mismatch.
+    plansBridge,
+    // Phase 8 Slice E (FR-021 / AS2) — used to enqueue the dispatch-
+    // failure transactional notification when the 1h retry budget is
+    // exhausted OR a permanent failure transitions the row to
+    // failed_to_dispatch. Routes through F4 outbox dispatcher's
+    // `broadcast_failed_to_dispatch_notification` render branch.
+    emailTransactional: emailTransactionalBridge,
+  };
+}
+
+/**
+ * Phase 8 / T171a — daily draft-expiry prune cron worker composition.
+ * Stateless deps — no external SDK calls. Pure DB DELETE inside
+ * `runInTenant` for RLS-scoped execution.
+ */
+export function makePruneExpiredDraftsDeps(
+  tenantId: string,
+): PruneExpiredDraftsDeps {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    clock: systemClock,
+    // Defaults to 30 days inside the use-case per FR-001a.
   };
 }
 

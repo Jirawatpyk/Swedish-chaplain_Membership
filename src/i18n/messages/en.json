@@ -2261,6 +2261,17 @@
       "footer": "Detailed metrics are available on your benefits page.",
       "viewBenefitsCta": "View benefits + history"
     },
+    "broadcastFailedToDispatch": {
+      "subject": "Your scheduled E-Blast \"{subject}\" did not go out",
+      "greeting": "Hi,",
+      "body1": "We were unable to dispatch your scheduled E-Blast for {tenantDisplayName}.",
+      "scheduledForLabel": "Originally scheduled for: {scheduledFor}",
+      "failureReasonLabel": "Reason: {reason}",
+      "body2": "Our delivery service was unreachable for over an hour, so we stopped retrying to avoid sending the broadcast at an unexpected time.",
+      "reassurance": "Your E-Blast quota slot has NOT been consumed and remains reserved. You can re-schedule the same broadcast from the admin queue, or your chamber admin can re-trigger dispatch manually.",
+      "ctaRescheduleLabel": "Open broadcast detail",
+      "footerSignOff": "If you need help, please contact your chamber administrator."
+    },
     "broadcastFooter": {
       "receivedBecause": "You are receiving this email because you are a contact at a member of {tenantDisplayName}.",
       "unsubscribeCta": "Unsubscribe",

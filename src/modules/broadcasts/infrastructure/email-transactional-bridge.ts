@@ -96,6 +96,7 @@ export const F7_NOTIFICATION_TYPES = [
   'broadcast_rejected_notification',
   'broadcast_cancelled_notification',
   'broadcast_delivered_notification',
+  'broadcast_failed_to_dispatch_notification',
 ] as const;
 
 export type F7NotificationType = (typeof F7_NOTIFICATION_TYPES)[number];
@@ -113,9 +114,16 @@ function resolveNotificationType(templateKey: string): F7NotificationType {
       // FR-028 / AS3 — summary email enqueued at sending → sent transition
       // (both webhook-driven completion + 24h reconciliation paths).
       return 'broadcast_delivered_notification';
+    case 'broadcast_failed_to_dispatch':
+      // FR-021 / AS2 — transactional email enqueued when the cron
+      // dispatcher exhausts the 1-hour retry budget (Slice D) AND on any
+      // permanent dispatch failure (Resend 4xx, audience-empty after
+      // suppression, resource-missing). Quota reservation stays held;
+      // member can re-trigger or re-schedule manually.
+      return 'broadcast_failed_to_dispatch_notification';
     default:
       throw new Error(
-        `email-transactional-bridge: unknown templateKey "${templateKey}" — must be one of broadcast_{approved,rejected,cancelled,delivered}`,
+        `email-transactional-bridge: unknown templateKey "${templateKey}" — must be one of broadcast_{approved,rejected,cancelled,delivered,failed_to_dispatch}`,
       );
   }
 }
