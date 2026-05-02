@@ -96,7 +96,10 @@ describe('cron reconcile-stuck-sending — wire contract', () => {
     expect(reconcileStuckSendingMock).not.toHaveBeenCalled();
   });
 
-  it('kill-switch off → 503 feature_disabled', async () => {
+  it('kill-switch off → 200 + {skipped:true, reason:feature_disabled}', async () => {
+    // Verify-fix R6 (2026-05-02): kill-switch returns 200 + skipped:true
+    // (parity with dispatch + prune routes) to prevent cron-job.org
+    // retry-storm during dark-launch periods. Was 503 pre-R6.
     envMock.features.f7Broadcasts = false;
     const { POST } = await import(
       '@/app/api/cron/broadcasts/reconcile-stuck-sending/route'
@@ -104,9 +107,13 @@ describe('cron reconcile-stuck-sending — wire contract', () => {
     const res = await POST(
       makeRequest({ auth: 'Bearer test-cron-secret' }),
     );
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as { error?: { code?: string } };
-    expect(body.error?.code).toBe('feature_disabled');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      skipped?: boolean;
+      reason?: string;
+    };
+    expect(body.skipped).toBe(true);
+    expect(body.reason).toBe('feature_disabled');
     expect(runInTenantMock).not.toHaveBeenCalled();
     expect(reconcileStuckSendingMock).not.toHaveBeenCalled();
   });

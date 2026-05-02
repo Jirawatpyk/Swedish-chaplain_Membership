@@ -18,6 +18,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import {
   asBroadcastId,
@@ -166,6 +167,12 @@ export async function saveDraft(
           },
           requestId: input.requestId,
         });
+        // T172 — emit-site wiring (Phase 9). Compose-funnel TOF.
+        broadcastsMetrics.draftCount(
+          deps.tenant.slug,
+          input.actorRole === 'admin_proxy' ? 'admin_proxy' : 'member_self_service',
+        );
+        broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_drafted');
       } else {
         // UPDATE — caller asserted draft exists; FR-004 → no audit on edit
         const broadcastId = asBroadcastId(input.draftId);

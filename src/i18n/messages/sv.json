@@ -1664,6 +1664,7 @@
       "dashboard": "Instrumentpanel",
       "profile": "Profil",
       "invoices": "Fakturor",
+      "broadcasts": "E-utskick",
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering"
     }
@@ -1700,6 +1701,10 @@
     "loadingForm": "Laddar formulär"
   },
   "portal": {
+    "account": {
+      "title": "Kontoinställningar",
+      "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl."
+    },
     "preferredLocale": {
       "title": "Språk för aviseringar",
       "description": "Välj språket för de mejl du får (utskicksgodkännanden, fakturor, lösenordsåterställning). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",

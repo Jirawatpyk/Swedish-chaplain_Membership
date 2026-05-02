@@ -209,13 +209,19 @@ describe('concurrent cross-method cancel — partial unique index safety', () =>
     expect(rejected.length).toBe(1);
 
     // Loser raises a clean PostgreSQL unique-violation, NOT a
-    // deadlock or pool timeout.
+    // deadlock or pool timeout. Drizzle 0.45+ wraps Postgres errors
+    // in `Failed query: ...` so walk the cause chain to find the
+    // original violation message.
     const rejectedReason =
       rejected[0]?.status === 'rejected' ? rejected[0].reason : null;
+    const parts: string[] = [];
+    let cur: unknown = rejectedReason;
+    while (cur instanceof Error) {
+      parts.push(cur.message);
+      cur = (cur as { cause?: unknown }).cause;
+    }
     const reasonStr =
-      rejectedReason instanceof Error
-        ? rejectedReason.message
-        : String(rejectedReason);
+      parts.length > 0 ? parts.join(' | ') : String(rejectedReason);
     expect(reasonStr.toLowerCase()).toMatch(
       /unique|duplicate|payments_one_active_per_invoice/,
     );

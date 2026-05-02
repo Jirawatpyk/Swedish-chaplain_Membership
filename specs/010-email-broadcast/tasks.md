@@ -481,21 +481,21 @@ Closes all 6 findings from `/speckit.verify.run` Phase 8 round 1 + 3 findings fr
 
 **Purpose**: Wire all metrics + alerts + traces + log redactions + secret rotations + DPIA + Vercel platform redaction. Required before /speckit.review per Constitution Principle VII.
 
-- [ ] T172 [P] Wire OTel metrics in `src/modules/broadcasts/infrastructure/metrics.ts` — all 16 metrics from plan.md § Constitution Principle VII Metrics list. Backed by `@vercel/otel`. Sample rates per perf.md CHK049 (100% for metrics, 100% webhook events, 10% prod traces / 100% dev/staging via `parentbased_traceidratio`). Errors + slow-path requests >1s at 100% via tail-sampler.
-- [ ] T173 [P] Wire 11 alert rules in `docs/observability.md § F7 alerts` — table per plan.md § Performance & Capacity deep-dive > Observability + Plan § Constitution Principle VII Alerts. Wire via Datadog / Vercel Observability dashboard (configuration in repo via `.observability/` directory — stub if not yet provisioned).
-- [ ] T174 [P] Wire distributed trace spans in Application + Infrastructure layers per Plan § Performance & Capacity deep-dive > Observability > Distributed trace span set (CHK047). 6 root spans + child spans documented in code-block format.
-- [ ] T175 [P] Extend `src/lib/logger.ts` redact list with F7 forbidden fields per FR-042: `recipient_email`, `recipient_emails`, `body_html`, `subject` (when logging broadcast contents — only event-id + counts logged), `RESEND_BROADCASTS_API_KEY`, `RESEND_BROADCASTS_WEBHOOK_SECRET`, `UNSUBSCRIBE_TOKEN_SECRET`, `Resend-Signature`, `Authorization`, full webhook body. Recipient lists logged as count + first-3-hashes per Plan § Performance & Capacity deep-dive > Log redaction.
-- [ ] T176 [P] Configure Vercel project log redaction per privacy.md CHK048 + Plan § Constitution Principle VII Vercel platform-layer log redaction verification — mask `/unsubscribe/v1\..*` URL path component in access logs UI + log-drain export. If Vercel does not support per-path redaction, document the absence in `docs/observability.md § F7 platform-redaction-limitation` + add quarterly `UNSUBSCRIBE_TOKEN_SECRET` rotation per Plan secret-rotation table.
-- [ ] T177 [P] Document secret-rotation procedures in `docs/runbooks/credential-compromise.md` per Plan § Performance & Capacity deep-dive > Secret-rotation table. 4 secrets covered: `RESEND_BROADCASTS_API_KEY` (quarterly), `RESEND_BROADCASTS_WEBHOOK_SECRET` (annually), `UNSUBSCRIBE_TOKEN_SECRET` (annually + quarterly if CHK048 unavailable), `CRON_SECRET` (annually cross-feature).
-- [ ] T178 [P] Document GDPR Art. 17 erasure cascade per data-model.md § GDPR Art. 17 erasure cascade — when F3 member row erased: `broadcasts.requested_by_member_id` SET NULL; `broadcast_deliveries.recipient_member_id` SET NULL; `marketing_unsubscribes.member_id` SET NULL but row preserved (indefinite retention). Implement in F3 cascade hooks (extends F3 erasure use case).
-- [ ] T178a [P] Implement F3 archival/erasure auto-cancel cascade for in-flight broadcasts (Spec § Edge Cases L353 — Coverage Gap C2 from /speckit.analyze). When F3 member is archived OR GDPR-erased AND member has broadcasts WHERE `status IN ('submitted','approved')`: auto-cancel each in-flight broadcast with `cancellation_reason = 'originator_member_deleted'` + release quota reservation per FR-003 + audit `broadcast_cancelled` with `actor_role = 'system'` and `cancelled_by_user_id = NULL` (system-initiated). Implementation: extend F3 archival/erasure use case to call F7 barrel export `cancelInFlightBroadcastsForMember(tenantCtx, memberId, reason): Result<void, CascadeError>` (NEW barrel export). Integration test `tests/integration/broadcasts/member-erasure-cascade.test.ts`: seed member with 2 submitted + 1 approved broadcast → trigger F3 archival → assert all 3 transition to `cancelled` + 3 audit events emitted + reservations released.
-- [ ] T179 [P] Implement `tests/integration/broadcasts/jcc-test-tenant-fixture.test.ts` (Q18 / SC-011 per-release multi-tenant readiness) — CI-nightly job that creates JCC-test tenant, seeds default segments, configures Resend test-mode account stub, submits + approves + dispatches synthetic broadcast, verifies cross-tenant isolation + tenant-scoped audit + tenant-scoped metrics, tears down. Total runtime <5 min. Failure = ship blocker.
-- [ ] T180 [P] Create `.github/workflows/multi-tenant-readiness.yml` — runs T179 nightly. Posts status badge.
-- [ ] T181 [P] Implement CI synthetic load script `scripts/synthetic-load-broadcasts.ts` per perf.md CHK065 — exercises 5 critical paths (compose TTFB / submit / queue list at 1k rows / approve send-now / webhook). Asserts p95 budgets per SC-010. PR fails if p95 >10% over budget.
-- [ ] T182 [P] Wire `next-bundle-analyzer` JS bundle budgets per perf.md CHK038 — fails build if any route exceeds budget (compose ≤180 KB / queue ≤120 KB / detail ≤100 KB / benefits ≤80 KB / unsubscribe ≤30 KB).
-- [ ] T183 [P] Create DPIA stub `docs/compliance/dpia-template.md` (privacy.md CHK054) + populate `docs/compliance/processing-records.md § F7` (privacy.md CHK055).
-- [ ] T184 [P] Implement Application audit emitter in `src/modules/broadcasts/infrastructure/audit/broadcasts-audit.ts` — emits all 37 event types from FR-033. Each event has structured payload (member_id + broadcast_id + actor_role + segment + counts; NEVER raw recipient emails / body / subject per FR-034). Map each event type to `retention_years = 5` per migration 0069.
-- [ ] T185 [P] Wire audit-log query for compliance officer per privacy.md CHK034 — admin-role can read F7 audit events (deferred to F9 audit-viewer surface but the query helper is exposed via F7 module barrel for F9 to consume).
+- [X] T172 [P] Wire OTel metrics in `src/modules/broadcasts/infrastructure/metrics.ts` — all 16 metrics from plan.md § Constitution Principle VII Metrics list. Backed by `@vercel/otel`. Sample rates per perf.md CHK049 (100% for metrics, 100% webhook events, 10% prod traces / 100% dev/staging via `parentbased_traceidratio`). Errors + slow-path requests >1s at 100% via tail-sampler.
+- [X] T173 [P] Wire 11 alert rules in `docs/observability.md § F7 alerts` — table per plan.md § Performance & Capacity deep-dive > Observability + Plan § Constitution Principle VII Alerts. Wire via Datadog / Vercel Observability dashboard (configuration in repo via `.observability/` directory — stub if not yet provisioned).
+- [X] T174 [P] Wire distributed trace spans in Application + Infrastructure layers per Plan § Performance & Capacity deep-dive > Observability > Distributed trace span set (CHK047). 6 root spans + child spans documented in code-block format.
+- [X] T175 [P] Extend `src/lib/logger.ts` redact list with F7 forbidden fields per FR-042: `recipient_email`, `recipient_emails`, `body_html`, `subject` (when logging broadcast contents — only event-id + counts logged), `RESEND_BROADCASTS_API_KEY`, `RESEND_BROADCASTS_WEBHOOK_SECRET`, `UNSUBSCRIBE_TOKEN_SECRET`, `Resend-Signature`, `Authorization`, full webhook body. Recipient lists logged as count + first-3-hashes per Plan § Performance & Capacity deep-dive > Log redaction.
+- [X] T176 [P] Configure Vercel project log redaction per privacy.md CHK048 + Plan § Constitution Principle VII Vercel platform-layer log redaction verification — mask `/unsubscribe/v1\..*` URL path component in access logs UI + log-drain export. If Vercel does not support per-path redaction, document the absence in `docs/observability.md § F7 platform-redaction-limitation` + add quarterly `UNSUBSCRIBE_TOKEN_SECRET` rotation per Plan secret-rotation table.
+- [X] T177 [P] Document secret-rotation procedures in `docs/runbooks/credential-compromise.md` per Plan § Performance & Capacity deep-dive > Secret-rotation table. 4 secrets covered: `RESEND_BROADCASTS_API_KEY` (quarterly), `RESEND_BROADCASTS_WEBHOOK_SECRET` (annually), `UNSUBSCRIBE_TOKEN_SECRET` (annually + quarterly if CHK048 unavailable), `CRON_SECRET` (annually cross-feature).
+- [X] T178 [P] Document GDPR Art. 17 erasure cascade per data-model.md § GDPR Art. 17 erasure cascade — when F3 member row erased: `broadcasts.requested_by_member_id` SET NULL; `broadcast_deliveries.recipient_member_id` SET NULL; `marketing_unsubscribes.member_id` SET NULL but row preserved (indefinite retention). Implement in F3 cascade hooks (extends F3 erasure use case).
+- [X] T178a [P] Implement F3 archival/erasure auto-cancel cascade for in-flight broadcasts (Spec § Edge Cases L353 — Coverage Gap C2 from /speckit.analyze). When F3 member is archived OR GDPR-erased AND member has broadcasts WHERE `status IN ('submitted','approved')`: auto-cancel each in-flight broadcast with `cancellation_reason = 'originator_member_deleted'` + release quota reservation per FR-003 + audit `broadcast_cancelled` with `actor_role = 'system'` and `cancelled_by_user_id = NULL` (system-initiated). Implementation: extend F3 archival/erasure use case to call F7 barrel export `cancelInFlightBroadcastsForMember(tenantCtx, memberId, reason): Result<void, CascadeError>` (NEW barrel export). Integration test `tests/integration/broadcasts/member-erasure-cascade.test.ts`: seed member with 2 submitted + 1 approved broadcast → trigger F3 archival → assert all 3 transition to `cancelled` + 3 audit events emitted + reservations released.
+- [X] T179 [P] Implement `tests/integration/broadcasts/jcc-test-tenant-fixture.test.ts` (Q18 / SC-011 per-release multi-tenant readiness) — CI-nightly job that creates JCC-test tenant, seeds default segments, configures Resend test-mode account stub, submits + approves + dispatches synthetic broadcast, verifies cross-tenant isolation + tenant-scoped audit + tenant-scoped metrics, tears down. Total runtime <5 min. Failure = ship blocker.
+- [X] T180 [P] Create `.github/workflows/multi-tenant-readiness.yml` — runs T179 nightly. Posts status badge.
+- [X] T181 [P] Implement CI synthetic load script `scripts/synthetic-load-broadcasts.ts` per perf.md CHK065 — exercises 5 critical paths (compose TTFB / submit / queue list at 1k rows / approve send-now / webhook). Asserts p95 budgets per SC-010. PR fails if p95 >10% over budget.
+- [X] T182 [P] Wire `next-bundle-analyzer` JS bundle budgets per perf.md CHK038 — fails build if any route exceeds budget (compose ≤180 KB / queue ≤120 KB / detail ≤100 KB / benefits ≤80 KB / unsubscribe ≤30 KB).
+- [X] T183 [P] Create DPIA stub `docs/compliance/dpia-template.md` (privacy.md CHK054) + populate `docs/compliance/processing-records.md § F7` (privacy.md CHK055).
+- [X] T184 [P] Implement Application audit emitter in `src/modules/broadcasts/infrastructure/audit/broadcasts-audit.ts` — emits all 37 event types from FR-033. Each event has structured payload (member_id + broadcast_id + actor_role + segment + counts; NEVER raw recipient emails / body / subject per FR-034). Map each event type to `retention_years = 5` per migration 0069.
+- [X] T185 [P] Wire audit-log query for compliance officer per privacy.md CHK034 — admin-role can read F7 audit events (deferred to F9 audit-viewer surface but the query helper is exposed via F7 module barrel for F9 to consume).
 
 ---
 
@@ -505,48 +505,48 @@ Closes all 6 findings from `/speckit.verify.run` Phase 8 round 1 + 3 findings fr
 
 ### i18n + a11y polish
 
-- [ ] T186 [P] Verify `pnpm check:i18n` passes — every key in `en.json` present in `th.json` + `sv.json`. Estimated ~200 new keys × 3 locales = ~600 entries.
-- [ ] T187 [P] Implement `pnpm check:i18n --orphans` flag per i18n.md CHK054 — extends `scripts/check-i18n-coverage.ts`.
-- [ ] T188 [P] Implement static-key invariant ESLint rule per i18n.md CHK053 — forbid template-literal / variable-interpolation in `t()` calls. Static `ERROR_KEY_MAP as const satisfies Record<...>` pattern for error-code mapping.
+- [X] T186 [P] Verify `pnpm check:i18n` passes — every key in `en.json` present in `th.json` + `sv.json`. Estimated ~200 new keys × 3 locales = ~600 entries.
+- [X] T187 [P] Implement `pnpm check:i18n --orphans` flag per i18n.md CHK054 — extends `scripts/check-i18n-coverage.ts`.
+- [X] T188 [P] Implement static-key invariant ESLint rule per i18n.md CHK053 — forbid template-literal / variable-interpolation in `t()` calls. Static `ERROR_KEY_MAP as const satisfies Record<...>` pattern for error-code mapping.
 - [ ] T189 [P] Chamber TH/SV liaison reviews legally-precise strings per i18n.md CHK041 — Q15 banner copy + PDPA notices + footer unsubscribe CTA. JSON-diff workflow: maintainer adds EN + placeholder TH/SV → liaison reviews via PR comment → liaison commits final TH/SV strings.
-- [ ] T190 [P] Run automated `@axe-core/playwright` scan on every F7 surface (compose / queue / detail / benefits / 3 banners / dialogs / unsubscribe page) per a11y.md CHK055.
+- [X] T190 [P] Run automated `@axe-core/playwright` scan on every F7 surface (compose / queue / detail / benefits / 3 banners / dialogs / unsubscribe page) per a11y.md CHK055.
 - [ ] T191 Manual screen-reader QA pass per a11y.md CHK056 — NVDA + VoiceOver covering compose flow + admin approve flow + banner acknowledge flow + unsubscribe flow. Recipient: chamber-os-ux-architect + mobile-a11y-ux-reviewer agents staff-review.
-- [ ] T192 [P] Implement Tiptap zoom 200% Playwright test `tests/e2e/broadcast-a11y.spec.ts > tiptap-zoom-200` per a11y.md CHK006 + i18n.md CHK006.
-- [ ] T193 [P] Implement `<html lang>` + `<span lang="auto">` Playwright tests `tests/e2e/broadcast-a11y.spec.ts > html-lang-attribute-correct-per-resolved-locale` per i18n.md CHK065.
-- [ ] T194 [P] Implement `prefers-reduced-motion` Playwright tests `tests/e2e/broadcast-a11y.spec.ts > reduced-motion` per a11y.md CHK058 — verifies 7-row reduced-motion matrix.
-- [ ] T195 [P] Implement TH IME composition Playwright test `tests/e2e/broadcast-i18n.spec.ts > tiptap-th-ime-composition` per i18n.md CHK059.
-- [ ] T196 [P] Implement TH+EN+SV dispatch round-trip Playwright test `tests/e2e/broadcast-i18n.spec.ts > resend-dispatch-roundtrip` per i18n.md CHK032 — TH-only subject + bidirectional + emoji-bearing subjects.
-- [ ] T197 [P] Implement length-expansion Playwright test `tests/e2e/broadcast-i18n.spec.ts > localised-layout-survives-th-expansion` per i18n.md CHK056 — switches to TH locale, navigates each F7 surface, asserts no overflow + no horizontal scroll at 320px + 1280px.
+- [X] T192 [P] Implement Tiptap zoom 200% Playwright test `tests/e2e/broadcast-a11y.spec.ts > tiptap-zoom-200` per a11y.md CHK006 + i18n.md CHK006.
+- [X] T193 [P] Implement `<html lang>` + `<span lang="auto">` Playwright tests `tests/e2e/broadcast-a11y.spec.ts > html-lang-attribute-correct-per-resolved-locale` per i18n.md CHK065.
+- [X] T194 [P] Implement `prefers-reduced-motion` Playwright tests `tests/e2e/broadcast-a11y.spec.ts > reduced-motion` per a11y.md CHK058 — verifies 7-row reduced-motion matrix.
+- [X] T195 [P] Implement TH IME composition Playwright test `tests/e2e/broadcast-i18n.spec.ts > tiptap-th-ime-composition` per i18n.md CHK059.
+- [X] T196 [P] Implement TH+EN+SV dispatch round-trip Playwright test `tests/e2e/broadcast-i18n.spec.ts > resend-dispatch-roundtrip` per i18n.md CHK032 — TH-only subject + bidirectional + emoji-bearing subjects.
+- [X] T197 [P] Implement length-expansion Playwright test `tests/e2e/broadcast-i18n.spec.ts > localised-layout-survives-th-expansion` per i18n.md CHK056 — switches to TH locale, navigates each F7 surface, asserts no overflow + no horizontal scroll at 320px + 1280px.
 
 ### Security + compliance polish
 
-- [ ] T198 Run `security-threat-modeler` agent pass per Plan § Constitution Principle IX solo-maintainer substitute (e). Reviews HTML-sanitisation XSS surface + token-forgery surface + webhook signature surface.
-- [ ] T199 Run `pdpa-gdpr-compliance-officer` agent pass per Plan § Constitution Principle IX solo-maintainer substitute (d). Reviews marketing-consent + unsubscribe surface + DSR coverage.
-- [ ] T200 Verify SAQ-A scope unchanged — F7 has no payment surface; PCI scope unaffected (Plan § Constitution Principle IV N/A).
-- [ ] T201 Verify F4 audit retention NOT impacted — F7 events default to 5y retention (NOT 10y tax-document overlap) per migration 0069.
-- [ ] T202 Verify cross-tenant suppression isolation per FR-018 + Q19 + JCC-test fixture — same person unsubscribed in tenant A is still deliverable in tenant B.
-- [ ] T203 Run `pnpm audit --prod` — fails on HIGH/CRITICAL. Sanitiser + Tiptap + email-validator are security-critical components per Plan § Constitution OWASP A06.
+- [X] T198 Run `security-threat-modeler` agent pass per Plan § Constitution Principle IX solo-maintainer substitute (e). Reviews HTML-sanitisation XSS surface + token-forgery surface + webhook signature surface.
+- [X] T199 Run `pdpa-gdpr-compliance-officer` agent pass per Plan § Constitution Principle IX solo-maintainer substitute (d). Reviews marketing-consent + unsubscribe surface + DSR coverage.
+- [X] T200 Verify SAQ-A scope unchanged — F7 has no payment surface; PCI scope unaffected (Plan § Constitution Principle IV N/A).
+- [X] T201 Verify F4 audit retention NOT impacted — F7 events default to 5y retention (NOT 10y tax-document overlap) per migration 0069.
+- [X] T202 Verify cross-tenant suppression isolation per FR-018 + Q19 + JCC-test fixture — same person unsubscribed in tenant A is still deliverable in tenant B.
+- [X] T203 Run `pnpm audit --prod` — fails on HIGH/CRITICAL. Sanitiser + Tiptap + email-validator are security-critical components per Plan § Constitution OWASP A06.
 
 ### Performance polish
 
-- [ ] T204 [P] Run perf benchmark suite — verify SC-010 budgets met at 5k member fixture: compose TTFB <600ms / submit <1.2s / queue <500ms / approve <1.5s / webhook <250ms / unsubscribe <400ms. Capture results in `specs/010-email-broadcast/perf-benchmarks.md`.
-- [ ] T205 [P] Verify suppression lookup batched as single `WHERE email = ANY($1)` per perf.md CHK028 + CHK058 — `EXPLAIN ANALYZE` integration test.
-- [ ] T206 [P] Verify custom-list validation as single CTE per perf.md CHK029 — `EXPLAIN ANALYZE` integration test.
-- [ ] T207 [P] Verify segment resolver index `(tenant_id, plan_id) INCLUDE (primary_contact_email, member_id)` per perf.md CHK025 — sub-50ms p95 at 5k members + 5k suppressions.
-- [ ] T208 [P] Verify RLS overhead ≤5ms p95 per perf.md CHK024 — `EXPLAIN ANALYZE` 5 hottest queries.
-- [ ] T209 [P] Verify TanStack Table virtualization at >100 rows per perf.md CHK039 — Playwright DOM-node-count assertion at 1k rows.
+- [X] T204 [P] Run perf benchmark suite — verify SC-010 budgets met at 5k member fixture: compose TTFB <600ms / submit <1.2s / queue <500ms / approve <1.5s / webhook <250ms / unsubscribe <400ms. Capture results in `specs/010-email-broadcast/perf-benchmarks.md`.
+- [X] T205 [P] Verify suppression lookup batched as single `WHERE email = ANY($1)` per perf.md CHK028 + CHK058 — `EXPLAIN ANALYZE` integration test.
+- [X] T206 [P] Verify custom-list validation as single CTE per perf.md CHK029 — `EXPLAIN ANALYZE` integration test.
+- [X] T207 [P] Verify segment resolver index `(tenant_id, plan_id) INCLUDE (primary_contact_email, member_id)` per perf.md CHK025 — sub-50ms p95 at 5k members + 5k suppressions.
+- [X] T208 [P] Verify RLS overhead ≤5ms p95 per perf.md CHK024 — `EXPLAIN ANALYZE` 5 hottest queries.
+- [X] T209 [P] Verify TanStack Table virtualization at >100 rows per perf.md CHK039 — Playwright DOM-node-count assertion at 1k rows.
 
 ### Final verification
 
-- [ ] T210 Run full CI pipeline locally per CLAUDE.md: `pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:layout && pnpm test:integration && pnpm test:e2e --workers=1`. ALL GREEN required before /speckit.verify.
-- [ ] T211 Verify Constitution v1.4.0 Principle I tenant-isolation Review-Gate blocker test `tests/integration/broadcasts/tenant-isolation.test.ts` GREEN.
-- [ ] T212 Verify Constitution v1.4.0 Principle I clause 5 super-admin: NOT applicable to F7 (no super-admin console yet — F13 scope).
+- [X] T210 Run full CI pipeline locally per CLAUDE.md: `pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:layout && pnpm test:integration && pnpm test:e2e --workers=1`. ALL GREEN required before /speckit.verify.
+- [X] T211 Verify Constitution v1.4.0 Principle I tenant-isolation Review-Gate blocker test `tests/integration/broadcasts/tenant-isolation.test.ts` GREEN.
+- [X] T212 Verify Constitution v1.4.0 Principle I clause 5 super-admin: NOT applicable to F7 (no super-admin console yet — F13 scope).
 - [ ] T213 Verify quickstart.md walkthrough end-to-end against staging deployment.
-- [ ] T214 Verify FR-039 + SC-006 i18n coverage 100% in EN + TH + SV — `pnpm check:i18n` GREEN.
+- [X] T214 Verify FR-039 + SC-006 i18n coverage 100% in EN + TH + SV — `pnpm check:i18n` GREEN.
 - [ ] T215 Verify SC-010 per-surface p95 budgets met at production scale — capture RUM windows in retrospective.
-- [ ] T216 Verify SC-011 multi-tenant readiness per-release invariant — JCC-test fixture passes.
-- [ ] T217 Write retrospective `specs/010-email-broadcast/retrospective.md` per Plan § Constitution Principle IX solo-maintainer substitute evidence — capture: (a) `/speckit.review` ≥3 passes evidence, (b) `/speckit.staff-review` correctness+security+tests results, (c) `pdpa-gdpr-compliance-officer` agent pass, (d) `security-threat-modeler` agent pass, (e) DB-level RLS+FORCE + sanitiser-at-Application defence-in-depth verified, (f) post-remediation `/speckit.verify` results.
-- [ ] T218 Update `CLAUDE.md` § Recent Changes — add F7 Email Broadcast (E-Blast) ship snapshot summary.
+- [X] T216 Verify SC-011 multi-tenant readiness per-release invariant — JCC-test fixture passes.
+- [X] T217 Write retrospective `specs/010-email-broadcast/retrospective.md` per Plan § Constitution Principle IX solo-maintainer substitute evidence — capture: (a) `/speckit.review` ≥3 passes evidence, (b) `/speckit.staff-review` correctness+security+tests results, (c) `pdpa-gdpr-compliance-officer` agent pass, (d) `security-threat-modeler` agent pass, (e) DB-level RLS+FORCE + sanitiser-at-Application defence-in-depth verified, (f) post-remediation `/speckit.verify` results.
+- [X] T218 Update `CLAUDE.md` § Recent Changes — add F7 Email Broadcast (E-Blast) ship snapshot summary.
 
 ---
 

@@ -1,5 +1,5 @@
-/**
- * T046 — Unit tests for `compute-quota-counter.ts` Application use-case.
+﻿/**
+ * T046 โ€” Unit tests for `compute-quota-counter.ts` Application use-case.
  *
  * Wave 6 fills the bodies. Tests exercise the derived quota view:
  *   reserved = COUNT(broadcasts WHERE status IN ('submitted','approved') AND member)
@@ -107,6 +107,7 @@ function makeBroadcastsRepo({
     async pruneExpiredDrafts() {
       return { prunedCount: 0 };
     },
+    async listInFlightOwnedByMember() { return []; },
   };
 }
 
@@ -120,7 +121,7 @@ function makeDeps(opts: DepsFixture = {}) {
   };
 }
 
-describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
+describe('compute-quota-counter โ€” Wave 6 (T067 GREEN)', () => {
   it('use-case module exists at application/use-cases/compute-quota-counter.ts', async () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });
@@ -149,11 +150,11 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
     }
   });
 
-  it('R4 Tests-Gap#3: AS4 — cancelled broadcast does NOT count toward reserved (quota released)', async () => {
+  it('R4 Tests-Gap#3: AS4 โ€” cancelled broadcast does NOT count toward reserved (quota released)', async () => {
     // Verify-fix R4 (2026-05-02): spec AS4 (line 326) explicitly says
     // "the quota reservation is released" on cancel. The repo SQL
     // (`drizzle-broadcasts-repo.ts:667`) does NOT include 'cancelled'
-    // in the reserved-status set — but that contract is invisible
+    // in the reserved-status set โ€” but that contract is invisible
     // unless a test asserts it. Mirrors the failed_to_dispatch
     // assertion from Tests-Gap#1: contract locked at the use-case
     // boundary so a future SQL refactor can't silently break AS4.
@@ -185,7 +186,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
       expect(result.value.counter.reserved).toBe(1);
       expect(result.value.counter.remaining).toBe(0);
       // Member is BLOCKED from submitting new broadcasts because the
-      // failed_to_dispatch row holds the slot — spec AS2 contract.
+      // failed_to_dispatch row holds the slot โ€” spec AS2 contract.
     }
   });
 
@@ -202,7 +203,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
   // ---- Quota year boundary ------------------------------------------
 
   it('quota_year computed via Asia/Bangkok fiscal-year boundary', async () => {
-    // 2026-12-31 23:00 UTC = 2027-01-01 06:00 Asia/Bangkok → year 2027
+    // 2026-12-31 23:00 UTC = 2027-01-01 06:00 Asia/Bangkok โ’ year 2027
     const deps = makeDeps({
       clockNow: new Date('2026-12-31T23:00:00Z'),
       cap: 6,
@@ -237,7 +238,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
     }
   });
 
-  it('returns cap=0 for free-tier members (eblast_per_year=0) → zeroQuota return', async () => {
+  it('returns cap=0 for free-tier members (eblast_per_year=0) โ’ zeroQuota return', async () => {
     const deps = makeDeps({ cap: 0 });
     const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
     expect(result.ok).toBe(true);
@@ -291,7 +292,7 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
     }
   });
 
-  it('Round 4 M4 — non-member_not_found plan error returns ok with zero counter (member exists, plan unresolved)', async () => {
+  it('Round 4 M4 โ€” non-member_not_found plan error returns ok with zero counter (member exists, plan unresolved)', async () => {
     // Branch coverage: `planLookup.ok=false` AND `error.kind !== 'plan_lookup.member_not_found'`.
     // Source returns ok({zeroCounter, '', '', ...reset}) so the page renders
     // 0/0 remaining without crashing. A regression that flips the condition
@@ -327,17 +328,17 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────
+// โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 // `currentQuotaYear` non-Bangkok-tz coverage. Round-4-era warn-path
 // for unknown-slug fallback was removed once `getTenantTimezone` was
 // migrated from the hard-coded slug map to an env-driven, boot-validated
-// IANA value (PR #18 follow-up — single TENANT_TIMEZONE per deployment).
-// ─────────────────────────────────────────────────────────────────────
+// IANA value (PR #18 follow-up โ€” single TENANT_TIMEZONE per deployment).
+// โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€โ”€
 import { currentQuotaYear } from '@/modules/broadcasts';
 
-describe('currentQuotaYear — tenant timezone parameter', () => {
+describe('currentQuotaYear โ€” tenant timezone parameter', () => {
   it('defaults to Asia/Bangkok when tenantTz omitted (legacy callers)', () => {
-    // 2026-12-31T20:00Z = 2027-01-01T03:00 ICT → year 2027
+    // 2026-12-31T20:00Z = 2027-01-01T03:00 ICT โ’ year 2027
     expect(currentQuotaYear(new Date('2026-12-31T20:00:00Z'))).toBe(2027);
   });
 
@@ -350,8 +351,8 @@ describe('currentQuotaYear — tenant timezone parameter', () => {
     ).toBe(2027);
   });
 
-  it('threads explicit Europe/Stockholm — same instant, different year', () => {
-    // 2026-12-31T20:00Z = 2026-12-31T21:00 CET (Stockholm) → year 2026
+  it('threads explicit Europe/Stockholm โ€” same instant, different year', () => {
+    // 2026-12-31T20:00Z = 2026-12-31T21:00 CET (Stockholm) โ’ year 2026
     expect(
       currentQuotaYear(
         new Date('2026-12-31T20:00:00Z'),

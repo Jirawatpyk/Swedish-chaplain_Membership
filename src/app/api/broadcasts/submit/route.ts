@@ -29,6 +29,9 @@ import {
 } from '@/lib/broadcasts-route-helpers';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 const SegmentSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('all_members') }),
@@ -99,8 +102,48 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     requestId: ctx.requestId,
   };
 
+  // T174 — root span `member_submit_broadcast` (docs/observability.md
+  // § 22). Wraps the use-case so traces show named hops + duration
+  // histogram for SLO-F7-002. Drizzle + Resend fetch sub-spans are
+  // auto-instrumented by @vercel/otel.
+  const startedAtMs = Date.now();
   try {
-    const result = await submitBroadcast(deps, input);
+    const result = await broadcastsTracer().startActiveSpan(
+      'member_submit_broadcast',
+      {
+        attributes: {
+          'tenant.id': ctx.tenant.slug,
+          'actor.role': 'member_self_service',
+          'segment.type': parsed.data.segment.kind,
+        },
+      },
+      async (span) => {
+        try {
+          const r = await submitBroadcast(deps, input);
+          span.setAttribute(
+            'broadcasts.outcome',
+            r.ok ? 'submitted' : `err:${r.error.kind}`,
+          );
+          if (r.ok) {
+            span.setAttribute('broadcast.id', r.value.broadcastId);
+          }
+          return r;
+        } catch (e) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: e instanceof Error ? e.message : 'submit_threw',
+          });
+          throw e;
+        } finally {
+          span.end();
+        }
+      },
+    );
+    broadcastsMetrics.submitDurationMs(
+      ctx.tenant.slug,
+      'member_self_service',
+      Date.now() - startedAtMs,
+    );
     if (!result.ok) {
       return mapSubmitError(result.error, correlationId);
     }

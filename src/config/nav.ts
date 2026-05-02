@@ -8,6 +8,7 @@ import {
   BuildingIcon,
   ReceiptIcon,
   FileCog2Icon,
+  MegaphoneIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -143,6 +144,17 @@ export const memberNavConfig: NavConfig = {
           icon: ReceiptIcon,
           href: '/portal/invoices',
           activePattern: '/portal/invoices',
+        },
+        // F7 — Email Broadcasts (E-Blast) entry point. Lands on the
+        // benefits dashboard which shows quota + history + Compose CTA.
+        // Members on plans with no E-Blast quota still see the page
+        // (with upgrade-explainer treatment) so the link is shown to
+        // every member regardless of tier.
+        {
+          titleKey: 'nav.member.broadcasts',
+          icon: MegaphoneIcon,
+          href: '/portal/benefits/e-blasts',
+          activePattern: '/portal/benefits/e-blasts',
         },
         {
           titleKey: 'nav.member.account',

@@ -282,6 +282,92 @@ export const REDACT_PATHS = [
   '*.memberIdentitySnapshot',
   'member_identity_snapshot',
   '*.member_identity_snapshot',
+  // --- F7 broadcasts secrets + content + signature headers (T175,
+  // FR-042; plan.md § 22.4 redact rules) ---
+  // Resend Broadcasts secrets — separate from F1+F4 transactional
+  // RESEND_API_KEY (already redacted above). Compromise grants the
+  // ability to dispatch arbitrary broadcasts on tenant accounts.
+  'RESEND_BROADCASTS_API_KEY',
+  'resend_broadcasts_api_key',
+  '*.resend_broadcasts_api_key',
+  'resendBroadcastsApiKey',
+  '*.resendBroadcastsApiKey',
+  'RESEND_BROADCASTS_WEBHOOK_SECRET',
+  'resend_broadcasts_webhook_secret',
+  '*.resend_broadcasts_webhook_secret',
+  'resendBroadcastsWebhookSecret',
+  '*.resendBroadcastsWebhookSecret',
+  // F7 unsubscribe-token HMAC secret. Independent rotation cadence
+  // from AUTH_COOKIE_SIGNING_SECRET per research.md § 4.
+  'UNSUBSCRIBE_TOKEN_SECRET',
+  'unsubscribe_token_secret',
+  '*.unsubscribe_token_secret',
+  'unsubscribeTokenSecret',
+  '*.unsubscribeTokenSecret',
+  // Svix HMAC headers on the Resend Broadcasts webhook. Mirror the
+  // Stripe-Signature redaction above.
+  'Svix-Signature',
+  '*.Svix-Signature',
+  'svix-signature',
+  '*.svix-signature',
+  'svixSignature',
+  '*.svixSignature',
+  'Svix-Id',
+  '*.Svix-Id',
+  'svix-id',
+  '*.svix-id',
+  'svixId',
+  '*.svixId',
+  'Svix-Timestamp',
+  '*.Svix-Timestamp',
+  'svix-timestamp',
+  '*.svix-timestamp',
+  'svixTimestamp',
+  '*.svixTimestamp',
+  'Resend-Signature',
+  '*.Resend-Signature',
+  'resend-signature',
+  '*.resend-signature',
+  'resendSignature',
+  '*.resendSignature',
+  // Member-authored broadcast content. body_html is sanitised at
+  // Application boundary but raw HTML never reaches log sinks.
+  // Per FR-042 broadcast events log broadcast_id + counts only.
+  'body_html',
+  '*.body_html',
+  'bodyHtml',
+  '*.bodyHtml',
+  // T199 M-1 — `body_source` carries the raw Tiptap editor content
+  // PRE-sanitisation. If a caller logs the full Broadcast domain
+  // object, body_source would leak unsanitised HTML / member content.
+  'body_source',
+  '*.body_source',
+  'bodySource',
+  '*.bodySource',
+  'rejection_reason',
+  '*.rejection_reason',
+  'rejectionReason',
+  '*.rejectionReason',
+  // Recipient-list shapes. `recipient_email` (singular) is already
+  // redacted above. F7 adds the plural array shape + resolved
+  // recipients produced by segment-resolve.
+  'recipient_emails',
+  '*.recipient_emails',
+  'recipientEmails',
+  '*.recipientEmails',
+  'recipient_email_lower',
+  '*.recipient_email_lower',
+  'recipientEmailLower',
+  '*.recipientEmailLower',
+  'custom_recipient_emails',
+  '*.custom_recipient_emails',
+  'customRecipientEmails',
+  '*.customRecipientEmails',
+  // Unsubscribe token plaintext. We log sha256(token) on audit emit.
+  'unsubscribe_token',
+  '*.unsubscribe_token',
+  'unsubscribeToken',
+  '*.unsubscribeToken',
 ];
 
 /**

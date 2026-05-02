@@ -31,6 +31,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { asMemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -148,6 +149,56 @@ export interface SubmitBroadcastOutput {
 }
 
 /** Helper: emit a precondition-rejection audit on a standalone tx. */
+/**
+ * T172 (Phase 9) — map F7 audit event type to the bounded
+ * `submit_precondition_blocked` enum used by the submit-funnel
+ * counter. Returning `null` for non-precondition events skips the
+ * metric emission (e.g. `broadcast_submitted` on the success path
+ * is counted by `submitCount` instead).
+ */
+function preconditionFromEvent(
+  eventType: F7AuditEventType,
+):
+  | 'quota_exhausted'
+  | 'empty_segment'
+  | 'rate_limit_exceeded'
+  | 'plan_no_eblast'
+  | 'subject_too_long'
+  | 'body_too_large'
+  | 'body_unsafe_html'
+  | 'audience_too_large'
+  | 'custom_recipient_unknown'
+  | 'member_missing_primary_contact_email'
+  | 'member_halted_pending_review'
+  | null {
+  switch (eventType) {
+    case 'broadcast_quota_blocked':
+      return 'quota_exhausted';
+    case 'broadcast_empty_segment_blocked':
+      return 'empty_segment';
+    case 'broadcast_rate_limit_exceeded':
+      return 'rate_limit_exceeded';
+    case 'broadcast_not_in_plan':
+      return 'plan_no_eblast';
+    case 'broadcast_subject_too_long':
+      return 'subject_too_long';
+    case 'broadcast_body_too_large':
+      return 'body_too_large';
+    case 'broadcast_body_unsafe_html':
+      return 'body_unsafe_html';
+    case 'broadcast_audience_too_large':
+      return 'audience_too_large';
+    case 'broadcast_custom_recipient_unknown':
+      return 'custom_recipient_unknown';
+    case 'broadcast_member_missing_primary_contact_email':
+      return 'member_missing_primary_contact_email';
+    case 'broadcast_member_halted_pending_review':
+      return 'member_halted_pending_review';
+    default:
+      return null;
+  }
+}
+
 async function emitReject(
   deps: SubmitBroadcastDeps,
   input: SubmitBroadcastInput,
@@ -167,6 +218,14 @@ async function emitReject(
     // Best-effort audit. Failure does not 5xx the request — but this is
     // logged at adapter level for observability.
   }
+  // T172 — emit submit-funnel drop-off metric. Bounded enum keeps
+  // cardinality small. Wrapped in a no-throw safe-metric helper so a
+  // single OTel pipeline glitch doesn't fail the use-case.
+  const precondition = preconditionFromEvent(eventType);
+  if (precondition !== null) {
+    broadcastsMetrics.submitPreconditionBlocked(deps.tenant.slug, precondition);
+  }
+  broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
 }
 
 export async function submitBroadcast(
@@ -524,6 +583,16 @@ export async function submitBroadcast(
         },
         requestId: input.requestId,
       });
+
+      // T172 — emit-site wiring (Phase 9). Counter + audit-volume per
+      // SC-010 / SLO-F7-002 dashboards. Duration histogram emitted by
+      // the route handler around this use-case (wallclock includes the
+      // sanitiser + segment-resolve dominant components).
+      broadcastsMetrics.submitCount(
+        deps.tenant.slug,
+        input.actorRole === 'admin_proxy' ? 'admin_proxy' : 'member_self_service',
+      );
+      broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_submitted');
 
       return ok({
         broadcast,

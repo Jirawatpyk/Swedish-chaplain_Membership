@@ -153,7 +153,21 @@ describe('primary-contact partial-index race (T075)', () => {
       preferredLanguage: 'en',
       isPrimary: true,
     });
-    await expect(attempt).rejects.toThrow(/duplicate key|unique|constraint/i);
+    // Drizzle 0.45+ wraps Postgres errors; walk the cause chain.
+    let caught: unknown;
+    try {
+      await attempt;
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeDefined();
+    const parts: string[] = [];
+    let cur: unknown = caught;
+    while (cur instanceof Error) {
+      parts.push(cur.message);
+      cur = (cur as { cause?: unknown }).cause;
+    }
+    expect(parts.join(' | ')).toMatch(/duplicate key|unique|constraint/i);
   }, 30_000);
 
   it('promotePrimary happy path demotes old primary then promotes target', async () => {

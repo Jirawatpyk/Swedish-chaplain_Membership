@@ -31,6 +31,7 @@ import type { TenantContext } from '@/modules/tenants';
 import { archive, type Member, type MemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
+import type { BroadcastsCascadePort } from '../ports/broadcasts-cascade-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { InvitationCascadePort } from '../ports/invitation-cascade-port';
@@ -59,6 +60,16 @@ export type ArchiveMemberDeps = {
   contactRepo: ContactRepo;
   invitations: InvitationCascadePort;
   sessions: SessionRevocationPort;
+  /**
+   * F7 in-flight broadcasts cascade (T178a / T199 H-1).
+   * REQUIRED in production. Tests must inject a no-op stub via
+   * `noopBroadcastsCascadeAdapter` exported from
+   * `@/modules/members/infrastructure/adapters/broadcasts-cascade-adapter`.
+   * Earlier `?` typing was a PDPA/GDPR compliance gap — a forgotten
+   * adapter injection silently broke the Art. 17 / PDPA §33 cascade
+   * invariant; making the dep required surfaces that bug at typecheck.
+   */
+  broadcastsCascade: BroadcastsCascadePort;
   audit: AuditPort;
   clock: ClockPort;
 };
@@ -202,6 +213,40 @@ export async function archiveMember(
 
       return persistResult.value;
     });
+
+    // F7 in-flight broadcasts cascade (T178a / Coverage Gap C2 / T199 H-1).
+    // Runs AFTER the F3 archival tx commits — the cascade opens its own
+    // short tx per broadcast (independent row-locks; concurrent races
+    // on individual broadcasts do not roll back the whole F3 archive).
+    // Failure here is non-fatal: the adapter logs + returns zero so the
+    // member archive remains successful even if a transient F7 issue
+    // leaves a broadcast in-flight. Ops can re-run cleanup manually.
+    {
+      try {
+        await deps.broadcastsCascade.cancelInFlightForMember(
+          deps.tenant,
+          memberId,
+          {
+            cancellationReason: 'originator_member_deleted',
+            initiatedByUserId: meta.actorUserId,
+            requestId: meta.requestId,
+          },
+        );
+      } catch (cascadeErr) {
+        logger.error(
+          {
+            err:
+              cascadeErr instanceof Error
+                ? cascadeErr.message
+                : String(cascadeErr),
+            memberId,
+            requestId: meta.requestId,
+            cascade: 'f7_in_flight_broadcast_cancel',
+          },
+          'archive-member: broadcasts cascade threw — member archive succeeded',
+        );
+      }
+    }
 
     return ok(archived);
   } catch (e) {

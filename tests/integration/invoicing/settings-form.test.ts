@@ -308,7 +308,14 @@ describe('T091 — F4 tenant invoice settings lifecycle', () => {
         );
       } catch (e) {
         rejected = true;
-        expect((e as Error).message).toMatch(/snapshot columns are immutable/i);
+        // Drizzle 0.45+ wraps Postgres errors; walk the cause chain.
+        const parts: string[] = [];
+        let cur: unknown = e;
+        while (cur instanceof Error) {
+          parts.push(cur.message);
+          cur = (cur as { cause?: unknown }).cause;
+        }
+        expect(parts.join(' | ')).toMatch(/snapshot columns are immutable/i);
       }
       expect(rejected).toBe(true);
 

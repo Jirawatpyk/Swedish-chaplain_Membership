@@ -596,10 +596,19 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
   }, 60_000);
 
   // -------------------------------------------------------------------------
-  // (c) Post-commit Blob sweeper — deferred. Sweeper job is a future F4
-  // polish item; there is no code path to exercise yet.
+  // (c) Post-commit Blob sweeper — DEFERRED to F4 backlog (post-MVP).
+  // The sweeper recovers orphan rows when DB commits but the matching
+  // Blob upload fails post-tx. No code path exists today.
+  // Converting `it.todo` → `it.skip` removes the ambient `1 todo` flag
+  // from CI summaries while keeping the future scenario discoverable.
+  // Re-enable when F4 sweeper ships.
   // -------------------------------------------------------------------------
-  it.todo('(c) DB commit succeeds but Blob reconciliation sweep recovers orphans (sweeper unimplemented)');
+  it.skip(
+    '(c) DB commit succeeds but Blob reconciliation sweep recovers orphans — sweeper unimplemented (F4 backlog)',
+    () => {
+      // No-op until the sweeper ships — see F4 retrospective § post-MVP polish.
+    },
+  );
 
   // -------------------------------------------------------------------------
   // (perf) 50-writer load variant — gated by RUN_PERF=1.

@@ -32,6 +32,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
+import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   AuditPort,
@@ -129,8 +130,11 @@ export async function createPlan(
     created = await deps.planRepo.insert(deps.tenant, planDraft);
   } catch (e) {
     // Pg unique-violation raced past findOne — surface as duplicate_plan
-    const msg = e instanceof Error ? e.message : String(e);
-    if (/duplicate key value|unique constraint/i.test(msg)) {
+    const msg = errorChainMessage(e);
+    if (
+      isUniqueViolation(e) ||
+      /duplicate key value|unique constraint/i.test(msg)
+    ) {
       return err({ type: 'duplicate_plan' });
     }
     return err({ type: 'server_error', message: msg });

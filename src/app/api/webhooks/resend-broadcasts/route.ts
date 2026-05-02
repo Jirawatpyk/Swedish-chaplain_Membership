@@ -41,6 +41,9 @@ import { randomUUID } from 'node:crypto';
 
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
   asBroadcastId,
@@ -206,6 +209,7 @@ async function auditUnknownResendBroadcast(
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
   const correlationId = randomUUID();
+  const startedAtMs = Date.now();
 
   if (!env.features.f7Broadcasts) {
     // ERR-M3 (review): emit audit so the kill-switch flip is observable
@@ -213,6 +217,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // "no traffic arrived." Tenant unknown at this stage → NULL tenant
     // sig-reject row (same shape as missing-header).
     await auditSignatureReject('feature_disabled', requestId, correlationId);
+    broadcastsMetrics.webhookSignatureRejected();
     return jsonFeatureDisabled(correlationId);
   }
 
@@ -224,6 +229,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const declared = Number.parseInt(contentLengthHeader, 10);
     if (!Number.isFinite(declared) || declared > MAX_WEBHOOK_BODY_BYTES) {
       await auditSignatureReject('body_too_large', requestId, correlationId);
+      broadcastsMetrics.webhookSignatureRejected();
       return jsonUnauthorized('body_too_large', correlationId);
     }
   }
@@ -243,6 +249,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     svixTimestamp.length === 0
   ) {
     await auditSignatureReject('missing_header', requestId, correlationId);
+    broadcastsMetrics.webhookSignatureRejected();
     return jsonUnauthorized('missing_header', correlationId);
   }
 
@@ -287,6 +294,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           ? ((e as { kind: string }).kind)
           : 'bad_signature';
     await auditSignatureReject(kind, requestId, correlationId);
+    broadcastsMetrics.webhookSignatureRejected();
     return jsonUnauthorized('bad_signature', correlationId);
   }
 
@@ -337,11 +345,40 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Step 6 — build per-tenant deps + dispatch.
   try {
     const deps = makeProcessWebhookEventDeps(tenantId);
-    const result = await processWebhookEvent(deps, {
-      broadcastId: asBroadcastId(broadcastId),
-      event: verified,
-      requestId,
-    });
+    // T174 — root span `webhook_receive_resend` (docs/observability.md
+    // § 22). Sub-spans for verify + DB upserts come from auto-instr.
+    const result = await broadcastsTracer().startActiveSpan(
+      'webhook_receive_resend',
+      {
+        attributes: {
+          'tenant.id': tenantId,
+          'broadcast.id': broadcastId,
+          'webhook.event_type': verified.type,
+        },
+      },
+      async (span) => {
+        try {
+          const r = await processWebhookEvent(deps, {
+            broadcastId: asBroadcastId(broadcastId),
+            event: verified,
+            requestId,
+          });
+          span.setAttribute(
+            'broadcasts.outcome',
+            r.ok ? r.value.kind : `err:${r.error.kind}`,
+          );
+          return r;
+        } catch (e) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: e instanceof Error ? e.message : 'webhook_threw',
+          });
+          throw e;
+        } finally {
+          span.end();
+        }
+      },
+    );
 
     if (!result.ok) {
       logger.error(
@@ -374,6 +411,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       'broadcasts.webhook.dispatched',
     );
+    // T172 — emit-site wiring (Phase 9). Per-event ingest counter +
+    // SLO-F7-005 latency histogram (target p95 < 250ms).
+    {
+      const subtype = verified.type.startsWith('email.')
+        ? verified.type.slice('email.'.length)
+        : verified.type;
+      const eventLabel: 'delivered' | 'bounced' | 'complained' | 'sent' | 'delivery_delayed' =
+        subtype === 'delivered' ||
+        subtype === 'bounced' ||
+        subtype === 'complained' ||
+        subtype === 'sent' ||
+        subtype === 'delivery_delayed'
+          ? subtype
+          : 'sent';
+      broadcastsMetrics.webhookReceiveCount(tenantId, eventLabel);
+      broadcastsMetrics.webhookDurationMs(tenantId, Date.now() - startedAtMs);
+    }
     return jsonOk(correlationId);
   } catch (e) {
     logger.error(

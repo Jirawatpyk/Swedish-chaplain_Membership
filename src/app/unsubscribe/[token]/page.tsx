@@ -59,6 +59,9 @@ import {
 import { resolveTenantDisplayName } from '@/lib/broadcasts-route-helpers';
 import { env } from '@/lib/env';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
+import { sha256Hex } from '@/lib/crypto';
 
 /**
  * E1 — anti-enumeration rate limit per plan.md § Storage L67:
@@ -159,11 +162,17 @@ async function emitInvalidTokenAudit(
   // amendment promoting any F7 event to 10y propagates here without
   // a hardcoded literal at the call site.
   try {
+    // T198 T-F7-05 (Phase 10) — sourceIp is GDPR Art. 4(1) PII; stored
+    // raw in a 5y-retention column violates data-minimisation. Hash
+    // before persistence; first 12 hex chars of sha256 are sufficient
+    // for cross-request correlation while making the original IP
+    // unrecoverable from a DB dump.
+    const sourceIpHash = `sha256:${sha256Hex(sourceIp).slice(0, 12)}`;
     await f7AuditAdapter.emit(null, {
       eventType: 'broadcast_unsubscribe_token_invalid',
       actorUserId: 'system:public_unsubscribe',
       summary: `Public unsubscribe rejected: ${failureReason}`,
-      payload: { failureReason, sourceIp },
+      payload: { failureReason, sourceIpHash },
       tenantId,
       requestId,
     });
@@ -394,13 +403,34 @@ export default async function UnsubscribePage({
     '0.0.0.0';
   const requestId = h.get('x-request-id') ?? randomUUID();
 
-  const { outcome, locale } = await processUnsubscribe(
-    token,
-    queryLang,
-    acceptLanguage,
-    sourceIp,
-    requestId,
-  );
+  // T174 — root span `public_unsubscribe` per docs § 22 trace tree.
+  // Token verify + DB upsert sub-spans hang from this root via
+  // auto-instrumentation.
+  const span = broadcastsTracer().startSpan('public_unsubscribe', {
+    attributes: { 'request.id': requestId },
+  });
+  let outcome: Awaited<ReturnType<typeof processUnsubscribe>>['outcome'];
+  let locale: Awaited<ReturnType<typeof processUnsubscribe>>['locale'];
+  try {
+    const result = await processUnsubscribe(
+      token,
+      queryLang,
+      acceptLanguage,
+      sourceIp,
+      requestId,
+    );
+    outcome = result.outcome;
+    locale = result.locale;
+    span.setAttribute('broadcasts.outcome', outcome.state);
+  } catch (e) {
+    span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: e instanceof Error ? e.message : 'unsubscribe_threw',
+    });
+    span.end();
+    throw e;
+  }
+  span.end();
 
   const t = await getTranslations({
     locale,

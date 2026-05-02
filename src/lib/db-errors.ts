@@ -48,9 +48,53 @@ function isPostgresError(
  * stable error message used by the trigger.
  */
 export function isLastAdminTriggerError(error: unknown): boolean {
-  if (!isPostgresError(error)) return false;
-  return (
-    error.code === POSTGRES_CHECK_VIOLATION &&
-    error.message.includes('last-admin-protection')
-  );
+  // Drizzle 0.45+ wraps Postgres errors in a `Failed query: ...` message;
+  // the original error sits on `.cause`. Walk the chain.
+  let cur: unknown = error;
+  while (cur !== null && cur !== undefined) {
+    if (
+      isPostgresError(cur) &&
+      cur.code === POSTGRES_CHECK_VIOLATION &&
+      cur.message.includes('last-admin-protection')
+    ) {
+      return true;
+    }
+    cur = (cur as { cause?: unknown } | null)?.cause;
+  }
+  return false;
+}
+
+/**
+ * Concatenate `error.message` across the entire `.cause` chain into a
+ * single inspectable string. Use this when you need to substring-match
+ * against a Postgres error (e.g. unique-violation detection in repo
+ * adapters) — Drizzle 0.45+ wraps the original Postgres error and the
+ * trigger / constraint message lives on `.cause.message`, not the
+ * top-level message.
+ */
+export function errorChainMessage(error: unknown): string {
+  const parts: string[] = [];
+  let cur: unknown = error;
+  while (cur instanceof Error) {
+    parts.push(cur.message);
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  if (parts.length === 0 && error !== null && error !== undefined) {
+    parts.push(String(error));
+  }
+  return parts.join(' | ');
+}
+
+/**
+ * SQLSTATE 23505 = unique_violation. Walks the cause chain so it
+ * works with Drizzle 0.45+ wrapped errors. Returns true when any
+ * link in the chain is a Postgres error with code 23505.
+ */
+export function isUniqueViolation(error: unknown): boolean {
+  let cur: unknown = error;
+  while (cur !== null && cur !== undefined) {
+    if (isPostgresError(cur) && cur.code === '23505') return true;
+    cur = (cur as { cause?: unknown } | null)?.cause;
+  }
+  return false;
 }

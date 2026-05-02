@@ -36,6 +36,11 @@ export default async function AdminBroadcastsPage({
 }: {
   readonly searchParams: Promise<SearchParams>;
 }): Promise<React.ReactElement> {
+  // T172 NOTE: SLO-F7-003 admin queue list TTFB is measured via
+  // Vercel Speed Insights per docs/observability.md § 22.2 source-
+  // signal table — NOT via OTel histogram. React 19 server-component
+  // purity rule (`react-hooks/purity`) forbids `Date.now()` in
+  // component body. Auto-instrumented span comes from `@vercel/otel`.
   const t = await getTranslations('admin.broadcasts.queue');
   const session = await requireSession('staff');
   const isReadOnlyManager = session.user.role === 'manager';
@@ -203,9 +208,7 @@ export default async function AdminBroadcastsPage({
         }}
         memberOptions={memberOptions}
       />
-      <div className="mt-4">
-        <QueueTable rows={rows} readOnly={isReadOnlyManager} />
-      </div>
+      <QueueTable rows={rows} readOnly={isReadOnlyManager} />
     </TableContainer>
   );
 }

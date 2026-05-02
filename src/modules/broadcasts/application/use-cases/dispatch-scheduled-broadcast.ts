@@ -198,6 +198,23 @@ async function failDispatchAndAudit(
         payload,
         requestId: null,
       });
+      // T172 — emit-site wiring (Phase 9). failure_reason maps phase
+      // strings to the bounded enum used by the
+      // broadcasts.failed_to_dispatch.count counter.
+      if (eventType === 'broadcast_failed_to_dispatch') {
+        const failureReason: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' =
+          phase.includes('429')
+            ? 'resend_429'
+            : phase.includes('403')
+              ? 'resend_403'
+              : phase.includes('5xx') || phase.includes('server')
+                ? 'resend_5xx'
+                : phase.includes('timeout')
+                  ? 'timeout'
+                  : 'app_error';
+        broadcastsMetrics.failedToDispatchCount(deps.tenant.slug, failureReason);
+      }
+      broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
     });
   } catch (cleanupErr) {
     logger.error(
@@ -927,6 +944,13 @@ export async function dispatchScheduledBroadcast(
         },
         requestId: null,
       });
+      // T172 — emit-site wiring (Phase 9). Cron throughput counter +
+      // audit-volume per SC-010 dashboards.
+      broadcastsMetrics.cronDispatchedCount(deps.tenant.slug);
+      broadcastsMetrics.auditEmitCount(
+        deps.tenant.slug,
+        'broadcast_send_started',
+      );
       return transitioned;
     });
 

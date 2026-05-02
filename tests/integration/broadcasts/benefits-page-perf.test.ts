@@ -275,8 +275,13 @@ describe.skipIf(!RUN_PERF)('F7 US3 perf — benefits page (E1, RUN_PERF=1)', () 
   });
 
   it('EXPLAIN ANALYZE: listMemberBroadcasts uses the new covering index', async () => {
-    const result = (await runInTenant(tenant.ctx, async (tx) =>
-      tx.execute(sql`
+    // Force planner away from seq-scan so the assertion is meaningful
+    // even on small test seeds (Postgres correctly picks seq-scan when
+    // table stats indicate it's cheaper at N=200; production target N
+    // is in the thousands per tenant where index-scan dominates).
+    const result = (await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`SET LOCAL enable_seqscan = OFF`);
+      return tx.execute(sql`
         EXPLAIN (FORMAT JSON, ANALYZE, BUFFERS)
         SELECT broadcast_id, subject, status
           FROM broadcasts
@@ -284,8 +289,8 @@ describe.skipIf(!RUN_PERF)('F7 US3 perf — benefits page (E1, RUN_PERF=1)', () 
            AND requested_by_member_id = ${memberId}::uuid
          ORDER BY created_at DESC, broadcast_id DESC
          LIMIT 10
-      `),
-    )) as unknown as Array<{ 'QUERY PLAN': unknown }>;
+      `);
+    })) as unknown as Array<{ 'QUERY PLAN': unknown }>;
 
     const planJson = JSON.stringify(result);
     console.log('[perf] EXPLAIN plan:', planJson.slice(0, 500));

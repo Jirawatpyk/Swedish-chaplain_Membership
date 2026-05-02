@@ -35,3 +35,25 @@ export function paymentsTracer(): Tracer {
   }
   return cachedTracer;
 }
+
+/**
+ * F7 Phase 9 — T174 OTel tracer for the broadcasts bounded context.
+ * Trace tree documented in `docs/observability.md § 22`:
+ * `member_compose_page_load → member_submit_broadcast →
+ *  admin_approve_send_now → cron_dispatch_scheduled →
+ *  webhook_receive_resend → public_unsubscribe`.
+ *
+ * Attribute-redaction contract: no recipient_email, recipient_emails,
+ * body_html, rejection_reason raw text, Resend-Signature, or
+ * Svix-Signature values. Bounded-cardinality attributes only:
+ * tenant.id, broadcast.id, actor.role, segment.type.
+ */
+const BROADCASTS_TRACER_NAME = 'swecham.broadcasts';
+let cachedBroadcastsTracer: Tracer | null = null;
+
+export function broadcastsTracer(): Tracer {
+  if (!cachedBroadcastsTracer) {
+    cachedBroadcastsTracer = trace.getTracer(BROADCASTS_TRACER_NAME, '1.0.0');
+  }
+  return cachedBroadcastsTracer;
+}

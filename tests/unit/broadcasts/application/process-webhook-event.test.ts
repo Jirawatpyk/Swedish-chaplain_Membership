@@ -1,9 +1,9 @@
-/**
- * T150 — Unit tests for `process-webhook-event.ts` Application use-case.
+﻿/**
+ * T150 โ€” Unit tests for `process-webhook-event.ts` Application use-case.
  *
  * Covers (a) idempotent replay (FR-025), (b) suppression cascade on
  * hard bounce (FR-027), (c) suppression + complaint audit, (d) the
- * sending → sent transition + quota consumption when terminal events
+ * sending โ’ sent transition + quota consumption when terminal events
  * complete the broadcast, (e) terminal-state guard (events arriving
  * after sent are recorded but do NOT mutate broadcast state).
  */
@@ -137,6 +137,7 @@ function makeBroadcastsRepo(args: {
     async pruneExpiredDrafts() {
       return { prunedCount: 0 };
     },
+    async listInFlightOwnedByMember() { return []; },
   };
   return { port, transitions };
 }
@@ -329,7 +330,7 @@ describe('process-webhook-event (T150 GREEN)', () => {
     expect(broadcasts.transitions).toHaveLength(0);
   });
 
-  it('hard bounce → suppression upsert + audit broadcast_suppression_applied (FR-027)', async () => {
+  it('hard bounce โ’ suppression upsert + audit broadcast_suppression_applied (FR-027)', async () => {
     const broadcasts = makeBroadcastsRepo({
       currentBroadcast: baseBroadcast(),
     });
@@ -413,7 +414,7 @@ describe('process-webhook-event (T150 GREEN)', () => {
     expect(broadcasts.transitions).toHaveLength(0);
   });
 
-  it('terminal-event count reaches estimatedRecipientCount → sending→sent + quota consumed', async () => {
+  it('terminal-event count reaches estimatedRecipientCount โ’ sendingโ’sent + quota consumed', async () => {
     const broadcasts = makeBroadcastsRepo({
       currentBroadcast: baseBroadcast({ estimatedRecipientCount: 3 }),
     });
@@ -511,15 +512,15 @@ describe('process-webhook-event (T150 GREEN)', () => {
   });
 });
 
-describe('process-webhook-event — per-broadcast complaint-rate auto-halt (FR-027 / Q14 / SC-005(b))', () => {
+describe('process-webhook-event โ€” per-broadcast complaint-rate auto-halt (FR-027 / Q14 / SC-005(b))', () => {
   // Review TEST-1: closes the gap where the 20-event small-N noise
   // floor + 5% threshold + setMemberHalt cascade were unasserted.
 
-  it('crosses 20-event floor + >5% rate → setMemberHalt called + breach audit emitted', async () => {
-    // 21 terminal events (1 complaint + 20 delivered) → 1/21 ≈ 4.76%
-    // — below 5%, halt should NOT fire (boundary check below).
+  it('crosses 20-event floor + >5% rate โ’ setMemberHalt called + breach audit emitted', async () => {
+    // 21 terminal events (1 complaint + 20 delivered) โ’ 1/21 โ 4.76%
+    // โ€” below 5%, halt should NOT fire (boundary check below).
     // For a positive halt: 22 terminals (2 complaints + 20 delivered)
-    // → 2/22 ≈ 9.1% AND ≥20 events → halt fires.
+    // โ’ 2/22 โ 9.1% AND โฅ20 events โ’ halt fires.
     const broadcasts = makeBroadcastsRepo({
       currentBroadcast: baseBroadcast({ estimatedRecipientCount: 100 }),
     });
@@ -567,8 +568,8 @@ describe('process-webhook-event — per-broadcast complaint-rate auto-halt (FR-0
     expect(breach?.payload['recipientsAtBreach']).toBe(22);
   });
 
-  it('below 20-event noise floor → halt does NOT fire even at 100% complaint rate', async () => {
-    // 5 terminals all complaints (100%) — n<20 → no halt.
+  it('below 20-event noise floor โ’ halt does NOT fire even at 100% complaint rate', async () => {
+    // 5 terminals all complaints (100%) โ€” n<20 โ’ no halt.
     const broadcasts = makeBroadcastsRepo({
       currentBroadcast: baseBroadcast({ estimatedRecipientCount: 100 }),
     });
@@ -605,7 +606,7 @@ describe('process-webhook-event — per-broadcast complaint-rate auto-halt (FR-0
     );
 
     // Suppression still applies (the spec'd cascade is independent of
-    // the halt cascade) — but member halt MUST NOT fire below the floor.
+    // the halt cascade) โ€” but member halt MUST NOT fire below the floor.
     expect(members.haltCalls).toHaveLength(0);
     expect(
       audit.emits.find(
@@ -616,9 +617,9 @@ describe('process-webhook-event — per-broadcast complaint-rate auto-halt (FR-0
     expect(unsub.upserts).toHaveLength(1);
   });
 
-  it('above noise floor but ≤5% rate → halt does NOT fire (boundary)', async () => {
-    // 21 terminals (1 complaint + 20 delivered) → 1/21 ≈ 4.76% — under
-    // 5%, halt MUST NOT fire even though n ≥ 20.
+  it('above noise floor but โค5% rate โ’ halt does NOT fire (boundary)', async () => {
+    // 21 terminals (1 complaint + 20 delivered) โ’ 1/21 โ 4.76% โ€” under
+    // 5%, halt MUST NOT fire even though n โฅ 20.
     const broadcasts = makeBroadcastsRepo({
       currentBroadcast: baseBroadcast({ estimatedRecipientCount: 100 }),
     });
@@ -663,7 +664,7 @@ describe('process-webhook-event — per-broadcast complaint-rate auto-halt (FR-0
   });
 });
 
-describe('process-webhook-event — terminal-state guard does NOT double-consume quota (TEST-1 lock)', () => {
+describe('process-webhook-event โ€” terminal-state guard does NOT double-consume quota (TEST-1 lock)', () => {
   it('event arriving after broadcast already sent does NOT re-emit broadcast_quota_consumed', async () => {
     const broadcasts = makeBroadcastsRepo({
       currentBroadcast: baseBroadcast({
@@ -721,7 +722,7 @@ describe('process-webhook-event — terminal-state guard does NOT double-consume
   });
 });
 
-describe('process-webhook-event — dup-replay on already-sent broadcast (TEST-GAP closure)', () => {
+describe('process-webhook-event โ€” dup-replay on already-sent broadcast (TEST-GAP closure)', () => {
   it('idempotent replay (inserted=false) on a `sent` broadcast does NOT emit broadcast_concurrent_action_blocked (audit-spam guard)', async () => {
     // Combines two terminal-guard conditions: the broadcast is already
     // `sent` AND the upsert returns `inserted=false` (Resend re-delivered
@@ -737,7 +738,7 @@ describe('process-webhook-event — dup-replay on already-sent broadcast (TEST-G
       }),
     });
     const deliveries = makeDeliveriesRepo({
-      upsertInsertedSequence: [false], // ← replay on terminal broadcast
+      upsertInsertedSequence: [false], // โ replay on terminal broadcast
       aggregate: {
         broadcastId,
         sent: 0,
@@ -785,7 +786,7 @@ describe('process-webhook-event — dup-replay on already-sent broadcast (TEST-G
   });
 });
 
-describe('process-webhook-event — outbox atomicity (ERR-C1 rollback coverage, TEST-G1)', () => {
+describe('process-webhook-event โ€” outbox atomicity (ERR-C1 rollback coverage, TEST-G1)', () => {
   it('outbox INSERT failure inside the tx surfaces as Result.err (broadcast_sent rollback)', async () => {
     // Round 2 fix (ERR-C1) made the outbox INSERT participate in the
     // broadcastsRepo.withTx scope. This test locks the rollback
@@ -793,7 +794,7 @@ describe('process-webhook-event — outbox atomicity (ERR-C1 rollback coverage, 
     // re-throws, and the use-case wraps it as a server_error. A
     // regression that catches+swallows the outbox throw (or moves the
     // INSERT back outside the tx) would let broadcast_sent commit
-    // alone, breaking the AS3 invariant "every sending → sent
+    // alone, breaking the AS3 invariant "every sending โ’ sent
     // transition produces a summary email."
     const broadcasts = makeBroadcastsRepo({
       currentBroadcast: baseBroadcast({ estimatedRecipientCount: 1 }),
@@ -814,7 +815,7 @@ describe('process-webhook-event — outbox atomicity (ERR-C1 rollback coverage, 
     const members: MembersBridgePort = {
       async getMembersBySegment() { return []; },
       async getMemberPrimaryContact() {
-        // Member lookup succeeds — a real email is found.
+        // Member lookup succeeds โ€” a real email is found.
         return unsafeBrandEmailLower('alice@example.com');
       },
       async memberExistsInTenant() { return true; },
@@ -825,7 +826,7 @@ describe('process-webhook-event — outbox atomicity (ERR-C1 rollback coverage, 
       async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },
       async getMemberPreferredLocale() { return null; },
     };
-    // Email transport throws — simulating a Postgres outage on the
+    // Email transport throws โ€” simulating a Postgres outage on the
     // outbox INSERT.
     const failingEmailTransport: EmailTransactionalPort = {
       async sendAdminNotification() { /* not used */ },
@@ -860,7 +861,7 @@ describe('process-webhook-event — outbox atomicity (ERR-C1 rollback coverage, 
     // NOTE: The current `enqueueDeliverySummaryEmail` helper has a
     // best-effort try/catch around `sendMemberEmail` (so an outage in
     // the dispatcher doesn't 5xx Resend). This test asserts the
-    // ROLLBACK contract — if the helper's try/catch is later removed
+    // ROLLBACK contract โ€” if the helper's try/catch is later removed
     // to make the outbox INSERT a hard requirement, this test passes.
     // Today's implementation is "best-effort" so the test asserts
     // result.ok with the audit row + transition committed. Either
@@ -882,7 +883,7 @@ describe('process-webhook-event — outbox atomicity (ERR-C1 rollback coverage, 
   });
 });
 
-describe('process-webhook-event — defence-in-depth checks', () => {
+describe('process-webhook-event โ€” defence-in-depth checks', () => {
   it('rejects malformed recipient email', async () => {
     const broadcasts = makeBroadcastsRepo({
       currentBroadcast: baseBroadcast(),
@@ -929,7 +930,7 @@ describe('process-webhook-event — defence-in-depth checks', () => {
 describe('helpers: shape conformance', () => {
   it('asBroadcastDeliveryId rejects malformed uuid', () => {
     expect(() => asBroadcastDeliveryId('not-a-uuid')).not.toThrow();
-    // Unchecked brand cast — domain enforces shape via parseBroadcastDeliveryId
+    // Unchecked brand cast โ€” domain enforces shape via parseBroadcastDeliveryId
   });
   it('unsafeBrandEmailLower preserves shape', () => {
     expect(unsafeBrandEmailLower('a@b.com')).toBe('a@b.com');

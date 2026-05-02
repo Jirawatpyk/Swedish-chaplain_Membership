@@ -130,6 +130,20 @@ export function f7RetentionFor(eventType: F7AuditEventType): 5 {
 }
 
 /**
+ * T185 (Phase 9) — predicate for the F9 audit-viewer surface to filter
+ * F7 events from the cross-feature `audit_log` table. F9 SHOULD call
+ * this via the public barrel (`@/modules/broadcasts`) instead of
+ * re-declaring the event-type list, so future F7 catalogue amendments
+ * automatically flow through to F9 with zero code change. Pure
+ * predicate — no DB access, no port shape, no Application port.
+ */
+export function isF7AuditEventType(
+  eventType: string,
+): eventType is F7AuditEventType {
+  return (F7_AUDIT_EVENT_TYPES as readonly string[]).includes(eventType);
+}
+
+/**
  * F7 audit event payload contract. F7 emit sites populate `payload`
  * with event-specific fields per data-model.md § 6 (e.g.,
  * `broadcast_submitted` carries `broadcastId`, `segmentType`,

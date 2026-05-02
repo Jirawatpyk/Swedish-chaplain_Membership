@@ -29,14 +29,28 @@ import { useAriaAnnounce } from '@/hooks/use-aria-announce';
 type PreferredLocale = 'en' | 'th' | 'sv' | null;
 type LoadState = 'loading' | 'ready' | 'error';
 
-export function PreferredLocaleForm(): ReactElement {
+export interface PreferredLocaleFormProps {
+  /**
+   * Optional SSR-seeded initial value. When provided the form skips the
+   * client-side GET on mount entirely (no skeleton flash, no waterfall).
+   * `undefined` = no SSR seed → fall back to client-side fetch.
+   * `null` = SSR confirmed value is null (use tenant default).
+   */
+  readonly initialValue?: PreferredLocale | undefined;
+}
+
+export function PreferredLocaleForm({
+  initialValue,
+}: PreferredLocaleFormProps = {}): ReactElement {
   const t = useTranslations('portal.preferredLocale');
-  const [state, setState] = useState<LoadState>('loading');
-  const [value, setValue] = useState<PreferredLocale>(null);
+  const seeded = initialValue !== undefined;
+  const [state, setState] = useState<LoadState>(seeded ? 'ready' : 'loading');
+  const [value, setValue] = useState<PreferredLocale>(seeded ? initialValue : null);
   const [saving, setSaving] = useState(false);
   const { announcement, announce } = useAriaAnnounce();
 
   useEffect(() => {
+    if (seeded) return; // SSR seeded — skip client-side fetch
     let cancelled = false;
     void (async () => {
       try {
@@ -59,7 +73,7 @@ export function PreferredLocaleForm(): ReactElement {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [seeded]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -129,7 +143,7 @@ export function PreferredLocaleForm(): ReactElement {
             return (
               <div key={opt} className="flex items-center gap-2">
                 <RadioGroupItem id={id} value={opt} />
-                <Label htmlFor={id} className="cursor-pointer">
+                <Label htmlFor={id} className="mb-0 leading-4 cursor-pointer">
                   {label}
                 </Label>
               </div>
@@ -137,7 +151,12 @@ export function PreferredLocaleForm(): ReactElement {
           })}
         </RadioGroup>
       </fieldset>
-      <Button type="submit" disabled={saving} className="min-w-[8rem]">
+      <Button
+        type="submit"
+        disabled={saving}
+        className="w-full"
+        size="lg"
+      >
         {saving && (
           <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" />
         )}

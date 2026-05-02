@@ -27,6 +27,12 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function ComposeBroadcastPage(): Promise<React.ReactElement> {
+  // T172/T174 NOTE: SLO-F7-001 compose page TTFB is measured via
+  // Vercel Speed Insights per docs/observability.md § 22.2 source-
+  // signal table — NOT via OTel histogram. Server-component bodies
+  // must be pure under React 19 (`react-hooks/purity`); time-sensitive
+  // measurements would violate the rule. Trace span is auto-created
+  // by `@vercel/otel` for the route handler.
   const t = await getTranslations('portal.broadcasts.compose');
   const session = await requireSession('member');
   const tenant = resolveTenantFromRequest();

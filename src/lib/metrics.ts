@@ -845,4 +845,328 @@ export const broadcastsMetrics = {
       ).add(1, { tenant: tenantId, sub_kind: subKind });
     });
   },
+
+  // --- T172 (Phase 9) — full F7 metrics catalogue --------------------------
+  // Wires the remaining metrics from observability.md § 22.1 + plan.md
+  // § Performance & Capacity Metrics list. Cardinality discipline:
+  // every label is bounded enum or small-cardinality string. NEVER
+  // label by recipient_email_lower / member_id (FR-042).
+
+  /** `broadcasts.draft.count{tenant, actor_role}` — compose-funnel TOF. */
+  draftCount(
+    tenantId: string,
+    actorRole: 'member_self_service' | 'admin_proxy' | 'system',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_draft_count',
+        'Drafts created — compose-funnel top-of-funnel signal',
+      ).add(1, { tenant: tenantId, actor_role: actorRole });
+    });
+  },
+
+  /** `broadcasts.submit.count{tenant, actor_role}` — submission throughput. */
+  submitCount(
+    tenantId: string,
+    actorRole: 'member_self_service' | 'admin_proxy',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_submit_count',
+        'Successful submit transitions to status=submitted',
+      ).add(1, { tenant: tenantId, actor_role: actorRole });
+    });
+  },
+
+  /** `broadcasts.submit.duration_ms{tenant, actor_role}` — SLO-F7-002 < 1.2s. */
+  submitDurationMs(
+    tenantId: string,
+    actorRole: 'member_self_service' | 'admin_proxy',
+    ms: number,
+  ): void {
+    safeMetric(() => {
+      histogram(
+        'broadcasts_submit_duration_ms',
+        'Submit endpoint p95 target 1200ms (SLO-F7-002)',
+        'ms',
+      ).record(ms, { tenant: tenantId, actor_role: actorRole });
+    });
+  },
+
+  /**
+   * `broadcasts.submit.precondition_blocked.count{tenant, precondition}`
+   * — drop-off forensics for FR-002 a–k preconditions.
+   */
+  submitPreconditionBlocked(
+    tenantId: string,
+    precondition:
+      | 'quota_exhausted'
+      | 'empty_segment'
+      | 'rate_limit_exceeded'
+      | 'plan_no_eblast'
+      | 'subject_too_long'
+      | 'body_too_large'
+      | 'body_unsafe_html'
+      | 'audience_too_large'
+      | 'custom_recipient_unknown'
+      | 'member_missing_primary_contact_email'
+      | 'member_halted_pending_review',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_submit_precondition_blocked_count',
+        'Submit blocked by FR-002 a–k precondition',
+      ).add(1, { tenant: tenantId, precondition });
+    });
+  },
+
+  /**
+   * `broadcasts.approve_send_now.duration_ms{tenant}` — SLO-F7-004 < 1.5s.
+   */
+  approveSendNowDurationMs(tenantId: string, ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'broadcasts_approve_send_now_duration_ms',
+        'Admin approve & send-now p95 target 1500ms (SLO-F7-004)',
+        'ms',
+      ).record(ms, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts.failed_to_dispatch.count{tenant, failure_reason}` —
+   * dispatch-failure forensics. Paired with `dispatchBudgetExhausted`
+   * (which counts only the AS2 1-hour-budget terminal case).
+   */
+  failedToDispatchCount(
+    tenantId: string,
+    failureReason:
+      | 'resend_5xx'
+      | 'resend_429'
+      | 'resend_403'
+      | 'app_error'
+      | 'timeout',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_failed_to_dispatch_count',
+        'Dispatch failures by reason — alert at >10% over send_started',
+      ).add(1, { tenant: tenantId, failure_reason: failureReason });
+    });
+  },
+
+  /**
+   * `broadcasts.cron.dispatched.count{tenant}` — scheduled-send cron
+   * throughput.
+   */
+  cronDispatchedCount(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_cron_dispatched_count',
+        'Scheduled-send cron successful dispatches',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts.cron.skipped.count{tenant, reason}` — cron tick
+   * observability. `advisory_lock_held` > 5 / 5min = potential
+   * concurrent-tick bug.
+   */
+  cronSkippedCount(
+    tenantId: string,
+    reason: 'kill_switch' | 'advisory_lock_held' | 'no_due_rows',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_cron_skipped_count',
+        'Cron tick skipped — kill-switch / lock-held / no-due-rows',
+      ).add(1, { tenant: tenantId, reason });
+    });
+  },
+
+  /**
+   * `broadcasts.webhook.receive.count{tenant, event_type}` — per-event
+   * ingest rate. Pre-tenant (signature-rejected) emits use
+   * `tenant='unresolved'`.
+   */
+  webhookReceiveCount(
+    tenantId: string | null,
+    eventType:
+      | 'delivered'
+      | 'bounced'
+      | 'complained'
+      | 'sent'
+      | 'delivery_delayed',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_webhook_receive_count',
+        'Resend Broadcasts webhook events received by type',
+      ).add(1, {
+        tenant: tenantId ?? 'unresolved',
+        event_type: eventType,
+      });
+    });
+  },
+
+  /**
+   * `broadcasts.webhook.duration_ms{tenant}` — SLO-F7-005 < 250ms.
+   */
+  webhookDurationMs(tenantId: string | null, ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'broadcasts_webhook_duration_ms',
+        'Webhook handler p95 target 250ms (SLO-F7-005)',
+        'ms',
+      ).record(ms, { tenant: tenantId ?? 'unresolved' });
+    });
+  },
+
+  /**
+   * `broadcasts.webhook_signature_rejected_total` — abuse / misconfig
+   * canary. NO tenant label (rejected pre-verification).
+   */
+  webhookSignatureRejected(): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_webhook_signature_rejected_total',
+        'Resend Broadcasts webhook events rejected at signature verification',
+      ).add(1);
+    });
+  },
+
+  /**
+   * `broadcasts.bounce_rate_per_broadcast{tenant, broadcast_id}` —
+   * gauge for sender-reputation watchdog. > 2% warn, > 5% page.
+   * Cardinality bounded by recipient cap × broadcasts/year/tenant.
+   */
+  bounceRatePerBroadcast(
+    tenantId: string,
+    broadcastId: string,
+    rate: number,
+  ): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_bounce_rate_per_broadcast',
+        'Per-broadcast bounce rate (0..1) — sender reputation watchdog',
+        { tenant: tenantId, broadcast_id: broadcastId },
+        rate,
+      );
+    });
+  },
+
+  /**
+   * `broadcasts.complaint_rate_per_broadcast{tenant, broadcast_id}` —
+   * gauge. ≥ 0.1% warn, ≥ 0.5% page, > 5% Q14 SC-005 (b) auto-halt.
+   */
+  complaintRatePerBroadcast(
+    tenantId: string,
+    broadcastId: string,
+    rate: number,
+  ): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_complaint_rate_per_broadcast',
+        'Per-broadcast complaint rate — Q14 SC-005(b) auto-halt at >5%',
+        { tenant: tenantId, broadcast_id: broadcastId },
+        rate,
+      );
+    });
+  },
+
+  /**
+   * `broadcasts.queue_pending{tenant}` — submitted + approved-with-
+   * scheduled count. Alert > 8000 (FR-013 SLA breach risk).
+   */
+  queuePending(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_queue_pending',
+        'Pending broadcasts (submitted + approved-with-scheduled)',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  /**
+   * `broadcasts.stuck_sending_count{tenant}` — `status='sending'` for
+   * > 24h. Any non-zero alarms (webhook event lost / Resend resource
+   * missing).
+   */
+  stuckSendingCount(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_stuck_sending_count',
+        'Broadcasts in status=sending for >24h',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  // NOTE: SLO-F7-001 (compose page TTFB) + SLO-F7-003 (admin queue
+  // list) source signal is Vercel Speed Insights per
+  // docs/observability.md § 22.2 — NOT OTel histograms. Server-
+  // component bodies are subject to React 19 `react-hooks/purity`
+  // rule which forbids `Date.now()` measurement at render time.
+  // No `composePageTtfbMs` / `adminQueueListMs` helpers — emission
+  // would be dead code.
+
+  /**
+   * `broadcasts.suppression_filter_count{tenant}` — number of
+   * recipients filtered out per dispatch (suppression anti-join).
+   */
+  suppressionFilterCount(tenantId: string, count: number): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_suppression_filter_count',
+        'Recipients removed by suppression anti-join per dispatch',
+      ).add(count, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts.audit_emit_count{tenant, event_type}` — ops-dashboard
+   * audit-event volume per tenant per type. Distinct from
+   * `auditEmitFailed` (which counts FAILURES).
+   */
+  auditEmitCount(tenantId: string | null, eventType: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audit_emit_count',
+        'F7 audit-event emissions by type — ops dashboard',
+      ).add(1, { tenant: tenantId ?? 'unknown', event_type: eventType });
+    });
+  },
+
+  /**
+   * `broadcasts.audience_drift_detected.count{tenant}` — F7.1-IMP5
+   * black-swan event: idempotency replay observed recipient-count
+   * mismatch between expected and Resend audience reality.
+   */
+  audienceDriftDetected(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_drift_detected_count',
+        'Idempotency-replay observed audience-count drift (F7.1-IMP5)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts.drift_check_unverifiable.count{tenant}` — Round-5
+   * R5-S1: Resend `getAudienceContactCount` failed on non-404 during
+   * idempotency replay. Replay still advances but recipient count
+   * cannot be verified.
+   */
+  driftCheckUnverifiable(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_drift_check_unverifiable_count',
+        'Audience drift check failed on non-404 during idempotency replay',
+      ).add(1, { tenant: tenantId });
+    });
+  },
 } as const;

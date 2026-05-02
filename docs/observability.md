@@ -1010,6 +1010,33 @@ Plus full webhook body → redacted to `resend_event_id` + `event_type` +
 Defence-in-depth: any field containing `@` regex match → masked except
 last 2 chars before `@` + domain.
 
+### 22.4a F7 platform-redaction limitation (T176 — privacy CHK048)
+
+**Status (2026-05-02)**: Vercel does NOT currently expose a per-path
+log-redaction primitive that would mask the `/unsubscribe/v1\..*` URL
+component in platform access logs / log-drain export. Application-layer
+pino redaction (§ 22.4) keeps tokens out of structured app logs, but
+Vercel's edge / function access logs may capture the full request URL.
+
+**Mitigation stack (defence-in-depth, ordered by strength)**:
+
+1. **HMAC-signed tokens** (`UNSUBSCRIBE_TOKEN_SECRET`) — leak grants
+   only idempotent unsubscribe replay (no PII exfiltration); attacker
+   needs both signing-secret compromise AND access to log retention.
+2. **Quarterly rotation** of `UNSUBSCRIBE_TOKEN_SECRET` (per
+   `docs/runbooks/credential-compromise.md`) bounds the breach window
+   to 90 days. Cadence escalates to monthly if a CHK048 follow-up
+   audit detects token-shaped strings in the Vercel access-log export.
+3. **Vercel log retention window** is 30 days on the current plan —
+   tokens older than that age out automatically.
+4. **No PII in token payload** beyond the recipient's own email — the
+   minimum identity needed to action the unsubscribe.
+
+**Re-evaluation trigger**: Vercel publishes a per-path redaction
+primitive (or the log-drain export gains pre-export filtering); F7
+upgrades to platform-layer redaction and downgrades the secret-rotation
+cadence back to annual baseline.
+
 ### 22.5 Sample rates
 
 Per perf.md CHK049:

@@ -186,7 +186,7 @@ export function TiptapToolbar({
             </Button>
           }
         />
-        <PopoverContent className="w-72 space-y-2 p-3">
+        <PopoverContent className="w-72 max-w-[calc(100vw-2rem)] space-y-2 p-3">
           <Label htmlFor="tiptap-link-url" className="text-xs">
             {tForm('linkUrlLabel')}
           </Label>

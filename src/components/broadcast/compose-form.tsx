@@ -251,10 +251,10 @@ export function ComposeForm({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} />
       <Card>
-        <CardContent className="space-y-6 pt-6">
+        <CardContent className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="broadcast-subject">{t('fields.subject')}</Label>
             <Input

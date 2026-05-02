@@ -1,5 +1,5 @@
-/**
- * T051 — FR-002 precondition `k` (R3-NEW-1) halt-flag enforcement.
+﻿/**
+ * T051 โ€” FR-002 precondition `k` (R3-NEW-1) halt-flag enforcement.
  *
  * Verifies the submit-broadcast use case rejects with
  * `broadcast_member_halted_pending_review` when the member's halt
@@ -171,6 +171,7 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     async pruneExpiredDrafts() {
       return { prunedCount: 0 };
     },
+    async listInFlightOwnedByMember() { return []; },
   };
 }
 
@@ -234,7 +235,7 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('halt-flag precondition (T051)', () => {
-  it('halted=true → submit returns broadcast_member_halted_pending_review', async () => {
+  it('halted=true โ’ submit returns broadcast_member_halted_pending_review', async () => {
     const state = makeState({ halted: true });
     const result = await submitBroadcast(
       {
@@ -304,7 +305,7 @@ describe('halt-flag precondition (T051)', () => {
     expect((evt?.payload as { memberId: string }).memberId).toBe('m-1');
   });
 
-  it('halt cleared via setMemberHalt → next submit succeeds', async () => {
+  it('halt cleared via setMemberHalt โ’ next submit succeeds', async () => {
     const state = makeState({ halted: true });
     const membersBridge = makeMembersBridge(state);
     const repo = makeBroadcastsRepo(state);
@@ -341,7 +342,7 @@ describe('halt-flag precondition (T051)', () => {
     expect(submitResult.ok).toBe(true);
   });
 
-  it('clear-halt with bridge unauthorised → forbidden error', async () => {
+  it('clear-halt with bridge unauthorised โ’ forbidden error', async () => {
     const restrictiveBridge: MembersBridgePort = {
       ...makeMembersBridge(makeState({ halted: true })),
       async setMemberHalt() {

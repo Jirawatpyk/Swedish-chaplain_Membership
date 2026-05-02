@@ -844,5 +844,28 @@ export function makeDrizzleBroadcastsRepo(
         return { prunedCount: deleted.length };
       });
     },
+
+    /**
+     * F7 Phase 9 / T178a — list in-flight broadcasts owned by a member.
+     * Used by the F3 archival/erasure cascade. Status filter narrow:
+     * only `submitted` + `approved` are cancellable per FR-004a / Q10
+     * (the cancellation cutoff is at Resend dispatch).
+     */
+    async listInFlightOwnedByMember(tenantIdArg, memberId) {
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(broadcasts)
+          .where(
+            and(
+              eq(broadcasts.tenantId, tenantIdArg),
+              eq(broadcasts.requestedByMemberId, memberId),
+              sql`${broadcasts.status}::text IN ('submitted', 'approved')`,
+            ),
+          )
+          .orderBy(desc(broadcasts.createdAt), desc(broadcasts.broadcastId));
+        return rows.map((r) => rowToBroadcast(r as BroadcastRow));
+      });
+    },
   };
 }

@@ -21,7 +21,7 @@ export default async function Loading() {
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
       <TableContainer>
-        <PageHeader title={t('title')} />
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
           <CardContent className="flex flex-col gap-4">
             {/* Reserve InvoiceFilters shape: search input (flex-1) +

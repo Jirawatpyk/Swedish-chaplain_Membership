@@ -41,6 +41,9 @@ import { env } from '@/lib/env';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 const MAX_PER_TICK = 50;
 
@@ -75,6 +78,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { tenantId: tenant.slug },
       'cron.broadcasts.dispatch.feature_disabled',
     );
+    broadcastsMetrics.cronSkippedCount(tenant.slug, 'kill_switch');
     return NextResponse.json(
       { skipped: true, reason: 'feature_disabled' },
       { status: 200 },
@@ -124,6 +128,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     unknown_error: 0,
     uncaught_error: 0,
   };
+
+  // T172 — emit no-due-rows skip when query returned an empty set so
+  // the cron tick observability dashboard can distinguish "queue
+  // empty" from "feature_disabled" / "advisory_lock_held".
+  if (eligible.length === 0) {
+    broadcastsMetrics.cronSkippedCount(tenant.slug, 'no_due_rows');
+  }
+
+  // T174 — root span `cron_dispatch_scheduled` per docs § 22 trace tree.
+  // The span wraps the entire eligible-row loop so per-broadcast
+  // dispatch sub-spans (created inside the use-case via Drizzle/fetch
+  // auto-instr) hang as children of this root.
+  const cronSpan = broadcastsTracer().startSpan('cron_dispatch_scheduled', {
+    attributes: {
+      'tenant.id': tenant.slug,
+      'cron.eligible_count': eligible.length,
+    },
+  });
 
   const deps = await makeDispatchScheduledBroadcastDeps(tenant.slug);
   for (const row of eligible) {
@@ -204,5 +226,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     { tenantId: tenant.slug, ...summary },
     'cron.broadcasts.dispatch.tick_complete',
   );
+  cronSpan.setAttribute('cron.processed', summary.processed);
+  cronSpan.setAttribute('cron.succeeded', summary.succeeded);
+  if (summary.uncaught_error > 0 || summary.unknown_error > 0) {
+    cronSpan.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: `errors: uncaught=${summary.uncaught_error} unknown=${summary.unknown_error}`,
+    });
+  }
+  cronSpan.end();
   return NextResponse.json(summary, { status: 200 });
 }

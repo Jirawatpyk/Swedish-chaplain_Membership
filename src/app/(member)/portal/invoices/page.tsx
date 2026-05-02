@@ -118,7 +118,7 @@ export default async function PortalInvoicesPage({
   if (!memberResult.ok) {
     return (
       <TableContainer>
-        <PageHeader title={t('title')} />
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">{t('notLinked')}</p>
@@ -165,7 +165,7 @@ export default async function PortalInvoicesPage({
 
   return (
     <TableContainer>
-      <PageHeader title={t('title')} />
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* Reuse the admin InvoiceFilters client component for

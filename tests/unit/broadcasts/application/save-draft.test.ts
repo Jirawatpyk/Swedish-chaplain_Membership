@@ -1,5 +1,5 @@
-/**
- * Wave 6b — Unit tests for `save-draft.ts` Application use-case.
+﻿/**
+ * Wave 6b โ€” Unit tests for `save-draft.ts` Application use-case.
  *
  * Covers FR-001 (multi-draft per member, no quota reservation) +
  * FR-004 (audit broadcast_drafted on create only, NOT on edit) +
@@ -176,6 +176,7 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
     async pruneExpiredDrafts() {
       return { prunedCount: 0 };
     },
+    async listInFlightOwnedByMember() { return []; },
   };
 }
 
@@ -257,7 +258,7 @@ const baseInput = {
   requestId: 'req-test',
 };
 
-describe('save-draft — Wave 6b coverage push', () => {
+describe('save-draft โ€” Wave 6b coverage push', () => {
   // ---- Happy path: create new draft ---------------------------------
 
   it('happy path create: inserts new broadcast row + emits broadcast_drafted audit', async () => {
@@ -276,7 +277,7 @@ describe('save-draft — Wave 6b coverage push', () => {
     ).toBeDefined();
   });
 
-  // ---- Update existing draft (FR-004 — no audit on edit) -------------
+  // ---- Update existing draft (FR-004 โ€” no audit on edit) -------------
 
   it('update existing draft: calls updateDraft + does NOT emit audit', async () => {
     const { audit, broadcastsRepo, deps } = makeDeps({
@@ -372,7 +373,7 @@ describe('save-draft — Wave 6b coverage push', () => {
 
   // ---- Update path edge cases ---------------------------------------
 
-  it('update with non-existent draftId → broadcast_not_found', async () => {
+  it('update with non-existent draftId โ’ broadcast_not_found', async () => {
     const { deps } = makeDeps({
       primaryContact: 'me@example.com',
       existingDraft: null,
@@ -387,7 +388,7 @@ describe('save-draft — Wave 6b coverage push', () => {
     }
   });
 
-  it('update existing non-draft (already submitted) → broadcast_immutable_after_submit', async () => {
+  it('update existing non-draft (already submitted) โ’ broadcast_immutable_after_submit', async () => {
     const { deps } = makeDeps({
       primaryContact: 'me@example.com',
       existingDraft: {
@@ -407,7 +408,7 @@ describe('save-draft — Wave 6b coverage push', () => {
 
   // ---- Server error fall-through ------------------------------------
 
-  it('repo throw inside withTx → save_draft.server_error', async () => {
+  it('repo throw inside withTx โ’ save_draft.server_error', async () => {
     const { deps } = makeDeps({
       primaryContact: 'me@example.com',
       insertThrows: true,
@@ -422,7 +423,7 @@ describe('save-draft — Wave 6b coverage push', () => {
     }
   });
 
-  it('repo throw with non-Error value → save_draft.server_error with "unknown error"', async () => {
+  it('repo throw with non-Error value โ’ save_draft.server_error with "unknown error"', async () => {
     const { deps } = makeDeps({ primaryContact: 'me@example.com' });
     const repo = deps.broadcastsRepo as unknown as {
       insertDraft: BroadcastsRepo['insertDraft'];

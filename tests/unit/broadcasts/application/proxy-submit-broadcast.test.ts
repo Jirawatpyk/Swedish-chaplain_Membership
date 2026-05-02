@@ -1,7 +1,7 @@
-/**
- * T098 — Unit tests for `proxy-submit-broadcast.ts` (Q12).
+﻿/**
+ * T098 โ€” Unit tests for `proxy-submit-broadcast.ts` (Q12).
  *
- * Wave 6 GREEN — admin-on-behalf-of-member. The use-case is a thin
+ * Wave 6 GREEN โ€” admin-on-behalf-of-member. The use-case is a thin
  * wrapper that:
  *   1. Calls `membersBridge.getMemberPrimaryContact` (existence probe)
  *   2. Delegates to `submitBroadcast` with actorRole='admin_proxy'
@@ -9,10 +9,10 @@
  *
  * Test focus:
  *   - actorRole='admin_proxy' propagated into persisted row
- *   - dual-actor mapping: proxiedMemberId → requestedByMemberId,
- *     adminUserId → submittedByUserId
+ *   - dual-actor mapping: proxiedMemberId โ’ requestedByMemberId,
+ *     adminUserId โ’ submittedByUserId
  *   - quota bypass (admin_proxy short-circuits the quota branch in submit-broadcast)
- *   - halt-flag still enforced (admin can NOT bypass halt — R3-NEW-1)
+ *   - halt-flag still enforced (admin can NOT bypass halt โ€” R3-NEW-1)
  *   - SubmitBroadcastError pass-through
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -58,7 +58,7 @@ interface FixtureOpts {
     memberId: string;
     primaryContactEmail: string | null;
   }>;
-  /** Round-5 R5-T — let tests synthesise "member not found in tenant" + infra-throw paths. */
+  /** Round-5 R5-T โ€” let tests synthesise "member not found in tenant" + infra-throw paths. */
   readonly memberExists?: boolean;
 }
 
@@ -193,6 +193,7 @@ function makeRepo(opts: FixtureOpts): {
       async pruneExpiredDrafts() {
         return { prunedCount: 0 };
       },
+    async listInFlightOwnedByMember() { return []; },
     },
   };
 }
@@ -313,7 +314,7 @@ const baseInput = {
 beforeEach(() => vi.useFakeTimers({ now: FROZEN_NOW }));
 afterEach(() => vi.useRealTimers());
 
-describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
+describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
   it('use-case module exists', async () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });
@@ -403,7 +404,7 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
 
   // ---- Halt-state precondition still applies (R3-NEW-1) ------------
 
-  it('proxied member halted → broadcast_member_halted_pending_review (admin can NOT bypass halt)', async () => {
+  it('proxied member halted โ’ broadcast_member_halted_pending_review (admin can NOT bypass halt)', async () => {
     const { deps, repo } = makeDeps({
       halted: ['m-target'],
       primaryContact: 'm-target@example.com',
@@ -421,7 +422,7 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
 
   // ---- Member existence ---------------------------------------------
 
-  it('rejects when proxied member missing primary contact email → broadcast_member_missing_primary_contact_email', async () => {
+  it('rejects when proxied member missing primary contact email โ’ broadcast_member_missing_primary_contact_email', async () => {
     const { deps, repo } = makeDeps({
       primaryContact: null,
       recipients: [
@@ -438,7 +439,7 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
     expect(repo.inserted).toHaveLength(0);
   });
 
-  it('rejects when proxied member plan not found → broadcast_not_in_plan', async () => {
+  it('rejects when proxied member plan not found โ’ broadcast_not_in_plan', async () => {
     const { deps } = makeDeps({
       planFound: false,
       primaryContact: 'm-target@example.com',
@@ -450,7 +451,7 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
 
   // ---- Standard FR-002 preconditions still enforced ----------------
 
-  it('subject too long → broadcast_subject_too_long', async () => {
+  it('subject too long โ’ broadcast_subject_too_long', async () => {
     const { deps } = makeDeps({
       primaryContact: 'm-target@example.com',
       recipients: [
@@ -466,7 +467,7 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
     if (!result.ok) expect(result.error.kind).toBe('broadcast_subject_too_long');
   });
 
-  it('empty body → broadcast_body_unsafe_html (sanitiser strips to empty)', async () => {
+  it('empty body โ’ broadcast_body_unsafe_html (sanitiser strips to empty)', async () => {
     const { deps } = makeDeps({
       primaryContact: 'm-target@example.com',
       recipients: [
@@ -481,7 +482,7 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
     if (!result.ok) expect(result.error.kind).toBe('broadcast_body_unsafe_html');
   });
 
-  it('empty segment → broadcast_empty_segment_blocked', async () => {
+  it('empty segment โ’ broadcast_empty_segment_blocked', async () => {
     const { deps } = makeDeps({
       primaryContact: 'm-target@example.com',
       recipients: [],
@@ -551,7 +552,7 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
 
   // ---- Server error catch-all -----------------------------------
 
-  it('repo throw inside withTx → submit.server_error', async () => {
+  it('repo throw inside withTx โ’ submit.server_error', async () => {
     const { deps } = makeDeps({
       primaryContact: 'm-target@example.com',
       recipients: [
@@ -576,7 +577,7 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
 
   // ---- Existence probe doesn't gate (delegate handles existence) --
 
-  it('proxy probe returns null but bridge.recipients still resolve → delegate fails on missing primary contact', async () => {
+  it('proxy probe returns null but bridge.recipients still resolve โ’ delegate fails on missing primary contact', async () => {
     // Even when getMemberPrimaryContact returns null at the probe, the
     // delegate (submit-broadcast) re-checks and emits the right error.
     // memberExistsInTenant is true (default) so proxy-submit doesn't
@@ -596,9 +597,9 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
     }
   });
 
-  // ---- Round-5 R5-T — memberExistsInTenant short-circuits ----------
+  // ---- Round-5 R5-T โ€” memberExistsInTenant short-circuits ----------
 
-  it('F7.1-HIGHC — memberExistsInTenant returns false → broadcast_member_not_found', async () => {
+  it('F7.1-HIGHC โ€” memberExistsInTenant returns false โ’ broadcast_member_not_found', async () => {
     const { deps } = makeDeps({
       memberExists: false,
       primaryContact: 'doesnt@matter.com',
@@ -613,7 +614,7 @@ describe('proxy-submit-broadcast — Wave 6 GREEN (T102 / Q12)', () => {
     }
   });
 
-  it('R5-S2 — memberExistsInTenant throws (Neon outage) → submit.server_error', async () => {
+  it('R5-S2 โ€” memberExistsInTenant throws (Neon outage) โ’ submit.server_error', async () => {
     const { deps } = makeDeps({
       primaryContact: 'me@example.com',
       recipients: [{ memberId: 'm-1', primaryContactEmail: 'r@example.com' }],

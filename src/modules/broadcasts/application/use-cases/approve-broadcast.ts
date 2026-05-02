@@ -20,6 +20,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
@@ -177,6 +178,10 @@ export async function approveBroadcast(
         },
         requestId: input.requestId,
       });
+      // T172 — emit-site wiring (Phase 9). Volume counter on the
+      // approved-events stream; SLO-F7-004 latency histogram emitted
+      // by the route wrapper around this use-case.
+      broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_approved');
 
       // G2 closure (verify-fix 2026-05-02 — US2 wire-up) — enqueue the
       // post-approval member notification email IN-TX so the

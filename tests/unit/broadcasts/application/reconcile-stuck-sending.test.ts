@@ -1,13 +1,13 @@
-/**
- * D1 (verify-gate) — Unit tests for `reconcile-stuck-sending.ts` Application
+﻿/**
+ * D1 (verify-gate) โ€” Unit tests for `reconcile-stuck-sending.ts` Application
  * use-case (F7 US5 / FR-028 / R2-NEW-3).
  *
  * Covers (a) `not_stuck_yet` short-circuits when status is not 'sending',
  * (b) `not_stuck_yet` when sending < 24h ago (defence-in-depth re-check),
- * (c) `reconciled_failed_resource_missing` when Resend returns 404 → audit
+ * (c) `reconciled_failed_resource_missing` when Resend returns 404 โ’ audit
  * `broadcast_resend_resource_missing` + `broadcast_failed_to_dispatch` +
  * NO quota consumption + NO summary email, (d) `reconciled_sent` when
- * Resend resource present → audit `broadcast_send_timeout_completed` +
+ * Resend resource present โ’ audit `broadcast_send_timeout_completed` +
  * `broadcast_sent` + `broadcast_quota_consumed` + summary email enqueued,
  * (e) gateway error surfaces as `reconcile.gateway_error`, (f)
  * `broadcast_not_found`, (g) no-resend-resource-attached path is
@@ -131,6 +131,7 @@ function makeBroadcastsRepo(args: {
     async pruneExpiredDrafts() {
       return { prunedCount: 0 };
     },
+    async listInFlightOwnedByMember() { return []; },
   };
   return { port, transitions };
 }
@@ -267,7 +268,7 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     expect(audit.emits).toHaveLength(0);
   });
 
-  it('reconciled_failed_resource_missing: Resend returns 404 → no quota consumed', async () => {
+  it('reconciled_failed_resource_missing: Resend returns 404 โ’ no quota consumed', async () => {
     const repo = makeBroadcastsRepo({ current: baseBroadcast() });
     const gateway = makeGateway({ retrieve: null });
     const audit = makeAudit();
@@ -303,7 +304,7 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     expect(email.memberSends).toHaveLength(0);
   });
 
-  it('reconciled_sent: Resend resource present → quota consumed + summary email enqueued', async () => {
+  it('reconciled_sent: Resend resource present โ’ quota consumed + summary email enqueued', async () => {
     const repo = makeBroadcastsRepo({ current: baseBroadcast() });
     const gateway = makeGateway({
       retrieve: {
@@ -339,7 +340,7 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     expect(auditTypes).toContain('broadcast_send_timeout_completed');
     expect(auditTypes).toContain('broadcast_sent');
     expect(auditTypes).toContain('broadcast_quota_consumed');
-    // FR-028 / AS3 — summary email enqueued
+    // FR-028 / AS3 โ€” summary email enqueued
     expect(email.memberSends).toHaveLength(1);
     expect(email.memberSends[0]!.templateKey).toBe('broadcast_delivered');
     expect(email.memberSends[0]!.payload['delivered']).toBe(5);
@@ -347,7 +348,7 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     expect(email.memberSends[0]!.payload['viaReconciliation']).toBe(true);
   });
 
-  it('gateway error → reconcile.gateway_error', async () => {
+  it('gateway error โ’ reconcile.gateway_error', async () => {
     const repo = makeBroadcastsRepo({ current: baseBroadcast() });
     const gateway = makeGateway({ retrieve: new Error('network down') });
     const audit = makeAudit();
@@ -388,7 +389,7 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     expect(audit.emits).toHaveLength(0);
   });
 
-  it('no resend resource attached → markFailedToDispatch with reason no_resend_resource_attached', async () => {
+  it('no resend resource attached โ’ markFailedToDispatch with reason no_resend_resource_attached', async () => {
     const repo = makeBroadcastsRepo({
       current: baseBroadcast({ resendBroadcastId: null }),
     });
@@ -407,10 +408,10 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     expect(result.ok).toBe(true);
     if (result.ok)
       expect(result.value.kind).toBe('reconciled_failed_resource_missing');
-    // Gateway should NOT have been called — the broadcast never had
+    // Gateway should NOT have been called โ€” the broadcast never had
     // a Resend resource id attached, so we short-circuit before the
     // retrieve.
-    // (Verified indirectly: gateway.retrieveCalls would be 0 — but
+    // (Verified indirectly: gateway.retrieveCalls would be 0 โ€” but
     // counter is captured by closure so we check via no successful
     // retrieve invocation by asserting the audit reason.)
     const resendMissingAudit = audit.emits.find(
@@ -422,7 +423,7 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     );
   });
 
-  it('reconciled_sent without emailTransactional dep: no email enqueued (defence — graceful degrade)', async () => {
+  it('reconciled_sent without emailTransactional dep: no email enqueued (defence โ€” graceful degrade)', async () => {
     const repo = makeBroadcastsRepo({ current: baseBroadcast() });
     const gateway = makeGateway({
       retrieve: { id: 'rsb-stuck', status: 'sent', sentAt: null },
@@ -444,7 +445,7 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
       { broadcastId, requestId: null },
     );
     expect(result.ok).toBe(true);
-    // Sent transition + audits still happen — only the email is
+    // Sent transition + audits still happen โ€” only the email is
     // skipped (the helper guards on `emailTransactional === undefined`).
     const sentTx = repo.transitions.find((t) => t.target === 'sent');
     expect(sentTx).toBeDefined();

@@ -1,5 +1,5 @@
-/**
- * T097 — Unit tests for `reject-broadcast.ts` Application use-case.
+﻿/**
+ * T097 โ€” Unit tests for `reject-broadcast.ts` Application use-case.
  *
  * Wave 6 GREEN. **100% branch coverage** of the typed-error matrix:
  * reason validation (3) + state-check (5) + concurrency (1) + audit
@@ -150,6 +150,7 @@ function makeRepo(opts: RepoOpts = {}): {
     async pruneExpiredDrafts() {
       return { prunedCount: 0 };
     },
+    async listInFlightOwnedByMember() { return []; },
   };
   return { port, transitions };
 }
@@ -213,8 +214,8 @@ const clock = { now: (): Date => FROZEN_NOW };
 beforeEach(() => vi.useFakeTimers({ now: FROZEN_NOW }));
 afterEach(() => vi.useRealTimers());
 
-describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
-  // ===== D1 closure (verify-fix 2026-05-02) — G2 notification tests =====
+describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
+  // ===== D1 closure (verify-fix 2026-05-02) โ€” G2 notification tests =====
 
   it('D1 G2: sendMemberEmail enqueued with VERBATIM rejection reason in payload + tenant locale threaded', async () => {
     const audit = makeAudit();
@@ -260,7 +261,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     expect(email.memberCalls[0]?.locale).toBe('en');
   });
 
-  it('D1 G2: emailTransactional throws → audit + transition still complete', async () => {
+  it('D1 G2: emailTransactional throws โ’ audit + transition still complete', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const email = makeEmail({ shouldThrow: true });
@@ -282,7 +283,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });
 
-  it('happy: lockForUpdate(submitted) → applyTransition(rejected, rejectedAt, rejectionReason)', async () => {
+  it('happy: lockForUpdate(submitted) โ’ applyTransition(rejected, rejectedAt, rejectionReason)', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const result = await rejectBroadcast(
@@ -310,7 +311,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     'cancelled',
     'rejected',
     'failed_to_dispatch',
-  ])('rejects when status=%s → broadcast_invalid_state_transition', async (s) => {
+  ])('rejects when status=%s โ’ broadcast_invalid_state_transition', async (s) => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: s });
     const result = await rejectBroadcast(
@@ -327,7 +328,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     expect(repo.transitions).toHaveLength(0);
   });
 
-  it('rejects when broadcast not found → broadcast_not_found', async () => {
+  it('rejects when broadcast not found โ’ broadcast_not_found', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: null });
     const result = await rejectBroadcast(
@@ -340,7 +341,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     }
   });
 
-  // ===== R5 verify-fix Tests-H5 (2026-05-02) — locale chain =====
+  // ===== R5 verify-fix Tests-H5 (2026-05-02) โ€” locale chain =====
   it('locale chain: memberPreferred WINS over input.notificationLocale', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
@@ -362,7 +363,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     expect(email.memberCalls[0]?.locale).toBe('sv');
   });
 
-  it('locale chain: memberPreferred null → falls back to input.notificationLocale', async () => {
+  it('locale chain: memberPreferred null โ’ falls back to input.notificationLocale', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const email = makeEmail();
@@ -383,7 +384,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     expect(email.memberCalls[0]?.locale).toBe('th');
   });
 
-  it('locale chain: both null → final fallback to "en"', async () => {
+  it('locale chain: both null โ’ final fallback to "en"', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const email = makeEmail();
@@ -430,7 +431,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
 
   // ---- Reason validation -------------------------------------------------
 
-  it('rejects empty rejectionReason → broadcast_rejection_reason_required', async () => {
+  it('rejects empty rejectionReason โ’ broadcast_rejection_reason_required', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const result = await rejectBroadcast(
@@ -444,7 +445,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     expect(repo.transitions).toHaveLength(0);
   });
 
-  it('rejects whitespace-only rejectionReason → broadcast_rejection_reason_required', async () => {
+  it('rejects whitespace-only rejectionReason โ’ broadcast_rejection_reason_required', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const result = await rejectBroadcast(
@@ -457,7 +458,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     }
   });
 
-  it('rejects rejectionReason > 2000 chars → broadcast_rejection_reason_too_long', async () => {
+  it('rejects rejectionReason > 2000 chars โ’ broadcast_rejection_reason_too_long', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const tooLong = 'x'.repeat(2001);
@@ -485,7 +486,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     expect(result.ok).toBe(true);
   });
 
-  // ---- FR-012 — sha256 hash, NOT raw reason -----------------------------
+  // ---- FR-012 โ€” sha256 hash, NOT raw reason -----------------------------
 
   it('audit broadcast_rejected payload contains rejectionReasonHash (sha256) NOT raw rejectionReason', async () => {
     const audit = makeAudit();
@@ -501,12 +502,12 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
       .update(baseInput.rejectionReason, 'utf8')
       .digest('hex');
     expect(payload.rejectionReasonHash).toBe(expectedHash);
-    // Hard guarantee — verbatim reason MUST NOT leak into audit
+    // Hard guarantee โ€” verbatim reason MUST NOT leak into audit
     expect(JSON.stringify(payload)).not.toContain(baseInput.rejectionReason);
     expect(payload.rejectionReasonLength).toBe(baseInput.rejectionReason.length);
   });
 
-  it('rejectionReasonHash is deterministic — same reason produces same hash', async () => {
+  it('rejectionReasonHash is deterministic โ€” same reason produces same hash', async () => {
     const audit1 = makeAudit();
     const repo1 = makeRepo({ lockedStatus: 'submitted' });
     const audit2 = makeAudit();
@@ -529,7 +530,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
 
   // ---- Concurrency ------------------------------------------------------
 
-  it('applyTransition throws BroadcastConcurrentMutationError → broadcast_concurrent_action_blocked', async () => {
+  it('applyTransition throws BroadcastConcurrentMutationError โ’ broadcast_concurrent_action_blocked', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'submitted',
@@ -549,7 +550,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     }
   });
 
-  it('concurrent: refresh returns null → observedStatus=unknown', async () => {
+  it('concurrent: refresh returns null โ’ observedStatus=unknown', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'submitted',
@@ -567,7 +568,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
 
   // ---- Server error catch-all -------------------------------------------
 
-  it('repo throw inside withTx → reject.server_error', async () => {
+  it('repo throw inside withTx โ’ reject.server_error', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ withTxThrows: true });
     const result = await rejectBroadcast(
@@ -583,7 +584,7 @@ describe('reject-broadcast — Wave 6 GREEN (T101)', () => {
     }
   });
 
-  it('non-Error thrown → reject.server_error with "unknown error" message', async () => {
+  it('non-Error thrown โ’ reject.server_error with "unknown error" message', async () => {
     const audit = makeAudit();
     const repo: BroadcastsRepo = {
       ...makeRepo({}).port,

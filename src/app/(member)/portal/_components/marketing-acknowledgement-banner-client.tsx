@@ -89,12 +89,19 @@ export function AcknowledgementBannerClient({
   return (
     <>
       {hidden ? null : (
+        // Outer wrapper matches DetailContainer's `mx-auto + max-w +
+        // px-[var(--page-padding-x)]` so the amber card edges align with
+        // the page content cards below on narrow viewports (was flush to
+        // viewport edges < 1152px).
+        <div
+          className="mx-auto w-full max-w-(--layout-max-width-detail) px-[var(--page-padding-x)] pt-[var(--page-padding-y)]"
+        >
         <div
           ref={ref}
           role="region"
           aria-labelledby="broadcasts-ack-banner-heading"
           data-testid="broadcasts-acknowledge-banner"
-          className="mx-auto my-4 flex max-w-(--layout-max-width-detail) items-start gap-4 rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/40"
+          className="flex items-start gap-4 rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/40"
         >
           <ShieldCheck
             className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300"
@@ -136,6 +143,7 @@ export function AcknowledgementBannerClient({
               </Button>
             </div>
           </div>
+        </div>
         </div>
       )}
       {/* a11y CHK042 — focus anchor stays mounted ACROSS the hidden

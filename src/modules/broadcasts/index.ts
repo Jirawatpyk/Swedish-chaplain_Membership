@@ -106,6 +106,7 @@ export {
   F7_AUDIT_EVENT_TYPES,
   F7_AUDIT_RETENTION_YEARS,
   f7RetentionFor,
+  isF7AuditEventType,
   type F7AuditEvent,
   type F7AuditEventType,
 } from './application/ports/audit-port';
@@ -203,6 +204,17 @@ export {
   type PruneExpiredDraftsError,
   type PruneExpiredDraftsOutput,
 } from './application/use-cases/prune-expired-drafts';
+// Phase 9 / T178a — F3 archival/erasure cascade. Exposed at the barrel
+// because the F3 archival/erasure use-case calls into F7 to auto-cancel
+// in-flight broadcasts when the originating member is archived/erased.
+// Spec § Edge Cases L353 / Coverage Gap C2.
+export {
+  cancelInFlightBroadcastsForMember,
+  type CancelInFlightForMemberDeps,
+  type CancelInFlightForMemberError,
+  type CancelInFlightForMemberInput,
+  type CancelInFlightForMemberOutput,
+} from './application/use-cases/cancel-in-flight-broadcasts-for-member';
 
 // --- Composition root factories (Phase 3) --------------------------------
 export {
@@ -224,6 +236,7 @@ export {
   makeClearHaltDeps,
   makeDispatchScheduledBroadcastDeps,
   makePruneExpiredDraftsDeps,
+  makeCancelInFlightBroadcastsForMemberDeps,
 } from './infrastructure/broadcasts-deps';
 
 // --- Application use-cases (Phase 5 US3) ---------------------------------

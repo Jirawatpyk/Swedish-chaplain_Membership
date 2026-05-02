@@ -21,6 +21,7 @@ import { authSessionRevocationPort } from './infrastructure/adapters/auth-sessio
 import { userEmailAdapter } from './infrastructure/adapters/user-email-adapter';
 import { emailChangeTokenAdapter } from './infrastructure/adapters/email-change-token-adapter';
 import { drizzleInvitationCascadePort } from './infrastructure/adapters/invitation-cascade-adapter';
+import { f7BroadcastsCascadeAdapter } from './infrastructure/adapters/broadcasts-cascade-adapter';
 import type { MemberRepo } from './application/ports/member-repo';
 import type { ContactRepo } from './application/ports/contact-repo';
 import type { AuditPort } from './application/ports/audit-port';
@@ -31,6 +32,7 @@ import type { SessionRevocationPort } from './application/ports/session-revocati
 import type { UserEmailPort } from './application/ports/user-email-port';
 import type { EmailChangeTokenPort } from './application/ports/email-change-token-port';
 import type { InvitationCascadePort } from './application/ports/invitation-cascade-port';
+import type { BroadcastsCascadePort } from './application/ports/broadcasts-cascade-port';
 import type { TimelinePort } from './application/ports/timeline-port';
 import type { MemberId } from './domain/member';
 import type { ContactId } from './domain/contact';
@@ -46,6 +48,8 @@ export type MembersDeps = {
   userEmails: UserEmailPort;
   tokens: EmailChangeTokenPort;
   invitations: InvitationCascadePort;
+  /** F7 in-flight broadcasts cascade (T178a / Coverage Gap C2). */
+  broadcastsCascade: BroadcastsCascadePort;
   timeline: TimelinePort;
   clock: ClockPort;
   idFactory: {
@@ -93,6 +97,7 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     userEmails: userEmailAdapter,
     tokens: emailChangeTokenAdapter,
     invitations: drizzleInvitationCascadePort,
+    broadcastsCascade: f7BroadcastsCascadeAdapter,
     timeline: drizzleTimelineRepo,
     clock: systemClock,
     idFactory: systemIdFactory,

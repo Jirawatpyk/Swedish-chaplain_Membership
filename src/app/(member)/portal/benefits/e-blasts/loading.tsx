@@ -1,16 +1,15 @@
+import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
+import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export default function EblastsListLoading(): React.ReactElement {
+export default async function EblastsListLoading(): Promise<React.ReactElement> {
+  const t = await getTranslations('portal.broadcasts.list');
   return (
     <DetailContainer>
-      <header className="space-y-2">
-        <Skeleton className="h-7 w-48" />
-        <Skeleton className="h-4 w-72" />
-      </header>
-      <Skeleton className="mt-6 h-32 w-full" />
-      <Skeleton className="mt-3 h-3 w-56" />
-      <div className="mt-6 space-y-2">
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <Skeleton className="h-32 w-full" />
+      <div className="space-y-2">
         {/* 10 rows to match `PER_PAGE` in page.tsx — prevents CLS when
             data hydrates (ux-standards.md § 2.1 Skeleton parity). */}
         {Array.from({ length: 10 }).map((_, i) => (

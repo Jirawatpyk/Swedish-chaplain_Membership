@@ -14,6 +14,7 @@ import { and, eq, ilike, inArray, or, sql, asc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
+import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
 import { members, type MemberRow } from './schema-members';
@@ -299,8 +300,8 @@ export const drizzleMemberRepo: MemberRepo = {
 
       return ok({ member: persistedMember, contact: persistedContact });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/duplicate key|unique constraint/i.test(msg)) {
+      const msg = errorChainMessage(e);
+      if (isUniqueViolation(e) || /duplicate key|unique constraint/i.test(msg)) {
         return err({ code: 'repo.conflict', reason: 'duplicate' });
       }
       return err(unexpected(e));

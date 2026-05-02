@@ -31,15 +31,38 @@ export default async function MemberLayout({ children }: { children: ReactNode }
   return (
     <div className="flex min-h-screen flex-col">
       <header className="flex h-[var(--top-bar-height)] items-center border-b border-border bg-background px-[var(--page-padding-x)] gap-2">
-        <div className="mx-auto w-full max-w-[var(--layout-max-width-detail)] flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Link href="/portal" className="text-body font-semibold tracking-tight">
+        {/*
+         * Mobile-first header layout (WCAG 2.1 1.4.4 reflow fix).
+         *
+         * Grid: left column takes whatever space is available after
+         * the fixed-width right column. `min-w-0` on the left cell
+         * lets content shrink below its intrinsic width so long
+         * tenant names + icon nav never force horizontal scroll at
+         * 320 px.
+         *
+         * Desktop (≥ 640 px): right column expands to include the
+         * ThemeToggle (via `sm:contents` on its wrapper); the grid
+         * max-width is capped at the detail layout token.
+         */}
+        <div className="mx-auto grid w-full max-w-[var(--layout-max-width-detail)] grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+            <Link
+              href="/portal"
+              className="text-body font-semibold tracking-tight shrink-0 max-w-[6rem] truncate sm:max-w-none"
+            >
               {process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} · Member
             </Link>
             <MemberNav />
           </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
+          <div className="flex shrink-0 items-center gap-2">
+            {/* ThemeToggle is hidden on mobile (< 640 px) to give the
+                fixed-width header room for the icon-only MemberNav.
+                Mobile users can change theme via their OS `prefers-
+                color-scheme` setting (honoured automatically) or via
+                the UserMenu which remains always-visible. */}
+            <span className="hidden sm:contents">
+              <ThemeToggle />
+            </span>
             <UserMenu
               displayName={user.displayName}
               email={user.email}
