@@ -1658,7 +1658,8 @@
       "expand": "Expandera sidofältet",
       "ariaLabel": "Personalnavigering",
       "members": "Medlemmar",
-      "invoices": "Fakturor"
+      "invoices": "Fakturor",
+      "broadcasts": "Utskick"
     },
     "member": {
       "dashboard": "Instrumentpanel",

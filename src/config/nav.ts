@@ -92,6 +92,12 @@ export const staffNavConfig: NavConfig = {
           activePattern: '/admin/invoices',
         },
         {
+          titleKey: 'nav.staff.broadcasts',
+          icon: MegaphoneIcon,
+          href: '/admin/broadcasts',
+          activePattern: '/admin/broadcasts',
+        },
+        {
           titleKey: 'nav.staff.users',
           icon: UsersIcon,
           href: '/admin/users',

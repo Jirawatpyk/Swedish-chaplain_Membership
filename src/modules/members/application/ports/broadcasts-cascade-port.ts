@@ -51,5 +51,16 @@ export interface BroadcastsCascadePort {
   ): Promise<{
     readonly cancelledCount: number;
     readonly skippedConcurrentCount: number;
+    /**
+     * `'ok'`              — cascade ran (counts may legitimately be 0
+     *                       when the member had no in-flight broadcasts).
+     * `'cascade_failed'`  — the F7 cascade itself errored before it
+     *                       could observe any broadcasts. Counts are
+     *                       always 0 in this branch. F3 archival is
+     *                       still allowed to commit (cascade is
+     *                       best-effort), but ops dashboards must
+     *                       distinguish this from the no-in-flight case.
+     */
+    readonly outcome: 'ok' | 'cascade_failed';
   }>;
 }

@@ -1169,4 +1169,29 @@ export const broadcastsMetrics = {
       ).add(1, { tenant: tenantId });
     });
   },
+
+  /**
+   * `broadcasts.cascade.outcome{tenant, outcome}` — F3 archival/erasure
+   * cascade outcome counter. Distinguishes:
+   *   - `cancelled`           → broadcast successfully transitioned to cancelled
+   *   - `concurrent_skip`     → BroadcastConcurrentMutationError — dispatch worker
+   *                             flipped status between snapshot and applyTransition;
+   *                             expected race, audited as
+   *                             `broadcast_concurrent_action_blocked`
+   *   - `unexpected_error`    → tx or audit emit threw something other than
+   *                             concurrent-mutation; broadcast was NOT cancelled.
+   *                             Any non-zero rate = stop-the-line (signal-loss
+   *                             on a Principle I cascade).
+   */
+  cascadeOutcome(
+    tenantId: string,
+    outcome: 'cancelled' | 'concurrent_skip' | 'unexpected_error',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_cascade_outcome_total',
+        'F3 archival/erasure cascade outcome per broadcast',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
 } as const;

@@ -262,11 +262,18 @@ export async function processUnsubscribe(
   }
   const payload = verifyResult.value;
 
-  // Defence-in-depth: peek and verify both parse `tid` from the same
-  // base64url-encoded payload, so they CANNOT diverge unless one of the
-  // parsers contains a bug. The check is intentionally cheap and stays
-  // here as a guard against future refactors that might separate the
-  // two parsers (e.g. if peek ever moves to reading a different field).
+  // Defence-in-depth: pre-tenant `peekTokenTenantId` parses `tid`
+  // from the unauthenticated token to bind RLS, while `verify` re-parses
+  // `tid` from the SAME base64url payload AFTER constant-time MAC
+  // verification. Today both parsers read the same field, so the only
+  // way they diverge is if (a) a future refactor separates the two
+  // parsers, (b) one parser is silently broken by a dependency bump,
+  // or (c) an attacker crafts a token whose unauthenticated peek path
+  // returns a different tenant from the MAC-verified payload. Any of
+  // those scenarios would let cross-tenant probes bind RLS to one
+  // tenant while the suppression row writes to another — this guard
+  // closes the window. Reject as `tenant_id_mismatch` (separate audit
+  // category from `bad_signature`) so dashboards can spot drift early.
   if (payload.tenantId !== tenantId) {
     return reject('tenant_id_mismatch', tenantId, payload.lang);
   }

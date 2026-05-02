@@ -35,10 +35,15 @@ export function MemberNav() {
             <item.icon className="size-4 shrink-0" aria-hidden />
             {/* Hide text labels on mobile (< 640 px) to prevent the
                 horizontal nav from overflowing a 320 px viewport.
-                WCAG 2.5.3 (Label in Name): the icon receives
-                aria-hidden and the Link's accessible name comes from
-                the visually-hidden <span> via the sr-only fallback,
-                so screen-reader users always hear the label. */}
+                Pattern serves two SCs:
+                  - WCAG 2.4.4 (Link Purpose, In Context): the icon
+                    receives aria-hidden so the Link's accessible name
+                    comes from the visually-hidden <span> on mobile and
+                    the visible text on desktop.
+                  - WCAG 4.1.2 (Name, Role, Value): the sr-only
+                    fallback guarantees every <a> always exposes a
+                    non-empty accessible name to AT, regardless of
+                    breakpoint. */}
             <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
               {t(item.titleKey)}
             </span>

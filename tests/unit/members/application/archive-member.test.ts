@@ -100,6 +100,7 @@ function makeDeps(overrides: Partial<{
   sessionRevocationResult: unknown;
   auditResult: unknown;
   now: Date;
+  broadcastsCascade: ArchiveMemberDeps['broadcastsCascade'];
 }> = {}): StubbedArchiveDeps {
   const now = overrides.now ?? new Date();
   const memberRepo = {
@@ -155,6 +156,17 @@ function makeDeps(overrides: Partial<{
     })),
   };
   const clock = { now: () => now };
+  // T199 H-1: broadcastsCascade is REQUIRED on ArchiveMemberDeps. Default
+  // to a no-op stub returning the new `outcome: 'ok'` shape; individual
+  // tests override to assert cascade-failure paths emit metric + log.
+  const broadcastsCascade: ArchiveMemberDeps['broadcastsCascade'] =
+    overrides.broadcastsCascade ?? {
+      cancelInFlightForMember: vi.fn(async () => ({
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        outcome: 'ok' as const,
+      })),
+    };
   return {
     tenant,
     memberRepo,
@@ -163,6 +175,7 @@ function makeDeps(overrides: Partial<{
     sessions,
     audit,
     clock,
+    broadcastsCascade,
   } as unknown as StubbedArchiveDeps;
 }
 
@@ -341,5 +354,77 @@ describe('archiveMember use case (R009)', () => {
     // Confirms current behaviour; spec amendment for F9 export carve-out
     // is tracked per staff-review R004.
     expect(payload.reason).toBe('sensitive internal note');
+  });
+
+  describe('F7 broadcasts cascade integration (T199 H-1)', () => {
+    it('happy path: invokes cascade with archived memberId + initiatedByUserId', async () => {
+      const cancelInFlightForMember = vi.fn(async () => ({
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        outcome: 'ok' as const,
+      }));
+      const deps = makeDeps({
+        broadcastsCascade: { cancelInFlightForMember },
+      });
+      const result = await archiveMember(
+        memberId,
+        { reason: 'cascade happy' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      expect(result.ok).toBe(true);
+      expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
+      const call = cancelInFlightForMember.mock.calls[0] as unknown as [
+        { slug: string },
+        unknown,
+        {
+          cancellationReason?: string;
+          initiatedByUserId: string | null;
+          requestId: string | null;
+        },
+      ];
+      expect(call[0].slug).toBe('test-tenant');
+      expect(call[1]).toBe(memberId);
+      expect(call[2].cancellationReason).toBe('originator_member_deleted');
+      expect(call[2].initiatedByUserId).toBe('admin-7');
+      expect(call[2].requestId).toBe('req-7');
+    });
+
+    it('cascade outcome=cascade_failed: archive still succeeds + caller still returns ok', async () => {
+      const cancelInFlightForMember = vi.fn(async () => ({
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        outcome: 'cascade_failed' as const,
+      }));
+      const deps = makeDeps({
+        broadcastsCascade: { cancelInFlightForMember },
+      });
+      const result = await archiveMember(
+        memberId,
+        { reason: 'cascade failed' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      // F3 archive must succeed even when F7 cascade reports failure —
+      // cascade is best-effort per archive-member.ts L221-223.
+      expect(result.ok).toBe(true);
+      expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
+    });
+
+    it('cascade throws: archive still succeeds (catch-all swallow)', async () => {
+      const cancelInFlightForMember = vi.fn(async () => {
+        throw new Error('adapter mis-wired');
+      });
+      const deps = makeDeps({
+        broadcastsCascade: { cancelInFlightForMember },
+      });
+      const result = await archiveMember(
+        memberId,
+        { reason: 'cascade throws' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      expect(result.ok).toBe(true);
+    });
   });
 });

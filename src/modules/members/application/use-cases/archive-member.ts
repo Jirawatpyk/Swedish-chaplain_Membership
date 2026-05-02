@@ -26,6 +26,7 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { archive, type Member, type MemberId } from '../../domain/member';
@@ -223,16 +224,35 @@ export async function archiveMember(
     // leaves a broadcast in-flight. Ops can re-run cleanup manually.
     {
       try {
-        await deps.broadcastsCascade.cancelInFlightForMember(
-          deps.tenant,
-          memberId,
-          {
-            cancellationReason: 'originator_member_deleted',
-            initiatedByUserId: meta.actorUserId,
-            requestId: meta.requestId,
-          },
-        );
+        const cascadeResult =
+          await deps.broadcastsCascade.cancelInFlightForMember(
+            deps.tenant,
+            memberId,
+            {
+              cancellationReason: 'originator_member_deleted',
+              initiatedByUserId: meta.actorUserId,
+              requestId: meta.requestId,
+            },
+          );
+        if (cascadeResult.outcome === 'cascade_failed') {
+          // Adapter already logged the underlying error. Emit
+          // stop-the-line metric so dashboards distinguish this from
+          // the no-in-flight + ok case (both report cancelledCount=0).
+          broadcastsMetrics.cascadeOutcome(
+            deps.tenant.slug,
+            'unexpected_error',
+          );
+        }
       } catch (cascadeErr) {
+        // Adapter is supposed to translate failures to
+        // `outcome: 'cascade_failed'`; a throw here means the adapter
+        // itself blew up (e.g. composition root mis-wired). Treat as
+        // unexpected-error: emit metric + structured log; member archive
+        // still committed and remains successful.
+        broadcastsMetrics.cascadeOutcome(
+          deps.tenant.slug,
+          'unexpected_error',
+        );
         logger.error(
           {
             err:

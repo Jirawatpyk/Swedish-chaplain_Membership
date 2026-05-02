@@ -1658,7 +1658,8 @@
       "expand": "Expand sidebar",
       "ariaLabel": "Staff navigation",
       "members": "Members",
-      "invoices": "Invoices"
+      "invoices": "Invoices",
+      "broadcasts": "Broadcasts"
     },
     "member": {
       "dashboard": "Dashboard",

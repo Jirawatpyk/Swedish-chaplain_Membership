@@ -32,11 +32,16 @@
  * Concurrency: each broadcast row is transitioned independently. If a
  * dispatch worker races us to flip an `approved` → `sending` between
  * the `listInFlightOwnedByMember` snapshot and our `applyTransition`,
- * `applyTransition` returns 0 rows (concurrent-mutation guard) and
- * the broadcast is skipped — it will deliver normally because the
- * member archive happened after the dispatch decision. The skip is
- * audited as `broadcast_concurrent_action_blocked` for forensic
- * trail.
+ * `applyTransition` THROWS `BroadcastConcurrentMutationError` (the
+ * repo guards on observed-status mismatch via `WHERE status = $prev`
+ * + `RETURNING`) and the broadcast is skipped — it will deliver
+ * normally because the member archive happened after the dispatch
+ * decision. The skip is audited as `broadcast_concurrent_action_blocked`
+ * for forensic trail. Any other exception is treated as
+ * unexpected-error: the broadcast remains in flight, the cascade
+ * continues to the next broadcast (best-effort), and the
+ * `cascade.unexpected_error` metric is incremented for stop-the-line
+ * alerting.
  */
 import { err, ok, type Result } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';
@@ -45,7 +50,10 @@ import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
 import type { Broadcast } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
-import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import {
+  BroadcastConcurrentMutationError,
+  type BroadcastsRepo,
+} from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 
 export type CancelInFlightForMemberError =
@@ -110,13 +118,15 @@ export async function cancelInFlightBroadcastsForMember(
     let cancelledCount = 0;
     let skippedConcurrentCount = 0;
 
+    let unexpectedErrorCount = 0;
+
     for (const broadcast of inFlight) {
       // Each broadcast cancelled in its own short tx so a single race
       // does not roll back the whole cascade. F3 archival audit on
       // the member row is independent.
       await deps.broadcastsRepo.withTx(async (tx) => {
         try {
-              const cancelled = await deps.broadcastsRepo.applyTransition(
+          const cancelled = await deps.broadcastsRepo.applyTransition(
             tx,
             input.tenant.slug,
             broadcast.broadcastId,
@@ -129,7 +139,7 @@ export async function cancelInFlightBroadcastsForMember(
             broadcast.status,
           );
 
-              await deps.audit.emit(tx, {
+          await deps.audit.emit(tx, {
             tenantId: input.tenant.slug,
             eventType: 'broadcast_cancelled',
             actorUserId: input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
@@ -152,56 +162,86 @@ export async function cancelInFlightBroadcastsForMember(
             input.tenant.slug,
             'broadcast_cancelled',
           );
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'cancelled');
           cancelledCount += 1;
         } catch (e) {
-          // applyTransition returns no rows when a concurrent worker
-          // already flipped the status (e.g. dispatch worker took
-          // 'approved' → 'sending'). Log + audit but do NOT throw —
-          // the cascade should be best-effort across the rest of the
-          // member's broadcasts.
-          skippedConcurrentCount += 1;
-          logger.warn(
+          if (e instanceof BroadcastConcurrentMutationError) {
+            // Expected race: dispatch worker flipped status between our
+            // snapshot and applyTransition. Skip + audit + continue.
+            skippedConcurrentCount += 1;
+            broadcastsMetrics.cascadeOutcome(
+              input.tenant.slug,
+              'concurrent_skip',
+            );
+            logger.warn(
+              {
+                err: e.message,
+                tenantId: input.tenant.slug,
+                broadcastId: broadcast.broadcastId as string,
+                memberId: input.memberId as string,
+                previousStatus: broadcast.status,
+                observedStatus: e.observedStatus,
+                useCase: 'cancel-in-flight-broadcasts-for-member',
+              },
+              'broadcasts.cascade.concurrent_skip',
+            );
+            try {
+              await deps.audit.emit(null, {
+                tenantId: input.tenant.slug,
+                eventType: 'broadcast_concurrent_action_blocked',
+                actorUserId:
+                  input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
+                summary: `Cancel cascade skipped broadcast ${broadcast.broadcastId} — concurrent transition`,
+                payload: {
+                  broadcastId: broadcast.broadcastId,
+                  memberId: input.memberId as string,
+                  cascade: 'f3_member_archival_or_erasure',
+                  snapshotStatus: broadcast.status,
+                  observedStatus: e.observedStatus,
+                },
+                requestId: input.requestId,
+              });
+            } catch (auditErr) {
+              broadcastsMetrics.auditEmitFailed(
+                'broadcast_concurrent_action_blocked',
+                input.tenant.slug,
+              );
+              logger.error(
+                {
+                  err:
+                    auditErr instanceof Error
+                      ? auditErr.message
+                      : String(auditErr),
+                  tenantId: input.tenant.slug,
+                  broadcastId: broadcast.broadcastId as string,
+                },
+                'broadcasts.cascade.audit_emit_failed',
+              );
+            }
+            return;
+          }
+          // Unexpected: tx error, audit emit error, or any non-concurrent
+          // throw. Broadcast remains in flight. Stop-the-line metric +
+          // structured error log; cascade continues to next broadcast
+          // (best-effort) so a single bad row does not block the rest
+          // of the member's archival.
+          unexpectedErrorCount += 1;
+          broadcastsMetrics.cascadeOutcome(
+            input.tenant.slug,
+            'unexpected_error',
+          );
+          logger.error(
             {
               err: e instanceof Error ? e.message : String(e),
+              errName: e instanceof Error ? e.name : undefined,
               tenantId: input.tenant.slug,
               broadcastId: broadcast.broadcastId as string,
               memberId: input.memberId as string,
               previousStatus: broadcast.status,
               useCase: 'cancel-in-flight-broadcasts-for-member',
             },
-            'broadcasts.cascade.concurrent_skip',
+            'broadcasts.cascade.tx_or_audit_failed',
           );
-          try {
-                  await deps.audit.emit(null, {
-              tenantId: input.tenant.slug,
-              eventType: 'broadcast_concurrent_action_blocked',
-              actorUserId: input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
-              summary: `Cancel cascade skipped broadcast ${broadcast.broadcastId} — concurrent transition`,
-              payload: {
-                broadcastId: broadcast.broadcastId,
-                memberId: input.memberId as string,
-                cascade: 'f3_member_archival_or_erasure',
-                snapshotStatus: broadcast.status,
-              },
-              requestId: input.requestId,
-            });
-          } catch (auditErr) {
-            broadcastsMetrics.auditEmitFailed(
-              'broadcast_concurrent_action_blocked',
-              input.tenant.slug,
-            );
-            logger.error(
-              {
-                err:
-                  auditErr instanceof Error
-                    ? auditErr.message
-                    : String(auditErr),
-                tenantId: input.tenant.slug,
-                broadcastId: broadcast.broadcastId as string,
-              },
-              'broadcasts.cascade.audit_emit_failed',
-            );
-          }
         }
       });
     }
@@ -212,6 +252,7 @@ export async function cancelInFlightBroadcastsForMember(
         memberId: input.memberId as string,
         cancelledCount,
         skippedConcurrentCount,
+        unexpectedErrorCount,
         cascade: 'f3_member_archival_or_erasure',
       },
       'broadcasts.cascade.completed',

@@ -22,7 +22,11 @@ import type { BroadcastsCascadePort } from '../../application/ports/broadcasts-c
  */
 export const noopBroadcastsCascadeAdapter: BroadcastsCascadePort = {
   async cancelInFlightForMember() {
-    return { cancelledCount: 0, skippedConcurrentCount: 0 };
+    return {
+      cancelledCount: 0,
+      skippedConcurrentCount: 0,
+      outcome: 'ok',
+    };
   },
 };
 
@@ -41,9 +45,11 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
     if (!result.ok) {
       // F7 cascade failure is non-fatal for F3 archival — the member
       // archive should succeed even if a broadcast cascade glitch
-      // leaves a few broadcasts in-flight. Log + return zero so the
-      // F3 use-case continues. Ops can re-run cascade manually via
-      // the audit-driven cleanup runbook.
+      // leaves a few broadcasts in-flight. Log + return `cascade_failed`
+      // outcome so the F3 caller can emit a metric / audit signal that
+      // distinguishes this from the no-in-flight case (which returns
+      // `outcome: 'ok'` with zeros). Ops can re-run cascade manually
+      // via the audit-driven cleanup runbook.
       logger.error(
         {
           err: result.error.message,
@@ -53,8 +59,12 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
         },
         'members.archive.broadcasts_cascade_failed',
       );
-      return { cancelledCount: 0, skippedConcurrentCount: 0 };
+      return {
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        outcome: 'cascade_failed',
+      };
     }
-    return result.value;
+    return { ...result.value, outcome: 'ok' };
   },
 };
