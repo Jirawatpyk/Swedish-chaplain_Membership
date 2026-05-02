@@ -664,7 +664,16 @@ export function makeDrizzleBroadcastsRepo(
               and(
                 eq(broadcasts.tenantId, tenantIdArg),
                 eq(broadcasts.requestedByMemberId, memberId),
-                sql`${broadcasts.status}::text IN ('submitted', 'approved')`,
+                // Verify-fix R3 (Tests-Gap#1, 2026-05-02): spec AS2
+                // (line 324) requires `failed_to_dispatch` rows to HOLD
+                // their quota reservation indefinitely (admin can
+                // manually re-trigger). Previously this counter only
+                // included submitted/approved → quota silently RELEASED
+                // on permanent dispatch failure, contradicting spec.
+                // Pre-fix this caused E2E pollution that needed the
+                // `wipeE2EMemberBroadcasts` helper. Now reserved =
+                // submitted ∪ approved ∪ failed_to_dispatch.
+                sql`${broadcasts.status}::text IN ('submitted', 'approved', 'failed_to_dispatch')`,
               ),
             ),
           tx

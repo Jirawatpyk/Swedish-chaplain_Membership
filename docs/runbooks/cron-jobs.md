@@ -189,8 +189,11 @@ cron-driven endpoints. Rotation procedure (zero downtime):
 2. `vercel env add CRON_SECRET <new-value> production`
 3. Redeploy production (the new env value loads at boot)
 4. Update **every** cron-job.org job's Bearer header in the headers UI
-   (currently 2 jobs: F5 stale-pending-count and F7 dispatch-scheduled
-    — see catalogue above)
+   — see the job catalogue table at the top of this file for the
+   complete list (currently 4 jobs: F5 stale-pending-count, F7
+   dispatch-scheduled, F7 reconcile-stuck-sending, F7
+   prune-expired-drafts). Verify the catalogue is up-to-date before
+   rotation; missing one cron job mid-rotation causes ≤5min outage.
 5. Click **Run** on each updated job to confirm 200 OK
 6. After 1 hour of clean runs, optionally: `vercel env rm
    CRON_SECRET_OLD production` if you kept the old value as a fallback

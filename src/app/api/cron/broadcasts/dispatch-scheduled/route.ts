@@ -38,14 +38,17 @@ import {
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
+import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
 const MAX_PER_TICK = 50;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const auth = request.headers.get('authorization');
-  if (auth !== `Bearer ${env.cron.secret}`) {
+  // Verify-fix R3 (Code-M2, 2026-05-02): constant-time Bearer check
+  // via shared `verifyCronBearer` helper (matches F4 outbox + F5
+  // sweep-stale-pending-refunds). Avoids timing side-channel.
+  if (!verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
     return NextResponse.json(
       { error: { code: 'unauthorized' } },
       { status: 401 },
@@ -54,6 +57,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const tenantCtx = resolveTenantFromRequest(request);
   const tenant = asTenantContext(tenantCtx.slug);
+
+  // Verify-fix R3 (Errors-H2, 2026-05-02): kill-switch check — without
+  // this, a feature-flag rollback would NOT stop in-flight `approved`
+  // broadcasts from going out (cron picks them up, calls Resend, sends
+  // real emails, consumes member quota). Returns 200 + {skipped:true}
+  // so cron-job.org does NOT retry-storm a dark-launch period.
+  if (!env.features.f7Broadcasts) {
+    logger.info(
+      { tenantId: tenant.slug },
+      'cron.broadcasts.dispatch.feature_disabled',
+    );
+    return NextResponse.json(
+      { skipped: true, reason: 'feature_disabled' },
+      { status: 200 },
+    );
+  }
 
   // Eligible-row pick goes through `runInTenant` so RLS+FORCE applies
   // (cron-system context). `FOR UPDATE SKIP LOCKED` prevents two ticks

@@ -2234,14 +2234,16 @@
       "body": "Ditt utskick \"{subject}\" har godkänts och kommer att skickas {scheduleHint}.",
       "scheduleNow": "inom kort",
       "scheduleAt": "den {when}",
-      "footer": "Du ser leveransresultaten på din förmånssida när utskicket är klart."
+      "footer": "Du ser leveransresultaten på din förmånssida när utskicket är klart.",
+      "ctaViewDetailLabel": "Visa utskicksdetaljer"
     },
     "broadcastRejected": {
       "subject": "Ditt utskick har inte godkänts",
       "greeting": "Hej {name},",
       "body": "Ditt utskick \"{subject}\" har inte godkänts.",
-      "reasonHeading": "Anledning från din kammaradmin:",
-      "footer": "Din reserverade kvot har frigjorts. Du är välkommen att skicka ett reviderat utskick."
+      "reasonHeading": "Anledning från din kammaradministratör:",
+      "footer": "Din reserverade kvot har frigjorts.",
+      "ctaReviseLabel": "Visa utskicksdetaljer"
     },
     "broadcastCancelled": {
       "subject": "Ditt utskick har avbrutits",

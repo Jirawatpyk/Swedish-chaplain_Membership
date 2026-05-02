@@ -149,6 +149,26 @@ describe('compute-quota-counter — Wave 6 (T067 GREEN)', () => {
     }
   });
 
+  it('R3 Tests-Gap#1: failed_to_dispatch holds the reservation slot per spec AS2', async () => {
+    // Verify-fix R3 (2026-05-02): spec.md US6 AS2 (line 324) requires
+    // `failed_to_dispatch` to HOLD the quota slot indefinitely (admin
+    // can manually re-trigger). The test mocks the repo to return
+    // reserved=1 (which now includes failed_to_dispatch per the
+    // updated SQL `IN ('submitted', 'approved', 'failed_to_dispatch')`)
+    // and asserts the use-case correctly surfaces that as "remaining
+    // quota = cap - reserved - used". Live SQL behaviour locked at
+    // the integration layer (`drizzle-broadcasts-repo.ts:667`).
+    const deps = makeDeps({ cap: 1, used: 0, reserved: 1 });
+    const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.counter.reserved).toBe(1);
+      expect(result.value.counter.remaining).toBe(0);
+      // Member is BLOCKED from submitting new broadcasts because the
+      // failed_to_dispatch row holds the slot — spec AS2 contract.
+    }
+  });
+
   it('returns used counts from broadcasts in sent state with quota_year_consumed = current year', async () => {
     const deps = makeDeps({ cap: 6, used: 3, reserved: 0 });
     const result = await computeQuotaCounter(deps, { memberId: asMemberId('m-1') });

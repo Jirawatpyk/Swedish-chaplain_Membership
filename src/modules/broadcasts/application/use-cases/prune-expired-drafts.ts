@@ -12,7 +12,7 @@
  *
  * Pure Application — only Domain types + ports.
  */
-import { ok, type Result } from '@/lib/result';
+import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
@@ -65,12 +65,16 @@ export async function pruneExpiredDrafts(
     // next daily tick). NO partial state to roll back: a failed DELETE
     // leaves drafts intact (acceptable — they were going to be pruned
     // anyway, just delayed by 24h).
-    return {
-      ok: false,
-      error: {
-        kind: 'prune.server_error',
-        message: e instanceof Error ? e.message : 'unknown error',
-      },
-    } as Result<PruneExpiredDraftsOutput, PruneExpiredDraftsError>;
+    //
+    // Verify-fix R3 (Errors-C2, 2026-05-02): use `err()` helper instead
+    // of hand-cast — aligns with the rest of the F7 module (mirrors
+    // `ok()` import on line 15). Hand-cast bypassed the discriminated-
+    // union helper and risked silent shape drift if `Result<T,E>` ever
+    // gains a brand or normalisation step.
+    const message = e instanceof Error ? e.message : 'unknown error';
+    // Truncate to bound log size + prevent PII (e.g., constraint-
+    // violation messages with row data) from leaking into audit.
+    const safeMessage = message.length > 500 ? message.slice(0, 500) + '…' : message;
+    return err({ kind: 'prune.server_error', message: safeMessage });
   }
 }

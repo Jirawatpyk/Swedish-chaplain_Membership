@@ -1702,4 +1702,98 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     // BUT no dispatch-failure email (different audit kind)
     expect(email.memberCalls).toHaveLength(0);
   });
+
+  // =====================================================================
+  // Verify-fix R3 — Tests-Gap#2 (AS2 admin alert) + Errors-H3
+  // (skipped-no-email audit) + Errors-C1 (idempotency_conflict_pre_send
+  // distinct audit)
+  // =====================================================================
+
+  it('R3 Tests-Gap#2: AS2 past-budget emits broadcasts.dispatch_budget_exhausted metric (admin alert pipeline)', async () => {
+    const audit = makeAudit();
+    const broadcastRow = {
+      ...makeBroadcast('approved'),
+      scheduledFor: new Date(FROZEN_NOW.getTime() - 65 * 60 * 1000),
+    };
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: broadcastRow });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'retryable', reason: 'Resend 503' },
+    });
+    const email = makeEmailTransactional();
+    // Spy on the metric — vi.spyOn safe because broadcastsMetrics is
+    // a module-level singleton const.
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    try {
+      await dispatchScheduledBroadcast(
+        {
+          tenant,
+          broadcastsRepo: repo.port,
+          broadcastsGateway: gw.port,
+          membersBridge: makeMembersBridge({
+            recipients: [recipient('m-1', 'one@example.com')],
+            primaryContact: 'sender@example.com',
+          }),
+          marketingUnsubscribes: makeMarketingUnsubscribes(),
+          eventAttendees: makeEventAttendees(),
+          audit: audit.port,
+          clock,
+          fromEmail: 'noreply@test.invalid-but-test-only',
+          tenantDisplayName: 'Test Chamber',
+          locale: 'en' as const,
+          plansBridge: makePlansBridge(),
+          emailTransactional: email.port,
+        },
+        baseInput,
+      );
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith(tenant.slug, expect.any(String));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('R3 Errors-H3: skipped notification (member null primary email) emits broadcast_dispatch_failure_notif_skipped_no_email audit', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
+    });
+    const email = makeEmailTransactional();
+    await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        // primaryContact: null → email skipped, audit MUST fire
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: null,
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    // Email NOT enqueued
+    expect(email.memberCalls).toHaveLength(0);
+    // BUT durable audit row IS emitted (compliance trail)
+    const skippedEvt = audit.emits.find(
+      (e) =>
+        e.eventType ===
+        'broadcast_dispatch_failure_notif_skipped_no_email',
+    );
+    expect(skippedEvt).toBeDefined();
+    expect((skippedEvt?.payload as Record<string, unknown>).memberId).toBe('m-1');
+  });
 });

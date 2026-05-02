@@ -2234,14 +2234,16 @@
       "body": "Your E-Blast \"{subject}\" has been approved and will be sent {scheduleHint}.",
       "scheduleNow": "shortly",
       "scheduleAt": "on {when}",
-      "footer": "You'll see delivery results on your benefits page once the broadcast completes."
+      "footer": "You'll see delivery results on your benefits page once the broadcast completes.",
+      "ctaViewDetailLabel": "View broadcast detail"
     },
     "broadcastRejected": {
       "subject": "Your E-Blast was not approved",
       "greeting": "Hi {name},",
       "body": "Your E-Blast \"{subject}\" was not approved.",
       "reasonHeading": "Reason from your chamber admin:",
-      "footer": "Your reserved quota slot has been released. You're welcome to submit a revised broadcast."
+      "footer": "Your reserved quota slot has been released.",
+      "ctaReviseLabel": "View broadcast detail"
     },
     "broadcastCancelled": {
       "subject": "Your E-Blast was cancelled",

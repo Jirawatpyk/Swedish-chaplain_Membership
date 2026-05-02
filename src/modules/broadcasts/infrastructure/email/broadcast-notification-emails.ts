@@ -1,9 +1,12 @@
 /**
- * F7 transactional notification email builders (Phase 8 — 2026-05-02).
+ * F7 transactional notification email builders (Phase 8 — 2026-05-02;
+ * extended verify-fix R1 + R2 + R3 — 2026-05-02).
  *
  * Render plain HTML + text payloads from the notifications_outbox row's
  * `context_data` for the F4 cron dispatcher (`/api/cron/outbox-dispatch`).
- * Two notification types covered today:
+ * Five notification types covered (corresponds to the 5 F7 values in
+ * the `notification_type` Postgres enum + `F7_NOTIFICATION_TYPES`
+ * union in `email-transactional-bridge.ts`):
  *
  *   - `broadcast_delivered_notification` (FR-028 / AS3 — US5 catch-up):
  *     enqueued at `sending → sent` transition (webhook + 24h reconcile
@@ -17,6 +20,19 @@
  *     empty-post-suppression) failure surfaces. Carries broadcast
  *     subject, scheduled-for timestamp, failure reason, broadcast id
  *     for deep-link.
+ *
+ *   - `broadcast_approved_notification` (US2 — G2 verify-fix R1):
+ *     enqueued in-tx by `approveBroadcast` use-case. Carries broadcast
+ *     id/subject + scheduledForIso (formatted by `formatEmailDate`).
+ *
+ *   - `broadcast_rejected_notification` (US2 — G2 verify-fix R1 +
+ *     UX-GAP3 R3 verify-fix added CTA):
+ *     enqueued in-tx by `rejectBroadcast` use-case. Carries VERBATIM
+ *     rejection reason per FR-012 (audit retains sha256 hash only).
+ *
+ *   - `broadcast_cancelled_notification` (US2 — G2 verify-fix R1):
+ *     enqueued in-tx by `cancelBroadcast` use-case for both admin
+ *     and member self-cancel paths. Carries optional reason.
  *
  * Locale strings come from `src/i18n/messages/{en,th,sv}.json` so the
  * portal surface + email surface stay in sync (one place to update
@@ -99,6 +115,43 @@ function fillTemplate(template: string, vars: Record<string, string | number>): 
   );
 }
 
+/**
+ * Verify-fix R3 (UX-GAP2, 2026-05-02) — format raw ISO timestamps as
+ * locale-aware date+time strings before template fill. Without this,
+ * members see `"กำหนดส่งเดิม: 2026-05-10T09:00:00.000Z"` in their
+ * inbox. Locale-aware formatting + tenant-aware timezone:
+ *   - `th` → Asia/Bangkok, "10 พฤษภาคม 2569 09:00" (Buddhist Era off
+ *     for now per CLAUDE.md timestamp rule — display Gregorian)
+ *   - `sv` → Europe/Stockholm
+ *   - `en` → UTC (default-of-defaults)
+ *
+ * Falls back to the raw ISO string on any Intl/Date error so a
+ * malformed input still produces SOMETHING readable rather than an
+ * exception that breaks the email send.
+ */
+function formatEmailDate(
+  iso: string,
+  locale: BroadcastNotificationLocale,
+): string {
+  try {
+    const tz =
+      locale === 'th'
+        ? 'Asia/Bangkok'
+        : locale === 'sv'
+          ? 'Europe/Stockholm'
+          : 'UTC';
+    const intlLocale =
+      locale === 'th' ? 'th-TH' : locale === 'sv' ? 'sv-SE' : 'en-GB';
+    return new Intl.DateTimeFormat(intlLocale, {
+      dateStyle: 'long',
+      timeStyle: 'short',
+      timeZone: tz,
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
 function broadcastDetailUrl(broadcastId: string): string {
   return `${env.app.baseUrl.replace(/\/$/, '')}/admin/broadcasts/${encodeURIComponent(broadcastId)}`;
 }
@@ -165,7 +218,7 @@ export function buildBroadcastDeliveredEmail(
       <a href="${ctaUrl}" style="display:inline-block;background:#0b6bcb;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escape(copy.viewBenefitsCta)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
-    <p style="color:#777;font-size:12px;">${escape(copy.footer)}</p>
+    <p style="color:#595959;font-size:12px;">${escape(copy.footer)}</p>
   </body>
 </html>`;
 
@@ -199,7 +252,9 @@ export function buildBroadcastFailedToDispatchEmail(
   const copy = pickLocale(FAILED_COPY, input.locale, 'broadcastFailedToDispatch');
   const subject = fillTemplate(copy.subject, { subject: input.broadcastSubject });
   const body1 = fillTemplate(copy.body1, { tenantDisplayName: input.tenantDisplayName });
-  const scheduledLine = fillTemplate(copy.scheduledForLabel, { scheduledFor: input.scheduledFor });
+  // UX-GAP2 closure (2026-05-02) — locale-aware date format
+  const scheduledFormatted = formatEmailDate(input.scheduledFor, input.locale);
+  const scheduledLine = fillTemplate(copy.scheduledForLabel, { scheduledFor: scheduledFormatted });
   const reasonLine = fillTemplate(copy.failureReasonLabel, { reason: input.reason });
   const ctaUrl = broadcastDetailUrl(input.broadcastId);
 
@@ -217,7 +272,7 @@ export function buildBroadcastFailedToDispatchEmail(
       <a href="${ctaUrl}" style="display:inline-block;background:#0b6bcb;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escape(copy.ctaRescheduleLabel)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
-    <p style="color:#777;font-size:12px;">${escape(copy.footerSignOff)}</p>
+    <p style="color:#595959;font-size:12px;">${escape(copy.footerSignOff)}</p>
   </body>
 </html>`;
 
@@ -248,6 +303,8 @@ interface BroadcastApprovedCopy {
   readonly scheduleNow: string;
   readonly scheduleAt: string;
   readonly footer: string;
+  /** Verify-fix R3 (UX, 2026-05-02) — CTA label for action-oriented button. */
+  readonly ctaViewDetailLabel: string;
 }
 
 const APPROVED_COPY: Record<BroadcastNotificationLocale, BroadcastApprovedCopy> = {
@@ -272,9 +329,12 @@ export function buildBroadcastApprovedEmail(
   input: BuildBroadcastApprovedEmailInput,
 ): BuiltEmail {
   const copy = pickLocale(APPROVED_COPY, input.locale, 'broadcastApproved');
+  // UX-GAP2 closure (2026-05-02) — locale-aware date format
   const scheduleHint = input.scheduledForIso === null
     ? copy.scheduleNow
-    : fillTemplate(copy.scheduleAt, { when: input.scheduledForIso });
+    : fillTemplate(copy.scheduleAt, {
+        when: formatEmailDate(input.scheduledForIso, input.locale),
+      });
   const subject = copy.subject;
   const greeting = fillTemplate(copy.greeting, { name: input.memberDisplayName });
   const body = fillTemplate(copy.body, {
@@ -291,15 +351,15 @@ export function buildBroadcastApprovedEmail(
     <p style="line-height:1.6;">${escape(greeting)}</p>
     <p style="line-height:1.6;">${escape(body)}</p>
     <p style="margin:24px 0;">
-      <a href="${ctaUrl}" style="display:inline-block;background:#0b6bcb;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escape(input.broadcastSubject)}</a>
+      <a href="${ctaUrl}" style="display:inline-block;background:#0b6bcb;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escape(copy.ctaViewDetailLabel)}</a>
     </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
-    <p style="color:#777;font-size:12px;">${escape(copy.footer)}</p>
+    <p style="color:#595959;font-size:12px;">${escape(copy.footer)}</p>
   </body>
 </html>`;
 
   const text =
-    `${greeting}\n\n${body}\n\n${ctaUrl}\n\n${copy.footer}\n`;
+    `${greeting}\n\n${body}\n\n${copy.ctaViewDetailLabel}: ${ctaUrl}\n\n${copy.footer}\n`;
 
   return { subject, html, text };
 }
@@ -314,6 +374,8 @@ interface BroadcastRejectedCopy {
   readonly body: string;
   readonly reasonHeading: string;
   readonly footer: string;
+  /** UX-GAP3 closure (2026-05-02) — CTA label for revise/detail action. */
+  readonly ctaReviseLabel: string;
 }
 
 const REJECTED_COPY: Record<BroadcastNotificationLocale, BroadcastRejectedCopy> = {
@@ -341,6 +403,11 @@ export function buildBroadcastRejectedEmail(
   const subject = copy.subject;
   const greeting = fillTemplate(copy.greeting, { name: input.memberDisplayName });
   const body = fillTemplate(copy.body, { subject: input.broadcastSubject });
+  const ctaUrl = broadcastDetailUrl(input.broadcastId);
+  // UX-GAP3 closure (2026-05-02) — preserve `\n` in user-authored
+  // rejection reason so multi-line reasons render readably in HTML.
+  // `escape()` handles HTML safety; we then replace newlines with <br>.
+  const safeReasonHtml = escape(input.rejectionReason).replaceAll('\n', '<br>');
 
   const html = `<!doctype html>
 <html lang="${input.locale}">
@@ -350,14 +417,17 @@ export function buildBroadcastRejectedEmail(
     <p style="line-height:1.6;">${escape(greeting)}</p>
     <p style="line-height:1.6;">${escape(body)}</p>
     <p style="line-height:1.6;font-weight:600;">${escape(copy.reasonHeading)}</p>
-    <blockquote style="margin:0 0 16px 0;padding:12px 16px;border-left:4px solid #b3261e;background:#fef3f2;color:#5a1d1d;">${escape(input.rejectionReason)}</blockquote>
+    <blockquote style="margin:0 0 16px 0;padding:12px 16px;border-left:4px solid #b3261e;background:#fef3f2;color:#5a1d1d;">${safeReasonHtml}</blockquote>
+    <p style="margin:24px 0;">
+      <a href="${ctaUrl}" style="display:inline-block;background:#0b6bcb;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escape(copy.ctaReviseLabel)}</a>
+    </p>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
-    <p style="color:#777;font-size:12px;">${escape(copy.footer)}</p>
+    <p style="color:#595959;font-size:12px;">${escape(copy.footer)}</p>
   </body>
 </html>`;
 
   const text =
-    `${greeting}\n\n${body}\n\n${copy.reasonHeading}\n${input.rejectionReason}\n\n${copy.footer}\n`;
+    `${greeting}\n\n${body}\n\n${copy.reasonHeading}\n${input.rejectionReason}\n\n${copy.ctaReviseLabel}: ${ctaUrl}\n\n${copy.footer}\n`;
 
   return { subject, html, text };
 }
@@ -417,7 +487,7 @@ export function buildBroadcastCancelledEmail(
     <p style="line-height:1.6;">${escape(body)}</p>
     ${reasonBlock}
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
-    <p style="color:#777;font-size:12px;">${escape(copy.footer)}</p>
+    <p style="color:#595959;font-size:12px;">${escape(copy.footer)}</p>
   </body>
 </html>`;
 

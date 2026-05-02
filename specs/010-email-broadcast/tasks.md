@@ -454,6 +454,27 @@ Closes all 6 findings from `/speckit.verify.run` Phase 8 round 1 + 3 findings fr
 
 **Round 2 architectural cleanup** (caught during E1 fix): admin routes (approve/reject/cancel) had their own post-tx `emailTransactionalBridge.sendMemberEmail` calls that DUPLICATED the use-case-side enqueue introduced in G2 (would cause 2 emails per action). Removed all 3 route-level enqueue blocks; use-case is now the single source of truth (in-tx atomic with audit + outbox). Member-self-cancel route — which previously had NO enqueue path — now also gets a confirmation email (gap fix, free side-effect of single-source-of-truth refactor). Recipient resolution moved from `getMemberPrimaryContact()` lookup to `broadcast.replyToEmail` (immutable submit-time snapshot per FR-002 precondition j).
 
+**Round 3 (commit pending — 7-agent /speckit.review pass)**:
+
+- [X] **Tests-Gap#1 (HIGH spec/code mismatch)** — `failed_to_dispatch` rows must hold quota per AS2; `compute-quota-counter` SQL fixed to include `failed_to_dispatch` in the `IN (...)` clause. New unit test locks the contract.
+- [X] **Errors-H1+H2** — both cron routes (dispatch + prune) now return `200 + {skipped:true, reason:'feature_disabled'}` instead of `503` to prevent cron-job.org retry storms; dispatch-cron also gained the kill-switch check it was missing entirely.
+- [X] **Code-M2** — both cron routes now use shared `verifyCronBearer` (constant-time + UTF-8-safe).
+- [X] **Code-M1** — cancel-broadcast use-case now passes `expectedFromStatus: existing.status` to `applyTransition`, closing the AS6 race window.
+- [X] **Errors-C1** — idempotency_conflict_pre_send now emits dedicated `broadcast_dispatch_idempotency_conflict_pre_send` audit (was conflated with permanent failure).
+- [X] **Errors-H3** — when AS2 dispatch-failure email is skipped due to NULL primary contact, audit `broadcast_dispatch_failure_notif_skipped_no_email` now fires (compliance trail durable).
+- [X] **Errors-C2** — `prune-expired-drafts` use-case uses `err()` helper + truncates message to 500 chars (PII bound).
+- [X] **UX-GAP1 (WCAG 2.1 AA)** — 5 footer `color:#777` (4.48:1 fails) → `#595959` (7.0:1 PASS).
+- [X] **UX-GAP2 (BLOCKER)** — `formatEmailDate(iso, locale)` helper added; `scheduledFor` and `scheduledForIso` now formatted as locale-aware date+time strings before template fill.
+- [X] **UX-GAP3 (BLOCKER)** — rejected-broadcast email now has CTA button (new `broadcastRejected.ctaReviseLabel` × 3 locales); rejection-reason blockquote preserves `\n` as `<br>`.
+- [X] **UX bonus** — approved-broadcast CTA label is now `ctaViewDetailLabel` (was `broadcastSubject` itself); SV "kammaradmin" → "kammaradministratör"; TH `สวัสดีค่ะ/ครับ` → `สวัสดีครับ/ค่ะ`.
+- [X] **Comments-C1** — dispatch use-case removed numeric `(line ~466)/(line ~489)` refs (drifted ~250 lines after Slice D+E+G1) replaced with structural anchors.
+- [X] **Comments-C2** — spec.md FR-021 corrected "at entry" → "lazily inside the gateway_retryable catch branch".
+- [X] **Comments-C4+C5** — file headers in email-transactional-bridge + broadcast-notification-emails now list all 5 notification types.
+- [X] **Comments-I1** — cron-jobs runbook secret-rotation step now references "currently 4 jobs" (was 2).
+- [X] **Migration 0081** — 2 new F7 audit event types (`broadcast_dispatch_idempotency_conflict_pre_send` + `broadcast_dispatch_failure_notif_skipped_no_email`); applied to live Neon Singapore. F7 audit count 39 → 41.
+
+**Round 3 deferred (out of scope per Constitution Principle X — Simplicity)**: Types-#1 (locale union duplication × 4 — 3 use-cases + 1 build-helper module — could collapse to canonical `Locale` from `@/i18n/config` but cross-layer impact warrants a separate refactor PR); Types-#4 (brand `toEmail`/`broadcastId`/`scheduledForIso` etc. — same — broader type-discipline PR scope); Types-#5 (`expectedFromStatus` named-method split — current optional-positional with JSDoc warning is acceptable safe-default-after-this-PR; Code-M1 wires it everywhere it matters); Types-#6 (member-preferred locale resolution — depends on F3 schema field that doesn't exist yet). Simplify-#1+#2 (extract `wipeE2EMemberBroadcasts` + `enqueueBroadcastMemberNotification` helpers — net ~117 lines saved but the 3 enqueue helpers are short and per-use-case readable; the wipe helper is in 2 E2E files only). Tests-Gap#3 (AS4 quota-release-on-cancel — implicitly covered by spec invariant + AS4 reservation-release assertion in cancel use-case tests).
+
 ---
 
 ## Phase 9: Cross-cutting Observability + Security + Compliance

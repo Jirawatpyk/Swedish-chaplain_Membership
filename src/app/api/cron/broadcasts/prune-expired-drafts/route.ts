@@ -28,6 +28,7 @@ import {
 } from '@/modules/broadcasts';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 export const runtime = 'nodejs';
@@ -36,21 +37,33 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const startedAt = Date.now();
 
-  const auth = request.headers.get('authorization');
-  if (auth !== `Bearer ${env.cron.secret}`) {
+  // Verify-fix R3 (Code-M2, 2026-05-02): constant-time Bearer check
+  // via shared `verifyCronBearer` helper (matches F4 outbox + F5
+  // sweep-stale-pending-refunds). Avoids timing side-channel on
+  // CRON_SECRET enumeration.
+  if (!verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
     return NextResponse.json(
       { error: { code: 'unauthorized' } },
       { status: 401 },
     );
   }
-  if (!env.features.f7Broadcasts) {
-    return NextResponse.json(
-      { error: { code: 'feature_disabled' } },
-      { status: 503 },
-    );
-  }
 
   const tenantCtx = resolveTenantFromRequest(request);
+
+  // Verify-fix R3 (Errors-H1, 2026-05-02): return 200 + skipped
+  // (was 503) so cron-job.org does NOT retry-storm during dark-launch.
+  // Operators distinguish "kill-switch off" from "real DB outage" via
+  // the explicit `skipped: true, reason` envelope vs the 500 error path.
+  if (!env.features.f7Broadcasts) {
+    logger.info(
+      { tenantId: tenantCtx.slug },
+      'cron.broadcasts.prune_drafts.feature_disabled',
+    );
+    return NextResponse.json(
+      { skipped: true, reason: 'feature_disabled' },
+      { status: 200 },
+    );
+  }
 
   let result;
   try {

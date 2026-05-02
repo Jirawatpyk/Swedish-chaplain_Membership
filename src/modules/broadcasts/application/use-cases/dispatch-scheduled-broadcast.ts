@@ -269,6 +269,36 @@ export async function enqueueDispatchFailureNotification(args: {
       },
       'broadcasts.dispatch_failure_email.skipped_no_primary_contact',
     );
+    // Verify-fix R3 (Errors-H3, 2026-05-02): emit durable audit event
+    // for the missed AS2 notification so compliance review has a
+    // greppable trail. Pino logs roll out of retention long before
+    // any audit. Best-effort — failure to emit audit also logs but
+    // does NOT throw (mirrors the rest of dispatch use-case best-
+    // effort guards).
+    try {
+      await deps.audit.emit(null, {
+        tenantId: deps.tenant.slug,
+        eventType: 'broadcast_dispatch_failure_notif_skipped_no_email',
+        actorUserId: 'system:cron',
+        summary: `AS2 dispatch-failure notification skipped — member ${broadcast.requestedByMemberId} has no primary contact email`,
+        payload: {
+          broadcastId: broadcast.broadcastId,
+          memberId: broadcast.requestedByMemberId,
+          reason,
+          failedAt: now.toISOString(),
+        },
+        requestId: null,
+      });
+    } catch (auditErr) {
+      logger.error(
+        {
+          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          tenantId: deps.tenant.slug,
+          broadcastId: broadcast.broadcastId as string,
+        },
+        'broadcasts.dispatch_failure_email.skipped_audit_emit_failed',
+      );
+    }
     return;
   }
 
@@ -583,6 +613,37 @@ export async function dispatchScheduledBroadcast(
           },
           'broadcasts.dispatch.idempotency_conflict_pre_send',
         );
+        // Verify-fix R3 (Errors-C1, 2026-05-02): emit DISTINCT audit
+        // event before falling through to the permanent handler so the
+        // forensic trail shows "two workers raced through createAudience"
+        // explicitly, separate from a generic Resend permanent error.
+        // Best-effort emit — the permanent handler below will also
+        // emit `broadcast_failed_to_dispatch`; both events together
+        // tell the full story.
+        try {
+          await deps.audit.emit(null, {
+            tenantId: deps.tenant.slug,
+            eventType: 'broadcast_dispatch_idempotency_conflict_pre_send',
+            actorUserId: 'system:cron',
+            summary: `Broadcast ${input.broadcastId} hit idempotency conflict BEFORE sendBroadcast — concurrent worker raced through createAudience`,
+            payload: {
+              broadcastId: input.broadcastId,
+              reason: shape.reason,
+              resendAudienceId,
+              failedAt: now.toISOString(),
+            },
+            requestId: null,
+          });
+        } catch (auditErr) {
+          logger.error(
+            {
+              err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+            },
+            'broadcasts.dispatch.idempotency_conflict_pre_send_audit_emit_failed',
+          );
+        }
         // Fall through to permanent handler below.
       } else {
         // F7.1-IMP5 (round-4 follow-up) — idempotency_conflict post-send
@@ -708,19 +769,23 @@ export async function dispatchScheduledBroadcast(
         }
         // Treat as success — INTENTIONAL fall-through to Step 4
         // (attach + transition). Control flow:
-        //   - kind === 'idempotency_conflict' so it skips the
-        //     `resource_missing` check below (line ~466).
-        //   - The permanent-handler condition at line ~489 is
+        //   - `kind === 'idempotency_conflict'` so the next branch
+        //     `if (shape.kind === 'resource_missing')` is skipped.
+        //   - The permanent-handler condition is
         //     `shape.kind !== 'idempotency_conflict' || resendBroadcastId === ''`
         //     — both clauses are false here (kind matches AND id is set),
         //     so the permanent handler is intentionally skipped.
-        //   - Execution exits the catch block and reaches Step 4.
+        //   - Execution exits the catch block and reaches Step 4
+        //     (`attachResendIds` + `applyTransition('sending')` + audit).
         //
         // **Maintainer note**: if you add a NEW error kind whose handler
-        // sits between this point and line ~489, gate it on
-        // `shape.kind === '<new kind>'` to keep the success-replay path
-        // intact — DO NOT use `else if` chains that could capture this
-        // case by accident.
+        // sits between this point and the permanent-handler `if`, gate
+        // it on `shape.kind === '<new kind>'` to keep the success-replay
+        // path intact — DO NOT use `else if` chains that could capture
+        // this case by accident.
+        // Verify-fix R3 (Comments-C1, 2026-05-02): replaced numeric line
+        // refs with structural refs since Slice D + E + G1 added ~250
+        // lines mid-file and the original anchors drifted.
       }
     }
 

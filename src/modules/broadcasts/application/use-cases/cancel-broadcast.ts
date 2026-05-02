@@ -153,6 +153,14 @@ export async function cancelBroadcast(
 
       let cancelled: Broadcast;
       try {
+        // Verify-fix R3 (Code-M1, 2026-05-02): pass `expectedFromStatus`
+        // (G1 race-guard) so a concurrent dispatch worker that just
+        // transitioned the row to 'sending' between our `findByIdInTx`
+        // snapshot (read-committed) and this UPDATE will cause
+        // `applyTransition` to return 0 rows → `BroadcastConcurrentMutationError`
+        // → caught below + mapped to `broadcast_concurrent_action_blocked`
+        // 409. Closes the AS6 race window: cancel cannot silently
+        // overwrite 'sending' anymore.
         cancelled = await deps.broadcastsRepo.applyTransition(
           tx,
           deps.tenant.slug,
@@ -163,6 +171,7 @@ export async function cancelBroadcast(
             cancelledByUserId: actorUserId,
             cancellationReason: input.cancellationReason,
           },
+          existing.status,
         );
       } catch {
         const refresh = await deps.broadcastsRepo.findByIdInTx(
