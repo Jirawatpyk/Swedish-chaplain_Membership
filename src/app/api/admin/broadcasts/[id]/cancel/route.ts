@@ -11,9 +11,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
   cancelBroadcast,
-  emailTransactionalBridge,
   makeCancelBroadcastDeps,
   parseBroadcastId,
+  tenantDefaultLocaleFor,
   type CancelBroadcastError,
 } from '@/modules/broadcasts';
 import {
@@ -68,46 +68,12 @@ export async function POST(
       actor: { kind: 'admin', userId: ctx.current.user.id },
       cancellationReason: parsed.data.cancellationReason,
       requestId: ctx.requestId,
+      // E1 closure (verify-fix 2026-05-02) — single-source-of-truth
+      // enqueue lives inside the use-case (in-tx atomic with audit).
+      notificationLocale: tenantDefaultLocaleFor(tenantCtx.slug),
     });
     if (!result.ok) {
       return mapCancelError(result.error, correlationId);
-    }
-
-    // Best-effort member email
-    try {
-      const broadcast = result.value.broadcast;
-      if (broadcast.replyToEmail.length > 0) {
-        await emailTransactionalBridge.sendMemberEmail(
-          tenantCtx,
-          {
-            to: broadcast.replyToEmail,
-            subject: 'Your E-Blast was cancelled',
-            templateKey: 'broadcast_cancelled',
-            payload: {
-              broadcastId: broadcast.broadcastId,
-              cancellationReason: parsed.data.cancellationReason,
-              cancelledByAdmin: true,
-            },
-            locale: 'en',
-          },
-          null,
-        );
-      }
-    } catch (e) {
-      // Review I5 (consistency with approve + reject siblings) — emit
-      // at error severity so log-aggregation alerts can enumerate
-      // "cancellations where the member never got told." The cancel
-      // itself succeeded (audit `broadcast_cancelled` already fired
-      // inside the use-case) — this is a notification-side
-      // best-effort failure that needs ops visibility for backfill.
-      logger.error(
-        {
-          err: e instanceof Error ? e.message : String(e),
-          correlationId,
-          broadcastId: parsedId.value as string,
-        },
-        'broadcasts.admin_cancel.member_email_enqueue_failed',
-      );
     }
 
     return NextResponse.json(

@@ -443,6 +443,7 @@ export function makeDrizzleBroadcastsRepo(
       broadcastId: BroadcastId,
       target: BroadcastStatus,
       fields: Partial<Broadcast>,
+      expectedFromStatus: BroadcastStatus,
     ): Promise<Broadcast> {
       const tx = txUnknown as TenantTx;
       const setClause: Record<string, unknown> = {
@@ -475,6 +476,11 @@ export function makeDrizzleBroadcastsRepo(
         }
       }
 
+      // Verify-fix R4 (Types-#5, 2026-05-02): expectedFromStatus is
+      // now REQUIRED. UPDATE adds `AND status = $expected` to its
+      // WHERE clause. Returning 0 rows means the row drifted (TOCTOU)
+      // OR doesn't exist; either way → BroadcastConcurrentMutationError
+      // (caller maps to broadcast_concurrent_action_blocked / 409).
       const [row] = await tx
         .update(broadcasts)
         .set(setClause)
@@ -482,12 +488,15 @@ export function makeDrizzleBroadcastsRepo(
           and(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
+            eq(broadcasts.status, expectedFromStatus),
           ),
         )
         .returning();
       if (!row) {
-        throw new Error(
-          `applyTransition: broadcast ${broadcastId} not found in tenant ${tenantIdArg}`,
+        throw new BroadcastConcurrentMutationError(
+          tenantIdArg,
+          broadcastId,
+          expectedFromStatus,
         );
       }
       return rowToBroadcast(row as BroadcastRow);
@@ -645,7 +654,16 @@ export function makeDrizzleBroadcastsRepo(
               and(
                 eq(broadcasts.tenantId, tenantIdArg),
                 eq(broadcasts.requestedByMemberId, memberId),
-                sql`${broadcasts.status}::text IN ('submitted', 'approved')`,
+                // Verify-fix R3 (Tests-Gap#1, 2026-05-02): spec AS2
+                // (line 324) requires `failed_to_dispatch` rows to HOLD
+                // their quota reservation indefinitely (admin can
+                // manually re-trigger). Previously this counter only
+                // included submitted/approved → quota silently RELEASED
+                // on permanent dispatch failure, contradicting spec.
+                // Pre-fix this caused E2E pollution that needed the
+                // `wipeE2EMemberBroadcasts` helper. Now reserved =
+                // submitted ∪ approved ∪ failed_to_dispatch.
+                sql`${broadcasts.status}::text IN ('submitted', 'approved', 'failed_to_dispatch')`,
               ),
             ),
           tx
@@ -791,6 +809,39 @@ export function makeDrizzleBroadcastsRepo(
           tenantId: tenantIdArg,
           broadcastId: broadcastId as string,
         });
+      });
+    },
+
+    /**
+     * F7 US6 / Phase 8 — T171a draft-expiry prune (FR-001a).
+     *
+     * Deletes `broadcasts WHERE tenant_id = $1 AND status = 'draft' AND
+     * updated_at < $2 RETURNING broadcast_id`. Wrapped in
+     * `assertTenantBoundTx` for defence-in-depth (Constitution Principle
+     * I clause 1+2 — `app.current_tenant` GUC matches `tenantIdArg` even
+     * though SQL `WHERE tenant_id = $1` already enforces isolation).
+     *
+     * NO audit emission per FR-001a (drafts are user scratch space).
+     * Returns the deleted row count for cron observability + test
+     * assertions; the cron route logs this as `prunedCount` in the
+     * tick-complete summary.
+     */
+    async pruneExpiredDrafts(tenantIdArg, olderThan) {
+      return runInTenant(ctx, async (tx) => {
+        await assertTenantBoundTx(tx, ctx.slug, 'pruneExpiredDrafts');
+        // Bind cutoff as ISO string + cast to TIMESTAMPTZ — the Neon
+        // serverless driver does not auto-serialize JS Date objects in
+        // sql template params (throws "The 'string' argument must be of
+        // type string"). All other Date binds in this repo already
+        // pre-format via `toISOString()`.
+        const deleted = (await tx.execute(sql`
+          DELETE FROM broadcasts
+          WHERE tenant_id = ${tenantIdArg}
+            AND status = 'draft'
+            AND updated_at < ${olderThan.toISOString()}::timestamptz
+          RETURNING broadcast_id
+        `)) as unknown as Array<{ broadcast_id: string }>;
+        return { prunedCount: deleted.length };
       });
     },
   };

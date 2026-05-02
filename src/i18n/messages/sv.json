@@ -473,6 +473,16 @@
         "sourceYearEmpty": "Inga paket hittades för {sourceYear}."
       }
     },
+    "membersPreferredLocale": {
+      "title": "Språk för aviseringar",
+      "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
+      "useTenantDefault": "Använd kammarens standardspråk",
+      "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
+      "save": "Spara",
+      "savedToast": "Aviseringsspråk uppdaterat.",
+      "errorToast": "Kunde inte spara inställningen. Försök igen.",
+      "loading": "Läser in…"
+    },
     "members": {
       "title": "Medlemmar",
       "overrideReason": {
@@ -1690,6 +1700,21 @@
     "loadingForm": "Laddar formulär"
   },
   "portal": {
+    "preferredLocale": {
+      "title": "Språk för aviseringar",
+      "description": "Välj språket för de mejl du får (utskicksgodkännanden, fakturor, lösenordsåterställning). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
+      "useTenantDefault": "Använd kammarens standardspråk",
+      "options": {
+        "en": "English",
+        "th": "ไทย",
+        "sv": "Svenska"
+      },
+      "save": "Spara inställning",
+      "savedToast": "Aviseringsspråk uppdaterat.",
+      "errorToast": "Kunde inte spara inställningen. Försök igen.",
+      "loading": "Läser in…",
+      "loadError": "Kunde inte läsa in din nuvarande inställning. Uppdatera sidan och försök igen."
+    },
     "invoices": {
       "title": "Fakturor",
       "subtitle": "Ditt företags fakturor och skattekvitton.",
@@ -2234,14 +2259,16 @@
       "body": "Ditt utskick \"{subject}\" har godkänts och kommer att skickas {scheduleHint}.",
       "scheduleNow": "inom kort",
       "scheduleAt": "den {when}",
-      "footer": "Du ser leveransresultaten på din förmånssida när utskicket är klart."
+      "footer": "Du ser leveransresultaten på din förmånssida när utskicket är klart.",
+      "ctaViewDetailLabel": "Visa utskicksdetaljer"
     },
     "broadcastRejected": {
       "subject": "Ditt utskick har inte godkänts",
       "greeting": "Hej {name},",
       "body": "Ditt utskick \"{subject}\" har inte godkänts.",
-      "reasonHeading": "Anledning från din kammaradmin:",
-      "footer": "Din reserverade kvot har frigjorts. Du är välkommen att skicka ett reviderat utskick."
+      "reasonHeading": "Anledning från din kammaradministratör:",
+      "footer": "Din reserverade kvot har frigjorts.",
+      "ctaReviseLabel": "Visa utskicksdetaljer"
     },
     "broadcastCancelled": {
       "subject": "Ditt utskick har avbrutits",
@@ -2260,6 +2287,17 @@
       "deliveryRate": "Leveransfrekvens: {rate}%",
       "footer": "Detaljerad statistik finns på din förmånssida.",
       "viewBenefitsCta": "Visa förmåner + historik"
+    },
+    "broadcastFailedToDispatch": {
+      "subject": "Ditt schemalagda utskick \"{subject}\" gick inte iväg",
+      "greeting": "Hej,",
+      "body1": "Vi kunde inte skicka ditt schemalagda utskick för {tenantDisplayName}.",
+      "scheduledForLabel": "Ursprungligen schemalagt till: {scheduledFor}",
+      "failureReasonLabel": "Orsak: {reason}",
+      "body2": "Vår leveranstjänst var oåtkomlig i mer än en timme, så vi slutade försöka för att inte skicka utskicket vid en oväntad tidpunkt.",
+      "reassurance": "Din utskickskvot har INTE förbrukats och är fortfarande reserverad. Du kan schemalägga om samma utskick från administrationskön, eller låta din kammaradministratör skicka det manuellt.",
+      "ctaRescheduleLabel": "Öppna utskicksdetaljer",
+      "footerSignOff": "Om du behöver hjälp, vänligen kontakta din kammaradministratör."
     },
     "broadcastFooter": {
       "receivedBecause": "Du tar emot detta mejl eftersom du är kontakt hos en medlem i {tenantDisplayName}.",

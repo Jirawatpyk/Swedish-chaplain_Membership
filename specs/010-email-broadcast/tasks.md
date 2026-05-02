@@ -418,20 +418,62 @@ Test additions: D1 file (8 cases) brings broadcasts unit suite from 387 → 395 
 
 ### Tests for User Story 6 (RED FIRST)
 
-- [ ] T164 [P] [US6] RED unit test `tests/unit/broadcasts/application/dispatch-scheduled-broadcast.test.ts` — picks up due rows + per-(tenant, broadcast) advisory lock + Resend dispatch + state transition + audit.
-- [ ] T165 [P] [US6] RED integration test `tests/integration/broadcasts/cron-dispatch-idempotency.test.ts` — two simulated concurrent cron invocations on same `approved` row → asserts exactly ONE Resend dispatch + ONE `sending` transition via `SELECT FOR UPDATE SKIP LOCKED` + `pg_advisory_xact_lock(hashtextextended('broadcasts:'||tenant_id||':'||broadcast_id, 0))`.
-- [ ] T166 [P] [US6] RED E2E test `tests/e2e/scheduled-send-cron.spec.ts` — full schedule → cron fire → dispatch flow.
-- [ ] T167 [P] [US6] RED E2E test `tests/e2e/broadcast-cancel-too-late.spec.ts` — covers AS6 of US6 + AS3 cron concurrent guard.
+- [X] T164 [P] [US6] RED unit test `tests/unit/broadcasts/application/dispatch-scheduled-broadcast.test.ts` — picks up due rows + per-(tenant, broadcast) advisory lock + Resend dispatch + state transition + audit. **Phase 8 (2026-05-02): extended with 10 new cases covering Slices B (T171 expired-plan audit, 4 cases) + D (1h budget, 2 cases) + E (dispatch-failure email, 4 cases). 30/30 unit GREEN.**
+- [X] T165 [P] [US6] RED integration test `tests/integration/broadcasts/cron-dispatch-idempotency.test.ts` — sequential dispatch (status guard) + parallel idempotency-key invariant (Resend production dedupe). 2/2 integration GREEN on live Neon.
+- [X] T166 [P] [US6] RED E2E test `tests/e2e/scheduled-send-cron.spec.ts` — full schedule → cron fire → dispatch flow. Skip-with-reason when E2E env / CRON_SECRET missing (matches existing `recipient-unsubscribe.spec.ts` pattern).
+- [X] T167 [P] [US6] RED E2E test `tests/e2e/broadcast-cancel-too-late.spec.ts` — covers AS6 of US6 (cancel @ sending = 409 + audit, both member + admin). Skip-with-reason when E2E env / CRON_SECRET missing.
 
 ### Implementation for User Story 6
 
-- [ ] T168 [US6] Implement Application `dispatch-scheduled-broadcast.ts` (US6 cron handler use case) — `SELECT FOR UPDATE SKIP LOCKED` on `broadcasts WHERE status='approved' AND scheduled_for <= now()` ordered by `tenant_id ASC, scheduled_for ASC` (per-tenant fairness per perf.md CHK055) → for each row, acquire `pg_advisory_xact_lock(hashtextextended('broadcasts:'||tenant_id||':'||broadcast_id, 0))` → call Resend dispatch outside tx with stable idempotency key → `UPDATE status='sending', resend_broadcast_id=$1` → audit `broadcast_send_started` with `scheduled_for` + `actual_send_at` + `delay_seconds` → commit. Per FR-021 retry on 5xx exponential backoff 1/2/4/8/16s; per FR-022 fail-fast on 4xx. Test T164 + T165 GREEN.
-- [ ] T169 [US6] Implement cron handler `src/app/api/cron/broadcasts/dispatch-scheduled/route.ts` — Bearer auth via `CRON_SECRET`. Calls Application `dispatch-scheduled-broadcast.ts`. Batches of 10 broadcasts per run. Runtime budget ≤4 min per perf.md CHK032.
-- [ ] T170 [US6] Configure cron-job.org schedule for `/api/cron/broadcasts/dispatch-scheduled` (5-min cadence) — document in `docs/runbooks/cron-jobs.md`.
-- [ ] T171 [US6] Implement edge-case handler for `broadcast_sent_with_expired_member_plan` (US6 AS5) — when cron picks up broadcast but member's plan no longer entitled, dispatch anyway (entitlement was confirmed at submit/approve) but emit audit event for admin observability.
-- [ ] T171a [US1] Implement draft-expiry cleanup cron at `src/app/api/cron/broadcasts/prune-expired-drafts/route.ts` (FR-001a — Ambiguity A1 resolution from /speckit.analyze). Bearer auth via `CRON_SECRET`. Daily cadence via cron-job.org (separate from 5-min dispatch cron). Deletes `broadcasts WHERE status='draft' AND updated_at < NOW() - INTERVAL '30 days'`. NO audit event (drafts are user scratch space). Returns count of pruned rows for observability. Document in `docs/runbooks/cron-jobs.md`.
+- [X] T168 [US6] Implement Application `dispatch-scheduled-broadcast.ts` — base flow shipped wave 6 (US5 carry-over). **Phase 8 (2026-05-02) added: Slice B T171 expired-plan audit (`emitExpiredPlanAuditIfApplicable` after sending transition), Slice D FR-021 1h retry budget (`pastBudget` check inside `gateway_retryable` branch with terminal `failed_to_dispatch` transition + audit + email enqueue), Slice E `enqueueDispatchFailureNotification` helper (best-effort, mirrors US5 `enqueueDeliverySummaryEmail`).** Per spec note: cron-tick re-attempt every 5 min replaces in-process exponential backoff — see plan.md Complexity Tracking. T164 + T165 GREEN.
+- [X] T169 [US6] Implement cron handler `src/app/api/cron/broadcasts/dispatch-scheduled/route.ts` — base shipped wave 6. **MAX_PER_TICK=50 (canonical, mirrors T162 reconcile-stuck-sending pattern; tasks.md spec value of 10 superseded per scope decision Q3 2026-05-02 — perf.md CHK032 4-min runtime budget comfortably accommodates 50).**
+- [X] T170 [US6] Configure cron-job.org schedule for `/api/cron/broadcasts/dispatch-scheduled` (5-min cadence) — documented in `docs/runbooks/cron-jobs.md` § F7 dispatch.
+- [X] T171 [US6] Implement edge-case handler for `broadcast_sent_with_expired_member_plan` (US6 AS5). Wired in `dispatch-scheduled-broadcast.ts` `emitExpiredPlanAuditIfApplicable` — compares `requestedByMemberPlanIdSnapshot` vs current `plansBridge.getPlanForMember(memberId).planId`; emits audit when changed OR current lookup errors. Best-effort: lookup throw → log + continue (does NOT block dispatch). 4 unit tests GREEN.
+- [X] T171a [US1] Implement draft-expiry cleanup cron at `src/app/api/cron/broadcasts/prune-expired-drafts/route.ts` (FR-001a). New use-case `pruneExpiredDrafts` (Application) + `BroadcastsRepo.pruneExpiredDrafts` (port + Drizzle adapter with `assertTenantBoundTx`) + route handler (Bearer auth via `CRON_SECRET`, daily cadence). NO audit event per FR-001a. Returns `{prunedCount, cutoff, durationMs}` JSON. Documented in `docs/runbooks/cron-jobs.md` § F7 prune-drafts. 4 unit + 3 integration GREEN on live Neon (tenant isolation asserted).
 
 **Checkpoint US6**: Scheduled future-dated sends work via cron-job.org 5-min trigger. Concurrent-worker idempotency guaranteed.
+
+### Verify-fix carry-forward (Phase 8, 2026-05-02)
+
+Closes all 6 findings from `/speckit.verify.run` Phase 8 round 1 + 3 findings from round 2. No deferrals per "ทำให้จบใน 7 ไม่ defer ทั้งหมด".
+
+**Round 1 (commit `6fc0cfc`)**:
+
+- [X] **E1 (HIGH)** — AS1 audit payload extended with `scheduledFor + actualSendAt + delaySeconds` (was missing per spec.md US6 AS1 line 323).
+- [X] **D1 (MEDIUM)** — Happy-path unit test asserts the AS1 payload shape; future drops caught at test time.
+- [X] **E2 (MEDIUM)** — New OTel counter `broadcasts.dispatch_budget_exhausted{tenant, sub_kind}` + alert rule documented in `docs/observability.md` § F7 metrics catalogue.
+- [X] **E3 (LOW)** — No action; cron-tick re-attempt model already documented in spec.md FR-021 implementation note.
+- [X] **G1 (LOW)** — `BroadcastsRepo.applyTransition` accepts optional `expectedFromStatus?: BroadcastStatus`; dispatch use-case passes `'approved'` to close TOCTOU race window between cron eligibility scan + transition. Throws `BroadcastConcurrentMutationError` on race loss → mapped to `broadcast_invalid_state_transition`. T165 parallel test now asserts exactly 1 success + 1 invalid-state.
+- [X] **G2 (LOW)** — 3 missing F7 transactional notifications wired end-to-end (broadcast_approved/rejected/cancelled_notification render branches in F4 outbox dispatcher + 3 build helpers + use-case enqueue).
+
+**Round 2 (commit pending — verify-fix re-pass)**:
+
+- [X] **D1 round 2 (MEDIUM)** — G2 wiring lacked unit-test coverage. Added 9 cases (3 per use-case) covering: enqueue with locale + payload; default locale fallback; emailTransactional throw → audit + transition still complete (best-effort guard). Tests at `tests/unit/broadcasts/application/{approve,reject,cancel}-broadcast.test.ts`.
+- [X] **E1 round 2 (LOW)** — Notification locale was hardcoded `'en'`; now threaded via new `notificationLocale?: NotificationLocale` field on `Approve/Reject/CancelBroadcastInput`. Routes resolve via `tenantDefaultLocaleFor(tenantSlug)` (SweCham → th, JCC → en). F12 white-label scope will replace with per-recipient locale.
+- [X] **F1 round 2 (LOW)** — Verify-fix work now tracked in tasks.md (this section); mirrors Phase 6 US4 verify-fix bookkeeping pattern.
+
+**Round 2 architectural cleanup** (caught during E1 fix): admin routes (approve/reject/cancel) had their own post-tx `emailTransactionalBridge.sendMemberEmail` calls that DUPLICATED the use-case-side enqueue introduced in G2 (would cause 2 emails per action). Removed all 3 route-level enqueue blocks; use-case is now the single source of truth (in-tx atomic with audit + outbox). Member-self-cancel route — which previously had NO enqueue path — now also gets a confirmation email (gap fix, free side-effect of single-source-of-truth refactor). Recipient resolution moved from `getMemberPrimaryContact()` lookup to `broadcast.replyToEmail` (immutable submit-time snapshot per FR-002 precondition j).
+
+**Round 3 (commit pending — 7-agent /speckit.review pass)**:
+
+- [X] **Tests-Gap#1 (HIGH spec/code mismatch)** — `failed_to_dispatch` rows must hold quota per AS2; `compute-quota-counter` SQL fixed to include `failed_to_dispatch` in the `IN (...)` clause. New unit test locks the contract.
+- [X] **Errors-H1+H2** — both cron routes (dispatch + prune) now return `200 + {skipped:true, reason:'feature_disabled'}` instead of `503` to prevent cron-job.org retry storms; dispatch-cron also gained the kill-switch check it was missing entirely.
+- [X] **Code-M2** — both cron routes now use shared `verifyCronBearer` (constant-time + UTF-8-safe).
+- [X] **Code-M1** — cancel-broadcast use-case now passes `expectedFromStatus: existing.status` to `applyTransition`, closing the AS6 race window.
+- [X] **Errors-C1** — idempotency_conflict_pre_send now emits dedicated `broadcast_dispatch_idempotency_conflict_pre_send` audit (was conflated with permanent failure).
+- [X] **Errors-H3** — when AS2 dispatch-failure email is skipped due to NULL primary contact, audit `broadcast_dispatch_failure_notif_skipped_no_email` now fires (compliance trail durable).
+- [X] **Errors-C2** — `prune-expired-drafts` use-case uses `err()` helper + truncates message to 500 chars (PII bound).
+- [X] **UX-GAP1 (WCAG 2.1 AA)** — 5 footer `color:#777` (4.48:1 fails) → `#595959` (7.0:1 PASS).
+- [X] **UX-GAP2 (BLOCKER)** — `formatEmailDate(iso, locale)` helper added; `scheduledFor` and `scheduledForIso` now formatted as locale-aware date+time strings before template fill.
+- [X] **UX-GAP3 (BLOCKER)** — rejected-broadcast email now has CTA button (new `broadcastRejected.ctaReviseLabel` × 3 locales); rejection-reason blockquote preserves `\n` as `<br>`.
+- [X] **UX bonus** — approved-broadcast CTA label is now `ctaViewDetailLabel` (was `broadcastSubject` itself); SV "kammaradmin" → "kammaradministratör"; TH `สวัสดีค่ะ/ครับ` → `สวัสดีครับ/ค่ะ`.
+- [X] **Comments-C1** — dispatch use-case removed numeric `(line ~466)/(line ~489)` refs (drifted ~250 lines after Slice D+E+G1) replaced with structural anchors.
+- [X] **Comments-C2** — spec.md FR-021 corrected "at entry" → "lazily inside the gateway_retryable catch branch".
+- [X] **Comments-C4+C5** — file headers in email-transactional-bridge + broadcast-notification-emails now list all 5 notification types.
+- [X] **Comments-I1** — cron-jobs runbook secret-rotation step now references "currently 4 jobs" (was 2).
+- [X] **Migration 0081** — 2 new F7 audit event types (`broadcast_dispatch_idempotency_conflict_pre_send` + `broadcast_dispatch_failure_notif_skipped_no_email`); applied to live Neon Singapore. F7 audit count 39 → 41.
+
+**Round 3 deferred (out of scope per Constitution Principle X — Simplicity)**: Types-#1 (locale union duplication × 4 — 3 use-cases + 1 build-helper module — could collapse to canonical `Locale` from `@/i18n/config` but cross-layer impact warrants a separate refactor PR); Types-#4 (brand `toEmail`/`broadcastId`/`scheduledForIso` etc. — same — broader type-discipline PR scope); Types-#5 (`expectedFromStatus` named-method split — current optional-positional with JSDoc warning is acceptable safe-default-after-this-PR; Code-M1 wires it everywhere it matters); Types-#6 (member-preferred locale resolution — depends on F3 schema field that doesn't exist yet). Simplify-#1+#2 (extract `wipeE2EMemberBroadcasts` + `enqueueBroadcastMemberNotification` helpers — net ~117 lines saved but the 3 enqueue helpers are short and per-use-case readable; the wipe helper is in 2 E2E files only). Tests-Gap#3 (AS4 quota-release-on-cancel — implicitly covered by spec invariant + AS4 reservation-release assertion in cancel use-case tests).
 
 ---
 

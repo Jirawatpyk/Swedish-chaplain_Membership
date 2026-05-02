@@ -6,15 +6,16 @@
  * The existing F4 cron dispatcher (`/api/cron/outbox-dispatch/route.ts`)
  * picks them up and renders the template based on `notification_type`.
  *
- * F7 notification types (added by Migration 0073):
- *   - broadcast_dispatch_pending     — internal cron-trigger row (NOT
- *                                       a member-facing email)
- *   - broadcast_approved_notification
- *   - broadcast_rejected_notification
- *   - broadcast_cancelled_notification
+ * F7 notification types — see `F7_NOTIFICATION_TYPES` array below for
+ * the canonical authoritative list (single source of truth, kept in
+ * pg_enum parity by `notification-type-parity.test.ts`). Migrations:
+ *   - 0073 — broadcast_{approved,rejected,cancelled}_notification (US2)
+ *   - 0079 — broadcast_delivered_notification (US5 / FR-028 / AS3)
+ *   - 0080 — broadcast_failed_to_dispatch_notification (US6 / Phase 8 /
+ *            FR-021 / AS2)
  *
  * `templateKey` discriminator in the application-port input maps to
- * one of the 3 member-facing notification types. Admin notifications
+ * one of the 5 member-facing notification types. Admin notifications
  * (sendAdminNotification) reuse the same outbox but route to admin
  * email addresses (looked up from F1+F2 tenant settings — admin
  * notification path is stubbed with a logger warning so route handlers
@@ -96,6 +97,7 @@ export const F7_NOTIFICATION_TYPES = [
   'broadcast_rejected_notification',
   'broadcast_cancelled_notification',
   'broadcast_delivered_notification',
+  'broadcast_failed_to_dispatch_notification',
 ] as const;
 
 export type F7NotificationType = (typeof F7_NOTIFICATION_TYPES)[number];
@@ -113,9 +115,16 @@ function resolveNotificationType(templateKey: string): F7NotificationType {
       // FR-028 / AS3 — summary email enqueued at sending → sent transition
       // (both webhook-driven completion + 24h reconciliation paths).
       return 'broadcast_delivered_notification';
+    case 'broadcast_failed_to_dispatch':
+      // FR-021 / AS2 — transactional email enqueued when the cron
+      // dispatcher exhausts the 1-hour retry budget (Slice D) AND on any
+      // permanent dispatch failure (Resend 4xx, audience-empty after
+      // suppression, resource-missing). Quota reservation stays held;
+      // member can re-trigger or re-schedule manually.
+      return 'broadcast_failed_to_dispatch_notification';
     default:
       throw new Error(
-        `email-transactional-bridge: unknown templateKey "${templateKey}" — must be one of broadcast_{approved,rejected,cancelled,delivered}`,
+        `email-transactional-bridge: unknown templateKey "${templateKey}" — must be one of broadcast_{approved,rejected,cancelled,delivered,failed_to_dispatch}`,
       );
   }
 }

@@ -561,6 +561,34 @@
       "when": 1786233600000,
       "tag": "0079_notification_type_f7_us5_extension",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1788393600000,
+      "tag": "0080_notification_type_f7_dispatch_failure",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1788480000000,
+      "tag": "0081_audit_log_f7_phase8_verify_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1788566400000,
+      "tag": "0082_members_preferred_locale",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1788652800000,
+      "tag": "0083_audit_log_member_preferred_locale_changed",
+      "breakpoints": true
     }
   ]
 }

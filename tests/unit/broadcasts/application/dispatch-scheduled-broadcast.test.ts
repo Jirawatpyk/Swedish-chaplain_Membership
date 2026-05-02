@@ -18,7 +18,7 @@ import { resolve } from 'node:path';
 import { dispatchScheduledBroadcast } from '@/modules/broadcasts/application/use-cases/dispatch-scheduled-broadcast';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
-import { ok } from '@/lib/result';
+import { ok, err } from '@/lib/result';
 import {
   unsafeBrandEmailLower,
   type EmailLower,
@@ -38,6 +38,8 @@ import type {
 } from '@/modules/broadcasts/application/ports/members-bridge-port';
 import type { MarketingUnsubscribesRepo } from '@/modules/broadcasts/application/ports/marketing-unsubscribes-repo';
 import type { EventAttendeesRepository } from '@/modules/broadcasts/application/ports/event-attendees-repository';
+import type { PlansBridgePort } from '@/modules/broadcasts/application/ports/plans-bridge-port';
+import type { EmailTransactionalPort } from '@/modules/broadcasts/application/ports/email-transactional-port';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 
@@ -172,6 +174,9 @@ function makeRepo(opts: RepoOpts): {
       async aggregateDeliveryCountsForBroadcast() {
         return { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0 };
       },
+      async pruneExpiredDrafts() {
+        return { prunedCount: 0 };
+      },
     },
   };
 }
@@ -255,6 +260,81 @@ function makeGateway(opts: GatewayOpts = {}): {
   };
 }
 
+/**
+ * Phase 8 Slice B helper — `PlansBridgePort` stub returning a successful
+ * plan lookup by default (matches the broadcast snapshot's planId so
+ * the T171 expired-plan audit does NOT fire). Tests that want to
+ * exercise the AS5 path override `planId` or set `lookupError`.
+ */
+function makePlansBridge(opts: {
+  planId?: string;
+  planCode?: string;
+  eblastPerYear?: number;
+  lookupError?:
+    | { kind: 'plan_lookup.member_not_found'; memberId: string }
+    | { kind: 'plan_lookup.member_no_plan'; memberId: string }
+    | { kind: 'plan_lookup.plan_not_found'; planId: string };
+  shouldThrow?: boolean;
+} = {}): PlansBridgePort {
+  return {
+    async getPlanForMember() {
+      if (opts.shouldThrow) {
+        throw new Error('simulated plansBridge.getPlanForMember failure');
+      }
+      if (opts.lookupError) {
+        return err(opts.lookupError);
+      }
+      return ok({
+        planId: opts.planId ?? 'p',
+        planCode: opts.planCode ?? 'P',
+        eblastPerYear: opts.eblastPerYear ?? 5,
+      });
+    },
+  };
+}
+
+/**
+ * Phase 8 Slice E helper — `EmailTransactionalPort` stub recording all
+ * `sendMemberEmail` calls so tests can assert the dispatch-failure
+ * notification was enqueued (or NOT enqueued) at the right path. Stub
+ * may be configured to throw to exercise the best-effort error path.
+ */
+function makeEmailTransactional(opts: {
+  shouldThrow?: boolean;
+} = {}): {
+  port: EmailTransactionalPort;
+  memberCalls: Array<{
+    to: string;
+    templateKey: string;
+    payload: Record<string, unknown>;
+    locale: string;
+  }>;
+} {
+  const memberCalls: Array<{
+    to: string;
+    templateKey: string;
+    payload: Record<string, unknown>;
+    locale: string;
+  }> = [];
+  return {
+    memberCalls,
+    port: {
+      async sendAdminNotification() {},
+      async sendMemberEmail(_ctx, input) {
+        if (opts.shouldThrow) {
+          throw new Error('simulated emailTransactional.sendMemberEmail failure');
+        }
+        memberCalls.push({
+          to: input.to,
+          templateKey: input.templateKey,
+          payload: input.payload,
+          locale: input.locale,
+        });
+      },
+    },
+  };
+}
+
 function makeMembersBridge(opts: {
   recipients?: ReadonlyArray<MemberRecipient>;
   primaryContact?: string | null;
@@ -284,6 +364,7 @@ function makeMembersBridge(opts: {
     async markBroadcastsAcknowledged() {
       return ok({ previouslyNull: true });
     },
+    async getMemberPreferredLocale() { return null; },
   };
 }
 
@@ -369,6 +450,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -390,6 +473,23 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(
       (evt?.payload as { resendBroadcastId: string }).resendBroadcastId,
     ).toBe('bcast-fake-1');
+    // E1 closure (verify-fix 2026-05-02) — AS1 spec.md L323 requires
+    // the audit payload to carry `scheduled_for + actual_send_at +
+    // delay_seconds` for SC-001 quartile analysis. Lock the field
+    // shape so future refactors that drop them are caught at test time.
+    const payload = evt?.payload as {
+      scheduledFor?: string | null;
+      actualSendAt?: string;
+      delaySeconds?: number | null;
+      sendingStartedAt?: string;
+    };
+    // makeBroadcast() seeds scheduledFor = FROZEN_NOW, so delay = 0
+    expect(payload.scheduledFor).toBe(FROZEN_NOW.toISOString());
+    expect(payload.actualSendAt).toBe(FROZEN_NOW.toISOString());
+    expect(payload.delaySeconds).toBe(0);
+    // sendingStartedAt retained for backward compatibility with the
+    // existing US5 reconciliation summary email build helper.
+    expect(payload.sendingStartedAt).toBe(FROZEN_NOW.toISOString());
   });
 
   it('idempotency key format: broadcast-{tenantId}-{broadcastId}', async () => {
@@ -415,6 +515,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -443,6 +545,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -470,6 +574,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -506,6 +612,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -549,6 +657,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -592,6 +702,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -628,6 +740,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -679,6 +793,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -729,6 +845,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -770,6 +888,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -803,6 +923,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -838,6 +960,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -873,6 +997,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -909,6 +1035,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -945,6 +1073,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -1002,6 +1132,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -1052,6 +1184,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -1107,6 +1241,8 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
       },
       baseInput,
     );
@@ -1125,5 +1261,540 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         (e) => e.eventType === 'broadcast_resend_drift_check_unverifiable',
       ),
     ).toBeUndefined();
+  });
+
+  // =====================================================================
+  // Phase 8 — Slice B (T171 / AS5): expired-plan audit
+  // =====================================================================
+
+  it('Phase 8 / T171 — plan unchanged at dispatch → no broadcast_sent_with_expired_member_plan audit', async () => {
+    const audit = makeAudit();
+    const broadcastRow = makeBroadcast('approved');
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: broadcastRow,
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        // Plan still matches snapshot's planId 'p' → no expired-plan audit
+        plansBridge: makePlansBridge({ planId: 'p' }),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(
+      audit.emits.find(
+        (e) => e.eventType === 'broadcast_sent_with_expired_member_plan',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('Phase 8 / T171 — plan changed since submit → broadcast_sent_with_expired_member_plan audit fires (dispatch still succeeds)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        // Snapshot is 'p'; current plan is 'p2' → expired-plan audit fires
+        plansBridge: makePlansBridge({ planId: 'p2' }),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    const evt = audit.emits.find(
+      (e) => e.eventType === 'broadcast_sent_with_expired_member_plan',
+    );
+    expect(evt).toBeDefined();
+    expect(evt?.payload['planAtSubmit']).toBe('p');
+    expect(evt?.payload['planAtDispatch']).toBe('p2');
+    expect(evt?.payload['currentlyEntitled']).toBe(true);
+  });
+
+  it('Phase 8 / T171 — current plan lookup error → broadcast_sent_with_expired_member_plan audit fires with currentlyEntitled=false', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge({
+          lookupError: { kind: 'plan_lookup.member_no_plan', memberId: 'm-1' },
+        }),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    const evt = audit.emits.find(
+      (e) => e.eventType === 'broadcast_sent_with_expired_member_plan',
+    );
+    expect(evt).toBeDefined();
+    expect(evt?.payload['currentlyEntitled']).toBe(false);
+    expect(evt?.payload['planLookupError']).toBe('plan_lookup.member_no_plan');
+  });
+
+  it('Phase 8 / T171 — plansBridge throws → no audit, dispatch still succeeds (best-effort guard)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge({ shouldThrow: true }),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(
+      audit.emits.find(
+        (e) => e.eventType === 'broadcast_sent_with_expired_member_plan',
+      ),
+    ).toBeUndefined();
+  });
+
+  // =====================================================================
+  // Phase 8 — Slice D (FR-021 / AS2): 1-hour retry budget
+  // =====================================================================
+
+  it('Phase 8 / Slice D — retryable within budget (now < scheduled_for + 1h) → row stays approved (gateway_retryable error returned)', async () => {
+    const audit = makeAudit();
+    // scheduled_for = FROZEN_NOW exactly, so elapsed = 0ms < 1h budget
+    const broadcastRow = makeBroadcast('approved');
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: broadcastRow,
+    });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'retryable', reason: 'Resend 503 — service unavailable' },
+    });
+    const email = makeEmailTransactional();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('gateway_retryable');
+    }
+    // No transition to failed_to_dispatch (within budget)
+    expect(repo.transitions.find((t) => t.status === 'failed_to_dispatch')).toBeUndefined();
+    // No dispatch-failure email enqueued
+    expect(email.memberCalls).toHaveLength(0);
+    // No retry_budget_exhausted audit either
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_failed_to_dispatch'),
+    ).toBeUndefined();
+  });
+
+  it('Phase 8 / Slice D — retryable past budget (scheduled_for + 65min) → terminal failed_to_dispatch + member email enqueued', async () => {
+    const audit = makeAudit();
+    // Set scheduled_for 65 min BEFORE FROZEN_NOW so elapsed > 1h budget
+    const broadcastRow = {
+      ...makeBroadcast('approved'),
+      scheduledFor: new Date(FROZEN_NOW.getTime() - 65 * 60 * 1000),
+    };
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: broadcastRow,
+    });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'retryable', reason: 'Resend 503 — service unavailable' },
+    });
+    const email = makeEmailTransactional();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_failed_to_dispatch');
+      if (result.error.kind === 'broadcast_failed_to_dispatch') {
+        expect(result.error.reason).toContain('retry_budget_exhausted_after_1h');
+      }
+    }
+    // Transition to failed_to_dispatch DID happen
+    expect(repo.transitions.find((t) => t.status === 'failed_to_dispatch')).toBeDefined();
+    // Audit broadcast_failed_to_dispatch with budget reason
+    const auditEvt = audit.emits.find(
+      (e) => e.eventType === 'broadcast_failed_to_dispatch',
+    );
+    expect(auditEvt).toBeDefined();
+    expect((auditEvt?.payload as Record<string, unknown>).reason).toContain(
+      'retry_budget_exhausted_after_1h',
+    );
+    // Slice E — dispatch-failure email enqueued
+    expect(email.memberCalls).toHaveLength(1);
+    expect(email.memberCalls[0]?.templateKey).toBe('broadcast_failed_to_dispatch');
+    expect(email.memberCalls[0]?.to).toBe('sender@example.com');
+    expect(email.memberCalls[0]?.payload['broadcastId']).toBe(broadcastId);
+  });
+
+  // =====================================================================
+  // Phase 8 — Slice E (FR-021 / AS2): dispatch-failure transactional email
+  // =====================================================================
+
+  it('Phase 8 / Slice E — permanent failure path enqueues dispatch-failure email to member primary contact', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
+    });
+    const email = makeEmailTransactional();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    expect(email.memberCalls).toHaveLength(1);
+    expect(email.memberCalls[0]?.templateKey).toBe('broadcast_failed_to_dispatch');
+    expect(email.memberCalls[0]?.payload['tenantDisplayName']).toBe('Test Chamber');
+    expect(email.memberCalls[0]?.payload['reason']).toContain('Resend 422');
+  });
+
+  it('Phase 8 / Slice E — member has no primary contact email → email skipped (logger warn), audit + transition still happen', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
+    });
+    const email = makeEmailTransactional();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        // primaryContact: null → membersBridge.getMemberPrimaryContact returns null
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: null,
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    // Audit + transition still happened
+    expect(repo.transitions.find((t) => t.status === 'failed_to_dispatch')).toBeDefined();
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_failed_to_dispatch'),
+    ).toBeDefined();
+    // BUT email NOT enqueued
+    expect(email.memberCalls).toHaveLength(0);
+  });
+
+  it('Phase 8 / Slice E — emailTransactional.sendMemberEmail throws → audit + transition still complete (best-effort guard)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
+    });
+    const email = makeEmailTransactional({ shouldThrow: true });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    // Audit + transition still happened (best-effort enqueue does NOT block)
+    expect(repo.transitions.find((t) => t.status === 'failed_to_dispatch')).toBeDefined();
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_failed_to_dispatch'),
+    ).toBeDefined();
+  });
+
+  it('Phase 8 / Slice E — resource_missing (404) does NOT enqueue dispatch-failure email (different audit type)', async () => {
+    // resource_missing is an ops-side issue (admin manually deleted Resend
+    // resource); member notification is reserved for terminal-fail kinds
+    // that map to broadcast_failed_to_dispatch audit. resource_missing
+    // fires broadcast_resend_resource_missing audit instead.
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway({
+      throwOnSend: {
+        kind: 'resource_missing',
+        reason: 'Resend 404 — broadcast not found',
+        resourceType: 'broadcast',
+        resourceId: 'bcast-fake-1',
+      },
+    });
+    const email = makeEmailTransactional();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    // resource_missing audit fires
+    expect(
+      audit.emits.find(
+        (e) => e.eventType === 'broadcast_resend_resource_missing',
+      ),
+    ).toBeDefined();
+    // BUT no dispatch-failure email (different audit kind)
+    expect(email.memberCalls).toHaveLength(0);
+  });
+
+  // =====================================================================
+  // Verify-fix R3 — Tests-Gap#2 (AS2 admin alert) + Errors-H3
+  // (skipped-no-email audit) + Errors-C1 (idempotency_conflict_pre_send
+  // distinct audit)
+  // =====================================================================
+
+  it('R3 Tests-Gap#2: AS2 past-budget emits broadcasts.dispatch_budget_exhausted metric (admin alert pipeline)', async () => {
+    const audit = makeAudit();
+    const broadcastRow = {
+      ...makeBroadcast('approved'),
+      scheduledFor: new Date(FROZEN_NOW.getTime() - 65 * 60 * 1000),
+    };
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: broadcastRow });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'retryable', reason: 'Resend 503' },
+    });
+    const email = makeEmailTransactional();
+    // Spy on the metric — vi.spyOn safe because broadcastsMetrics is
+    // a module-level singleton const.
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    try {
+      await dispatchScheduledBroadcast(
+        {
+          tenant,
+          broadcastsRepo: repo.port,
+          broadcastsGateway: gw.port,
+          membersBridge: makeMembersBridge({
+            recipients: [recipient('m-1', 'one@example.com')],
+            primaryContact: 'sender@example.com',
+          }),
+          marketingUnsubscribes: makeMarketingUnsubscribes(),
+          eventAttendees: makeEventAttendees(),
+          audit: audit.port,
+          clock,
+          fromEmail: 'noreply@test.invalid-but-test-only',
+          tenantDisplayName: 'Test Chamber',
+          locale: 'en' as const,
+          plansBridge: makePlansBridge(),
+          emailTransactional: email.port,
+        },
+        baseInput,
+      );
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith(tenant.slug, expect.any(String));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('R3 Errors-H3: skipped notification (member null primary email) emits broadcast_dispatch_failure_notif_skipped_no_email audit', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
+    });
+    const email = makeEmailTransactional();
+    await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        // primaryContact: null → email skipped, audit MUST fire
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: null,
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    // Email NOT enqueued
+    expect(email.memberCalls).toHaveLength(0);
+    // BUT durable audit row IS emitted (compliance trail)
+    const skippedEvt = audit.emits.find(
+      (e) =>
+        e.eventType ===
+        'broadcast_dispatch_failure_notif_skipped_no_email',
+    );
+    expect(skippedEvt).toBeDefined();
+    expect((skippedEvt?.payload as Record<string, unknown>).memberId).toBe('m-1');
   });
 });

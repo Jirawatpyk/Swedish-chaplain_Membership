@@ -24,6 +24,12 @@ import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import type { EmailTransactionalPort } from '../ports/email-transactional-port';
+import type { MembersBridgePort } from '../ports/members-bridge-port';
+import { enqueueBroadcastMemberNotification } from '../enqueue-member-notification';
+// Verify-fix R4 (Types-#1, 2026-05-02) — see approve-broadcast.ts.
+import type { Locale } from '@/i18n/config';
+export type NotificationLocale = Locale;
 
 const MAX_REASON_LENGTH = 500;
 
@@ -49,6 +55,10 @@ export interface CancelBroadcastDeps {
   readonly broadcastsRepo: BroadcastsRepo;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
+  /** G2 closure (verify-fix 2026-05-02) — best-effort post-cancel email. */
+  readonly emailTransactional?: EmailTransactionalPort;
+  /** R4 Types-#6 — see approve-broadcast.ts. */
+  readonly membersBridge?: MembersBridgePort;
 }
 
 export interface CancelBroadcastInput {
@@ -56,6 +66,8 @@ export interface CancelBroadcastInput {
   readonly actor: CancelActor;
   readonly cancellationReason: string | null;
   readonly requestId: string | null;
+  /** E1 closure (verify-fix 2026-05-02) — locale for notification email. */
+  readonly notificationLocale?: NotificationLocale;
 }
 
 export interface CancelBroadcastOutput {
@@ -146,6 +158,14 @@ export async function cancelBroadcast(
 
       let cancelled: Broadcast;
       try {
+        // Verify-fix R3 (Code-M1, 2026-05-02): pass `expectedFromStatus`
+        // (G1 race-guard) so a concurrent dispatch worker that just
+        // transitioned the row to 'sending' between our `findByIdInTx`
+        // snapshot (read-committed) and this UPDATE will cause
+        // `applyTransition` to return 0 rows → `BroadcastConcurrentMutationError`
+        // → caught below + mapped to `broadcast_concurrent_action_blocked`
+        // 409. Closes the AS6 race window: cancel cannot silently
+        // overwrite 'sending' anymore.
         cancelled = await deps.broadcastsRepo.applyTransition(
           tx,
           deps.tenant.slug,
@@ -156,6 +176,7 @@ export async function cancelBroadcast(
             cancelledByUserId: actorUserId,
             cancellationReason: input.cancellationReason,
           },
+          existing.status,
         );
       } catch {
         const refresh = await deps.broadcastsRepo.findByIdInTx(
@@ -184,6 +205,46 @@ export async function cancelBroadcast(
         requestId: input.requestId,
       });
 
+      // G2 closure (verify-fix 2026-05-02 — US2 wire-up) — notify the
+      // originating member. For self-cancel: confirmation. For
+      // admin-cancel: the member learns their broadcast was stopped
+      // + the (admin-supplied) cancellation reason.
+      // Recipient = `replyToEmail` (immutable submit-time snapshot).
+      // Verify-fix R4 (Simplify-#2 + Types-#6): shared helper +
+      // member-preferred-locale chain.
+      if (deps.emailTransactional) {
+        let memberPreferred: 'en' | 'th' | 'sv' | null = null;
+        if (deps.membersBridge) {
+          try {
+            memberPreferred = await deps.membersBridge.getMemberPreferredLocale(
+              deps.tenant,
+              cancelled.requestedByMemberId,
+            );
+          } catch (e) {
+            logger.warn(
+              {
+                err: e instanceof Error ? e.message : String(e),
+                tenantId: deps.tenant.slug,
+                memberId: cancelled.requestedByMemberId,
+                useCase: 'cancel-broadcast',
+              },
+              'broadcasts.locale_resolve_failed',
+            );
+          }
+        }
+        await enqueueBroadcastMemberNotification({
+          tenant: deps.tenant,
+          emailTransactional: deps.emailTransactional,
+          broadcast: cancelled,
+          variant: {
+            templateKey: 'broadcast_cancelled',
+            cancellationReason: input.cancellationReason,
+          },
+          locale: memberPreferred ?? input.notificationLocale ?? 'en',
+          tx,
+        });
+      }
+
       return ok({ broadcast: cancelled, reservationReleased: true as const });
     });
   } catch (e) {
@@ -193,3 +254,6 @@ export async function cancelBroadcast(
     });
   }
 }
+
+// Verify-fix R4 (Simplify-#2, 2026-05-02): local enqueueCancelledNotification
+// helper removed — replaced by shared `enqueueBroadcastMemberNotification`.

@@ -32,6 +32,7 @@ vi.mock('@/modules/broadcasts', () => ({
     UUID_RE.test(id)
       ? { ok: true, value: id }
       : { ok: false, error: { kind: 'invalid_uuid' } },
+  tenantDefaultLocaleFor: () => 'en',
   emailTransactionalBridge: {
     sendMemberEmail: (...args: unknown[]) => sendMemberEmailMock(...args),
   },

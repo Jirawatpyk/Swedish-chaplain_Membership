@@ -41,6 +41,8 @@ function stubDeps(): BulkActionDeps {
       updateBroadcastsHaltedInTx: vi.fn(),
       updateBroadcastsAcknowledgedAtInTx: vi.fn(),
       findPrimaryContactEmailInTx: vi.fn(),
+      findPreferredLocaleInTx: vi.fn(),
+      updatePreferredLocaleInTx: vi.fn(),
       findMemberByPrimaryContactEmailInTx: vi.fn(),
     findLastPlanChangedAt: vi.fn(),
     },

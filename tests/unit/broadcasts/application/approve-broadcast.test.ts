@@ -22,6 +22,45 @@ import type {
 } from '@/modules/broadcasts/application/ports/audit-port';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import type {
+  EmailTransactionalPort,
+  SendEmailInput,
+} from '@/modules/broadcasts/application/ports/email-transactional-port';
+
+interface MemberCallRecord {
+  to: string;
+  subject: string;
+  templateKey: string;
+  payload: Record<string, unknown>;
+  locale: string;
+  txWasSupplied: boolean;
+}
+
+function makeEmail(opts: { shouldThrow?: boolean } = {}): {
+  port: EmailTransactionalPort;
+  memberCalls: Array<MemberCallRecord>;
+} {
+  const memberCalls: Array<MemberCallRecord> = [];
+  return {
+    memberCalls,
+    port: {
+      async sendAdminNotification() {},
+      async sendMemberEmail(_ctx, input: SendEmailInput, tx) {
+        if (opts.shouldThrow) {
+          throw new Error('outbox INSERT failed');
+        }
+        memberCalls.push({
+          to: input.to,
+          subject: input.subject,
+          templateKey: input.templateKey,
+          payload: input.payload,
+          locale: input.locale,
+          txWasSupplied: tx !== null && tx !== undefined,
+        });
+      },
+    },
+  };
+}
 
 const useCasePath = resolve(
   __dirname,
@@ -154,6 +193,9 @@ function makeRepo(opts: RepoOpts): {
       async aggregateDeliveryCountsForBroadcast() {
         return { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0 };
       },
+      async pruneExpiredDrafts() {
+        return { prunedCount: 0 };
+      },
     },
   };
 }
@@ -171,8 +213,163 @@ beforeEach(() => vi.useFakeTimers({ now: FROZEN_NOW }));
 afterEach(() => vi.useRealTimers());
 
 describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
+  // ===== D1 closure (verify-fix 2026-05-02) — G2 notification tests =====
+
+  it('D1 G2: emailTransactional.sendMemberEmail enqueued IN-TX with correct payload + locale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const result = await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(result.ok).toBe(true);
+    expect(email.memberCalls).toHaveLength(1);
+    const call = email.memberCalls[0]!;
+    expect(call.to).toBe('me@example.com'); // replyToEmail snapshot
+    expect(call.templateKey).toBe('broadcast_approved');
+    expect(call.locale).toBe('th');
+    expect(call.payload['broadcastId']).toBe(broadcastId);
+    expect(call.payload['broadcastSubject']).toBe('Welcome');
+    expect(call.payload['scheduledForIso']).toBe(FROZEN_NOW.toISOString());
+  });
+
+  it('D1 G2: notificationLocale defaults to "en" when input field omitted', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      baseInput, // no notificationLocale
+    );
+    expect(email.memberCalls[0]?.locale).toBe('en');
+  });
+
+  it('D1 G2: emailTransactional throws → audit + transition still complete (best-effort guard)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail({ shouldThrow: true });
+    const result = await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_approved')).toBeDefined();
+    expect(repo.transitions[0]?.status).toBe('approved');
+  });
+
   it('use-case module exists', async () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
+  });
+
+  // ===== R5 verify-fix Tests-H5 (2026-05-02) — locale chain =====
+  // Spec: `memberPreferred ?? input.notificationLocale ?? 'en'`.
+  // Locks the per-recipient locale resolution that motivated the
+  // entire Types-#6 OPTION B chain (F3 schema → bridge → use-case).
+
+  it('locale chain: memberPreferred WINS over input.notificationLocale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue('sv'),
+    } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
+    await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(email.memberCalls[0]?.locale).toBe('sv');
+  });
+
+  it('locale chain: memberPreferred null → falls back to input.notificationLocale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
+    } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
+    await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(email.memberCalls[0]?.locale).toBe('th');
+  });
+
+  it('locale chain: both null → final fallback to "en"', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
+    } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
+    await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      baseInput, // no notificationLocale
+    );
+    expect(email.memberCalls[0]?.locale).toBe('en');
+  });
+
+  it('locale chain: bridge throw is logged + falls through to input.notificationLocale (R5 Errors-H3)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi
+        .fn()
+        .mockRejectedValue(new Error('bridge boom')),
+    } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
+    const result = await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'sv' },
+    );
+    expect(result.ok).toBe(true);
+    expect(email.memberCalls[0]?.locale).toBe('sv'); // input fallback
   });
 
   // ---- send_now path ---------------------------------------------------

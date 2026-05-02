@@ -473,6 +473,16 @@
         "sourceYearEmpty": "No plans found for {sourceYear}."
       }
     },
+    "membersPreferredLocale": {
+      "title": "Notification language",
+      "description": "Override the language this member receives transactional emails in (broadcast approvals, invoices, etc.). Leave on \"Use chamber default\" to follow the tenant default.",
+      "useTenantDefault": "Use chamber default",
+      "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
+      "save": "Save preference",
+      "savedToast": "Notification language updated.",
+      "errorToast": "Could not save preference. Please try again.",
+      "loading": "Loading…"
+    },
     "members": {
       "title": "Members",
       "overrideReason": {
@@ -1690,6 +1700,21 @@
     "loadingForm": "Loading form"
   },
   "portal": {
+    "preferredLocale": {
+      "title": "Notification language",
+      "description": "Choose the language for the emails you receive (broadcast approvals, invoices, password resets). Leave on \"Use chamber default\" to follow your chamber's setting.",
+      "useTenantDefault": "Use chamber default",
+      "options": {
+        "en": "English",
+        "th": "ไทย",
+        "sv": "Svenska"
+      },
+      "save": "Save preference",
+      "savedToast": "Notification language updated.",
+      "errorToast": "Could not save preference. Please try again.",
+      "loading": "Loading…",
+      "loadError": "Could not load your current preference. Please refresh the page and try again."
+    },
     "invoices": {
       "title": "Invoices",
       "subtitle": "Your company's invoices and tax receipts.",
@@ -2234,14 +2259,16 @@
       "body": "Your E-Blast \"{subject}\" has been approved and will be sent {scheduleHint}.",
       "scheduleNow": "shortly",
       "scheduleAt": "on {when}",
-      "footer": "You'll see delivery results on your benefits page once the broadcast completes."
+      "footer": "You'll see delivery results on your benefits page once the broadcast completes.",
+      "ctaViewDetailLabel": "View broadcast detail"
     },
     "broadcastRejected": {
       "subject": "Your E-Blast was not approved",
       "greeting": "Hi {name},",
       "body": "Your E-Blast \"{subject}\" was not approved.",
       "reasonHeading": "Reason from your chamber admin:",
-      "footer": "Your reserved quota slot has been released. You're welcome to submit a revised broadcast."
+      "footer": "Your reserved quota slot has been released.",
+      "ctaReviseLabel": "View broadcast detail"
     },
     "broadcastCancelled": {
       "subject": "Your E-Blast was cancelled",
@@ -2260,6 +2287,17 @@
       "deliveryRate": "Delivery rate: {rate}%",
       "footer": "Detailed metrics are available on your benefits page.",
       "viewBenefitsCta": "View benefits + history"
+    },
+    "broadcastFailedToDispatch": {
+      "subject": "Your scheduled E-Blast \"{subject}\" did not go out",
+      "greeting": "Hi,",
+      "body1": "We were unable to dispatch your scheduled E-Blast for {tenantDisplayName}.",
+      "scheduledForLabel": "Originally scheduled for: {scheduledFor}",
+      "failureReasonLabel": "Reason: {reason}",
+      "body2": "Our delivery service was unreachable for over an hour, so we stopped retrying to avoid sending the broadcast at an unexpected time.",
+      "reassurance": "Your E-Blast quota slot has NOT been consumed and remains reserved. You can re-schedule the same broadcast from the admin queue, or your chamber admin can re-trigger dispatch manually.",
+      "ctaRescheduleLabel": "Open broadcast detail",
+      "footerSignOff": "If you need help, please contact your chamber administrator."
     },
     "broadcastFooter": {
       "receivedBecause": "You are receiving this email because you are a contact at a member of {tenantDisplayName}.",

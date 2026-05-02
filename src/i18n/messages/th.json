@@ -473,6 +473,16 @@
         "sourceYearEmpty": "ไม่พบแพ็กเกจสำหรับปี {sourceYear}"
       }
     },
+    "membersPreferredLocale": {
+      "title": "ภาษาของอีเมลแจ้งเตือน",
+      "description": "ตั้งค่าภาษาที่สมาชิกรายนี้จะได้รับอีเมลแจ้งเตือน (การอนุมัติบรอดแคสต์, ใบแจ้งหนี้ ฯลฯ) ปล่อยที่ \"ใช้ภาษาของหอการค้า\" เพื่อใช้ค่าเริ่มต้นของหอการค้า",
+      "useTenantDefault": "ใช้ภาษาของหอการค้า",
+      "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
+      "save": "บันทึก",
+      "savedToast": "อัปเดตภาษาของอีเมลแจ้งเตือนแล้ว",
+      "errorToast": "ไม่สามารถบันทึกได้ กรุณาลองใหม่",
+      "loading": "กำลังโหลด…"
+    },
     "members": {
       "title": "สมาชิก",
       "overrideReason": {
@@ -1690,6 +1700,21 @@
     "loadingForm": "กำลังโหลดแบบฟอร์ม"
   },
   "portal": {
+    "preferredLocale": {
+      "title": "ภาษาของอีเมลแจ้งเตือน",
+      "description": "เลือกภาษาที่คุณต้องการรับอีเมล (อนุมัติบรอดแคสต์, ใบแจ้งหนี้, รีเซ็ตรหัสผ่าน) ปล่อยที่ \"ใช้ภาษาของหอการค้า\" เพื่อใช้ค่าเริ่มต้นของหอการค้า",
+      "useTenantDefault": "ใช้ภาษาของหอการค้า",
+      "options": {
+        "en": "English",
+        "th": "ไทย",
+        "sv": "Svenska"
+      },
+      "save": "บันทึกการตั้งค่า",
+      "savedToast": "อัปเดตภาษาของอีเมลแจ้งเตือนแล้ว",
+      "errorToast": "ไม่สามารถบันทึกได้ กรุณาลองใหม่",
+      "loading": "กำลังโหลด…",
+      "loadError": "ไม่สามารถโหลดค่าปัจจุบันได้ กรุณารีเฟรชหน้าและลองใหม่"
+    },
     "invoices": {
       "title": "ใบแจ้งหนี้",
       "subtitle": "ใบแจ้งหนี้และใบเสร็จรับเงินของบริษัทคุณ",
@@ -2231,17 +2256,19 @@
     "broadcastApproved": {
       "subject": "E-Blast ของคุณได้รับการอนุมัติแล้ว",
       "greeting": "สวัสดีคุณ {name},",
-      "body": "E-Blast \"{subject}\" ของคุณได้รับการอนุมัติและจะส่ง{scheduleHint}",
+      "body": "E-Blast \"{subject}\" ของคุณได้รับการอนุมัติและจะส่ง {scheduleHint}",
       "scheduleNow": "ในไม่ช้า",
       "scheduleAt": "ในวันที่ {when}",
-      "footer": "คุณจะเห็นผลการส่งในหน้าสิทธิประโยชน์เมื่อ E-Blast ส่งเสร็จ"
+      "footer": "คุณจะเห็นผลการส่งในหน้าสิทธิประโยชน์เมื่อ E-Blast ส่งเสร็จ",
+      "ctaViewDetailLabel": "ดูรายละเอียด E-Blast"
     },
     "broadcastRejected": {
       "subject": "E-Blast ของคุณไม่ได้รับการอนุมัติ",
       "greeting": "สวัสดีคุณ {name},",
       "body": "E-Blast \"{subject}\" ของคุณไม่ได้รับการอนุมัติ",
       "reasonHeading": "เหตุผลจากผู้ดูแลหอการค้า:",
-      "footer": "โควตาที่จองไว้ได้รับการคืนแล้ว คุณสามารถส่ง E-Blast ฉบับใหม่ได้"
+      "footer": "โควตาที่จองไว้ได้รับการคืนแล้ว",
+      "ctaReviseLabel": "ดูรายละเอียด E-Blast"
     },
     "broadcastCancelled": {
       "subject": "E-Blast ของคุณถูกยกเลิก",
@@ -2252,7 +2279,7 @@
     },
     "broadcastDelivered": {
       "subject": "ส่ง E-Blast \"{subject}\" สำเร็จแล้ว",
-      "greeting": "สวัสดีค่ะ/ครับ,",
+      "greeting": "สวัสดีครับ/ค่ะ,",
       "summaryIntro": "นี่คือสรุปการส่ง E-Blast ของคุณ:",
       "deliveredCount": "ส่งถึงแล้ว: {count} จาก {total}",
       "bouncedCount": "ตีกลับ: {count}",
@@ -2260,6 +2287,17 @@
       "deliveryRate": "อัตราส่งสำเร็จ: {rate}%",
       "footer": "ดูข้อมูลเพิ่มเติมได้ที่หน้าสิทธิประโยชน์",
       "viewBenefitsCta": "ดูสิทธิประโยชน์และประวัติ"
+    },
+    "broadcastFailedToDispatch": {
+      "subject": "ไม่สามารถส่ง E-Blast \"{subject}\" ตามกำหนดการได้",
+      "greeting": "สวัสดีครับ/ค่ะ,",
+      "body1": "เราไม่สามารถส่ง E-Blast ของคุณสำหรับ {tenantDisplayName} ตามกำหนดการได้",
+      "scheduledForLabel": "กำหนดส่งเดิม: {scheduledFor}",
+      "failureReasonLabel": "สาเหตุ: {reason}",
+      "body2": "บริการส่งอีเมลขัดข้องนานกว่าหนึ่งชั่วโมง เราจึงหยุดความพยายามส่งซ้ำ เพื่อไม่ให้ E-Blast ส่งออกในเวลาที่ไม่คาดคิด",
+      "reassurance": "โควตา E-Blast ของคุณยังไม่ถูกใช้และยังคงสำรองไว้ คุณสามารถจัดกำหนดการใหม่จากคิวผู้ดูแล หรือผู้ดูแลห้องการค้าสามารถส่งซ้ำเองได้",
+      "ctaRescheduleLabel": "เปิดดูรายละเอียดบรอดแคสต์",
+      "footerSignOff": "หากต้องการความช่วยเหลือ กรุณาติดต่อผู้ดูแลห้องการค้าของคุณ"
     },
     "broadcastFooter": {
       "receivedBecause": "คุณได้รับอีเมลฉบับนี้เพราะคุณเป็นผู้ติดต่อของสมาชิก {tenantDisplayName}",

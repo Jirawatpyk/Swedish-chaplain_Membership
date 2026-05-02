@@ -132,6 +132,22 @@ export interface BroadcastsRepo {
    * Apply a status transition. Caller has already validated the
    * transition via the Domain `transition()` policy. Adapter sets
    * the corresponding lifecycle timestamp + actor field per status.
+   *
+   * **`expectedFromStatus` is REQUIRED** (verify-fix R4 / Types-#5,
+   * 2026-05-02): the UPDATE adds `AND status = expectedFromStatus`
+   * to its WHERE clause. If 0 rows are updated (the row's status
+   * drifted since the caller read it — TOCTOU window between cron
+   * eligibility scan + dispatch transition, OR concurrent admin
+   * action), the adapter throws `BroadcastConcurrentMutationError`.
+   *
+   * Safe-by-default API: every caller MUST think about which source
+   * state they expect. Previously this was an optional positional
+   * parameter with unconditional-UPDATE default — the agent review
+   * flagged that as an anti-pattern (optional positional that
+   * silently changes SQL semantics; new transitions risked unsafe
+   * default). Required now: callers who don't have a source state
+   * to verify either (a) don't need this method, or (b) should
+   * acquire one via `lockForUpdate()` first.
    */
   applyTransition(
     tx: unknown,
@@ -139,6 +155,7 @@ export interface BroadcastsRepo {
     broadcastId: BroadcastId,
     target: BroadcastStatus,
     fields: Partial<Broadcast>,
+    expectedFromStatus: BroadcastStatus,
   ): Promise<Broadcast>;
 
   /**
@@ -277,4 +294,24 @@ export interface BroadcastsRepo {
     readonly complained: number;
     readonly sent: number;
   }>;
+
+  /**
+   * F7 US6 / Phase 8 — T171a draft-expiry prune (FR-001a).
+   *
+   * Deletes rows in `broadcasts` where `tenant_id = $1`,
+   * `status = 'draft'`, AND `updated_at < $2`. Returns the count of
+   * deleted rows for cron observability. NO audit event (per FR-001a
+   * — drafts are user-controlled scratch space; preserving the
+   * "drafts do NOT consume or reserve quota" invariant means the
+   * prune is invisible).
+   *
+   * Tenant isolation: enforced at the SQL level (`WHERE tenant_id = $1`)
+   * AND defence-in-depth via `assertTenantBoundTx` in the adapter so
+   * a different `runInTenant` context cannot accidentally prune
+   * another tenant's drafts (Constitution Principle I clause 1+2).
+   */
+  pruneExpiredDrafts(
+    tenantId: string,
+    olderThan: Date,
+  ): Promise<{ readonly prunedCount: number }>;
 }

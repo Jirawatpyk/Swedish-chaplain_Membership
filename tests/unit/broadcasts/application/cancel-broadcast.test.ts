@@ -23,6 +23,39 @@ import type {
 } from '@/modules/broadcasts/application/ports/audit-port';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import type {
+  EmailTransactionalPort,
+  SendEmailInput,
+} from '@/modules/broadcasts/application/ports/email-transactional-port';
+
+interface MemberCallRecord {
+  to: string;
+  templateKey: string;
+  payload: Record<string, unknown>;
+  locale: string;
+}
+
+function makeEmail(opts: { shouldThrow?: boolean } = {}): {
+  port: EmailTransactionalPort;
+  memberCalls: Array<MemberCallRecord>;
+} {
+  const memberCalls: Array<MemberCallRecord> = [];
+  return {
+    memberCalls,
+    port: {
+      async sendAdminNotification() {},
+      async sendMemberEmail(_ctx, input: SendEmailInput) {
+        if (opts.shouldThrow) throw new Error('outbox INSERT failed');
+        memberCalls.push({
+          to: input.to,
+          templateKey: input.templateKey,
+          payload: input.payload,
+          locale: input.locale,
+        });
+      },
+    },
+  };
+}
 
 const useCasePath = resolve(
   __dirname,
@@ -157,6 +190,9 @@ function makeRepo(opts: RepoOpts): {
       async aggregateDeliveryCountsForBroadcast() {
         return { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0 };
       },
+      async pruneExpiredDrafts() {
+        return { prunedCount: 0 };
+      },
     },
   };
 }
@@ -181,6 +217,75 @@ beforeEach(() => vi.useFakeTimers({ now: FROZEN_NOW }));
 afterEach(() => vi.useRealTimers());
 
 describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
+  // ===== D1 closure (verify-fix 2026-05-02) — G2 notification tests =====
+
+  it('D1 G2: admin-cancel sends notification email with cancellationReason + tenant locale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing: makeBroadcast('submitted') });
+    const email = makeEmail();
+    const result = await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(result.ok).toBe(true);
+    expect(email.memberCalls).toHaveLength(1);
+    const call = email.memberCalls[0]!;
+    expect(call.templateKey).toBe('broadcast_cancelled');
+    expect(call.locale).toBe('th');
+    expect(call.payload['cancellationReason']).toBe(baseInput.cancellationReason);
+  });
+
+  it('D1 G2: member self-cancel ALSO sends notification (gap fix)', async () => {
+    const audit = makeAudit();
+    // member-actor + matching requestedByMemberId
+    const repo = makeRepo({
+      existing: makeBroadcast('submitted', 'm-1'),
+    });
+    const email = makeEmail();
+    const result = await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      {
+        ...baseInput,
+        actor: { kind: 'member', memberId: 'm-1', userId: 'u-1' },
+        cancellationReason: null,
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(email.memberCalls).toHaveLength(1);
+    expect(email.memberCalls[0]?.templateKey).toBe('broadcast_cancelled');
+    expect(email.memberCalls[0]?.payload['cancellationReason']).toBeNull();
+  });
+
+  it('D1 G2: emailTransactional throws → audit + transition still complete (best-effort)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing: makeBroadcast('submitted') });
+    const email = makeEmail({ shouldThrow: true });
+    const result = await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_cancelled')).toBeDefined();
+  });
+
   it('use-case module exists', async () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });
@@ -223,6 +328,94 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     expect((evt?.payload as { actorRole: string }).actorRole).toBe(
       'member_self_service',
     );
+  });
+
+  // ===== R5 verify-fix Tests-H5 (2026-05-02) — locale chain =====
+  it('locale chain: memberPreferred WINS over input.notificationLocale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing: makeBroadcast('submitted') });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue('sv'),
+    } as unknown as NonNullable<Parameters<typeof cancelBroadcast>[0]['membersBridge']>;
+    await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(email.memberCalls[0]?.locale).toBe('sv');
+  });
+
+  it('locale chain: memberPreferred null → falls back to input.notificationLocale', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing: makeBroadcast('submitted') });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
+    } as unknown as NonNullable<Parameters<typeof cancelBroadcast>[0]['membersBridge']>;
+    await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'th' },
+    );
+    expect(email.memberCalls[0]?.locale).toBe('th');
+  });
+
+  it('locale chain: both null → final fallback to "en"', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing: makeBroadcast('submitted') });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
+    } as unknown as NonNullable<Parameters<typeof cancelBroadcast>[0]['membersBridge']>;
+    await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      baseInput,
+    );
+    expect(email.memberCalls[0]?.locale).toBe('en');
+  });
+
+  it('locale chain: bridge throw is logged + falls through to input.notificationLocale (R5 Errors-H3)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing: makeBroadcast('submitted') });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi
+        .fn()
+        .mockRejectedValue(new Error('bridge boom')),
+    } as unknown as NonNullable<Parameters<typeof cancelBroadcast>[0]['membersBridge']>;
+    const result = await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'sv' },
+    );
+    expect(result.ok).toBe(true);
+    expect(email.memberCalls[0]?.locale).toBe('sv');
   });
 
   // ---- Cutoff (FR-004a) ------------------------------------------------

@@ -84,6 +84,16 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_complaint_rate_per_broadcast_breach', // US4-deferred (5% complaint-rate auto-halt webhook handler)
   'broadcast_member_dispatch_resumed',             // Q14 admin clear-halt — emitted
   'member_acknowledged_broadcasts_terms',          // Q15 GDPR Art. 7 — emitted (round-4 CRIT-B)
+
+  // --- Phase 8 verify-fix R3 — 2 events ------------------------------
+  // (Errors-C1) — distinguishes pre-`createBroadcast` race (two workers
+  // dueled through `createAudience`) from post-send Resend conflict.
+  'broadcast_dispatch_idempotency_conflict_pre_send',
+  // (Errors-H3) — AS2 contract requires member transactional email on
+  // dispatch failure, but member's primary contact email may be NULL
+  // (F3 archive cascade / contact deletion). Audit records the missed
+  // notification so compliance review has a durable trail.
+  'broadcast_dispatch_failure_notif_skipped_no_email',
 ] as const;
 
 /**
@@ -92,7 +102,7 @@ export const F7_AUDIT_EVENT_TYPES = [
  * lives at type level; if the count is wrong, TypeScript errors here
  * with "Type '38' is not assignable to type '37'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 39
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 41
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;

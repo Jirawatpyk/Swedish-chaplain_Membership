@@ -73,6 +73,7 @@ function makeBridges(seed: SeedOpts = {}): {
       async markBroadcastsAcknowledged() {
         return ok({ previouslyNull: true });
       },
+      async getMemberPreferredLocale() { return null; },
     },
     eventAttendees: {
       async getLastNinetyDayAttendees() {

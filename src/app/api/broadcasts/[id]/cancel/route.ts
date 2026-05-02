@@ -15,6 +15,7 @@ import {
   cancelBroadcast,
   makeCancelBroadcastDeps,
   parseBroadcastId,
+  tenantDefaultLocaleFor,
   type CancelBroadcastError,
 } from '@/modules/broadcasts';
 import {
@@ -73,6 +74,11 @@ export async function POST(
       },
       cancellationReason: reason,
       requestId: ctx.requestId,
+      // E1 closure (verify-fix 2026-05-02) — member self-cancel now
+      // also enqueues a confirmation email (was previously a gap —
+      // member route did not enqueue). Use-case is single source of
+      // truth; routes only thread locale.
+      notificationLocale: tenantDefaultLocaleFor(ctx.tenant.slug),
     });
     if (!result.ok) {
       return mapCancelError(result.error, correlationId);

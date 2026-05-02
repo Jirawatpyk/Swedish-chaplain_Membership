@@ -273,6 +273,40 @@ export interface MemberRepo {
   ): Promise<Result<string | null, RepoError>>;
 
   /**
+   * F7 R4 (verify-fix Types-#6, 2026-05-02) — read
+   * `members.preferred_locale`. Returns `null` if the member has no
+   * preference set (legacy rows + new members without explicit
+   * choice) OR the member is not found. CHECK constraint on column
+   * (migration 0082) guarantees stored values are `en|th|sv`.
+   */
+  findPreferredLocaleInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+  ): Promise<Result<'en' | 'th' | 'sv' | null, RepoError>>;
+
+  /**
+   * F7 R4 — set/clear `members.preferred_locale`. Pass `null` to
+   * clear preference (member falls back to tenant default). Returns
+   * `previousValue` so the caller can short-circuit audit emit when
+   * the value didn't actually change (idempotent admin clicks).
+   * Atomic; caller emits `member_preferred_locale_changed` audit in
+   * same tx.
+   */
+  updatePreferredLocaleInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+    nextLocale: 'en' | 'th' | 'sv' | null,
+  ): Promise<
+    Result<
+      {
+        readonly affected: number;
+        readonly previousValue: 'en' | 'th' | 'sv' | null;
+      },
+      RepoError
+    >
+  >;
+
+  /**
    * F7 — reverse lookup: find a member whose primary contact email
    * matches the given lowercase email string. Returns `null` if no
    * match. Used by FR-015d resolution branch 1 (custom-recipient

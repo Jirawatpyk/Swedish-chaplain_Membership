@@ -16,7 +16,12 @@ import { ArrowLeftIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getMember } from '@/modules/members';
+import { logger } from '@/lib/logger';
+import {
+  getMember,
+  getMemberPreferredLocale,
+  f3DrizzleMemberRepo,
+} from '@/modules/members';
 import type { MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { listPlans } from '@/modules/plans';
@@ -31,6 +36,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EditMemberClient } from '@/components/members/edit-member-client';
+import { AdminPreferredLocaleCard } from '@/components/admin/admin-preferred-locale-card';
 import type { PlanOption } from '@/components/members/member-form';
 
 const UUID_RE =
@@ -75,6 +81,34 @@ export default async function EditMemberPage({ params }: PageProps) {
   const { member, contacts } = memberResult.value;
   const primary = contacts.find((c) => c.isPrimary && c.removedAt === null);
 
+  // R5 verify-fix UX-H1 (2026-05-02): seed AdminPreferredLocaleCard with
+  // the member's CURRENT preferred_locale so the admin sees the present
+  // value before clicking Save. Without this, admin would silently reset
+  // the field to null on every accidental Save. Lookup is best-effort
+  // (null on F3 failure → bridge falls back to tenant default).
+  const preferredLocaleResult = await getMemberPreferredLocale(
+    { tenant, memberRepo: f3DrizzleMemberRepo },
+    member.memberId,
+  );
+  if (!preferredLocaleResult.ok) {
+    // R6 verify-fix Errors-LOW (2026-05-02): log Result-error so a
+    // forensic trail exists when admin loads the page during a Neon
+    // RLS denial / schema drift. Render still proceeds with null
+    // (admin can set fresh value); ops sees the gap in pino stream.
+    logger.warn(
+      {
+        err: preferredLocaleResult.error,
+        tenantId: tenant.slug,
+        memberId: member.memberId,
+        actorUserId: user.id,
+      },
+      'admin.edit_page.preferred_locale_lookup_failed',
+    );
+  }
+  const initialPreferredLocale = preferredLocaleResult.ok
+    ? preferredLocaleResult.value
+    : null;
+
   // Plans list for the dropdown
   const plansDeps = buildPlansDeps(tenant);
   const plansResult = await listPlans(
@@ -111,6 +145,16 @@ export default async function EditMemberPage({ params }: PageProps) {
           </Link>
         }
       />
+      {/* R4 Types-#6 (2026-05-02) — preferred-locale picker section.
+          Card chrome + i18n title rendered inside the client component
+          via useTranslations('admin.membersPreferredLocale').
+          R5 UX-H1: server-seeds initialValue so admin sees current
+          state and never silently overwrites with null on accidental Save. */}
+      <AdminPreferredLocaleCard
+        memberId={member.memberId}
+        initialValue={initialPreferredLocale}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{member.companyName}</CardTitle>

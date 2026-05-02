@@ -100,6 +100,15 @@ export const members = pgTable(
       withTimezone: true,
     }),
 
+    // F7 / R4 (verify-fix Types-#6, 2026-05-02) — preferred locale for
+    // member-facing transactional emails (broadcast approved/rejected/
+    // cancelled/delivered/failed_to_dispatch + future F3+F4 surfaces).
+    // NULL = use tenant default locale at notification time. Admin can
+    // set per-member via the F3 member edit screen (TODO post-F12
+    // white-label phase). Allowed values enforced by CHECK in migration
+    // 0082 — must be one of `en|th|sv` to match `Locale` union.
+    preferredLocale: text('preferred_locale'),
+
     // Audit metadata
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

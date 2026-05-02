@@ -950,6 +950,7 @@ pino's redact list (see § 22.4).
 | `broadcasts.stuck_sending_count` | gauge | `tenant` | `status='sending'` for > 24 h count; ≥ 1 alarm |
 | `broadcasts.audience_drift_detected.count` | counter | `tenant` | F7.1-IMP5 — emitted whenever idempotency-replay observes a recipient-count mismatch between expected and Resend audience reality. **Black swan event** — should be 0 over weeks; > 0 / 24 h pages ops to investigate partial-delivery scope. Backed by audit event `broadcast_resend_audience_drift`. |
 | `broadcasts.drift_check_unverifiable.count` | counter | `tenant` | Round-5 R5-S1 — emitted when `getAudienceContactCount` fails on a non-404 (Resend 5xx / network) during idempotency replay. The replay still advances to `sending` but recipients-delivered count cannot be verified. Backed by audit event `broadcast_resend_drift_check_unverifiable`. > 1 / hour alarm. |
+| `broadcasts.dispatch_budget_exhausted.count` | counter | `tenant`, `sub_kind` (network\|timeout\|server_5xx\|api) | **Phase 8 / FR-021 / AS2 (E2 verify-fix 2026-05-02)** — incremented when the 1-hour retry budget elapses with Resend still failing → row transitioned to `failed_to_dispatch`. **Steady state = 0**; any non-zero count in a 15-minute window pages on-call (a member's scheduled E-Blast did not go out). Backed by audit event `broadcast_failed_to_dispatch` + Slice E member transactional notification email. |
 
 **Cardinality**: `precondition`, `failure_reason`, `reason`, `event_type`
 are bounded enums; `tenant` is small-cardinality (≤ a few hundred over

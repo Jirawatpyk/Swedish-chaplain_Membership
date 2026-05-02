@@ -71,6 +71,7 @@ function makeRepoMocks(opts: {
         complained: 0,
         sent: 0,
       })),
+    pruneExpiredDrafts: async () => ({ prunedCount: 0 }),
   };
 }
 

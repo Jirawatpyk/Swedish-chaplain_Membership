@@ -29,6 +29,7 @@ import {
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
+import { verifyCronBearer } from '@/lib/cron-auth';
 import { logger } from '@/lib/logger';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
@@ -38,22 +39,33 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const auth = request.headers.get('authorization');
-  if (auth !== `Bearer ${env.cron.secret}`) {
+  // Verify-fix R6 (parity with dispatch + prune routes, 2026-05-02):
+  // constant-time Bearer check via shared `verifyCronBearer` helper —
+  // closes timing side-channel on `CRON_SECRET` brute-force.
+  if (!verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
     return NextResponse.json(
       { error: { code: 'unauthorized' } },
       { status: 401 },
     );
   }
-  if (!env.features.f7Broadcasts) {
-    return NextResponse.json(
-      { error: { code: 'feature_disabled' } },
-      { status: 503 },
-    );
-  }
 
   const tenantCtx = resolveTenantFromRequest(request);
   const tenant = asTenantContext(tenantCtx.slug);
+
+  // Verify-fix R6 (parity with dispatch + prune routes, 2026-05-02):
+  // kill-switch returns 200 + {skipped:true} so cron-job.org does NOT
+  // retry-storm a dark-launch period (was 503 → harness retried every
+  // 15 min and emitted noise log + duplicate audit fan-out).
+  if (!env.features.f7Broadcasts) {
+    logger.info(
+      { tenantId: tenant.slug },
+      'cron.broadcasts.reconcile.feature_disabled',
+    );
+    return NextResponse.json(
+      { skipped: true, reason: 'feature_disabled' },
+      { status: 200 },
+    );
+  }
 
   // Pick eligible rows. The 24h threshold is also enforced inside the
   // use-case (defence in depth — protects against clock skew between
