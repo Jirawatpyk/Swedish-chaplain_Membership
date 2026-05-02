@@ -749,6 +749,16 @@ function safeMetric(fn: () => void): void {
   }
 }
 
+/**
+ * Shared label alphabet for the `broadcasts.cascade.outcome` counter
+ * (see `broadcastsMetrics.cascadeOutcome`). Exported so callers, tests,
+ * and dashboard code reference one symbol — Round 2 type-design fix.
+ */
+export type BroadcastsCascadeOutcomeMetric =
+  | 'cancelled'
+  | 'concurrent_skip'
+  | 'unexpected_error';
+
 export const broadcastsMetrics = {
   /**
    * `broadcasts.unsubscribes{tenant, outcome}` — counter incremented on
@@ -1172,7 +1182,8 @@ export const broadcastsMetrics = {
 
   /**
    * `broadcasts.cascade.outcome{tenant, outcome}` — F3 archival/erasure
-   * cascade outcome counter. Distinguishes:
+   * cascade outcome counter. Per-broadcast classification (see
+   * `BroadcastsCascadeOutcomeMetric`):
    *   - `cancelled`           → broadcast successfully transitioned to cancelled
    *   - `concurrent_skip`     → BroadcastConcurrentMutationError — dispatch worker
    *                             flipped status between snapshot and applyTransition;
@@ -1182,10 +1193,14 @@ export const broadcastsMetrics = {
    *                             concurrent-mutation; broadcast was NOT cancelled.
    *                             Any non-zero rate = stop-the-line (signal-loss
    *                             on a Principle I cascade).
+   *
+   * Distinct from the port-level `CascadeResult.outcome` (`'ok' | 'cascade_failed'`)
+   * which classifies whether the cascade USE-CASE ran end-to-end vs the
+   * use-case ITSELF errored.
    */
   cascadeOutcome(
     tenantId: string,
-    outcome: 'cancelled' | 'concurrent_skip' | 'unexpected_error',
+    outcome: BroadcastsCascadeOutcomeMetric,
   ): void {
     safeMetric(() => {
       counter(

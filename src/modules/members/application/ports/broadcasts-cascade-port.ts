@@ -48,19 +48,38 @@ export interface BroadcastsCascadePort {
       readonly initiatedByUserId: string | null;
       readonly requestId: string | null;
     },
-  ): Promise<{
-    readonly cancelledCount: number;
-    readonly skippedConcurrentCount: number;
-    /**
-     * `'ok'`              — cascade ran (counts may legitimately be 0
-     *                       when the member had no in-flight broadcasts).
-     * `'cascade_failed'`  — the F7 cascade itself errored before it
-     *                       could observe any broadcasts. Counts are
-     *                       always 0 in this branch. F3 archival is
-     *                       still allowed to commit (cascade is
-     *                       best-effort), but ops dashboards must
-     *                       distinguish this from the no-in-flight case.
-     */
-    readonly outcome: 'ok' | 'cascade_failed';
-  }>;
+  ): Promise<CascadeResult>;
 }
+
+/**
+ * Discriminated union over the F3↔F7 cascade outcome (Round 2 review
+ * type-design fix — flat record allowed nonsensical states like
+ * `{cancelledCount: 5, outcome: 'cascade_failed'}`).
+ *
+ *   - `'ok'`             → cascade ran. Counts may legitimately be 0
+ *                          when the member had no in-flight broadcasts.
+ *                          Per-broadcast `unexpected_error` failures
+ *                          inside the use-case still report `'ok'` here
+ *                          (the cascade ran end-to-end); the
+ *                          authoritative failure signal in that case is
+ *                          the per-broadcast `broadcasts.cascade.outcome`
+ *                          metric (see `BroadcastsCascadeOutcomeMetric`),
+ *                          NOT this port-level discriminator.
+ *   - `'cascade_failed'` → the F7 cascade use-case ITSELF errored before
+ *                          it could iterate broadcasts (e.g. listing
+ *                          query threw). Counts are not surfaced. F3
+ *                          archival is still allowed to commit (cascade
+ *                          is best-effort).
+ *
+ * NOTE: this two-value port-level outcome is deliberately distinct
+ * from the three-value `BroadcastsCascadeOutcomeMetric` (per-broadcast
+ * label) — see `src/lib/metrics.ts cascadeOutcome` JSDoc. Port = adapter
+ * rollup; metric = per-row classification.
+ */
+export type CascadeResult =
+  | {
+      readonly outcome: 'ok';
+      readonly cancelledCount: number;
+      readonly skippedConcurrentCount: number;
+    }
+  | { readonly outcome: 'cascade_failed' };

@@ -40,8 +40,9 @@
  * for forensic trail. Any other exception is treated as
  * unexpected-error: the broadcast remains in flight, the cascade
  * continues to the next broadcast (best-effort), and the
- * `cascade.unexpected_error` metric is incremented for stop-the-line
- * alerting.
+ * `broadcasts.cascade.outcome{outcome=unexpected_error}` counter is
+ * incremented for stop-the-line alerting (see
+ * `BroadcastsCascadeOutcomeMetric` in `src/lib/metrics.ts`).
  */
 import { err, ok, type Result } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';

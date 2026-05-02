@@ -503,12 +503,12 @@
         }
       },
       "bundleChangeWarning": {
-        "title": "การเปลี่ยน bundle",
+        "title": "การเปลี่ยนชุดแพ็กเกจ",
         "description": "การเปลี่ยนแพ็กเกจจะเปลี่ยน corporate tier ที่ผูกไว้ โดยกระทบ {affectedCount, plural, =0 {ไม่มีสมาชิก} other {# ราย}} บน partnership เดิม",
-        "oldBundle": "Bundle เดิม",
-        "newBundle": "Bundle ใหม่",
+        "oldBundle": "แพ็กเกจเดิม",
+        "newBundle": "แพ็กเกจใหม่",
         "affectedCount": "{count, plural, =0 {ไม่มีสมาชิกที่กระทบ} other {กระทบ # ราย}}",
-        "confirm": "ยืนยันการเปลี่ยน bundle",
+        "confirm": "ยืนยันการเปลี่ยนแพ็กเกจ",
         "cancel": "ยกเลิก",
         "loading": "กำลังคำนวณจำนวนสมาชิกที่กระทบ…"
       },
@@ -540,7 +540,7 @@
           "status": "สถานะ",
           "risk": "ความเสี่ยง",
           "lastActivity": "กิจกรรมล่าสุด",
-          "notes": "โน้ต"
+          "notes": "บันทึก"
         },
         "riskPlaceholder": "—",
         "rowAriaLabel": "เปิดรายละเอียด {company}",
@@ -733,8 +733,8 @@
           "preferredLanguage": "ภาษาที่ต้องการ",
           "dateOfBirth": "วันเกิด",
           "dateOfBirthHint": "จำเป็นสำหรับแพ็กเกจ Thai Alumni",
-          "notes": "โน้ต (สำหรับแอดมินเท่านั้น)",
-          "notesPlaceholder": "บันทึกภายในสำหรับแอดมิน…",
+          "notes": "บันทึก (สำหรับผู้ดูแลระบบเท่านั้น)",
+          "notesPlaceholder": "บันทึกภายในสำหรับผู้ดูแลระบบ…",
           "notesHint": "มองเห็นได้เฉพาะเจ้าหน้าที่หอการค้า ไม่แสดงต่อสมาชิก"
         },
         "errors": {
@@ -882,8 +882,8 @@
       "subtitle": "การตั้งค่าระดับ tenant (ข้อมูลนิติบุคคล, VAT, การเลขเอกสาร, โลโก้)",
       "card": {
         "title": "ตั้งค่าใบแจ้งหนี้",
-        "description": "การเปลี่ยนแปลงจะมีผลกับใบแจ้งหนี้ใหม่เท่านั้น ใบที่ออกไปแล้วจะคงค่าเดิม (FR-011)",
-        "firstTimeDescription": "ยังไม่มีการตั้งค่า กรอกฟิลด์ที่จำเป็นเพื่อปลดล็อกการออกใบแจ้งหนี้ (FR-010)"
+        "description": "การเปลี่ยนแปลงจะมีผลกับใบแจ้งหนี้ใหม่เท่านั้น ใบที่ออกไปแล้วจะคงค่าเดิม",
+        "firstTimeDescription": "ยังไม่มีการตั้งค่า กรอกฟิลด์ที่จำเป็นเพื่อปลดล็อกการออกใบแจ้งหนี้"
       },
       "sections": {
         "currency": "สกุลเงิน",
@@ -1659,13 +1659,13 @@
       "ariaLabel": "เมนูนำทางสำหรับเจ้าหน้าที่",
       "members": "สมาชิก",
       "invoices": "ใบแจ้งหนี้",
-      "broadcasts": "บรอดแคสต์"
+      "broadcasts": "E-Blast"
     },
     "member": {
       "dashboard": "แดชบอร์ด",
       "profile": "โปรไฟล์",
       "invoices": "ใบแจ้งหนี้",
-      "broadcasts": "อีเมลข่าวสาร",
+      "broadcasts": "E-Blast",
       "account": "บัญชีของฉัน",
       "ariaLabel": "เมนูนำทางสำหรับสมาชิก"
     }
@@ -1915,9 +1915,9 @@
           "broadcast_custom_recipient_unknown": "อีเมลในรายการกำหนดเองบางรายการไม่อยู่ในไดเรกทอรี",
           "broadcast_custom_recipient_invalid_format": "อีเมลบางรายการรูปแบบไม่ถูกต้อง",
           "broadcast_member_missing_primary_contact_email": "โปรไฟล์ของคุณยังไม่มีอีเมลผู้ติดต่อหลัก",
-          "broadcast_member_halted_pending_review": "สิทธิ์การส่ง E-Blast ของคุณถูกพักไว้รออดมินตรวจสอบ",
+          "broadcast_member_halted_pending_review": "สิทธิ์การส่ง E-Blast ของคุณถูกพักไว้รอผู้ดูแลระบบตรวจสอบ",
           "broadcast_rate_limit_exceeded": "ส่งบ่อยเกินไป กรุณาลองใหม่ภายหลัง",
-          "broadcast_immutable_after_submit": "E-Blast นี้ถูกส่งแล้วและแก้ไขไม่ได้",
+          "broadcast_immutable_after_submit": "E-Blast นี้ถูกส่งเพื่ออนุมัติแล้วและไม่สามารถแก้ไขได้",
           "broadcast_not_found": "ไม่พบ E-Blast",
           "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่"
         },
@@ -2211,35 +2211,35 @@
         "placeholder": "ค้นหาใบแจ้งหนี้ของคุณ…",
         "label": "ชำระเงินใบแจ้งหนี้ {invoiceNumber} · {amount}",
         "emptyHint": "ไม่มีใบแจ้งหนี้ที่รอชำระ",
-        "allPaidHint": "ไม่มีใบแจ้งหนี้รอชำระ — คุณชำระครบแล้ว ✨"
+        "allPaidHint": "ไม่มีใบแจ้งหนี้รอชำระ — คุณชำระครบแล้ว"
       }
     }
   },
   "audit": {
     "eventType": {
-      "member_created": "Member created",
-      "member_updated": "Member updated",
-      "member_plan_changed": "Plan changed",
-      "member_primary_contact_changed": "Primary contact changed",
-      "member_status_changed": "Status changed",
-      "member_archived": "Member archived",
-      "member_undeleted": "Member undeleted",
-      "contact_created": "Contact added",
-      "contact_updated": "Contact updated",
-      "contact_removed": "Contact removed",
-      "member_self_updated": "Profile updated by member",
-      "member_self_update_forbidden": "Forbidden self-update blocked",
-      "member_cross_tenant_probe": "Cross-tenant probe detected",
-      "plan_bundle_changed": "Plan bundle changed",
-      "member_contact_email_changed": "Contact email changed",
-      "user_sessions_revoked": "Sessions revoked",
-      "email_verification_sent": "Email verification sent",
-      "email_change_notification_sent_to_old_address": "Email-change notice sent to old address",
-      "member_email_change_reverted": "Email change reverted",
-      "email_verification_resent": "Verification email resent",
-      "email_dispatch_failed": "Email dispatch failed",
-      "invitation_bounced": "Invitation bounced",
-      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
+      "member_created": "เพิ่มสมาชิก",
+      "member_updated": "อัปเดตสมาชิก",
+      "member_plan_changed": "เปลี่ยนแพ็กเกจ",
+      "member_primary_contact_changed": "เปลี่ยนผู้ติดต่อหลัก",
+      "member_status_changed": "เปลี่ยนสถานะ",
+      "member_archived": "เก็บเข้าคลังแล้ว",
+      "member_undeleted": "กู้คืนสมาชิก",
+      "contact_created": "เพิ่มผู้ติดต่อ",
+      "contact_updated": "อัปเดตผู้ติดต่อ",
+      "contact_removed": "ลบผู้ติดต่อ",
+      "member_self_updated": "สมาชิกอัปเดตโปรไฟล์",
+      "member_self_update_forbidden": "ระงับการแก้ไขที่ไม่ได้รับอนุญาต",
+      "member_cross_tenant_probe": "ตรวจพบการเข้าถึงข้ามผู้เช่า",
+      "plan_bundle_changed": "เปลี่ยนชุดแพ็กเกจ",
+      "member_contact_email_changed": "เปลี่ยนอีเมลผู้ติดต่อ",
+      "user_sessions_revoked": "ยกเลิกเซสชันผู้ใช้",
+      "email_verification_sent": "ส่งอีเมลยืนยันแล้ว",
+      "email_change_notification_sent_to_old_address": "ส่งแจ้งเตือนการเปลี่ยนอีเมลไปยังที่อยู่เดิม",
+      "member_email_change_reverted": "ย้อนกลับการเปลี่ยนอีเมล",
+      "email_verification_resent": "ส่งอีเมลยืนยันซ้ำแล้ว",
+      "email_dispatch_failed": "ส่งอีเมลไม่สำเร็จ",
+      "invitation_bounced": "อีเมลคำเชิญตีกลับ",
+      "bulk_action_rate_limit_exceeded": "เกินขีดจำกัดการดำเนินการแบบกลุ่ม"
     }
   },
   "pagination": {
@@ -2285,7 +2285,7 @@
     },
     "broadcastDelivered": {
       "subject": "ส่ง E-Blast \"{subject}\" สำเร็จแล้ว",
-      "greeting": "สวัสดีครับ/ค่ะ,",
+      "greeting": "สวัสดีครับ,",
       "summaryIntro": "นี่คือสรุปการส่ง E-Blast ของคุณ:",
       "deliveredCount": "ส่งถึงแล้ว: {count} จาก {total}",
       "bouncedCount": "ตีกลับ: {count}",
@@ -2296,14 +2296,14 @@
     },
     "broadcastFailedToDispatch": {
       "subject": "ไม่สามารถส่ง E-Blast \"{subject}\" ตามกำหนดการได้",
-      "greeting": "สวัสดีครับ/ค่ะ,",
+      "greeting": "สวัสดีครับ,",
       "body1": "เราไม่สามารถส่ง E-Blast ของคุณสำหรับ {tenantDisplayName} ตามกำหนดการได้",
       "scheduledForLabel": "กำหนดส่งเดิม: {scheduledFor}",
       "failureReasonLabel": "สาเหตุ: {reason}",
       "body2": "บริการส่งอีเมลขัดข้องนานกว่าหนึ่งชั่วโมง เราจึงหยุดความพยายามส่งซ้ำ เพื่อไม่ให้ E-Blast ส่งออกในเวลาที่ไม่คาดคิด",
-      "reassurance": "โควตา E-Blast ของคุณยังไม่ถูกใช้และยังคงสำรองไว้ คุณสามารถจัดกำหนดการใหม่จากคิวผู้ดูแล หรือผู้ดูแลห้องการค้าสามารถส่งซ้ำเองได้",
+      "reassurance": "โควตา E-Blast ของคุณยังไม่ถูกใช้และยังคงสำรองไว้ คุณสามารถจัดกำหนดการใหม่จากคิวผู้ดูแล หรือผู้ดูแลหอการค้าสามารถส่งซ้ำเองได้",
       "ctaRescheduleLabel": "เปิดดูรายละเอียดบรอดแคสต์",
-      "footerSignOff": "หากต้องการความช่วยเหลือ กรุณาติดต่อผู้ดูแลห้องการค้าของคุณ"
+      "footerSignOff": "หากต้องการความช่วยเหลือ กรุณาติดต่อผู้ดูแลหอการค้าของคุณ"
     },
     "broadcastFooter": {
       "receivedBecause": "คุณได้รับอีเมลฉบับนี้เพราะคุณเป็นผู้ติดต่อของสมาชิก {tenantDisplayName}",

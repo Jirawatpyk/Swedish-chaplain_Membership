@@ -11,6 +11,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ok, err } from '@/lib/result';
 
+// Round 2 review M-2/C1: assert the H1-fix invariant (cascade-failure
+// metric emit) — without this, a future refactor that drops the metric
+// would silently re-introduce the original signal-loss bug.
+const { cascadeOutcomeSpy } = vi.hoisted(() => ({
+  cascadeOutcomeSpy: vi.fn(),
+}));
+vi.mock('@/lib/metrics', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/lib/metrics')>('@/lib/metrics');
+  return {
+    ...actual,
+    broadcastsMetrics: {
+      ...actual.broadcastsMetrics,
+      cascadeOutcome: cascadeOutcomeSpy,
+    },
+  };
+});
+
 // Hoisted stub tx — must be declared before vi.mock hoists.
 const stubTxContacts = { linkedUserIds: [] as Array<string | null> };
 const stubTxInvitationsRevoked: string[] = [];
@@ -162,9 +180,9 @@ function makeDeps(overrides: Partial<{
   const broadcastsCascade: ArchiveMemberDeps['broadcastsCascade'] =
     overrides.broadcastsCascade ?? {
       cancelInFlightForMember: vi.fn(async () => ({
+        outcome: 'ok' as const,
         cancelledCount: 0,
         skippedConcurrentCount: 0,
-        outcome: 'ok' as const,
       })),
     };
   return {
@@ -182,6 +200,7 @@ function makeDeps(overrides: Partial<{
 describe('archiveMember use case (R009)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    cascadeOutcomeSpy.mockReset();
     stubTxContacts.linkedUserIds = [];
     stubTxInvitationsRevoked.length = 0;
   });
@@ -357,11 +376,11 @@ describe('archiveMember use case (R009)', () => {
   });
 
   describe('F7 broadcasts cascade integration (T199 H-1)', () => {
-    it('happy path: invokes cascade with archived memberId + initiatedByUserId', async () => {
+    it('happy path: invokes cascade with archived memberId + initiatedByUserId; no unexpected_error metric emitted', async () => {
       const cancelInFlightForMember = vi.fn(async () => ({
+        outcome: 'ok' as const,
         cancelledCount: 0,
         skippedConcurrentCount: 0,
-        outcome: 'ok' as const,
       }));
       const deps = makeDeps({
         broadcastsCascade: { cancelInFlightForMember },
@@ -388,12 +407,15 @@ describe('archiveMember use case (R009)', () => {
       expect(call[2].cancellationReason).toBe('originator_member_deleted');
       expect(call[2].initiatedByUserId).toBe('admin-7');
       expect(call[2].requestId).toBe('req-7');
+      // Happy path MUST NOT emit unexpected_error — would break alert.
+      const unexpectedErrorCalls = cascadeOutcomeSpy.mock.calls.filter(
+        (c) => c[1] === 'unexpected_error',
+      );
+      expect(unexpectedErrorCalls).toHaveLength(0);
     });
 
-    it('cascade outcome=cascade_failed: archive still succeeds + caller still returns ok', async () => {
+    it('cascade outcome=cascade_failed: archive still succeeds + emits unexpected_error metric (H3 invariant)', async () => {
       const cancelInFlightForMember = vi.fn(async () => ({
-        cancelledCount: 0,
-        skippedConcurrentCount: 0,
         outcome: 'cascade_failed' as const,
       }));
       const deps = makeDeps({
@@ -409,9 +431,15 @@ describe('archiveMember use case (R009)', () => {
       // cascade is best-effort per archive-member.ts L221-223.
       expect(result.ok).toBe(true);
       expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
+      // H3 invariant: outcome='cascade_failed' MUST emit unexpected_error
+      // metric so the stop-the-line alert fires.
+      expect(cascadeOutcomeSpy).toHaveBeenCalledWith(
+        'test-tenant',
+        'unexpected_error',
+      );
     });
 
-    it('cascade throws: archive still succeeds (catch-all swallow)', async () => {
+    it('cascade throws: archive still succeeds + emits unexpected_error metric (H3 invariant)', async () => {
       const cancelInFlightForMember = vi.fn(async () => {
         throw new Error('adapter mis-wired');
       });
@@ -425,6 +453,11 @@ describe('archiveMember use case (R009)', () => {
         deps,
       );
       expect(result.ok).toBe(true);
+      // H3 invariant: adapter throws also emit unexpected_error metric.
+      expect(cascadeOutcomeSpy).toHaveBeenCalledWith(
+        'test-tenant',
+        'unexpected_error',
+      );
     });
   });
 });

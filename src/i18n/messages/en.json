@@ -882,8 +882,8 @@
       "subtitle": "Tenant-level invoice configuration (legal identity, VAT, numbering, logo).",
       "card": {
         "title": "Invoice configuration",
-        "description": "Changes apply to future invoices only. Already-issued invoices retain their original snapshot (FR-011).",
-        "firstTimeDescription": "No settings yet. Fill in the required fields to unlock invoice issuance (FR-010)."
+        "description": "Changes apply to future invoices only. Already-issued invoices retain their original snapshot.",
+        "firstTimeDescription": "No settings yet. Fill in the required fields to unlock invoice issuance."
       },
       "sections": {
         "currency": "Currency",
@@ -2211,7 +2211,7 @@
         "placeholder": "Search your invoices…",
         "label": "Pay invoice {invoiceNumber} · {amount}",
         "emptyHint": "No issued invoices to pay",
-        "allPaidHint": "No pending invoices — you're all paid up ✨"
+        "allPaidHint": "No pending invoices — you're all paid up."
       }
     }
   },

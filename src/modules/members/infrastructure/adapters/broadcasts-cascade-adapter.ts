@@ -23,9 +23,9 @@ import type { BroadcastsCascadePort } from '../../application/ports/broadcasts-c
 export const noopBroadcastsCascadeAdapter: BroadcastsCascadePort = {
   async cancelInFlightForMember() {
     return {
+      outcome: 'ok',
       cancelledCount: 0,
       skippedConcurrentCount: 0,
-      outcome: 'ok',
     };
   },
 };
@@ -59,12 +59,12 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
         },
         'members.archive.broadcasts_cascade_failed',
       );
-      return {
-        cancelledCount: 0,
-        skippedConcurrentCount: 0,
-        outcome: 'cascade_failed',
-      };
+      return { outcome: 'cascade_failed' };
     }
-    return { ...result.value, outcome: 'ok' };
+    return {
+      outcome: 'ok',
+      cancelledCount: result.value.cancelledCount,
+      skippedConcurrentCount: result.value.skippedConcurrentCount,
+    };
   },
 };

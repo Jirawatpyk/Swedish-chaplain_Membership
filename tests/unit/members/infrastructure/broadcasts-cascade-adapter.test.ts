@@ -54,6 +54,7 @@ describe('f7BroadcastsCascadeAdapter (G4)', () => {
       },
     );
     expect(result.outcome).toBe('ok');
+    if (result.outcome !== 'ok') return;
     expect(result.cancelledCount).toBe(3);
     expect(result.skippedConcurrentCount).toBe(1);
   });
@@ -71,11 +72,12 @@ describe('f7BroadcastsCascadeAdapter (G4)', () => {
       },
     );
     expect(result.outcome).toBe('ok');
+    if (result.outcome !== 'ok') return;
     expect(result.cancelledCount).toBe(0);
     expect(result.skippedConcurrentCount).toBe(0);
   });
 
-  it('translates use-case err → outcome="cascade_failed" + zeros (signal-loss closed)', async () => {
+  it('translates use-case err → outcome="cascade_failed" (no counts in DU branch — signal-loss closed)', async () => {
     cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
       err({ kind: 'cascade.server_error', message: 'neon down' }),
     );
@@ -88,8 +90,20 @@ describe('f7BroadcastsCascadeAdapter (G4)', () => {
       },
     );
     expect(result.outcome).toBe('cascade_failed');
-    expect(result.cancelledCount).toBe(0);
-    expect(result.skippedConcurrentCount).toBe(0);
+    // DU shape: cascade_failed branch has no counts (TS-enforced).
+    expect((result as { cancelledCount?: number }).cancelledCount).toBeUndefined();
+  });
+
+  it('propagates use-case throws (does NOT swallow into outcome="cascade_failed")', async () => {
+    cancelInFlightBroadcastsForMember.mockRejectedValueOnce(
+      new Error('neon connection refused'),
+    );
+    await expect(
+      f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
+        initiatedByUserId: 'admin-7',
+        requestId: 'req-7',
+      }),
+    ).rejects.toThrow('neon connection refused');
   });
 
   it('omits cancellationReason when caller passes undefined (exactOptionalPropertyTypes)', async () => {
@@ -113,6 +127,7 @@ describe('noopBroadcastsCascadeAdapter', () => {
       { initiatedByUserId: null, requestId: null },
     );
     expect(result.outcome).toBe('ok');
+    if (result.outcome !== 'ok') return;
     expect(result.cancelledCount).toBe(0);
     expect(result.skippedConcurrentCount).toBe(0);
   });

@@ -259,6 +259,12 @@ export async function archiveMember(
               cascadeErr instanceof Error
                 ? cascadeErr.message
                 : String(cascadeErr),
+            // Round 2 silent-failure LOW — surface error class so the
+            // alert runbook can distinguish a TypeError (programmer
+            // mis-wire) from a network/IO blip in the same metric
+            // bucket.
+            errName:
+              cascadeErr instanceof Error ? cascadeErr.name : undefined,
             memberId,
             requestId: meta.requestId,
             cascade: 'f7_in_flight_broadcast_cancel',

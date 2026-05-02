@@ -581,7 +581,7 @@
         "fields": {
           "legalEntityType": "Företagstyp",
           "country": "Land",
-          "taxId": "Org.nr",
+          "taxId": "Skatte-ID",
           "website": "Webbplats",
           "description": "Beskrivning",
           "foundedYear": "Grundat",
@@ -607,7 +607,7 @@
         "copy": {
           "copyMemberId": "Kopiera medlems-ID",
           "copyEmail": "Kopiera e-post",
-          "copyTaxId": "Kopiera org.nr",
+          "copyTaxId": "Kopiera skatte-ID",
           "copied": "Kopierat!"
         },
         "notFound": {
@@ -715,8 +715,8 @@
           "companyName": "Företagsnamn",
           "legalEntityType": "Företagstyp",
           "country": "Land (ISO-kod)",
-          "taxId": "Org.nr",
-          "taxIdHintTH": "Thailändskt 13-siffrigt org.nr med checksiffra",
+          "taxId": "Skatte-ID",
+          "taxIdHintTH": "Thailändskt 13-siffrigt skatte-ID med checksiffra",
           "website": "Webbplats",
           "description": "Beskrivning",
           "foundedYear": "Grundat år",
@@ -733,7 +733,7 @@
           "preferredLanguage": "Föredraget språk",
           "dateOfBirth": "Födelsedatum",
           "dateOfBirthHint": "Krävs för Thai Alumni-planen",
-          "notes": "Anteckningar (endast admin)",
+          "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",
           "notesHint": "Synligt endast för kammarpersonal. Visas inte för medlemmar."
         },
@@ -879,11 +879,11 @@
     },
     "invoiceSettings": {
       "title": "Fakturainställningar",
-      "subtitle": "Tenant-nivå fakturakonfiguration (juridisk identitet, moms, numrering, logotyp).",
+      "subtitle": "Konfiguration på kammarnivå: juridisk identitet, moms, numrering och logotyp.",
       "card": {
         "title": "Fakturakonfiguration",
-        "description": "Ändringar gäller endast framtida fakturor. Redan utfärdade fakturor behåller sin ursprungliga snapshot (FR-011).",
-        "firstTimeDescription": "Inga inställningar ännu. Fyll i obligatoriska fält för att låsa upp fakturering (FR-010)."
+        "description": "Ändringar gäller endast framtida fakturor. Redan utfärdade fakturor behåller sin ursprungliga snapshot.",
+        "firstTimeDescription": "Inga inställningar ännu. Fyll i obligatoriska fält för att låsa upp fakturering."
       },
       "sections": {
         "currency": "Valuta",
@@ -1665,7 +1665,7 @@
       "dashboard": "Instrumentpanel",
       "profile": "Profil",
       "invoices": "Fakturor",
-      "broadcasts": "E-utskick",
+      "broadcasts": "Utskick",
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering"
     }
@@ -1674,12 +1674,12 @@
     "admin": "Admin",
     "dashboard": "Instrumentpanel",
     "users": "Användare",
-    "plans": "Planer",
+    "plans": "Paket",
     "settings": "Inställningar",
     "fees": "Avgiftskonfiguration",
     "account": "Konto",
-    "newPlan": "Ny plan",
-    "clonePlan": "Klona plan",
+    "newPlan": "Nytt paket",
+    "clonePlan": "Klona paket",
     "editPlan": "Redigera",
     "members": "Medlemmar",
     "memberDetail": "Detaljer",
@@ -1753,7 +1753,7 @@
         "heading": "Senaste fakturor",
         "description": "Dina tre senaste fakturor — ladda ner PDF eller visa alla.",
         "viewAll": "Visa alla",
-        "contactAdmin": "Kontakta din handelskammaradmin"
+        "contactAdmin": "Kontakta din kammaradministratör"
       },
       "detail": {
         "a11y": {
@@ -1901,7 +1901,7 @@
         "button": {
           "saveDraft": "Spara som utkast",
           "submit": "Skicka för granskning",
-          "deleteDraft": "Släng utkast"
+          "deleteDraft": "Ta bort utkast"
         },
         "errors": {
           "broadcast_quota_blocked": "Du har använt hela din E-Blast-kvot för i år.",
@@ -1922,9 +1922,9 @@
           "internal_error": "Ett oväntat fel inträffade. Försök igen."
         },
         "delete": {
-          "title": "Släng detta utkast?",
+          "title": "Ta bort detta utkast?",
           "body": "Detta tar bort ditt utkast permanent. Åtgärden kan inte ångras.",
-          "confirm": "Släng",
+          "confirm": "Ta bort",
           "cancel": "Fortsätt redigera"
         }
       },
@@ -2168,11 +2168,11 @@
       },
       "disabled": {
         "title": "Onlinebetalning är inte tillgänglig",
-        "body": "Onlinebetalning med kort eller PromptPay är inte tillgänglig för denna faktura. Kontakta kammarens administratör för instruktioner om bankoverföring.",
+        "body": "Onlinebetalning med kort eller PromptPay är inte tillgänglig för denna faktura. Kontakta kammarens administratör för instruktioner om banköverföring.",
         "contactAdminCta": "Kontakta administratören",
         "contactAdminCtaAria": "Kontakta administratören om faktura {invoiceNumber}",
         "noContactEmail": "Ingen administratörs-e-post är konfigurerad ännu. Kontakta kammarkontoret direkt.",
-        "mailSubject": "Instruktioner för bankoverföring för faktura {invoiceNumber}"
+        "mailSubject": "Instruktioner för banköverföring för faktura {invoiceNumber}"
       },
       "qrExpiring": {
         "title": "QR-koden förfaller snart",
@@ -2211,35 +2211,35 @@
         "placeholder": "Sök dina fakturor…",
         "label": "Betala faktura {invoiceNumber} · {amount}",
         "emptyHint": "Inga fakturor att betala",
-        "allPaidHint": "Inga väntande fakturor — du är i kapp ✨"
+        "allPaidHint": "Inga väntande fakturor — du är i kapp."
       }
     }
   },
   "audit": {
     "eventType": {
-      "member_created": "Member created",
-      "member_updated": "Member updated",
-      "member_plan_changed": "Plan changed",
-      "member_primary_contact_changed": "Primary contact changed",
-      "member_status_changed": "Status changed",
-      "member_archived": "Member archived",
-      "member_undeleted": "Member undeleted",
-      "contact_created": "Contact added",
-      "contact_updated": "Contact updated",
-      "contact_removed": "Contact removed",
-      "member_self_updated": "Profile updated by member",
-      "member_self_update_forbidden": "Forbidden self-update blocked",
-      "member_cross_tenant_probe": "Cross-tenant probe detected",
-      "plan_bundle_changed": "Plan bundle changed",
-      "member_contact_email_changed": "Contact email changed",
-      "user_sessions_revoked": "Sessions revoked",
-      "email_verification_sent": "Email verification sent",
-      "email_change_notification_sent_to_old_address": "Email-change notice sent to old address",
-      "member_email_change_reverted": "Email change reverted",
-      "email_verification_resent": "Verification email resent",
-      "email_dispatch_failed": "Email dispatch failed",
-      "invitation_bounced": "Invitation bounced",
-      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
+      "member_created": "Medlem skapad",
+      "member_updated": "Medlem uppdaterad",
+      "member_plan_changed": "Paket ändrat",
+      "member_primary_contact_changed": "Primär kontakt ändrad",
+      "member_status_changed": "Status ändrad",
+      "member_archived": "Medlem arkiverad",
+      "member_undeleted": "Medlem återställd",
+      "contact_created": "Kontakt tillagd",
+      "contact_updated": "Kontakt uppdaterad",
+      "contact_removed": "Kontakt borttagen",
+      "member_self_updated": "Profil uppdaterad av medlem",
+      "member_self_update_forbidden": "Otillåten självuppdatering blockerad",
+      "member_cross_tenant_probe": "Korsklientförsök upptäckt",
+      "plan_bundle_changed": "Paketgrupp ändrad",
+      "member_contact_email_changed": "Kontaktens e-postadress ändrad",
+      "user_sessions_revoked": "Sessioner återkallade",
+      "email_verification_sent": "E-postverifiering skickad",
+      "email_change_notification_sent_to_old_address": "Avisering om e-poständring skickad till tidigare adress",
+      "member_email_change_reverted": "E-poständring återställd",
+      "email_verification_resent": "Verifieringsmejl skickat på nytt",
+      "email_dispatch_failed": "E-postutskick misslyckades",
+      "invitation_bounced": "Inbjudan studsade",
+      "bulk_action_rate_limit_exceeded": "Gräns för massåtgärd nådd"
     }
   },
   "pagination": {
@@ -2280,7 +2280,7 @@
       "subject": "Ditt utskick har avbrutits",
       "greeting": "Hej {name},",
       "body": "Ditt utskick \"{subject}\" har avbrutits.",
-      "reasonHeading": "Anteckning om avbrott:",
+      "reasonHeading": "Notering om avbokning:",
       "footer": "Din reserverade kvot har frigjorts."
     },
     "broadcastDelivered": {
