@@ -816,4 +816,33 @@ export const broadcastsMetrics = {
       ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
     });
   },
+
+  /**
+   * `broadcasts.dispatch_budget_exhausted{tenant, sub_kind}` — counter
+   * incremented when the FR-021 / AS2 1-hour retry budget elapses with
+   * Resend still failing → row transitions to `failed_to_dispatch`.
+   *
+   * **Alert rule (E2 closure 2026-05-02)**: any non-zero count in a
+   * 15-minute window pages on-call. Per scheduled-broadcast cadence
+   * the steady state is 0 — even a single budget-exhausted event
+   * means a member's scheduled E-Blast did not go out. The use-case
+   * also enqueues the Slice E member-facing dispatch-failure email
+   * (best-effort) and emits the `broadcast_failed_to_dispatch`
+   * audit; this metric is the alert-pipeline trigger.
+   *
+   * `sub_kind` carries the Resend gateway failure subKind that
+   * exhausted the budget (`network`, `timeout`, `server_5xx`, `api`)
+   * so dashboards can distinguish Resend outages from network blips.
+   */
+  dispatchBudgetExhausted(
+    tenantId: string,
+    subKind: 'network' | 'timeout' | 'server_5xx' | 'api',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_dispatch_budget_exhausted_total',
+        'FR-021 / AS2 — 1-hour retry budget exhausted; broadcast did not go out',
+      ).add(1, { tenant: tenantId, sub_kind: subKind });
+    });
+  },
 } as const;

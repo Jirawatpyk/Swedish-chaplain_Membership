@@ -24,6 +24,8 @@ import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import type { MembersBridgePort } from '../ports/members-bridge-port';
+import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 
 const MAX_REASON_LENGTH = 500;
 
@@ -49,6 +51,10 @@ export interface CancelBroadcastDeps {
   readonly broadcastsRepo: BroadcastsRepo;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
+  /** G2 closure (verify-fix 2026-05-02 — US2 wire-up). */
+  readonly membersBridge?: MembersBridgePort;
+  /** G2 closure — best-effort post-cancel member email. */
+  readonly emailTransactional?: EmailTransactionalPort;
 }
 
 export interface CancelBroadcastInput {
@@ -184,6 +190,22 @@ export async function cancelBroadcast(
         requestId: input.requestId,
       });
 
+      // G2 closure (verify-fix 2026-05-02 — US2 wire-up) — notify the
+      // originating member. For self-cancel paths the member receives
+      // a confirmation; for admin-cancel paths the member learns
+      // their broadcast was stopped + the (admin-supplied)
+      // cancellation reason.
+      if (deps.emailTransactional && deps.membersBridge) {
+        await enqueueCancelledNotification({
+          tenant: deps.tenant,
+          membersBridge: deps.membersBridge,
+          emailTransactional: deps.emailTransactional,
+          broadcast: cancelled,
+          cancellationReason: input.cancellationReason,
+          tx,
+        });
+      }
+
       return ok({ broadcast: cancelled, reservationReleased: true as const });
     });
   } catch (e) {
@@ -191,5 +213,69 @@ export async function cancelBroadcast(
       kind: 'cancel.server_error',
       message: e instanceof Error ? e.message : 'unknown error',
     });
+  }
+}
+
+async function enqueueCancelledNotification(args: {
+  readonly tenant: TenantContext;
+  readonly membersBridge: MembersBridgePort;
+  readonly emailTransactional: EmailTransactionalPort;
+  readonly broadcast: Broadcast;
+  readonly cancellationReason: string | null;
+  readonly tx: unknown;
+}): Promise<void> {
+  let memberEmail: string | null;
+  try {
+    memberEmail = await args.membersBridge.getMemberPrimaryContact(
+      args.tenant,
+      args.broadcast.requestedByMemberId,
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: args.tenant.slug,
+        broadcastId: args.broadcast.broadcastId as string,
+      },
+      'broadcasts.cancelled_email.member_lookup_failed',
+    );
+    return;
+  }
+  if (memberEmail === null) {
+    logger.warn(
+      {
+        tenantId: args.tenant.slug,
+        broadcastId: args.broadcast.broadcastId as string,
+      },
+      'broadcasts.cancelled_email.skipped_no_primary_contact',
+    );
+    return;
+  }
+  try {
+    await args.emailTransactional.sendMemberEmail(
+      args.tenant,
+      {
+        to: memberEmail,
+        subject: args.broadcast.subject,
+        templateKey: 'broadcast_cancelled',
+        payload: {
+          broadcastId: args.broadcast.broadcastId,
+          broadcastSubject: args.broadcast.subject,
+          memberDisplayName: args.broadcast.fromName,
+          cancellationReason: args.cancellationReason,
+        },
+        locale: 'en',
+      },
+      args.tx,
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: args.tenant.slug,
+        broadcastId: args.broadcast.broadcastId as string,
+      },
+      'broadcasts.cancelled_email.enqueue_failed',
+    );
   }
 }

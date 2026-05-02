@@ -472,6 +472,23 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(
       (evt?.payload as { resendBroadcastId: string }).resendBroadcastId,
     ).toBe('bcast-fake-1');
+    // E1 closure (verify-fix 2026-05-02) — AS1 spec.md L323 requires
+    // the audit payload to carry `scheduled_for + actual_send_at +
+    // delay_seconds` for SC-001 quartile analysis. Lock the field
+    // shape so future refactors that drop them are caught at test time.
+    const payload = evt?.payload as {
+      scheduledFor?: string | null;
+      actualSendAt?: string;
+      delaySeconds?: number | null;
+      sendingStartedAt?: string;
+    };
+    // makeBroadcast() seeds scheduledFor = FROZEN_NOW, so delay = 0
+    expect(payload.scheduledFor).toBe(FROZEN_NOW.toISOString());
+    expect(payload.actualSendAt).toBe(FROZEN_NOW.toISOString());
+    expect(payload.delaySeconds).toBe(0);
+    // sendingStartedAt retained for backward compatibility with the
+    // existing US5 reconciliation summary email build helper.
+    expect(payload.sendingStartedAt).toBe(FROZEN_NOW.toISOString());
   });
 
   it('idempotency key format: broadcast-{tenantId}-{broadcastId}', async () => {

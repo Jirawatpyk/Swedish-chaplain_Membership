@@ -28,6 +28,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
@@ -516,6 +517,11 @@ export async function dispatchScheduledBroadcast(
           },
           'broadcasts.dispatch.retry_budget_exhausted',
         );
+        // E2 closure (verify-fix 2026-05-02) — explicit metric counter
+        // is the alert-pipeline trigger for AS2 "admin alert is raised".
+        // Steady state = 0; any non-zero count in a 15-minute window
+        // pages on-call. See `docs/observability.md` § F7 alerts.
+        broadcastsMetrics.dispatchBudgetExhausted(deps.tenant.slug, subKind);
         const budgetReason = `retry_budget_exhausted_after_1h:${subKind}:${reason}`;
         await failDispatchAndAudit(
           deps,
@@ -782,6 +788,14 @@ export async function dispatchScheduledBroadcast(
         resendAudienceId,
         resendBroadcastId,
       );
+      // G1 closure (verify-fix 2026-05-02) — pass `expectedFromStatus:
+      // 'approved'` so the UPDATE serializes against any concurrent
+      // worker that already transitioned the row to 'sending'.
+      // Returning 0 rows → BroadcastConcurrentMutationError thrown →
+      // caught below → mapped to broadcast_invalid_state_transition.
+      // Recipients are protected from duplicate emails by Resend's
+      // own idempotency-key dedup (gateway-level invariant); this
+      // closes the DB-side audit/over-emit forensics issue.
       const transitioned = await deps.broadcastsRepo.applyTransition(
         tx,
         deps.tenant.slug,
@@ -791,7 +805,29 @@ export async function dispatchScheduledBroadcast(
           sendingStartedAt: now,
           estimatedRecipientCount: resolvedResult.value.estimatedCount,
         },
+        'approved',
       );
+      // E1 closure (verify-fix 2026-05-02) — AS1 audit payload now
+      // includes the spec-required `scheduledFor` + `actualSendAt` +
+      // `delaySeconds` fields. `actualSendAt === sendingStartedAt`
+      // (same wall-clock moment, two field names per AS1 wording).
+      // `delaySeconds` is the wait between the originator's planned
+      // delivery time and the actual cron pickup — surfaces "how
+      // late did the cron handler fire" for SC-001 quartile analysis.
+      // For "send-now" paths where `scheduledFor === null`,
+      // delaySeconds is null (the field is irrelevant).
+      const actualSendAt = now;
+      const scheduledForIso =
+        broadcast.scheduledFor !== null
+          ? broadcast.scheduledFor.toISOString()
+          : null;
+      const delaySeconds =
+        broadcast.scheduledFor !== null
+          ? Math.round(
+              (actualSendAt.getTime() - broadcast.scheduledFor.getTime()) /
+                1000,
+            )
+          : null;
       await deps.audit.emit(tx, {
         tenantId: deps.tenant.slug,
         eventType: 'broadcast_send_started',
@@ -802,7 +838,10 @@ export async function dispatchScheduledBroadcast(
           resendAudienceId,
           resendBroadcastId,
           recipientCount: resolvedResult.value.estimatedCount,
-          sendingStartedAt: now.toISOString(),
+          sendingStartedAt: actualSendAt.toISOString(),
+          scheduledFor: scheduledForIso,
+          actualSendAt: actualSendAt.toISOString(),
+          delaySeconds,
         },
         requestId: null,
       });
@@ -834,6 +873,31 @@ export async function dispatchScheduledBroadcast(
       recipientCount: resolvedResult.value.estimatedCount,
     });
   } catch (e) {
+    // G1 closure (verify-fix 2026-05-02) — concurrent worker won the
+    // sending-transition race. The other worker has already committed
+    // the transition + audit + email; this worker's Resend external
+    // calls were no-ops (idempotency-key dedup). Surface as
+    // broadcast_invalid_state_transition for the cron route's bucket
+    // counter; do NOT page on-call (no actual failure).
+    if (
+      typeof e === 'object' &&
+      e !== null &&
+      (e as { name?: string }).name === 'BroadcastConcurrentMutationError'
+    ) {
+      logger.warn(
+        {
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId as string,
+          resendAudienceId,
+          resendBroadcastId,
+        },
+        'broadcasts.dispatch.concurrent_transition_lost',
+      );
+      return err({
+        kind: 'broadcast_invalid_state_transition',
+        observedStatus: 'sending_or_later',
+      });
+    }
     // Review E2 — DB write failed AFTER Resend success. Recipients have
     // (or will) receive the broadcast but the DB row is still
     // 'approved'. Next cron tick will re-detect 'approved' status and

@@ -132,6 +132,17 @@ export interface BroadcastsRepo {
    * Apply a status transition. Caller has already validated the
    * transition via the Domain `transition()` policy. Adapter sets
    * the corresponding lifecycle timestamp + actor field per status.
+   *
+   * **G1 closure (verify-fix 2026-05-02)** — when `expectedFromStatus`
+   * is supplied, the UPDATE adds `AND status = expectedFromStatus` to
+   * its WHERE clause. If 0 rows are updated (the row's status drifted
+   * since the caller read it — TOCTOU window between cron eligibility
+   * scan + dispatch transition), the adapter throws
+   * `BroadcastConcurrentMutationError`. Callers who do external work
+   * between read + write (e.g., dispatch use-case calling Resend
+   * outside the tx) should pass `expectedFromStatus` to close the
+   * race window. Existing call sites that omit it preserve the
+   * original unconditional-UPDATE behaviour.
    */
   applyTransition(
     tx: unknown,
@@ -139,6 +150,7 @@ export interface BroadcastsRepo {
     broadcastId: BroadcastId,
     target: BroadcastStatus,
     fields: Partial<Broadcast>,
+    expectedFromStatus?: BroadcastStatus,
   ): Promise<Broadcast>;
 
   /**

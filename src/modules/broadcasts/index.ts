@@ -355,7 +355,13 @@ export { dompurifySanitizer } from './infrastructure/sanitizer/dompurify-sanitiz
 export {
   buildBroadcastDeliveredEmail,
   buildBroadcastFailedToDispatchEmail,
+  buildBroadcastApprovedEmail,
+  buildBroadcastRejectedEmail,
+  buildBroadcastCancelledEmail,
   type BuildBroadcastDeliveredEmailInput,
   type BuildBroadcastFailedToDispatchEmailInput,
+  type BuildBroadcastApprovedEmailInput,
+  type BuildBroadcastRejectedEmailInput,
+  type BuildBroadcastCancelledEmailInput,
   type BroadcastNotificationLocale,
 } from './infrastructure/email/broadcast-notification-emails';

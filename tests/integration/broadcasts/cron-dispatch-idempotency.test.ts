@@ -226,18 +226,21 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
     expect(await readBroadcastStatus(tenant, broadcastId)).toBe('sending');
   });
 
-  it('parallel dispatches use the same Resend idempotency key (gateway-level dedupe invariant)', async () => {
-    // True parallel calls may both pass the eligibility check before
-    // the first commits its sending transition (TOCTOU window between
-    // step 1 lockForUpdate-tx and step 4 transition-tx). The
-    // production guarantee in that rare case is Resend's idempotency-
-    // key dedupe: both calls produce
-    // `broadcast-${tenantId}-${broadcastId}` and Resend treats the
-    // second sendBroadcast as a no-op replay.
+  it('parallel dispatches → exactly ONE sending transition (G1 closure: expectedFromStatus guard) + same idempotency key', async () => {
+    // G1 closure (verify-fix 2026-05-02) — `applyTransition` now
+    // accepts an `expectedFromStatus` param; when the dispatch
+    // use-case passes `'approved'`, the UPDATE adds
+    // `AND status='approved'` to its WHERE clause. The losing
+    // concurrent worker's UPDATE returns 0 rows →
+    // `BroadcastConcurrentMutationError` thrown → use-case maps to
+    // `broadcast_invalid_state_transition`. Defence-in-depth on top
+    // of Resend's gateway-level idempotency-key dedup.
     //
-    // This test asserts the invariant the production safety relies on:
-    // the idempotency key is a deterministic function of (tenantId,
-    // broadcastId), independent of attempt count or wall-clock time.
+    // This test also asserts the gateway-level invariant: the
+    // idempotency key is a deterministic function of (tenantId,
+    // broadcastId), so even if both Resend calls reach the gateway
+    // (TOCTOU window between createAudience + applyTransition),
+    // production Resend dedupes recipients to a single delivery.
     const broadcastId = 'dddddddd-1234-5678-9abc-def012345679';
     await seedApprovedBroadcast(tenant, broadcastId);
 
@@ -294,7 +297,7 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
       emailTransactional: emailTransactionalBridge,
     });
 
-    await Promise.all([
+    const [resultA, resultB] = await Promise.all([
       dispatchScheduledBroadcast(buildDeps(), {
         broadcastId: asBroadcastId(broadcastId),
       }),
@@ -303,9 +306,27 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
       }),
     ]);
 
-    // All Resend send calls (1 or 2 — depending on timing) MUST use
-    // the same stable idempotency key. Production Resend dedupes on
-    // this key so the recipients only get the broadcast once.
+    // G1 closure — exactly one worker wins the sending transition.
+    // The losing worker may have done Resend external calls (no-op
+    // dedupe) but its applyTransition returned 0 rows so the
+    // use-case maps to broadcast_invalid_state_transition.
+    const successes = [resultA, resultB].filter((r) => r.ok);
+    const failures = [resultA, resultB].filter((r) => !r.ok);
+    expect(successes).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+    if (!failures[0]!.ok) {
+      expect(failures[0]!.error.kind).toBe(
+        'broadcast_invalid_state_transition',
+      );
+    }
+
+    // Final DB state — exactly 'sending'. Both transitions
+    // attempted but only one survived the G1 conditional UPDATE.
+    expect(await readBroadcastStatus(tenant, broadcastId)).toBe('sending');
+
+    // Gateway-level invariant: all Resend send calls (1 or 2
+    // depending on timing) used the same stable idempotency key, so
+    // production Resend dedupes recipients to a single delivery.
     expect(sendCalls.length).toBeGreaterThanOrEqual(1);
     const expectedKey = `broadcast-${tenant.ctx.slug}-${broadcastId}`;
     for (const call of sendCalls) {

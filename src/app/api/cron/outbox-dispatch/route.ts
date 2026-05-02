@@ -71,6 +71,9 @@ import { renderReceiptPdf, makeRenderReceiptPdfDeps } from '@/modules/invoicing'
 import {
   buildBroadcastDeliveredEmail,
   buildBroadcastFailedToDispatchEmail,
+  buildBroadcastApprovedEmail,
+  buildBroadcastRejectedEmail,
+  buildBroadcastCancelledEmail,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -248,6 +251,68 @@ async function buildPayload(
         complained,
         total,
         deliveryRate,
+        locale,
+      });
+    }
+    case 'broadcast_approved_notification': {
+      // F7 US2 (G2 closure 2026-05-02) — admin approved member's
+      // broadcast. context_data populated by approve-broadcast.ts
+      // post-tx enqueue.
+      const broadcastId = typeof ctx.broadcastId === 'string' ? ctx.broadcastId : '';
+      const broadcastSubject =
+        typeof ctx.broadcastSubject === 'string' ? ctx.broadcastSubject : '';
+      const memberDisplayName =
+        typeof ctx.memberDisplayName === 'string' ? ctx.memberDisplayName : 'there';
+      const scheduledForIso =
+        typeof ctx.scheduledForIso === 'string' ? ctx.scheduledForIso : null;
+      if (!broadcastId || !broadcastSubject) return null;
+      return buildBroadcastApprovedEmail({
+        toEmail: row.toEmail,
+        broadcastId,
+        broadcastSubject,
+        memberDisplayName,
+        scheduledForIso,
+        locale,
+      });
+    }
+    case 'broadcast_rejected_notification': {
+      // F7 US2 (G2 closure 2026-05-02) — admin rejected member's
+      // broadcast with reason. quota slot already released by use-case.
+      const broadcastId = typeof ctx.broadcastId === 'string' ? ctx.broadcastId : '';
+      const broadcastSubject =
+        typeof ctx.broadcastSubject === 'string' ? ctx.broadcastSubject : '';
+      const memberDisplayName =
+        typeof ctx.memberDisplayName === 'string' ? ctx.memberDisplayName : 'there';
+      const rejectionReason =
+        typeof ctx.rejectionReason === 'string' ? ctx.rejectionReason : '';
+      if (!broadcastId || !broadcastSubject || !rejectionReason) return null;
+      return buildBroadcastRejectedEmail({
+        toEmail: row.toEmail,
+        broadcastId,
+        broadcastSubject,
+        memberDisplayName,
+        rejectionReason,
+        locale,
+      });
+    }
+    case 'broadcast_cancelled_notification': {
+      // F7 US2 (G2 closure 2026-05-02) — broadcast cancelled by member
+      // self-service OR by admin. cancellationReason optional for
+      // member self-cancel; required for admin-cancel per FR-004a.
+      const broadcastId = typeof ctx.broadcastId === 'string' ? ctx.broadcastId : '';
+      const broadcastSubject =
+        typeof ctx.broadcastSubject === 'string' ? ctx.broadcastSubject : '';
+      const memberDisplayName =
+        typeof ctx.memberDisplayName === 'string' ? ctx.memberDisplayName : 'there';
+      const cancellationReason =
+        typeof ctx.cancellationReason === 'string' ? ctx.cancellationReason : null;
+      if (!broadcastId || !broadcastSubject) return null;
+      return buildBroadcastCancelledEmail({
+        toEmail: row.toEmail,
+        broadcastId,
+        broadcastSubject,
+        memberDisplayName,
+        cancellationReason,
         locale,
       });
     }

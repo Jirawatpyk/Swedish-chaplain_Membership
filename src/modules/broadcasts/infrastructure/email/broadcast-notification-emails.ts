@@ -236,3 +236,193 @@ export function buildBroadcastFailedToDispatchEmail(
 function stripTags(s: string): string {
   return s.replace(/<[^>]+>/g, '');
 }
+
+// =====================================================================
+// broadcast_approved_notification (G2 closure 2026-05-02 — US2 wire-up)
+// =====================================================================
+
+interface BroadcastApprovedCopy {
+  readonly subject: string;
+  readonly greeting: string;
+  readonly body: string;
+  readonly scheduleNow: string;
+  readonly scheduleAt: string;
+  readonly footer: string;
+}
+
+const APPROVED_COPY: Record<BroadcastNotificationLocale, BroadcastApprovedCopy> = {
+  en: (enMessages as { email: { broadcastApproved: BroadcastApprovedCopy } })
+    .email.broadcastApproved,
+  th: (thMessages as { email: { broadcastApproved: BroadcastApprovedCopy } })
+    .email.broadcastApproved,
+  sv: (svMessages as { email: { broadcastApproved: BroadcastApprovedCopy } })
+    .email.broadcastApproved,
+};
+
+export interface BuildBroadcastApprovedEmailInput {
+  readonly toEmail: string;
+  readonly broadcastId: string;
+  readonly broadcastSubject: string;
+  readonly memberDisplayName: string;
+  readonly scheduledForIso: string | null;
+  readonly locale: BroadcastNotificationLocale;
+}
+
+export function buildBroadcastApprovedEmail(
+  input: BuildBroadcastApprovedEmailInput,
+): BuiltEmail {
+  const copy = pickLocale(APPROVED_COPY, input.locale, 'broadcastApproved');
+  const scheduleHint = input.scheduledForIso === null
+    ? copy.scheduleNow
+    : fillTemplate(copy.scheduleAt, { when: input.scheduledForIso });
+  const subject = copy.subject;
+  const greeting = fillTemplate(copy.greeting, { name: input.memberDisplayName });
+  const body = fillTemplate(copy.body, {
+    subject: input.broadcastSubject,
+    scheduleHint,
+  });
+  const ctaUrl = broadcastDetailUrl(input.broadcastId);
+
+  const html = `<!doctype html>
+<html lang="${input.locale}">
+  <head><meta charset="utf-8"><title>${escape(subject)}</title></head>
+  <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:40px auto;padding:24px;color:#111;">
+    <h1 style="font-size:20px;margin:0 0 16px 0;color:#0b6bcb;">${escape(subject)}</h1>
+    <p style="line-height:1.6;">${escape(greeting)}</p>
+    <p style="line-height:1.6;">${escape(body)}</p>
+    <p style="margin:24px 0;">
+      <a href="${ctaUrl}" style="display:inline-block;background:#0b6bcb;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escape(input.broadcastSubject)}</a>
+    </p>
+    <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
+    <p style="color:#777;font-size:12px;">${escape(copy.footer)}</p>
+  </body>
+</html>`;
+
+  const text =
+    `${greeting}\n\n${body}\n\n${ctaUrl}\n\n${copy.footer}\n`;
+
+  return { subject, html, text };
+}
+
+// =====================================================================
+// broadcast_rejected_notification (G2 closure 2026-05-02 — US2 wire-up)
+// =====================================================================
+
+interface BroadcastRejectedCopy {
+  readonly subject: string;
+  readonly greeting: string;
+  readonly body: string;
+  readonly reasonHeading: string;
+  readonly footer: string;
+}
+
+const REJECTED_COPY: Record<BroadcastNotificationLocale, BroadcastRejectedCopy> = {
+  en: (enMessages as { email: { broadcastRejected: BroadcastRejectedCopy } })
+    .email.broadcastRejected,
+  th: (thMessages as { email: { broadcastRejected: BroadcastRejectedCopy } })
+    .email.broadcastRejected,
+  sv: (svMessages as { email: { broadcastRejected: BroadcastRejectedCopy } })
+    .email.broadcastRejected,
+};
+
+export interface BuildBroadcastRejectedEmailInput {
+  readonly toEmail: string;
+  readonly broadcastId: string;
+  readonly broadcastSubject: string;
+  readonly memberDisplayName: string;
+  readonly rejectionReason: string;
+  readonly locale: BroadcastNotificationLocale;
+}
+
+export function buildBroadcastRejectedEmail(
+  input: BuildBroadcastRejectedEmailInput,
+): BuiltEmail {
+  const copy = pickLocale(REJECTED_COPY, input.locale, 'broadcastRejected');
+  const subject = copy.subject;
+  const greeting = fillTemplate(copy.greeting, { name: input.memberDisplayName });
+  const body = fillTemplate(copy.body, { subject: input.broadcastSubject });
+
+  const html = `<!doctype html>
+<html lang="${input.locale}">
+  <head><meta charset="utf-8"><title>${escape(subject)}</title></head>
+  <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:40px auto;padding:24px;color:#111;">
+    <h1 style="font-size:20px;margin:0 0 16px 0;color:#b3261e;">${escape(subject)}</h1>
+    <p style="line-height:1.6;">${escape(greeting)}</p>
+    <p style="line-height:1.6;">${escape(body)}</p>
+    <p style="line-height:1.6;font-weight:600;">${escape(copy.reasonHeading)}</p>
+    <blockquote style="margin:0 0 16px 0;padding:12px 16px;border-left:4px solid #b3261e;background:#fef3f2;color:#5a1d1d;">${escape(input.rejectionReason)}</blockquote>
+    <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
+    <p style="color:#777;font-size:12px;">${escape(copy.footer)}</p>
+  </body>
+</html>`;
+
+  const text =
+    `${greeting}\n\n${body}\n\n${copy.reasonHeading}\n${input.rejectionReason}\n\n${copy.footer}\n`;
+
+  return { subject, html, text };
+}
+
+// =====================================================================
+// broadcast_cancelled_notification (G2 closure 2026-05-02 — US2 wire-up)
+// =====================================================================
+
+interface BroadcastCancelledCopy {
+  readonly subject: string;
+  readonly greeting: string;
+  readonly body: string;
+  readonly reasonHeading: string;
+  readonly footer: string;
+}
+
+const CANCELLED_COPY: Record<BroadcastNotificationLocale, BroadcastCancelledCopy> = {
+  en: (enMessages as { email: { broadcastCancelled: BroadcastCancelledCopy } })
+    .email.broadcastCancelled,
+  th: (thMessages as { email: { broadcastCancelled: BroadcastCancelledCopy } })
+    .email.broadcastCancelled,
+  sv: (svMessages as { email: { broadcastCancelled: BroadcastCancelledCopy } })
+    .email.broadcastCancelled,
+};
+
+export interface BuildBroadcastCancelledEmailInput {
+  readonly toEmail: string;
+  readonly broadcastId: string;
+  readonly broadcastSubject: string;
+  readonly memberDisplayName: string;
+  readonly cancellationReason: string | null;
+  readonly locale: BroadcastNotificationLocale;
+}
+
+export function buildBroadcastCancelledEmail(
+  input: BuildBroadcastCancelledEmailInput,
+): BuiltEmail {
+  const copy = pickLocale(CANCELLED_COPY, input.locale, 'broadcastCancelled');
+  const subject = copy.subject;
+  const greeting = fillTemplate(copy.greeting, { name: input.memberDisplayName });
+  const body = fillTemplate(copy.body, { subject: input.broadcastSubject });
+
+  const reasonBlock = input.cancellationReason
+    ? `<p style="line-height:1.6;font-weight:600;">${escape(copy.reasonHeading)}</p>
+       <blockquote style="margin:0 0 16px 0;padding:12px 16px;border-left:4px solid #888;background:#f5f5f5;color:#333;">${escape(input.cancellationReason)}</blockquote>`
+    : '';
+  const reasonText = input.cancellationReason
+    ? `${copy.reasonHeading}\n${input.cancellationReason}\n\n`
+    : '';
+
+  const html = `<!doctype html>
+<html lang="${input.locale}">
+  <head><meta charset="utf-8"><title>${escape(subject)}</title></head>
+  <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:40px auto;padding:24px;color:#111;">
+    <h1 style="font-size:20px;margin:0 0 16px 0;color:#555;">${escape(subject)}</h1>
+    <p style="line-height:1.6;">${escape(greeting)}</p>
+    <p style="line-height:1.6;">${escape(body)}</p>
+    ${reasonBlock}
+    <hr style="border:none;border-top:1px solid #eee;margin:32px 0 16px;" />
+    <p style="color:#777;font-size:12px;">${escape(copy.footer)}</p>
+  </body>
+</html>`;
+
+  const text =
+    `${greeting}\n\n${body}\n\n${reasonText}${copy.footer}\n`;
+
+  return { subject, html, text };
+}

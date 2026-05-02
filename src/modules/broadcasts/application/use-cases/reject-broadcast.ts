@@ -13,10 +13,13 @@
  */
 import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import type { MembersBridgePort } from '../ports/members-bridge-port';
+import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 
 const MIN_REASON_LENGTH = 1;
 const MAX_REASON_LENGTH = 2000;
@@ -43,6 +46,10 @@ export interface RejectBroadcastDeps {
   readonly broadcastsRepo: BroadcastsRepo;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
+  /** G2 closure (verify-fix 2026-05-02 — US2 wire-up). */
+  readonly membersBridge?: MembersBridgePort;
+  /** G2 closure — best-effort post-rejection member email. */
+  readonly emailTransactional?: EmailTransactionalPort;
 }
 
 export interface RejectBroadcastInput {
@@ -140,6 +147,19 @@ export async function rejectBroadcast(
         requestId: input.requestId,
       });
 
+      // G2 closure (verify-fix 2026-05-02) — VERBATIM rejection reason
+      // travels in the email payload (FR-012). Audit retains hash only.
+      if (deps.emailTransactional && deps.membersBridge) {
+        await enqueueRejectedNotification({
+          tenant: deps.tenant,
+          membersBridge: deps.membersBridge,
+          emailTransactional: deps.emailTransactional,
+          broadcast: rejected,
+          rejectionReason: input.rejectionReason,
+          tx,
+        });
+      }
+
       return ok({
         broadcast: rejected,
         reservationReleased: true as const,
@@ -150,5 +170,69 @@ export async function rejectBroadcast(
       kind: 'reject.server_error',
       message: e instanceof Error ? e.message : 'unknown error',
     });
+  }
+}
+
+async function enqueueRejectedNotification(args: {
+  readonly tenant: TenantContext;
+  readonly membersBridge: MembersBridgePort;
+  readonly emailTransactional: EmailTransactionalPort;
+  readonly broadcast: Broadcast;
+  readonly rejectionReason: string;
+  readonly tx: unknown;
+}): Promise<void> {
+  let memberEmail: string | null;
+  try {
+    memberEmail = await args.membersBridge.getMemberPrimaryContact(
+      args.tenant,
+      args.broadcast.requestedByMemberId,
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: args.tenant.slug,
+        broadcastId: args.broadcast.broadcastId as string,
+      },
+      'broadcasts.rejected_email.member_lookup_failed',
+    );
+    return;
+  }
+  if (memberEmail === null) {
+    logger.warn(
+      {
+        tenantId: args.tenant.slug,
+        broadcastId: args.broadcast.broadcastId as string,
+      },
+      'broadcasts.rejected_email.skipped_no_primary_contact',
+    );
+    return;
+  }
+  try {
+    await args.emailTransactional.sendMemberEmail(
+      args.tenant,
+      {
+        to: memberEmail,
+        subject: args.broadcast.subject,
+        templateKey: 'broadcast_rejected',
+        payload: {
+          broadcastId: args.broadcast.broadcastId,
+          broadcastSubject: args.broadcast.subject,
+          memberDisplayName: args.broadcast.fromName,
+          rejectionReason: args.rejectionReason,
+        },
+        locale: 'en',
+      },
+      args.tx,
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: args.tenant.slug,
+        broadcastId: args.broadcast.broadcastId as string,
+      },
+      'broadcasts.rejected_email.enqueue_failed',
+    );
   }
 }

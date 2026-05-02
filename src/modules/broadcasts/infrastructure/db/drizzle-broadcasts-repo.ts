@@ -443,6 +443,7 @@ export function makeDrizzleBroadcastsRepo(
       broadcastId: BroadcastId,
       target: BroadcastStatus,
       fields: Partial<Broadcast>,
+      expectedFromStatus?: BroadcastStatus,
     ): Promise<Broadcast> {
       const tx = txUnknown as TenantTx;
       const setClause: Record<string, unknown> = {
@@ -475,17 +476,35 @@ export function makeDrizzleBroadcastsRepo(
         }
       }
 
+      // G1 closure (verify-fix 2026-05-02) — when caller passes
+      // `expectedFromStatus`, the UPDATE adds `AND status = $expected`
+      // to its WHERE clause. Returning 0 rows means the row drifted
+      // since the caller's read (concurrent worker won the race).
+      // Throws `BroadcastConcurrentMutationError` so the caller can
+      // distinguish "row missing" from "row no longer in the
+      // expected source state".
+      const whereClauses = [
+        eq(broadcasts.tenantId, tenantIdArg),
+        eq(broadcasts.broadcastId, broadcastId),
+      ];
+      if (expectedFromStatus !== undefined) {
+        whereClauses.push(eq(broadcasts.status, expectedFromStatus));
+      }
       const [row] = await tx
         .update(broadcasts)
         .set(setClause)
-        .where(
-          and(
-            eq(broadcasts.tenantId, tenantIdArg),
-            eq(broadcasts.broadcastId, broadcastId),
-          ),
-        )
+        .where(and(...whereClauses))
         .returning();
       if (!row) {
+        if (expectedFromStatus !== undefined) {
+          // Row may exist but drifted; surface the canonical concurrent
+          // mutation error so callers can map to their own envelope.
+          throw new BroadcastConcurrentMutationError(
+            tenantIdArg,
+            broadcastId,
+            expectedFromStatus,
+          );
+        }
         throw new Error(
           `applyTransition: broadcast ${broadcastId} not found in tenant ${tenantIdArg}`,
         );
