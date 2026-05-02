@@ -23,6 +23,7 @@ import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useAriaAnnounce } from '@/hooks/use-aria-announce';
 
 type PreferredLocale = 'en' | 'th' | 'sv' | null;
@@ -115,29 +116,26 @@ export function PreferredLocaleForm(): ReactElement {
     <form onSubmit={handleSubmit} className="space-y-4">
       <fieldset className="space-y-2">
         <legend className="sr-only">{t('title')}</legend>
-        {(['__null', 'en', 'th', 'sv'] as const).map((opt) => {
-          const optValue: PreferredLocale = opt === '__null' ? null : opt;
-          const id = `preferred-locale-${opt}`;
-          const label =
-            opt === '__null' ? t('useTenantDefault') : t(`options.${opt}`);
-          return (
-            <div key={opt} className="flex items-center gap-2">
-              <input
-                type="radio"
-                id={id}
-                name="preferredLocale"
-                value={opt}
-                checked={value === optValue}
-                onChange={() => setValue(optValue)}
-                className="h-4 w-4"
-                disabled={saving}
-              />
-              <Label htmlFor={id} className="cursor-pointer">
-                {label}
-              </Label>
-            </div>
-          );
-        })}
+        <RadioGroup
+          value={value === null ? '__null' : value}
+          onValueChange={(v) => setValue(v === '__null' ? null : (v as 'en' | 'th' | 'sv'))}
+          disabled={saving}
+          className="space-y-2"
+        >
+          {(['__null', 'en', 'th', 'sv'] as const).map((opt) => {
+            const id = `preferred-locale-${opt}`;
+            const label =
+              opt === '__null' ? t('useTenantDefault') : t(`options.${opt}`);
+            return (
+              <div key={opt} className="flex items-center gap-2">
+                <RadioGroupItem id={id} value={opt} />
+                <Label htmlFor={id} className="cursor-pointer">
+                  {label}
+                </Label>
+              </div>
+            );
+          })}
+        </RadioGroup>
       </fieldset>
       <Button type="submit" disabled={saving} className="min-w-[8rem]">
         {saving && (
