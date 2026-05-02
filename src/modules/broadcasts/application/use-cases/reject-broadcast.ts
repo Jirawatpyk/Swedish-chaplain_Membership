@@ -177,7 +177,6 @@ export async function rejectBroadcast(
               },
               'broadcasts.locale_resolve_failed',
             );
-            // Best-effort
           }
         }
         await enqueueBroadcastMemberNotification({

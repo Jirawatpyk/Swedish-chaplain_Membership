@@ -19,7 +19,7 @@ import type { MemberId } from '../../domain/member';
 import type { AuditPort } from '../ports/audit-port';
 import type { MemberRepo } from '../ports/member-repo';
 
-// R5 verify-fix Types-#H8 (2026-05-02): alias canonical Locale instead
+// R5 verify-fix Types-H8 (2026-05-02): alias canonical Locale instead
 // of duplicating the union literal. Adding a 4th locale in
 // `src/i18n/config.ts` now propagates here automatically.
 export type LocaleLiteral = import('@/i18n/config').Locale;

@@ -291,7 +291,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     const email = makeEmail();
     const membersBridge = {
       getMemberPreferredLocale: vi.fn().mockResolvedValue('sv'),
-    } as unknown as Parameters<typeof approveBroadcast>[0]['membersBridge'];
+    } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
     await approveBroadcast(
       {
         tenant,
@@ -312,7 +312,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     const email = makeEmail();
     const membersBridge = {
       getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
-    } as unknown as Parameters<typeof approveBroadcast>[0]['membersBridge'];
+    } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
     await approveBroadcast(
       {
         tenant,
@@ -333,7 +333,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     const email = makeEmail();
     const membersBridge = {
       getMemberPreferredLocale: vi.fn().mockResolvedValue(null),
-    } as unknown as Parameters<typeof approveBroadcast>[0]['membersBridge'];
+    } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
     await approveBroadcast(
       {
         tenant,
@@ -346,6 +346,30 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
       baseInput, // no notificationLocale
     );
     expect(email.memberCalls[0]?.locale).toBe('en');
+  });
+
+  it('locale chain: bridge throw is logged + falls through to input.notificationLocale (R5 Errors-H3)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    const email = makeEmail();
+    const membersBridge = {
+      getMemberPreferredLocale: vi
+        .fn()
+        .mockRejectedValue(new Error('bridge boom')),
+    } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
+    const result = await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audit: audit.port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      { ...baseInput, notificationLocale: 'sv' },
+    );
+    expect(result.ok).toBe(true);
+    expect(email.memberCalls[0]?.locale).toBe('sv'); // input fallback
   });
 
   // ---- send_now path ---------------------------------------------------

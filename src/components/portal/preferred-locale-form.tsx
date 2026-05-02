@@ -23,6 +23,7 @@ import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAriaAnnounce } from '@/hooks/use-aria-announce';
 
 type PreferredLocale = 'en' | 'th' | 'sv' | null;
 type LoadState = 'loading' | 'ready' | 'error';
@@ -32,7 +33,7 @@ export function PreferredLocaleForm(): ReactElement {
   const [state, setState] = useState<LoadState>('loading');
   const [value, setValue] = useState<PreferredLocale>(null);
   const [saving, setSaving] = useState(false);
-  const [announcement, setAnnouncement] = useState('');
+  const { announcement, announce } = useAriaAnnounce();
 
   useEffect(() => {
     let cancelled = false;
@@ -58,12 +59,6 @@ export function PreferredLocaleForm(): ReactElement {
       cancelled = true;
     };
   }, []);
-
-  function announce(msg: string) {
-    setAnnouncement(msg);
-    // Reset after 3s so consecutive saves re-announce.
-    setTimeout(() => setAnnouncement(''), 3000);
-  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -144,8 +139,10 @@ export function PreferredLocaleForm(): ReactElement {
           );
         })}
       </fieldset>
-      <Button type="submit" disabled={saving}>
-        {saving && <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />}
+      <Button type="submit" disabled={saving} className="min-w-[8rem]">
+        {saving && (
+          <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" />
+        )}
         {t('save')}
       </Button>
       <span role="status" aria-live="polite" className="sr-only">

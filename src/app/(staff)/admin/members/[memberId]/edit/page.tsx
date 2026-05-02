@@ -16,6 +16,7 @@ import { ArrowLeftIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { logger } from '@/lib/logger';
 import {
   getMember,
   getMemberPreferredLocale,
@@ -89,6 +90,21 @@ export default async function EditMemberPage({ params }: PageProps) {
     { tenant, memberRepo: f3DrizzleMemberRepo },
     member.memberId,
   );
+  if (!preferredLocaleResult.ok) {
+    // R6 verify-fix Errors-LOW (2026-05-02): log Result-error so a
+    // forensic trail exists when admin loads the page during a Neon
+    // RLS denial / schema drift. Render still proceeds with null
+    // (admin can set fresh value); ops sees the gap in pino stream.
+    logger.warn(
+      {
+        err: preferredLocaleResult.error,
+        tenantId: tenant.slug,
+        memberId: member.memberId,
+        actorUserId: user.id,
+      },
+      'admin.edit_page.preferred_locale_lookup_failed',
+    );
+  }
   const initialPreferredLocale = preferredLocaleResult.ok
     ? preferredLocaleResult.value
     : null;

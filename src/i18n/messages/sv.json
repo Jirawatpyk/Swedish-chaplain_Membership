@@ -475,8 +475,8 @@
     },
     "membersPreferredLocale": {
       "title": "Språk för aviseringar",
-      "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på \"Använd kammarstandard\" för att följa kammarens inställning.",
-      "useTenantDefault": "Använd kammarstandard",
+      "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
+      "useTenantDefault": "Använd kammarens standardspråk",
       "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
       "save": "Spara",
       "savedToast": "Aviseringsspråk uppdaterat.",
@@ -1702,8 +1702,8 @@
   "portal": {
     "preferredLocale": {
       "title": "Språk för aviseringar",
-      "description": "Välj språket för de mejl du får (utskicksgodkännanden, fakturor, lösenordsåterställning). Lämna på \"Använd kammarstandard\" för att följa kammarens inställning.",
-      "useTenantDefault": "Använd kammarstandard",
+      "description": "Välj språket för de mejl du får (utskicksgodkännanden, fakturor, lösenordsåterställning). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
+      "useTenantDefault": "Använd kammarens standardspråk",
       "options": {
         "en": "English",
         "th": "ไทย",

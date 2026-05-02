@@ -137,6 +137,33 @@ describe('setMemberPreferredLocale', () => {
     expect(audit.recordInTx).not.toHaveBeenCalled();
   });
 
+  it('R6 Errors-Tests: outer catch wraps thrown exceptions as repo_error (e.g. runInTenant DB drop)', async () => {
+    const { runInTenant } = (await import('@/lib/db')) as unknown as {
+      runInTenant: ReturnType<typeof vi.fn>;
+    };
+    runInTenant.mockRejectedValueOnce(new Error('db connection dropped'));
+
+    const { memberRepo, audit } = makeDeps({ current: null });
+    const result = await setMemberPreferredLocale(
+      { tenant, memberRepo, audit },
+      {
+        memberId,
+        nextValue: 'th',
+        actor: { kind: 'admin', userId: 'user-admin-1' },
+        requestId: null,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('repo_error');
+      expect((result.error.cause as Error).message).toBe(
+        'db connection dropped',
+      );
+    }
+    expect(audit.recordInTx).not.toHaveBeenCalled();
+  });
+
   it('repo error on findPreferredLocaleInTx surfaces as repo_error', async () => {
     const { memberRepo, audit } = makeDeps({
       current: { error: 'boom' },

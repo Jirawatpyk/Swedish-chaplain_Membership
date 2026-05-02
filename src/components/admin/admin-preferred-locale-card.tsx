@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { useAriaAnnounce } from '@/hooks/use-aria-announce';
 
 type PreferredLocale = 'en' | 'th' | 'sv' | null;
 
@@ -38,12 +39,7 @@ export function AdminPreferredLocaleCard({
   const titleId = `admin-preferred-locale-title-${memberId}`;
   const [value, setValue] = useState<PreferredLocale>(initialValue);
   const [saving, setSaving] = useState(false);
-  const [announcement, setAnnouncement] = useState('');
-
-  function announce(msg: string) {
-    setAnnouncement(msg);
-    setTimeout(() => setAnnouncement(''), 3000);
-  }
+  const { announcement, announce } = useAriaAnnounce();
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -108,8 +104,10 @@ export function AdminPreferredLocaleCard({
             );
           })}
         </fieldset>
-        <Button type="submit" disabled={saving}>
-          {saving && <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />}
+        <Button type="submit" disabled={saving} className="min-w-[8rem]">
+          {saving && (
+            <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" />
+          )}
           {t('save')}
         </Button>
         <span role="status" aria-live="polite" className="sr-only">
