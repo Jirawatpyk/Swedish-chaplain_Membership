@@ -51,6 +51,7 @@ import {
   broadcastsRateLimiter,
   f7AuditAdapter,
   makeUnsubscribeRecipientDeps,
+  peekTokenLang,
   peekTokenTenantId,
   tenantDefaultLocaleFor,
   unsubscribeRecipient,
@@ -85,21 +86,28 @@ interface PageProps {
 /**
  * `noindex,nofollow` is non-negotiable: the URL embeds a signed token that
  * is per-recipient PII proxy. A search-engine crawl would leak the token
- * into archive caches. Title is intentionally generic — the per-state
- * heading lives in the page body, not the tab.
+ * into archive caches.
  *
- * Title is English-only here because Next.js `metadata` is exported
- * synchronously (no async locale resolution). A locale-aware title would
- * require `generateMetadata` which would re-resolve params/headers and
- * cost p95 budget on a SLO-F7-006 < 400ms surface; the per-state heading
- * inside the body already gives the recipient localised context. The
- * `public.unsubscribe.metaTitle` i18n keys are reserved for a future
- * `generateMetadata` migration if the trade-off changes.
+ * Locale-aware title (Phase 9 i18n cleanup): `peekTokenLang` decodes the
+ * unsigned `lang` claim ONLY (no HMAC verify, no DB roundtrip — pure
+ * in-memory parse). A forged `lang` only changes the rendered `<title>`
+ * of the attacker's own request — same surface area as the existing
+ * `peekTokenTenantId` pattern. Falls back to `en` when missing/malformed
+ * so the title always renders even on a corrupt token.
  */
-export const metadata: Metadata = {
-  title: 'Unsubscribe',
-  robots: { index: false, follow: false, noarchive: true },
-};
+export async function generateMetadata({
+  params,
+}: {
+  readonly params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+  const lang = peekTokenLang(token) ?? 'en';
+  const t = await getTranslations({ locale: lang, namespace: 'public.unsubscribe' });
+  return {
+    title: t('metaTitle'),
+    robots: { index: false, follow: false, noarchive: true },
+  };
+}
 
 export type UnsubscribeOutcome =
   | {

@@ -589,6 +589,13 @@
       "when": 1788652800000,
       "tag": "0083_audit_log_member_preferred_locale_changed",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1788825600000,
+      "tag": "0084_audit_log_marketing_consent_retention",
+      "breakpoints": true
     }
   ]
 }

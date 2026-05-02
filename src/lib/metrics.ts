@@ -1034,22 +1034,49 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts.webhook_signature_rejected_total` — abuse / misconfig
-   * canary. NO tenant label (rejected pre-verification).
+   * `broadcasts.webhook_signature_rejected_total{reason}` — abuse /
+   * misconfig canary. NO tenant label (rejected pre-verification).
+   *
+   * Round 3 code-reviewer fix — added `reason` label so secret-rotation
+   * incidents (`bad_signature` spike) read distinctly from kill-switch
+   * blocks (`feature_disabled` spike) on dashboards. Cardinality
+   * bounded ≤4.
+   *
+   *   - `feature_disabled` → kill-switch path; FEATURE_F7_BROADCASTS=false
+   *   - `body_too_large`   → 64 KiB cap exceeded (Content-Length OR
+   *                          realised body)
+   *   - `missing_header`   → svix-id / svix-timestamp / svix-signature
+   *                          absent
+   *   - `bad_signature`    → HMAC mismatch / timestamp window violation
+   *                          / version mismatch / payload-too-large
    */
-  webhookSignatureRejected(): void {
+  webhookSignatureRejected(
+    reason:
+      | 'feature_disabled'
+      | 'body_too_large'
+      | 'missing_header'
+      | 'bad_signature' = 'bad_signature',
+  ): void {
     safeMetric(() => {
       counter(
         'broadcasts_webhook_signature_rejected_total',
         'Resend Broadcasts webhook events rejected at signature verification',
-      ).add(1);
+      ).add(1, { reason });
     });
   },
 
   /**
    * `broadcasts.bounce_rate_per_broadcast{tenant, broadcast_id}` —
    * gauge for sender-reputation watchdog. > 2% warn, > 5% page.
-   * Cardinality bounded by recipient cap × broadcasts/year/tenant.
+   *
+   * Cardinality ceiling (Round 3 observability G4):
+   * `broadcasts/year/tenant × tenant_count`. At STD scale (1 active
+   * tenant SweCham + ≤52 broadcasts/year/tenant cadence assumption)
+   * this caps at ~52 series. Multi-tenant onboarding raises this
+   * linearly; if `tenant_count × 52 > ~500` series re-evaluate by
+   * dropping `broadcast_id` and aggregating to per-tenant only.
+   * `broadcast_id` is a UUID — dashboards must group by `tenant`,
+   * not by `broadcast_id`, for human-readable rollups.
    */
   bounceRatePerBroadcast(
     tenantId: string,
@@ -1069,6 +1096,9 @@ export const broadcastsMetrics = {
   /**
    * `broadcasts.complaint_rate_per_broadcast{tenant, broadcast_id}` —
    * gauge. ≥ 0.1% warn, ≥ 0.5% page, > 5% Q14 SC-005 (b) auto-halt.
+   *
+   * Cardinality ceiling: see `bounceRatePerBroadcast` above —
+   * same shape, same ceiling, same dashboard-grouping guidance.
    */
   complaintRatePerBroadcast(
     tenantId: string,

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { getTranslations } from 'next-intl/server';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { MemberNav } from '@/components/layout/member-nav';
 import { MemberCommandPaletteRoot } from '@/components/shell/member-command-palette-root';
@@ -28,6 +29,8 @@ export default async function MemberLayout({ children }: { children: ReactNode }
     redirect('/admin');
   }
 
+  const tPortal = await getTranslations('shell.portalLabel');
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="flex h-[var(--top-bar-height)] items-center border-b border-border bg-background px-[var(--page-padding-x)] gap-2">
@@ -50,7 +53,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
               href="/portal"
               className="text-body font-semibold tracking-tight shrink-0 max-w-[6rem] truncate sm:max-w-none"
             >
-              {process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} · Member
+              {process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} · {tPortal('member')}
             </Link>
             <MemberNav />
           </div>

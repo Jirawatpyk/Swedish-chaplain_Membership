@@ -13,14 +13,15 @@ describe('staffNavConfig', () => {
     expect(staffNavConfig.sections).toHaveLength(2);
   });
 
-  it('first section has 5 items: Dashboard, Plans, Members, Invoices, Users', () => {
+  it('first section has 6 items: Dashboard, Plans, Members, Invoices, Broadcasts, Users (F7 admin nav added Round 1 review)', () => {
     const mainSection = staffNavConfig.sections[0]!;
-    expect(mainSection.items).toHaveLength(5);
+    expect(mainSection.items).toHaveLength(6);
     expect(mainSection.items[0]!.titleKey).toBe('nav.staff.dashboard');
     expect(mainSection.items[1]!.titleKey).toBe('nav.staff.plans');
     expect(mainSection.items[2]!.titleKey).toBe('nav.staff.members');
     expect(mainSection.items[3]!.titleKey).toBe('nav.staff.invoices');
-    expect(mainSection.items[4]!.titleKey).toBe('nav.staff.users');
+    expect(mainSection.items[4]!.titleKey).toBe('nav.staff.broadcasts');
+    expect(mainSection.items[5]!.titleKey).toBe('nav.staff.users');
   });
 
   it('second section is Settings with only InvoiceSettings (R7 consolidation)', () => {
@@ -61,17 +62,19 @@ describe('staffNavConfig', () => {
 });
 
 describe('memberNavConfig', () => {
-  it('has exactly 1 section with 4 items: Dashboard, Profile, Invoices, Account (R7-B3)', () => {
+  it('has exactly 1 section with 5 items: Dashboard, Profile, Invoices, Broadcasts, Account (F7 e-blasts added)', () => {
     expect(memberNavConfig.sections).toHaveLength(1);
     const section = memberNavConfig.sections[0]!;
-    expect(section.items).toHaveLength(4);
+    expect(section.items).toHaveLength(5);
     expect(section.items[0]!.titleKey).toBe('nav.member.dashboard');
     expect(section.items[1]!.titleKey).toBe('nav.member.profile');
     // R7-B3 — US3 member invoice self-service inserted between
     // Profile and Account to group "company information" (Profile +
     // Invoices) before "personal settings" (Account).
     expect(section.items[2]!.titleKey).toBe('nav.member.invoices');
-    expect(section.items[3]!.titleKey).toBe('nav.member.account');
+    // F7 — E-Blast benefit dashboard entry point.
+    expect(section.items[3]!.titleKey).toBe('nav.member.broadcasts');
+    expect(section.items[4]!.titleKey).toBe('nav.member.account');
   });
 
   it('no NavGroups in member config', () => {

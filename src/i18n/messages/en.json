@@ -58,6 +58,7 @@
     },
     "invite": {
       "title": "Finish setting up your account",
+      "emailLabel": "Email",
       "displayNameLabel": "Your name",
       "passwordLabel": "Choose a password",
       "submit": "Activate account",
@@ -136,7 +137,27 @@
     "userMenu": {
       "label": "Account menu",
       "account": "Account settings",
-      "signOut": "Sign out"
+      "signOut": "Sign out",
+      "signOutFailed": "Sign out failed",
+      "signOutNetworkError": "Network error during sign out"
+    },
+    "portalLabel": {
+      "staff": "Staff",
+      "member": "Member"
+    },
+    "pagination": {
+      "prev": "Go to previous page",
+      "next": "Go to next page",
+      "morePages": "More pages"
+    },
+    "breadcrumbUI": {
+      "label": "Breadcrumb",
+      "more": "More"
+    },
+    "sidebar": {
+      "toggleLabel": "Toggle Sidebar",
+      "title": "Sidebar",
+      "description": "Mobile sidebar"
     },
     "theme": {
       "label": "Toggle theme",
@@ -156,7 +177,8 @@
     "notFound": "We couldn't find what you were looking for.",
     "unauthorized": "You need to sign in to see this.",
     "forbidden": "You don't have permission to see this.",
-    "readOnlyMode": "The system is currently in read-only mode for maintenance."
+    "readOnlyMode": "The system is currently in read-only mode for maintenance.",
+    "errorId": "Error ID: {id}"
   },
   "buttons": {
     "cancel": "Cancel",
@@ -339,9 +361,48 @@
           "benefits": "Benefits",
           "review": "Review"
         },
+        "matrix": {
+          "section": {
+            "brandVisibility": "Brand Visibility",
+            "events": "Events",
+            "additionalBenefits": "Additional Benefits",
+            "partnershipBenefits": "Partnership Benefits"
+          },
+          "eblastPerYear": "E-blast per year",
+          "websitePageType": "Website page type",
+          "homepageLogoCategory": "Homepage logo category",
+          "homepageLogo": "Homepage logo",
+          "directoryListingSize": "Directory listing size",
+          "directoryListing": "Directory listing",
+          "eventDiscountScope": "Event discount scope",
+          "discountScope": "Discount scope",
+          "eventsCoBrandedAccess": "Events co-branded access",
+          "coBrandedAccess": "Co-branded access",
+          "culturalTicketsPerYear": "Cultural tickets per year",
+          "culturalTicketsYear": "Cultural tickets/year",
+          "m2mBenefitsAccess": "M2M benefits access",
+          "businessReferrals": "Business referrals",
+          "tailorMadeServices": "Tailor-made services",
+          "eventTicketsIncluded": "Event tickets included",
+          "eventTickets": "Event tickets",
+          "websiteLogoMonths": "Website logo months",
+          "bannerPerYear": "Banner per year",
+          "boothIncluded": "Booth included",
+          "rollupLogoAtEvents": "Rollup logo at events",
+          "logoOnMerch": "Logo on merch",
+          "newsletterPromotion": "Newsletter promotion",
+          "eNewsletterLogo": "E-newsletter logo",
+          "videoDuration": "Video duration (minutes)",
+          "videoDurationShort": "Video duration",
+          "videoFrequencyScope": "Video frequency scope",
+          "directoryAdPosition": "Directory ad position",
+          "directoryAd": "Directory ad"
+        },
         "labels": {
           "planId": "Plan ID (slug)",
           "planIdHelp": "Lowercase letters, digits, and hyphens only (e.g. diamond, start-up).",
+          "planIdPlaceholder": "e.g. premium",
+          "loadingLabel": "Loading plan list…",
           "planYear": "Plan year",
           "planName": "Plan name",
           "description": "Description",
@@ -417,7 +478,10 @@
         "title": "Edit {planName}",
         "titleGeneric": "Edit plan",
         "save": "Save changes",
-        "saving": "Saving…"
+        "saving": "Saving…",
+        "toast": {
+          "noChanges": "No changes to save."
+        }
       },
       "detail": {
         "titleGeneric": "Plan details"
@@ -430,7 +494,11 @@
         "activateClonedLabel": "Activate cloned plans immediately",
         "submit": "Clone {count} plans",
         "submitting": "Cloning…",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "errors": {
+          "targetYearPopulated": "Target year {year} already has plans. Delete or choose another year.",
+          "noPlans": "Source year {year} has no plans to clone."
+        }
       },
       "confirm": {
         "deactivate": {
@@ -579,6 +647,7 @@
           "audit": "Recent activity"
         },
         "fields": {
+          "memberId": "Member ID",
           "legalEntityType": "Legal entity type",
           "country": "Country",
           "taxId": "Tax ID",
@@ -715,9 +784,11 @@
           "companyName": "Company name",
           "legalEntityType": "Legal entity type",
           "country": "Country (ISO code)",
+          "countryPlaceholder": "TH",
           "taxId": "Tax ID",
           "taxIdHintTH": "Thai 13-digit tax ID with checksum",
           "website": "Website",
+          "websitePlaceholder": "https://…",
           "description": "Description",
           "foundedYear": "Founded year",
           "turnoverThb": "Annual turnover (THB)",

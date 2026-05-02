@@ -334,7 +334,7 @@ export default async function MemberDetailPage({
           <CardContent>
             <dl className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 lg:grid-cols-3">
               <Field
-                label="Member ID"
+                label={t('fields.memberId')}
                 value={member.memberId}
                 mono
                 extra={

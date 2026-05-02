@@ -58,6 +58,7 @@
     },
     "invite": {
       "title": "Slutför ditt konto",
+      "emailLabel": "E-post",
       "displayNameLabel": "Ditt namn",
       "passwordLabel": "Välj ett lösenord",
       "submit": "Aktivera konto",
@@ -136,7 +137,27 @@
     "userMenu": {
       "label": "Kontomeny",
       "account": "Kontoinställningar",
-      "signOut": "Logga ut"
+      "signOut": "Logga ut",
+      "signOutFailed": "Utloggning misslyckades",
+      "signOutNetworkError": "Nätverksfel vid utloggning"
+    },
+    "portalLabel": {
+      "staff": "Personal",
+      "member": "Medlem"
+    },
+    "pagination": {
+      "prev": "Gå till föregående sida",
+      "next": "Gå till nästa sida",
+      "morePages": "Fler sidor"
+    },
+    "breadcrumbUI": {
+      "label": "Brödsmulor",
+      "more": "Mer"
+    },
+    "sidebar": {
+      "toggleLabel": "Växla sidofält",
+      "title": "Sidofält",
+      "description": "Mobilt sidofält"
     },
     "theme": {
       "label": "Växla tema",
@@ -156,7 +177,8 @@
     "notFound": "Vi kunde inte hitta det du letade efter.",
     "unauthorized": "Du måste logga in för att se det här.",
     "forbidden": "Du har inte behörighet att se det här.",
-    "readOnlyMode": "Systemet är i skrivskyddat läge för underhåll."
+    "readOnlyMode": "Systemet är i skrivskyddat läge för underhåll.",
+    "errorId": "Fel-ID: {id}"
   },
   "buttons": {
     "cancel": "Avbryt",
@@ -339,9 +361,48 @@
           "benefits": "Förmåner",
           "review": "Granska"
         },
+        "matrix": {
+          "section": {
+            "brandVisibility": "Varumärkessynlighet",
+            "events": "Evenemang",
+            "additionalBenefits": "Övriga förmåner",
+            "partnershipBenefits": "Partnerskapsförmåner"
+          },
+          "eblastPerYear": "E-utskick per år",
+          "websitePageType": "Webbsidetyp",
+          "homepageLogoCategory": "Logokategori på startsida",
+          "homepageLogo": "Logo på startsida",
+          "directoryListingSize": "Storlek på katalogpost",
+          "directoryListing": "Katalogpost",
+          "eventDiscountScope": "Omfattning av evenemangsrabatt",
+          "discountScope": "Rabattomfattning",
+          "eventsCoBrandedAccess": "Co-branded evenemangstillgång",
+          "coBrandedAccess": "Co-branded-tillgång",
+          "culturalTicketsPerYear": "Kulturbiljetter per år",
+          "culturalTicketsYear": "Kulturbiljetter/år",
+          "m2mBenefitsAccess": "Tillgång till M2M-förmåner",
+          "businessReferrals": "Affärshänvisningar",
+          "tailorMadeServices": "Skräddarsydda tjänster",
+          "eventTicketsIncluded": "Evenemangsbiljetter ingår",
+          "eventTickets": "Evenemangsbiljetter",
+          "websiteLogoMonths": "Antal månader logo på webbplats",
+          "bannerPerYear": "Banner per år",
+          "boothIncluded": "Monter ingår",
+          "rollupLogoAtEvents": "Rollup-logo på evenemang",
+          "logoOnMerch": "Logo på merchandise",
+          "newsletterPromotion": "Nyhetsbrevspromotion",
+          "eNewsletterLogo": "Logo i e-nyhetsbrev",
+          "videoDuration": "Videolängd (minuter)",
+          "videoDurationShort": "Videolängd",
+          "videoFrequencyScope": "Omfattning av videofrekvens",
+          "directoryAdPosition": "Annonsposition i katalogen",
+          "directoryAd": "Katalogannons"
+        },
         "labels": {
           "planId": "Paket-ID (slug)",
           "planIdHelp": "Endast gemener, siffror och bindestreck (t.ex. diamond, start-up).",
+          "planIdPlaceholder": "t.ex. premium",
+          "loadingLabel": "Läser in paketlista…",
           "planYear": "Paketår",
           "planName": "Paketnamn",
           "description": "Beskrivning",
@@ -417,7 +478,10 @@
         "title": "Redigera {planName}",
         "titleGeneric": "Redigera paket",
         "save": "Spara ändringar",
-        "saving": "Sparar…"
+        "saving": "Sparar…",
+        "toast": {
+          "noChanges": "Inga ändringar att spara."
+        }
       },
       "detail": {
         "titleGeneric": "Paketdetaljer"
@@ -430,7 +494,11 @@
         "activateClonedLabel": "Aktivera klonade paket omedelbart",
         "submit": "Klona {count} paket",
         "submitting": "Klonar…",
-        "cancel": "Avbryt"
+        "cancel": "Avbryt",
+        "errors": {
+          "targetYearPopulated": "Målåret {year} har redan paket. Ta bort dem eller välj ett annat år.",
+          "noPlans": "Källåret {year} har inga paket att klona."
+        }
       },
       "confirm": {
         "deactivate": {
@@ -579,6 +647,7 @@
           "audit": "Senaste aktivitet"
         },
         "fields": {
+          "memberId": "Medlems-ID",
           "legalEntityType": "Företagstyp",
           "country": "Land",
           "taxId": "Skatte-ID",
@@ -715,9 +784,11 @@
           "companyName": "Företagsnamn",
           "legalEntityType": "Företagstyp",
           "country": "Land (ISO-kod)",
+          "countryPlaceholder": "TH",
           "taxId": "Skatte-ID",
           "taxIdHintTH": "Thailändskt 13-siffrigt skatte-ID med checksiffra",
           "website": "Webbplats",
+          "websitePlaceholder": "https://…",
           "description": "Beskrivning",
           "foundedYear": "Grundat år",
           "turnoverThb": "Årsomsättning (THB)",

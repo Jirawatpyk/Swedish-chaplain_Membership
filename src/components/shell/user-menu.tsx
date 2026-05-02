@@ -62,10 +62,10 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
         router.push(role === 'member' ? '/portal/sign-in' : '/admin/sign-in');
         router.refresh();
       } else {
-        toast.error('Sign out failed');
+        toast.error(t('signOutFailed'));
       }
     } catch {
-      toast.error('Network error during sign out');
+      toast.error(t('signOutNetworkError'));
     }
   };
 

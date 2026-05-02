@@ -198,3 +198,26 @@ export function peekTokenTenantId(token: string): TenantSlug | null {
     ? unsafeBrandTenantSlug(r.tid)
     : null;
 }
+
+/**
+ * Pre-verify peek for the optional `lang` claim. Mirrors
+ * `peekTokenTenantId` — used by the unsubscribe page's `generateMetadata`
+ * to localise the `<title>` tag without paying for a full HMAC verify.
+ *
+ * Same security constraints as peekTokenTenantId: NEVER trust the value
+ * for any decision other than UI-only locale selection (already public-
+ * facing copy). The HMAC verify pass that follows binds tenant + email +
+ * broadcast atomically; an attacker forging `lang` only changes the
+ * rendered `<title>` of their own request.
+ */
+export function peekTokenLang(token: string): 'en' | 'th' | 'sv' | null {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [version, b64Payload] = parts as [string, string, string];
+  if (version !== TOKEN_VERSION) return null;
+  const r = parsePayloadSegment(b64Payload);
+  if (r === null) return null;
+  const lang = r.lang;
+  return lang === 'en' || lang === 'th' || lang === 'sv' ? lang : null;
+}

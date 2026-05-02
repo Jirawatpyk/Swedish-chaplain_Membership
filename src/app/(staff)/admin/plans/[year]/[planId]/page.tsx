@@ -60,6 +60,7 @@ export default async function PlanDetailPage({
   const { user: currentUser } = await requireSession('staff');
   const { year, planId } = await params;
   const t = await getTranslations('admin.plans');
+  const tM = await getTranslations('admin.plans.create.matrix');
 
   const yearNumber = Number(year);
   if (!Number.isInteger(yearNumber) || yearNumber < 2000 || yearNumber > 2100) {
@@ -209,20 +210,20 @@ export default async function PlanDetailPage({
         <CardContent className="space-y-4">
           <section>
             <h2 className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
-              Brand Visibility
+              {tM('section.brandVisibility')}
             </h2>
             <dl className="mt-2 grid grid-cols-1 gap-2 text-body md:grid-cols-2">
-              <KV label="E-blast per year" value={String(plan.benefit_matrix.eblast_per_year)} raw />
+              <KV label={tM('eblastPerYear')} value={String(plan.benefit_matrix.eblast_per_year)} raw />
               <KV
-                label="Website page type"
+                label={tM('websitePageType')}
                 value={plan.benefit_matrix.website_page_type ?? '—'}
               />
               <KV
-                label="Homepage logo"
+                label={tM('homepageLogo')}
                 value={plan.benefit_matrix.homepage_logo_category ?? '—'}
               />
               <KV
-                label="Directory listing"
+                label={tM('directoryListing')}
                 value={plan.benefit_matrix.directory_listing_size ?? '—'}
               />
             </dl>
@@ -230,17 +231,17 @@ export default async function PlanDetailPage({
           <Separator />
           <section>
             <h2 className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
-              Events
+              {tM('section.events')}
             </h2>
             <dl className="mt-2 grid grid-cols-1 gap-2 text-body md:grid-cols-2">
-              <KV label="Discount scope" value={plan.benefit_matrix.event_discount_scope} />
+              <KV label={tM('discountScope')} value={plan.benefit_matrix.event_discount_scope} />
               <KV
-                label="Co-branded access"
+                label={tM('coBrandedAccess')}
                 value={plan.benefit_matrix.events_cobranded_access ? 'Yes' : 'No'}
                 raw
               />
               <KV
-                label="Cultural tickets/year"
+                label={tM('culturalTicketsYear')}
                 value={String(plan.benefit_matrix.cultural_tickets_per_year)}
                 raw
               />
@@ -251,31 +252,31 @@ export default async function PlanDetailPage({
               <Separator />
               <section>
                 <h2 className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
-                  Partnership
+                  {tM('section.partnershipBenefits')}
                 </h2>
                 <dl className="mt-2 grid grid-cols-1 gap-2 text-body md:grid-cols-2">
                   <KV
-                    label="Event tickets"
+                    label={tM('eventTickets')}
                     value={String(plan.benefit_matrix.partnership.event_tickets_included)}
                     raw
                   />
                   <KV
-                    label="Video duration"
+                    label={tM('videoDurationShort')}
                     value={`${plan.benefit_matrix.partnership.video_duration_minutes} min`}
                     raw
                   />
                   <KV
-                    label="Website logo months"
+                    label={tM('websiteLogoMonths')}
                     value={String(plan.benefit_matrix.partnership.website_logo_months)}
                     raw
                   />
                   <KV
-                    label="Banner per year"
+                    label={tM('bannerPerYear')}
                     value={String(plan.benefit_matrix.partnership.banner_per_year)}
                     raw
                   />
                   <KV
-                    label="Directory ad"
+                    label={tM('directoryAd')}
                     value={plan.benefit_matrix.partnership.directory_ad_position}
                   />
                 </dl>

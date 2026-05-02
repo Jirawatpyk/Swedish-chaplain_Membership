@@ -124,6 +124,7 @@ export function BenefitMatrixEditor({
   disabled = false,
 }: BenefitMatrixEditorProps) {
   const t = useTranslations('admin.plans.create.options');
+  const tM = useTranslations('admin.plans.create.matrix');
 
   const WEBSITE_PAGE_OPTIONS = useMemo(() => [
     { value: '__null__', label: t('websitePageType.none') },
@@ -196,17 +197,17 @@ export function BenefitMatrixEditor({
     <div className="space-y-6">
       <section className="space-y-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Brand Visibility
+          {tM('section.brandVisibility')}
         </h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <NumberField
-            label="E-blast per year"
+            label={tM('eblastPerYear')}
             value={value.eblast_per_year}
             onChange={(n) => patch({ eblast_per_year: n })}
             disabled={disabled}
           />
           <div className="space-y-1">
-            <Label>Website page type</Label>
+            <Label>{tM('websitePageType')}</Label>
             <Select
               value={value.website_page_type ?? '__null__'}
               onValueChange={(v) =>
@@ -217,7 +218,7 @@ export function BenefitMatrixEditor({
               disabled={disabled}
               items={WEBSITE_PAGE_OPTIONS}
             >
-              <SelectTrigger aria-label="Website page type" className="w-full">
+              <SelectTrigger aria-label={tM('websitePageType')} className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -228,7 +229,7 @@ export function BenefitMatrixEditor({
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Homepage logo category</Label>
+            <Label>{tM('homepageLogoCategory')}</Label>
             <Select
               value={value.homepage_logo_category ?? '__null__'}
               onValueChange={(v) =>
@@ -242,7 +243,7 @@ export function BenefitMatrixEditor({
               disabled={disabled}
               items={LOGO_CATEGORY_OPTIONS}
             >
-              <SelectTrigger aria-label="Homepage logo category" className="w-full">
+              <SelectTrigger aria-label={tM('homepageLogoCategory')} className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -253,7 +254,7 @@ export function BenefitMatrixEditor({
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Directory listing size</Label>
+            <Label>{tM('directoryListingSize')}</Label>
             <Select
               value={value.directory_listing_size ?? '__null__'}
               onValueChange={(v) =>
@@ -267,7 +268,7 @@ export function BenefitMatrixEditor({
               disabled={disabled}
               items={DIRECTORY_SIZE_OPTIONS}
             >
-              <SelectTrigger aria-label="Directory listing size" className="w-full">
+              <SelectTrigger aria-label={tM('directoryListingSize')} className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -284,10 +285,10 @@ export function BenefitMatrixEditor({
 
       <section className="space-y-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Events
+          {tM('section.events')}
         </h3>
         <div className="space-y-1">
-          <Label>Event discount scope</Label>
+          <Label>{tM('eventDiscountScope')}</Label>
           <Select
             value={value.event_discount_scope}
             onValueChange={(v) =>
@@ -296,7 +297,7 @@ export function BenefitMatrixEditor({
             disabled={disabled}
             items={DISCOUNT_SCOPE_OPTIONS}
           >
-            <SelectTrigger aria-label="Event discount scope" className="w-full">
+            <SelectTrigger aria-label={tM('eventDiscountScope')} className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -307,13 +308,13 @@ export function BenefitMatrixEditor({
           </Select>
         </div>
         <BoolField
-          label="Events co-branded access"
+          label={tM('eventsCoBrandedAccess')}
           value={value.events_cobranded_access}
           onChange={(b) => patch({ events_cobranded_access: b })}
           disabled={disabled}
         />
         <NumberField
-          label="Cultural tickets per year"
+          label={tM('culturalTicketsPerYear')}
           value={value.cultural_tickets_per_year}
           onChange={(n) => patch({ cultural_tickets_per_year: n })}
           disabled={disabled}
@@ -324,22 +325,22 @@ export function BenefitMatrixEditor({
 
       <section className="space-y-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Additional Benefits
+          {tM('section.additionalBenefits')}
         </h3>
         <BoolField
-          label="M2M benefits access"
+          label={tM('m2mBenefitsAccess')}
           value={value.m2m_benefits_access}
           onChange={(b) => patch({ m2m_benefits_access: b })}
           disabled={disabled}
         />
         <BoolField
-          label="Business referrals"
+          label={tM('businessReferrals')}
           value={value.business_referrals}
           onChange={(b) => patch({ business_referrals: b })}
           disabled={disabled}
         />
         <BoolField
-          label="Tailor-made services"
+          label={tM('tailorMadeServices')}
           value={value.tailor_made_services}
           onChange={(b) => patch({ tailor_made_services: b })}
           disabled={disabled}
@@ -351,29 +352,29 @@ export function BenefitMatrixEditor({
           <Separator />
           <section className="space-y-3">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Partnership Benefits
+              {tM('section.partnershipBenefits')}
             </h3>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <NumberField
-                label="Event tickets included"
+                label={tM('eventTicketsIncluded')}
                 value={value.partnership.event_tickets_included}
                 onChange={(n) => patchPartnership({ event_tickets_included: n })}
                 disabled={disabled}
               />
               <NumberField
-                label="Website logo months"
+                label={tM('websiteLogoMonths')}
                 value={value.partnership.website_logo_months}
                 onChange={(n) => patchPartnership({ website_logo_months: n })}
                 disabled={disabled}
               />
               <NumberField
-                label="Banner per year"
+                label={tM('bannerPerYear')}
                 value={value.partnership.banner_per_year}
                 onChange={(n) => patchPartnership({ banner_per_year: n })}
                 disabled={disabled}
               />
               <div className="space-y-1">
-                <Label>Video duration (minutes)</Label>
+                <Label>{tM('videoDuration')}</Label>
                 <Select
                   value={String(value.partnership.video_duration_minutes)}
                   onValueChange={(v) => {
@@ -385,7 +386,7 @@ export function BenefitMatrixEditor({
                   disabled={disabled}
                   items={VIDEO_DURATION_OPTIONS}
                 >
-                  <SelectTrigger aria-label="Video duration (minutes)" className="w-full">
+                  <SelectTrigger aria-label={tM('videoDuration')} className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -396,7 +397,7 @@ export function BenefitMatrixEditor({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Video frequency scope</Label>
+                <Label>{tM('videoFrequencyScope')}</Label>
                 <Select
                   value={value.partnership.video_frequency_scope}
                   onValueChange={(v) =>
@@ -407,7 +408,7 @@ export function BenefitMatrixEditor({
                   disabled={disabled}
                   items={VIDEO_FREQUENCY_OPTIONS}
                 >
-                  <SelectTrigger aria-label="Video frequency scope" className="w-full">
+                  <SelectTrigger aria-label={tM('videoFrequencyScope')} className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -418,7 +419,7 @@ export function BenefitMatrixEditor({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Directory ad position</Label>
+                <Label>{tM('directoryAdPosition')}</Label>
                 <Select
                   value={value.partnership.directory_ad_position}
                   onValueChange={(v) =>
@@ -430,7 +431,7 @@ export function BenefitMatrixEditor({
                   disabled={disabled}
                   items={DIRECTORY_AD_OPTIONS}
                 >
-                  <SelectTrigger aria-label="Directory ad position" className="w-full">
+                  <SelectTrigger aria-label={tM('directoryAdPosition')} className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -442,31 +443,31 @@ export function BenefitMatrixEditor({
               </div>
             </div>
             <BoolField
-              label="Booth included"
+              label={tM('boothIncluded')}
               value={value.partnership.booth_included}
               onChange={(b) => patchPartnership({ booth_included: b })}
               disabled={disabled}
             />
             <BoolField
-              label="Rollup logo at events"
+              label={tM('rollupLogoAtEvents')}
               value={value.partnership.rollup_logo_at_events}
               onChange={(b) => patchPartnership({ rollup_logo_at_events: b })}
               disabled={disabled}
             />
             <BoolField
-              label="Logo on merch"
+              label={tM('logoOnMerch')}
               value={value.partnership.logo_on_merch}
               onChange={(b) => patchPartnership({ logo_on_merch: b })}
               disabled={disabled}
             />
             <BoolField
-              label="Newsletter promotion"
+              label={tM('newsletterPromotion')}
               value={value.partnership.newsletter_promotion}
               onChange={(b) => patchPartnership({ newsletter_promotion: b })}
               disabled={disabled}
             />
             <BoolField
-              label="E-newsletter logo"
+              label={tM('eNewsletterLogo')}
               value={value.partnership.enewsletter_logo}
               onChange={(b) => patchPartnership({ enewsletter_logo: b })}
               disabled={disabled}

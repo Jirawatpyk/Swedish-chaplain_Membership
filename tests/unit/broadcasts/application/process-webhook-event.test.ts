@@ -566,6 +566,28 @@ describe('process-webhook-event โ€” per-broadcast complaint-rate auto-halt
     );
     expect(breach).toBeDefined();
     expect(breach?.payload['recipientsAtBreach']).toBe(22);
+
+    // Round 3 G2 — assert hashRecipient format on every audit row that
+    // carries `recipientEmailHashed`. Format must be `sha256:<24-hex>`
+    // so dashboards can mass-grep without knowing per-tenant salts.
+    // Plaintext email MUST NOT appear in any audit payload (PDPA §23 +
+    // GDPR Art. 5(1)(c) data minimisation).
+    const hashedEvents = audit.emits.filter((e) =>
+      Object.prototype.hasOwnProperty.call(
+        e.payload ?? {},
+        'recipientEmailHashed',
+      ),
+    );
+    expect(hashedEvents.length).toBeGreaterThan(0);
+    for (const ev of hashedEvents) {
+      const hashed = (ev.payload as { recipientEmailHashed: unknown })
+        .recipientEmailHashed;
+      expect(typeof hashed).toBe('string');
+      expect(hashed).toMatch(/^sha256:[a-f0-9]{24}$/);
+      // Plaintext leak guard.
+      const payloadJson = JSON.stringify(ev.payload);
+      expect(payloadJson).not.toMatch(/@/);
+    }
   });
 
   it('below 20-event noise floor โ’ halt does NOT fire even at 100% complaint rate', async () => {

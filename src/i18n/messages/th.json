@@ -58,6 +58,7 @@
     },
     "invite": {
       "title": "ตั้งค่าบัญชีของคุณ",
+      "emailLabel": "อีเมล",
       "displayNameLabel": "ชื่อของคุณ",
       "passwordLabel": "เลือกรหัสผ่าน",
       "submit": "เปิดใช้งานบัญชี",
@@ -136,7 +137,27 @@
     "userMenu": {
       "label": "เมนูบัญชี",
       "account": "การตั้งค่าบัญชี",
-      "signOut": "ออกจากระบบ"
+      "signOut": "ออกจากระบบ",
+      "signOutFailed": "ออกจากระบบไม่สำเร็จ",
+      "signOutNetworkError": "เกิดข้อผิดพลาดเครือข่ายขณะออกจากระบบ"
+    },
+    "portalLabel": {
+      "staff": "เจ้าหน้าที่",
+      "member": "สมาชิก"
+    },
+    "pagination": {
+      "prev": "ไปหน้าก่อนหน้า",
+      "next": "ไปหน้าถัดไป",
+      "morePages": "หน้าเพิ่มเติม"
+    },
+    "breadcrumbUI": {
+      "label": "เส้นทางนำทาง",
+      "more": "เพิ่มเติม"
+    },
+    "sidebar": {
+      "toggleLabel": "สลับแถบด้านข้าง",
+      "title": "แถบด้านข้าง",
+      "description": "แถบด้านข้างสำหรับมือถือ"
     },
     "theme": {
       "label": "สลับธีม",
@@ -156,7 +177,8 @@
     "notFound": "ไม่พบสิ่งที่คุณค้นหา",
     "unauthorized": "กรุณาเข้าสู่ระบบเพื่อดูเนื้อหานี้",
     "forbidden": "คุณไม่มีสิทธิ์ดูเนื้อหานี้",
-    "readOnlyMode": "ระบบอยู่ในโหมดอ่านอย่างเดียวเพื่อการบำรุงรักษา"
+    "readOnlyMode": "ระบบอยู่ในโหมดอ่านอย่างเดียวเพื่อการบำรุงรักษา",
+    "errorId": "รหัสข้อผิดพลาด: {id}"
   },
   "buttons": {
     "cancel": "ยกเลิก",
@@ -339,9 +361,48 @@
           "benefits": "สิทธิประโยชน์",
           "review": "ตรวจสอบ"
         },
+        "matrix": {
+          "section": {
+            "brandVisibility": "การมองเห็นแบรนด์",
+            "events": "กิจกรรม",
+            "additionalBenefits": "สิทธิประโยชน์เพิ่มเติม",
+            "partnershipBenefits": "สิทธิประโยชน์พาร์ทเนอร์ชิป"
+          },
+          "eblastPerYear": "E-blast ต่อปี",
+          "websitePageType": "ประเภทหน้าเว็บไซต์",
+          "homepageLogoCategory": "หมวดโลโก้บนหน้าแรก",
+          "homepageLogo": "โลโก้บนหน้าแรก",
+          "directoryListingSize": "ขนาดรายชื่อในไดเรกทอรี",
+          "directoryListing": "รายชื่อในไดเรกทอรี",
+          "eventDiscountScope": "ขอบเขตส่วนลดงานอีเวนต์",
+          "discountScope": "ขอบเขตส่วนลด",
+          "eventsCoBrandedAccess": "สิทธิ์เข้างาน Co-Branded",
+          "coBrandedAccess": "สิทธิ์ Co-Branded",
+          "culturalTicketsPerYear": "บัตรงานวัฒนธรรมต่อปี",
+          "culturalTicketsYear": "บัตรงานวัฒนธรรม/ปี",
+          "m2mBenefitsAccess": "สิทธิ์ M2M Benefits",
+          "businessReferrals": "การแนะนำธุรกิจ",
+          "tailorMadeServices": "บริการเฉพาะสมาชิก",
+          "eventTicketsIncluded": "บัตรงานอีเวนต์รวมในแพ็กเกจ",
+          "eventTickets": "บัตรงานอีเวนต์",
+          "websiteLogoMonths": "เดือนแสดงโลโก้บนเว็บไซต์",
+          "bannerPerYear": "แบนเนอร์ต่อปี",
+          "boothIncluded": "บูธรวมในแพ็กเกจ",
+          "rollupLogoAtEvents": "โลโก้บน Rollup ในงาน",
+          "logoOnMerch": "โลโก้บนของที่ระลึก",
+          "newsletterPromotion": "โปรโมชันใน Newsletter",
+          "eNewsletterLogo": "โลโก้ใน E-newsletter",
+          "videoDuration": "ความยาววิดีโอ (นาที)",
+          "videoDurationShort": "ความยาววิดีโอ",
+          "videoFrequencyScope": "ขอบเขตความถี่วิดีโอ",
+          "directoryAdPosition": "ตำแหน่งโฆษณาในไดเรกทอรี",
+          "directoryAd": "โฆษณาในไดเรกทอรี"
+        },
         "labels": {
           "planId": "รหัสแพ็กเกจ (slug)",
           "planIdHelp": "ตัวพิมพ์เล็ก ตัวเลข และเครื่องหมายขีดเท่านั้น (เช่น diamond, start-up)",
+          "planIdPlaceholder": "เช่น premium",
+          "loadingLabel": "กำลังโหลดรายการแพ็กเกจ…",
           "planYear": "ปีของแพ็กเกจ",
           "planName": "ชื่อแพ็กเกจ",
           "description": "คำอธิบาย",
@@ -417,7 +478,10 @@
         "title": "แก้ไข {planName}",
         "titleGeneric": "แก้ไขแพ็กเกจ",
         "save": "บันทึกการเปลี่ยนแปลง",
-        "saving": "กำลังบันทึก…"
+        "saving": "กำลังบันทึก…",
+        "toast": {
+          "noChanges": "ไม่มีการเปลี่ยนแปลงให้บันทึก"
+        }
       },
       "detail": {
         "titleGeneric": "รายละเอียดแพ็กเกจ"
@@ -430,7 +494,11 @@
         "activateClonedLabel": "เปิดใช้งานแพ็กเกจที่คัดลอกทันที",
         "submit": "คัดลอก {count} แพ็กเกจ",
         "submitting": "กำลังคัดลอก…",
-        "cancel": "ยกเลิก"
+        "cancel": "ยกเลิก",
+        "errors": {
+          "targetYearPopulated": "ปีปลายทาง {year} มีแพ็กเกจอยู่แล้ว กรุณาลบหรือเลือกปีอื่น",
+          "noPlans": "ปีต้นทาง {year} ไม่มีแพ็กเกจให้คัดลอก"
+        }
       },
       "confirm": {
         "deactivate": {
@@ -579,6 +647,7 @@
           "audit": "กิจกรรมล่าสุด"
         },
         "fields": {
+          "memberId": "รหัสสมาชิก",
           "legalEntityType": "ประเภทนิติบุคคล",
           "country": "ประเทศ",
           "taxId": "เลขประจำตัวผู้เสียภาษี",
@@ -715,9 +784,11 @@
           "companyName": "ชื่อบริษัท",
           "legalEntityType": "ประเภทนิติบุคคล",
           "country": "ประเทศ (ISO alpha-2)",
+          "countryPlaceholder": "TH",
           "taxId": "เลขประจำตัวผู้เสียภาษี",
           "taxIdHintTH": "เลข 13 หลัก พร้อม checksum ตามเกณฑ์สรรพากร",
           "website": "เว็บไซต์",
+          "websitePlaceholder": "https://…",
           "description": "คำอธิบาย",
           "foundedYear": "ปีก่อตั้ง",
           "turnoverThb": "ยอดขายต่อปี (บาท)",

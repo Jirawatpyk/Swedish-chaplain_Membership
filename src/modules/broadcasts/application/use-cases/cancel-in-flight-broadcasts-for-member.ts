@@ -60,16 +60,27 @@ import type { ClockPort } from '../ports/clock-port';
 export type CancelInFlightForMemberError =
   | { readonly kind: 'cascade.server_error'; readonly message: string };
 
+/**
+ * Round 3 type-design fix — bounded enum mirrors
+ * `SystemCancellationReason` in the F3 cascade port. Kept as its own
+ * type alias here so this F7 use-case does not import F3 types
+ * (Clean Architecture — F7 has no compile dep on F3).
+ */
+export type CascadeCancellationReason =
+  | 'originator_member_deleted'
+  | 'gdpr_erasure_request'
+  | 'pdpa_deletion_request';
+
 export interface CancelInFlightForMemberInput {
   readonly tenant: TenantContext;
   readonly memberId: MemberId;
   /**
    * Reason recorded on each cancelled broadcast. Default
    * `'originator_member_deleted'` matches the spec wording at L353;
-   * F3 callers may pass a more specific string (e.g.
-   * `'gdpr_erasure_request'`) for compliance differentiation.
+   * F3 callers may pass a more specific value for compliance
+   * differentiation (GDPR Art. 17 vs PDPA §33 vs default archive).
    */
-  readonly cancellationReason?: string;
+  readonly cancellationReason?: CascadeCancellationReason;
   readonly requestId: string | null;
   /**
    * Optional actor user id — the F3 admin who initiated the

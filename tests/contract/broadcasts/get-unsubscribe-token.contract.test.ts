@@ -197,6 +197,29 @@ describe('GET /unsubscribe/[token] (T136 contract)', () => {
 
     expect(unsubscribeRecipientMock).not.toHaveBeenCalled();
     expect(f7AuditEmitMock).toHaveBeenCalled();
+
+    // Round 3 G3 — assert sourceIp is HASHED (sha256:<12-hex>) before
+    // persistence and that the raw IP NEVER appears in any audit
+    // payload. T-F7-05 GDPR Art. 5(1)(c) data minimisation invariant.
+    for (const call of f7AuditEmitMock.mock.calls) {
+      const auditEvent = call[1] as { payload?: Record<string, unknown> };
+      const payload = auditEvent?.payload ?? {};
+      // No raw IP — accept either explicit `sourceIpHash` or omitted.
+      expect(payload).not.toHaveProperty('sourceIp');
+      expect(payload).not.toHaveProperty('source_ip');
+      const hashed = payload['sourceIpHash'];
+      if (hashed !== undefined && hashed !== null) {
+        expect(typeof hashed).toBe('string');
+        expect(hashed).toMatch(/^sha256:[a-f0-9]{12}$/);
+      }
+      // Defence-in-depth: stringified payload contains no IPv4/IPv6
+      // octet pattern (rough check — would catch raw IPs left behind
+      // by future contributors).
+      const json = JSON.stringify(payload);
+      expect(json).not.toMatch(
+        /\b(?:\d{1,3}\.){3}\d{1,3}\b|\b(?:[a-f0-9]{1,4}:){2,}[a-f0-9]{1,4}\b/,
+      );
+    }
   });
 
   it('use-case error (e.g. repo_error) → page renders invalid state without crashing', async () => {

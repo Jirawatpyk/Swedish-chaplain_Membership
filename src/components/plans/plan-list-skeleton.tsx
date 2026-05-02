@@ -19,6 +19,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 
 const DEFAULT_ROW_COUNT = 9; // matches the SweCham 2026 seed row count
@@ -44,6 +45,7 @@ export interface PlanListSkeletonProps {
 }
 
 export function PlanListSkeleton({ rowCount = DEFAULT_ROW_COUNT }: PlanListSkeletonProps) {
+  const t = useTranslations('admin.plans.create.labels');
   // `useSyncExternalStore` is the React-recommended pattern for
   // reading a browser media-query preference into state without the
   // "setState in effect" cascading-render warning (lint rule
@@ -91,7 +93,7 @@ export function PlanListSkeleton({ rowCount = DEFAULT_ROW_COUNT }: PlanListSkele
           </div>
         </div>
       ))}
-      <span className="sr-only">Loading plan list…</span>
+      <span className="sr-only">{t('loadingLabel')}</span>
     </div>
   );
 }

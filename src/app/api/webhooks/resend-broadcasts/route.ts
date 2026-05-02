@@ -217,7 +217,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // "no traffic arrived." Tenant unknown at this stage → NULL tenant
     // sig-reject row (same shape as missing-header).
     await auditSignatureReject('feature_disabled', requestId, correlationId);
-    broadcastsMetrics.webhookSignatureRejected();
+    broadcastsMetrics.webhookSignatureRejected('feature_disabled');
     return jsonFeatureDisabled(correlationId);
   }
 
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const declared = Number.parseInt(contentLengthHeader, 10);
     if (!Number.isFinite(declared) || declared > MAX_WEBHOOK_BODY_BYTES) {
       await auditSignatureReject('body_too_large', requestId, correlationId);
-      broadcastsMetrics.webhookSignatureRejected();
+      broadcastsMetrics.webhookSignatureRejected('body_too_large');
       return jsonUnauthorized('body_too_large', correlationId);
     }
   }
@@ -249,7 +249,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     svixTimestamp.length === 0
   ) {
     await auditSignatureReject('missing_header', requestId, correlationId);
-    broadcastsMetrics.webhookSignatureRejected();
+    broadcastsMetrics.webhookSignatureRejected('missing_header');
     return jsonUnauthorized('missing_header', correlationId);
   }
 
@@ -273,6 +273,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // 413 (NOT 401) so chunked / no-Content-Length requests get the
     // same ERR-C2 semantics as the pre-guard above.
     await auditSignatureReject('body_too_large', requestId, correlationId);
+    broadcastsMetrics.webhookSignatureRejected('body_too_large');
     return jsonUnauthorized('body_too_large', correlationId);
   }
 
@@ -294,7 +295,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           ? ((e as { kind: string }).kind)
           : 'bad_signature';
     await auditSignatureReject(kind, requestId, correlationId);
-    broadcastsMetrics.webhookSignatureRejected();
+    broadcastsMetrics.webhookSignatureRejected('bad_signature');
     return jsonUnauthorized('bad_signature', correlationId);
   }
 

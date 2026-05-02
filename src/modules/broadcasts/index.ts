@@ -312,7 +312,7 @@ export {
   tenantDefaultLocaleFor,
   unsubscribeTokenSigner,
 } from './infrastructure/broadcasts-deps';
-export { peekTokenTenantId } from './infrastructure/unsubscribe-token/hmac-signer';
+export { peekTokenTenantId, peekTokenLang } from './infrastructure/unsubscribe-token/hmac-signer';
 export { broadcastsRateLimiter } from './infrastructure/rate-limiter';
 
 // --- Application port — webhook verifier (Phase 7 US5) -------------------

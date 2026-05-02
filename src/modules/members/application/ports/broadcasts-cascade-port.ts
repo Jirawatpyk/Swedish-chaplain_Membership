@@ -20,6 +20,26 @@
 import type { MemberId } from '../../domain/member';
 import type { TenantContext } from '@/modules/tenants';
 
+/**
+ * Round 3 type-design fix — bounded enum for system-initiated cascade
+ * cancellations. Previously this was a free `string` which let any
+ * caller stuff arbitrary text into the audit `payload.cancellationReason`
+ * forensic field. Audit payloads are the system of record for Principle I
+ * forensics; a string-literal union is the right type.
+ *
+ * - `originator_member_deleted` → F3 archive (default per spec § Edge
+ *   Cases L353)
+ * - `gdpr_erasure_request`      → GDPR Art. 17 right-to-erasure
+ *                                 (compliance-differentiated audit row)
+ * - `pdpa_deletion_request`     → PDPA §33 right-to-deletion (Thai
+ *                                 equivalent; differentiated for legal
+ *                                 reporting in TH locale)
+ */
+export type SystemCancellationReason =
+  | 'originator_member_deleted'
+  | 'gdpr_erasure_request'
+  | 'pdpa_deletion_request';
+
 export interface BroadcastsCascadePort {
   /**
    * Cancel every in-flight broadcast owned by `memberId`. Idempotent
@@ -44,7 +64,7 @@ export interface BroadcastsCascadePort {
     tenant: TenantContext,
     memberId: MemberId,
     opts: {
-      readonly cancellationReason?: string;
+      readonly cancellationReason?: SystemCancellationReason;
       readonly initiatedByUserId: string | null;
       readonly requestId: string | null;
     },
