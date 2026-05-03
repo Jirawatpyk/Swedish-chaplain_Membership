@@ -37,6 +37,7 @@ import {
   type InvoiceId,
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
+import type { F4InvoicePaidEvent } from '@/modules/invoicing/domain/f4-invoice-paid-event';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { logger } from '@/lib/logger';
@@ -136,6 +137,21 @@ export interface RecordPaymentDeps {
    * Composition root reads `env.features.f5AsyncReceiptPdf`.
    */
   readonly asyncReceiptPdf?: boolean;
+  /**
+   * F8 Phase 2 Wave A (T008) — cross-module on-paid hooks. Fired in
+   * registration order INSIDE the same `withTx` after applyPayment +
+   * audit emit + outbox enqueue + registration-fee flip have all
+   * succeeded, but BEFORE the tx commits. Any rejection rolls back the
+   * entire transaction (invoice stays `issued`, audit + outbox + reg-
+   * fee flip are unwound). Atomic by construction — no separate
+   * compensating action needed on the listener side.
+   *
+   * Registered at composition time via `makeRecordPaymentDeps(..., onPaidCallbacks)`.
+   * F8 wires its `complete-cycle-on-paid` adapter here per research.md R12.
+   * Default `[]` keeps the existing F4 admin manual mark-paid + F5
+   * webhook code paths unchanged for callers that don't pass callbacks.
+   */
+  readonly onPaidCallbacks?: ReadonlyArray<(evt: F4InvoicePaidEvent) => Promise<void>>;
 }
 
 export async function recordPayment(
@@ -481,6 +497,39 @@ export async function recordPayment(
         input.tenantId,
         loaded.memberId,
       );
+    }
+
+    // F8 Phase 2 Wave A (T008) — fire registered on-paid callbacks
+    // INSIDE the still-open withTx, after every other side-effect
+    // (applyPayment, audit, outbox enqueue, registration-fee flip)
+    // has succeeded. A callback rejection propagates out of `withTx`
+    // and rolls back the entire transaction — F4 invoice goes back to
+    // `issued`, audit + outbox + reg-fee flip are unwound. Atomic
+    // coordination per Constitution Principle VIII (Reliability).
+    //
+    // Listeners must keep their own work transactional via the same
+    // `tx` if they touch other tables; they receive only the canonical
+    // event payload here, not the raw tx handle, to keep the cross-
+    // module contract narrow + framework-free (Principle III).
+    //
+    // The non-null assertions on `loaded.total` and `updated.paidAt`
+    // are guarded upstream: `no_snapshot_on_invoice` returns early when
+    // `loaded.total` is null (line ~204), and `applyPayment` always
+    // populates `paid_at` on a successful issued→paid UPDATE (RETURNING
+    // contract). A failed adapter would have thrown before this point.
+    const callbacks = deps.onPaidCallbacks;
+    if (callbacks && callbacks.length > 0) {
+      const evt: F4InvoicePaidEvent = {
+        tenantId: input.tenantId,
+        invoiceId,
+        memberId: loaded.memberId,
+        paidAt: updated.paidAt ?? deps.clock.nowIso(),
+        amountSatang: loaded.total!.satang,
+        currency: loaded.currency,
+      };
+      for (const cb of callbacks) {
+        await cb(evt);
+      }
     }
 
     // `applyPayment` returns the refreshed row via RETURNING — no need

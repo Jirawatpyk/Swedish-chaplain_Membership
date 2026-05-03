@@ -51,6 +51,7 @@ import {
 } from './record-payment';
 import { makeRecordPaymentDeps } from '../invoicing-deps';
 import type { Invoice } from '@/modules/invoicing/domain/invoice';
+import type { F4InvoicePaidEvent } from '@/modules/invoicing/domain/f4-invoice-paid-event';
 
 /** F5-surface payment-method discriminator. Widen as new rails land. */
 export type ProcessorPaymentMethod = 'stripe_card' | 'stripe_promptpay';
@@ -105,6 +106,16 @@ export interface MarkPaidFromProcessorInput {
    * "MAY suppress" optional override.
    */
   readonly suppressReceiptEmail?: boolean;
+  /**
+   * F8 Phase 2 Wave A (T008) — cross-module on-paid hooks forwarded
+   * verbatim to `makeRecordPaymentDeps`. F8's `complete-cycle-on-paid`
+   * adapter is registered here at the F5 webhook composition root so
+   * the renewal cycle transition lands inside the same atomic tx as
+   * the F4 invoice `issued → paid` flip (Complexity Tracking #3 +
+   * research.md R12). Any callback rejection rolls back the entire
+   * webhook tx including the F4 flip — no compensating action needed.
+   */
+  readonly onPaidCallbacks?: ReadonlyArray<(evt: F4InvoicePaidEvent) => Promise<void>>;
 }
 
 export type MarkPaidFromProcessorError = RecordPaymentError;
@@ -138,7 +149,11 @@ function describeProcessorMethod(
 export async function markPaidFromProcessor(
   input: MarkPaidFromProcessorInput,
 ): Promise<Result<Invoice, MarkPaidFromProcessorError>> {
-  const deps = makeRecordPaymentDeps(input.tenantId, input.tx);
+  const deps = makeRecordPaymentDeps(
+    input.tenantId,
+    input.tx,
+    input.onPaidCallbacks,
+  );
   return recordPayment(deps, {
     tenantId: input.tenantId,
     actorUserId: input.actorUserId,

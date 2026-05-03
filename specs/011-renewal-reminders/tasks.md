@@ -26,10 +26,10 @@
 
 ### F4 Callback Coordinated PR (per Complexity Tracking #3)
 
-- [ ] T007 Author F4 callback contract test at `tests/contract/f4-on-paid-callbacks.contract.test.ts` — assert callback fires once per state-transition + rollback path on callback failure
-- [ ] T008 Extend F4's `markPaidFromProcessor` use-case in `src/modules/invoicing/application/mark-paid-from-processor.ts` with optional `onPaidCallbacks: ((evt: F4InvoicePaidEvent) => Promise<void>)[]` parameter
-- [ ] T009 Add `F4InvoicePaidEvent` type to F4 barrel `src/modules/invoicing/index.ts` (canonical shape per research.md R12)
-- [ ] T010 Run F4 contract test green; merge F4 callback PR to main before continuing F8 work
+- [X] T007 Author F4 callback contract test at `tests/contract/f4-on-paid-callbacks.contract.test.ts` — assert callback fires once per state-transition + rollback path on callback failure (5 contracts: fires-once + canonical-shape + rollback + sequential-order + opt-in regression)
+- [X] T008 Extend F4's `markPaidFromProcessor` use-case in `src/modules/invoicing/application/mark-paid-from-processor.ts` with optional `onPaidCallbacks: ((evt: F4InvoicePaidEvent) => Promise<void>)[]` parameter — DEVIATION: callbacks live on `RecordPaymentDeps` (composition-root surface) instead of input shape, threaded through `makeRecordPaymentDeps(tenantId, externalTx?, onPaidCallbacks?)` so admin manual mark-paid + F5 webhook + F8 manual mark-paid all benefit. Wrapper input forwards via 3rd param. Callback invocation host = `record-payment.ts` after `applyPayment` + audit + outbox + reg-fee flip, before `return ok(updated)` inside withTx (atomic rollback semantics).
+- [X] T009 Add `F4InvoicePaidEvent` type to F4 barrel `src/modules/invoicing/index.ts` (canonical shape per research.md R12) — file at `src/modules/invoicing/domain/f4-invoice-paid-event.ts`; barrel `export type` only. Fields: `tenantId, invoiceId, memberId, paidAt (ISO 8601 UTC), amountSatang (bigint), currency ('THB' literal)`. `paymentId` omitted from MVP shape — F8 listeners only need `invoiceId` to resolve linked cycle.
+- [X] T010 Run F4 contract test green; merge F4 callback PR to main before continuing F8 work — 5/5 contract tests GREEN, 684/684 F4+F5 unit tests GREEN (zero regression), `pnpm typecheck` GREEN, `pnpm lint` GREEN. Solo-maintainer substitute (Constitution v1.4.0 § Governance): kept on `011-renewal-reminders` branch instead of separate PR; one Wave-A commit per plan commit strategy.
 
 ### F2 Scheduled-Plan-Change Coordinated Code PR (per Complexity Tracking #4)
 

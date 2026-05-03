@@ -266,10 +266,21 @@ export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
  *   tx instead of opening its own. Used by the F5 → F4 invoicing-bridge
  *   to keep the payment-row update and the invoice `issued → paid` flip
  *   in a SINGLE transaction (Reliability D-03, Group E2b).
+ * @param onPaidCallbacks - optional list of cross-module on-paid hooks.
+ *   F8 Phase 2 Wave A (T008) — fired inside the same withTx after
+ *   applyPayment + audit + outbox + registration-fee flip succeed,
+ *   before the tx commits. Any rejection rolls back the whole tx.
+ *   F8's composition root will register a `complete-cycle-on-paid`
+ *   callback here per research.md R12. Defaults to undefined (no
+ *   callbacks) so existing F4 admin manual mark-paid + F5 webhook
+ *   call sites are unchanged when callers don't pass the parameter.
  */
 export function makeRecordPaymentDeps(
   tenantId: string,
   externalTx?: unknown,
+  onPaidCallbacks?: ReadonlyArray<
+    (evt: import('@/modules/invoicing/domain/f4-invoice-paid-event').F4InvoicePaidEvent) => Promise<void>
+  >,
 ): RecordPaymentDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId, externalTx),
@@ -284,6 +295,7 @@ export function makeRecordPaymentDeps(
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     receiptPdfRenderEnqueue: receiptPdfRenderEnqueueAdapter,
     asyncReceiptPdf: env.features.f5AsyncReceiptPdf,
+    ...(onPaidCallbacks !== undefined ? { onPaidCallbacks } : {}),
   };
 }
 
