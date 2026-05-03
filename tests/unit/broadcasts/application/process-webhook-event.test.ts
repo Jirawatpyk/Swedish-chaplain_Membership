@@ -465,6 +465,95 @@ describe('process-webhook-event (T150 GREEN)', () => {
     expect(quotaAudit?.payload['quotaYear']).toBe(2026);
   });
 
+  // R6 staff-review W-T4 fix — Bangkok timezone boundary cases for
+  // FR-007 quota-year derivation. The prior single test fixed the
+  // clock at 2026-06-15 which yielded 2026 in BOTH UTC and BKK, so a
+  // regression that swapped `tenantTz` for UTC would not be caught.
+  // These two tests pin the Asia/Bangkok boundary explicitly.
+  it('Bangkok new-year boundary: 2026-12-31T17:01:00Z (= 2027-01-01 00:01 BKK) → quotaYear 2027', async () => {
+    const NY_BKK = new Date('2026-12-31T17:01:00Z');
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({ estimatedRecipientCount: 1 }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: {
+        broadcastId,
+        sent: 1,
+        delivered: 1,
+        bounced: 0,
+        softBounced: 0,
+        complained: 0,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => NY_BKK },
+      },
+      {
+        broadcastId,
+        event: { ...buildEvent('delivered'), createdAtUnixSeconds: Math.floor(NY_BKK.getTime() / 1000) },
+        requestId: null,
+      },
+    );
+    expect(result.ok).toBe(true);
+    const quotaAudit = audit.emits.find(
+      (e) => e.eventType === 'broadcast_quota_consumed',
+    );
+    expect(quotaAudit?.payload['quotaYear']).toBe(2027);
+  });
+
+  it('Bangkok pre-rollover boundary: 2026-12-31T16:59:00Z (= 2026-12-31 23:59 BKK) → quotaYear 2026', async () => {
+    const PRE_NY_BKK = new Date('2026-12-31T16:59:00Z');
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({ estimatedRecipientCount: 1 }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: {
+        broadcastId,
+        sent: 1,
+        delivered: 1,
+        bounced: 0,
+        softBounced: 0,
+        complained: 0,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => PRE_NY_BKK },
+      },
+      {
+        broadcastId,
+        event: { ...buildEvent('delivered'), createdAtUnixSeconds: Math.floor(PRE_NY_BKK.getTime() / 1000) },
+        requestId: null,
+      },
+    );
+    expect(result.ok).toBe(true);
+    const quotaAudit = audit.emits.find(
+      (e) => e.eventType === 'broadcast_quota_consumed',
+    );
+    expect(quotaAudit?.payload['quotaYear']).toBe(2026);
+  });
+
   it('event after broadcast already sent: row recorded, no transition + outcome=broadcast_terminal', async () => {
     const broadcasts = makeBroadcastsRepo({
       currentBroadcast: baseBroadcast({
@@ -808,8 +897,8 @@ describe('process-webhook-event โ€” dup-replay on already-sent broadcast (
   });
 });
 
-describe('process-webhook-event โ€” outbox atomicity (ERR-C1 rollback coverage, TEST-G1)', () => {
-  it('outbox INSERT failure inside the tx surfaces as Result.err (broadcast_sent rollback)', async () => {
+describe('process-webhook-event — outbox best-effort + observability fallback (R6 B4 fix; TEST-G1)', () => {
+  it('outbox failure DOES NOT roll back broadcast_sent — AS3 via logger.error + alert (best-effort by design)', async () => {
     // Round 2 fix (ERR-C1) made the outbox INSERT participate in the
     // broadcastsRepo.withTx scope. This test locks the rollback
     // contract: if sendMemberEmail throws, the entire withTx callback
@@ -875,21 +964,34 @@ describe('process-webhook-event โ€” outbox atomicity (ERR-C1 rollback cove
       },
     );
 
-    // CRITICAL invariant: the outbox throw rolls back the withTx
-    // callback. The use-case returns Result.err, NOT Result.ok with a
-    // partial commit. Outer catch in process-webhook-event wraps the
-    // throw as `process_webhook.server_error`.
+    // R6 staff-review B4 fix — the prior comment block claimed this
+    // test pinned the rollback contract; in reality
+    // `enqueueDeliverySummaryEmail` (process-webhook-event.ts:659)
+    // wraps `sendMemberEmail` in try/catch and emits
+    // `broadcasts.delivered_email.enqueue_failed` via logger.error.
+    // The reason the helper swallows is to prevent a transient
+    // outbox/Postgres outage from cascading into a Resend webhook 5xx
+    // storm (Resend would retry, the outbox would still be down, and
+    // broadcasts would never transition to `sent` — worse than
+    // missing one summary email).
     //
-    // NOTE: The current `enqueueDeliverySummaryEmail` helper has a
-    // best-effort try/catch around `sendMemberEmail` (so an outage in
-    // the dispatcher doesn't 5xx Resend). This test asserts the
-    // ROLLBACK contract โ€” if the helper's try/catch is later removed
-    // to make the outbox INSERT a hard requirement, this test passes.
-    // Today's implementation is "best-effort" so the test asserts
-    // result.ok with the audit row + transition committed. Either
-    // semantic is defensible; this test pins the CURRENT behavior so
-    // a future contributor flipping the invariant (in either
-    // direction) is forced through review.
+    // AS3 invariant ("every sending → sent produces a summary email")
+    // is therefore enforced via OBSERVABILITY (logger.error +
+    // `f7-broadcasts.delivered_email_enqueue_failures` alert + manual
+    // re-enqueue runbook), NOT transaction atomicity. This test pins
+    // THAT contract:
+    //   1. result.ok === true (sent transition committed despite
+    //      outbox failure — the alternative is a 5xx storm).
+    //   2. broadcast_sent + broadcast_quota_consumed audit rows
+    //      committed in the tx alongside the transition.
+    //
+    // The logger.error emit IS the AS3 enforcement signal — a
+    // regression that drops it would break the alert chain silently.
+    // A `logger.error` spy assertion would tighten this further but
+    // requires `vi.mock` on `@/lib/logger` which collides with
+    // unrelated suite setup; the live-pino integration test is the
+    // load-bearing observability assertion (covered via
+    // tests/integration/broadcasts/webhook-idempotency.test.ts).
     expect(result.ok).toBe(true);
     if (result.ok && result.value.kind === 'recorded') {
       expect(result.value.transitionedToSent).toBe(true);

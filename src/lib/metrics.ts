@@ -980,12 +980,23 @@ export const broadcastsMetrics = {
 
   /**
    * `broadcasts.cron.skipped.count{tenant, reason}` — cron tick
-   * observability. `advisory_lock_held` > 5 / 5min = potential
-   * concurrent-tick bug.
+   * observability.
+   *
+   * R6 staff-review W-P5 fix — `'advisory_lock_held'` removed from the
+   * union. The dispatch route uses `FOR UPDATE SKIP LOCKED` on the
+   * eligible-row scan AND `pg_advisory_xact_lock` per-(tenant,
+   * broadcast); a row contested by another worker is never returned to
+   * the second scanner in the first place, so the "skipped because
+   * lock held" bucket has no emission site by design. Keeping a label
+   * with no call-site path was actively harmful: the corresponding
+   * alert rule in `docs/observability.md` (`advisory_lock_held > 5 in
+   * 5min`) would never fire, masking real concurrency bugs if they
+   * ever surfaced. The alert rule was removed alongside the label
+   * (see docs/observability.md § F7 alerts post-R6).
    */
   cronSkippedCount(
     tenantId: string,
-    reason: 'kill_switch' | 'advisory_lock_held' | 'no_due_rows',
+    reason: 'kill_switch' | 'no_due_rows',
   ): void {
     safeMetric(() => {
       counter(

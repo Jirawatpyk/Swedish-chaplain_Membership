@@ -35,6 +35,14 @@ const tenant = asTenantContext('test-tenant');
 const memberId = 'mem-archived-1' as BroadcastsRepo extends infer _ ? string : never;
 const NOW = new Date('2026-05-02T12:00:00Z');
 
+// R6 staff-review W-T2 fix — drop the `as unknown as Broadcast` cast.
+// The prior fixture carried stale field names (`segmentDefinitionId`,
+// `quotaYearReserved`, `rejectionReasonHash`, `sendStartedAt`) that
+// did not match the `Broadcast` interface in
+// `src/modules/broadcasts/domain/broadcast.ts`. The cast made
+// TypeScript silently accept the drift; removing it forces compile-
+// time alignment with the real interface and surfaces future schema
+// changes immediately.
 function makeBroadcast(
   id: string,
   status: 'submitted' | 'approved' | 'sending',
@@ -42,7 +50,6 @@ function makeBroadcast(
   return {
     broadcastId: asBroadcastId(id),
     tenantId: tenant.slug,
-    status,
     requestedByMemberId: memberId,
     requestedByMemberPlanIdSnapshot: 'plan-snap-1',
     submittedByUserId: 'user-1',
@@ -53,26 +60,32 @@ function makeBroadcast(
     fromName: 'Test',
     replyToEmail: unsafeBrandEmailLower('reply@example.com'),
     segmentType: 'all_members',
-    segmentDefinitionId: null,
+    segmentParams: null,
     customRecipientEmails: null,
     estimatedRecipientCount: 100,
-    quotaYearReserved: 2026,
-    quotaYearConsumed: null,
-    rejectionReasonHash: null,
+    status,
+    submittedAt: NOW,
+    approvedAt: null,
+    approvedByUserId: null,
+    rejectedAt: null,
+    rejectedByUserId: null,
     rejectionReason: null,
-    cancellationReason: null,
-    cancelledByUserId: null,
     scheduledFor: null,
+    sendingStartedAt: null,
+    sentAt: null,
+    cancelledAt: null,
+    cancelledByUserId: null,
+    cancellationReason: null,
+    failedToDispatchAt: null,
+    failureReason: null,
+    quotaYearConsumed: null,
+    quotaConsumedAt: null,
     resendAudienceId: null,
     resendBroadcastId: null,
-    sentAt: null,
-    sendStartedAt: null,
-    cancelledAt: null,
-    rejectedAt: null,
-    submittedAt: NOW,
+    retentionYears: 5,
     createdAt: NOW,
     updatedAt: NOW,
-  } as unknown as Broadcast;
+  };
 }
 
 function makeStubRepo(opts: {

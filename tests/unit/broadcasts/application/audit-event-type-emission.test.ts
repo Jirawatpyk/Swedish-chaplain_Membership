@@ -37,15 +37,20 @@ const ROOTS_TO_GREP = [
  * MUST carry a code-comment justification — if you find yourself adding
  * a new entry here, double-check that the omission is intentional and
  * not a regression from an earlier round.
+ *
+ * R6 staff-review W-S2/W-S3 — verified emission sites for previously
+ * suspected gaps:
+ *   - `broadcast_resend_audience_drift` → emitted in
+ *     `dispatch-scheduled-broadcast.ts:800` (no longer allow-listed).
+ *   - `broadcast_resend_drift_check_unverifiable` → emitted at
+ *     `dispatch-scheduled-broadcast.ts:764`.
+ *   - `broadcast_cross_tenant_probe` → emitted at
+ *     `enforce-tenant-context.ts:65,81`.
+ *
+ * The list is intentionally empty post-R6 — every F7 audit event type
+ * has a verified emission site in the production tree.
  */
-const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
-  // F7.1-IMP5 — audience drift on idempotency replay; the metric
-  // counterpart (`broadcastsMetrics.audienceDriftDetected`) IS wired in
-  // dispatch-scheduled-broadcast for early observability, but the audit
-  // row emission lands with the F7.1 polish pass. Documented in
-  // application/ports/audit-port.ts L61.
-  'broadcast_resend_audience_drift',
-];
+const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [];
 
 function listTsFiles(root: string): string[] {
   const out: string[] = [];

@@ -511,7 +511,7 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
   });
 
   it('subject empty / whitespace-only โ’ broadcast_subject_empty', async () => {
-    const { deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const { audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
     const result = await submitBroadcast(deps, {
       ...baseInput,
       subject: '   ',
@@ -519,6 +519,40 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('broadcast_subject_empty');
+    }
+    // R6 W-R3 — audit event type now matches the Result kind.
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_subject_empty'),
+    ).toBeDefined();
+  });
+
+  // R6 staff-review W-T6 fix — subject-length boundary tests. The
+  // pre-fix suite tested 201 (rejected) but not the boundary at
+  // exactly 200 (should pass). An off-by-one regression that flipped
+  // the predicate from `> 200` to `>= 200` would not have been
+  // caught.
+  it('subject boundary: exactly 200 chars → accepted (no broadcast_subject_too_long)', async () => {
+    const { deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const exact = 'a'.repeat(200);
+    const result = await submitBroadcast(deps, {
+      ...baseInput,
+      subject: exact,
+    });
+    if (!result.ok) {
+      expect(result.error.kind).not.toBe('broadcast_subject_too_long');
+    }
+  });
+
+  it('subject boundary: 201 chars → broadcast_subject_too_long', async () => {
+    const { deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const justOver = 'a'.repeat(201);
+    const result = await submitBroadcast(deps, {
+      ...baseInput,
+      subject: justOver,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_subject_too_long');
     }
   });
 

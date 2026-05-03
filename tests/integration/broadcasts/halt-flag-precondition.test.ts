@@ -16,12 +16,23 @@ import { clearHalt } from '@/modules/broadcasts/application/use-cases/clear-halt
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { rfc5321EmailValidator } from '@/modules/broadcasts/infrastructure/email-validator/rfc5321-email-validator';
 import type { HtmlSanitizerPort } from '@/modules/broadcasts/application/ports/html-sanitizer-port';
+// R6 staff-review W-T3 fix — replaced the regex-based stub sanitizer
+// with the real `dompurifySanitizer` so the halt-flag + sanitiser
+// composite path is tested with the same allowlist that runs in
+// production. The stub only stripped `<script>` and would let any
+// other forbidden tag (`<iframe>`, `<style>`, `<form>`, all `on*`
+// handlers, inline `style`) through — masking a regression where the
+// halt precondition fires correctly but the sanitiser allowlist
+// drifts.
+import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer';
 
-const stubSanitizer: HtmlSanitizerPort = {
-  sanitize(html: string): string {
-    return html.replace(/<script[\s\S]*?<\/script>/gi, '');
-  },
-};
+// Kept as an alias of the real sanitiser so the rest of the file's
+// `sanitizer: stubSanitizer` references stay readable. If a future
+// test legitimately needs a permissive stub (e.g. testing that the
+// sanitiser is the SOLE defence and the use-case must NOT block
+// untrusted HTML on its own), introduce a separate fixture rather
+// than weakening this one.
+const stubSanitizer: HtmlSanitizerPort = dompurifySanitizer;
 import { asTenantContext } from '@/modules/tenants';
 import type { AuditEmitInput, AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type { BroadcastsRepo, NewBroadcastDraftInput } from '@/modules/broadcasts/application/ports/broadcasts-repo';

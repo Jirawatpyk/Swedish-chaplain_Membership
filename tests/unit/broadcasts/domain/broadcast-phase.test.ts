@@ -128,4 +128,94 @@ describe('phaseOf', () => {
       expect(phase.failureReason).toBe('audience_post_suppression_empty');
     }
   });
+
+  // R6 staff-review W-T5 fix — `approved` and `sending` phase coverage.
+  // Both phases have non-null timestamp invariants that the prior
+  // suite did not pin, leaving `phaseOf` regressions in those branches
+  // undetected.
+  it('approved status with all required timestamps → kind=approved', () => {
+    const submittedAt = new Date('2026-02-01T00:00:00Z');
+    const approvedAt = new Date('2026-02-02T00:00:00Z');
+    const phase = phaseOf({
+      ...baseBroadcast,
+      status: 'approved',
+      submittedAt,
+      approvedAt,
+      approvedByUserId: 'admin-1',
+    });
+    expect(phase.kind).toBe('approved');
+    if (phase.kind === 'approved') {
+      expect(phase.submittedAt).toBe(submittedAt);
+      expect(phase.approvedAt).toBe(approvedAt);
+      expect(phase.approvedByUserId).toBe('admin-1');
+    }
+  });
+
+  it('approved status with null approvedAt → throws invariant violation', () => {
+    expect(() =>
+      phaseOf({
+        ...baseBroadcast,
+        status: 'approved',
+        submittedAt: new Date(),
+        approvedAt: null,
+        approvedByUserId: 'admin-1',
+      }),
+    ).toThrow(/BroadcastPhaseInvariantViolation/);
+  });
+
+  it('approved status with null approvedByUserId → throws invariant violation', () => {
+    expect(() =>
+      phaseOf({
+        ...baseBroadcast,
+        status: 'approved',
+        submittedAt: new Date(),
+        approvedAt: new Date(),
+        approvedByUserId: null,
+      }),
+    ).toThrow(/BroadcastPhaseInvariantViolation/);
+  });
+
+  it('sending status with sendingStartedAt + approvedAt → kind=sending', () => {
+    const sendingStartedAt = new Date('2026-02-03T00:00:00Z');
+    const approvedAt = new Date('2026-02-02T00:00:00Z');
+    const phase = phaseOf({
+      ...baseBroadcast,
+      status: 'sending',
+      submittedAt: new Date('2026-02-01T00:00:00Z'),
+      approvedAt,
+      approvedByUserId: 'admin-1',
+      sendingStartedAt,
+    });
+    expect(phase.kind).toBe('sending');
+    if (phase.kind === 'sending') {
+      expect(phase.sendingStartedAt).toBe(sendingStartedAt);
+      expect(phase.approvedAt).toBe(approvedAt);
+    }
+  });
+
+  it('sending status with null sendingStartedAt → throws invariant violation', () => {
+    expect(() =>
+      phaseOf({
+        ...baseBroadcast,
+        status: 'sending',
+        submittedAt: new Date(),
+        approvedAt: new Date(),
+        approvedByUserId: 'admin-1',
+        sendingStartedAt: null,
+      }),
+    ).toThrow(/BroadcastPhaseInvariantViolation/);
+  });
+
+  it('sending status with null approvedAt → throws invariant violation', () => {
+    expect(() =>
+      phaseOf({
+        ...baseBroadcast,
+        status: 'sending',
+        submittedAt: new Date(),
+        approvedAt: null,
+        approvedByUserId: 'admin-1',
+        sendingStartedAt: new Date(),
+      }),
+    ).toThrow(/BroadcastPhaseInvariantViolation/);
+  });
 });

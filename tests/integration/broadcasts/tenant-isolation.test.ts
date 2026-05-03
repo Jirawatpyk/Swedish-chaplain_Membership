@@ -22,9 +22,11 @@
  *   - broadcast_segment_definitions     — SELECT / UPDATE / INSERT
  *
  * Cross-tenant-probe audit emission (`broadcast_cross_tenant_probe`,
- * `broadcast_cross_member_probe`) is deferred to the application
- * use-case layer (Phase 3+ T070). The RLS table-level guarantee tested
- * here is independent of use-case existence.
+ * `broadcast_cross_member_probe`) is wired in
+ * `src/modules/broadcasts/application/use-cases/enforce-tenant-context.ts`
+ * (R6 staff-review W-S3 verified — emit sites at lines 65, 81). The
+ * RLS table-level guarantee tested here is the layer-1 defence; the
+ * use-case audit emit is the layer-2 (application boundary) defence.
  *
  * Sibling files:
  *   - tests/integration/invoicing/tenant-isolation.test.ts (F4)

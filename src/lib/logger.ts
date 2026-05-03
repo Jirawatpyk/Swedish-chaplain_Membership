@@ -333,10 +333,15 @@ export const REDACT_PATHS = [
   // Member-authored broadcast content. body_html is sanitised at
   // Application boundary but raw HTML never reaches log sinks.
   // Per FR-042 broadcast events log broadcast_id + counts only.
+  // R6 staff-review B3 fix — added `*.*.body_html` depth-2 to cover
+  // the `audit.payload.body_html` audit-emit shape that legitimately
+  // could be produced by `logger.info(auditEvent, ...)`.
   'body_html',
   '*.body_html',
+  '*.*.body_html',
   'bodyHtml',
   '*.bodyHtml',
+  '*.*.bodyHtml',
   // T199 M-1 — `body_source` carries the raw Tiptap editor content
   // PRE-sanitisation. If a caller logs the full Broadcast domain
   // object, body_source would leak unsanitised HTML / member content.
@@ -351,18 +356,26 @@ export const REDACT_PATHS = [
   // Recipient-list shapes. `recipient_email` (singular) is already
   // redacted above. F7 adds the plural array shape + resolved
   // recipients produced by segment-resolve.
+  // R6 staff-review B3 fix — depth-2 patterns added to cover
+  // `audit.payload.recipient_emails` shape produced by F7 audit emit.
   'recipient_emails',
   '*.recipient_emails',
+  '*.*.recipient_emails',
   'recipientEmails',
   '*.recipientEmails',
+  '*.*.recipientEmails',
   'recipient_email_lower',
   '*.recipient_email_lower',
+  '*.*.recipient_email_lower',
   'recipientEmailLower',
   '*.recipientEmailLower',
+  '*.*.recipientEmailLower',
   'custom_recipient_emails',
   '*.custom_recipient_emails',
+  '*.*.custom_recipient_emails',
   'customRecipientEmails',
   '*.customRecipientEmails',
+  '*.*.customRecipientEmails',
   // Unsubscribe token plaintext. We log sha256(token) on audit emit.
   'unsubscribe_token',
   '*.unsubscribe_token',

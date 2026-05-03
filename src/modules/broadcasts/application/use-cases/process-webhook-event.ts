@@ -245,10 +245,15 @@ export async function processWebhookEvent(
           // pivots on terminal events (delivered/bounced/complained).
           break;
         case 'delivered':
+          // R6 staff-review B1 fix — was incorrectly emitting
+          // `broadcast_send_started` (the dispatch use-case's send-init
+          // event), polluting the audit trail and the SLO-F7-005 metric
+          // cardinality. `broadcast_delivery_recorded` is the correct
+          // per-recipient delivery-confirmation semantic.
           await deps.audit.emit(
             tx,
             f7Audit({
-              eventType: 'broadcast_send_started',
+              eventType: 'broadcast_delivery_recorded',
               tenantId,
               actorUserId: 'system:resend-webhook',
               summary: `Broadcast ${broadcastId}: delivery recorded`,
@@ -456,7 +461,21 @@ export async function processWebhookEvent(
             agg.complained / terminalCount,
           );
         }
-        if (terminalCount >= fresh.estimatedRecipientCount) {
+        // R6 staff-review B2 fix — zero-recipient guard. Without the
+        // `> 0` predicate, a row that arrives at `sending` with
+        // `estimatedRecipientCount = 0` would transition to `sent` and
+        // consume the member's annual quota on the very first webhook
+        // event. The DB CHECK (`broadcasts_estimated_recipient_count`
+        // BETWEEN 0 AND 5000) permits 0; the App-layer guard is the
+        // only safety net. A 0-count row reaching `sending` indicates
+        // a dispatch-logic bug (segment resolved to 0 should fail at
+        // submit per FR-002c `broadcast_empty_segment_blocked`); the
+        // guard prevents silent quota corruption while the bug is
+        // diagnosed.
+        if (
+          fresh.estimatedRecipientCount > 0 &&
+          terminalCount >= fresh.estimatedRecipientCount
+        ) {
           const transitionResult = transition(fresh.status, 'sent');
           if (transitionResult.ok) {
             const now = deps.clock.now();

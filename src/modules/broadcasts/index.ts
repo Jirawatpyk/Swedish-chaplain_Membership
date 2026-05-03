@@ -348,6 +348,7 @@ export type {
 // MembersBridge instance — exposed for the admin queue server component
 // which reads halt-state inline.
 export { membersBridge } from './infrastructure/members-bridge';
+export { makeTickMemoizedMembersBridge } from './infrastructure/tick-memoized-members-bridge';
 
 // F7 audit adapter — exposed at the barrel because the
 // `/api/portal/broadcasts/acknowledge` route emits the GDPR Art. 7

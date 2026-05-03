@@ -34,6 +34,7 @@ import {
   asBroadcastId,
   dispatchScheduledBroadcast,
   makeDispatchScheduledBroadcastDeps,
+  makeTickMemoizedMembersBridge,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -42,7 +43,7 @@ import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { broadcastsTracer } from '@/lib/otel-tracer';
+import { broadcastsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
 
 const MAX_PER_TICK = 50;
@@ -131,7 +132,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // T172 — emit no-due-rows skip when query returned an empty set so
   // the cron tick observability dashboard can distinguish "queue
-  // empty" from "feature_disabled" / "advisory_lock_held".
+  // empty" from "feature_disabled". (R6 W-P5: `advisory_lock_held`
+  // bucket removed — never emitted because FOR UPDATE SKIP LOCKED +
+  // advisory_xact_lock pattern means contested rows aren't returned to
+  // the scanner in the first place.)
   if (eligible.length === 0) {
     broadcastsMetrics.cronSkippedCount(tenant.slug, 'no_due_rows');
   }
@@ -146,15 +150,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // any code between span-create and `cronSpan.end()` (logger
   // formatter, etc.) does not leak the span and stall the trace
   // exporter.
-  const cronSpan = broadcastsTracer().startSpan('cron_dispatch_scheduled', {
-    attributes: {
+  //
+  // R6 staff-review W-P6 fix — converted from `startSpan` to
+  // `startActiveSpan` (via the `withActiveSpan` helper) so the span
+  // is set as the active context. Without this, auto-instrumented
+  // child spans (Drizzle queries inside use-case `withTx`, Resend
+  // fetch calls) appear orphaned at trace-tree root in Vercel
+  // Observability, making latency attribution impossible.
+  return withActiveSpan(
+    broadcastsTracer(),
+    'cron_dispatch_scheduled',
+    {
       'tenant.id': tenant.slug,
       'cron.eligible_count': eligible.length,
     },
-  });
-
-  try {
-    const deps = await makeDispatchScheduledBroadcastDeps(tenant.slug);
+    async (cronSpan) => {
+    const baseDeps = await makeDispatchScheduledBroadcastDeps(tenant.slug);
+    // R6 staff-review W-P3 fix — per-tick memoization on segment
+    // resolution. Multiple `all_members` (or shared-tier) broadcasts
+    // in the same tick now share one F3 round-trip instead of
+    // re-fetching the same recipient list per broadcast. Cache scope
+    // = this cron-tick closure (fresh Map per tick).
+    const deps = {
+      ...baseDeps,
+      membersBridge: makeTickMemoizedMembersBridge(baseDeps.membersBridge),
+    };
     for (const row of eligible) {
       summary.processed++;
       try {
@@ -244,8 +264,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         message: `errors: uncaught=${summary.uncaught_error} unknown=${summary.unknown_error}`,
       });
     }
-    return NextResponse.json(summary, { status: 200 });
-  } finally {
-    cronSpan.end();
-  }
+      return NextResponse.json(summary, { status: 200 });
+    },
+  );
 }

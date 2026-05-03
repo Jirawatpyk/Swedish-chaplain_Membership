@@ -13,18 +13,20 @@
  * (none currently).
  *
  * Event taxonomy:
- *   - Draft / submission (US1): 15 events
- *   - Admin review + dispatch (US2): 12 events (round-4 added
- *     `broadcast_resend_audience_drift` for idempotency-replay
- *     count mismatch + round-5 added
- *     `broadcast_resend_drift_check_unverifiable` for non-404 fetch
- *     failures during the same path)
+ *   - Draft / submission (US1): 16 events (R6 added `broadcast_subject_empty`)
+ *   - Admin review + dispatch + per-recipient delivery (US2+US4): 14 events
+ *     (round-4 added `broadcast_resend_audience_drift`; round-5 added
+ *     `broadcast_resend_drift_check_unverifiable`; round-6 added
+ *     `broadcast_delivery_recorded` to fix audit-trail semantic for
+ *     `email.delivered` webhook events — was incorrectly aliased to
+ *     `broadcast_send_started`)
  *   - Cross-tenant probes: 2 events
- *   - Unsubscribe + suppression (US5): 4 events (deferred emit)
- *   - Webhook (US4): 1 event (deferred emit)
- *   - Plan-expiry edge (US6): 1 event (deferred emit)
+ *   - Unsubscribe + suppression (US5): 4 events
+ *   - Webhook (US4): 1 event
+ *   - Plan-expiry edge (US6): 1 event
  *   - Clarifications session 5 (Q14 + Q15): 3 events
- *   = 39 total
+ *   - Phase 8 verify-fix R3: 2 events
+ *   = 43 total
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -39,6 +41,7 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_not_in_plan',
   'broadcast_immutable_after_submit',
   'broadcast_subject_too_long',
+  'broadcast_subject_empty', // R6 W-R3 fix — separate from too_long to align audit with Result kind
   'broadcast_body_too_large',
   'broadcast_body_unsafe_html',
   'broadcast_audience_too_large',
@@ -47,12 +50,13 @@ export const F7_AUDIT_EVENT_TYPES = [
   'member_missing_primary_contact',
   'broadcast_member_halted_pending_review', // R3-NEW-1
 
-  // --- Admin review (US2) — 11 events --------------------------------
+  // --- Admin review (US2) + delivery (US4) — 14 events ----------------
   'broadcast_approved',
   'broadcast_rejected',
   'broadcast_cancelled',
   'broadcast_cancel_too_late',
   'broadcast_send_started',
+  'broadcast_delivery_recorded',       // US4 — per-recipient delivery confirmation from Resend webhook (was incorrectly aliased to send_started until R6 staff-review fix)
   'broadcast_send_timeout_completed', // US6-deferred (24h stuck-sending reconcile)
   'broadcast_sent',                    // US4-deferred (Resend webhook delivered handler)
   'broadcast_quota_consumed',          // US4-deferred (consumed at sending→sent webhook)
@@ -97,12 +101,12 @@ export const F7_AUDIT_EVENT_TYPES = [
 ] as const;
 
 /**
- * Static assertion: count matches the declared 37. Catches drift if a
+ * Static assertion: count matches the declared 43. Catches drift if a
  * spec amendment adds an event without updating this file. The check
  * lives at type level; if the count is wrong, TypeScript errors here
- * with "Type '38' is not assignable to type '37'" (or similar).
+ * with "Type '44' is not assignable to type '43'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 41
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 43
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;

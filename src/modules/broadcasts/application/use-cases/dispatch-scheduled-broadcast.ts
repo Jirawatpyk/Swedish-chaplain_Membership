@@ -550,7 +550,13 @@ export async function dispatchScheduledBroadcast(
       fromName: broadcast.fromName,
       fromEmail: deps.fromEmail,
       replyToEmail: broadcast.replyToEmail,
-      broadcastNameForResendDashboard: `${broadcast.fromName} — ${broadcast.subject.slice(0, 60)}`,
+      // R6 staff-review #12 — Unicode-safe truncation. `String.slice`
+      // operates on UTF-16 code units, so a subject ending with an
+      // emoji (surrogate pair, 2 code units) at index 59 would be
+      // split mid-pair, producing an invalid lone-surrogate that
+      // Resend's dashboard renders as a replacement glyph. Spread to
+      // an array of grapheme-safe code points before slicing.
+      broadcastNameForResendDashboard: `${broadcast.fromName} — ${[...broadcast.subject].slice(0, 60).join('')}`,
       tenantDisplayName: deps.tenantDisplayName,
       locale: deps.locale,
     });
@@ -580,15 +586,30 @@ export async function dispatchScheduledBroadcast(
       // assertions (previously 4 instances). pastBudget definition
       // narrows scheduledFor to non-null implicitly, but TS doesn't
       // propagate that narrowing across the if-block boundary.
+      //
+      // R6 staff-review W-R1 fix — send-now broadcasts (`scheduledFor`
+      // is null because the admin hit "Approve & send now") MUST also
+      // honor the 1h retry budget. The prior code set
+      // `elapsedMs = 0` for null-scheduledFor, making pastBudget
+      // permanently false — a stuck send-now would retry forever.
+      // Fallback epoch order: scheduledFor → approvedAt → createdAt.
+      // approvedAt is the dispatcher-eligibility moment for send-now
+      // (status transitions submitted → approved → sending happen
+      // synchronously in the admin-approve-send-now use-case so the
+      // fallback approximates "time since dispatch attempt began").
       const scheduledFor = broadcast.scheduledFor;
-      const elapsedMs =
-        scheduledFor !== null ? now.getTime() - scheduledFor.getTime() : 0;
-      const pastBudget = scheduledFor !== null && elapsedMs > RETRY_BUDGET_MS;
+      const epochForBudget =
+        scheduledFor ?? broadcast.approvedAt ?? broadcast.createdAt;
+      const elapsedMs = now.getTime() - epochForBudget.getTime();
+      const pastBudget = elapsedMs > RETRY_BUDGET_MS;
 
       if (pastBudget) {
-        // scheduledFor is non-null here by pastBudget definition; type
-        // narrowing requires re-assignment to the locally-bound const.
-        const scheduledForIso = scheduledFor.toISOString();
+        // R6 W-R1 fix — log both the scheduled epoch (if any) and the
+        // budget epoch actually used. For send-now, scheduledFor is
+        // null and the budget anchors on approvedAt (dispatch-eligibility
+        // moment).
+        const scheduledForIso = scheduledFor?.toISOString() ?? null;
+        const epochForBudgetIso = epochForBudget.toISOString();
         logger.error(
           {
             tenantId: deps.tenant.slug,
@@ -596,6 +617,8 @@ export async function dispatchScheduledBroadcast(
             subKind,
             reason,
             scheduledFor: scheduledForIso,
+            epochForBudget: epochForBudgetIso,
+            sendMode: scheduledFor === null ? 'send_now' : 'scheduled',
             elapsedMs,
             severity: 'critical',
           },

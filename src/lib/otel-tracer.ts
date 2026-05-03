@@ -109,3 +109,37 @@ export async function withSpan<T>(
     span.end();
   }
 }
+
+/**
+ * R6 staff-review W-P6 fix — same as `withSpan` but uses
+ * `startActiveSpan` so the span is set as the active context for the
+ * duration of `fn()`. Auto-instrumented child spans (Drizzle queries,
+ * fetch calls inside the callback) will then parent correctly to this
+ * span in the trace tree, instead of being orphaned at the root.
+ *
+ * Use this for cron loops + route handlers where the work inside the
+ * callback issues DB queries / outbound HTTP that should appear as
+ * children in Vercel Observability. `withSpan` (non-active) is fine
+ * for leaf-level annotations where no child spans are expected.
+ */
+export async function withActiveSpan<T>(
+  tracer: Tracer,
+  name: string,
+  attributes: Attributes,
+  fn: (span: Span) => Promise<T>,
+): Promise<T> {
+  return tracer.startActiveSpan(name, { attributes }, async (span: Span) => {
+    try {
+      return await fn(span);
+    } catch (e) {
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: e instanceof Error ? e.message : String(e),
+      });
+      if (e instanceof Error) span.recordException(e);
+      throw e;
+    } finally {
+      span.end();
+    }
+  });
+}
