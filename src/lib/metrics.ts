@@ -1051,7 +1051,13 @@ export const broadcastsMetrics = {
       | 'bounced'
       | 'complained'
       | 'sent'
-      | 'delivery_delayed',
+      | 'delivery_delayed'
+      // R9 staff-review NIT — surface novel Resend event subtypes
+      // (e.g. future `email.opened`) in the metric instead of
+      // collapsing them silently to `'sent'`. The bounded label set
+      // keeps cardinality safe; `'unknown'` is the explicit catch-
+      // all that on-call dashboards alert on if it becomes non-zero.
+      | 'unknown',
   ): void {
     safeMetric(() => {
       counter(

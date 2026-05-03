@@ -441,14 +441,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const subtype = verified.type.startsWith('email.')
         ? verified.type.slice('email.'.length)
         : verified.type;
-      const eventLabel: 'delivered' | 'bounced' | 'complained' | 'sent' | 'delivery_delayed' =
+      // R9 staff-review NIT — fallback label changed from `'sent'`
+      // to `'unknown'` so a future Resend-side event subtype
+      // addition (e.g. `email.opened`) surfaces in the metric as
+      // its own bucket rather than silently inflating the `sent`
+      // counter. Note: this branch is unreachable today because
+      // `isKnownResendEventType` in the verifier rejects unknown
+      // event types BEFORE this code runs (LOW-G fix returned
+      // 200-ack with `unknown_event_type` kind earlier in the
+      // route). The `'unknown'` label is defence-in-depth for the
+      // hypothetical case where the verifier's enum drifts ahead
+      // of this label-mapping switch.
+      const eventLabel: 'delivered' | 'bounced' | 'complained' | 'sent' | 'delivery_delayed' | 'unknown' =
         subtype === 'delivered' ||
         subtype === 'bounced' ||
         subtype === 'complained' ||
         subtype === 'sent' ||
         subtype === 'delivery_delayed'
           ? subtype
-          : 'sent';
+          : 'unknown';
       broadcastsMetrics.webhookReceiveCount(tenantId, eventLabel);
       broadcastsMetrics.webhookDurationMs(tenantId, Date.now() - startedAtMs);
     }
