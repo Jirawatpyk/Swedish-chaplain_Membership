@@ -22,6 +22,7 @@
  * orphan member ids + dedup count for observability.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { RecipientSegment } from '../../domain/recipient-segment';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
@@ -118,6 +119,12 @@ export async function resolveSegmentRecipients(
       dedup,
     );
     final = dedup.filter((e) => !suppressed.has(e));
+    // T172 — emit-site wiring (Phase 9). Number of recipients dropped
+    // by the suppression anti-join — `dedup.length - final.length`.
+    const filtered = dedup.length - final.length;
+    if (filtered > 0) {
+      broadcastsMetrics.suppressionFilterCount(deps.tenant.slug, filtered);
+    }
   }
 
   // Brand-cast (defence-in-depth — primary contact emails could be string at the source)

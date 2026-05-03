@@ -94,7 +94,7 @@ export function AdminPreferredLocaleCard({
               return (
                 <div key={opt} className="flex items-center gap-2">
                   <RadioGroupItem id={id} value={opt} />
-                  <Label htmlFor={id} className="cursor-pointer">
+                  <Label htmlFor={id} className="mb-0 leading-4 cursor-pointer">
                     {label}
                   </Label>
                 </div>

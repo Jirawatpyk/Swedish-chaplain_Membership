@@ -4,8 +4,51 @@
 **Severity**: critical (regulatory clock — 24h PDPA, 72h GDPR)
 **Source signal**: SECURITY EVENT — manual escalation triggered by detection of unauthorised data access, exfiltration, deletion, or alteration affecting member PII
 **Audit events**: ANY `*_cross_tenant_probe` event ≥ threshold rate · `webhook_signature_rejected` sustained spike · unexplained `marketing_unsubscribes` deletion attempts · F1 `password_reset_failed` mass rate
-**Last reviewed**: 2026-04-29 (Batch D T032 spec scaffolding — cross-cutting F1+F4+F5+F7)
-**Status**: SPEC — cross-cutting playbook references emit sites across all F-stack features. F7-specific signals land Phase 3+ (T036+).
+**Last reviewed**: 2026-05-03 (Round 3 PDPA review M-4 — promoted from SPEC to LIVE; contact roster requires chamber DPO + legal-counsel walkthrough before first prod incident)
+**Status**: LIVE for procedural steps + audit-event triggers + containment toggles. Contact roster (§ Notification Authorities below) carries placeholder fields that MUST be populated by the chamber DPO during the pre-ship walkthrough — flagged with `<DPO_FILL>` for grep-ability.
+
+## § Notification Authorities — Contact Roster
+
+> **PRE-SHIP ACTION REQUIRED**: chamber DPO + legal-counsel must populate every `<DPO_FILL>` token below and check this section into git via PR before first prod broadcast dispatch. The placeholders are deliberately strict-string so they fail any future grep-based readiness check.
+
+### Thailand — Office of the Personal Data Protection Committee (PDPC)
+- **Authority**: Office of the Personal Data Protection Committee (สำนักงานคณะกรรมการคุ้มครองข้อมูลส่วนบุคคล)
+- **Hotline (24h)**: `<DPO_FILL: PDPC_HOTLINE>`
+- **Email**: `<DPO_FILL: PDPC_EMAIL>`
+- **Web form**: https://www.pdpc.or.th/ (verify exact submission URL with chamber legal-counsel — PDPC migrates the form periodically)
+- **Notification window**: **24 hours** from awareness (PDPA §37)
+- **Form template**: `<DPO_FILL: PDPC_FORM_TEMPLATE_PATH>` — chamber legal-counsel maintains a TH/EN bilingual template at this path; reference here AFTER first incident.
+
+### European Union — Supervisory Authority for SweCham EU members
+- **Lead authority**: Integritetsskyddsmyndigheten (IMY — Swedish DPA, since SweCham is incorporated in TH but holds EU/EEA member data subjects under cross-border SCC scope)
+- **Hotline**: `<DPO_FILL: IMY_HOTLINE>`
+- **Email**: `<DPO_FILL: IMY_EMAIL>`
+- **Online portal**: https://www.imy.se/en/ (the lead-authority designation may switch to a different EU DPA depending on the data subject's country of habitual residence — chamber legal-counsel confirms per incident)
+- **Notification window**: **72 hours** from awareness (GDPR Art. 33)
+
+### SweCham Internal Roster
+- **Chamber DPO (primary)**: `<DPO_FILL: DPO_NAME>`, `<DPO_FILL: DPO_EMAIL>`, `<DPO_FILL: DPO_PHONE_24H>`
+- **Chamber DPO (deputy)**: `<DPO_FILL: DPO_DEPUTY_NAME>`, `<DPO_FILL: DPO_DEPUTY_EMAIL>`, `<DPO_FILL: DPO_DEPUTY_PHONE_24H>`
+- **Chamber legal-counsel**: `<DPO_FILL: LEGAL_COUNSEL_NAME>`, `<DPO_FILL: LEGAL_COUNSEL_EMAIL>`, `<DPO_FILL: LEGAL_COUNSEL_PHONE>`
+- **Platform on-call rotation** (Chamber-OS technical containment): `<DPO_FILL: ONCALL_ESCALATION_URL>` (PagerDuty / Vercel on-call link)
+
+### Sub-Processor Incident Coordination (Art. 28(3) chain liability)
+- **Resend (transactional + Broadcasts)**: security@resend.com — DPA + sub-processor list under chamber legal-counsel review pre-ship; confirm BOTH the Transactional API and the Broadcasts API surfaces are covered before first dispatch (Round 3 PDPA review H-2 sign-off).
+- **Neon (Postgres)**: security@neon.tech — DPA confirms ap-southeast-1 (Singapore) data-residency.
+- **Upstash (Redis)**: security@upstash.com — DPA + Singapore region.
+- **Vercel (hosting)**: security@vercel.com — DPA + sin1 region.
+
+> A breach involving a sub-processor opens a parallel notification track: the sub-processor's own DPA timelines apply in addition to PDPC/IMY. Chamber legal-counsel coordinates.
+
+## DPO Walkthrough Checklist (pre-ship — must complete before first prod broadcast)
+
+- [ ] All `<DPO_FILL>` placeholders above populated and committed via PR.
+- [ ] PDPC submission form template reviewed; bilingual TH/EN copy in `docs/runbooks/templates/` (chamber legal-counsel).
+- [ ] Internal escalation tree printed + posted in DPO office + Slack `#chamber-incident` topic header.
+- [ ] Tabletop exercise run on a synthetic cross-tenant probe scenario; document results in `specs/010-email-broadcast/retrospective.md` § DPO-walkthrough.
+- [ ] Verify `READ_ONLY_MODE=true` and `FEATURE_F7_BROADCASTS=false` Vercel env-flips work on the staging deployment (containment-toggle smoke test).
+- [ ] Resend DPA confirmed covers Broadcasts API surface (Round 3 PDPA review H-2 sign-off).
+- [ ] Sub-processor list (Resend / Neon / Upstash / Vercel) referenced from `docs/saas-architecture.md` and current.
 
 ---
 

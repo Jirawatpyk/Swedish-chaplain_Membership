@@ -1,5 +1,5 @@
-/**
- * T051 — FR-002 precondition `k` (R3-NEW-1) halt-flag enforcement.
+﻿/**
+ * T051 โ€” FR-002 precondition `k` (R3-NEW-1) halt-flag enforcement.
  *
  * Verifies the submit-broadcast use case rejects with
  * `broadcast_member_halted_pending_review` when the member's halt
@@ -16,12 +16,23 @@ import { clearHalt } from '@/modules/broadcasts/application/use-cases/clear-halt
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { rfc5321EmailValidator } from '@/modules/broadcasts/infrastructure/email-validator/rfc5321-email-validator';
 import type { HtmlSanitizerPort } from '@/modules/broadcasts/application/ports/html-sanitizer-port';
+// R6 staff-review W-T3 fix — replaced the regex-based stub sanitizer
+// with the real `dompurifySanitizer` so the halt-flag + sanitiser
+// composite path is tested with the same allowlist that runs in
+// production. The stub only stripped `<script>` and would let any
+// other forbidden tag (`<iframe>`, `<style>`, `<form>`, all `on*`
+// handlers, inline `style`) through — masking a regression where the
+// halt precondition fires correctly but the sanitiser allowlist
+// drifts.
+import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer';
 
-const stubSanitizer: HtmlSanitizerPort = {
-  sanitize(html: string): string {
-    return html.replace(/<script[\s\S]*?<\/script>/gi, '');
-  },
-};
+// Kept as an alias of the real sanitiser so the rest of the file's
+// `sanitizer: stubSanitizer` references stay readable. If a future
+// test legitimately needs a permissive stub (e.g. testing that the
+// sanitiser is the SOLE defence and the use-case must NOT block
+// untrusted HTML on its own), introduce a separate fixture rather
+// than weakening this one.
+const stubSanitizer: HtmlSanitizerPort = dompurifySanitizer;
 import { asTenantContext } from '@/modules/tenants';
 import type { AuditEmitInput, AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type { BroadcastsRepo, NewBroadcastDraftInput } from '@/modules/broadcasts/application/ports/broadcasts-repo';
@@ -171,6 +182,7 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     async pruneExpiredDrafts() {
       return { prunedCount: 0 };
     },
+    async listInFlightOwnedByMember() { return []; },
   };
 }
 
@@ -234,7 +246,7 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('halt-flag precondition (T051)', () => {
-  it('halted=true → submit returns broadcast_member_halted_pending_review', async () => {
+  it('halted=true โ’ submit returns broadcast_member_halted_pending_review', async () => {
     const state = makeState({ halted: true });
     const result = await submitBroadcast(
       {
@@ -304,7 +316,7 @@ describe('halt-flag precondition (T051)', () => {
     expect((evt?.payload as { memberId: string }).memberId).toBe('m-1');
   });
 
-  it('halt cleared via setMemberHalt → next submit succeeds', async () => {
+  it('halt cleared via setMemberHalt โ’ next submit succeeds', async () => {
     const state = makeState({ halted: true });
     const membersBridge = makeMembersBridge(state);
     const repo = makeBroadcastsRepo(state);
@@ -341,7 +353,7 @@ describe('halt-flag precondition (T051)', () => {
     expect(submitResult.ok).toBe(true);
   });
 
-  it('clear-halt with bridge unauthorised → forbidden error', async () => {
+  it('clear-halt with bridge unauthorised โ’ forbidden error', async () => {
     const restrictiveBridge: MembersBridgePort = {
       ...makeMembersBridge(makeState({ halted: true })),
       async setMemberHalt() {

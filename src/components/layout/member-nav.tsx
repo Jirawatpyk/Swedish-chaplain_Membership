@@ -24,7 +24,7 @@ export function MemberNav() {
             key={item.href}
             href={item.href}
             className={cn(
-              'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+              'flex items-center gap-1.5 rounded-md px-1.5 py-1.5 text-sm font-medium transition-colors sm:px-3',
               'hover:bg-accent hover:text-accent-foreground',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
               active
@@ -33,7 +33,20 @@ export function MemberNav() {
             )}
           >
             <item.icon className="size-4 shrink-0" aria-hidden />
-            <span>{t(item.titleKey)}</span>
+            {/* Hide text labels on mobile (< 640 px) to prevent the
+                horizontal nav from overflowing a 320 px viewport.
+                Pattern serves two SCs:
+                  - WCAG 2.4.4 (Link Purpose, In Context): the icon
+                    receives aria-hidden so the Link's accessible name
+                    comes from the visually-hidden <span> on mobile and
+                    the visible text on desktop.
+                  - WCAG 4.1.2 (Name, Role, Value): the sr-only
+                    fallback guarantees every <a> always exposes a
+                    non-empty accessible name to AT, regardless of
+                    breakpoint. */}
+            <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
+              {t(item.titleKey)}
+            </span>
           </Link>
         );
       })}

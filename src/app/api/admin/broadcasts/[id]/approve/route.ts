@@ -29,6 +29,9 @@ import {
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 const MIN_SCHEDULE_LEAD_MS = 5 * 60 * 1000;
 
@@ -87,19 +90,50 @@ export async function POST(
           scheduledFor: new Date(parsed.data.scheduledFor),
         } as const);
 
+  // T174 — root span `admin_approve_send_now` (docs/observability.md
+  // § 22). T172 — SLO-F7-004 latency histogram (target p95 < 1.5s).
+  // R7 staff-review LOW-P1 fix — moved histogram emit into `finally`
+  // so exception paths also record the latency. Without this, errors
+  // (Neon outage, Resend 5xx) silently exclude themselves from the
+  // SLO histogram, biasing the p95 toward happy-path-only and
+  // hiding real availability regressions.
+  const startedAtMs = Date.now();
   try {
-    const result = await approveBroadcast(deps, {
-      broadcastId: parsedId.value,
-      actorUserId: ctx.current.user.id,
-      decision,
-      requestId: ctx.requestId,
-      // E1 closure (verify-fix 2026-05-02) — tenant default locale
-      // for the post-approval member notification email. F12
-      // white-label scope will replace with per-recipient locale.
-      // Use-case enqueues IN-TX so audit + outbox commit atomically;
-      // route no longer enqueues post-tx (G2 single-source-of-truth).
-      notificationLocale: tenantDefaultLocaleFor(tenantCtx.slug),
-    });
+    const result = await broadcastsTracer().startActiveSpan(
+      'admin_approve_send_now',
+      {
+        attributes: {
+          'tenant.id': tenantCtx.slug,
+          'broadcast.id': parsedId.value as unknown as string,
+          'actor.role': 'admin',
+          'broadcasts.decision': decision.mode,
+        },
+      },
+      async (span) => {
+        try {
+          const r = await approveBroadcast(deps, {
+            broadcastId: parsedId.value,
+            actorUserId: ctx.current.user.id,
+            decision,
+            requestId: ctx.requestId,
+            notificationLocale: tenantDefaultLocaleFor(tenantCtx.slug),
+          });
+          span.setAttribute(
+            'broadcasts.outcome',
+            r.ok ? r.value.status : `err:${r.error.kind}`,
+          );
+          return r;
+        } catch (e) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: e instanceof Error ? e.message : 'approve_threw',
+          });
+          throw e;
+        } finally {
+          span.end();
+        }
+      },
+    );
     if (!result.ok) {
       return mapApproveError(result.error, correlationId);
     }
@@ -125,6 +159,11 @@ export async function POST(
       'admin.broadcasts.approve.unexpected_error',
     );
     return errorResponse(500, 'internal_error', correlationId);
+  } finally {
+    broadcastsMetrics.approveSendNowDurationMs(
+      tenantCtx.slug,
+      Date.now() - startedAtMs,
+    );
   }
 }
 

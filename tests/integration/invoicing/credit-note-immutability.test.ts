@@ -222,8 +222,16 @@ describe('F4 credit_notes immutability trigger — behavioral (N8)', () => {
         caught = e;
       }
       expect(caught, 'expected trigger to raise').not.toBeNull();
-      const message =
-        caught instanceof Error ? caught.message : String(caught);
+      // Drizzle 0.45+ wraps Postgres errors with `Failed query: ...`;
+      // walk the .cause chain so the trigger-emitted message remains
+      // visible to the assertion.
+      const parts: string[] = [];
+      let cur: unknown = caught;
+      while (cur instanceof Error) {
+        parts.push(cur.message);
+        cur = (cur as { cause?: unknown }).cause;
+      }
+      const message = parts.length > 0 ? parts.join(' | ') : String(caught);
       expect(message).toMatch(
         /credit_notes.*immutable|check_violation|snapshot \+ money \+ pdf/i,
       );

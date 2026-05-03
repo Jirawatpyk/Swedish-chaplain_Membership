@@ -25,10 +25,12 @@
 export {
   asBroadcastId,
   parseBroadcastId,
+  phaseOf,
   type Broadcast,
   type BroadcastActorRole,
   type BroadcastId,
   type BroadcastIdError,
+  type BroadcastPhase,
 } from './domain/broadcast';
 export {
   asBroadcastDeliveryId,
@@ -50,6 +52,7 @@ export {
   type BroadcastSegmentDefinition,
   type BroadcastSegmentDefinitionId,
   type BroadcastSegmentDefinitionIdError,
+  type BroadcastSegmentDefinitionParams,
   type RecipientSegment,
 } from './domain/recipient-segment';
 
@@ -106,8 +109,11 @@ export {
   F7_AUDIT_EVENT_TYPES,
   F7_AUDIT_RETENTION_YEARS,
   f7RetentionFor,
+  isF7AuditEventType,
   type F7AuditEvent,
   type F7AuditEventType,
+  type F7AuditPayloadFor,
+  type F7AuditPayloadShapes,
 } from './application/ports/audit-port';
 
 // --- Application use-cases (Phase 3 US1) ---------------------------------
@@ -203,6 +209,17 @@ export {
   type PruneExpiredDraftsError,
   type PruneExpiredDraftsOutput,
 } from './application/use-cases/prune-expired-drafts';
+// Phase 9 / T178a — F3 archival/erasure cascade. Exposed at the barrel
+// because the F3 archival/erasure use-case calls into F7 to auto-cancel
+// in-flight broadcasts when the originating member is archived/erased.
+// Spec § Edge Cases L353 / Coverage Gap C2.
+export {
+  cancelInFlightBroadcastsForMember,
+  type CancelInFlightForMemberDeps,
+  type CancelInFlightForMemberError,
+  type CancelInFlightForMemberInput,
+  type CancelInFlightForMemberOutput,
+} from './application/use-cases/cancel-in-flight-broadcasts-for-member';
 
 // --- Composition root factories (Phase 3) --------------------------------
 export {
@@ -224,6 +241,7 @@ export {
   makeClearHaltDeps,
   makeDispatchScheduledBroadcastDeps,
   makePruneExpiredDraftsDeps,
+  makeCancelInFlightBroadcastsForMemberDeps,
 } from './infrastructure/broadcasts-deps';
 
 // --- Application use-cases (Phase 5 US3) ---------------------------------
@@ -299,7 +317,14 @@ export {
   tenantDefaultLocaleFor,
   unsubscribeTokenSigner,
 } from './infrastructure/broadcasts-deps';
-export { peekTokenTenantId } from './infrastructure/unsubscribe-token/hmac-signer';
+export {
+  peekTokenTenantId,
+  peekTokenLang,
+} from './infrastructure/unsubscribe-token/hmac-signer';
+// R8 staff-review R8-A3 — re-export the brand so callers annotating
+// `peekTokenTenantId` return type don't reach into the infrastructure
+// subpath (Constitution Principle III barrel rule).
+export type { UnverifiedTenantSlug } from './infrastructure/unsubscribe-token/hmac-signer';
 export { broadcastsRateLimiter } from './infrastructure/rate-limiter';
 
 // --- Application port — webhook verifier (Phase 7 US5) -------------------
@@ -330,6 +355,7 @@ export type {
 // MembersBridge instance — exposed for the admin queue server component
 // which reads halt-state inline.
 export { membersBridge } from './infrastructure/members-bridge';
+export { makeTickMemoizedMembersBridge } from './infrastructure/tick-memoized-members-bridge';
 
 // F7 audit adapter — exposed at the barrel because the
 // `/api/portal/broadcasts/acknowledge` route emits the GDPR Art. 7

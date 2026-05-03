@@ -112,7 +112,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   };
 
   const deps = makeReconcileStuckSendingDeps(tenant.slug);
-  for (const row of eligible) {
+
+  // R6 staff-review W-P4 fix — parallelise reconciliation across
+  // chunks to avoid approaching the Vercel function timeout. Each row
+  // issues `findById` + `broadcastsGateway.retrieveBroadcast` (~200ms
+  // Resend RTT) + `withTx` (write). Sequential: 50 rows × 225ms ≈
+  // 11.25s, dangerously close to the 10s default. Parallel chunks of
+  // 5 (semaphore-equivalent): ~50/5 × 225ms ≈ 2.25s. Each row owns a
+  // distinct `(tenant, broadcast_id)` advisory-lock namespace inside
+  // the use-case so concurrent invocations don't contend, and
+  // `Promise.allSettled` ensures one row's throw doesn't short-circuit
+  // the others (mirrors the pre-fix per-row try/catch isolation).
+  const RECONCILE_CONCURRENCY = 5;
+  const handleOne = async (row: { broadcast_id: string }): Promise<void> => {
     summary.processed++;
     try {
       const result = await reconcileStuckSending(deps, {
@@ -141,7 +153,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             'cron.broadcasts.reconcile.server_error',
           );
         }
-        continue;
+        return;
       }
       switch (result.value.kind) {
         case 'reconciled_sent':
@@ -176,6 +188,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         'cron.broadcasts.reconcile.uncaught_error',
       );
     }
+  };
+
+  for (let i = 0; i < eligible.length; i += RECONCILE_CONCURRENCY) {
+    const chunk = eligible.slice(i, i + RECONCILE_CONCURRENCY);
+    await Promise.allSettled(chunk.map(handleOne));
   }
 
   logger.info(

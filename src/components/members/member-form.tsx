@@ -243,7 +243,7 @@ export function MemberForm({
               aria-invalid={Boolean(errors.country)}
               maxLength={2}
               autoComplete="country"
-              placeholder="TH"
+              placeholder={tf('countryPlaceholder')}
               className="uppercase"
             />
             <FieldError message={errors.country?.message} />
@@ -269,7 +269,7 @@ export function MemberForm({
               {...register('website')}
               autoComplete="url"
               maxLength={200}
-              placeholder="https://…"
+              placeholder={tf('websitePlaceholder')}
             />
             <FieldError message={errors.website?.message} />
           </div>

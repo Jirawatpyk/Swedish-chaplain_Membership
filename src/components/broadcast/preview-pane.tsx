@@ -92,7 +92,7 @@ export function PreviewPane({
   return (
     <section
       aria-label={t('previewLabel')}
-      className="rounded-md border bg-muted/20"
+      className="rounded-md border bg-muted/20 overflow-x-hidden min-w-0"
     >
       <header className="border-b px-3 py-2">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -111,7 +111,7 @@ export function PreviewPane({
         </div>
       ) : (
         <div
-          className="prose prose-sm dark:prose-invert max-w-none px-3 py-2"
+          className="prose prose-sm dark:prose-invert max-w-none overflow-x-hidden px-3 py-2"
           dangerouslySetInnerHTML={{ __html: sanitised }}
         />
       )}

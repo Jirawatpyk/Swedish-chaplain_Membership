@@ -69,6 +69,26 @@ export type RecipientSegment =
     };
 
 /**
+ * Round 5 review type-design fix — bound segment-definition params to
+ * the same DU shape as `RecipientSegment` rather than `Record<string,
+ * unknown>`. This catches mis-typed param keys at compile time and
+ * removes the `as { tierCodes?: string[] } | null` casts that were
+ * appearing in `dispatch-scheduled-broadcast.ts buildSegmentFromBroadcast`
+ * and `Broadcast.segmentParams` consumers.
+ *
+ * Why a separate type rather than reusing `RecipientSegment` directly:
+ * the persisted definition row has no `kind` discriminant column —
+ * `segmentType` enum already plays that role at the row level. The
+ * `params` JSON column carries ONLY the payload fields, no kind tag.
+ * Omitting `kind` keeps DB serialisation backward-compatible with the
+ * pre-Round 5 schema (no migration needed).
+ */
+export type BroadcastSegmentDefinitionParams =
+  | null
+  | { readonly tierCodes: ReadonlyArray<string> }
+  | { readonly emails: ReadonlyArray<string> };
+
+/**
  * Persisted segment metadata (`broadcast_segment_definitions` table).
  * Used by the admin queue UI ("which segment was this targeting?")
  * and the compose surface segment-picker dropdown.
@@ -78,7 +98,7 @@ export interface BroadcastSegmentDefinition {
   readonly definitionId: BroadcastSegmentDefinitionId;
   readonly segmentType: BroadcastSegmentType;
   readonly displayLabelI18nKey: string;
-  readonly params: Record<string, unknown> | null;
+  readonly params: BroadcastSegmentDefinitionParams;
   readonly enabled: boolean;
   readonly createdAt: Date;
   readonly updatedAt: Date;

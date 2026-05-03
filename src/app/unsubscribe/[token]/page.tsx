@@ -51,6 +51,7 @@ import {
   broadcastsRateLimiter,
   f7AuditAdapter,
   makeUnsubscribeRecipientDeps,
+  peekTokenLang,
   peekTokenTenantId,
   tenantDefaultLocaleFor,
   unsubscribeRecipient,
@@ -59,6 +60,9 @@ import {
 import { resolveTenantDisplayName } from '@/lib/broadcasts-route-helpers';
 import { env } from '@/lib/env';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
+import { sha256Hex } from '@/lib/crypto';
 
 /**
  * E1 — anti-enumeration rate limit per plan.md § Storage L67:
@@ -82,21 +86,28 @@ interface PageProps {
 /**
  * `noindex,nofollow` is non-negotiable: the URL embeds a signed token that
  * is per-recipient PII proxy. A search-engine crawl would leak the token
- * into archive caches. Title is intentionally generic — the per-state
- * heading lives in the page body, not the tab.
+ * into archive caches.
  *
- * Title is English-only here because Next.js `metadata` is exported
- * synchronously (no async locale resolution). A locale-aware title would
- * require `generateMetadata` which would re-resolve params/headers and
- * cost p95 budget on a SLO-F7-006 < 400ms surface; the per-state heading
- * inside the body already gives the recipient localised context. The
- * `public.unsubscribe.metaTitle` i18n keys are reserved for a future
- * `generateMetadata` migration if the trade-off changes.
+ * Locale-aware title (Phase 9 i18n cleanup): `peekTokenLang` decodes the
+ * unsigned `lang` claim ONLY (no HMAC verify, no DB roundtrip — pure
+ * in-memory parse). A forged `lang` only changes the rendered `<title>`
+ * of the attacker's own request — same surface area as the existing
+ * `peekTokenTenantId` pattern. Falls back to `en` when missing/malformed
+ * so the title always renders even on a corrupt token.
  */
-export const metadata: Metadata = {
-  title: 'Unsubscribe',
-  robots: { index: false, follow: false, noarchive: true },
-};
+export async function generateMetadata({
+  params,
+}: {
+  readonly params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+  const lang = peekTokenLang(token) ?? 'en';
+  const t = await getTranslations({ locale: lang, namespace: 'public.unsubscribe' });
+  return {
+    title: t('metaTitle'),
+    robots: { index: false, follow: false, noarchive: true },
+  };
+}
 
 export type UnsubscribeOutcome =
   | {
@@ -159,11 +170,17 @@ async function emitInvalidTokenAudit(
   // amendment promoting any F7 event to 10y propagates here without
   // a hardcoded literal at the call site.
   try {
+    // T198 T-F7-05 (Phase 10) — sourceIp is GDPR Art. 4(1) PII; stored
+    // raw in a 5y-retention column violates data-minimisation. Hash
+    // before persistence; first 12 hex chars of sha256 are sufficient
+    // for cross-request correlation while making the original IP
+    // unrecoverable from a DB dump.
+    const sourceIpHash = `sha256:${sha256Hex(sourceIp).slice(0, 12)}`;
     await f7AuditAdapter.emit(null, {
       eventType: 'broadcast_unsubscribe_token_invalid',
       actorUserId: 'system:public_unsubscribe',
       summary: `Public unsubscribe rejected: ${failureReason}`,
-      payload: { failureReason, sourceIp },
+      payload: { failureReason, sourceIpHash },
       tenantId,
       requestId,
     });
@@ -253,12 +270,23 @@ export async function processUnsubscribe(
   }
   const payload = verifyResult.value;
 
-  // Defence-in-depth: peek and verify both parse `tid` from the same
-  // base64url-encoded payload, so they CANNOT diverge unless one of the
-  // parsers contains a bug. The check is intentionally cheap and stays
-  // here as a guard against future refactors that might separate the
-  // two parsers (e.g. if peek ever moves to reading a different field).
-  if (payload.tenantId !== tenantId) {
+  // Defence-in-depth: pre-tenant `peekTokenTenantId` parses `tid`
+  // from the unauthenticated token to bind RLS, while `verify` re-parses
+  // `tid` from the SAME base64url payload AFTER constant-time MAC
+  // verification. Today both parsers read the same field, so the only
+  // way they diverge is if (a) a future refactor separates the two
+  // parsers, (b) one parser is silently broken by a dependency bump,
+  // or (c) an attacker crafts a token whose unauthenticated peek path
+  // returns a different tenant from the MAC-verified payload. Any of
+  // those scenarios would let cross-tenant probes bind RLS to one
+  // tenant while the suppression row writes to another — this guard
+  // closes the window. Reject as `tenant_id_mismatch` (separate audit
+  // category from `bad_signature`) so dashboards can spot drift early.
+  // R7 MED-S4 — `tenantId` is `UnverifiedTenantSlug` (peek), `payload.tenantId`
+  // is `TenantSlug` (verified). Compare as plain strings; the brand
+  // mismatch is an intentional type-level marker that this comparison
+  // is exactly the verified-vs-unverified consistency check.
+  if ((payload.tenantId as string) !== (tenantId as string)) {
     return reject('tenant_id_mismatch', tenantId, payload.lang);
   }
 
@@ -394,13 +422,34 @@ export default async function UnsubscribePage({
     '0.0.0.0';
   const requestId = h.get('x-request-id') ?? randomUUID();
 
-  const { outcome, locale } = await processUnsubscribe(
-    token,
-    queryLang,
-    acceptLanguage,
-    sourceIp,
-    requestId,
-  );
+  // T174 — root span `public_unsubscribe` per docs § 22 trace tree.
+  // Token verify + DB upsert sub-spans hang from this root via
+  // auto-instrumentation.
+  const span = broadcastsTracer().startSpan('public_unsubscribe', {
+    attributes: { 'request.id': requestId },
+  });
+  let outcome: Awaited<ReturnType<typeof processUnsubscribe>>['outcome'];
+  let locale: Awaited<ReturnType<typeof processUnsubscribe>>['locale'];
+  try {
+    const result = await processUnsubscribe(
+      token,
+      queryLang,
+      acceptLanguage,
+      sourceIp,
+      requestId,
+    );
+    outcome = result.outcome;
+    locale = result.locale;
+    span.setAttribute('broadcasts.outcome', outcome.state);
+  } catch (e) {
+    span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: e instanceof Error ? e.message : 'unsubscribe_threw',
+    });
+    span.end();
+    throw e;
+  }
+  span.end();
 
   const t = await getTranslations({
     locale,
@@ -522,6 +571,20 @@ export default async function UnsubscribePage({
             </p>
           </>
         )}
+        {/* UX-6 — link back to chamber website (when configured).
+            Omitted entirely when env var unset so no dead anchor. */}
+        {env.broadcasts.websiteUrl ? (
+          <p className="mt-6 text-sm">
+            <a
+              href={env.broadcasts.websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 inline-block py-1"
+            >
+              {t('chamberWebsiteLink')}
+            </a>
+          </p>
+        ) : null}
       </article>
     </main>
   );

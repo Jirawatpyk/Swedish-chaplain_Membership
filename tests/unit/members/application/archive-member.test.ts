@@ -11,6 +11,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ok, err } from '@/lib/result';
 
+// Round 2 review M-2/C1: assert the H1-fix invariant (cascade-failure
+// metric emit) — without this, a future refactor that drops the metric
+// would silently re-introduce the original signal-loss bug.
+const { cascadeOutcomeSpy } = vi.hoisted(() => ({
+  cascadeOutcomeSpy: vi.fn(),
+}));
+vi.mock('@/lib/metrics', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/lib/metrics')>('@/lib/metrics');
+  return {
+    ...actual,
+    broadcastsMetrics: {
+      ...actual.broadcastsMetrics,
+      cascadeOutcome: cascadeOutcomeSpy,
+    },
+  };
+});
+
 // Hoisted stub tx — must be declared before vi.mock hoists.
 const stubTxContacts = { linkedUserIds: [] as Array<string | null> };
 const stubTxInvitationsRevoked: string[] = [];
@@ -100,6 +118,7 @@ function makeDeps(overrides: Partial<{
   sessionRevocationResult: unknown;
   auditResult: unknown;
   now: Date;
+  broadcastsCascade: ArchiveMemberDeps['broadcastsCascade'];
 }> = {}): StubbedArchiveDeps {
   const now = overrides.now ?? new Date();
   const memberRepo = {
@@ -155,6 +174,20 @@ function makeDeps(overrides: Partial<{
     })),
   };
   const clock = { now: () => now };
+  // T199 H-1: broadcastsCascade is REQUIRED on ArchiveMemberDeps. Default
+  // to a no-op stub returning the new `outcome: 'ok'` shape; individual
+  // tests override to assert cascade-failure paths emit metric + log.
+  const broadcastsCascade: ArchiveMemberDeps['broadcastsCascade'] =
+    overrides.broadcastsCascade ?? {
+      cancelInFlightForMember: vi.fn(
+        async () =>
+          ({
+            outcome: 'ok' as const,
+            cancelledCount: 0,
+            skippedConcurrentCount: 0,
+          }) as const,
+      ),
+    };
   return {
     tenant,
     memberRepo,
@@ -163,12 +196,14 @@ function makeDeps(overrides: Partial<{
     sessions,
     audit,
     clock,
+    broadcastsCascade,
   } as unknown as StubbedArchiveDeps;
 }
 
 describe('archiveMember use case (R009)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    cascadeOutcomeSpy.mockReset();
     stubTxContacts.linkedUserIds = [];
     stubTxInvitationsRevoked.length = 0;
   });
@@ -341,5 +376,115 @@ describe('archiveMember use case (R009)', () => {
     // Confirms current behaviour; spec amendment for F9 export carve-out
     // is tracked per staff-review R004.
     expect(payload.reason).toBe('sensitive internal note');
+  });
+
+  describe('F7 broadcasts cascade integration (T199 H-1)', () => {
+    it('happy path: invokes cascade with archived memberId + initiatedByUserId; no unexpected_error metric emitted', async () => {
+      const cancelInFlightForMember = vi.fn(async () => ({
+        outcome: 'ok' as const,
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+      }));
+      const deps = makeDeps({
+        broadcastsCascade: { cancelInFlightForMember },
+      });
+      const result = await archiveMember(
+        memberId,
+        { reason: 'cascade happy' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      expect(result.ok).toBe(true);
+      expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
+      const call = cancelInFlightForMember.mock.calls[0] as unknown as [
+        { slug: string },
+        unknown,
+        {
+          cancellationReason?: string;
+          initiatedByUserId: string | null;
+          requestId: string | null;
+        },
+      ];
+      expect(call[0].slug).toBe('test-tenant');
+      expect(call[1]).toBe(memberId);
+      expect(call[2].cancellationReason).toBe('originator_member_deleted');
+      expect(call[2].initiatedByUserId).toBe('admin-7');
+      expect(call[2].requestId).toBe('req-7');
+      // Happy path MUST NOT emit unexpected_error — would break alert.
+      const unexpectedErrorCalls = cascadeOutcomeSpy.mock.calls.filter(
+        (c) => c[1] === 'unexpected_error',
+      );
+      expect(unexpectedErrorCalls).toHaveLength(0);
+    });
+
+    it('cascade outcome=cascade_failed: archive still succeeds + emits unexpected_error metric (H3 invariant)', async () => {
+      const cancelInFlightForMember = vi.fn(async () => ({
+        outcome: 'cascade_failed' as const,
+      }));
+      const deps = makeDeps({
+        broadcastsCascade: { cancelInFlightForMember },
+      });
+      const result = await archiveMember(
+        memberId,
+        { reason: 'cascade failed' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      // F3 archive must succeed even when F7 cascade reports failure —
+      // cascade is best-effort per archive-member.ts L221-223.
+      expect(result.ok).toBe(true);
+      expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
+      // H3 invariant: outcome='cascade_failed' MUST emit unexpected_error
+      // metric so the stop-the-line alert fires.
+      expect(cascadeOutcomeSpy).toHaveBeenCalledWith(
+        'test-tenant',
+        'unexpected_error',
+      );
+    });
+
+    it('cascade throws: archive still succeeds + emits unexpected_error metric (H3 invariant)', async () => {
+      const cancelInFlightForMember = vi.fn(async () => {
+        throw new Error('adapter mis-wired');
+      });
+      const deps = makeDeps({
+        broadcastsCascade: { cancelInFlightForMember },
+      });
+      const result = await archiveMember(
+        memberId,
+        { reason: 'cascade throws' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      expect(result.ok).toBe(true);
+      // H3 invariant: adapter throws also emit unexpected_error metric.
+      expect(cascadeOutcomeSpy).toHaveBeenCalledWith(
+        'test-tenant',
+        'unexpected_error',
+      );
+    });
+
+    it('cascade outcome=cascade_partial_failure: archive succeeds + structured log records counts (Round 5)', async () => {
+      const cancelInFlightForMember = vi.fn(async () => ({
+        outcome: 'cascade_partial_failure' as const,
+        cancelledCount: 2,
+        skippedConcurrentCount: 1,
+        unexpectedErrorCount: 3,
+      }));
+      const deps = makeDeps({
+        broadcastsCascade: { cancelInFlightForMember },
+      });
+      const result = await archiveMember(
+        memberId,
+        { reason: 'partial failure' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      // F3 archive must succeed even on partial cascade — per-broadcast
+      // unexpected_error metric was already emitted inside the F7
+      // use-case loop. F3 just records the structured log so ops can
+      // grep which member's archive ended in a partial cascade.
+      expect(result.ok).toBe(true);
+      expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
+    });
   });
 });

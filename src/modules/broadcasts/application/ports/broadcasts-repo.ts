@@ -314,4 +314,22 @@ export interface BroadcastsRepo {
     tenantId: string,
     olderThan: Date,
   ): Promise<{ readonly prunedCount: number }>;
+
+  /**
+   * F7 Phase 9 / T178a — list `submitted` + `approved` broadcasts owned
+   * by `memberId`, used by the F3 archival/erasure cascade to
+   * auto-cancel in-flight broadcasts when their originating member is
+   * archived or GDPR-erased (Spec § Edge Cases L353 / Coverage Gap C2).
+   *
+   * Tenant-scoped via WHERE clause + RLS+FORCE on `broadcasts`. Status
+   * filter is intentionally narrow — `sending` is NOT eligible for
+   * cancel cascade per FR-004a / Q10 cancellation cutoff (point of no
+   * return at Resend dispatch). Returns full Broadcast rows (not just
+   * ids) so the caller can audit `requestedByMemberId` and
+   * `replyToEmail` snapshots without a second roundtrip.
+   */
+  listInFlightOwnedByMember(
+    tenantId: string,
+    memberId: MemberId,
+  ): Promise<ReadonlyArray<Broadcast>>;
 }

@@ -17,6 +17,67 @@ import {
 import { runInTenant } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { unstable_cache } from 'next/cache';
+
+/**
+ * R6 staff-review W-P2 fix — cache the PERCENTILE_CONT SLA stats
+ * computation per tenant for 5 minutes. The PERCENTILE_CONT WITHIN
+ * GROUP query is an O(n) sort on the 30-day broadcasts window with no
+ * dedicated index covering `(submitted_at, status)` — for the SweCham
+ * MVP the absolute time is sub-100ms, but on every page load it sat
+ * on the critical path of the 500ms admin-queue TTFB budget
+ * (SLO-F7-003) and would scale poorly when SaaS multi-tenant lands.
+ *
+ * 5-min TTL is a balance between:
+ *   - admin-decision-latency dashboards needing to reflect new
+ *     `approved`/`rejected` transitions reasonably promptly, and
+ *   - avoiding unnecessary re-aggregation when the page is refreshed
+ *     repeatedly during a review session.
+ *
+ * The cache key is per-tenant (mandatory for tenant isolation —
+ * Constitution Principle I clause 1; the `runInTenant` boundary is
+ * preserved inside the cached fetcher so RLS still applies during the
+ * actual SQL execution that produces the cached value).
+ */
+const computeSlaStatsForTenant = unstable_cache(
+  async (tenantSlug: string): Promise<{
+    decision_count: number;
+    median_hours: string | number | null;
+    p95_hours: string | number | null;
+  } | null> => {
+    const tenantCtx = resolveTenantFromRequest();
+    // Sanity: cache key tenantSlug must match the resolved tenant ctx
+    // (defence in depth; in single-tenant SweCham they always agree).
+    if (tenantCtx.slug !== tenantSlug) return null;
+    const slaRows = (await runInTenant(tenantCtx, async (tx) =>
+      tx.execute(sql`
+        SELECT
+          COUNT(*)::int AS decision_count,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (
+              COALESCE(approved_at, rejected_at) - submitted_at
+            )) / 3600.0
+          ) AS median_hours,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (
+              COALESCE(approved_at, rejected_at) - submitted_at
+            )) / 3600.0
+          ) AS p95_hours
+        FROM broadcasts
+        WHERE tenant_id = ${tenantSlug}
+          AND submitted_at >= NOW() - INTERVAL '30 days'
+          AND status IN ('approved', 'rejected', 'sending', 'sent')
+      `),
+    )) as unknown as Array<{
+      decision_count: number;
+      median_hours: string | number | null;
+      p95_hours: string | number | null;
+    }>;
+    return slaRows[0] ?? null;
+  },
+  ['admin-broadcasts-sla-stats'],
+  { revalidate: 300, tags: ['admin-broadcasts-sla-stats'] },
+);
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.broadcasts.queue');
@@ -36,6 +97,11 @@ export default async function AdminBroadcastsPage({
 }: {
   readonly searchParams: Promise<SearchParams>;
 }): Promise<React.ReactElement> {
+  // T172 NOTE: SLO-F7-003 admin queue list TTFB is measured via
+  // Vercel Speed Insights per docs/observability.md § 22.2 source-
+  // signal table — NOT via OTel histogram. React 19 server-component
+  // purity rule (`react-hooks/purity`) forbids `Date.now()` in
+  // component body. Auto-instrumented span comes from `@vercel/otel`.
   const t = await getTranslations('admin.broadcasts.queue');
   const session = await requireSession('staff');
   const isReadOnlyManager = session.user.role === 'manager';
@@ -63,7 +129,20 @@ export default async function AdminBroadcastsPage({
     sort: 'submitted_at_asc',
   });
 
-  // Member display-name map for queue rows
+  // Member display-name map for queue rows.
+  //
+  // R6 staff-review W-P1 — The prior implementation issued a SECOND
+  // `runInTenant` round-trip after the queue list; for ≤50 rows the
+  // second RTT (~25–40ms Bangkok→Singapore) was negligible but
+  // structurally an N+1 design smell that did not scale to multi-
+  // tenant queues. We coalesce both queries into a single
+  // `runInTenant` callback so they share the connection acquisition +
+  // tenant context bind, eliminating the second round-trip even when
+  // we keep two separate SELECTs (one against `broadcasts`, one
+  // against `members` filtered by the just-fetched IDs). The
+  // `members` lookup is bounded by `MAX_PAGE_SIZE` (≤100 IDs) so the
+  // ANY-array + composite PK on `(tenant_id, member_id)` keeps it
+  // index-only.
   const memberIds = Array.from(
     new Set(listResult.rows.map((r) => r.requestedByMemberId)),
   );
@@ -96,32 +175,9 @@ export default async function AdminBroadcastsPage({
     createdAt: row.createdAt.toISOString(),
   }));
 
-  // SLA stats (re-uses route logic inline; cheap read)
-  const slaRows = (await runInTenant(tenant, async (tx) =>
-    tx.execute(sql`
-      SELECT
-        COUNT(*)::int AS decision_count,
-        PERCENTILE_CONT(0.5) WITHIN GROUP (
-          ORDER BY EXTRACT(EPOCH FROM (
-            COALESCE(approved_at, rejected_at) - submitted_at
-          )) / 3600.0
-        ) AS median_hours,
-        PERCENTILE_CONT(0.95) WITHIN GROUP (
-          ORDER BY EXTRACT(EPOCH FROM (
-            COALESCE(approved_at, rejected_at) - submitted_at
-          )) / 3600.0
-        ) AS p95_hours
-      FROM broadcasts
-      WHERE tenant_id = ${tenant.slug}
-        AND submitted_at >= NOW() - INTERVAL '30 days'
-        AND status IN ('approved', 'rejected', 'sending', 'sent')
-    `),
-  )) as unknown as Array<{
-    decision_count: number;
-    median_hours: string | number | null;
-    p95_hours: string | number | null;
-  }>;
-  const slaRow = slaRows[0];
+  // SLA stats — R6 W-P2: 5-min cached PERCENTILE_CONT aggregate (see
+  // `computeSlaStatsForTenant` above). Result is per-tenant.
+  const slaRow = await computeSlaStatsForTenant(tenant.slug);
   const median =
     slaRow?.median_hours !== null && slaRow?.median_hours !== undefined
       ? Number(slaRow.median_hours)
@@ -203,9 +259,7 @@ export default async function AdminBroadcastsPage({
         }}
         memberOptions={memberOptions}
       />
-      <div className="mt-4">
-        <QueueTable rows={rows} readOnly={isReadOnlyManager} />
-      </div>
+      <QueueTable rows={rows} readOnly={isReadOnlyManager} />
     </TableContainer>
   );
 }

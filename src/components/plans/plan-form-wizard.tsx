@@ -176,7 +176,7 @@ export function PlanFormWizard({
                 id="plan_id"
                 value={draft.plan_id}
                 onChange={(e) => update('plan_id', e.target.value.toLowerCase())}
-                placeholder="e.g. premium"
+                placeholder={tLabels('planIdPlaceholder')}
               />
               <p className="text-muted-foreground text-sm">{tLabels('planIdHelp')}</p>
             </div>
@@ -325,7 +325,7 @@ export function PlanFormWizard({
                     e.target.value.trim() === '' ? null : e.target.value.toLowerCase(),
                   )
                 }
-                placeholder="e.g. premium"
+                placeholder={tLabels('planIdPlaceholder')}
               />
             </div>
           ) : null}

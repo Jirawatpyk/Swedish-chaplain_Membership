@@ -58,6 +58,7 @@
     },
     "invite": {
       "title": "ตั้งค่าบัญชีของคุณ",
+      "emailLabel": "อีเมล",
       "displayNameLabel": "ชื่อของคุณ",
       "passwordLabel": "เลือกรหัสผ่าน",
       "submit": "เปิดใช้งานบัญชี",
@@ -136,7 +137,27 @@
     "userMenu": {
       "label": "เมนูบัญชี",
       "account": "การตั้งค่าบัญชี",
-      "signOut": "ออกจากระบบ"
+      "signOut": "ออกจากระบบ",
+      "signOutFailed": "ออกจากระบบไม่สำเร็จ",
+      "signOutNetworkError": "เกิดข้อผิดพลาดเครือข่ายขณะออกจากระบบ"
+    },
+    "portalLabel": {
+      "staff": "เจ้าหน้าที่",
+      "member": "สมาชิก"
+    },
+    "pagination": {
+      "prev": "ไปหน้าก่อนหน้า",
+      "next": "ไปหน้าถัดไป",
+      "morePages": "หน้าเพิ่มเติม"
+    },
+    "breadcrumbUI": {
+      "label": "เส้นทางนำทาง",
+      "more": "เพิ่มเติม"
+    },
+    "sidebar": {
+      "toggleLabel": "สลับแถบด้านข้าง",
+      "title": "แถบด้านข้าง",
+      "description": "แถบด้านข้างสำหรับมือถือ"
     },
     "theme": {
       "label": "สลับธีม",
@@ -156,7 +177,8 @@
     "notFound": "ไม่พบสิ่งที่คุณค้นหา",
     "unauthorized": "กรุณาเข้าสู่ระบบเพื่อดูเนื้อหานี้",
     "forbidden": "คุณไม่มีสิทธิ์ดูเนื้อหานี้",
-    "readOnlyMode": "ระบบอยู่ในโหมดอ่านอย่างเดียวเพื่อการบำรุงรักษา"
+    "readOnlyMode": "ระบบอยู่ในโหมดอ่านอย่างเดียวเพื่อการบำรุงรักษา",
+    "errorId": "รหัสข้อผิดพลาด: {id}"
   },
   "buttons": {
     "cancel": "ยกเลิก",
@@ -254,7 +276,7 @@
           "network": "เครือข่ายมีปัญหา โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่",
           "invalid-input": "กรุณากรอกอีเมลและเลือกสิทธิ์ให้ถูกต้อง",
           "email-taken": "อีเมลนี้มีอยู่ในระบบแล้ว",
-          "member-not-found": "ไม่พบข้อมูลสมาชิกที่เลือก อาจอยู่ในเทนแนนต์อื่นหรือถูกเก็บถาวรแล้ว",
+          "member-not-found": "ไม่พบข้อมูลสมาชิกที่เลือก อาจอยู่ในองค์กรอื่นหรือถูกเก็บถาวรแล้ว",
           "contact-already-linked": "อีเมลนี้มีบัญชีสำหรับบริษัทนี้อยู่แล้ว หากลืมรหัสผ่านให้ไปที่หน้าลืมรหัสผ่าน",
           "email-belongs-to-other-member": "อีเมลนี้เป็นผู้ติดต่อของบริษัทอื่นในระบบอยู่แล้ว 1 อีเมลผูกได้กับ 1 บริษัทเท่านั้น",
           "forbidden": "คุณไม่มีสิทธิ์เชิญผู้ใช้"
@@ -339,9 +361,48 @@
           "benefits": "สิทธิประโยชน์",
           "review": "ตรวจสอบ"
         },
+        "matrix": {
+          "section": {
+            "brandVisibility": "การมองเห็นแบรนด์",
+            "events": "กิจกรรม",
+            "additionalBenefits": "สิทธิประโยชน์เพิ่มเติม",
+            "partnershipBenefits": "สิทธิประโยชน์พาร์ทเนอร์ชิป"
+          },
+          "eblastPerYear": "E-blast ต่อปี",
+          "websitePageType": "ประเภทหน้าเว็บไซต์",
+          "homepageLogoCategory": "หมวดโลโก้บนหน้าแรก",
+          "homepageLogo": "โลโก้บนหน้าแรก",
+          "directoryListingSize": "ขนาดรายชื่อในไดเรกทอรี",
+          "directoryListing": "รายชื่อในไดเรกทอรี",
+          "eventDiscountScope": "ขอบเขตส่วนลดงานอีเวนต์",
+          "discountScope": "ขอบเขตส่วนลด",
+          "eventsCoBrandedAccess": "สิทธิ์เข้างาน Co-Branded",
+          "coBrandedAccess": "สิทธิ์ Co-Branded",
+          "culturalTicketsPerYear": "บัตรงานวัฒนธรรมต่อปี",
+          "culturalTicketsYear": "บัตรงานวัฒนธรรม/ปี",
+          "m2mBenefitsAccess": "สิทธิ์ M2M Benefits",
+          "businessReferrals": "การแนะนำธุรกิจ",
+          "tailorMadeServices": "บริการเฉพาะสมาชิก",
+          "eventTicketsIncluded": "บัตรงานอีเวนต์รวมในแพ็กเกจ",
+          "eventTickets": "บัตรงานอีเวนต์",
+          "websiteLogoMonths": "เดือนแสดงโลโก้บนเว็บไซต์",
+          "bannerPerYear": "แบนเนอร์ต่อปี",
+          "boothIncluded": "บูธรวมในแพ็กเกจ",
+          "rollupLogoAtEvents": "โลโก้บน Rollup ในงาน",
+          "logoOnMerch": "โลโก้บนของที่ระลึก",
+          "newsletterPromotion": "โปรโมชันใน Newsletter",
+          "eNewsletterLogo": "โลโก้ใน E-newsletter",
+          "videoDuration": "ความยาววิดีโอ (นาที)",
+          "videoDurationShort": "ความยาววิดีโอ",
+          "videoFrequencyScope": "ขอบเขตความถี่วิดีโอ",
+          "directoryAdPosition": "ตำแหน่งโฆษณาในไดเรกทอรี",
+          "directoryAd": "โฆษณาในไดเรกทอรี"
+        },
         "labels": {
           "planId": "รหัสแพ็กเกจ (slug)",
           "planIdHelp": "ตัวพิมพ์เล็ก ตัวเลข และเครื่องหมายขีดเท่านั้น (เช่น diamond, start-up)",
+          "planIdPlaceholder": "เช่น premium",
+          "loadingLabel": "กำลังโหลดรายการแพ็กเกจ…",
           "planYear": "ปีของแพ็กเกจ",
           "planName": "ชื่อแพ็กเกจ",
           "description": "คำอธิบาย",
@@ -417,7 +478,10 @@
         "title": "แก้ไข {planName}",
         "titleGeneric": "แก้ไขแพ็กเกจ",
         "save": "บันทึกการเปลี่ยนแปลง",
-        "saving": "กำลังบันทึก…"
+        "saving": "กำลังบันทึก…",
+        "toast": {
+          "noChanges": "ไม่มีการเปลี่ยนแปลงให้บันทึก"
+        }
       },
       "detail": {
         "titleGeneric": "รายละเอียดแพ็กเกจ"
@@ -430,7 +494,11 @@
         "activateClonedLabel": "เปิดใช้งานแพ็กเกจที่คัดลอกทันที",
         "submit": "คัดลอก {count} แพ็กเกจ",
         "submitting": "กำลังคัดลอก…",
-        "cancel": "ยกเลิก"
+        "cancel": "ยกเลิก",
+        "errors": {
+          "targetYearPopulated": "ปีปลายทาง {year} มีแพ็กเกจอยู่แล้ว กรุณาลบหรือเลือกปีอื่น",
+          "noPlans": "ปีต้นทาง {year} ไม่มีแพ็กเกจให้คัดลอก"
+        }
       },
       "confirm": {
         "deactivate": {
@@ -503,12 +571,12 @@
         }
       },
       "bundleChangeWarning": {
-        "title": "การเปลี่ยน bundle",
+        "title": "การเปลี่ยนชุดแพ็กเกจ",
         "description": "การเปลี่ยนแพ็กเกจจะเปลี่ยน corporate tier ที่ผูกไว้ โดยกระทบ {affectedCount, plural, =0 {ไม่มีสมาชิก} other {# ราย}} บน partnership เดิม",
-        "oldBundle": "Bundle เดิม",
-        "newBundle": "Bundle ใหม่",
+        "oldBundle": "แพ็กเกจเดิม",
+        "newBundle": "แพ็กเกจใหม่",
         "affectedCount": "{count, plural, =0 {ไม่มีสมาชิกที่กระทบ} other {กระทบ # ราย}}",
-        "confirm": "ยืนยันการเปลี่ยน bundle",
+        "confirm": "ยืนยันการเปลี่ยนแพ็กเกจ",
         "cancel": "ยกเลิก",
         "loading": "กำลังคำนวณจำนวนสมาชิกที่กระทบ…"
       },
@@ -540,7 +608,7 @@
           "status": "สถานะ",
           "risk": "ความเสี่ยง",
           "lastActivity": "กิจกรรมล่าสุด",
-          "notes": "โน้ต"
+          "notes": "บันทึก"
         },
         "riskPlaceholder": "—",
         "rowAriaLabel": "เปิดรายละเอียด {company}",
@@ -579,6 +647,7 @@
           "audit": "กิจกรรมล่าสุด"
         },
         "fields": {
+          "memberId": "รหัสสมาชิก",
           "legalEntityType": "ประเภทนิติบุคคล",
           "country": "ประเทศ",
           "taxId": "เลขประจำตัวผู้เสียภาษี",
@@ -715,9 +784,11 @@
           "companyName": "ชื่อบริษัท",
           "legalEntityType": "ประเภทนิติบุคคล",
           "country": "ประเทศ (ISO alpha-2)",
+          "countryPlaceholder": "TH",
           "taxId": "เลขประจำตัวผู้เสียภาษี",
           "taxIdHintTH": "เลข 13 หลัก พร้อม checksum ตามเกณฑ์สรรพากร",
           "website": "เว็บไซต์",
+          "websitePlaceholder": "https://…",
           "description": "คำอธิบาย",
           "foundedYear": "ปีก่อตั้ง",
           "turnoverThb": "ยอดขายต่อปี (บาท)",
@@ -733,8 +804,8 @@
           "preferredLanguage": "ภาษาที่ต้องการ",
           "dateOfBirth": "วันเกิด",
           "dateOfBirthHint": "จำเป็นสำหรับแพ็กเกจ Thai Alumni",
-          "notes": "โน้ต (สำหรับแอดมินเท่านั้น)",
-          "notesPlaceholder": "บันทึกภายในสำหรับแอดมิน…",
+          "notes": "บันทึก (สำหรับผู้ดูแลระบบเท่านั้น)",
+          "notesPlaceholder": "บันทึกภายในสำหรับผู้ดูแลระบบ…",
           "notesHint": "มองเห็นได้เฉพาะเจ้าหน้าที่หอการค้า ไม่แสดงต่อสมาชิก"
         },
         "errors": {
@@ -804,7 +875,7 @@
         "selectedCount": "เลือกแล้ว {count} รายการ",
         "overCap": "สูงสุด {max} สมาชิกต่อชุด กรุณาแบ่งรายการ",
         "actions": {
-          "archive": "ย้ายไปถังเก็บ",
+          "archive": "เก็บเข้าคลัง",
           "change_plan": "เปลี่ยนแพ็กเกจ",
           "send_portal_invite": "ส่งคำเชิญ"
         },
@@ -835,12 +906,12 @@
         "countryUpdated": "อัปเดตประเทศแล้ว",
         "countryInvalid": "รหัสประเทศต้องเป็น 2 ตัวอักษร ISO",
         "countryInput": "รหัสประเทศ (2 ตัวอักษร)",
-        "editNotes": "แก้ไขโน้ต",
-        "editNotesHint": "ดับเบิลคลิกเพื่อแก้ไขโน้ต",
-        "notesUpdated": "อัปเดตโน้ตแล้ว",
-        "notesSaved": "บันทึกโน้ตแล้ว",
-        "notesInput": "แก้ไขโน้ต",
-        "notesPlaceholder": "เพิ่มโน้ต…",
+        "editNotes": "แก้ไขบันทึก",
+        "editNotesHint": "ดับเบิลคลิกเพื่อแก้ไขบันทึก",
+        "notesUpdated": "อัปเดตบันทึกแล้ว",
+        "notesSaved": "บันทึกข้อมูลแล้ว",
+        "notesInput": "แก้ไขบันทึก",
+        "notesPlaceholder": "เพิ่มบันทึก…",
         "networkError": "เครือข่ายมีปัญหา ตรวจสอบการเชื่อมต่อ"
       },
       "archive": {
@@ -879,11 +950,11 @@
     },
     "invoiceSettings": {
       "title": "ตั้งค่าการออกใบแจ้งหนี้",
-      "subtitle": "การตั้งค่าระดับ tenant (ข้อมูลนิติบุคคล, VAT, การเลขเอกสาร, โลโก้)",
+      "subtitle": "การตั้งค่าระดับหอการค้า: ข้อมูลนิติบุคคล, VAT, การเลขเอกสาร, โลโก้",
       "card": {
         "title": "ตั้งค่าใบแจ้งหนี้",
-        "description": "การเปลี่ยนแปลงจะมีผลกับใบแจ้งหนี้ใหม่เท่านั้น ใบที่ออกไปแล้วจะคงค่าเดิม (FR-011)",
-        "firstTimeDescription": "ยังไม่มีการตั้งค่า กรอกฟิลด์ที่จำเป็นเพื่อปลดล็อกการออกใบแจ้งหนี้ (FR-010)"
+        "description": "การเปลี่ยนแปลงจะมีผลกับใบแจ้งหนี้ใหม่เท่านั้น ใบที่ออกไปแล้วจะคงค่าเดิม",
+        "firstTimeDescription": "ยังไม่มีการตั้งค่า กรอกฟิลด์ที่จำเป็นเพื่อปลดล็อกการออกใบแจ้งหนี้"
       },
       "sections": {
         "currency": "สกุลเงิน",
@@ -1234,7 +1305,7 @@
         "issuing": "กำลังออก…",
         "success": "ออกใบแจ้งหนี้เรียบร้อย",
         "cancel": "ยกเลิก",
-        "irreversibleWarning": "การออกใบแจ้งหนี้จะจัดสรรเลขเอกสารตามลำดับ §87 ของกรมสรรพากร และ **ไม่สามารถย้อนกลับได้** — หากต้องการยกเลิกต้องออกใบลดหนี้ (Credit Note)",
+        "irreversibleWarning": "การออกใบแจ้งหนี้จะจัดสรรเลขเอกสารตามลำดับ §87 ของกรมสรรพากร และไม่สามารถย้อนกลับได้ — หากต้องการยกเลิกต้องออกใบลดหนี้ (Credit Note)",
         "errors": {
           "failed": "ออกใบแจ้งหนี้ไม่สำเร็จ",
           "codeFallback": "รหัสข้อผิดพลาด: {code}",
@@ -1415,7 +1486,8 @@
           "schedule": "อนุมัติและนัดส่ง"
         },
         "scheduleLabel": "ส่งเวลา",
-        "scheduleHelp": "อย่างน้อย 5 นาทีจากเวลาปัจจุบัน",
+        "scheduleHelp": "อย่างน้อย 5 นาทีจากเวลาปัจจุบัน · เขตเวลา: Asia/Bangkok",
+        "schedulePreviewLabel": "จะส่งในวันที่:",
         "confirm": "อนุมัติ",
         "cancel": "ยกเลิก"
       },
@@ -1513,7 +1585,7 @@
         "ariaLabel": "คืนเงินสำหรับใบแจ้งหนี้นี้"
       },
       "dialog": {
-        "title": "ออกใบลดหนี้?",
+        "title": "ยืนยันการคืนเงิน?",
         "description": "คืนเงินทั้งหมดหรือบางส่วนของรายการชำระเงินนี้ ระบบจะออกใบลดหนี้และส่งอีเมลให้สมาชิกโดยอัตโนมัติ",
         "cancel": "ยกเลิก",
         "confirm": "ยืนยันการคืนเงิน",
@@ -1658,12 +1730,14 @@
       "expand": "ขยายแถบด้านข้าง",
       "ariaLabel": "เมนูนำทางสำหรับเจ้าหน้าที่",
       "members": "สมาชิก",
-      "invoices": "ใบแจ้งหนี้"
+      "invoices": "ใบแจ้งหนี้",
+      "broadcasts": "E-Blast"
     },
     "member": {
       "dashboard": "แดชบอร์ด",
       "profile": "โปรไฟล์",
       "invoices": "ใบแจ้งหนี้",
+      "broadcasts": "E-Blast",
       "account": "บัญชีของฉัน",
       "ariaLabel": "เมนูนำทางสำหรับสมาชิก"
     }
@@ -1672,11 +1746,11 @@
     "admin": "ผู้ดูแลระบบ",
     "dashboard": "แดชบอร์ด",
     "users": "ผู้ใช้งาน",
-    "plans": "แผนสมาชิก",
+    "plans": "แพ็กเกจสมาชิก",
     "settings": "การตั้งค่า",
     "fees": "การตั้งค่าค่าธรรมเนียม",
     "account": "บัญชี",
-    "newPlan": "แผนใหม่",
+    "newPlan": "แพ็กเกจใหม่",
     "clonePlan": "คัดลอกแผน",
     "editPlan": "แก้ไข",
     "members": "สมาชิก",
@@ -1700,6 +1774,10 @@
     "loadingForm": "กำลังโหลดแบบฟอร์ม"
   },
   "portal": {
+    "account": {
+      "title": "การตั้งค่าบัญชี",
+      "subtitle": "จัดการรหัสผ่านและภาษาของอีเมลแจ้งเตือน"
+    },
     "preferredLocale": {
       "title": "ภาษาของอีเมลแจ้งเตือน",
       "description": "เลือกภาษาที่คุณต้องการรับอีเมล (อนุมัติบรอดแคสต์, ใบแจ้งหนี้, รีเซ็ตรหัสผ่าน) ปล่อยที่ \"ใช้ภาษาของหอการค้า\" เพื่อใช้ค่าเริ่มต้นของหอการค้า",
@@ -1897,6 +1975,15 @@
           "submit": "ส่งเพื่อตรวจสอบ",
           "deleteDraft": "ลบฉบับร่าง"
         },
+        "submitNote": {
+          "cancellable": "คุณสามารถยกเลิกการส่งนี้ได้จนกว่าผู้ดูแลจะอนุมัติ"
+        },
+        "estimateNote": {
+          "allMembers": "ผู้รับ: สมาชิกที่ใช้งานทุกคนที่มีอีเมลหลัก (จำกัดไม่เกิน 5,000 รายต่อการส่ง 1 ครั้ง)",
+          "tier": "ผู้รับ: สมาชิกในระดับที่เลือกที่มีอีเมลหลัก (จำกัดไม่เกิน 5,000 ราย)",
+          "custom": "ผู้รับ: 1 อีเมลต่อบรรทัด สูงสุด 100 รายการ ต้องตรงกับสมาชิก/ผู้ติดต่อในหอการค้า",
+          "customCount": "กรอกแล้ว {count} อีเมล"
+        },
         "errors": {
           "broadcast_quota_blocked": "โควตา E-Blast ของปีนี้ถูกใช้หมดแล้ว",
           "broadcast_not_in_plan": "แพ็กเกจของคุณยังไม่รวมสิทธิ์ส่ง E-Blast",
@@ -1909,9 +1996,9 @@
           "broadcast_custom_recipient_unknown": "อีเมลในรายการกำหนดเองบางรายการไม่อยู่ในไดเรกทอรี",
           "broadcast_custom_recipient_invalid_format": "อีเมลบางรายการรูปแบบไม่ถูกต้อง",
           "broadcast_member_missing_primary_contact_email": "โปรไฟล์ของคุณยังไม่มีอีเมลผู้ติดต่อหลัก",
-          "broadcast_member_halted_pending_review": "สิทธิ์การส่ง E-Blast ของคุณถูกพักไว้รออดมินตรวจสอบ",
+          "broadcast_member_halted_pending_review": "สิทธิ์การส่ง E-Blast ของคุณถูกพักไว้รอผู้ดูแลระบบตรวจสอบ",
           "broadcast_rate_limit_exceeded": "ส่งบ่อยเกินไป กรุณาลองใหม่ภายหลัง",
-          "broadcast_immutable_after_submit": "E-Blast นี้ถูกส่งแล้วและแก้ไขไม่ได้",
+          "broadcast_immutable_after_submit": "E-Blast นี้ถูกส่งเพื่ออนุมัติแล้วและไม่สามารถแก้ไขได้",
           "broadcast_not_found": "ไม่พบ E-Blast",
           "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่"
         },
@@ -1940,6 +2027,7 @@
         "acknowledgement": {
           "title": "ความยินยอมการสื่อสารทางการตลาด",
           "body": "การส่ง E-Blast เป็นการยืนยันว่าผู้รับยินยอมรับข้อมูลข่าวสารจากหอการค้า ผู้รับสามารถถอนความยินยอมรายบุคคลได้ตลอดเวลา",
+          "privacyPolicyLink": "อ่านนโยบายความเป็นส่วนตัว",
           "acknowledge": "ฉันรับทราบ",
           "remindLater": "เตือนภายหลัง",
           "closeLabel": "ปิดแบนเนอร์",
@@ -2017,7 +2105,7 @@
       "loadError": "ไม่สามารถโหลดโปรไฟล์ได้ กรุณาลองใหม่อีกครั้ง",
       "editButton": "แก้ไขโปรไฟล์",
       "companySection": "ข้อมูลบริษัท",
-      "planSection": "แผนสมาชิกภาพ",
+      "planSection": "แพ็กเกจสมาชิก",
       "contactsSection": "ผู้ติดต่อ",
       "inviteColleague": "เชิญเพื่อนร่วมงาน",
       "primaryBadge": "หลัก",
@@ -2187,7 +2275,7 @@
       },
       "hardCap": {
         "title": "คุณยังอยู่ไหม?",
-        "body": "หน้าต่างชำระเงินเปิดมาแล้ว 30 นาที กดดำเนินการต่อเพื่อทำรายการ มิฉะนั้นระบบจะยกเลิกการชำระเงินโดยอัตโนมัติ",
+        "body": "หน้าต่างชำระเงินเปิดมาแล้ว 30 นาที กดดำเนินการต่อเพื่อทำรายการ หากไม่ดำเนินการ ระบบจะยกเลิกการชำระเงินโดยอัตโนมัติ",
         "continue": "ดำเนินการต่อ",
         "autoCancelCountdown": "จะยกเลิกใน {seconds} วินาที"
       },
@@ -2205,35 +2293,35 @@
         "placeholder": "ค้นหาใบแจ้งหนี้ของคุณ…",
         "label": "ชำระเงินใบแจ้งหนี้ {invoiceNumber} · {amount}",
         "emptyHint": "ไม่มีใบแจ้งหนี้ที่รอชำระ",
-        "allPaidHint": "ไม่มีใบแจ้งหนี้รอชำระ — คุณชำระครบแล้ว ✨"
+        "allPaidHint": "ไม่มีใบแจ้งหนี้รอชำระ — คุณชำระครบแล้ว"
       }
     }
   },
   "audit": {
     "eventType": {
-      "member_created": "Member created",
-      "member_updated": "Member updated",
-      "member_plan_changed": "Plan changed",
-      "member_primary_contact_changed": "Primary contact changed",
-      "member_status_changed": "Status changed",
-      "member_archived": "Member archived",
-      "member_undeleted": "Member undeleted",
-      "contact_created": "Contact added",
-      "contact_updated": "Contact updated",
-      "contact_removed": "Contact removed",
-      "member_self_updated": "Profile updated by member",
-      "member_self_update_forbidden": "Forbidden self-update blocked",
-      "member_cross_tenant_probe": "Cross-tenant probe detected",
-      "plan_bundle_changed": "Plan bundle changed",
-      "member_contact_email_changed": "Contact email changed",
-      "user_sessions_revoked": "Sessions revoked",
-      "email_verification_sent": "Email verification sent",
-      "email_change_notification_sent_to_old_address": "Email-change notice sent to old address",
-      "member_email_change_reverted": "Email change reverted",
-      "email_verification_resent": "Verification email resent",
-      "email_dispatch_failed": "Email dispatch failed",
-      "invitation_bounced": "Invitation bounced",
-      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
+      "member_created": "เพิ่มสมาชิก",
+      "member_updated": "อัปเดตสมาชิก",
+      "member_plan_changed": "เปลี่ยนแพ็กเกจ",
+      "member_primary_contact_changed": "เปลี่ยนผู้ติดต่อหลัก",
+      "member_status_changed": "เปลี่ยนสถานะ",
+      "member_archived": "เก็บเข้าคลังแล้ว",
+      "member_undeleted": "กู้คืนสมาชิก",
+      "contact_created": "เพิ่มผู้ติดต่อ",
+      "contact_updated": "อัปเดตผู้ติดต่อ",
+      "contact_removed": "ลบผู้ติดต่อ",
+      "member_self_updated": "สมาชิกอัปเดตโปรไฟล์",
+      "member_self_update_forbidden": "ระงับการแก้ไขที่ไม่ได้รับอนุญาต",
+      "member_cross_tenant_probe": "ตรวจพบการเข้าถึงข้ามองค์กร",
+      "plan_bundle_changed": "เปลี่ยนชุดแพ็กเกจ",
+      "member_contact_email_changed": "เปลี่ยนอีเมลผู้ติดต่อ",
+      "user_sessions_revoked": "ยกเลิกเซสชันผู้ใช้",
+      "email_verification_sent": "ส่งอีเมลยืนยันแล้ว",
+      "email_change_notification_sent_to_old_address": "ส่งแจ้งเตือนการเปลี่ยนอีเมลไปยังที่อยู่เดิม",
+      "member_email_change_reverted": "ย้อนกลับการเปลี่ยนอีเมล",
+      "email_verification_resent": "ส่งอีเมลยืนยันซ้ำแล้ว",
+      "email_dispatch_failed": "ส่งอีเมลไม่สำเร็จ",
+      "invitation_bounced": "อีเมลคำเชิญตีกลับ",
+      "bulk_action_rate_limit_exceeded": "เกินขีดจำกัดการดำเนินการแบบกลุ่ม"
     }
   },
   "pagination": {
@@ -2279,7 +2367,7 @@
     },
     "broadcastDelivered": {
       "subject": "ส่ง E-Blast \"{subject}\" สำเร็จแล้ว",
-      "greeting": "สวัสดีครับ/ค่ะ,",
+      "greeting": "เรียนท่านสมาชิก,",
       "summaryIntro": "นี่คือสรุปการส่ง E-Blast ของคุณ:",
       "deliveredCount": "ส่งถึงแล้ว: {count} จาก {total}",
       "bouncedCount": "ตีกลับ: {count}",
@@ -2290,14 +2378,14 @@
     },
     "broadcastFailedToDispatch": {
       "subject": "ไม่สามารถส่ง E-Blast \"{subject}\" ตามกำหนดการได้",
-      "greeting": "สวัสดีครับ/ค่ะ,",
+      "greeting": "เรียนท่านสมาชิก,",
       "body1": "เราไม่สามารถส่ง E-Blast ของคุณสำหรับ {tenantDisplayName} ตามกำหนดการได้",
       "scheduledForLabel": "กำหนดส่งเดิม: {scheduledFor}",
       "failureReasonLabel": "สาเหตุ: {reason}",
       "body2": "บริการส่งอีเมลขัดข้องนานกว่าหนึ่งชั่วโมง เราจึงหยุดความพยายามส่งซ้ำ เพื่อไม่ให้ E-Blast ส่งออกในเวลาที่ไม่คาดคิด",
-      "reassurance": "โควตา E-Blast ของคุณยังไม่ถูกใช้และยังคงสำรองไว้ คุณสามารถจัดกำหนดการใหม่จากคิวผู้ดูแล หรือผู้ดูแลห้องการค้าสามารถส่งซ้ำเองได้",
+      "reassurance": "โควตา E-Blast ของคุณยังไม่ถูกใช้และยังคงสำรองไว้ คุณสามารถจัดกำหนดการใหม่จากคิวผู้ดูแล หรือผู้ดูแลหอการค้าสามารถส่งซ้ำเองได้",
       "ctaRescheduleLabel": "เปิดดูรายละเอียดบรอดแคสต์",
-      "footerSignOff": "หากต้องการความช่วยเหลือ กรุณาติดต่อผู้ดูแลห้องการค้าของคุณ"
+      "footerSignOff": "หากต้องการความช่วยเหลือ กรุณาติดต่อผู้ดูแลหอการค้าของคุณ"
     },
     "broadcastFooter": {
       "receivedBecause": "คุณได้รับอีเมลฉบับนี้เพราะคุณเป็นผู้ติดต่อของสมาชิก {tenantDisplayName}",
@@ -2310,6 +2398,7 @@
     "unsubscribe": {
       "metaTitle": "ยกเลิกการรับข่าวสาร",
       "fallbackChamberName": "องค์กร",
+      "chamberWebsiteLink": "เยี่ยมชมเว็บไซต์องค์กร",
       "success": {
         "heading": "ยกเลิกการรับข่าวสารแล้ว",
         "body": "คุณได้ยกเลิกการรับอีเมลข่าวสารทางการตลาดจาก {tenantDisplayName} แล้ว และจะไม่ได้รับ E-Blasts อีกต่อไป",

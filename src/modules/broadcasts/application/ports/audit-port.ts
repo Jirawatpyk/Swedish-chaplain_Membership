@@ -13,24 +13,26 @@
  * (none currently).
  *
  * Event taxonomy:
- *   - Draft / submission (US1): 15 events
- *   - Admin review + dispatch (US2): 12 events (round-4 added
- *     `broadcast_resend_audience_drift` for idempotency-replay
- *     count mismatch + round-5 added
- *     `broadcast_resend_drift_check_unverifiable` for non-404 fetch
- *     failures during the same path)
+ *   - Draft / submission (US1): 16 events (R6 added `broadcast_subject_empty`)
+ *   - Admin review + dispatch + per-recipient delivery (US2+US4): 14 events
+ *     (round-4 added `broadcast_resend_audience_drift`; round-5 added
+ *     `broadcast_resend_drift_check_unverifiable`; round-6 added
+ *     `broadcast_delivery_recorded` to fix audit-trail semantic for
+ *     `email.delivered` webhook events — was incorrectly aliased to
+ *     `broadcast_send_started`)
  *   - Cross-tenant probes: 2 events
- *   - Unsubscribe + suppression (US5): 4 events (deferred emit)
- *   - Webhook (US4): 1 event (deferred emit)
- *   - Plan-expiry edge (US6): 1 event (deferred emit)
+ *   - Unsubscribe + suppression (US5): 4 events
+ *   - Webhook (US4): 1 event
+ *   - Plan-expiry edge (US6): 1 event
  *   - Clarifications session 5 (Q14 + Q15): 3 events
- *   = 39 total
+ *   - Phase 8 verify-fix R3: 2 events
+ *   = 43 total
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
 
 export const F7_AUDIT_EVENT_TYPES = [
-  // --- Draft / submission (US1) — 15 events --------------------------
+  // --- Draft / submission (US1) — 16 events (R7 LOW-S1: was 15 pre-R6) -
   'broadcast_drafted',
   'broadcast_submitted',
   'broadcast_quota_blocked',
@@ -39,6 +41,7 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_not_in_plan',
   'broadcast_immutable_after_submit',
   'broadcast_subject_too_long',
+  'broadcast_subject_empty', // R6 W-R3 fix — separate from too_long to align audit with Result kind
   'broadcast_body_too_large',
   'broadcast_body_unsafe_html',
   'broadcast_audience_too_large',
@@ -47,12 +50,13 @@ export const F7_AUDIT_EVENT_TYPES = [
   'member_missing_primary_contact',
   'broadcast_member_halted_pending_review', // R3-NEW-1
 
-  // --- Admin review (US2) — 11 events --------------------------------
+  // --- Admin review (US2) + delivery (US4) — 14 events ----------------
   'broadcast_approved',
   'broadcast_rejected',
   'broadcast_cancelled',
   'broadcast_cancel_too_late',
   'broadcast_send_started',
+  'broadcast_delivery_recorded',       // US4 — per-recipient delivery confirmation from Resend webhook (was incorrectly aliased to send_started until R6 staff-review fix)
   'broadcast_send_timeout_completed', // US6-deferred (24h stuck-sending reconcile)
   'broadcast_sent',                    // US4-deferred (Resend webhook delivered handler)
   'broadcast_quota_consumed',          // US4-deferred (consumed at sending→sent webhook)
@@ -97,12 +101,12 @@ export const F7_AUDIT_EVENT_TYPES = [
 ] as const;
 
 /**
- * Static assertion: count matches the declared 37. Catches drift if a
+ * Static assertion: count matches the declared 43. Catches drift if a
  * spec amendment adds an event without updating this file. The check
  * lives at type level; if the count is wrong, TypeScript errors here
- * with "Type '38' is not assignable to type '37'" (or similar).
+ * with "Type '44' is not assignable to type '43'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 41
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 43
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -130,11 +134,106 @@ export function f7RetentionFor(eventType: F7AuditEventType): 5 {
 }
 
 /**
+ * T185 (Phase 9) — predicate for the F9 audit-viewer surface to filter
+ * F7 events from the cross-feature `audit_log` table. F9 SHOULD call
+ * this via the public barrel (`@/modules/broadcasts`) instead of
+ * re-declaring the event-type list, so future F7 catalogue amendments
+ * automatically flow through to F9 with zero code change. Pure
+ * predicate — no DB access, no port shape, no Application port.
+ */
+export function isF7AuditEventType(
+  eventType: string,
+): eventType is F7AuditEventType {
+  return (F7_AUDIT_EVENT_TYPES as readonly string[]).includes(eventType);
+}
+
+/**
+ * Round 5 review type-design — per-event payload shapes for the
+ * highest-leverage F7 audit events. The full DU (all 43 event types)
+ * is deliberately NOT enforced through the port signature because it
+ * would require simultaneous rewrite of ~50 emit sites + ~70 test
+ * fixtures, and the carve-outs needed for trace-replay test fixtures
+ * would weaken the type guarantee anyway.
+ *
+ * Instead we ship a STRUCTURAL contract (this mapped type) that
+ * dashboards / runbooks / future typed-emit helpers can reference —
+ * covering the 8 most security-critical events whose payload shape is
+ * load-bearing for cross-tenant / GDPR / quota forensics. Other events
+ * keep the wide `Record<string, unknown>` shape and rely on emit-site
+ * tests as the authoritative payload contract (per CLAUDE.md
+ * test-first principle).
+ *
+ * If a new event needs typed-payload enforcement, add it to this map
+ * AND a `F7AuditPayloadFor<E>` derivation in the typed-emit helper
+ * (`emitTyped` below).
+ */
+export interface F7AuditPayloadShapes {
+  readonly broadcast_submitted: {
+    readonly broadcastId: string;
+    readonly actorRole: 'member_self_service' | 'admin_proxy';
+    readonly segmentType: string;
+    readonly estimatedRecipientCount: number;
+  };
+  readonly broadcast_cancelled: {
+    readonly broadcastId: string;
+    readonly actorKind: 'member' | 'admin' | 'system';
+    readonly actorRole: 'member_self_service' | 'admin_proxy' | 'system';
+    readonly cancellationReason: string | null;
+    readonly cancelledAt: string;
+  };
+  readonly broadcast_unsubscribed: {
+    readonly recipientEmailHashed: string;
+    readonly broadcastId: string | null;
+    readonly tokenHash: string;
+  };
+  readonly broadcast_suppression_applied: {
+    readonly recipientEmailHashed: string;
+    readonly source: 'webhook_bounce' | 'webhook_complaint' | 'public_unsubscribe';
+  };
+  readonly broadcast_quota_consumed: {
+    readonly broadcastId: string;
+    readonly quotaYearConsumed: number;
+    readonly recipientCount: number;
+  };
+  readonly broadcast_cross_tenant_probe: {
+    readonly probedTenantId: string;
+    readonly probedBroadcastId: string;
+  };
+  readonly broadcast_cross_member_probe: {
+    readonly probedMemberId: string;
+    readonly probedBroadcastId: string;
+  };
+  readonly broadcast_webhook_signature_rejected: {
+    readonly reason:
+      | 'feature_disabled'
+      | 'body_too_large'
+      | 'missing_header'
+      | 'bad_signature';
+  };
+}
+
+/**
+ * Mapped type — `F7AuditPayloadFor<'broadcast_submitted'>` resolves to
+ * the per-event payload shape, defaulting to the wide
+ * `Record<string, unknown>` for events not yet in `F7AuditPayloadShapes`.
+ */
+export type F7AuditPayloadFor<E extends F7AuditEventType> =
+  E extends keyof F7AuditPayloadShapes
+    ? F7AuditPayloadShapes[E]
+    : Record<string, unknown>;
+
+/**
  * F7 audit event payload contract. F7 emit sites populate `payload`
  * with event-specific fields per data-model.md § 6 (e.g.,
  * `broadcast_submitted` carries `broadcastId`, `segmentType`,
- * `estimatedRecipientCount`, etc.). Strict per-event payload typing
- * is deferred to Phase 3+ (per-story emit sites).
+ * `estimatedRecipientCount`, etc.).
+ *
+ * The structural payload contract is `F7AuditPayloadShapes` /
+ * `F7AuditPayloadFor<E>` above (Round 5 type-design). The port keeps
+ * the wide `Record<string, unknown>` payload field for back-compat
+ * with the ~50 untyped emit sites; new emit sites SHOULD migrate to
+ * the typed helper once a per-event entry is added to
+ * `F7AuditPayloadShapes`.
  */
 export interface F7AuditEvent {
   readonly eventType: F7AuditEventType;

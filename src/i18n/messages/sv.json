@@ -58,6 +58,7 @@
     },
     "invite": {
       "title": "Slutför ditt konto",
+      "emailLabel": "E-post",
       "displayNameLabel": "Ditt namn",
       "passwordLabel": "Välj ett lösenord",
       "submit": "Aktivera konto",
@@ -136,7 +137,27 @@
     "userMenu": {
       "label": "Kontomeny",
       "account": "Kontoinställningar",
-      "signOut": "Logga ut"
+      "signOut": "Logga ut",
+      "signOutFailed": "Utloggning misslyckades",
+      "signOutNetworkError": "Nätverksfel vid utloggning"
+    },
+    "portalLabel": {
+      "staff": "Personal",
+      "member": "Medlem"
+    },
+    "pagination": {
+      "prev": "Gå till föregående sida",
+      "next": "Gå till nästa sida",
+      "morePages": "Fler sidor"
+    },
+    "breadcrumbUI": {
+      "label": "Brödsmulor",
+      "more": "Mer"
+    },
+    "sidebar": {
+      "toggleLabel": "Växla sidofält",
+      "title": "Sidofält",
+      "description": "Mobilt sidofält"
     },
     "theme": {
       "label": "Växla tema",
@@ -156,7 +177,8 @@
     "notFound": "Vi kunde inte hitta det du letade efter.",
     "unauthorized": "Du måste logga in för att se det här.",
     "forbidden": "Du har inte behörighet att se det här.",
-    "readOnlyMode": "Systemet är i skrivskyddat läge för underhåll."
+    "readOnlyMode": "Systemet är i skrivskyddat läge för underhåll.",
+    "errorId": "Fel-ID: {id}"
   },
   "buttons": {
     "cancel": "Avbryt",
@@ -339,9 +361,48 @@
           "benefits": "Förmåner",
           "review": "Granska"
         },
+        "matrix": {
+          "section": {
+            "brandVisibility": "Varumärkessynlighet",
+            "events": "Evenemang",
+            "additionalBenefits": "Övriga förmåner",
+            "partnershipBenefits": "Partnerskapsförmåner"
+          },
+          "eblastPerYear": "E-utskick per år",
+          "websitePageType": "Webbsidetyp",
+          "homepageLogoCategory": "Logokategori på startsida",
+          "homepageLogo": "Logo på startsida",
+          "directoryListingSize": "Storlek på katalogpost",
+          "directoryListing": "Katalogpost",
+          "eventDiscountScope": "Omfattning av evenemangsrabatt",
+          "discountScope": "Rabattomfattning",
+          "eventsCoBrandedAccess": "Co-branded evenemangstillgång",
+          "coBrandedAccess": "Co-branded-tillgång",
+          "culturalTicketsPerYear": "Kulturbiljetter per år",
+          "culturalTicketsYear": "Kulturbiljetter/år",
+          "m2mBenefitsAccess": "Tillgång till M2M-förmåner",
+          "businessReferrals": "Affärshänvisningar",
+          "tailorMadeServices": "Skräddarsydda tjänster",
+          "eventTicketsIncluded": "Evenemangsbiljetter ingår",
+          "eventTickets": "Evenemangsbiljetter",
+          "websiteLogoMonths": "Antal månader logo på webbplats",
+          "bannerPerYear": "Banner per år",
+          "boothIncluded": "Monter ingår",
+          "rollupLogoAtEvents": "Rollup-logo på evenemang",
+          "logoOnMerch": "Logo på merchandise",
+          "newsletterPromotion": "Nyhetsbrevspromotion",
+          "eNewsletterLogo": "Logo i e-nyhetsbrev",
+          "videoDuration": "Videolängd (minuter)",
+          "videoDurationShort": "Videolängd",
+          "videoFrequencyScope": "Omfattning av videofrekvens",
+          "directoryAdPosition": "Annonsposition i katalogen",
+          "directoryAd": "Katalogannons"
+        },
         "labels": {
           "planId": "Paket-ID (slug)",
           "planIdHelp": "Endast gemener, siffror och bindestreck (t.ex. diamond, start-up).",
+          "planIdPlaceholder": "t.ex. premium",
+          "loadingLabel": "Läser in paketlista…",
           "planYear": "Paketår",
           "planName": "Paketnamn",
           "description": "Beskrivning",
@@ -417,7 +478,10 @@
         "title": "Redigera {planName}",
         "titleGeneric": "Redigera paket",
         "save": "Spara ändringar",
-        "saving": "Sparar…"
+        "saving": "Sparar…",
+        "toast": {
+          "noChanges": "Inga ändringar att spara."
+        }
       },
       "detail": {
         "titleGeneric": "Paketdetaljer"
@@ -430,7 +494,11 @@
         "activateClonedLabel": "Aktivera klonade paket omedelbart",
         "submit": "Klona {count} paket",
         "submitting": "Klonar…",
-        "cancel": "Avbryt"
+        "cancel": "Avbryt",
+        "errors": {
+          "targetYearPopulated": "Målåret {year} har redan paket. Ta bort dem eller välj ett annat år.",
+          "noPlans": "Källåret {year} har inga paket att klona."
+        }
       },
       "confirm": {
         "deactivate": {
@@ -534,7 +602,7 @@
         "columns": {
           "company": "Företag",
           "country": "Land",
-          "plan": "Plan",
+          "plan": "Paket",
           "year": "År",
           "primaryContact": "Primär kontakt",
           "status": "Status",
@@ -575,19 +643,20 @@
           "contacts": "Kontakter",
           "primary": "Primär kontakt",
           "secondary": "Övriga kontakter",
-          "plan": "Plan",
+          "plan": "Paket",
           "audit": "Senaste aktivitet"
         },
         "fields": {
+          "memberId": "Medlems-ID",
           "legalEntityType": "Företagstyp",
           "country": "Land",
-          "taxId": "Org.nr",
+          "taxId": "Skatte-ID",
           "website": "Webbplats",
           "description": "Beskrivning",
           "foundedYear": "Grundat",
           "turnoverThb": "Årsomsättning (THB)",
-          "planId": "Plan-ID",
-          "planYear": "Planår",
+          "planId": "Paket-ID",
+          "planYear": "Paketår",
           "registrationDate": "Registreringsdatum",
           "registrationFeePaid": "Registreringsavgift",
           "registrationFeePaidYes": "Betald",
@@ -602,12 +671,12 @@
           "phone": "Telefon",
           "roleTitle": "Roll",
           "preferredLanguage": "Föredraget språk",
-          "plan": "Plan"
+          "plan": "Paket"
         },
         "copy": {
           "copyMemberId": "Kopiera medlems-ID",
           "copyEmail": "Kopiera e-post",
-          "copyTaxId": "Kopiera org.nr",
+          "copyTaxId": "Kopiera skatte-ID",
           "copied": "Kopierat!"
         },
         "notFound": {
@@ -622,7 +691,7 @@
           "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Klicka på Lägg till kontakt för att skapa en sekundär kontakt med den nya personens uppgifter och använd sedan Befordra för att göra dem till den nya primära. Den gamla primära nedgraderas automatiskt."
         },
         "portal": {
-          "linked": "Portalanslutning"
+          "linked": "Portalansluten"
         },
         "editCta": "Redigera"
       },
@@ -715,15 +784,17 @@
           "companyName": "Företagsnamn",
           "legalEntityType": "Företagstyp",
           "country": "Land (ISO-kod)",
-          "taxId": "Org.nr",
-          "taxIdHintTH": "Thailändskt 13-siffrigt org.nr med checksiffra",
+          "countryPlaceholder": "TH",
+          "taxId": "Skatte-ID",
+          "taxIdHintTH": "Thailändskt 13-siffrigt skatte-ID med checksiffra",
           "website": "Webbplats",
+          "websitePlaceholder": "https://…",
           "description": "Beskrivning",
           "foundedYear": "Grundat år",
           "turnoverThb": "Årsomsättning (THB)",
-          "plan": "Plan",
-          "planPlaceholder": "Välj plan…",
-          "planYear": "Planår",
+          "plan": "Paket",
+          "planPlaceholder": "Välj paket…",
+          "planYear": "Paketår",
           "registrationDate": "Registreringsdatum",
           "firstName": "Förnamn",
           "lastName": "Efternamn",
@@ -733,7 +804,7 @@
           "preferredLanguage": "Föredraget språk",
           "dateOfBirth": "Födelsedatum",
           "dateOfBirthHint": "Krävs för Thai Alumni-planen",
-          "notes": "Anteckningar (endast admin)",
+          "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",
           "notesHint": "Synligt endast för kammarpersonal. Visas inte för medlemmar."
         },
@@ -879,11 +950,11 @@
     },
     "invoiceSettings": {
       "title": "Fakturainställningar",
-      "subtitle": "Tenant-nivå fakturakonfiguration (juridisk identitet, moms, numrering, logotyp).",
+      "subtitle": "Konfiguration på kammarnivå: juridisk identitet, moms, numrering och logotyp.",
       "card": {
         "title": "Fakturakonfiguration",
-        "description": "Ändringar gäller endast framtida fakturor. Redan utfärdade fakturor behåller sin ursprungliga snapshot (FR-011).",
-        "firstTimeDescription": "Inga inställningar ännu. Fyll i obligatoriska fält för att låsa upp fakturering (FR-010)."
+        "description": "Ändringar gäller endast framtida fakturor. Redan utfärdade fakturor behåller sin ursprungliga snapshot.",
+        "firstTimeDescription": "Inga inställningar ännu. Fyll i obligatoriska fält för att låsa upp fakturering."
       },
       "sections": {
         "currency": "Valuta",
@@ -1129,8 +1200,8 @@
         "fields": {
           "memberId": "Medlem",
           "memberIdHelp": "Klistra in medlems-UUID. Väljare kommer senare.",
-          "planId": "Plan",
-          "planYear": "Planår"
+          "planId": "Paket",
+          "planYear": "Paketår"
         },
         "memberPicker": {
           "placeholder": "Välj medlem…",
@@ -1169,7 +1240,7 @@
         },
         "fields": {
           "memberId": "Medlem",
-          "plan": "Plan / år",
+          "plan": "Paket / år",
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
           "subtotal": "Delsumma",
@@ -1234,7 +1305,7 @@
         "issuing": "Utfärdar…",
         "success": "Fakturan utfärdad",
         "cancel": "Avbryt",
-        "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan **inte ångras** — för att annullera måste en kreditnota utfärdas.",
+        "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan inte ångras — för att annullera måste en kreditnota utfärdas.",
         "errors": {
           "failed": "Kunde inte utfärda",
           "codeFallback": "Felkod: {code}",
@@ -1415,7 +1486,8 @@
           "schedule": "Godkänn och schemalägg"
         },
         "scheduleLabel": "Skicka",
-        "scheduleHelp": "Minst 5 minuter från nu.",
+        "scheduleHelp": "Minst 5 minuter från nu. Tidszon: Asia/Bangkok.",
+        "schedulePreviewLabel": "Skickas:",
         "confirm": "Godkänn",
         "cancel": "Avbryt"
       },
@@ -1651,19 +1723,21 @@
       "settings": "Inställningar",
       "settingsInvoices": "Fakturainställningar",
       "sections": {
-        "main": "Huvud",
+        "main": "Allmänt",
         "settings": "Inställningar"
       },
       "collapse": "Fäll ihop sidofältet",
       "expand": "Expandera sidofältet",
       "ariaLabel": "Personalnavigering",
       "members": "Medlemmar",
-      "invoices": "Fakturor"
+      "invoices": "Fakturor",
+      "broadcasts": "Utskick"
     },
     "member": {
       "dashboard": "Instrumentpanel",
       "profile": "Profil",
       "invoices": "Fakturor",
+      "broadcasts": "Utskick",
       "account": "Mitt konto",
       "ariaLabel": "Medlemsnavigering"
     }
@@ -1672,12 +1746,12 @@
     "admin": "Admin",
     "dashboard": "Instrumentpanel",
     "users": "Användare",
-    "plans": "Planer",
+    "plans": "Paket",
     "settings": "Inställningar",
     "fees": "Avgiftskonfiguration",
     "account": "Konto",
-    "newPlan": "Ny plan",
-    "clonePlan": "Klona plan",
+    "newPlan": "Nytt paket",
+    "clonePlan": "Klona paket",
     "editPlan": "Redigera",
     "members": "Medlemmar",
     "memberDetail": "Detaljer",
@@ -1700,6 +1774,10 @@
     "loadingForm": "Laddar formulär"
   },
   "portal": {
+    "account": {
+      "title": "Kontoinställningar",
+      "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl."
+    },
     "preferredLocale": {
       "title": "Språk för aviseringar",
       "description": "Välj språket för de mejl du får (utskicksgodkännanden, fakturor, lösenordsåterställning). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
@@ -1747,7 +1825,7 @@
         "heading": "Senaste fakturor",
         "description": "Dina tre senaste fakturor — ladda ner PDF eller visa alla.",
         "viewAll": "Visa alla",
-        "contactAdmin": "Kontakta din handelskammaradmin"
+        "contactAdmin": "Kontakta din kammaradministratör"
       },
       "detail": {
         "a11y": {
@@ -1764,7 +1842,7 @@
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
           "paidDate": "Betald",
-          "planYear": "Planår"
+          "planYear": "Paketår"
         },
         "lines": {
           "description": "Beskrivning",
@@ -1895,7 +1973,16 @@
         "button": {
           "saveDraft": "Spara som utkast",
           "submit": "Skicka för granskning",
-          "deleteDraft": "Släng utkast"
+          "deleteDraft": "Ta bort utkast"
+        },
+        "submitNote": {
+          "cancellable": "Du kan avbryta detta utskick när som helst tills en administratör godkänner det."
+        },
+        "estimateNote": {
+          "allMembers": "Mottagare: varje aktiv medlem med primär kontakt-e-post (max 5 000 per utskick).",
+          "tier": "Mottagare: medlemmar på vald nivå med primär kontakt-e-post (max 5 000).",
+          "custom": "Mottagare: en e-post per rad nedan. Max 100 rader. Varje måste matcha en medlem eller kontakt i din kammare.",
+          "customCount": "{count} e-post angiven."
         },
         "errors": {
           "broadcast_quota_blocked": "Du har använt hela din E-Blast-kvot för i år.",
@@ -1916,9 +2003,9 @@
           "internal_error": "Ett oväntat fel inträffade. Försök igen."
         },
         "delete": {
-          "title": "Släng detta utkast?",
+          "title": "Ta bort detta utkast?",
           "body": "Detta tar bort ditt utkast permanent. Åtgärden kan inte ångras.",
-          "confirm": "Släng",
+          "confirm": "Ta bort",
           "cancel": "Fortsätt redigera"
         }
       },
@@ -1940,6 +2027,7 @@
         "acknowledgement": {
           "title": "Samtycke till marknadskommunikation",
           "body": "Att skicka in ett E-Blast bekräftar att mottagarna har samtyckt till att ta emot din kammares kommunikation. Du kan återkalla samtycke per mottagare när som helst.",
+          "privacyPolicyLink": "Läs sekretesspolicyn",
           "acknowledge": "Jag bekräftar",
           "remindLater": "Påminn senare",
           "closeLabel": "Stäng banner",
@@ -2029,7 +2117,7 @@
         "country": "Land",
         "website": "Webbplats",
         "description": "Beskrivning",
-        "planYear": "Planår",
+        "planYear": "Paketår",
         "registrationDate": "Registreringsdatum",
         "status": "Status"
       },
@@ -2162,11 +2250,11 @@
       },
       "disabled": {
         "title": "Onlinebetalning är inte tillgänglig",
-        "body": "Onlinebetalning med kort eller PromptPay är inte tillgänglig för denna faktura. Kontakta kammarens administratör för instruktioner om bankoverföring.",
+        "body": "Onlinebetalning med kort eller PromptPay är inte tillgänglig för denna faktura. Kontakta kammarens administratör för instruktioner om banköverföring.",
         "contactAdminCta": "Kontakta administratören",
         "contactAdminCtaAria": "Kontakta administratören om faktura {invoiceNumber}",
         "noContactEmail": "Ingen administratörs-e-post är konfigurerad ännu. Kontakta kammarkontoret direkt.",
-        "mailSubject": "Instruktioner för bankoverföring för faktura {invoiceNumber}"
+        "mailSubject": "Instruktioner för banköverföring för faktura {invoiceNumber}"
       },
       "qrExpiring": {
         "title": "QR-koden förfaller snart",
@@ -2205,35 +2293,35 @@
         "placeholder": "Sök dina fakturor…",
         "label": "Betala faktura {invoiceNumber} · {amount}",
         "emptyHint": "Inga fakturor att betala",
-        "allPaidHint": "Inga väntande fakturor — du är i kapp ✨"
+        "allPaidHint": "Inga obetalda fakturor — allt är betalt."
       }
     }
   },
   "audit": {
     "eventType": {
-      "member_created": "Member created",
-      "member_updated": "Member updated",
-      "member_plan_changed": "Plan changed",
-      "member_primary_contact_changed": "Primary contact changed",
-      "member_status_changed": "Status changed",
-      "member_archived": "Member archived",
-      "member_undeleted": "Member undeleted",
-      "contact_created": "Contact added",
-      "contact_updated": "Contact updated",
-      "contact_removed": "Contact removed",
-      "member_self_updated": "Profile updated by member",
-      "member_self_update_forbidden": "Forbidden self-update blocked",
-      "member_cross_tenant_probe": "Cross-tenant probe detected",
-      "plan_bundle_changed": "Plan bundle changed",
-      "member_contact_email_changed": "Contact email changed",
-      "user_sessions_revoked": "Sessions revoked",
-      "email_verification_sent": "Email verification sent",
-      "email_change_notification_sent_to_old_address": "Email-change notice sent to old address",
-      "member_email_change_reverted": "Email change reverted",
-      "email_verification_resent": "Verification email resent",
-      "email_dispatch_failed": "Email dispatch failed",
-      "invitation_bounced": "Invitation bounced",
-      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
+      "member_created": "Medlem skapad",
+      "member_updated": "Medlem uppdaterad",
+      "member_plan_changed": "Paket ändrat",
+      "member_primary_contact_changed": "Primär kontakt ändrad",
+      "member_status_changed": "Status ändrad",
+      "member_archived": "Medlem arkiverad",
+      "member_undeleted": "Medlem återställd",
+      "contact_created": "Kontakt tillagd",
+      "contact_updated": "Kontakt uppdaterad",
+      "contact_removed": "Kontakt borttagen",
+      "member_self_updated": "Profil uppdaterad av medlem",
+      "member_self_update_forbidden": "Otillåten självuppdatering blockerad",
+      "member_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation",
+      "plan_bundle_changed": "Paketgrupp ändrad",
+      "member_contact_email_changed": "Kontaktens e-postadress ändrad",
+      "user_sessions_revoked": "Sessioner återkallade",
+      "email_verification_sent": "E-postverifiering skickad",
+      "email_change_notification_sent_to_old_address": "Avisering om e-poständring skickad till tidigare adress",
+      "member_email_change_reverted": "E-poständring återställd",
+      "email_verification_resent": "Verifieringsmejl skickat på nytt",
+      "email_dispatch_failed": "E-postutskick misslyckades",
+      "invitation_bounced": "Inbjudan studsade",
+      "bulk_action_rate_limit_exceeded": "Gräns för massåtgärd nådd"
     }
   },
   "pagination": {
@@ -2244,7 +2332,7 @@
     "page": "Sida {page}"
   },
   "shared": {
-    "loaded": "Laddat"
+    "loaded": "Innehåll laddat"
   },
   "email": {
     "invoiceIssued": {
@@ -2274,7 +2362,7 @@
       "subject": "Ditt utskick har avbrutits",
       "greeting": "Hej {name},",
       "body": "Ditt utskick \"{subject}\" har avbrutits.",
-      "reasonHeading": "Anteckning om avbrott:",
+      "reasonHeading": "Notering om avbrytning:",
       "footer": "Din reserverade kvot har frigjorts."
     },
     "broadcastDelivered": {
@@ -2308,11 +2396,12 @@
   },
   "public": {
     "unsubscribe": {
-      "metaTitle": "Avregistrera",
+      "metaTitle": "Avregistrering",
       "fallbackChamberName": "kammaren",
+      "chamberWebsiteLink": "Besök kammarens webbplats",
       "success": {
         "heading": "Avregistrerad",
-        "body": "Du har avregistrerats från {tenantDisplayName} marknadsutskick. Du kommer inte längre att få E-Blasts.",
+        "body": "Du har avregistrerats från {tenantDisplayName} marknadsutskick. Du kommer inte längre att få marknadsutskick.",
         "transactional": "Du fortsätter att ta emot transaktionsmejl (lösenordsåterställning, fakturakvitton, förnyelsepåminnelser) kopplade till ditt konto, om sådana finns.",
         "contact": "Om du avregistrerade av misstag, kontakta <email></email>."
       },

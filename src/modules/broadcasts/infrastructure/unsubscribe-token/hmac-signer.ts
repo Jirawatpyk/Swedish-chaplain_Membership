@@ -23,7 +23,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
-import { unsafeBrandTenantSlug, type TenantSlug } from '@/modules/tenants';
+import { unsafeBrandTenantSlug } from '@/modules/tenants';
 import {
   asBroadcastId,
   type BroadcastId,
@@ -186,7 +186,29 @@ export const unsubscribeTokenSigner: UnsubscribeTokenPort = {
  * function and NEVER use the returned tid for anything other than RLS
  * binding.
  */
-export function peekTokenTenantId(token: string): TenantSlug | null {
+/**
+ * R7 staff-review MED-S4 fix — branded `UnverifiedTenantSlug` makes
+ * accidental trusted use a TypeScript error. The `peek*` family is
+ * the narrowest possible RLS-bypass window (pre-HMAC payload reads).
+ * Returning the same brand as the verified output (`TenantSlug`)
+ * silently allowed callers to mix verified and unverified slugs at
+ * the type level. Branding the return forces a deliberate cast at
+ * the call site (`peeked as TenantSlug`) which acts as a code review
+ * marker for "I am binding RLS with an unverified tenant identity
+ * because I will verify HMAC immediately afterwards".
+ *
+ * The downstream `unsubscribeTokenSigner.verify()` returns the
+ * verified `TenantSlug`. The unsubscribe page and the
+ * `unsubscribe-recipient` use-case implement the
+ * peek → bind RLS → verify → defence-in-depth tenant_id_mismatch
+ * pattern; this brand documents that contract at the type level.
+ */
+declare const UnverifiedTenantSlugBrand: unique symbol;
+export type UnverifiedTenantSlug = string & {
+  readonly [UnverifiedTenantSlugBrand]: true;
+};
+
+export function peekTokenTenantId(token: string): UnverifiedTenantSlug | null {
   if (typeof token !== 'string') return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
@@ -195,6 +217,29 @@ export function peekTokenTenantId(token: string): TenantSlug | null {
   const r = parsePayloadSegment(b64Payload);
   if (r === null) return null;
   return typeof r.tid === 'string' && r.tid.length > 0
-    ? unsafeBrandTenantSlug(r.tid)
+    ? (r.tid as UnverifiedTenantSlug)
     : null;
+}
+
+/**
+ * Pre-verify peek for the optional `lang` claim. Mirrors
+ * `peekTokenTenantId` — used by the unsubscribe page's `generateMetadata`
+ * to localise the `<title>` tag without paying for a full HMAC verify.
+ *
+ * Same security constraints as peekTokenTenantId: NEVER trust the value
+ * for any decision other than UI-only locale selection (already public-
+ * facing copy). The HMAC verify pass that follows binds tenant + email +
+ * broadcast atomically; an attacker forging `lang` only changes the
+ * rendered `<title>` of their own request.
+ */
+export function peekTokenLang(token: string): 'en' | 'th' | 'sv' | null {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [version, b64Payload] = parts as [string, string, string];
+  if (version !== TOKEN_VERSION) return null;
+  const r = parsePayloadSegment(b64Payload);
+  if (r === null) return null;
+  const lang = r.lang;
+  return lang === 'en' || lang === 'th' || lang === 'sv' ? lang : null;
 }

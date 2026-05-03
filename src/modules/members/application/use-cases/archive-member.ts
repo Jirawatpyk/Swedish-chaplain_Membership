@@ -26,11 +26,13 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { archive, type Member, type MemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
+import type { BroadcastsCascadePort } from '../ports/broadcasts-cascade-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { InvitationCascadePort } from '../ports/invitation-cascade-port';
@@ -59,6 +61,16 @@ export type ArchiveMemberDeps = {
   contactRepo: ContactRepo;
   invitations: InvitationCascadePort;
   sessions: SessionRevocationPort;
+  /**
+   * F7 in-flight broadcasts cascade (T178a / T199 H-1).
+   * REQUIRED in production. Tests must inject a no-op stub via
+   * `noopBroadcastsCascadeAdapter` exported from
+   * `@/modules/members/infrastructure/adapters/broadcasts-cascade-adapter`.
+   * Earlier `?` typing was a PDPA/GDPR compliance gap — a forgotten
+   * adapter injection silently broke the Art. 17 / PDPA §33 cascade
+   * invariant; making the dep required surfaces that bug at typecheck.
+   */
+  broadcastsCascade: BroadcastsCascadePort;
   audit: AuditPort;
   clock: ClockPort;
 };
@@ -202,6 +214,87 @@ export async function archiveMember(
 
       return persistResult.value;
     });
+
+    // F7 in-flight broadcasts cascade (T178a / Coverage Gap C2 / T199 H-1).
+    // Runs AFTER the F3 archival tx commits — the cascade opens its own
+    // short tx per broadcast (independent row-locks; concurrent races
+    // on individual broadcasts do not roll back the whole F3 archive).
+    // Failure here is non-fatal: the adapter logs + returns zero so the
+    // member archive remains successful even if a transient F7 issue
+    // leaves a broadcast in-flight. Ops can re-run cleanup manually.
+    {
+      try {
+        const cascadeResult =
+          await deps.broadcastsCascade.cancelInFlightForMember(
+            deps.tenant,
+            memberId,
+            {
+              cancellationReason: 'originator_member_deleted',
+              initiatedByUserId: meta.actorUserId,
+              requestId: meta.requestId,
+            },
+          );
+        if (cascadeResult.outcome === 'cascade_failed') {
+          // Adapter already logged the underlying error. Emit
+          // stop-the-line metric so dashboards distinguish this from
+          // the no-in-flight + ok case (both report cancelledCount=0).
+          broadcastsMetrics.cascadeOutcome(
+            deps.tenant.slug,
+            'unexpected_error',
+          );
+        } else if (cascadeResult.outcome === 'cascade_partial_failure') {
+          // Round 5 review fix — partial cascade is now a first-class
+          // signal at the port level. The per-broadcast
+          // `unexpected_error` metric was already emitted inside the
+          // F7 use-case loop (so dashboards alert), but until now the
+          // F3 caller had no visibility — the cleanup runbook had to
+          // diff cascadeOutcome metric against archive-member call
+          // count. Now we record a structured log keyed by `memberId`
+          // so ops can grep which member's archive ended in partial
+          // cascade and re-attempt cancellation for the stuck rows.
+          logger.error(
+            {
+              tenantId: deps.tenant.slug,
+              memberId,
+              requestId: meta.requestId,
+              cancelledCount: cascadeResult.cancelledCount,
+              skippedConcurrentCount: cascadeResult.skippedConcurrentCount,
+              unexpectedErrorCount: cascadeResult.unexpectedErrorCount,
+              cascade: 'f7_in_flight_broadcast_cancel',
+            },
+            'archive-member: broadcasts cascade partial — some broadcasts remain in flight',
+          );
+        }
+      } catch (cascadeErr) {
+        // Adapter is supposed to translate failures to
+        // `outcome: 'cascade_failed'`; a throw here means the adapter
+        // itself blew up (e.g. composition root mis-wired). Treat as
+        // unexpected-error: emit metric + structured log; member archive
+        // still committed and remains successful.
+        broadcastsMetrics.cascadeOutcome(
+          deps.tenant.slug,
+          'unexpected_error',
+        );
+        logger.error(
+          {
+            err:
+              cascadeErr instanceof Error
+                ? cascadeErr.message
+                : String(cascadeErr),
+            // Round 2 silent-failure LOW — surface error class so the
+            // alert runbook can distinguish a TypeError (programmer
+            // mis-wire) from a network/IO blip in the same metric
+            // bucket.
+            errName:
+              cascadeErr instanceof Error ? cascadeErr.name : undefined,
+            memberId,
+            requestId: meta.requestId,
+            cascade: 'f7_in_flight_broadcast_cancel',
+          },
+          'archive-member: broadcasts cascade threw — member archive succeeded',
+        );
+      }
+    }
 
     return ok(archived);
   } catch (e) {

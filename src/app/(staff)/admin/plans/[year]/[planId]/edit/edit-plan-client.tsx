@@ -66,7 +66,7 @@ export function EditPlanClient({
   async function handleSubmit(draft: PlanSchemaInput): Promise<void> {
     const patch = computePatch(initialValues, draft);
     if (Object.keys(patch).length === 0) {
-      toast.info('No changes to save.');
+      toast.info(t('edit.toast.noChanges'));
       return;
     }
 

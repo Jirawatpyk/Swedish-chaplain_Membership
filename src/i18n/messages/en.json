@@ -58,6 +58,7 @@
     },
     "invite": {
       "title": "Finish setting up your account",
+      "emailLabel": "Email",
       "displayNameLabel": "Your name",
       "passwordLabel": "Choose a password",
       "submit": "Activate account",
@@ -136,7 +137,27 @@
     "userMenu": {
       "label": "Account menu",
       "account": "Account settings",
-      "signOut": "Sign out"
+      "signOut": "Sign out",
+      "signOutFailed": "Sign out failed",
+      "signOutNetworkError": "Network error during sign out"
+    },
+    "portalLabel": {
+      "staff": "Staff",
+      "member": "Member"
+    },
+    "pagination": {
+      "prev": "Go to previous page",
+      "next": "Go to next page",
+      "morePages": "More pages"
+    },
+    "breadcrumbUI": {
+      "label": "Breadcrumb",
+      "more": "More"
+    },
+    "sidebar": {
+      "toggleLabel": "Toggle Sidebar",
+      "title": "Sidebar",
+      "description": "Mobile sidebar"
     },
     "theme": {
       "label": "Toggle theme",
@@ -156,7 +177,8 @@
     "notFound": "We couldn't find what you were looking for.",
     "unauthorized": "You need to sign in to see this.",
     "forbidden": "You don't have permission to see this.",
-    "readOnlyMode": "The system is currently in read-only mode for maintenance."
+    "readOnlyMode": "The system is currently in read-only mode for maintenance.",
+    "errorId": "Error ID: {id}"
   },
   "buttons": {
     "cancel": "Cancel",
@@ -339,9 +361,48 @@
           "benefits": "Benefits",
           "review": "Review"
         },
+        "matrix": {
+          "section": {
+            "brandVisibility": "Brand Visibility",
+            "events": "Events",
+            "additionalBenefits": "Additional Benefits",
+            "partnershipBenefits": "Partnership Benefits"
+          },
+          "eblastPerYear": "E-blast per year",
+          "websitePageType": "Website page type",
+          "homepageLogoCategory": "Homepage logo category",
+          "homepageLogo": "Homepage logo",
+          "directoryListingSize": "Directory listing size",
+          "directoryListing": "Directory listing",
+          "eventDiscountScope": "Event discount scope",
+          "discountScope": "Discount scope",
+          "eventsCoBrandedAccess": "Events co-branded access",
+          "coBrandedAccess": "Co-branded access",
+          "culturalTicketsPerYear": "Cultural tickets per year",
+          "culturalTicketsYear": "Cultural tickets/year",
+          "m2mBenefitsAccess": "M2M benefits access",
+          "businessReferrals": "Business referrals",
+          "tailorMadeServices": "Tailor-made services",
+          "eventTicketsIncluded": "Event tickets included",
+          "eventTickets": "Event tickets",
+          "websiteLogoMonths": "Website logo months",
+          "bannerPerYear": "Banner per year",
+          "boothIncluded": "Booth included",
+          "rollupLogoAtEvents": "Rollup logo at events",
+          "logoOnMerch": "Logo on merch",
+          "newsletterPromotion": "Newsletter promotion",
+          "eNewsletterLogo": "E-newsletter logo",
+          "videoDuration": "Video duration (minutes)",
+          "videoDurationShort": "Video duration",
+          "videoFrequencyScope": "Video frequency scope",
+          "directoryAdPosition": "Directory ad position",
+          "directoryAd": "Directory ad"
+        },
         "labels": {
           "planId": "Plan ID (slug)",
           "planIdHelp": "Lowercase letters, digits, and hyphens only (e.g. diamond, start-up).",
+          "planIdPlaceholder": "e.g. premium",
+          "loadingLabel": "Loading plan list…",
           "planYear": "Plan year",
           "planName": "Plan name",
           "description": "Description",
@@ -417,7 +478,10 @@
         "title": "Edit {planName}",
         "titleGeneric": "Edit plan",
         "save": "Save changes",
-        "saving": "Saving…"
+        "saving": "Saving…",
+        "toast": {
+          "noChanges": "No changes to save."
+        }
       },
       "detail": {
         "titleGeneric": "Plan details"
@@ -430,7 +494,11 @@
         "activateClonedLabel": "Activate cloned plans immediately",
         "submit": "Clone {count} plans",
         "submitting": "Cloning…",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "errors": {
+          "targetYearPopulated": "Target year {year} already has plans. Delete or choose another year.",
+          "noPlans": "Source year {year} has no plans to clone."
+        }
       },
       "confirm": {
         "deactivate": {
@@ -579,6 +647,7 @@
           "audit": "Recent activity"
         },
         "fields": {
+          "memberId": "Member ID",
           "legalEntityType": "Legal entity type",
           "country": "Country",
           "taxId": "Tax ID",
@@ -715,9 +784,11 @@
           "companyName": "Company name",
           "legalEntityType": "Legal entity type",
           "country": "Country (ISO code)",
+          "countryPlaceholder": "TH",
           "taxId": "Tax ID",
           "taxIdHintTH": "Thai 13-digit tax ID with checksum",
           "website": "Website",
+          "websitePlaceholder": "https://…",
           "description": "Description",
           "foundedYear": "Founded year",
           "turnoverThb": "Annual turnover (THB)",
@@ -882,8 +953,8 @@
       "subtitle": "Tenant-level invoice configuration (legal identity, VAT, numbering, logo).",
       "card": {
         "title": "Invoice configuration",
-        "description": "Changes apply to future invoices only. Already-issued invoices retain their original snapshot (FR-011).",
-        "firstTimeDescription": "No settings yet. Fill in the required fields to unlock invoice issuance (FR-010)."
+        "description": "Changes apply to future invoices only. Already-issued invoices retain their original snapshot.",
+        "firstTimeDescription": "No settings yet. Fill in the required fields to unlock invoice issuance."
       },
       "sections": {
         "currency": "Currency",
@@ -1415,7 +1486,8 @@
           "schedule": "Approve & schedule"
         },
         "scheduleLabel": "Send at",
-        "scheduleHelp": "At least 5 minutes from now.",
+        "scheduleHelp": "At least 5 minutes from now. Time zone: Asia/Bangkok.",
+        "schedulePreviewLabel": "Will be sent on:",
         "confirm": "Approve",
         "cancel": "Cancel"
       },
@@ -1658,12 +1730,14 @@
       "expand": "Expand sidebar",
       "ariaLabel": "Staff navigation",
       "members": "Members",
-      "invoices": "Invoices"
+      "invoices": "Invoices",
+      "broadcasts": "Broadcasts"
     },
     "member": {
       "dashboard": "Dashboard",
       "profile": "Profile",
       "invoices": "Invoices",
+      "broadcasts": "E-Blasts",
       "account": "Account",
       "ariaLabel": "Member navigation"
     }
@@ -1700,6 +1774,10 @@
     "loadingForm": "Loading form"
   },
   "portal": {
+    "account": {
+      "title": "Account settings",
+      "subtitle": "Manage your password and notification language."
+    },
     "preferredLocale": {
       "title": "Notification language",
       "description": "Choose the language for the emails you receive (broadcast approvals, invoices, password resets). Leave on \"Use chamber default\" to follow your chamber's setting.",
@@ -1897,6 +1975,15 @@
           "submit": "Submit for review",
           "deleteDraft": "Discard draft"
         },
+        "submitNote": {
+          "cancellable": "You can cancel this broadcast at any time until an admin approves it."
+        },
+        "estimateNote": {
+          "allMembers": "Recipients: every active member with a primary contact email (capped at 5,000 per broadcast).",
+          "tier": "Recipients: members on the selected tier with a primary contact email (capped at 5,000).",
+          "custom": "Recipients: each line below is one email. Maximum 100 entries. Each must match a member or contact in your chamber.",
+          "customCount": "{count} email(s) entered."
+        },
         "errors": {
           "broadcast_quota_blocked": "You've used all of your E-Blast quota for this year.",
           "broadcast_not_in_plan": "Your membership plan does not include the E-Blast benefit.",
@@ -1940,6 +2027,7 @@
         "acknowledgement": {
           "title": "Marketing communications consent",
           "body": "Submitting an E-Blast confirms recipients have agreed to receive your chamber's communications. You can revoke consent on a per-recipient basis at any time.",
+          "privacyPolicyLink": "Read the privacy policy",
           "acknowledge": "I acknowledge",
           "remindLater": "Remind me later",
           "closeLabel": "Close banner",
@@ -2205,7 +2293,7 @@
         "placeholder": "Search your invoices…",
         "label": "Pay invoice {invoiceNumber} · {amount}",
         "emptyHint": "No issued invoices to pay",
-        "allPaidHint": "No pending invoices — you're all paid up ✨"
+        "allPaidHint": "No pending invoices — you're all paid up."
       }
     }
   },
@@ -2310,6 +2398,7 @@
     "unsubscribe": {
       "metaTitle": "Unsubscribe",
       "fallbackChamberName": "the chamber",
+      "chamberWebsiteLink": "Visit the chamber website",
       "success": {
         "heading": "Unsubscribed",
         "body": "You have been unsubscribed from {tenantDisplayName} marketing broadcasts. You will no longer receive E-Blasts.",

@@ -34,6 +34,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { verifyCronBearer } from '@/lib/cron-auth';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -43,7 +44,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const authHeader = request.headers.get('authorization');
   const expected = process.env.CRON_SECRET;
   if (expected) {
-    if (authHeader !== `Bearer ${expected}`) {
+    // R7 staff-review MED-S1 fix — timing-safe Bearer compare via
+    // `verifyCronBearer` to match F7 cron auth pattern.
+    if (!verifyCronBearer(authHeader, expected)) {
       logger.warn({ requestId }, 'cron.lockout_cleanup.unauthorized');
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
@@ -106,4 +109,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 // POST mirror so the endpoint also responds to POST (Vercel Cron
 // uses GET by default, but some schedulers use POST).
+//
+// R8 staff-review R8-S2 — both verbs go through the same
+// `verifyCronBearer(authHeader, expected)` gate at the top of GET.
+// CSRF is not a concern because the gate requires the shared
+// `CRON_SECRET` in the Authorization header (browsers cannot set
+// arbitrary Authorization on cross-origin POSTs without CORS
+// preflight, which Vercel does not advertise). Operational risk: a
+// misconfigured internal health-check posting with the secret could
+// trigger an unintended cleanup — accept as low-severity since the
+// cleanup is itself idempotent (only clears expired lockouts).
 export const POST = GET;

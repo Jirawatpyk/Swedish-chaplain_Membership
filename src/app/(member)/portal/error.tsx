@@ -41,7 +41,7 @@ export default function PortalError({
           <div>
             <CardTitle>{t('generic')}</CardTitle>
             <CardDescription>
-              {error.digest ? `Error ID: ${error.digest}` : null}
+              {error.digest ? t('errorId', { id: error.digest }) : null}
             </CardDescription>
           </div>
         </CardHeader>

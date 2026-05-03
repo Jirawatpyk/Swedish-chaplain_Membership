@@ -44,7 +44,7 @@ export async function SlaBanner({
       role={stats.bannerSeverity === 'red' ? 'alert' : 'region'}
       aria-label={t('targetSla')}
       className={cn(
-        'mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border px-4 py-3 text-sm',
+        'flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border px-4 py-3 text-sm',
         SEVERITY_STYLES[stats.bannerSeverity],
       )}
     >

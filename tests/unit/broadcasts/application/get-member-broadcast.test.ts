@@ -1,16 +1,16 @@
-/**
- * Unit tests — `get-member-broadcast.ts` use-case (F7 US3 AS5 + AS3).
+﻿/**
+ * Unit tests โ€” `get-member-broadcast.ts` use-case (F7 US3 AS5 + AS3).
  *
  * Constitution Principle II: security-critical 100% branch coverage.
  * Branches asserted:
- *   1. Genuinely-absent broadcast → returns broadcast.not_found, NO audit emit.
- *   2. Cross-member probe        → returns broadcast.not_found + emits
+ *   1. Genuinely-absent broadcast โ’ returns broadcast.not_found, NO audit emit.
+ *   2. Cross-member probe        โ’ returns broadcast.not_found + emits
  *                                  `broadcast_cross_member_probe` audit
  *                                  with correct payload.
- *   3. Audit emit throws on cross-member path → still returns
+ *   3. Audit emit throws on cross-member path โ’ still returns
  *                                  broadcast.not_found (anti-enumeration
  *                                  preserved at HTTP boundary).
- *   4. Owned broadcast → returns ok with broadcast + DeliveryBreakdown
+ *   4. Owned broadcast โ’ returns ok with broadcast + DeliveryBreakdown
  *                        totals computed correctly.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -72,6 +72,7 @@ function makeRepoMocks(opts: {
         sent: 0,
       })),
     pruneExpiredDrafts: async () => ({ prunedCount: 0 }),
+    listInFlightOwnedByMember: async () => [],
   };
 }
 
@@ -82,7 +83,7 @@ function makeAuditEmitMock() {
 }
 
 describe('getMemberBroadcast', () => {
-  it('not_found path — absent row returns err({not_found}) and DOES NOT emit audit', async () => {
+  it('not_found path โ€” absent row returns err({not_found}) and DOES NOT emit audit', async () => {
     const { audit, emit } = makeAuditEmitMock();
     const broadcastsRepo = makeRepoMocks({
       findOwned: async () => ({ broadcast: null, probeKind: 'not_found' }),
@@ -98,7 +99,7 @@ describe('getMemberBroadcast', () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
-  it('cross_member path — emits broadcast_cross_member_probe audit with correct payload', async () => {
+  it('cross_member path โ€” emits broadcast_cross_member_probe audit with correct payload', async () => {
     const { audit, emit } = makeAuditEmitMock();
     const broadcastsRepo = makeRepoMocks({
       findOwned: async () => ({ broadcast: null, probeKind: 'cross_member' }),
@@ -123,7 +124,7 @@ describe('getMemberBroadcast', () => {
     });
   });
 
-  it('cross_member path — audit emit failure does NOT change response (anti-enumeration preserved)', async () => {
+  it('cross_member path โ€” audit emit failure does NOT change response (anti-enumeration preserved)', async () => {
     const audit: AuditPort = {
       emit: vi.fn<AuditPort['emit']>(async () => {
         throw new Error('audit transport down');
@@ -142,7 +143,7 @@ describe('getMemberBroadcast', () => {
     if (!result.ok) expect(result.error.kind).toBe('broadcast.not_found');
   });
 
-  it('Round 4 H2 — repo calls receive tenant.slug + memberId + broadcastId verbatim (cross-tenant safety)', async () => {
+  it('Round 4 H2 โ€” repo calls receive tenant.slug + memberId + broadcastId verbatim (cross-tenant safety)', async () => {
     // Regression guard: a refactor that drops tenantId from the repo
     // signature, or threads `''` / a wrong slug, would make a JCC member
     // probe SweCham broadcasts. Both calls (findOwnedByMember +
@@ -181,7 +182,7 @@ describe('getMemberBroadcast', () => {
     expect(aggregate).toHaveBeenCalledWith(tenant.slug, broadcastId);
   });
 
-  it('owned path — returns broadcast + DeliveryBreakdown with correct total', async () => {
+  it('owned path โ€” returns broadcast + DeliveryBreakdown with correct total', async () => {
     const { audit } = makeAuditEmitMock();
     const broadcast = {
       tenantId: tenant.slug,

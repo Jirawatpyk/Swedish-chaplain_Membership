@@ -31,6 +31,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { asMemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -147,7 +148,59 @@ export interface SubmitBroadcastOutput {
   readonly reviewSlaTargetHours: number;
 }
 
+/**
+ * T172 (Phase 9) — map F7 audit event type to the bounded
+ * `submit_precondition_blocked` enum used by the submit-funnel
+ * counter. Returning `null` for non-precondition events skips the
+ * metric emission (e.g. `broadcast_submitted` on the success path
+ * is counted by `submitCount` instead).
+ *
+ * Round 5 simplification — switch replaced with a const lookup table.
+ * `satisfies Partial<Record<…, …>>` lets TS verify every key is a
+ * valid `F7AuditEventType` and the union of values still matches the
+ * bounded precondition enum without the 11-line return-type literal.
+ * Adding a new precondition is one line, not three.
+ */
+type SubmitPrecondition =
+  | 'quota_exhausted'
+  | 'empty_segment'
+  | 'rate_limit_exceeded'
+  | 'plan_no_eblast'
+  | 'subject_too_long'
+  | 'body_too_large'
+  | 'body_unsafe_html'
+  | 'audience_too_large'
+  | 'custom_recipient_unknown'
+  | 'member_missing_primary_contact_email'
+  | 'member_halted_pending_review';
+
+const PRECONDITION_BY_EVENT = {
+  broadcast_quota_blocked: 'quota_exhausted',
+  broadcast_empty_segment_blocked: 'empty_segment',
+  broadcast_rate_limit_exceeded: 'rate_limit_exceeded',
+  broadcast_not_in_plan: 'plan_no_eblast',
+  broadcast_subject_too_long: 'subject_too_long',
+  broadcast_subject_empty: 'subject_too_long', // R6 W-R3 — both length-violations share the same precondition bucket
+  broadcast_body_too_large: 'body_too_large',
+  broadcast_body_unsafe_html: 'body_unsafe_html',
+  broadcast_audience_too_large: 'audience_too_large',
+  broadcast_custom_recipient_unknown: 'custom_recipient_unknown',
+  broadcast_member_missing_primary_contact_email:
+    'member_missing_primary_contact_email',
+  broadcast_member_halted_pending_review: 'member_halted_pending_review',
+} as const satisfies Partial<Record<F7AuditEventType, SubmitPrecondition>>;
+
 /** Helper: emit a precondition-rejection audit on a standalone tx. */
+function preconditionFromEvent(
+  eventType: F7AuditEventType,
+): SubmitPrecondition | null {
+  return (
+    (PRECONDITION_BY_EVENT as Partial<Record<F7AuditEventType, SubmitPrecondition>>)[
+      eventType
+    ] ?? null
+  );
+}
+
 async function emitReject(
   deps: SubmitBroadcastDeps,
   input: SubmitBroadcastInput,
@@ -167,6 +220,14 @@ async function emitReject(
     // Best-effort audit. Failure does not 5xx the request — but this is
     // logged at adapter level for observability.
   }
+  // T172 — emit submit-funnel drop-off metric. Bounded enum keeps
+  // cardinality small. Wrapped in a no-throw safe-metric helper so a
+  // single OTel pipeline glitch doesn't fail the use-case.
+  const precondition = preconditionFromEvent(eventType);
+  if (precondition !== null) {
+    broadcastsMetrics.submitPreconditionBlocked(deps.tenant.slug, precondition);
+  }
+  broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
 }
 
 export async function submitBroadcast(
@@ -279,12 +340,14 @@ export async function submitBroadcast(
   // ---- Precondition (c): subject length ----------------------------
   const trimmedSubject = input.subject.trim();
   if (trimmedSubject.length === 0) {
-    // Round-4 MED-A — emit `broadcast_subject_too_long` with `length:0`
-    // so audit + client error code agree on the same event type. The
-    // alternative (separate `broadcast_subject_empty` event) would
-    // require enum migration; mapping empty as length-0 keeps a single
-    // event type and the audit payload distinguishes the two cases.
-    await emitReject(deps, input, 'broadcast_subject_too_long', {
+    // R6 staff-review W-R3 fix — audit event type now matches the
+    // Result kind. Previously emitted `broadcast_subject_too_long`
+    // with `length:0` while the Result returned
+    // `broadcast_subject_empty`, so audit-log queries and on-wire
+    // error codes diverged for the same rejection. Adding
+    // `broadcast_subject_empty` to F7_AUDIT_EVENT_TYPES and emitting
+    // it here aligns the two surfaces (count bumped 42→43).
+    await emitReject(deps, input, 'broadcast_subject_empty', {
       memberId: input.memberId,
       length: 0,
       reason: 'empty_after_trim',
@@ -524,6 +587,16 @@ export async function submitBroadcast(
         },
         requestId: input.requestId,
       });
+
+      // T172 — emit-site wiring (Phase 9). Counter + audit-volume per
+      // SC-010 / SLO-F7-002 dashboards. Duration histogram emitted by
+      // the route handler around this use-case (wallclock includes the
+      // sanitiser + segment-resolve dominant components).
+      broadcastsMetrics.submitCount(
+        deps.tenant.slug,
+        input.actorRole === 'admin_proxy' ? 'admin_proxy' : 'member_self_service',
+      );
+      broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_submitted');
 
       return ok({
         broadcast,

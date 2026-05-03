@@ -41,6 +41,9 @@ import { randomUUID } from 'node:crypto';
 
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastsTracer } from '@/lib/otel-tracer';
+import { SpanStatusCode } from '@opentelemetry/api';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
   asBroadcastId,
@@ -206,6 +209,7 @@ async function auditUnknownResendBroadcast(
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
   const correlationId = randomUUID();
+  const startedAtMs = Date.now();
 
   if (!env.features.f7Broadcasts) {
     // ERR-M3 (review): emit audit so the kill-switch flip is observable
@@ -213,6 +217,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // "no traffic arrived." Tenant unknown at this stage → NULL tenant
     // sig-reject row (same shape as missing-header).
     await auditSignatureReject('feature_disabled', requestId, correlationId);
+    broadcastsMetrics.webhookSignatureRejected('feature_disabled');
     return jsonFeatureDisabled(correlationId);
   }
 
@@ -224,6 +229,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const declared = Number.parseInt(contentLengthHeader, 10);
     if (!Number.isFinite(declared) || declared > MAX_WEBHOOK_BODY_BYTES) {
       await auditSignatureReject('body_too_large', requestId, correlationId);
+      broadcastsMetrics.webhookSignatureRejected('body_too_large');
       return jsonUnauthorized('body_too_large', correlationId);
     }
   }
@@ -243,6 +249,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     svixTimestamp.length === 0
   ) {
     await auditSignatureReject('missing_header', requestId, correlationId);
+    broadcastsMetrics.webhookSignatureRejected('missing_header');
     return jsonUnauthorized('missing_header', correlationId);
   }
 
@@ -266,6 +273,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // 413 (NOT 401) so chunked / no-Content-Length requests get the
     // same ERR-C2 semantics as the pre-guard above.
     await auditSignatureReject('body_too_large', requestId, correlationId);
+    broadcastsMetrics.webhookSignatureRejected('body_too_large');
     return jsonUnauthorized('body_too_large', correlationId);
   }
 
@@ -286,7 +294,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : typeof (e as { kind?: unknown })?.kind === 'string'
           ? ((e as { kind: string }).kind)
           : 'bad_signature';
+
+    // R7 staff-review LOW-G fix — `unknown_event_type` is NOT a
+    // signature failure; it means Resend introduced a new event type
+    // we haven't taught the verifier about yet. 200-ack so Resend
+    // doesn't retry-storm and emit info-level log + bounded metric
+    // so on-call learns about the new shape without paging.
+    //
+    // R8 staff-review R8-S1 fix — return the SAME response body as
+    // the normal success path (`{received:true}`) instead of
+    // `{received:true, ignored:'unknown_event_type'}`. The body diff
+    // gave an attacker (who would already need the signing secret
+    // to reach this code) a known/unknown-event-type oracle. Log
+    // the distinguishing info (`unknown_event_type_acked`) and the
+    // event type instead — observability without leaking the diff
+    // back to the caller.
+    if (kind === 'unknown_event_type') {
+      logger.info(
+        { requestId, correlationId },
+        'broadcasts.webhook.unknown_event_type_acked',
+      );
+      return NextResponse.json({ received: true }, { status: 200 });
+    }
+
     await auditSignatureReject(kind, requestId, correlationId);
+    broadcastsMetrics.webhookSignatureRejected('bad_signature');
     return jsonUnauthorized('bad_signature', correlationId);
   }
 
@@ -337,11 +369,40 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Step 6 — build per-tenant deps + dispatch.
   try {
     const deps = makeProcessWebhookEventDeps(tenantId);
-    const result = await processWebhookEvent(deps, {
-      broadcastId: asBroadcastId(broadcastId),
-      event: verified,
-      requestId,
-    });
+    // T174 — root span `webhook_receive_resend` (docs/observability.md
+    // § 22). Sub-spans for verify + DB upserts come from auto-instr.
+    const result = await broadcastsTracer().startActiveSpan(
+      'webhook_receive_resend',
+      {
+        attributes: {
+          'tenant.id': tenantId,
+          'broadcast.id': broadcastId,
+          'webhook.event_type': verified.type,
+        },
+      },
+      async (span) => {
+        try {
+          const r = await processWebhookEvent(deps, {
+            broadcastId: asBroadcastId(broadcastId),
+            event: verified,
+            requestId,
+          });
+          span.setAttribute(
+            'broadcasts.outcome',
+            r.ok ? r.value.kind : `err:${r.error.kind}`,
+          );
+          return r;
+        } catch (e) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: e instanceof Error ? e.message : 'webhook_threw',
+          });
+          throw e;
+        } finally {
+          span.end();
+        }
+      },
+    );
 
     if (!result.ok) {
       logger.error(
@@ -374,6 +435,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       'broadcasts.webhook.dispatched',
     );
+    // T172 — emit-site wiring (Phase 9). Per-event ingest counter +
+    // SLO-F7-005 latency histogram (target p95 < 250ms).
+    {
+      const subtype = verified.type.startsWith('email.')
+        ? verified.type.slice('email.'.length)
+        : verified.type;
+      // R9 staff-review NIT — fallback label changed from `'sent'`
+      // to `'unknown'` so a future Resend-side event subtype
+      // addition (e.g. `email.opened`) surfaces in the metric as
+      // its own bucket rather than silently inflating the `sent`
+      // counter. Note: this branch is unreachable today because
+      // `isKnownResendEventType` in the verifier rejects unknown
+      // event types BEFORE this code runs (LOW-G fix returned
+      // 200-ack with `unknown_event_type` kind earlier in the
+      // route). The `'unknown'` label is defence-in-depth for the
+      // hypothetical case where the verifier's enum drifts ahead
+      // of this label-mapping switch.
+      const eventLabel: 'delivered' | 'bounced' | 'complained' | 'sent' | 'delivery_delayed' | 'unknown' =
+        subtype === 'delivered' ||
+        subtype === 'bounced' ||
+        subtype === 'complained' ||
+        subtype === 'sent' ||
+        subtype === 'delivery_delayed'
+          ? subtype
+          : 'unknown';
+      broadcastsMetrics.webhookReceiveCount(tenantId, eventLabel);
+      broadcastsMetrics.webhookDurationMs(tenantId, Date.now() - startedAtMs);
+    }
     return jsonOk(correlationId);
   } catch (e) {
     logger.error(

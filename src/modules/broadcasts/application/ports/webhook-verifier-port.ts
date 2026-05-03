@@ -29,7 +29,14 @@ export class WebhookSignatureError extends Error {
     | 'malformed'
     | 'bad_signature'
     | 'tampered_body'
-    | 'expired_timestamp';
+    | 'expired_timestamp'
+    // R7 staff-review LOW-G fix — separate `unknown_event_type` from
+    // `malformed` so a Resend-side schema addition (e.g. new
+    // `email.opened` event type) does NOT page on-call as a
+    // `bad_signature`-class noise. Route handler returns 200-ack +
+    // logs at info-level for unknown types, vs 401 for the other
+    // kinds.
+    | 'unknown_event_type';
 
   constructor(kind: WebhookSignatureError['kind'], message: string) {
     super(message);

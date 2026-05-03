@@ -151,6 +151,29 @@ function buildIdempotencyKey(tenantId: string, broadcastId: string): string {
   return `broadcast-${tenantId}-${broadcastId}`;
 }
 
+type DispatchFailureReason =
+  | 'resend_5xx'
+  | 'resend_429'
+  | 'resend_403'
+  | 'app_error'
+  | 'timeout';
+
+/**
+ * Map a free-text dispatch `phase` label to the bounded
+ * `broadcasts.failed_to_dispatch.count` failure_reason enum. Round 5
+ * simplification — extracted from a 4-level nested ternary. The phase
+ * strings come from `classifyThrown` + caller call-sites; the matcher
+ * is order-sensitive (more specific Resend HTTP-code phases first,
+ * generic timeout next, app_error catch-all last).
+ */
+function phaseToFailureReason(phase: string): DispatchFailureReason {
+  if (phase.includes('429')) return 'resend_429';
+  if (phase.includes('403')) return 'resend_403';
+  if (phase.includes('5xx') || phase.includes('server')) return 'resend_5xx';
+  if (phase.includes('timeout')) return 'timeout';
+  return 'app_error';
+}
+
 /**
  * Helper: transition a broadcast to `failed_to_dispatch` + emit a
  * matching audit event in a single tx. On cleanup failure, log loudly
@@ -198,6 +221,20 @@ async function failDispatchAndAudit(
         payload,
         requestId: null,
       });
+      // T172 — emit-site wiring (Phase 9). failure_reason maps phase
+      // strings to the bounded enum used by the
+      // broadcasts.failed_to_dispatch.count counter.
+      // Round 5 simplification — replace the 4-level nested ternary with
+      // a small helper that early-returns. CLAUDE.md forbids nested
+      // ternaries; this also gives the helper a name visible in stack
+      // traces if the mapping ever throws.
+      if (eventType === 'broadcast_failed_to_dispatch') {
+        broadcastsMetrics.failedToDispatchCount(
+          deps.tenant.slug,
+          phaseToFailureReason(phase),
+        );
+      }
+      broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
     });
   } catch (cleanupErr) {
     logger.error(
@@ -513,7 +550,13 @@ export async function dispatchScheduledBroadcast(
       fromName: broadcast.fromName,
       fromEmail: deps.fromEmail,
       replyToEmail: broadcast.replyToEmail,
-      broadcastNameForResendDashboard: `${broadcast.fromName} — ${broadcast.subject.slice(0, 60)}`,
+      // R6 staff-review #12 — Unicode-safe truncation. `String.slice`
+      // operates on UTF-16 code units, so a subject ending with an
+      // emoji (surrogate pair, 2 code units) at index 59 would be
+      // split mid-pair, producing an invalid lone-surrogate that
+      // Resend's dashboard renders as a replacement glyph. Spread to
+      // an array of grapheme-safe code points before slicing.
+      broadcastNameForResendDashboard: `${broadcast.fromName} — ${[...broadcast.subject].slice(0, 60).join('')}`,
       tenantDisplayName: deps.tenantDisplayName,
       locale: deps.locale,
     });
@@ -543,15 +586,30 @@ export async function dispatchScheduledBroadcast(
       // assertions (previously 4 instances). pastBudget definition
       // narrows scheduledFor to non-null implicitly, but TS doesn't
       // propagate that narrowing across the if-block boundary.
+      //
+      // R6 staff-review W-R1 fix — send-now broadcasts (`scheduledFor`
+      // is null because the admin hit "Approve & send now") MUST also
+      // honor the 1h retry budget. The prior code set
+      // `elapsedMs = 0` for null-scheduledFor, making pastBudget
+      // permanently false — a stuck send-now would retry forever.
+      // Fallback epoch order: scheduledFor → approvedAt → createdAt.
+      // approvedAt is the dispatcher-eligibility moment for send-now
+      // (status transitions submitted → approved → sending happen
+      // synchronously in the admin-approve-send-now use-case so the
+      // fallback approximates "time since dispatch attempt began").
       const scheduledFor = broadcast.scheduledFor;
-      const elapsedMs =
-        scheduledFor !== null ? now.getTime() - scheduledFor.getTime() : 0;
-      const pastBudget = scheduledFor !== null && elapsedMs > RETRY_BUDGET_MS;
+      const epochForBudget =
+        scheduledFor ?? broadcast.approvedAt ?? broadcast.createdAt;
+      const elapsedMs = now.getTime() - epochForBudget.getTime();
+      const pastBudget = elapsedMs > RETRY_BUDGET_MS;
 
       if (pastBudget) {
-        // scheduledFor is non-null here by pastBudget definition; type
-        // narrowing requires re-assignment to the locally-bound const.
-        const scheduledForIso = scheduledFor.toISOString();
+        // R6 W-R1 fix — log both the scheduled epoch (if any) and the
+        // budget epoch actually used. For send-now, scheduledFor is
+        // null and the budget anchors on approvedAt (dispatch-eligibility
+        // moment).
+        const scheduledForIso = scheduledFor?.toISOString() ?? null;
+        const epochForBudgetIso = epochForBudget.toISOString();
         logger.error(
           {
             tenantId: deps.tenant.slug,
@@ -559,6 +617,8 @@ export async function dispatchScheduledBroadcast(
             subKind,
             reason,
             scheduledFor: scheduledForIso,
+            epochForBudget: epochForBudgetIso,
+            sendMode: scheduledFor === null ? 'send_now' : 'scheduled',
             elapsedMs,
             severity: 'critical',
           },
@@ -730,6 +790,10 @@ export async function dispatchScheduledBroadcast(
               'broadcasts.dispatch.unverifiable_audit_emit_failed',
             );
           }
+          // Round 3 observability G2 — emit metric so the catalogued
+          // alert at observability.md § 22.3 (drift_check_unverifiable
+          // > 1 / 1h → alarm) actually has a data source.
+          broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
         }
         if (actualCount !== null && actualCount !== expectedCount) {
           // Audience drift detected — emit audit + log error so ops
@@ -772,6 +836,10 @@ export async function dispatchScheduledBroadcast(
             },
             'broadcasts.dispatch.audience_drift_detected',
           );
+          // Round 3 observability G2 — emit metric so the catalogued
+          // alert at observability.md § 22.3 (audience_drift_detected
+          // > 0 / 24h → page) actually has a data source.
+          broadcastsMetrics.audienceDriftDetected(deps.tenant.slug);
         } else if (!countCheckFailed) {
           logger.warn(
             {
@@ -927,6 +995,13 @@ export async function dispatchScheduledBroadcast(
         },
         requestId: null,
       });
+      // T172 — emit-site wiring (Phase 9). Cron throughput counter +
+      // audit-volume per SC-010 dashboards.
+      broadcastsMetrics.cronDispatchedCount(deps.tenant.slug);
+      broadcastsMetrics.auditEmitCount(
+        deps.tenant.slug,
+        'broadcast_send_started',
+      );
       return transitioned;
     });
 

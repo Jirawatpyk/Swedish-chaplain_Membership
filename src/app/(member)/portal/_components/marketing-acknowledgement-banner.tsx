@@ -100,6 +100,10 @@ export async function MarketingAcknowledgementBanner(): Promise<React.ReactEleme
   const locale = await getLocale();
   const ackLocale: 'en' | 'th' | 'sv' =
     locale === 'th' || locale === 'sv' ? locale : 'en';
+  // UX-5 — surface tenant Privacy Policy URL when configured. Prop
+  // omitted when env is unset so the client gracefully renders no
+  // link (vs a dead `<a href="">`).
+  const privacyPolicyUrl = env.broadcasts.privacyPolicyUrl ?? null;
   return (
     <AcknowledgementBannerClient
       title={t('title')}
@@ -107,6 +111,8 @@ export async function MarketingAcknowledgementBanner(): Promise<React.ReactEleme
       acknowledge={t('acknowledge')}
       remindLater={t('remindLater')}
       locale={ackLocale}
+      privacyPolicyUrl={privacyPolicyUrl}
+      privacyPolicyLinkLabel={t('privacyPolicyLink')}
     />
   );
 }

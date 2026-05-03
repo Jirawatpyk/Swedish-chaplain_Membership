@@ -133,7 +133,7 @@ export default async function BroadcastDetailPage(props: {
 
       <section
         aria-labelledby="broadcast-detail-fields-heading"
-        className="mt-6 space-y-3 rounded-md border p-4"
+        className="space-y-3 rounded-md border p-4"
       >
         <h2
           id="broadcast-detail-fields-heading"
@@ -188,7 +188,7 @@ export default async function BroadcastDetailPage(props: {
       <section
         data-testid="delivery-breakdown"
         aria-labelledby="delivery-breakdown-heading"
-        className="mt-6 grid grid-cols-2 gap-3 rounded-md border p-4 sm:grid-cols-3"
+        className="grid grid-cols-2 gap-3 rounded-md border p-4 sm:grid-cols-3"
       >
         <h2
           id="delivery-breakdown-heading"

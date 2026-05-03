@@ -30,7 +30,7 @@ export default async function ForgotPasswordPage() {
   return (
     <main className="flex min-h-screen flex-col bg-muted/20">
       <header className="flex items-center justify-between p-4">
-        <div className="text-sm font-semibold tracking-tight">SweCham</div>
+        <div className="text-sm font-semibold tracking-tight">{process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}</div>
         <ThemeToggle />
       </header>
       <div className="flex flex-1 items-center justify-center p-4">

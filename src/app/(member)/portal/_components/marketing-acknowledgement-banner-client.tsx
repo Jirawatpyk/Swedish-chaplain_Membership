@@ -34,6 +34,11 @@ export interface AcknowledgementBannerClientProps {
    *  from `document.documentElement.lang` so the consent reflects what
    *  the user actually saw on the server-rendered page. */
   readonly locale: 'en' | 'th' | 'sv';
+  /** UX-5 — optional tenant Privacy Policy URL. When null/undefined
+   *  the link is omitted entirely (no dead anchor) for tenants
+   *  without a published policy URL. */
+  readonly privacyPolicyUrl?: string | null;
+  readonly privacyPolicyLinkLabel?: string;
 }
 
 export function AcknowledgementBannerClient({
@@ -42,6 +47,8 @@ export function AcknowledgementBannerClient({
   acknowledge,
   remindLater,
   locale,
+  privacyPolicyUrl,
+  privacyPolicyLinkLabel,
 }: AcknowledgementBannerClientProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.banner.acknowledgement');
   const [hidden, setHidden] = useState<boolean>(false);
@@ -89,12 +96,19 @@ export function AcknowledgementBannerClient({
   return (
     <>
       {hidden ? null : (
+        // Outer wrapper matches DetailContainer's `mx-auto + max-w +
+        // px-[var(--page-padding-x)]` so the amber card edges align with
+        // the page content cards below on narrow viewports (was flush to
+        // viewport edges < 1152px).
+        <div
+          className="mx-auto w-full max-w-(--layout-max-width-detail) px-[var(--page-padding-x)] pt-[var(--page-padding-y)]"
+        >
         <div
           ref={ref}
           role="region"
           aria-labelledby="broadcasts-ack-banner-heading"
           data-testid="broadcasts-acknowledge-banner"
-          className="mx-auto my-4 flex max-w-(--layout-max-width-detail) items-start gap-4 rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/40"
+          className="flex items-start gap-4 rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/40"
         >
           <ShieldCheck
             className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300"
@@ -108,6 +122,18 @@ export function AcknowledgementBannerClient({
               {title}
             </h2>
             <p className="text-sm text-muted-foreground">{body}</p>
+            {privacyPolicyUrl && privacyPolicyLinkLabel ? (
+              <p className="text-sm">
+                <a
+                  href={privacyPolicyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  {privacyPolicyLinkLabel}
+                </a>
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -136,6 +162,7 @@ export function AcknowledgementBannerClient({
               </Button>
             </div>
           </div>
+        </div>
         </div>
       )}
       {/* a11y CHK042 — focus anchor stays mounted ACROSS the hidden

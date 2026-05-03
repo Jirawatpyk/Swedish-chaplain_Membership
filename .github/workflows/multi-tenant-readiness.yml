@@ -1,0 +1,58 @@
+# T180 (Phase 9 / SC-011) — multi-tenant readiness nightly job.
+#
+# Runs the JCC-test tenant fixture (T179) on every weekday morning to
+# verify F7 (and future F-stack features) remain data-only configurable
+# for new tenants — i.e. onboarding a new chamber requires zero code
+# change in `src/modules/**`.
+#
+# **Stub-Resend mode** (active by default): T179 uses an in-process
+# stub `BroadcastsGatewayPort` so this workflow needs no Resend
+# credentials. It runs against the project's TypeScript module graph
+# only — confirms the audit catalogue + cascade boundary stay
+# tenant-agnostic. Live Resend dispatch is exercised by the staging
+# promotion pipeline.
+#
+# Failure = ship blocker for the next F7.x amendment.
+name: F7 Multi-tenant readiness (nightly)
+
+on:
+  schedule:
+    # 04:00 UTC = 11:00 Bangkok = quiet window
+    - cron: '0 4 * * 1-5'
+  workflow_dispatch: {}
+
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Stub-Resend mode: T179 does not hit a real Resend account, so
+      # API key + webhook secret are placeholder strings. They satisfy
+      # `src/lib/env.ts` zod schema length minimums without granting
+      # any real-world capability.
+      RESEND_BROADCASTS_API_KEY: re_synthetic_ci_placeholder_DO_NOT_USE
+      RESEND_BROADCASTS_WEBHOOK_SECRET: synthetic-ci-secret-32-chars-padding-padding
+      UNSUBSCRIBE_TOKEN_SECRET: synthetic-ci-token-secret-32-chars-padding
+      CRON_SECRET: synthetic-ci-cron-secret
+      FEATURE_F7_BROADCASTS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run JCC-test fixture (stub-Resend mode)
+        run: pnpm test:integration tests/integration/broadcasts/jcc-test-tenant-fixture.test.ts --reporter=verbose
+      - name: Run member-erasure-cascade test
+        run: pnpm test:integration tests/integration/broadcasts/member-erasure-cascade.test.ts --reporter=verbose
+      - name: Audit catalogue parity check
+        run: pnpm vitest run tests/integration/broadcasts/audit-event-type-parity.test.ts
+      - name: Status badge
+        if: always()
+        run: |
+          echo "JCC-test fixture: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "Multi-tenant readiness: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY

@@ -121,7 +121,91 @@ async function checkSubCatalogueKeyParity(
   }
 }
 
+/**
+ * T187 (Phase 10 / i18n.md CHK054) — orphan-key scanner.
+ *
+ * Finds keys present in `en.json` but NEVER referenced via `t('foo')`
+ * or `t('foo.bar')` calls in `src/`. Orphans are dead translations
+ * that bloat bundles and confuse i18n liaison reviews.
+ *
+ * The scanner accepts a literal-only argument extraction (matching
+ * T188's static-key invariant ESLint rule) — it does NOT try to
+ * resolve variable namespaces or `getTranslations({namespace})`
+ * dynamic prefixes. Static `t('error.too_long')` / `t('shell.userMenu')`
+ * patterns + `getTranslations('admin.plans')` namespace prefixes are
+ * recognised; everything else is conservatively assumed used.
+ */
+async function findOrphans(enKeys: Set<string>): Promise<string[]> {
+  const { readdir, stat } = await import('node:fs/promises');
+  const used = new Set<string>();
+  const namespaces: string[] = [];
+
+  async function walk(dir: string): Promise<void> {
+    const entries = await readdir(dir);
+    for (const entry of entries) {
+      const path = resolve(dir, entry);
+      const s = await stat(path);
+      if (s.isDirectory()) {
+        if (entry === 'node_modules' || entry.startsWith('.')) continue;
+        await walk(path);
+      } else if (
+        entry.endsWith('.ts') ||
+        entry.endsWith('.tsx') ||
+        entry.endsWith('.js')
+      ) {
+        const text = await readFile(path, 'utf8');
+        // t('foo.bar') and t("foo.bar")
+        const tCallRe = /\bt\(\s*['"]([\w.\-]+)['"]/g;
+        let m: RegExpExecArray | null;
+        while ((m = tCallRe.exec(text)) !== null) used.add(m[1]!);
+        // getTranslations('namespace.path')
+        const nsRe = /getTranslations\(\s*['"]([\w.\-]+)['"]/g;
+        while ((m = nsRe.exec(text)) !== null) namespaces.push(m[1]!);
+        // useTranslations('namespace.path')
+        const useNsRe = /useTranslations\(\s*['"]([\w.\-]+)['"]/g;
+        while ((m = useNsRe.exec(text)) !== null) namespaces.push(m[1]!);
+      }
+    }
+  }
+
+  await walk(resolve(process.cwd(), 'src'));
+
+  // For each enKey, count it as used if:
+  //   - exactly matches a `t('full.key')` call, OR
+  //   - any of its prefixes is a known namespace + the suffix is a
+  //     `t('suffix')` call.
+  const orphans: string[] = [];
+  for (const key of enKeys) {
+    if (used.has(key)) continue;
+    let foundViaNs = false;
+    for (const ns of namespaces) {
+      if (key.startsWith(`${ns}.`)) {
+        const suffix = key.slice(ns.length + 1);
+        if (used.has(suffix)) {
+          foundViaNs = true;
+          break;
+        }
+        // Conservative: if any t() call exactly matches a leaf of this
+        // namespace, allow keys nested under it. This avoids false-
+        // positive orphan flags on dynamic key composition.
+        for (const u of used) {
+          if (u === suffix || suffix.startsWith(`${u}.`) || u.startsWith(`${suffix}.`)) {
+            foundViaNs = true;
+            break;
+          }
+        }
+        if (foundViaNs) break;
+      }
+    }
+    if (!foundViaNs) orphans.push(key);
+  }
+  return orphans.sort();
+}
+
 async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  const orphansMode = argv.includes('--orphans');
+
   const sets: Record<Locale, Set<string>> = {
     en: new Set(),
     th: new Set(),
@@ -171,6 +255,22 @@ async function main(): Promise<void> {
     'F5 decline-reasons',
     issues,
   );
+
+  if (orphansMode) {
+    const orphans = await findOrphans(enKeys);
+    if (orphans.length === 0) {
+      console.log(
+        `[check:i18n --orphans] OK — every en.json key is referenced from src/`,
+      );
+      return;
+    }
+    console.warn(
+      `[check:i18n --orphans] ${orphans.length} potentially orphan keys (review for dead translations):`,
+    );
+    for (const key of orphans) console.warn(`  - ${key}`);
+    // Orphan check is advisory — never fails CI; missing keys still do.
+    if (issues.length === 0) return;
+  }
 
   if (issues.length === 0) {
     console.log(

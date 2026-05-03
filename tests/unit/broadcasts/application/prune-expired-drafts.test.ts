@@ -77,6 +77,9 @@ function makeRepo(opts: {
         }
         return { prunedCount: opts.prunedCount ?? 0 };
       },
+      async listInFlightOwnedByMember() {
+        return [];
+      },
     },
   };
 }

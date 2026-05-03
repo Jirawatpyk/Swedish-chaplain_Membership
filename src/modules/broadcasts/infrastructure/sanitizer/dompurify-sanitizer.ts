@@ -120,8 +120,40 @@ function installLinkHardeningHook(): void {
   hookInstalled = true;
 }
 
+// R7 staff-review MED-S5 fix — Edge-runtime guard. The
+// `installLinkHardeningHook` hook + `hookInstalled` module flag rely
+// on a Node.js-runtime DOMPurify instance backed by isomorphic-
+// dompurify's internal jsdom. Vercel Edge runtime would expose a
+// browser-shape `globalThis.window` and a different DOMPurify
+// instance, breaking the hook installation and the
+// `RETURN_TRUSTED_TYPE: false` contract. Webhook + cron + submit
+// routes are pinned to Node runtime; this guard throws fast if a
+// future migration accidentally moves a sanitiser caller to Edge.
+function assertNodeRuntime(): void {
+  // Vercel Edge runtime exposes `globalThis.EdgeRuntime` and/or sets
+  // `process.env.NEXT_RUNTIME === 'edge'`. We use the explicit Edge
+  // signature rather than `typeof window !== 'undefined'` because
+  // vitest's jsdom test environment also provides `window` and would
+  // false-trigger this guard. Production routes (webhook, cron,
+  // submit) all pin `export const runtime = 'nodejs'`; this is the
+  // last-line fail-fast for accidental migration.
+  const isEdgeRuntime =
+    typeof (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime !==
+      'undefined' ||
+    (typeof process !== 'undefined' &&
+      process.env?.NEXT_RUNTIME === 'edge');
+  if (isEdgeRuntime) {
+    throw new Error(
+      'dompurify_sanitizer_edge_runtime_unsupported: F7 sanitiser ' +
+        'requires Node.js runtime (jsdom-backed DOMPurify). Pin route ' +
+        'config: `export const runtime = "nodejs"`.',
+    );
+  }
+}
+
 export const dompurifySanitizer: HtmlSanitizerPort = {
   sanitize(html: string): string {
+    assertNodeRuntime();
     installLinkHardeningHook();
     const out = DOMPurify.sanitize(html, PURIFY_CONFIG) as unknown;
     if (typeof out !== 'string') {

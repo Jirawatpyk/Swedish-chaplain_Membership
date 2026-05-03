@@ -1,16 +1,16 @@
-/**
+﻿/**
  * Unit tests for `dispatch-scheduled-broadcast.ts` cron worker.
  *
- * Wave 6 GREEN — covers the deferred-cron pattern (Ultraplan AD1):
+ * Wave 6 GREEN โ€” covers the deferred-cron pattern (Ultraplan AD1):
  *   - lockForUpdate('approved') + recipient re-resolve
  *   - Resend Broadcasts API surface (createAudience + addContactsToAudience
  *     + createBroadcast + sendBroadcast with stable idempotency key)
  *   - attachResendIds + applyTransition('sending') + audit
- *   - Retryable failures (gateway throws {kind:'retryable'}) → row stays
+ *   - Retryable failures (gateway throws {kind:'retryable'}) โ’ row stays
  *     'approved' (no transition, no audit)
- *   - Permanent failures → applyTransition('failed_to_dispatch') + audit
+ *   - Permanent failures โ’ applyTransition('failed_to_dispatch') + audit
  *   - Audience-empty-post-suppression branch
- *   - DB write failure AFTER Resend success → kind='gateway_retryable'
+ *   - DB write failure AFTER Resend success โ’ kind='gateway_retryable'
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { access } from 'node:fs/promises';
@@ -177,6 +177,7 @@ function makeRepo(opts: RepoOpts): {
       async pruneExpiredDrafts() {
         return { prunedCount: 0 };
       },
+    async listInFlightOwnedByMember() { return []; },
     },
   };
 }
@@ -188,14 +189,17 @@ type ThrowSpec =
       reason: string;
       resourceType: 'audience' | 'broadcast';
       resourceId: string;
-    };
+    }
+  // R7 staff-review HIGH-3 — idempotency_conflict thrown when a
+  // concurrent worker raced through createAudience/createBroadcast.
+  | { kind: 'idempotency_conflict'; reason: string };
 
 interface GatewayOpts {
   readonly throwOnCreateAudience?: ThrowSpec;
   readonly throwOnCreateBroadcast?: ThrowSpec;
   readonly throwOnSend?: ThrowSpec;
   readonly errorAsPlainError?: boolean;
-  /** Round-5 R5-T — let tests synthesise audience-count drift on idempotency replay. */
+  /** Round-5 R5-T โ€” let tests synthesise audience-count drift on idempotency replay. */
   readonly audienceContactCount?: number | null;
   readonly throwOnGetAudienceContactCount?: ThrowSpec;
 }
@@ -261,7 +265,7 @@ function makeGateway(opts: GatewayOpts = {}): {
 }
 
 /**
- * Phase 8 Slice B helper — `PlansBridgePort` stub returning a successful
+ * Phase 8 Slice B helper โ€” `PlansBridgePort` stub returning a successful
  * plan lookup by default (matches the broadcast snapshot's planId so
  * the T171 expired-plan audit does NOT fire). Tests that want to
  * exercise the AS5 path override `planId` or set `lookupError`.
@@ -294,7 +298,7 @@ function makePlansBridge(opts: {
 }
 
 /**
- * Phase 8 Slice E helper — `EmailTransactionalPort` stub recording all
+ * Phase 8 Slice E helper โ€” `EmailTransactionalPort` stub recording all
  * `sendMemberEmail` calls so tests can assert the dispatch-failure
  * notification was enqueued (or NOT enqueued) at the right path. Stub
  * may be configured to throw to exercise the best-effort error path.
@@ -419,12 +423,12 @@ const clock = { now: (): Date => FROZEN_NOW };
 beforeEach(() => vi.useFakeTimers({ now: FROZEN_NOW }));
 afterEach(() => vi.useRealTimers());
 
-describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
+describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
   it('use-case module exists', async () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });
 
-  it('happy: lock+resolve+createAudience+addContacts+createBroadcast+sendBroadcast → applyTransition(sending) + audit broadcast_send_started', async () => {
+  it('happy: lock+resolve+createAudience+addContacts+createBroadcast+sendBroadcast โ’ applyTransition(sending) + audit broadcast_send_started', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -473,7 +477,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(
       (evt?.payload as { resendBroadcastId: string }).resendBroadcastId,
     ).toBe('bcast-fake-1');
-    // E1 closure (verify-fix 2026-05-02) — AS1 spec.md L323 requires
+    // E1 closure (verify-fix 2026-05-02) โ€” AS1 spec.md L323 requires
     // the audit payload to carry `scheduled_for + actual_send_at +
     // delay_seconds` for SC-001 quartile analysis. Lock the field
     // shape so future refactors that drop them are caught at test time.
@@ -525,7 +529,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     );
   });
 
-  it('skips when locked status != approved → broadcast_invalid_state_transition', async () => {
+  it('skips when locked status != approved โ’ broadcast_invalid_state_transition', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'sending',
@@ -557,7 +561,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(gw.audienceCalls).toHaveLength(0);
   });
 
-  it('skips when broadcast not found (lockForUpdate=null) → broadcast_invalid_state_transition', async () => {
+  it('skips when broadcast not found (lockForUpdate=null) โ’ broadcast_invalid_state_transition', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: null, broadcast: null });
     const gw = makeGateway();
@@ -587,7 +591,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
 
   // ---- Audience-empty-post-suppression --------------------------------
 
-  it('audience evaporates after suppression filter → applyTransition(failed_to_dispatch) + audit', async () => {
+  it('audience evaporates after suppression filter โ’ applyTransition(failed_to_dispatch) + audit', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -632,7 +636,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
 
   // ---- Gateway retryable failures -----------------------------------
 
-  it('gateway retryable on createAudience → kind=gateway_retryable, no transition, no audit', async () => {
+  it('gateway retryable on createAudience โ’ kind=gateway_retryable, no transition, no audit', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -677,7 +681,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     ).toBeUndefined();
   });
 
-  it('gateway retryable on sendBroadcast → kind=gateway_retryable', async () => {
+  it('gateway retryable on sendBroadcast โ’ kind=gateway_retryable', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -714,7 +718,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
 
   // ---- Gateway permanent failures -----------------------------------
 
-  it('gateway permanent error (plain Error) on createBroadcast → applyTransition(failed_to_dispatch) + audit', async () => {
+  it('gateway permanent error (plain Error) on createBroadcast โ’ applyTransition(failed_to_dispatch) + audit', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -761,9 +765,9 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     ).toBeDefined();
   });
 
-  // ---- Resource missing (404 from Resend) — F7.1-T2 -----------------
+  // ---- Resource missing (404 from Resend) โ€” F7.1-T2 -----------------
 
-  it('gateway resource_missing on createBroadcast → emits broadcast_resend_resource_missing audit + transitions to failed_to_dispatch', async () => {
+  it('gateway resource_missing on createBroadcast โ’ emits broadcast_resend_resource_missing audit + transitions to failed_to_dispatch', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -821,7 +825,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
 
   // ---- DB write failure AFTER Resend success -------------------------
 
-  it('applyTransition(sending) throws AFTER Resend already succeeded → kind=gateway_retryable (next tick re-dispatches with same idempotency key)', async () => {
+  it('applyTransition(sending) throws AFTER Resend already succeeded โ’ kind=gateway_retryable (next tick re-dispatches with same idempotency key)', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -900,7 +904,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
 
   // ---- Audience name stability (orphan-prevention polish 2026-05-01) -
 
-  it('audience name is deterministic per (tenantId, broadcastId) — no timestamp suffix so retries reuse', async () => {
+  it('audience name is deterministic per (tenantId, broadcastId) โ€” no timestamp suffix so retries reuse', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -930,7 +934,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     );
     expect(gw.audienceCalls[0]).toContain(broadcastId as string);
     expect(gw.audienceCalls[0]).toContain('test-tenant');
-    // No timestamp in name — stability lets retries reuse the same audience
+    // No timestamp in name โ€” stability lets retries reuse the same audience
     // (orphan-prevention; persisted via attachAudienceId).
     expect(gw.audienceCalls[0]).not.toContain(String(FROZEN_NOW.getTime()));
   });
@@ -1051,7 +1055,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
 
   // ---- Server error catch-all (lock lookup throws) ------------------
 
-  it('repo throw inside lock-lookup withTx → dispatch.server_error', async () => {
+  it('repo throw inside lock-lookup withTx โ’ dispatch.server_error', async () => {
     const audit = makeAudit();
     const repo: BroadcastsRepo = {
       ...makeRepo({}).port,
@@ -1087,16 +1091,16 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     }
   });
 
-  // ---- F7.1-IMP5 / R5-T — audience drift on idempotency replay -----
+  // ---- F7.1-IMP5 / R5-T โ€” audience drift on idempotency replay -----
 
-  it('idempotency_conflict on send + audience count mismatch → broadcast_resend_audience_drift audit emitted, broadcast still advances to sending', async () => {
+  it('idempotency_conflict on send + audience count mismatch โ’ broadcast_resend_audience_drift audit emitted, broadcast still advances to sending', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
       broadcast: makeBroadcast('approved'),
     });
     // Gateway returns audience contact count of 1 but recipient list
-    // has 2 — mismatch triggers drift audit.
+    // has 2 โ€” mismatch triggers drift audit.
     const gw = makeGateway({
       throwOnSend: { kind: 'permanent', reason: 'idempotency_conflict' },
       // override kind in maybeThrow path: use real shape via plain throw
@@ -1137,7 +1141,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
       },
       baseInput,
     );
-    // Replay treated as success — broadcast advances to 'sending'
+    // Replay treated as success โ€” broadcast advances to 'sending'
     expect(result.ok).toBe(true);
     // Drift audit emitted with mismatched counts
     const driftEvent = audit.emits.find(
@@ -1149,7 +1153,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(driftEvent?.payload['drift']).toBe(1);
   });
 
-  it('R5-S1 — getAudienceContactCount throws non-404 → broadcast_resend_drift_check_unverifiable audit emitted', async () => {
+  it('R5-S1 โ€” getAudienceContactCount throws non-404 โ’ broadcast_resend_drift_check_unverifiable audit emitted', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -1165,7 +1169,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         };
       },
       async getAudienceContactCount() {
-        throw new Error('Resend 503 — service unavailable');
+        throw new Error('Resend 503 โ€” service unavailable');
       },
     };
     const result = await dispatchScheduledBroadcast(
@@ -1199,7 +1203,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(unverifiableEvent?.payload['errorReason']).toContain('503');
   });
 
-  it('TEST-G3 — getAudienceContactCount returns {kind:"audience_missing"} → drift check skipped (no audit, no crash)', async () => {
+  it('TEST-G3 โ€” getAudienceContactCount returns {kind:"audience_missing"} โ’ drift check skipped (no audit, no crash)', async () => {
     // Round 3 review TYPES-2: getAudienceContactCount is a discriminated
     // union {kind:'present',count}|{kind:'audience_missing'}. Lock the
     // positive `audience_missing` outcome path: caller translates to
@@ -1264,10 +1268,10 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
   });
 
   // =====================================================================
-  // Phase 8 — Slice B (T171 / AS5): expired-plan audit
+  // Phase 8 โ€” Slice B (T171 / AS5): expired-plan audit
   // =====================================================================
 
-  it('Phase 8 / T171 — plan unchanged at dispatch → no broadcast_sent_with_expired_member_plan audit', async () => {
+  it('Phase 8 / T171 โ€” plan unchanged at dispatch โ’ no broadcast_sent_with_expired_member_plan audit', async () => {
     const audit = makeAudit();
     const broadcastRow = makeBroadcast('approved');
     const repo = makeRepo({
@@ -1291,7 +1295,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
-        // Plan still matches snapshot's planId 'p' → no expired-plan audit
+        // Plan still matches snapshot's planId 'p' โ’ no expired-plan audit
         plansBridge: makePlansBridge({ planId: 'p' }),
         emailTransactional: makeEmailTransactional().port,
       },
@@ -1305,7 +1309,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     ).toBeUndefined();
   });
 
-  it('Phase 8 / T171 — plan changed since submit → broadcast_sent_with_expired_member_plan audit fires (dispatch still succeeds)', async () => {
+  it('Phase 8 / T171 โ€” plan changed since submit โ’ broadcast_sent_with_expired_member_plan audit fires (dispatch still succeeds)', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -1328,7 +1332,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         fromEmail: 'noreply@test.invalid-but-test-only',
         tenantDisplayName: 'Test Chamber',
         locale: 'en' as const,
-        // Snapshot is 'p'; current plan is 'p2' → expired-plan audit fires
+        // Snapshot is 'p'; current plan is 'p2' โ’ expired-plan audit fires
         plansBridge: makePlansBridge({ planId: 'p2' }),
         emailTransactional: makeEmailTransactional().port,
       },
@@ -1344,7 +1348,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(evt?.payload['currentlyEntitled']).toBe(true);
   });
 
-  it('Phase 8 / T171 — current plan lookup error → broadcast_sent_with_expired_member_plan audit fires with currentlyEntitled=false', async () => {
+  it('Phase 8 / T171 โ€” current plan lookup error โ’ broadcast_sent_with_expired_member_plan audit fires with currentlyEntitled=false', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -1383,7 +1387,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(evt?.payload['planLookupError']).toBe('plan_lookup.member_no_plan');
   });
 
-  it('Phase 8 / T171 — plansBridge throws → no audit, dispatch still succeeds (best-effort guard)', async () => {
+  it('Phase 8 / T171 โ€” plansBridge throws โ’ no audit, dispatch still succeeds (best-effort guard)', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -1420,10 +1424,10 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
   });
 
   // =====================================================================
-  // Phase 8 — Slice D (FR-021 / AS2): 1-hour retry budget
+  // Phase 8 โ€” Slice D (FR-021 / AS2): 1-hour retry budget
   // =====================================================================
 
-  it('Phase 8 / Slice D — retryable within budget (now < scheduled_for + 1h) → row stays approved (gateway_retryable error returned)', async () => {
+  it('Phase 8 / Slice D โ€” retryable within budget (now < scheduled_for + 1h) โ’ row stays approved (gateway_retryable error returned)', async () => {
     const audit = makeAudit();
     // scheduled_for = FROZEN_NOW exactly, so elapsed = 0ms < 1h budget
     const broadcastRow = makeBroadcast('approved');
@@ -1432,7 +1436,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
       broadcast: broadcastRow,
     });
     const gw = makeGateway({
-      throwOnSend: { kind: 'retryable', reason: 'Resend 503 — service unavailable' },
+      throwOnSend: { kind: 'retryable', reason: 'Resend 503 โ€” service unavailable' },
     });
     const email = makeEmailTransactional();
     const result = await dispatchScheduledBroadcast(
@@ -1470,7 +1474,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     ).toBeUndefined();
   });
 
-  it('Phase 8 / Slice D — retryable past budget (scheduled_for + 65min) → terminal failed_to_dispatch + member email enqueued', async () => {
+  it('Phase 8 / Slice D โ€” retryable past budget (scheduled_for + 65min) โ’ terminal failed_to_dispatch + member email enqueued', async () => {
     const audit = makeAudit();
     // Set scheduled_for 65 min BEFORE FROZEN_NOW so elapsed > 1h budget
     const broadcastRow = {
@@ -1482,7 +1486,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
       broadcast: broadcastRow,
     });
     const gw = makeGateway({
-      throwOnSend: { kind: 'retryable', reason: 'Resend 503 — service unavailable' },
+      throwOnSend: { kind: 'retryable', reason: 'Resend 503 โ€” service unavailable' },
     });
     const email = makeEmailTransactional();
     const result = await dispatchScheduledBroadcast(
@@ -1523,7 +1527,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect((auditEvt?.payload as Record<string, unknown>).reason).toContain(
       'retry_budget_exhausted_after_1h',
     );
-    // Slice E — dispatch-failure email enqueued
+    // Slice E โ€” dispatch-failure email enqueued
     expect(email.memberCalls).toHaveLength(1);
     expect(email.memberCalls[0]?.templateKey).toBe('broadcast_failed_to_dispatch');
     expect(email.memberCalls[0]?.to).toBe('sender@example.com');
@@ -1531,17 +1535,17 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
   });
 
   // =====================================================================
-  // Phase 8 — Slice E (FR-021 / AS2): dispatch-failure transactional email
+  // Phase 8 โ€” Slice E (FR-021 / AS2): dispatch-failure transactional email
   // =====================================================================
 
-  it('Phase 8 / Slice E — permanent failure path enqueues dispatch-failure email to member primary contact', async () => {
+  it('Phase 8 / Slice E โ€” permanent failure path enqueues dispatch-failure email to member primary contact', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
-      throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
+      throwOnSend: { kind: 'permanent', reason: 'Resend 422 โ€” invalid template' },
     });
     const email = makeEmailTransactional();
     const result = await dispatchScheduledBroadcast(
@@ -1572,14 +1576,14 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(email.memberCalls[0]?.payload['reason']).toContain('Resend 422');
   });
 
-  it('Phase 8 / Slice E — member has no primary contact email → email skipped (logger warn), audit + transition still happen', async () => {
+  it('Phase 8 / Slice E โ€” member has no primary contact email โ’ email skipped (logger warn), audit + transition still happen', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
-      throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
+      throwOnSend: { kind: 'permanent', reason: 'Resend 422 โ€” invalid template' },
     });
     const email = makeEmailTransactional();
     const result = await dispatchScheduledBroadcast(
@@ -1587,7 +1591,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         tenant,
         broadcastsRepo: repo.port,
         broadcastsGateway: gw.port,
-        // primaryContact: null → membersBridge.getMemberPrimaryContact returns null
+        // primaryContact: null โ’ membersBridge.getMemberPrimaryContact returns null
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-1', 'one@example.com')],
           primaryContact: null,
@@ -1614,14 +1618,14 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     expect(email.memberCalls).toHaveLength(0);
   });
 
-  it('Phase 8 / Slice E — emailTransactional.sendMemberEmail throws → audit + transition still complete (best-effort guard)', async () => {
+  it('Phase 8 / Slice E โ€” emailTransactional.sendMemberEmail throws โ’ audit + transition still complete (best-effort guard)', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
-      throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
+      throwOnSend: { kind: 'permanent', reason: 'Resend 422 โ€” invalid template' },
     });
     const email = makeEmailTransactional({ shouldThrow: true });
     const result = await dispatchScheduledBroadcast(
@@ -1653,7 +1657,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     ).toBeDefined();
   });
 
-  it('Phase 8 / Slice E — resource_missing (404) does NOT enqueue dispatch-failure email (different audit type)', async () => {
+  it('Phase 8 / Slice E โ€” resource_missing (404) does NOT enqueue dispatch-failure email (different audit type)', async () => {
     // resource_missing is an ops-side issue (admin manually deleted Resend
     // resource); member notification is reserved for terminal-fail kinds
     // that map to broadcast_failed_to_dispatch audit. resource_missing
@@ -1666,7 +1670,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     const gw = makeGateway({
       throwOnSend: {
         kind: 'resource_missing',
-        reason: 'Resend 404 — broadcast not found',
+        reason: 'Resend 404 โ€” broadcast not found',
         resourceType: 'broadcast',
         resourceId: 'bcast-fake-1',
       },
@@ -1705,7 +1709,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
   });
 
   // =====================================================================
-  // Verify-fix R3 — Tests-Gap#2 (AS2 admin alert) + Errors-H3
+  // Verify-fix R3 โ€” Tests-Gap#2 (AS2 admin alert) + Errors-H3
   // (skipped-no-email audit) + Errors-C1 (idempotency_conflict_pre_send
   // distinct audit)
   // =====================================================================
@@ -1721,7 +1725,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
       throwOnSend: { kind: 'retryable', reason: 'Resend 503' },
     });
     const email = makeEmailTransactional();
-    // Spy on the metric — vi.spyOn safe because broadcastsMetrics is
+    // Spy on the metric โ€” vi.spyOn safe because broadcastsMetrics is
     // a module-level singleton const.
     const { broadcastsMetrics } = await import('@/lib/metrics');
     const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
@@ -1761,7 +1765,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
-      throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
+      throwOnSend: { kind: 'permanent', reason: 'Resend 422 โ€” invalid template' },
     });
     const email = makeEmailTransactional();
     await dispatchScheduledBroadcast(
@@ -1769,7 +1773,7 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
         tenant,
         broadcastsRepo: repo.port,
         broadcastsGateway: gw.port,
-        // primaryContact: null → email skipped, audit MUST fire
+        // primaryContact: null โ’ email skipped, audit MUST fire
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-1', 'one@example.com')],
           primaryContact: null,
@@ -1796,5 +1800,70 @@ describe('dispatch-scheduled-broadcast — Wave 6 GREEN', () => {
     );
     expect(skippedEvt).toBeDefined();
     expect((skippedEvt?.payload as Record<string, unknown>).memberId).toBe('m-1');
+  });
+
+  // R7 staff-review HIGH-3 fix — Errors-C1 distinct audit event was
+  // declared in F7_AUDIT_EVENT_TYPES + production emit path at
+  // dispatch-scheduled-broadcast.ts:703 but had no test pinning the
+  // emission. The audit-event-type-emission grep test only checks
+  // declarations, not emission paths in mock chains. A regression
+  // that drops the `try/audit.emit` block at line 700–713 would
+  // ship green.
+  it('R3 Errors-C1: idempotency_conflict on createAudience (pre-send) → emits broadcast_dispatch_idempotency_conflict_pre_send audit', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    // Concurrent worker raced through createAudience first. Resend
+    // returns 409 idempotency-key reuse — our wrapper surfaces this
+    // as `kind: 'idempotency_conflict'` BEFORE we can call
+    // sendBroadcast, so the use-case enters the `resendBroadcastId === ''`
+    // branch and emits the distinct pre-send audit event.
+    const gw = makeGateway({
+      throwOnCreateAudience: {
+        kind: 'idempotency_conflict',
+        reason: 'idempotency_key_already_used',
+      },
+    });
+    await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+    // Distinct pre-send audit MUST emit so on-call sees the
+    // "two workers raced" forensic signal separate from a generic
+    // permanent-error trail.
+    const preSendAudit = audit.emits.find(
+      (e) =>
+        e.eventType === 'broadcast_dispatch_idempotency_conflict_pre_send',
+    );
+    expect(preSendAudit).toBeDefined();
+    expect((preSendAudit?.payload as Record<string, unknown>).reason).toBe(
+      'idempotency_key_already_used',
+    );
+    // The permanent-failure handler runs after the pre-send emit so
+    // BOTH events together tell the full story — the test pins both
+    // audit kinds to lock the documented "two events together"
+    // contract from the production code's comment at line 698–699.
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_failed_to_dispatch'),
+    ).toBeDefined();
   });
 });

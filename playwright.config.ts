@@ -89,7 +89,15 @@ export default defineConfig({
     },
     {
       name: 'mobile-safari',
-      use: { ...devices['iPhone 12'] },
+      use: {
+        ...devices['iPhone 12'],
+        // WebKit emulation + Next.js dev-server cold compile = far
+        // slower than Chromium for the first request to any route.
+        // Production builds pre-compile chunks and don't need these
+        // bumped budgets — these only matter for local dev e2e runs.
+        actionTimeout: 90_000,
+        navigationTimeout: 90_000,
+      },
     },
     {
       name: 'mobile-chrome',

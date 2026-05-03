@@ -124,7 +124,7 @@ export default function TiptapEditor({
 
   return (
     <div
-      className="rounded-md border focus-within:ring-2 focus-within:ring-ring"
+      className="rounded-md border focus-within:ring-2 focus-within:ring-ring min-w-0 overflow-hidden"
       data-testid="tiptap-editor"
     >
       <TiptapToolbar editor={editor} onAnnounce={announceState} />

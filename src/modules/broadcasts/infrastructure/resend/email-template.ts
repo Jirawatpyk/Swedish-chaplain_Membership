@@ -104,10 +104,15 @@ function fillTemplate(template: string, vars: Record<string, string>): string {
  * `physicalAddress` line satisfies CAN-SPAM / PDPA marketing-mail
  * disclosure expectations.
  *
- * TODO(F12): replace the synthetic "{tenantDisplayName}, address on file"
- * placeholder with a real postal address surfaced by tenant settings
- * once F12 white-label ships. Until then the tenant display name acts
- * as the minimum identifier per CAN-SPAM § 5(a)(5).
+ * NOTE — synthetic "{tenantDisplayName}, address on file" placeholder
+ * stands in for the real postal address. The real value will land on
+ * `tenant_invoice_settings.physical_address` once that column is added
+ * (see `docs/phases-plan.md` SaaS layer — currently no row exposes a
+ * postal address; tracked under the white-label / multi-tenant onboarding
+ * thread, not a discrete F-feature). Until then the tenant display name
+ * is the minimum identifier per CAN-SPAM § 5(a)(5). Round 5 review fix —
+ * removed the vague `TODO(F12)` reference (no F12 in the canonical 14-
+ * feature plan; was confusing future contributors).
  *
  * The member-authored `bodyHtml` MUST already be sanitised by the
  * Application-layer DOMPurify pass before reaching this renderer — we

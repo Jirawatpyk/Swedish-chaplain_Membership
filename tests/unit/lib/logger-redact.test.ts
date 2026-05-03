@@ -307,3 +307,215 @@ describe('F5 redactPanValues recursive walk (T032)', () => {
     expect(redactPanValues(42n)).toBe(42n);
   });
 });
+
+describe('F7 unsubscribe-token redaction (Round 3 T-F7-07)', () => {
+  // Build a minimal pino logger mirroring the prod redact config.
+  function captureLog(log: Record<string, unknown>): string {
+    const chunks: string[] = [];
+    const logger = pino(
+      {
+        level: 'info',
+        redact: { paths: REDACT_PATHS, censor: '[REDACTED]', remove: false },
+      },
+      {
+        write(chunk: string) {
+          chunks.push(chunk);
+        },
+      } as unknown as NodeJS.WritableStream,
+    );
+    logger.info(log, 'test');
+    return chunks.join('');
+  }
+
+  it('redacts top-level tokenPlaintext (Round 3 T-F7-07 — UnsubscribeRecipientInput field)', () => {
+    const out = captureLog({
+      tokenPlaintext: 'v1.eyJ0aWQiOiJ0ZW5hbnQifQ.deadbeefcafe',
+      msg: 'test',
+    });
+    expect(out).toContain('[REDACTED]');
+    expect(out).not.toContain('v1.eyJ0aWQiOiJ0ZW5hbnQifQ.deadbeefcafe');
+  });
+
+  it('redacts nested *.tokenPlaintext (depth 2)', () => {
+    const out = captureLog({
+      input: { tokenPlaintext: 'v1.payload.signature' },
+      msg: 'test',
+    });
+    expect(out).toContain('[REDACTED]');
+    expect(out).not.toContain('v1.payload.signature');
+  });
+
+  it('redacts unsubscribeToken alongside tokenPlaintext (both shapes covered)', () => {
+    const out = captureLog({
+      unsubscribeToken: 'v1.aaa.bbb',
+      tokenPlaintext: 'v1.ccc.ddd',
+      msg: 'test',
+    });
+    expect(out).not.toContain('v1.aaa.bbb');
+    expect(out).not.toContain('v1.ccc.ddd');
+  });
+});
+
+/**
+ * R6 staff-review B3 fix — F7 PDPA/GDPR redact paths assertion.
+ *
+ * FR-042 (NON-NEGOTIABLE) requires pino logs to NEVER contain raw
+ * recipient emails, raw email body content, raw subject lines, Resend
+ * API keys or webhook secrets, unsubscribe-token plaintext, or session
+ * cookies. The Round 3 commit f212c7c added the redact paths to
+ * `src/lib/logger.ts:285–370` but the test file pinned only F5 PCI
+ * paths — so a future refactor that breaks the F7 redact paths would
+ * not be caught by CI. This block closes that test gap.
+ */
+describe('F7 broadcasts redact paths (R6 B3 fix — FR-042 PDPA/GDPR)', () => {
+  function captureLog(log: Record<string, unknown>): string {
+    const chunks: string[] = [];
+    const logger = pino(
+      {
+        level: 'info',
+        redact: { paths: REDACT_PATHS, censor: '[REDACTED]', remove: false },
+      },
+      {
+        write(chunk: string) {
+          chunks.push(chunk);
+        },
+      } as unknown as NodeJS.WritableStream,
+    );
+    logger.info(log, 'test');
+    return chunks.join('');
+  }
+
+  it.each([
+    // Resend Broadcasts API key — separate product surface from F1
+    // transactional Resend; rotation cadence independent.
+    'RESEND_BROADCASTS_API_KEY',
+    'resend_broadcasts_api_key',
+    // Resend webhook signing secret (Svix HMAC).
+    'RESEND_BROADCASTS_WEBHOOK_SECRET',
+    'resend_broadcasts_webhook_secret',
+    // Unsubscribe-token HMAC secret (independent from auth cookie).
+    'UNSUBSCRIBE_TOKEN_SECRET',
+    'unsubscribe_token_secret',
+    'unsubscribeTokenSecret',
+  ])('redacts F7 secret env-var %s', (field) => {
+    const out = captureLog({ [field]: 'whsec_F7_HIGHLY_SENSITIVE_VALUE' });
+    expect(out).not.toContain('F7_HIGHLY_SENSITIVE_VALUE');
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it.each([
+    // Member-authored body content. DOMPurify-sanitised; logging would
+    // still leak the broadcast subject + content to log aggregators.
+    'body_html',
+    // Recipient PII — the entire point of the F7 module is to send
+    // marketing email; logging recipient lists would defeat the
+    // suppression cascade and leak member directory.
+    'recipient_emails',
+    'recipientEmails',
+    'recipient_email_lower',
+    'recipientEmailLower',
+    'custom_recipient_emails',
+    // Unsubscribe-token plaintext — token compromise grants
+    // suppression-trigger ability for the recipient identified by the
+    // token's tenantId+email payload.
+    'unsubscribe_token',
+    'unsubscribeToken',
+  ])('redacts F7 PII/content field %s', (field) => {
+    const out = captureLog({
+      [field]: '<p>Subject: Welcome 2026 — body of newsletter</p>',
+    });
+    expect(out).not.toContain('Welcome 2026');
+    expect(out).not.toContain('newsletter');
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it.each([
+    // Svix webhook headers — signature/id/timestamp tuple is required
+    // for replay/forgery analysis if leaked, since the verifier accepts
+    // any (id, ts, body) combo with a matching MAC.
+    'svix-signature',
+    'svixSignature',
+    'svix-id',
+    'svixId',
+    'svix-timestamp',
+  ])('redacts Svix webhook header %s', (field) => {
+    const out = captureLog({
+      [field]: 'v1,SECRET_MAC_VALUE_THAT_MUST_NOT_LEAK',
+    });
+    expect(out).not.toContain('SECRET_MAC_VALUE_THAT_MUST_NOT_LEAK');
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it('redacts F7 PII at depth-1 nesting (audit-payload shape)', () => {
+    const out = captureLog({
+      audit: {
+        payload: {
+          recipient_emails: ['member-A@example.com', 'member-B@example.com'],
+          body_html: '<p>Newsletter content</p>',
+        },
+      },
+    });
+    expect(out).toContain('[REDACTED]');
+  });
+
+  // R7 staff-review MED-S2 fix — explicit depth-2 assertions for
+  // `audit.payload.<F7_PII_field>` shape that production webhook +
+  // cron audit emits actually use. Without these, a future refactor
+  // that drops the `*.*.body_html` / `*.*.recipient_emails` patterns
+  // from REDACT_PATHS would not be caught by CI even though the
+  // production log line is the EXACT shape we care about.
+  it.each([
+    [
+      'audit.payload.body_html',
+      { audit: { payload: { body_html: '<p>SECRET_NEWSLETTER_CONTENT</p>' } } },
+      'SECRET_NEWSLETTER_CONTENT',
+    ],
+    [
+      'audit.payload.recipient_emails',
+      { audit: { payload: { recipient_emails: ['LIVE_CEO@example.com'] } } },
+      'LIVE_CEO@example.com',
+    ],
+    [
+      'audit.payload.recipientEmails (camelCase)',
+      { audit: { payload: { recipientEmails: ['LIVE_CTO@example.com'] } } },
+      'LIVE_CTO@example.com',
+    ],
+    [
+      'audit.payload.custom_recipient_emails',
+      { audit: { payload: { custom_recipient_emails: ['LIVE_CFO@example.com'] } } },
+      'LIVE_CFO@example.com',
+    ],
+    [
+      'audit.payload.recipient_email_lower',
+      { audit: { payload: { recipient_email_lower: 'LIVE_COO@example.com' } } },
+      'LIVE_COO@example.com',
+    ],
+  ])('depth-2 redact: %s', (_name, log, secret) => {
+    const out = captureLog(log as Record<string, unknown>);
+    expect(out).not.toContain(secret);
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it('synthetic F7 webhook log shape — no raw email/body/secret leaks', () => {
+    const synthetic = {
+      requestId: 'req-r6-b3',
+      tenantId: 'swecham',
+      broadcastId: 'bc-r6-b3',
+      // Fields that MUST be redacted per FR-042.
+      RESEND_BROADCASTS_WEBHOOK_SECRET: 'whsec_LIVE_HIGHLY_SENSITIVE',
+      'svix-signature': 'v1,LIVE_SIGNATURE_VALUE',
+      body_html: '<p>Quarterly newsletter — confidential member content</p>',
+      recipient_emails: ['ceo@example.com', 'cfo@example.com'],
+      unsubscribe_token: 'v1.eyJ0aWQiOiJzd2VjaGFtIn0.LIVE_TOKEN_MAC',
+      tokenPlaintext: 'v1.eyJ0aWQiOiJzd2VjaGFtIn0.LIVE_TOKEN_MAC',
+    };
+    const out = captureLog(synthetic);
+    expect(out).not.toContain('LIVE_HIGHLY_SENSITIVE');
+    expect(out).not.toContain('LIVE_SIGNATURE_VALUE');
+    expect(out).not.toContain('confidential member content');
+    expect(out).not.toContain('ceo@example.com');
+    expect(out).not.toContain('cfo@example.com');
+    expect(out).not.toContain('LIVE_TOKEN_MAC');
+    expect(out).toContain('[REDACTED]');
+  });
+});

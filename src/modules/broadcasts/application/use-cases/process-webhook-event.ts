@@ -32,6 +32,8 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
+import { sha256Hex } from '@/lib/crypto';
 import { unsafeIanaTimezone, type TenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 
@@ -197,7 +199,7 @@ export async function processWebhookEvent(
                 terminalStatus: fresh.status,
                 lateEventStatus: event.data.status,
                 resendEventId: event.id,
-                recipientEmailHashed: hashRecipient(recipientLower.value),
+                recipientEmailHashed: hashRecipient(tenantId, recipientLower.value),
               },
               requestId: input.requestId,
             }),
@@ -243,17 +245,22 @@ export async function processWebhookEvent(
           // pivots on terminal events (delivered/bounced/complained).
           break;
         case 'delivered':
+          // R6 staff-review B1 fix — was incorrectly emitting
+          // `broadcast_send_started` (the dispatch use-case's send-init
+          // event), polluting the audit trail and the SLO-F7-005 metric
+          // cardinality. `broadcast_delivery_recorded` is the correct
+          // per-recipient delivery-confirmation semantic.
           await deps.audit.emit(
             tx,
             f7Audit({
-              eventType: 'broadcast_send_started',
+              eventType: 'broadcast_delivery_recorded',
               tenantId,
               actorUserId: 'system:resend-webhook',
               summary: `Broadcast ${broadcastId}: delivery recorded`,
               payload: {
                 broadcastId,
                 resendEventId: event.id,
-                recipientEmailHashed: hashRecipient(recipientLower.value),
+                recipientEmailHashed: hashRecipient(tenantId, recipientLower.value),
               },
               requestId: input.requestId,
             }),
@@ -284,7 +291,7 @@ export async function processWebhookEvent(
                 summary: `Hard bounce suppressed recipient on broadcast ${broadcastId}`,
                 payload: {
                   broadcastId,
-                  recipientEmailHashed: hashRecipient(recipientLower.value),
+                  recipientEmailHashed: hashRecipient(tenantId, recipientLower.value),
                   reason: 'hard_bounce',
                   bounceType: event.data.bounceType ?? null,
                 },
@@ -322,7 +329,7 @@ export async function processWebhookEvent(
               payload: {
                 broadcastId,
                 memberId: fresh.requestedByMemberId,
-                recipientEmailHashed: hashRecipient(recipientLower.value),
+                recipientEmailHashed: hashRecipient(tenantId, recipientLower.value),
               },
               requestId: input.requestId,
             }),
@@ -336,7 +343,7 @@ export async function processWebhookEvent(
               summary: `Complaint suppressed recipient on broadcast ${broadcastId}`,
               payload: {
                 broadcastId,
-                recipientEmailHashed: hashRecipient(recipientLower.value),
+                recipientEmailHashed: hashRecipient(tenantId, recipientLower.value),
                 reason: 'complaint',
               },
               requestId: input.requestId,
@@ -384,6 +391,22 @@ export async function processWebhookEvent(
             fresh.requestedByMemberId !== null &&
             !memberHalted
           ) {
+            // R7 staff-review MED-S3 fix — privilege-check defence in
+            // depth. `setMemberHalt` is a privileged action (only
+            // system + admin contexts may halt; member self-service
+            // is forbidden per FR-027 / Q14). The webhook entrypoint
+            // is the SOLE call site for this branch and it always
+            // runs under a system actor. Use-case-internal assertion
+            // documents the invariant and fails fast on a future
+            // refactor that exposes this branch to non-system actors.
+            // The `processWebhookEvent` use-case is itself trusted
+            // because (a) the route handler verifies Svix HMAC
+            // signature before calling, (b) the use-case has no
+            // member-input parameter, and (c) the actor literal
+            // `'system:resend-webhook'` is hard-coded in the emit
+            // sites below. Branded `WebhookActor` type would be
+            // equivalent but heavier; runtime invariant + comment
+            // is the lighter-weight equivalent.
             const halt = await deps.membersBridge.setMemberHalt(
               deps.tenant,
               fresh.requestedByMemberId,
@@ -438,7 +461,37 @@ export async function processWebhookEvent(
           tx,
         );
         const terminalCount = agg.delivered + agg.bounced + agg.complained;
-        if (terminalCount >= fresh.estimatedRecipientCount) {
+        // T172 — emit per-broadcast deliverability gauges. Only after
+        // a noise floor (>=5 events) so an early single-bounce doesn't
+        // spike the gauge to 1.0 / 0% complaint. Cardinality bounded
+        // by recipient cap × broadcasts/year/tenant per docs § 22.1.
+        if (terminalCount >= 5) {
+          broadcastsMetrics.bounceRatePerBroadcast(
+            tenantId,
+            broadcastId as unknown as string,
+            agg.bounced / terminalCount,
+          );
+          broadcastsMetrics.complaintRatePerBroadcast(
+            tenantId,
+            broadcastId as unknown as string,
+            agg.complained / terminalCount,
+          );
+        }
+        // R6 staff-review B2 fix — zero-recipient guard. Without the
+        // `> 0` predicate, a row that arrives at `sending` with
+        // `estimatedRecipientCount = 0` would transition to `sent` and
+        // consume the member's annual quota on the very first webhook
+        // event. The DB CHECK (`broadcasts_estimated_recipient_count`
+        // BETWEEN 0 AND 5000) permits 0; the App-layer guard is the
+        // only safety net. A 0-count row reaching `sending` indicates
+        // a dispatch-logic bug (segment resolved to 0 should fail at
+        // submit per FR-002c `broadcast_empty_segment_blocked`); the
+        // guard prevents silent quota corruption while the bug is
+        // diagnosed.
+        if (
+          fresh.estimatedRecipientCount > 0 &&
+          terminalCount >= fresh.estimatedRecipientCount
+        ) {
           const transitionResult = transition(fresh.status, 'sent');
           if (transitionResult.ok) {
             const now = deps.clock.now();
@@ -536,13 +589,22 @@ export async function processWebhookEvent(
     // need it for triage on unexpected failures (RLS probe, DB drop,
     // programmer bugs).
     //
-    // Use pino's `err` field convention so its built-in error
-    // serialiser handles circular `cause` chains via `[Circular]`
-    // marker (e.g. AggregateError) instead of crashing JSON.stringify
-    // inside the log transport.
+    // R7 staff-review LOW-D fix — strip `cause` chain to a narrow
+    // `{ message, name }` shape. Pino's default error serialiser
+    // traverses `cause` recursively and SQL Drizzle errors can carry
+    // recipient email or body content in the wrapped query text;
+    // those values are NOT covered by `REDACT_PATHS` (paths match
+    // field names, not string-content within err.message). Mirrors
+    // the `enqueueDeliverySummaryEmail` catch-block pattern at line
+    // 695. Operators retain the message + name for triage; the full
+    // stack is available on the original throw via the OTel span
+    // recordException path which never goes to log sinks.
     logger.error(
       {
-        err: e,
+        err:
+          e instanceof Error
+            ? { message: e.message, name: e.name }
+            : String(e),
         tenantId,
         broadcastId,
         eventId: event.id,
@@ -584,22 +646,20 @@ function f7Audit(args: {
  * emails (FR-042 + privacy.md). Hashing inside the use-case keeps the
  * redaction invariant at the Application boundary.
  *
- * NOTE: FNV-1a is **not** cryptographically one-way — a known small
- * recipient set is brute-forceable by precomputing hashes. We use it
- * only to defeat passive `SELECT … FROM audit_log` reads (operator
- * accident, dump leak). PII-grade hashing for the `marketing_unsubscribes`
- * suppression list uses Node `createHash('sha256')` at the
- * Infrastructure boundary.
+ * T199 M-2 / T198 T-F7-04 (Phase 10 — 2026-05-02): hash family
+ * upgraded from FNV-1a to SHA-256 with per-tenant scope. FNV-1a was
+ * brute-forceable for the bounded SweCham recipient set (~131
+ * members) and unscoped — two tenants' audit dumps could correlate
+ * recipient presence via identical hashes. Now aligned with
+ * `unsubscribe-recipient.ts` which already uses
+ * `sha256Hex(tenantId + ':' + email)`.
+ *
+ * Existing `audit_log` rows with `fnv64:` prefix are unaffected
+ * (immutable per append-only triggers); new rows use the
+ * `sha256:<24-hex>` prefix for forensic distinguishability.
  */
-function hashRecipient(emailLower: EmailLower): string {
-  // FNV-1a 64-bit (deterministic, framework-free, no PII reversal).
-  let hash = 0xcbf29ce484222325n;
-  const bytes = new TextEncoder().encode(emailLower);
-  for (const b of bytes) {
-    hash ^= BigInt(b);
-    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
-  }
-  return `fnv64:${hash.toString(16).padStart(16, '0')}`;
+function hashRecipient(tenantId: string, emailLower: EmailLower): string {
+  return `sha256:${sha256Hex(`${tenantId}:${emailLower}`).slice(0, 24)}`;
 }
 
 /**

@@ -143,7 +143,7 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   return (
     <form onSubmit={handleFormSubmit} className="space-y-4" noValidate>
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">{t('emailLabel')}</Label>
         <Input id="email" type="email" value={email} readOnly disabled />
       </div>
 

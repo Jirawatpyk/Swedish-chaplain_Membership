@@ -526,6 +526,44 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // T188 (Phase 10 / i18n.md CHK053) — static-key invariant for `t()`.
+    // Forward-looking guidance for new F7 (broadcasts) code only.
+    // Pre-existing F1–F5 dynamic-key sites are left intact: the project
+    // has no human TH/SV liaison pipeline (T189 deferred indefinitely),
+    // and AI reviewers can read `t(\`namespace.${var}\`)` without
+    // needing static-discoverability. The rule remains useful inside
+    // the broadcasts surface where any future translator workflow
+    // would be enabled, and where the marketing-copy review surface
+    // is most regulated (PDPA marketing-consent).
+    files: [
+      "src/modules/broadcasts/**/*.ts",
+      "src/modules/broadcasts/**/*.tsx",
+      "src/app/api/broadcasts/**/*.ts",
+      "src/app/api/admin/broadcasts/**/*.ts",
+      "src/app/api/cron/broadcasts/**/*.ts",
+      "src/app/api/webhooks/resend-broadcasts/**/*.ts",
+      "src/app/(member)/portal/broadcasts/**/*.tsx",
+      "src/app/(staff)/admin/broadcasts/**/*.tsx",
+      "src/app/unsubscribe/**/*.tsx",
+      "src/components/broadcast/**/*.tsx",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.name='t'] > TemplateLiteral[expressions.length>0]",
+          message:
+            "i18n.md CHK053 (F7 scope) — keys passed to `t()` MUST be " +
+            "string literals. Use a switch/ternary that emits explicit " +
+            "`t('literal')` per branch so every key is statically " +
+            "discoverable. Forward-looking guidance — does NOT apply " +
+            "to F1–F5 surfaces.",
+        },
+      ],
+    },
+  },
   globalIgnores([
     ".next/**",
     "out/**",

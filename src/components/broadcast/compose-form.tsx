@@ -129,6 +129,28 @@ export function ComposeForm({
 
   const deferredBody = useDeferredValue(bodyHtml);
 
+  // UX-3 — beforeunload guard so a member who composed substantial
+  // content + accidentally closes the tab gets a browser-native
+  // "Are you sure you want to leave?" prompt. Active only when the
+  // body OR subject has diverged from the initial draft AND we're
+  // not in the middle of submitting (post-submit redirect would
+  // false-trigger the prompt).
+  useEffect(() => {
+    const dirty =
+      !submitting &&
+      (subject !== initialSubject || bodyHtml !== initialBodyHtml);
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      // Modern browsers ignore the message string and show their own
+      // copy; setting returnValue + preventDefault is the cross-
+      // browser invocation pattern.
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [submitting, subject, bodyHtml, initialSubject, initialBodyHtml]);
+
   // UX-R2-1 — auto-focus the failing field when a server error arrives.
   useEffect(() => {
     if (serverError === null) return;
@@ -251,10 +273,10 @@ export function ComposeForm({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} />
       <Card>
-        <CardContent className="space-y-6 pt-6">
+        <CardContent className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="broadcast-subject">{t('fields.subject')}</Label>
             <Input
@@ -304,6 +326,21 @@ export function ComposeForm({
             disabled={submitting}
           />
 
+          {/* UX-1 — surface expectations about recipient counts so the
+              member doesn't hit the 5,000 cap or empty-segment-block as
+              a "submit-to-discover" surprise. We deliberately don't
+              compute the live count here (would require an auth'd API
+              endpoint + debounced fetch + cap pre-check) — instead
+              describe the segment shape + link to broadcast detail
+              page where the post-submit count is visible. */}
+          <p className="text-xs text-muted-foreground">
+            {segment.kind === 'all_members'
+              ? t('estimateNote.allMembers')
+              : segment.kind === 'tier'
+                ? t('estimateNote.tier')
+                : t('estimateNote.custom')}
+          </p>
+
           {segment.kind === 'custom' ? (
             <CustomListInput
               value={customList}
@@ -312,11 +349,34 @@ export function ComposeForm({
             />
           ) : null}
 
+          {segment.kind === 'custom' && customLines.length > 0 ? (
+            <p
+              className="text-xs text-muted-foreground"
+              aria-live="polite"
+            >
+              {t('estimateNote.customCount', { count: customLines.length })}
+            </p>
+          ) : null}
+
           <div
             ref={bodyContainerRef}
             tabIndex={-1}
             className="space-y-2 outline-none"
             aria-invalid={bodyInvalid || serverError?.field === 'body' || undefined}
+            // QA T191 fix (2026-05-03) — WCAG 3.3.1: SR users hearing
+            // `aria-invalid` need the error reason programmatically
+            // associated. The error <p> below carries id="broadcast-
+            // body-error"; this `aria-describedby` wires the chain.
+            // Note: ideally the inner Tiptap `contenteditable` would
+            // also receive the describedby via `editorProps.attributes`
+            // but that requires a TiptapEditor prop addition; the
+            // wrapper-div-level association is what most SR pipelines
+            // resolve to anyway when `aria-invalid` is on the wrapper.
+            aria-describedby={
+              bodyInvalid || serverError?.field === 'body'
+                ? 'broadcast-body-error'
+                : undefined
+            }
           >
             <Label id="broadcast-body-label">{t('fields.bodyLabel')}</Label>
             <TiptapEditor
@@ -329,11 +389,19 @@ export function ComposeForm({
               labelledById="broadcast-body-label"
             />
             {serverError?.field === 'body' ? (
-              <p className="text-xs text-destructive" role="alert">
+              <p
+                id="broadcast-body-error"
+                className="text-xs text-destructive"
+                role="alert"
+              >
                 {serverError.message}
               </p>
             ) : bodyInvalid ? (
-              <p className="text-xs text-destructive" role="alert">
+              <p
+                id="broadcast-body-error"
+                className="text-xs text-destructive"
+                role="alert"
+              >
                 {tErr('broadcast_body_too_large')}
               </p>
             ) : null}
@@ -346,6 +414,12 @@ export function ComposeForm({
           />
 
           <PreviewPane subject={subject} bodyHtml={deferredBody} />
+
+          {/* UX-4 — surface FR-004a cancellation cutoff so members know
+              they can still pull back a submission until admin approves. */}
+          <p className="text-xs text-muted-foreground">
+            {t('submitNote.cancellable')}
+          </p>
 
           <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
             <Button

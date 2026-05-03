@@ -11,6 +11,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
+import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 import { logger } from '@/lib/logger';
 import { contacts } from './schema-contacts';
 import type {
@@ -133,8 +134,9 @@ export const drizzleContactRepo: ContactRepo = {
         .returning();
       return ok(rowToContact(rows[0]!));
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/duplicate key|unique constraint/i.test(msg)) {
+      // Drizzle 0.45+ wraps Postgres errors; walk the cause chain.
+      const msg = errorChainMessage(e);
+      if (isUniqueViolation(e) || /duplicate key|unique constraint/i.test(msg)) {
         return err({
           code: 'repo.conflict',
           reason: 'duplicate primary or unique email',
@@ -278,8 +280,9 @@ export const drizzleContactRepo: ContactRepo = {
 
       return ok({ oldEmail: before.email as typeof newEmail });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/duplicate key|unique constraint/i.test(msg)) {
+      // Drizzle 0.45+ wraps Postgres errors; walk the cause chain.
+      const msg = errorChainMessage(e);
+      if (isUniqueViolation(e) || /duplicate key|unique constraint/i.test(msg)) {
         return err({
           code: 'repo.conflict',
           reason: 'contact email already used in this tenant',
@@ -327,8 +330,9 @@ export const drizzleContactRepo: ContactRepo = {
         promoted: rowToContact(promoted[0]!),
       });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/duplicate key|unique constraint/i.test(msg)) {
+      // Drizzle 0.45+ wraps Postgres errors; walk the cause chain.
+      const msg = errorChainMessage(e);
+      if (isUniqueViolation(e) || /duplicate key|unique constraint/i.test(msg)) {
         return err({
           code: 'repo.conflict',
           reason: 'primary partial-index race',

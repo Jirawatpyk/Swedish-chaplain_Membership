@@ -1,9 +1,9 @@
-/**
- * T096 — Unit tests for `approve-broadcast.ts` Application use-case.
+﻿/**
+ * T096 โ€” Unit tests for `approve-broadcast.ts` Application use-case.
  *
- * Wave 6 GREEN — covers two paths (send_now + schedule), schedule lead
- * defence (≥5min), state-check (5 invalid statuses), concurrency, and
- * server_error catch-all. Resend Broadcasts API is NOT touched here —
+ * Wave 6 GREEN โ€” covers two paths (send_now + schedule), schedule lead
+ * defence (โฅ5min), state-check (5 invalid statuses), concurrency, and
+ * server_error catch-all. Resend Broadcasts API is NOT touched here โ€”
  * dispatch is deferred to the cron worker (Ultraplan AD1).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -196,6 +196,7 @@ function makeRepo(opts: RepoOpts): {
       async pruneExpiredDrafts() {
         return { prunedCount: 0 };
       },
+    async listInFlightOwnedByMember() { return []; },
     },
   };
 }
@@ -212,8 +213,8 @@ const clock = { now: (): Date => FROZEN_NOW };
 beforeEach(() => vi.useFakeTimers({ now: FROZEN_NOW }));
 afterEach(() => vi.useRealTimers());
 
-describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
-  // ===== D1 closure (verify-fix 2026-05-02) — G2 notification tests =====
+describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
+  // ===== D1 closure (verify-fix 2026-05-02) โ€” G2 notification tests =====
 
   it('D1 G2: emailTransactional.sendMemberEmail enqueued IN-TX with correct payload + locale', async () => {
     const audit = makeAudit();
@@ -257,7 +258,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     expect(email.memberCalls[0]?.locale).toBe('en');
   });
 
-  it('D1 G2: emailTransactional throws → audit + transition still complete (best-effort guard)', async () => {
+  it('D1 G2: emailTransactional throws โ’ audit + transition still complete (best-effort guard)', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const email = makeEmail({ shouldThrow: true });
@@ -280,10 +281,10 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });
 
-  // ===== R5 verify-fix Tests-H5 (2026-05-02) — locale chain =====
+  // ===== R5 verify-fix Tests-H5 (2026-05-02) โ€” locale chain =====
   // Spec: `memberPreferred ?? input.notificationLocale ?? 'en'`.
   // Locks the per-recipient locale resolution that motivated the
-  // entire Types-#6 OPTION B chain (F3 schema → bridge → use-case).
+  // entire Types-#6 OPTION B chain (F3 schema โ’ bridge โ’ use-case).
 
   it('locale chain: memberPreferred WINS over input.notificationLocale', async () => {
     const audit = makeAudit();
@@ -306,7 +307,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     expect(email.memberCalls[0]?.locale).toBe('sv');
   });
 
-  it('locale chain: memberPreferred null → falls back to input.notificationLocale', async () => {
+  it('locale chain: memberPreferred null โ’ falls back to input.notificationLocale', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const email = makeEmail();
@@ -327,7 +328,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     expect(email.memberCalls[0]?.locale).toBe('th');
   });
 
-  it('locale chain: both null → final fallback to "en"', async () => {
+  it('locale chain: both null โ’ final fallback to "en"', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const email = makeEmail();
@@ -450,7 +451,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
 
   // ---- Schedule defence (Ultraplan AD8) -------------------------------
 
-  it('rejects schedule < now+5min → broadcast_schedule_too_soon', async () => {
+  it('rejects schedule < now+5min โ’ broadcast_schedule_too_soon', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const tooSoon = new Date(FROZEN_NOW.getTime() + 4 * 60 * 1000); // +4min
@@ -468,7 +469,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     expect(repo.transitions).toHaveLength(0);
   });
 
-  it('rejects schedule in the past → broadcast_schedule_too_soon', async () => {
+  it('rejects schedule in the past โ’ broadcast_schedule_too_soon', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const past = new Date(FROZEN_NOW.getTime() - 60 * 1000);
@@ -501,7 +502,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     'cancelled',
     'rejected',
     'failed_to_dispatch',
-  ])('rejects when status=%s → broadcast_invalid_state_transition', async (s) => {
+  ])('rejects when status=%s โ’ broadcast_invalid_state_transition', async (s) => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: s });
     const result = await approveBroadcast(
@@ -518,7 +519,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     expect(repo.transitions).toHaveLength(0);
   });
 
-  it('rejects when broadcast not found → broadcast_not_found', async () => {
+  it('rejects when broadcast not found โ’ broadcast_not_found', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: null });
     const result = await approveBroadcast(
@@ -531,7 +532,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
 
   // ---- Concurrency ----------------------------------------------------
 
-  it('applyTransition throws → broadcast_concurrent_action_blocked', async () => {
+  it('applyTransition throws โ’ broadcast_concurrent_action_blocked', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'submitted',
@@ -551,7 +552,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     }
   });
 
-  it('concurrent: refresh returns null → observedStatus="unknown"', async () => {
+  it('concurrent: refresh returns null โ’ observedStatus="unknown"', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'submitted',
@@ -569,7 +570,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
 
   // ---- Server error catch-all ----------------------------------------
 
-  it('repo throw inside withTx → approve.server_error', async () => {
+  it('repo throw inside withTx โ’ approve.server_error', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ withTxThrows: new Error('db down') });
     const result = await approveBroadcast(
@@ -585,7 +586,7 @@ describe('approve-broadcast — Wave 6 GREEN (T100)', () => {
     }
   });
 
-  it('non-Error thrown → approve.server_error with "unknown error" message', async () => {
+  it('non-Error thrown โ’ approve.server_error with "unknown error" message', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ withTxThrows: 'string-error' });
     const result = await approveBroadcast(

@@ -23,7 +23,13 @@
  * in spans, swap to `cryptoHash('sha256', tenantId)` at the call
  * site — but no F5 use-case needs that today.
  */
-import { trace, type Tracer } from '@opentelemetry/api';
+import {
+  SpanStatusCode,
+  trace,
+  type Attributes,
+  type Span,
+  type Tracer,
+} from '@opentelemetry/api';
 
 const TRACER_NAME = 'swecham.payments';
 
@@ -34,4 +40,106 @@ export function paymentsTracer(): Tracer {
     cachedTracer = trace.getTracer(TRACER_NAME, '1.0.0');
   }
   return cachedTracer;
+}
+
+/**
+ * F7 Phase 9 — T174 OTel tracer for the broadcasts bounded context.
+ * Trace tree documented in `docs/observability.md § 22`:
+ * `member_compose_page_load → member_submit_broadcast →
+ *  admin_approve_send_now → cron_dispatch_scheduled →
+ *  webhook_receive_resend → public_unsubscribe`.
+ *
+ * Attribute-redaction contract: no recipient_email, recipient_emails,
+ * body_html, rejection_reason raw text, Resend-Signature, or
+ * Svix-Signature values. Bounded-cardinality attributes only:
+ * tenant.id, broadcast.id, actor.role, segment.type.
+ */
+const BROADCASTS_TRACER_NAME = 'swecham.broadcasts';
+let cachedBroadcastsTracer: Tracer | null = null;
+
+export function broadcastsTracer(): Tracer {
+  if (!cachedBroadcastsTracer) {
+    cachedBroadcastsTracer = trace.getTracer(BROADCASTS_TRACER_NAME, '1.0.0');
+  }
+  return cachedBroadcastsTracer;
+}
+
+/**
+ * Round 5 simplification — span lifecycle helper.
+ *
+ * Wraps `tracer.startSpan(name, {attributes}) → fn(span) → catch:
+ * setStatus(ERROR) + recordException + rethrow → finally: span.end()`.
+ * Removes the duplicated try/catch/finally boilerplate that started
+ * showing up at the F7 webhook, cron, and unsubscribe entrypoints.
+ *
+ * Why a generic helper rather than a class: the OTel API is
+ * pure-functional + the helper has no state of its own. A
+ * higher-order function keeps the call site terse:
+ *
+ * ```ts
+ * return withSpan(broadcastsTracer(), 'webhook_receive_resend', { 'tenant.id': t }, async (span) => {
+ *   span.setAttribute('broadcasts.outcome', 'success');
+ *   return jsonOk();
+ * });
+ * ```
+ *
+ * The helper does NOT swallow errors — exceptions still propagate so
+ * the route handler / cron loop can convert them into HTTP 5xx + log
+ * entries as before. We just guarantee `span.end()` runs even on a
+ * synchronous throw inside the callback (was a Round 5 R5-CRON-B
+ * leak risk before this helper existed).
+ */
+export async function withSpan<T>(
+  tracer: Tracer,
+  name: string,
+  attributes: Attributes,
+  fn: (span: Span) => Promise<T>,
+): Promise<T> {
+  const span = tracer.startSpan(name, { attributes });
+  try {
+    return await fn(span);
+  } catch (e) {
+    span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: e instanceof Error ? e.message : String(e),
+    });
+    if (e instanceof Error) span.recordException(e);
+    throw e;
+  } finally {
+    span.end();
+  }
+}
+
+/**
+ * R6 staff-review W-P6 fix — same as `withSpan` but uses
+ * `startActiveSpan` so the span is set as the active context for the
+ * duration of `fn()`. Auto-instrumented child spans (Drizzle queries,
+ * fetch calls inside the callback) will then parent correctly to this
+ * span in the trace tree, instead of being orphaned at the root.
+ *
+ * Use this for cron loops + route handlers where the work inside the
+ * callback issues DB queries / outbound HTTP that should appear as
+ * children in Vercel Observability. `withSpan` (non-active) is fine
+ * for leaf-level annotations where no child spans are expected.
+ */
+export async function withActiveSpan<T>(
+  tracer: Tracer,
+  name: string,
+  attributes: Attributes,
+  fn: (span: Span) => Promise<T>,
+): Promise<T> {
+  return tracer.startActiveSpan(name, { attributes }, async (span: Span) => {
+    try {
+      return await fn(span);
+    } catch (e) {
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: e instanceof Error ? e.message : String(e),
+      });
+      if (e instanceof Error) span.recordException(e);
+      throw e;
+    } finally {
+      span.end();
+    }
+  });
 }

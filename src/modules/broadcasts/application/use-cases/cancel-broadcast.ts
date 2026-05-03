@@ -23,7 +23,7 @@ import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
 import type { AuditPort } from '../ports/audit-port';
-import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import { enqueueBroadcastMemberNotification } from '../enqueue-member-notification';
@@ -122,6 +122,16 @@ export async function cancelBroadcast(
 
       const policyResult = authorizeCancel(existing.status);
       if (!policyResult.ok) {
+        // R7 staff-review MED-R2 — `null` tx is intentional here: the
+        // policy reject branch performs NO state mutation (no UPDATE,
+        // no INSERT into broadcasts), so emitting the audit on
+        // auto-commit is safe — there is no broadcasts-row write that
+        // could roll back independently. This DIVERGES from the
+        // F5/F4 in-tx-audit pattern but the F5/F4 patterns wrap a
+        // mutation; here the audit is the sole side effect of a
+        // policy reject. If a future change adds a write to this
+        // branch (unlikely — it would conflict with FR-004a's
+        // "cancellation rejected" semantic), promote `null` → `tx`.
         try {
           await deps.audit.emit(null, {
             tenantId: deps.tenant.slug,
@@ -178,7 +188,21 @@ export async function cancelBroadcast(
           },
           existing.status,
         );
-      } catch {
+      } catch (e) {
+        // R6 staff-review W-R2 fix — narrow catch to the concurrency
+        // sentinel only. The prior bare `catch` swallowed any throw,
+        // including a Neon outage on the refresh-status `findByIdInTx`
+        // call below (which itself can throw). That secondary throw
+        // would propagate out of the inner try, get caught by the
+        // outer `try/catch` at line 251, and surface as
+        // `cancel.server_error` — masking the real concurrency signal
+        // and producing the wrong audit-event-kind. Narrowing to
+        // `BroadcastConcurrentMutationError` lets DB-layer errors
+        // propagate cleanly to the outer catch which logs and returns
+        // `cancel.server_error` with the underlying cause.
+        if (!(e instanceof BroadcastConcurrentMutationError)) {
+          throw e;
+        }
         const refresh = await deps.broadcastsRepo.findByIdInTx(
           tx,
           deps.tenant.slug,

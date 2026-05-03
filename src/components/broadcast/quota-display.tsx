@@ -40,12 +40,18 @@ export interface QuotaDisplayProps {
   readonly initial?: QuotaSnapshot | null;
   /** Show "Compose" deep-link when remaining>0 (Smart-4). Default false on compose page itself. */
   readonly showComposeCta?: boolean;
+  /** AS1: localised "Resets on <date>" copy rendered inside the card footer. */
+  readonly nextResetCopy?: string | null;
+  /** AS2: localised "Plan changed on <date>" explainer when applicable. */
+  readonly planChangedExplainer?: string | null;
 }
 
 export function QuotaDisplay({
   refreshKey = 0,
   initial = null,
   showComposeCta = false,
+  nextResetCopy = null,
+  planChangedExplainer = null,
 }: QuotaDisplayProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.quota');
   const tCompose = useTranslations('portal.broadcasts.compose');
@@ -110,7 +116,7 @@ export function QuotaDisplay({
 
   return (
     <Card aria-busy={loading} data-testid="quota-display">
-      <CardContent className="space-y-3 pt-6">
+      <CardContent className="space-y-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="text-sm font-medium">
             {snap === null
@@ -177,6 +183,25 @@ export function QuotaDisplay({
               >
                 {tCompose('title')}
               </Link>
+            ) : null}
+            {/* AS1 reset-date copy + AS2 plan-changed explainer — moved
+                inside the Card footer so they read as quota metadata
+                rather than a heading floating between cards. */}
+            {nextResetCopy !== null ? (
+              <p
+                data-testid="quota-next-reset"
+                className="text-xs text-muted-foreground"
+              >
+                {nextResetCopy}
+              </p>
+            ) : null}
+            {planChangedExplainer !== null ? (
+              <p
+                data-testid="quota-plan-changed-explainer"
+                className="text-xs text-amber-700 dark:text-amber-300"
+              >
+                {planChangedExplainer}
+              </p>
             ) : null}
           </>
         ) : (

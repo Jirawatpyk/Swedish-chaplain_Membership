@@ -20,6 +20,34 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 
 const TEST_REQUEST_ID = `append-only-test-${Date.now()}`;
 
+/**
+ * Drizzle 0.45+ wraps Postgres errors with a `Failed query: ...`
+ * message and stashes the original Postgres error on `.cause`. Walk
+ * the cause chain to find the trigger-emitted "append-only" message.
+ */
+function errorChainMessage(err: unknown): string {
+  const parts: string[] = [];
+  let cur: unknown = err;
+  while (cur instanceof Error) {
+    parts.push(cur.message);
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return parts.join(' | ');
+}
+
+async function expectAppendOnlyRejection(
+  promise: Promise<unknown>,
+): Promise<void> {
+  let caught: unknown;
+  try {
+    await promise;
+  } catch (e) {
+    caught = e;
+  }
+  expect(caught).toBeDefined();
+  expect(errorChainMessage(caught)).toMatch(/append-only/i);
+}
+
 describe('audit_log append-only enforcement', () => {
   it('rejects UPDATE on audit_log with permission-denied SQLSTATE', async () => {
     const inserted = await db
@@ -35,9 +63,9 @@ describe('audit_log append-only enforcement', () => {
     expect(inserted).toHaveLength(1);
     const row = inserted[0]!;
 
-    await expect(
+    await expectAppendOnlyRejection(
       db.update(auditLog).set({ summary: 'tampered' }).where(eq(auditLog.id, row.id)),
-    ).rejects.toThrow(/append-only/i);
+    );
   });
 
   it('rejects DELETE on audit_log', async () => {
@@ -53,15 +81,13 @@ describe('audit_log append-only enforcement', () => {
 
     const row = inserted[0]!;
 
-    await expect(
+    await expectAppendOnlyRejection(
       db.delete(auditLog).where(eq(auditLog.id, row.id)),
-    ).rejects.toThrow(/append-only/i);
+    );
   });
 
   it('rejects TRUNCATE on audit_log via raw SQL', async () => {
-    await expect(db.execute('TRUNCATE TABLE audit_log')).rejects.toThrow(
-      /append-only/i,
-    );
+    await expectAppendOnlyRejection(db.execute('TRUNCATE TABLE audit_log'));
   });
 
   it('still permits INSERT (proves the table is not fully locked)', async () => {

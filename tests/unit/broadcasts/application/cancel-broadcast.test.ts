@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Unit tests for `cancel-broadcast.ts` Application use-case (T103).
  *
- * Wave 6 GREEN — FR-004a / Q10 cancel cutoff at `sending`.
+ * Wave 6 GREEN โ€” FR-004a / Q10 cancel cutoff at `sending`.
  *
  * Shared between member-self + admin paths via `actor` discriminator.
  * Member-self requesting another member's broadcast must surface
- * `broadcast_not_found` (no existence leak — security).
+ * `broadcast_not_found` (no existence leak โ€” security).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { access } from 'node:fs/promises';
@@ -193,6 +193,7 @@ function makeRepo(opts: RepoOpts): {
       async pruneExpiredDrafts() {
         return { prunedCount: 0 };
       },
+    async listInFlightOwnedByMember() { return []; },
     },
   };
 }
@@ -216,8 +217,8 @@ const clock = { now: (): Date => FROZEN_NOW };
 beforeEach(() => vi.useFakeTimers({ now: FROZEN_NOW }));
 afterEach(() => vi.useRealTimers());
 
-describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
-  // ===== D1 closure (verify-fix 2026-05-02) — G2 notification tests =====
+describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
+  // ===== D1 closure (verify-fix 2026-05-02) โ€” G2 notification tests =====
 
   it('D1 G2: admin-cancel sends notification email with cancellationReason + tenant locale', async () => {
     const audit = makeAudit();
@@ -268,7 +269,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     expect(email.memberCalls[0]?.payload['cancellationReason']).toBeNull();
   });
 
-  it('D1 G2: emailTransactional throws → audit + transition still complete (best-effort)', async () => {
+  it('D1 G2: emailTransactional throws โ’ audit + transition still complete (best-effort)', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
     const email = makeEmail({ shouldThrow: true });
@@ -290,7 +291,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });
 
-  it('happy admin: status=submitted → cancelled, audit broadcast_cancelled', async () => {
+  it('happy admin: status=submitted โ’ cancelled, audit broadcast_cancelled', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
     const result = await cancelBroadcast(
@@ -305,7 +306,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     expect((evt?.payload as { actorKind: string }).actorKind).toBe('admin');
   });
 
-  it('happy admin: status=approved → cancelled (cutoff allows approved)', async () => {
+  it('happy admin: status=approved โ’ cancelled (cutoff allows approved)', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('approved') });
     const result = await cancelBroadcast(
@@ -315,7 +316,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('happy member-self: actor.memberId matches requestedByMemberId → cancelled', async () => {
+  it('happy member-self: actor.memberId matches requestedByMemberId โ’ cancelled', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted', 'm-1') });
     const result = await cancelBroadcast(
@@ -330,7 +331,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     );
   });
 
-  // ===== R5 verify-fix Tests-H5 (2026-05-02) — locale chain =====
+  // ===== R5 verify-fix Tests-H5 (2026-05-02) โ€” locale chain =====
   it('locale chain: memberPreferred WINS over input.notificationLocale', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
@@ -352,7 +353,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     expect(email.memberCalls[0]?.locale).toBe('sv');
   });
 
-  it('locale chain: memberPreferred null → falls back to input.notificationLocale', async () => {
+  it('locale chain: memberPreferred null โ’ falls back to input.notificationLocale', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
     const email = makeEmail();
@@ -373,7 +374,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     expect(email.memberCalls[0]?.locale).toBe('th');
   });
 
-  it('locale chain: both null → final fallback to "en"', async () => {
+  it('locale chain: both null โ’ final fallback to "en"', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
     const email = makeEmail();
@@ -427,7 +428,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     'cancelled',
     'failed_to_dispatch',
     'draft',
-  ])('rejects when status=%s → broadcast_cancel_too_late + audit emitted', async (s) => {
+  ])('rejects when status=%s โ’ broadcast_cancel_too_late + audit emitted', async (s) => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast(s) });
     const result = await cancelBroadcast(
@@ -451,7 +452,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
 
   // ---- Existence + member-self isolation -------------------------------
 
-  it('rejects when broadcast not found → broadcast_not_found', async () => {
+  it('rejects when broadcast not found โ’ broadcast_not_found', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: null });
     const result = await cancelBroadcast(
@@ -462,7 +463,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     if (!result.ok) expect(result.error.kind).toBe('broadcast_not_found');
   });
 
-  it("member-self trying to cancel another member's broadcast → broadcast_not_found (no leak)", async () => {
+  it("member-self trying to cancel another member's broadcast โ’ broadcast_not_found (no leak)", async () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted', 'm-OTHER') });
     const result = await cancelBroadcast(
@@ -486,7 +487,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('rejects cancellationReason > 500 chars → broadcast_cancel_reason_too_long', async () => {
+  it('rejects cancellationReason > 500 chars โ’ broadcast_cancel_reason_too_long', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
     const tooLong = 'r'.repeat(501);
@@ -516,7 +517,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
 
   // ---- Concurrency -----------------------------------------------------
 
-  it('applyTransition throws → broadcast_concurrent_action_blocked', async () => {
+  it('applyTransition throws โ’ broadcast_concurrent_action_blocked', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       existing: makeBroadcast('submitted'),
@@ -536,7 +537,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     }
   });
 
-  it('concurrent: refresh returns null → observedStatus="unknown"', async () => {
+  it('concurrent: refresh returns null โ’ observedStatus="unknown"', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       existing: makeBroadcast('submitted'),
@@ -572,7 +573,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     expect(evt?.actorUserId).toBe('admin-7');
   });
 
-  it('cancel_too_late audit best-effort — failed audit does NOT mask the error', async () => {
+  it('cancel_too_late audit best-effort โ€” failed audit does NOT mask the error', async () => {
     const repo = makeRepo({ existing: makeBroadcast('sent') });
     const auditPort: AuditPort = {
       async emit() {
@@ -589,7 +590,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
 
   // ---- Server error catch-all -----------------------------------------
 
-  it('repo throw inside withTx → cancel.server_error', async () => {
+  it('repo throw inside withTx โ’ cancel.server_error', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ withTxThrows: new Error('db down') });
     const result = await cancelBroadcast(
@@ -605,7 +606,7 @@ describe('cancel-broadcast — Wave 6 GREEN (T103)', () => {
     }
   });
 
-  it('non-Error thrown → cancel.server_error with "unknown error" message', async () => {
+  it('non-Error thrown โ’ cancel.server_error with "unknown error" message', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ withTxThrows: 'string-error' });
     const result = await cancelBroadcast(

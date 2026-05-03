@@ -940,12 +940,12 @@ pino's redact list (see § 22.4).
 | `broadcasts.failed_to_dispatch.count` | counter | `tenant`, `failure_reason` (resend_5xx\|resend_429\|resend_403\|app_error\|timeout) | Dispatch-failure forensics |
 | `broadcasts.dispatch_failure_rate` | gauge | `tenant` | Computed: `failed_to_dispatch / send_started` over 1h rolling window; > 10 % alert |
 | `broadcasts.cron.dispatched.count` | counter | `tenant` | Scheduled-send cron throughput |
-| `broadcasts.cron.skipped.count` | counter | `tenant`, `reason` (kill_switch\|advisory_lock_held\|no_due_rows) | Cron tick observability |
+| `broadcasts.cron.skipped.count` | counter | `tenant`, `reason` (kill_switch\|no_due_rows) | Cron tick observability. Round 3 G3 fix: `advisory_lock_held` removed — `FOR UPDATE SKIP LOCKED` skips at the Postgres engine level without surfacing skipped-row counts to the app; the label was structurally unemittable. Lock-contention is now indirectly observable via `cron_dispatch_scheduled` span p99. |
 | `broadcasts.webhook.receive.count` | counter | `tenant`, `event_type` (delivered\|bounced\|complained\|sent\|delivery_delayed) | Per-event ingest rate |
 | `broadcasts.webhook.duration_ms` | histogram | `tenant` | webhook handler p95 < 250 ms |
-| `broadcasts.webhook_signature_rejected_total` | counter | _(no tenant — pre-verification)_ | Abuse / misconfig canary |
-| `broadcasts.bounce_rate_per_broadcast` | gauge | `tenant`, `broadcast_id` | Per-broadcast bounce rate; > 2 % warn, > 5 % page |
-| `broadcasts.complaint_rate_per_broadcast` | gauge | `tenant`, `broadcast_id` | Per-broadcast complaint rate; ≥ 0.1 % warn, ≥ 0.5 % page, > 5 % Q14 SC-005 (b) auto-halt |
+| `broadcasts.webhook_signature_rejected_total` | counter | `reason` (feature_disabled\|body_too_large\|missing_header\|bad_signature) | Abuse / misconfig canary. Round 3 code-reviewer fix: added `reason` label so secret-rotation incidents read distinct from kill-switch blocks on dashboards. NO tenant label (rejected pre-verification). |
+| `broadcasts.bounce_rate_per_broadcast` | gauge | `tenant`, `broadcast_id` | Per-broadcast bounce rate; > 2 % warn, > 5 % page. Cardinality ceiling: see § 22.4. |
+| `broadcasts.complaint_rate_per_broadcast` | gauge | `tenant`, `broadcast_id` | Per-broadcast complaint rate; ≥ 0.1 % warn, ≥ 0.5 % page, > 5 % Q14 SC-005 (b) auto-halt. Cardinality ceiling: see § 22.4. |
 | `broadcasts.queue_pending` | gauge | `tenant` | `submitted` + `approved-with-scheduled` count; > 8000 warn |
 | `broadcasts.stuck_sending_count` | gauge | `tenant` | `status='sending'` for > 24 h count; ≥ 1 alarm |
 | `broadcasts.audience_drift_detected.count` | counter | `tenant` | F7.1-IMP5 — emitted whenever idempotency-replay observes a recipient-count mismatch between expected and Resend audience reality. **Black swan event** — should be 0 over weeks; > 0 / 24 h pages ops to investigate partial-delivery scope. Backed by audit event `broadcast_resend_audience_drift`. |
@@ -988,7 +988,7 @@ the recipient cap × broadcast count per tenant per quota year (10/year/member
 | `broadcast_complaint_rate_per_broadcast_breach` event ≥ 1 / 24 h | **page** | Q14 auto-halt fired; admin clear-halt required | `docs/runbooks/broadcasts-halt-clear.md` |
 | `broadcasts.queue_pending` > 8000 | **alarm** | FR-013 SLA breach risk | `docs/runbooks/broadcasts-queue-overflow.md` |
 | Any F7 surface p95 budget breach (any of the 6 SLOs above) | **alarm** | UX degradation; investigate per-surface | `docs/runbooks/broadcasts-perf-regression.md` |
-| `broadcasts.cron.skipped.count{reason="advisory_lock_held"}` > 5 / 5 min | **alarm** | Concurrent cron ticks holding the dispatch lock — possible Vercel function instance retention bug | `docs/runbooks/broadcasts-dispatch-failure.md` |
+| `cron_dispatch_scheduled` span p99 > 30 s / 1 h | **alarm** | Round 3 G3 replacement: was `cron.skipped{advisory_lock_held}` but `FOR UPDATE SKIP LOCKED` returns no skip-count to the app. Span-duration proxy: lock-contention OR Resend latency surge OR DB pool exhaustion all manifest as p99 spikes on this span. | `docs/runbooks/broadcasts-dispatch-failure.md` |
 | `broadcasts.audience_drift_detected.count` > 0 / 24 h | **page** | F7.1-IMP5 — recipient-count drift on idempotency replay; partial-delivery investigation required | `docs/runbooks/broadcasts-dispatch-failure.md` |
 | `broadcasts.drift_check_unverifiable.count` > 1 / 1 h | **alarm** | R5-S1 — multiple unverifiable replays in a window; Resend availability or app classification bug | `docs/runbooks/broadcasts-dispatch-failure.md` |
 
@@ -1009,6 +1009,33 @@ Plus full webhook body → redacted to `resend_event_id` + `event_type` +
 `broadcast_id` + `recipient_member_id` + `bounce_type` only.
 Defence-in-depth: any field containing `@` regex match → masked except
 last 2 chars before `@` + domain.
+
+### 22.4a F7 platform-redaction limitation (T176 — privacy CHK048)
+
+**Status (2026-05-02)**: Vercel does NOT currently expose a per-path
+log-redaction primitive that would mask the `/unsubscribe/v1\..*` URL
+component in platform access logs / log-drain export. Application-layer
+pino redaction (§ 22.4) keeps tokens out of structured app logs, but
+Vercel's edge / function access logs may capture the full request URL.
+
+**Mitigation stack (defence-in-depth, ordered by strength)**:
+
+1. **HMAC-signed tokens** (`UNSUBSCRIBE_TOKEN_SECRET`) — leak grants
+   only idempotent unsubscribe replay (no PII exfiltration); attacker
+   needs both signing-secret compromise AND access to log retention.
+2. **Quarterly rotation** of `UNSUBSCRIBE_TOKEN_SECRET` (per
+   `docs/runbooks/credential-compromise.md`) bounds the breach window
+   to 90 days. Cadence escalates to monthly if a CHK048 follow-up
+   audit detects token-shaped strings in the Vercel access-log export.
+3. **Vercel log retention window** is 30 days on the current plan —
+   tokens older than that age out automatically.
+4. **No PII in token payload** beyond the recipient's own email — the
+   minimum identity needed to action the unsubscribe.
+
+**Re-evaluation trigger**: Vercel publishes a per-path redaction
+primitive (or the log-drain export gains pre-export filtering); F7
+upgrades to platform-layer redaction and downgrades the secret-rotation
+cadence back to annual baseline.
 
 ### 22.5 Sample rates
 

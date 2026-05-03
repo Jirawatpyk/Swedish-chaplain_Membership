@@ -115,11 +115,28 @@ export default async function EblastsListPage(props: {
   let pagination = { page: 1, totalPages: 0, total: 0 };
 
   if (memberId !== null) {
-    const quotaResult = await computeQuotaCounter(
-      makeComputeQuotaDeps(tenant.slug),
-      { memberId },
-    );
-    if (quotaResult.ok) {
+    // Parallelise the 3 independent DB roundtrips (quota + plan-changed
+    // audit + history) via Promise.allSettled. Previously sequential
+    // (~260ms total Neon Singapore) which crossed the streaming
+    // threshold and made the loading.tsx skeleton paint visibly on
+    // refresh; parallelised they complete in ~max(80,80,100)≈100ms
+    // and the shell + content arrive together.
+    const [quotaResultS, planLookupS, listResultS] = await Promise.allSettled([
+      computeQuotaCounter(makeComputeQuotaDeps(tenant.slug), { memberId }),
+      membersDeps.memberRepo.findLastPlanChangedAt(tenant, asMemberId(memberId)),
+      listMemberBroadcasts(makeListMemberBroadcastsDeps(tenant.slug), {
+        memberId,
+        page: requestedPage,
+        perPage: PER_PAGE,
+      }),
+    ]);
+
+    const quotaResult =
+      quotaResultS.status === 'fulfilled' ? quotaResultS.value : null;
+    const planLookup =
+      planLookupS.status === 'fulfilled' ? planLookupS.value : null;
+
+    if (quotaResult && quotaResult.ok) {
       const v = quotaResult.value;
       quota = {
         used: v.counter.used,
@@ -137,28 +154,20 @@ export default async function EblastsListPage(props: {
         date: dateOnlyFormatter.format(new Date(v.nextResetAt)),
       });
 
-      // AS2 — plan-changed explainer: read most-recent audit timestamp
-      // via the F3 `findLastPlanChangedAt` port (Constitution Principle
-      // III — Presentation never reaches into infrastructure directly).
-      const planLookup = await membersDeps.memberRepo.findLastPlanChangedAt(
-        tenant,
-        asMemberId(memberId),
-      );
-      if (!planLookup.ok) {
+      // AS2 — plan-changed explainer: derive from the parallel-fetched
+      // audit lookup. Constitution Principle III — Presentation never
+      // reaches into infrastructure directly; uses the F3 port.
+      if (planLookup && !planLookup.ok) {
         // Real DB error must not silently masquerade as "no plan
         // change". Log so an audit-log read regression is observable;
-        // continue with `null` so the explainer is suppressed (graceful
-        // degradation — the page still renders with the quota panel).
+        // continue with `null` so the explainer is suppressed.
         logger.error(
-          {
-            err: planLookup.error,
-            tenantId: tenant.slug,
-            memberId,
-          },
+          { err: planLookup.error, tenantId: tenant.slug, memberId },
           'broadcasts.benefits_page.find_last_plan_changed_at_failed',
         );
       }
-      const lastPlanChangedAt = planLookup.ok ? planLookup.value : null;
+      const lastPlanChangedAt =
+        planLookup && planLookup.ok ? planLookup.value : null;
       if (
         lastPlanChangedAt !== null &&
         shouldShowPlanChangedExplainer(
@@ -169,8 +178,7 @@ export default async function EblastsListPage(props: {
       ) {
         // Format the plan-changed date in the tenant timezone so the
         // microcopy reads "Plan changed on <Bangkok-day>" regardless
-        // of where the server is running. Explicit null-guard above
-        // replaces the prior `lastPlanChangedAt!` non-null assertion.
+        // of where the server is running.
         const planChangedFormatter = new Intl.DateTimeFormat(
           intlLocale(locale),
           { dateStyle: 'long', timeZone: v.tenantTimezone },
@@ -180,28 +188,19 @@ export default async function EblastsListPage(props: {
         });
       }
     } else {
-      // Quota query failure must not silently render zero counters
-      // with the Compose CTA enabled. Log + render the page with
-      // `quota=null` (the quota panel handles its own error state via
-      // `<QuotaDisplay initial={null}>`); the Compose CTA stays
-      // enabled because the spec mandates the benefit is observable
-      // even when the count is unknown — the submit endpoint itself
-      // re-validates quota at the boundary (defence in depth).
+      // Quota query failure (rejected promise OR Result.err) must not
+      // silently render zero counters with the Compose CTA enabled.
+      const err = quotaResultS.status === 'rejected'
+        ? quotaResultS.reason
+        : (quotaResult && !quotaResult.ok ? quotaResult.error : null);
       logger.error(
-        {
-          err: quotaResult.error,
-          tenantId: tenant.slug,
-          memberId,
-        },
+        { err, tenantId: tenant.slug, memberId },
         'broadcasts.benefits_page.compute_quota_counter_failed',
       );
     }
 
-    try {
-      const listResult = await listMemberBroadcasts(
-        makeListMemberBroadcastsDeps(tenant.slug),
-        { memberId, page: requestedPage, perPage: PER_PAGE },
-      );
+    if (listResultS.status === 'fulfilled') {
+      const listResult = listResultS.value;
       pagination = {
         page: listResult.page,
         totalPages: listResult.totalPages,
@@ -215,13 +214,17 @@ export default async function EblastsListPage(props: {
         sentAt: b.sentAt,
         estimatedRecipientCount: b.estimatedRecipientCount,
       }));
-    } catch (err) {
+    } else {
       // History query failure must not crash the entire page — quota
       // panel + reset-date are the primary surface; the table degrades
-      // to the AS4 empty-state. Log so a Neon outage / RLS regression
-      // is visible in the dashboards.
+      // to the AS4 empty-state.
       logger.error(
-        { err, tenantId: tenant.slug, memberId, page: requestedPage },
+        {
+          err: listResultS.reason,
+          tenantId: tenant.slug,
+          memberId,
+          page: requestedPage,
+        },
         'broadcasts.benefits_page.list_history_failed',
       );
     }
@@ -253,37 +256,23 @@ export default async function EblastsListPage(props: {
         }
       />
 
-      <QuotaDisplay initial={quota} showComposeCta={!composeDisabled} />
-
-      {/* AS1 reset-date copy + AS2 plan-changed explainer — both inside
-          the quota card surface but rendered as sibling testid'd nodes
-          so the E2E can assert each independently. */}
-      {nextResetCopy !== null ? (
-        <p
-          data-testid="quota-next-reset"
-          className="mt-2 text-xs text-muted-foreground"
-        >
-          {nextResetCopy}
-        </p>
-      ) : null}
-      {/* AS2: testid present (count=1) when explainer is applicable.
-          When suppressed (no plan change in quota year), the testid is
-          omitted entirely so T129 distinguishes "shown vs hidden". */}
-      {planChangedExplainer !== null ? (
-        <p
-          data-testid="quota-plan-changed-explainer"
-          className="mt-2 text-xs text-amber-700 dark:text-amber-300"
-        >
-          {planChangedExplainer}
-        </p>
-      ) : null}
+      {/* AS1+AS2 reset-date + plan-changed copy now live INSIDE the
+          QuotaDisplay card so they read as quota metadata, not as a
+          heading floating between cards. Inline Compose CTA omitted —
+          PageHeader actions slot above is canonical primary CTA per
+          ux-standards.md (avoid duplicate buttons in the same surface). */}
+      <QuotaDisplay
+        initial={quota}
+        nextResetCopy={nextResetCopy}
+        planChangedExplainer={planChangedExplainer}
+      />
 
       {/* AS4 empty-state OR AS1 history-table */}
       {history.length === 0 ? (
         <section
           data-testid="broadcast-empty-state"
           aria-label={t('emptyTitle')}
-          className="mt-6 flex flex-col items-center gap-3 rounded-md border px-4 py-12 text-center"
+          className="flex flex-col items-center gap-3 rounded-md border px-4 py-12 text-center"
         >
           <div className="rounded-full bg-muted p-3">
             {/* Icon size 48×48 per ux-standards.md § 13 empty-state spec. */}
@@ -303,7 +292,7 @@ export default async function EblastsListPage(props: {
       ) : (
         <section
           aria-label={t('title')}
-          className="mt-6 overflow-x-auto rounded-md border"
+          className="overflow-x-auto rounded-md border"
         >
           <table
             data-testid="broadcast-history-table"
@@ -372,7 +361,7 @@ export default async function EblastsListPage(props: {
         <nav
           data-testid="broadcast-history-pagination"
           aria-label={tPagination('ariaLabel')}
-          className="mt-4 flex items-center justify-between text-sm"
+          className="flex items-center justify-between text-sm"
         >
           {pagination.page > 1 ? (
             <Link

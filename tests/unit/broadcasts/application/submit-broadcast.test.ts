@@ -1,8 +1,8 @@
-/**
- * T045 — Unit tests for `submit-broadcast.ts` Application use-case.
+﻿/**
+ * T045 โ€” Unit tests for `submit-broadcast.ts` Application use-case.
  *
  * **100% branch coverage required** per Constitution Principle II
- * (security-critical: every FR-002 precondition a–k surfaces a typed
+ * (security-critical: every FR-002 precondition aโ€“k surfaces a typed
  * error code + audit emission + reservation rollback).
  *
  * Wave 6 fills the bodies. Strategy: hand-built mocks for every Port
@@ -10,12 +10,12 @@
  * use-case is fully Dependency-Injected so vi.mock is unnecessary.
  *
  * Coverage targets every branch in `submit-broadcast.ts`:
- *   1. Halt-flag (k) — emits audit + returns broadcast_member_halted_pending_review
- *   2. Rate limit (FR-002d) — emits audit + returns broadcast_rate_limit_exceeded
+ *   1. Halt-flag (k) โ€” emits audit + returns broadcast_member_halted_pending_review
+ *   2. Rate limit (FR-002d) โ€” emits audit + returns broadcast_rate_limit_exceeded
  *   3. Plan check (a)
- *   4. Quota check (b) — admin_proxy bypasses
+ *   4. Quota check (b) โ€” admin_proxy bypasses
  *   5. Reply-to (j)
- *   6. Subject length (c) — empty + too-long
+ *   6. Subject length (c) โ€” empty + too-long
  *   7. Sanitiser (e + d)
  *   8. Custom-list validation (h)
  *   9. Segment resolve (f + g + i)
@@ -232,6 +232,7 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
     async pruneExpiredDrafts() {
       return { prunedCount: 0 };
     },
+    async listInFlightOwnedByMember() { return []; },
   };
 }
 
@@ -369,14 +370,14 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
+describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)', () => {
   it('use-case module exists at application/use-cases/submit-broadcast.ts', async () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
   });
 
-  // ---- FR-002 precondition (k) — halt flag --------------------------
+  // ---- FR-002 precondition (k) โ€” halt flag --------------------------
 
-  it('precondition (k) member halted (R3-NEW-1) → broadcast_member_halted_pending_review', async () => {
+  it('precondition (k) member halted (R3-NEW-1) โ’ broadcast_member_halted_pending_review', async () => {
     const { audit, deps } = makeDeps({
       halted: ['m-1'],
       primaryContact: 'me@example.com',
@@ -392,9 +393,9 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     ).toBeDefined();
   });
 
-  // ---- FR-002d — rate limit -----------------------------------------
+  // ---- FR-002d โ€” rate limit -----------------------------------------
 
-  it('rate limit hit (10/24h) → broadcast_rate_limit_exceeded', async () => {
+  it('rate limit hit (10/24h) โ’ broadcast_rate_limit_exceeded', async () => {
     const { audit, deps } = makeDeps({
       rateLimit: { allow: false, retryAfterSeconds: 120 },
       primaryContact: 'me@example.com',
@@ -412,9 +413,9 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     ).toBeDefined();
   });
 
-  // ---- FR-002 precondition (a) — plan -------------------------------
+  // ---- FR-002 precondition (a) โ€” plan -------------------------------
 
-  it('precondition (a) member plan does NOT include broadcasts → broadcast_not_in_plan', async () => {
+  it('precondition (a) member plan does NOT include broadcasts โ’ broadcast_not_in_plan', async () => {
     const { audit, deps } = makeDeps({
       planFound: false,
       primaryContact: 'me@example.com',
@@ -429,9 +430,9 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     ).toBeDefined();
   });
 
-  // ---- FR-002 precondition (b) — quota ------------------------------
+  // ---- FR-002 precondition (b) โ€” quota ------------------------------
 
-  it('precondition (b) quota exhausted → broadcast_quota_blocked', async () => {
+  it('precondition (b) quota exhausted โ’ broadcast_quota_blocked', async () => {
     const { audit, deps } = makeDeps({
       planCap: 6,
       used: 6,
@@ -471,9 +472,9 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     }
   });
 
-  // ---- FR-002 precondition (j) — reply-to ---------------------------
+  // ---- FR-002 precondition (j) โ€” reply-to ---------------------------
 
-  it('precondition (j) reply-to derivation fails (no primary contact) → broadcast_member_missing_primary_contact_email', async () => {
+  it('precondition (j) reply-to derivation fails (no primary contact) โ’ broadcast_member_missing_primary_contact_email', async () => {
     const { audit, deps } = makeDeps({
       primaryContact: null,
     });
@@ -491,9 +492,9 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     ).toBeDefined();
   });
 
-  // ---- FR-002 precondition (c) — subject ----------------------------
+  // ---- FR-002 precondition (c) โ€” subject ----------------------------
 
-  it('precondition (c) subject too long (> 200 chars) → broadcast_subject_too_long', async () => {
+  it('precondition (c) subject too long (> 200 chars) โ’ broadcast_subject_too_long', async () => {
     const { audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
     const tooLong = 'a'.repeat(201);
     const result = await submitBroadcast(deps, {
@@ -509,8 +510,8 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     ).toBeDefined();
   });
 
-  it('subject empty / whitespace-only → broadcast_subject_empty', async () => {
-    const { deps } = makeDeps({ primaryContact: 'me@example.com' });
+  it('subject empty / whitespace-only โ’ broadcast_subject_empty', async () => {
+    const { audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
     const result = await submitBroadcast(deps, {
       ...baseInput,
       subject: '   ',
@@ -519,11 +520,65 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('broadcast_subject_empty');
     }
+    // R6 W-R3 — audit event type now matches the Result kind.
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_subject_empty'),
+    ).toBeDefined();
   });
 
-  // ---- FR-002 preconditions (d, e) — body sanitiser -----------------
+  // R6 staff-review W-T6 fix — subject-length boundary tests. The
+  // pre-fix suite tested 201 (rejected) but not the boundary at
+  // exactly 200 (should pass). An off-by-one regression that flipped
+  // the predicate from `> 200` to `>= 200` would not have been
+  // caught.
+  it('subject boundary: exactly 200 chars → subject preconditions never emit (audit-positive pin)', async () => {
+    const { audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const exact = 'a'.repeat(200);
+    const result = await submitBroadcast(deps, {
+      ...baseInput,
+      subject: exact,
+    });
+    // R8 staff-review R8-T1 fix — replaced the conditional `if
+    // (!result.ok) { ... }` (which silently no-op'd if `result.ok===true`,
+    // failing to pin anything) with positive AUDIT assertions:
+    // neither `broadcast_subject_too_long` NOR `broadcast_subject_empty`
+    // audit may emit at the 200-char boundary. This test does NOT
+    // assert `result.ok===true` because downstream preconditions
+    // (rate-limit, member lookup, segment resolve) depend on wider
+    // fixture state and aren't the subject-length contract under
+    // test. The audit-positive pin guarantees that even if some
+    // downstream precondition fails, the subject preconditions did
+    // NOT fire.
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_subject_too_long'),
+    ).toBeUndefined();
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_subject_empty'),
+    ).toBeUndefined();
+    // Defence-in-depth: if result.ok is false, kind must NOT be
+    // either subject-length kind.
+    if (!result.ok) {
+      expect(result.error.kind).not.toBe('broadcast_subject_too_long');
+      expect(result.error.kind).not.toBe('broadcast_subject_empty');
+    }
+  });
 
-  it('precondition (e) body sanitised to empty → broadcast_body_unsafe_html', async () => {
+  it('subject boundary: 201 chars → broadcast_subject_too_long', async () => {
+    const { deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const justOver = 'a'.repeat(201);
+    const result = await submitBroadcast(deps, {
+      ...baseInput,
+      subject: justOver,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_subject_too_long');
+    }
+  });
+
+  // ---- FR-002 preconditions (d, e) โ€” body sanitiser -----------------
+
+  it('precondition (e) body sanitised to empty โ’ broadcast_body_unsafe_html', async () => {
     const { deps } = makeDeps({ primaryContact: 'me@example.com' });
     const result = await submitBroadcast(deps, {
       ...baseInput,
@@ -535,7 +590,7 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     }
   });
 
-  it('precondition (d) body > 200 KB → broadcast_body_too_large', async () => {
+  it('precondition (d) body > 200 KB โ’ broadcast_body_too_large', async () => {
     const { deps } = makeDeps({ primaryContact: 'me@example.com' });
     const huge = '<p>' + 'a'.repeat(201 * 1024) + '</p>';
     const result = await submitBroadcast(deps, { ...baseInput, bodyHtml: huge });
@@ -545,9 +600,9 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     }
   });
 
-  // ---- FR-002 precondition (h) — custom-list validation -------------
+  // ---- FR-002 precondition (h) โ€” custom-list validation -------------
 
-  it('precondition (h) custom list has unknown emails → broadcast_custom_recipient_unknown', async () => {
+  it('precondition (h) custom list has unknown emails โ’ broadcast_custom_recipient_unknown', async () => {
     const { audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
     const result = await submitBroadcast(deps, {
       ...baseInput,
@@ -564,9 +619,9 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     ).toBeDefined();
   });
 
-  // ---- FR-002 preconditions (f, g, i) — segment resolve --------------
+  // ---- FR-002 preconditions (f, g, i) โ€” segment resolve --------------
 
-  it('precondition (f) segment resolves to 0 recipients → broadcast_empty_segment_blocked', async () => {
+  it('precondition (f) segment resolves to 0 recipients โ’ broadcast_empty_segment_blocked', async () => {
     const { audit, deps } = makeDeps({
       primaryContact: 'me@example.com',
       memberInBridge: [],
@@ -581,7 +636,7 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     ).toBeDefined();
   });
 
-  it('precondition (g) audience > 5,000 → broadcast_audience_too_large', async () => {
+  it('precondition (g) audience > 5,000 โ’ broadcast_audience_too_large', async () => {
     const memberInBridge = Array.from({ length: 5001 }, (_, i) => ({
       memberId: `m-${i + 100}`,
       primaryContactEmail: `r${i}@example.com`,
@@ -600,7 +655,7 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     ).toBeDefined();
   });
 
-  it('precondition (i) member missing primary contact email → orphan emit (non-blocking)', async () => {
+  it('precondition (i) member missing primary contact email โ’ orphan emit (non-blocking)', async () => {
     const { audit, deps } = makeDeps({
       primaryContact: 'me@example.com',
       memberInBridge: [
@@ -619,7 +674,7 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
 
   // ---- Happy path + atomicity ---------------------------------------
 
-  it('happy path: all preconditions pass → row inserted with status=submitted + reservation derived', async () => {
+  it('happy path: all preconditions pass โ’ row inserted with status=submitted + reservation derived', async () => {
     const { broadcastsRepo, deps } = makeDeps({
       primaryContact: 'me@example.com',
       memberInBridge: [
@@ -661,7 +716,7 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
 
   // ---- Sanitiser invocation ------------------------------------------
 
-  it('sanitiser is invoked BEFORE persistence — raw body NEVER stored', async () => {
+  it('sanitiser is invoked BEFORE persistence โ€” raw body NEVER stored', async () => {
     const { broadcastsRepo, deps } = makeDeps({
       primaryContact: 'me@example.com',
       memberInBridge: [
@@ -679,7 +734,7 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     expect(inserted!.bodyHtml).toContain('<p>safe</p>');
   });
 
-  it('sanitiser deterministic — same input produces same body_html', async () => {
+  it('sanitiser deterministic โ€” same input produces same body_html', async () => {
     const ctx1 = makeDeps({
       primaryContact: 'me@example.com',
       memberInBridge: [
@@ -751,19 +806,19 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
 
   // ---- Quota invariant violation (cap=0 from getPlanForMember) ------
 
-  it('quota lookup returns invariant violation → submit.server_error (round-4 MED-D)', async () => {
-    // Round-4 MED-D — counter internal-error (e.g. over-subscription
+  it('quota lookup returns invariant violation โ’ submit.server_error (round-4 MED-D)', async () => {
+    // Round-4 MED-D โ€” counter internal-error (e.g. over-subscription
     // invariant from corrupt state) is NOT "quota full". The use-case
     // now returns `submit.server_error` so the route maps to 500
     // internal_error instead of misleading 422 `quota_blocked`.
     // computeQuotaCounter receives countForMemberQuota with high counts
-    // vs small cap → asQuotaCounter rejects with over_subscription
+    // vs small cap โ’ asQuotaCounter rejects with over_subscription
     // invariant.
     const { deps } = makeDeps({
       primaryContact: 'me@example.com',
       planCap: 6,
       used: 5,
-      reserved: 3, // 5+3 > 6 → over_subscription
+      reserved: 3, // 5+3 > 6 โ’ over_subscription
     });
     const result = await submitBroadcast(deps, baseInput);
     expect(result.ok).toBe(false);
@@ -1208,7 +1263,7 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     }
   });
 
-  it('repo throw inside withTx → submit.server_error', async () => {
+  it('repo throw inside withTx โ’ submit.server_error', async () => {
     const { deps } = makeDeps({
       primaryContact: 'me@example.com',
       memberInBridge: [
@@ -1231,7 +1286,7 @@ describe('submit-broadcast — Wave 6 (T069 GREEN — 100% branch)', () => {
     }
   });
 
-  it('repo throw with non-Error value → submit.server_error with "unknown error" message', async () => {
+  it('repo throw with non-Error value โ’ submit.server_error with "unknown error" message', async () => {
     const { deps } = makeDeps({
       primaryContact: 'me@example.com',
       memberInBridge: [

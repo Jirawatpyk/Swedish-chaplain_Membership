@@ -70,11 +70,9 @@ export function CloneYearClient({
       }
       const errorCode = body?.error?.code ?? 'generic';
       if (errorCode === 'target_year_populated') {
-        toast.error(
-          `Target year ${targetYear} already has plans. Delete or choose another year.`,
-        );
+        toast.error(tClone('errors.targetYearPopulated', { year: targetYear }));
       } else if (errorCode === 'source_year_empty') {
-        toast.error(`Source year ${sourceYear} has no plans to clone.`);
+        toast.error(tClone('errors.noPlans', { year: sourceYear }));
       } else {
         toast.error(t('errors.generic'));
       }

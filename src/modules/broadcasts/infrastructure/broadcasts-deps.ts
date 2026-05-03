@@ -295,6 +295,20 @@ export function tenantDefaultLocaleFor(tenantId: string): 'en' | 'th' | 'sv' {
   return TENANT_DEFAULT_LOCALE[tenantId] ?? 'en';
 }
 
+/**
+ * Phase 9 / T178a — F3 archival/erasure cascade composition.
+ * Walks `submitted` + `approved` broadcasts owned by the archived/erased
+ * member and transitions each to `cancelled` with actor_role='system'.
+ * Stateless — pure DB UPDATE inside `runInTenant` for RLS-scoped tx.
+ */
+export function makeCancelInFlightBroadcastsForMemberDeps(tenantId: string) {
+  return {
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
 // =====================================================================
 // Phase 5 US3 — member quota + history surface use-case factories
 // =====================================================================

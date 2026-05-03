@@ -16,6 +16,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { err, ok } from '@/lib/result';
+import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 // Direct schema import to reuse the caller's transaction; same escape
 // hatch auth-session-revocation-port uses. Wrapping in a public F1 use
 // case would add no behaviour.
@@ -55,8 +56,12 @@ export const userEmailAdapter: UserEmailPort = {
 
       return ok({ oldEmail: before.email });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/duplicate key|unique constraint/i.test(msg)) {
+      // Drizzle 0.45+ wraps Postgres errors; the unique-violation
+      // SQLSTATE 23505 + message live on the cause chain.
+      if (
+        isUniqueViolation(e) ||
+        /duplicate key|unique constraint/i.test(errorChainMessage(e))
+      ) {
         return err({ code: 'repo.conflict', reason: 'email already taken' });
       }
       return err({ code: 'repo.unexpected', cause: e });

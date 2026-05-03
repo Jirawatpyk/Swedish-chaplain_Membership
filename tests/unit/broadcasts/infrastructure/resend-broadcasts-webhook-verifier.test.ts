@@ -128,7 +128,7 @@ describe('resendBroadcastsWebhookVerifier', () => {
     },
   );
 
-  it('throws malformed for unknown event types', () => {
+  it('throws unknown_event_type for unknown event types (R7 LOW-G — was malformed pre-R7)', () => {
     const ts = Math.floor(FROZEN_NOW.getTime() / 1000);
     const body = JSON.stringify({
       type: 'email.brand_new_event_type',
@@ -151,7 +151,10 @@ describe('resendBroadcastsWebhookVerifier', () => {
     } catch (e) {
       expect(e).toBeInstanceOf(WebhookSignatureError);
       if (e instanceof WebhookSignatureError) {
-        expect(e.kind).toBe('malformed');
+        // R7 LOW-G — kind separated from `malformed` so the route
+        // handler can 200-ack new Resend event types instead of
+        // recording bad_signature noise.
+        expect(e.kind).toBe('unknown_event_type');
       }
     }
   });
