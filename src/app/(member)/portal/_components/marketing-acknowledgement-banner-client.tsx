@@ -34,6 +34,11 @@ export interface AcknowledgementBannerClientProps {
    *  from `document.documentElement.lang` so the consent reflects what
    *  the user actually saw on the server-rendered page. */
   readonly locale: 'en' | 'th' | 'sv';
+  /** UX-5 — optional tenant Privacy Policy URL. When null/undefined
+   *  the link is omitted entirely (no dead anchor) for tenants
+   *  without a published policy URL. */
+  readonly privacyPolicyUrl?: string | null;
+  readonly privacyPolicyLinkLabel?: string;
 }
 
 export function AcknowledgementBannerClient({
@@ -42,6 +47,8 @@ export function AcknowledgementBannerClient({
   acknowledge,
   remindLater,
   locale,
+  privacyPolicyUrl,
+  privacyPolicyLinkLabel,
 }: AcknowledgementBannerClientProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.banner.acknowledgement');
   const [hidden, setHidden] = useState<boolean>(false);
@@ -115,6 +122,18 @@ export function AcknowledgementBannerClient({
               {title}
             </h2>
             <p className="text-sm text-muted-foreground">{body}</p>
+            {privacyPolicyUrl && privacyPolicyLinkLabel ? (
+              <p className="text-sm">
+                <a
+                  href={privacyPolicyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  {privacyPolicyLinkLabel}
+                </a>
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"

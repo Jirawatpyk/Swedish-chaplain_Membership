@@ -571,6 +571,20 @@ export default async function UnsubscribePage({
             </p>
           </>
         )}
+        {/* UX-6 — link back to chamber website (when configured).
+            Omitted entirely when env var unset so no dead anchor. */}
+        {env.broadcasts.websiteUrl ? (
+          <p className="mt-6 text-sm">
+            <a
+              href={env.broadcasts.websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 inline-block py-1"
+            >
+              {t('chamberWebsiteLink')}
+            </a>
+          </p>
+        ) : null}
       </article>
     </main>
   );

@@ -331,6 +331,23 @@ const schema = z.object({
   // SECRET — redacted in logs.
   UNSUBSCRIBE_TOKEN_SECRET: z.string().min(32).describe('SECRET — do not log'),
 
+  // F7 UX-5/UX-6 — optional public URLs surfaced on member-acknowledge
+  // banner (privacy policy) and the public unsubscribe page (chamber
+  // website). Both nullable; UI gracefully omits the link when unset
+  // so a tenant without a published privacy policy or website does
+  // not render dead `<a href="">` markup. URL validation is best-
+  // effort; mis-typed URLs degrade to "no link rendered" in prod.
+  TENANT_PRIVACY_POLICY_URL: z
+    .string()
+    .url()
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+  TENANT_WEBSITE_URL: z
+    .string()
+    .url()
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+
   // Kill-switch for F7 Email Broadcast. When FALSE every
   // `/api/broadcasts/**` and `/api/admin/broadcasts/**` route returns
   // 503 `feature_disabled` via the kill-switch helper (T031). Default
@@ -527,6 +544,9 @@ export const env = {
     webhookSecret: raw.RESEND_BROADCASTS_WEBHOOK_SECRET,
     unsubscribeTokenSecret: raw.UNSUBSCRIBE_TOKEN_SECRET,
     fromEmail: raw.BROADCASTS_FROM_EMAIL,
+    // F7 UX-5/UX-6 — optional tenant URLs (gracefully omitted when unset).
+    privacyPolicyUrl: raw.TENANT_PRIVACY_POLICY_URL,
+    websiteUrl: raw.TENANT_WEBSITE_URL,
   },
 } as const;
 

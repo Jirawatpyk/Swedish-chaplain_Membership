@@ -9,7 +9,7 @@
  */
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -46,6 +46,7 @@ export function ApproveDialog({
 }: ApproveDialogProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.approveDialog');
   const tToast = useTranslations('admin.broadcasts.toast');
+  const locale = useLocale();
   const router = useRouter();
   const [decision, setDecision] = useState<'send_now' | 'schedule'>('send_now');
   const [scheduledFor, setScheduledFor] = useState<string>('');
@@ -150,6 +151,30 @@ export function ApproveDialog({
                 disabled={pending}
                 aria-describedby="approve-when-help"
               />
+              {scheduledFor !== '' ? (
+                <p className="text-xs font-medium text-foreground">
+                  {t('schedulePreviewLabel')}{' '}
+                  <span suppressHydrationWarning>
+                    {(() => {
+                      const date = new Date(scheduledFor);
+                      if (Number.isNaN(date.getTime())) return '';
+                      const formatter =
+                        locale === 'th'
+                          ? new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
+                              dateStyle: 'long',
+                              timeStyle: 'short',
+                              timeZone: 'Asia/Bangkok',
+                            })
+                          : new Intl.DateTimeFormat(locale, {
+                              dateStyle: 'long',
+                              timeStyle: 'short',
+                              timeZone: 'Asia/Bangkok',
+                            });
+                      return formatter.format(date);
+                    })()}
+                  </span>
+                </p>
+              ) : null}
               <p
                 id="approve-when-help"
                 className="text-xs text-muted-foreground"
