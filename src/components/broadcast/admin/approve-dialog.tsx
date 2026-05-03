@@ -24,13 +24,46 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { LocalDateTime, ZoneId } from '@js-joda/core';
+import '@js-joda/timezone';
 
 const MIN_LEAD_MS = 5 * 60 * 1000;
+const BANGKOK_ZONE = ZoneId.of('Asia/Bangkok');
+
+/**
+ * Code-review TZ fix — `<input type="datetime-local">` returns a naive
+ * local string ("2026-05-04T14:00") with no offset. The new
+ * scheduleHelp microcopy + preview formatter both claim the input is
+ * Asia/Bangkok wall-time, so we must parse it as Bangkok-zoned, not
+ * the browser's local zone (which is what `new Date(localString)`
+ * does). Mismatch would let an admin in UTC type "14:00 Bangkok" but
+ * the system would dispatch at 21:00 Bangkok — UX claim broken.
+ *
+ * `LocalDateTime.parse` accepts the `YYYY-MM-DDTHH:mm` shape directly
+ * (the input adds `:ss` if seconds enabled — we don't). Then bind to
+ * Asia/Bangkok and convert to a real `Date`/ISO instant.
+ */
+function bangkokInputToInstant(scheduledFor: string): Date {
+  // Pad with `:00` seconds if missing (datetime-local without `step`
+  // omits seconds).
+  const normalised =
+    scheduledFor.length === 16 ? `${scheduledFor}:00` : scheduledFor;
+  const local = LocalDateTime.parse(normalised);
+  const instant = local.atZone(BANGKOK_ZONE).toInstant();
+  return new Date(instant.toEpochMilli());
+}
 
 function minLocalDateTime(): string {
-  const future = new Date(Date.now() + MIN_LEAD_MS + 60_000);
+  // `min=` attribute on `<input type="datetime-local">` is interpreted
+  // by the browser in its OWN local zone — the spec doesn't allow
+  // overriding. We compute "5 minutes from now" in Bangkok wall-time
+  // (the contract advertised in microcopy) and serialise. A non-
+  // Bangkok admin's browser may still allow earlier selections within
+  // its local +X-hour window; the server-side use-case enforces the
+  // hard 5-minute minimum so the client min is best-effort.
+  const future = LocalDateTime.now(BANGKOK_ZONE).plusMinutes(6);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${future.getFullYear()}-${pad(future.getMonth() + 1)}-${pad(future.getDate())}T${pad(future.getHours())}:${pad(future.getMinutes())}`;
+  return `${future.year()}-${pad(future.monthValue())}-${pad(future.dayOfMonth())}T${pad(future.hour())}:${pad(future.minute())}`;
 }
 
 export interface ApproveDialogProps {
@@ -65,10 +98,20 @@ export function ApproveDialog({
 
   // Compute validity on demand inside the click handler — avoids
   // calling `Date.now()` during render (React 19 strict-mode rule).
+  // Parses `scheduledFor` as Bangkok wall-time (matches scheduleHelp
+  // microcopy contract); compares against current epoch so MIN_LEAD_MS
+  // works regardless of admin browser TZ.
   function isScheduleValid(): boolean {
     if (decision === 'send_now') return true;
     if (scheduledFor === '') return false;
-    return new Date(scheduledFor).getTime() > Date.now() + MIN_LEAD_MS;
+    try {
+      return (
+        bangkokInputToInstant(scheduledFor).getTime() >
+        Date.now() + MIN_LEAD_MS
+      );
+    } catch {
+      return false;
+    }
   }
   const submitDisabled =
     pending || (decision === 'schedule' && scheduledFor === '');
@@ -82,7 +125,12 @@ export function ApproveDialog({
             ? { decision: 'send_now' as const }
             : {
                 decision: 'schedule' as const,
-                scheduledFor: new Date(scheduledFor).toISOString(),
+                // Parse as Bangkok wall-time (matches scheduleHelp
+                // microcopy + preview formatter). Pre-fix used
+                // `new Date(scheduledFor)` which interprets the
+                // datetime-local string in browser-local TZ, drifting
+                // dispatch by the admin's UTC offset.
+                scheduledFor: bangkokInputToInstant(scheduledFor).toISOString(),
               };
         const res = await fetch(
           `/api/admin/broadcasts/${broadcastId}/approve`,
@@ -156,21 +204,28 @@ export function ApproveDialog({
                   {t('schedulePreviewLabel')}{' '}
                   <span suppressHydrationWarning>
                     {(() => {
-                      const date = new Date(scheduledFor);
-                      if (Number.isNaN(date.getTime())) return '';
-                      const formatter =
-                        locale === 'th'
-                          ? new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-                              dateStyle: 'long',
-                              timeStyle: 'short',
-                              timeZone: 'Asia/Bangkok',
-                            })
-                          : new Intl.DateTimeFormat(locale, {
-                              dateStyle: 'long',
-                              timeStyle: 'short',
-                              timeZone: 'Asia/Bangkok',
-                            });
-                      return formatter.format(date);
+                      try {
+                        // Parse as Bangkok wall-time then render in
+                        // Bangkok TZ — round-trip is identity, so the
+                        // preview matches what the admin typed in the
+                        // input regardless of browser TZ.
+                        const instant = bangkokInputToInstant(scheduledFor);
+                        const formatter =
+                          locale === 'th'
+                            ? new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
+                                dateStyle: 'long',
+                                timeStyle: 'short',
+                                timeZone: 'Asia/Bangkok',
+                              })
+                            : new Intl.DateTimeFormat(locale, {
+                                dateStyle: 'long',
+                                timeStyle: 'short',
+                                timeZone: 'Asia/Bangkok',
+                              });
+                        return formatter.format(instant);
+                      } catch {
+                        return '';
+                      }
                     })()}
                   </span>
                 </p>
