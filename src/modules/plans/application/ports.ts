@@ -267,6 +267,17 @@ import type {
 } from '../domain/scheduled-plan-change';
 
 /**
+ * Result of an atomic supersede + insert call. Surfaces both rows so
+ * the use-case caller can wire downstream side-effects (audit emit,
+ * cross-module hooks) without a second DB round-trip.
+ */
+export interface SupersedeAndInsertResult {
+  readonly inserted: ScheduledPlanChange;
+  /** `null` when there was no prior pending row to supersede. */
+  readonly superseded: ScheduledPlanChange | null;
+}
+
+/**
  * Repository over the `scheduled_plan_changes` table. The Drizzle
  * adapter ships with US5 (Phase 5+); Wave B contract tests use an
  * in-memory mock (`tests/contract/f2-scheduled-plan-change.contract.test.ts`).
@@ -276,14 +287,22 @@ import type {
  */
 export interface ScheduledPlanChangeRepo {
   /**
-   * Insert a fresh `pending` row. Caller must have already superseded
-   * any prior pending row for the same (member, cycle) — the use-case
-   * orchestrates that supersede + insert pair atomically.
+   * Atomically supersede any prior pending row for (member, cycle) and
+   * insert a fresh pending row in ONE database transaction. The Drizzle
+   * adapter (Phase 5+) wraps both writes in `withTx` so a failure on
+   * either statement rolls both back — the (tenant, member, cycle)
+   * never observes a "no pending row" intermediate state.
+   *
+   * Resolves Wave B verify-run finding F1 (Constitution Principle VIII —
+   * Reliability / atomic state mutations). The earlier two-call pattern
+   * (`transitionStatus` then `insertPending`) had a window where a
+   * crash between calls could lose the prior pending row WITHOUT a
+   * replacement landing.
    */
-  insertPending(
+  supersedeAndInsertPendingAtomically(
     tenant: TenantContext,
     input: ScheduleNextRenewalPlanChangeInput,
-  ): Promise<ScheduledPlanChange>;
+  ): Promise<SupersedeAndInsertResult>;
 
   /** Find the single pending row for (member, cycle), if any. */
   findPendingForCycle(
@@ -293,8 +312,10 @@ export interface ScheduledPlanChangeRepo {
   ): Promise<ScheduledPlanChange | null>;
 
   /**
-   * Move a row out of `pending`. Throws if the source row is already
-   * terminal — terminal-state immutability is a Domain invariant.
+   * Move a row out of `pending` (apply / cancel paths). Throws if the
+   * source row is already terminal — terminal-state immutability is a
+   * Domain invariant. Supersede transitions land via
+   * `supersedeAndInsertPendingAtomically` instead.
    */
   transitionStatus(
     tenant: TenantContext,

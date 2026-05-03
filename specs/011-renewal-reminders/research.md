@@ -523,7 +523,7 @@ F4's `markPaidFromProcessor` change is small (~10 lines + 1 contract test). Coor
 
 ### Decision
 
-**Coordinate with F2 maintainer**: F2's barrel gains a new use-case `applyScheduledPlanChange(memberId: MemberId, options: { effectiveAtCycleId: CycleId, newPlanId: PlanId, scheduledByUserId: UserId })`. Stored in a new F2 table `scheduled_plan_changes` (member, effective_at_cycle_id, new_plan_id, scheduled_by_user_id, scheduled_at, applied_at?, status).
+**Coordinate with F2 maintainer**: F2's barrel gains two new use-cases — `scheduleNextRenewalPlanChange(memberId, {effectiveAtCycleId, fromPlanId, toPlanId, scheduledByUserId, reason?})` (writes the pending intent) and `getEffectivePlanForRenewal(memberId, cycleId)` (resolves the effective plan_id at F4 invoice-creation time). Stored in a new F2 table `scheduled_plan_changes` — see data-model.md § 2.9 for the authoritative column list (tenant_id, scheduled_change_id, member_id, effective_at_cycle_id, from_plan_id, to_plan_id, scheduled_by_user_id, reason, status, scheduled_at, applied_at, superseded_at, cancelled_at). The `from_plan_id` + `to_plan_id` pair preserves audit trail across the state machine; the original R13 draft used a single `new_plan_id` field which was widened during /speckit.implement Wave B for state-machine completeness. Apply / cancel paths use a separate `transitionStatus` repo method; supersede transitions land via `supersedeAndInsertPendingAtomically` (single-tx supersede + insert per /speckit.verify.run Wave B F1 remediation — Constitution Principle VIII Reliability).
 
 Flow at F8 tier-upgrade acceptance time:
 

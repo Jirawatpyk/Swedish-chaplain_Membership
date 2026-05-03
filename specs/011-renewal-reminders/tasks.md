@@ -58,6 +58,12 @@
 - [ ] T028 Run `pnpm drizzle-kit generate` + `pnpm drizzle-kit migrate` against local DB; verify all 9 F8 tables (8 F8-owned + 1 F2-cross-module) exist + RLS+FORCE active
 - [ ] T029 [P] Add F8 tables to `scripts/check-multi-tenant-ready.ts` (E18 round 1) — RLS+FORCE present + USING `app.current_tenant` + no NULL `tenant_id` rows
 
+#### F2/F3 audit-event-type pgEnum extension cluster (Wave B verify-run carry-overs)
+
+- [ ] T029a Author migration `drizzle/migrations/0095_f8_extend_audit_event_type_enum.sql` — `ALTER TYPE audit_event_type ADD VALUE` for **5 new event types**: `member_plan_manually_changed` (T013 carry-over) + `plan_change_scheduled` + `plan_change_superseded` + `plan_change_cancelled` + `plan_change_applied` (G1 carry-over). Extend Drizzle pgEnum schema in `src/modules/auth/infrastructure/db/schema.ts` (or wherever `auditEventTypeEnum` lives) so the F3 + F2 audit adapters typecheck against the widened union. Migration is sequential (last in Wave C) because Postgres `ALTER TYPE ... ADD VALUE` cannot run in the same tx as the table creates above.
+- [ ] T029b Re-add `'member_plan_manually_changed'` to `F3AuditEventType` union in `src/modules/members/application/ports/audit-port.ts` (Wave B T013 deferral resolves) + emit from `change-plan.ts` use-case alongside existing `member_plan_changed` audit (atomic state+audit per Constitution Principle VIII). Update F3 audit-event-type-parity integration test if present.
+- [ ] T029c Add 4 new F2 audit event types (`plan_change_scheduled` + `plan_change_superseded` + `plan_change_cancelled` + `plan_change_applied`) to `src/modules/plans/domain/audit-event.ts` — extend `F2_AUDIT_EVENT_TYPES` const, add zod payload schemas + per-event entries to discriminated union + severity table. Wire emission inside `scheduleNextRenewalPlanChange` (Wave B G1 carry-over) + future `transitionStatus` apply/cancel callers. Atomic state+audit via single tx (F1 supersede-and-insert path already covers the schedule write).
+
 ### Domain Layer (zero framework imports)
 
 - [ ] T030 [P] Domain value object `tier-bucket.ts` in `src/modules/renewals/domain/value-objects/tier-bucket.ts` — 5-value enum

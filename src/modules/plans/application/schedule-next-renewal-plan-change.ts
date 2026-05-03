@@ -52,23 +52,24 @@ export async function scheduleNextRenewalPlanChange(
     return err({ code: 'invalid_input', field: 'toPlanId' });
 
   try {
-    // Supersede any prior pending row before inserting the new one.
-    // Terminal rows are left untouched per data-model.md § 2.9.
-    const existing = await deps.repo.findPendingForCycle(
+    // Atomic supersede + insert pair (Constitution Principle VIII —
+    // Reliability). The repo's `supersedeAndInsertPendingAtomically`
+    // wraps both writes in a single DB tx; a failure on either statement
+    // rolls both back so the (tenant, member, cycle) never observes a
+    // "no pending row" intermediate state. Resolves Wave B verify-run
+    // finding F1 (the earlier two-call pattern via `transitionStatus`
+    // + `insertPending` had a crash window between calls).
+    //
+    // Terminal rows on the same (member, cycle) are left untouched by
+    // the adapter — the partial unique
+    // `(tenant_id, member_id, effective_at_cycle_id) WHERE status='pending'`
+    // permits any number of terminal rows to coexist alongside one
+    // fresh pending row (data-model.md § 2.9).
+    const result = await deps.repo.supersedeAndInsertPendingAtomically(
       deps.tenant,
-      input.memberId,
-      input.effectiveAtCycleId,
+      input,
     );
-    if (existing) {
-      await deps.repo.transitionStatus(
-        deps.tenant,
-        existing.scheduledChangeId,
-        'superseded',
-      );
-    }
-
-    const inserted = await deps.repo.insertPending(deps.tenant, input);
-    return ok(inserted);
+    return ok(result.inserted);
   } catch (e) {
     return err({
       code: 'server_error',

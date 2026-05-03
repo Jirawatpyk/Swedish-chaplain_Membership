@@ -522,8 +522,15 @@ CREATE INDEX scheduled_plan_changes_member_cycle_idx
 ALTER TABLE scheduled_plan_changes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scheduled_plan_changes FORCE ROW LEVEL SECURITY;
 
+-- Role name `chamber_app` per F2 migration 0006 + F4 + F7 precedent
+-- (verified at /speckit.verify.run Wave B finding E1). The earlier
+-- F8 data-model § 2.1–2.8 tables nominally use `swecham_app_rw` —
+-- a stale draft role name from before /speckit.plan locked the role
+-- to `chamber_app`. Wave C migration authors MUST audit + reconcile
+-- §§ 2.1–2.8 to `chamber_app` before scaffolding 0086–0094 SQL files
+-- so the live DB grants line up with what's actually granted in 0006.
 CREATE POLICY tenant_isolation ON scheduled_plan_changes
-  FOR ALL TO swecham_app_rw
+  FOR ALL TO chamber_app
   USING (tenant_id = current_setting('app.current_tenant', TRUE))
   WITH CHECK (tenant_id = current_setting('app.current_tenant', TRUE));
 ```

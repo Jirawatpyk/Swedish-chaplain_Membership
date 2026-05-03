@@ -65,8 +65,26 @@ function makeMemoryRepo(seed: ScheduledPlanChange[] = []): ScheduledPlanChangeRe
   const rows: MutableScheduledPlanChange[] = seed.map((r) => ({ ...r }));
 
   return {
-    insertPending: vi.fn(async (ctx, input) => {
-      const row: MutableScheduledPlanChange = {
+    // Wave B verify-run F1 remediation — atomic supersede+insert.
+    // The mock is synchronous + can't fail mid-pair, but the contract
+    // assertion below (Contract 7) verifies the result shape returned
+    // to the use-case is faithful to the SupersedeAndInsertResult type
+    // so the Drizzle adapter (Phase 5+) ships against the same contract.
+    supersedeAndInsertPendingAtomically: vi.fn(async (ctx, input) => {
+      const prior = rows.find(
+        (r) =>
+          r.tenantId === ctx.slug &&
+          r.memberId === input.memberId &&
+          r.effectiveAtCycleId === input.effectiveAtCycleId &&
+          r.status === 'pending',
+      );
+      let supersededRow: ScheduledPlanChange | null = null;
+      if (prior) {
+        prior.status = 'superseded';
+        prior.supersededAt = '2026-05-03T12:05:00Z';
+        supersededRow = prior;
+      }
+      const insertedRow: MutableScheduledPlanChange = {
         tenantId: ctx.slug,
         scheduledChangeId: `mem-${rows.length + 1}`,
         memberId: input.memberId,
@@ -81,8 +99,8 @@ function makeMemoryRepo(seed: ScheduledPlanChange[] = []): ScheduledPlanChangeRe
         supersededAt: null,
         cancelledAt: null,
       };
-      rows.push(row);
-      return row;
+      rows.push(insertedRow);
+      return { inserted: insertedRow, superseded: supersededRow };
     }),
     findPendingForCycle: vi.fn(async (ctx, memberId, cycleId) => {
       return (
@@ -150,7 +168,7 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
     expect(r.value.scheduledByUserId).toBe(ADMIN_USER_ID);
     expect(r.value.reason).toBe('tier upgrade accepted by member');
     expect(r.value.tenantId).toBe('test-swecham');
-    expect(repo.insertPending).toHaveBeenCalledTimes(1);
+    expect(repo.supersedeAndInsertPendingAtomically).toHaveBeenCalledTimes(1);
   });
 
   // ── Contract 2 ────────────────────────────────────────────────────
@@ -206,10 +224,56 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
         scheduledByUserId: ADMIN_USER_ID,
       },
     );
-    expect(repo.insertPending).toHaveBeenCalledWith(
+    expect(repo.supersedeAndInsertPendingAtomically).toHaveBeenCalledWith(
       expect.objectContaining({ slug: 'test-swecham' }),
       expect.any(Object),
     );
+  });
+
+  // ── Contract 7 (added at /speckit.verify.run Wave B F1 remediation) ────
+  it('Contract 7: atomic shape — repo returns {inserted, superseded} so caller never observes a "no pending" intermediate state (Constitution Principle VIII)', async () => {
+    const repo = makeMemoryRepo();
+    // First schedule — superseded should be null (no prior pending row).
+    await scheduleNextRenewalPlanChange(
+      { tenant, repo },
+      {
+        memberId: MEMBER_ID,
+        effectiveAtCycleId: CYCLE_ID,
+        fromPlanId: 'corporate-regular',
+        toPlanId: 'corporate-premier',
+        scheduledByUserId: ADMIN_USER_ID,
+      },
+    );
+    expect(repo.supersedeAndInsertPendingAtomically).toHaveBeenLastCalledWith(
+      expect.objectContaining({ slug: 'test-swecham' }),
+      expect.objectContaining({ toPlanId: 'corporate-premier' }),
+    );
+    const firstResult = await (
+      repo.supersedeAndInsertPendingAtomically as ReturnType<typeof vi.fn>
+    ).mock.results[0]?.value;
+    expect(firstResult.inserted).toBeDefined();
+    expect(firstResult.inserted.status).toBe('pending');
+    expect(firstResult.superseded).toBeNull();
+
+    // Second schedule on same (member, cycle) — superseded surfaces the prior pending row.
+    await scheduleNextRenewalPlanChange(
+      { tenant, repo },
+      {
+        memberId: MEMBER_ID,
+        effectiveAtCycleId: CYCLE_ID,
+        fromPlanId: 'corporate-regular',
+        toPlanId: 'corporate-elite',
+        scheduledByUserId: ADMIN_USER_ID,
+      },
+    );
+    const secondResult = await (
+      repo.supersedeAndInsertPendingAtomically as ReturnType<typeof vi.fn>
+    ).mock.results[1]?.value;
+    expect(secondResult.inserted.status).toBe('pending');
+    expect(secondResult.inserted.toPlanId).toBe('corporate-elite');
+    expect(secondResult.superseded).not.toBeNull();
+    expect(secondResult.superseded.status).toBe('superseded');
+    expect(secondResult.superseded.toPlanId).toBe('corporate-premier');
   });
 });
 
