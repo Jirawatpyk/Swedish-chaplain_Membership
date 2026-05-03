@@ -109,4 +109,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 // POST mirror so the endpoint also responds to POST (Vercel Cron
 // uses GET by default, but some schedulers use POST).
+//
+// R8 staff-review R8-S2 — both verbs go through the same
+// `verifyCronBearer(authHeader, expected)` gate at the top of GET.
+// CSRF is not a concern because the gate requires the shared
+// `CRON_SECRET` in the Authorization header (browsers cannot set
+// arbitrary Authorization on cross-origin POSTs without CORS
+// preflight, which Vercel does not advertise). Operational risk: a
+// misconfigured internal health-check posting with the secret could
+// trigger an unintended cleanup — accept as low-severity since the
+// cleanup is itself idempotent (only clears expired lockouts).
 export const POST = GET;

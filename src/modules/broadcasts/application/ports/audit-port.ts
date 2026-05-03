@@ -149,7 +149,7 @@ export function isF7AuditEventType(
 
 /**
  * Round 5 review type-design — per-event payload shapes for the
- * highest-leverage F7 audit events. The full DU (all 41 event types)
+ * highest-leverage F7 audit events. The full DU (all 43 event types)
  * is deliberately NOT enforced through the port signature because it
  * would require simultaneous rewrite of ~50 emit sites + ~70 test
  * fixtures, and the carve-outs needed for trace-replay test fixtures

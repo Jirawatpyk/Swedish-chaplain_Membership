@@ -300,15 +300,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // we haven't taught the verifier about yet. 200-ack so Resend
     // doesn't retry-storm and emit info-level log + bounded metric
     // so on-call learns about the new shape without paging.
+    //
+    // R8 staff-review R8-S1 fix — return the SAME response body as
+    // the normal success path (`{received:true}`) instead of
+    // `{received:true, ignored:'unknown_event_type'}`. The body diff
+    // gave an attacker (who would already need the signing secret
+    // to reach this code) a known/unknown-event-type oracle. Log
+    // the distinguishing info (`unknown_event_type_acked`) and the
+    // event type instead — observability without leaking the diff
+    // back to the caller.
     if (kind === 'unknown_event_type') {
       logger.info(
         { requestId, correlationId },
         'broadcasts.webhook.unknown_event_type_acked',
       );
-      return NextResponse.json(
-        { received: true, ignored: 'unknown_event_type' },
-        { status: 200 },
-      );
+      return NextResponse.json({ received: true }, { status: 200 });
     }
 
     await auditSignatureReject(kind, requestId, correlationId);

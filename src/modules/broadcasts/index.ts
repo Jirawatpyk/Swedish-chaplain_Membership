@@ -317,7 +317,14 @@ export {
   tenantDefaultLocaleFor,
   unsubscribeTokenSigner,
 } from './infrastructure/broadcasts-deps';
-export { peekTokenTenantId, peekTokenLang } from './infrastructure/unsubscribe-token/hmac-signer';
+export {
+  peekTokenTenantId,
+  peekTokenLang,
+} from './infrastructure/unsubscribe-token/hmac-signer';
+// R8 staff-review R8-A3 — re-export the brand so callers annotating
+// `peekTokenTenantId` return type don't reach into the infrastructure
+// subpath (Constitution Principle III barrel rule).
+export type { UnverifiedTenantSlug } from './infrastructure/unsubscribe-token/hmac-signer';
 export { broadcastsRateLimiter } from './infrastructure/rate-limiter';
 
 // --- Application port — webhook verifier (Phase 7 US5) -------------------

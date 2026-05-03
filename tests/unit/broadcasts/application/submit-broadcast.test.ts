@@ -531,28 +531,36 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
   // exactly 200 (should pass). An off-by-one regression that flipped
   // the predicate from `> 200` to `>= 200` would not have been
   // caught.
-  it('subject boundary: exactly 200 chars → subject precondition does NOT fire', async () => {
-    const { deps } = makeDeps({ primaryContact: 'me@example.com' });
+  it('subject boundary: exactly 200 chars → subject preconditions never emit (audit-positive pin)', async () => {
+    const { audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
     const exact = 'a'.repeat(200);
     const result = await submitBroadcast(deps, {
       ...baseInput,
       subject: exact,
     });
-    // R7 staff-review MED-T3 fix — narrow assertion to the actual
-    // boundary contract. The pre-fix conditional skipped silently;
-    // a hard `result.ok===true` assertion would couple this test to
-    // unrelated downstream preconditions that depend on the wider
-    // `baseInput` fixture state (rate limit, member lookup, etc.).
-    // The boundary contract is solely "subject length 200 chars
-    // does NOT trigger the subject preconditions". Assert that
-    // negatively.
+    // R8 staff-review R8-T1 fix — replaced the conditional `if
+    // (!result.ok) { ... }` (which silently no-op'd if `result.ok===true`,
+    // failing to pin anything) with positive AUDIT assertions:
+    // neither `broadcast_subject_too_long` NOR `broadcast_subject_empty`
+    // audit may emit at the 200-char boundary. This test does NOT
+    // assert `result.ok===true` because downstream preconditions
+    // (rate-limit, member lookup, segment resolve) depend on wider
+    // fixture state and aren't the subject-length contract under
+    // test. The audit-positive pin guarantees that even if some
+    // downstream precondition fails, the subject preconditions did
+    // NOT fire.
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_subject_too_long'),
+    ).toBeUndefined();
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_subject_empty'),
+    ).toBeUndefined();
+    // Defence-in-depth: if result.ok is false, kind must NOT be
+    // either subject-length kind.
     if (!result.ok) {
       expect(result.error.kind).not.toBe('broadcast_subject_too_long');
       expect(result.error.kind).not.toBe('broadcast_subject_empty');
     }
-    // Either result.ok is true (full happy path) or the error is
-    // some OTHER precondition (rate limit, body, etc.) — never the
-    // subject-length one we're testing.
   });
 
   it('subject boundary: 201 chars → broadcast_subject_too_long', async () => {
