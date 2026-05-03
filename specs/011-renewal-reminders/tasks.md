@@ -66,6 +66,8 @@
 
 ### Domain Layer (zero framework imports)
 
+> **Test location convention** (clarified at /speckit.verify.run Wave D B1): T034-T040 originally said "+ spec.ts" implying colocated tests under `src/modules/renewals/domain/`. The project's `vitest.config.ts` excludes `src/**` from test discovery (`include: ['tests/unit/**/*.test.{ts,tsx}', 'tests/contract/**/*.test.ts']`) per F7 broadcasts module precedent. Wave D ships test files at `tests/unit/renewals/domain/<entity>.test.ts` to match the project convention; functionally identical (same suite runs).
+
 - [X] T030 [P] Domain value object `tier-bucket.ts` in `src/modules/renewals/domain/value-objects/tier-bucket.ts` — 5-value enum
 - [X] T031 [P] Domain value object `cycle-status.ts` — 7-value enum + invariants
 - [X] T032 [P] Domain value object `risk-band.ts` — 4-value enum + threshold computation

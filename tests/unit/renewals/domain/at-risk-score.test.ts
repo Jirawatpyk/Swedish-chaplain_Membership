@@ -244,4 +244,46 @@ describe('property-based — score is always [0,100] (fast-check)', () => {
       ),
     );
   });
+
+  // D1 verify-run remediation — pin determinism: identical inputs must
+  // always yield identical results. computeAtRiskScore is a pure function
+  // (no clock / no random), so this property holds by construction; the
+  // test guards against a future refactor that accidentally breaks it
+  // (e.g. introducing Date.now() somewhere in the formula).
+  it('determinism — identical inputs always yield identical results', () => {
+    fc.assert(
+      fc.property(
+        fc.record({
+          tenureDays: fc.integer({ min: 30, max: 1000 }),
+          daysSinceLastActivity: fc.integer({ min: 0, max: 200 }),
+          recentEmailOpenCount: fc.integer({ min: 0, max: 50 }),
+          recentEmailIgnoreCount: fc.integer({ min: 0, max: 50 }),
+          paymentFailureCount: fc.integer({ min: 0, max: 20 }),
+          daysPastGrace: fc.integer({ min: 0, max: 90 }),
+          emailUnverifiedOver7Days: fc.boolean(),
+          eventsAttendedLast12Months: fc.integer({ min: 0, max: 20 }),
+        }),
+        fc.boolean(),
+        (factors, eventAttendeesAvailable) => {
+          const ctx: AtRiskComputeContext = {
+            minTenureDays: 30,
+            eventAttendeesAvailable,
+          };
+          const r1 = computeAtRiskScore(factors as AtRiskFactors, ctx);
+          const r2 = computeAtRiskScore(factors as AtRiskFactors, ctx);
+          if (!r1.ok || !r2.ok) return false;
+          return (
+            r1.value.score === r2.value.score &&
+            r1.value.band === r2.value.band &&
+            r1.value.skippedBelowMinTenure === r2.value.skippedBelowMinTenure &&
+            r1.value.eventAttendanceFactorSkipped ===
+              r2.value.eventAttendanceFactorSkipped &&
+            JSON.stringify(r1.value.contributions) ===
+              JSON.stringify(r2.value.contributions)
+          );
+        },
+      ),
+      { numRuns: 50 },
+    );
+  });
 });

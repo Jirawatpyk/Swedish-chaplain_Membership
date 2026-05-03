@@ -55,7 +55,7 @@ export function parseSchedulePolicySteps(
   const parsed: ReminderStep[] = [];
   const seenIds = new Set<string>();
   for (let i = 0; i < raw.length; i++) {
-    const stepRaw = raw[i] as RawScheduleStep;
+    const stepRaw = raw[i]!;
     const r = parseReminderStep(stepRaw);
     if (!r.ok) {
       return err({ kind: 'step_parse_failed', index: i, error: r.error });

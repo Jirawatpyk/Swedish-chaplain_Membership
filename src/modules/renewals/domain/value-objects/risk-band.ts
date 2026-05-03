@@ -77,7 +77,7 @@ export function bandForScore(score: number): Result<RiskBand, RiskBandError> {
     }
   }
   // Unreachable — `RISK_BAND_THRESHOLDS` covers 0–100 contiguously.
-  /* istanbul ignore next */
+  /* v8 ignore next */
   return err({ kind: 'score_out_of_range', score });
 }
 

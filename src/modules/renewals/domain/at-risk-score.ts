@@ -194,7 +194,7 @@ export function computeAtRiskScore(
   const bandResult = bandForScore(score);
   // bandForScore can only fail on out-of-range; we just clamped to [0,100]
   // so this branch is unreachable.
-  /* istanbul ignore next */
+  /* v8 ignore next */
   const band: RiskBand = bandResult.ok ? bandResult.value : 'healthy';
 
   return ok({
