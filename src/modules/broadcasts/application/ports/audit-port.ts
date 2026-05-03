@@ -32,7 +32,7 @@
  */
 
 export const F7_AUDIT_EVENT_TYPES = [
-  // --- Draft / submission (US1) — 15 events --------------------------
+  // --- Draft / submission (US1) — 16 events (R7 LOW-S1: was 15 pre-R6) -
   'broadcast_drafted',
   'broadcast_submitted',
   'broadcast_quota_blocked',

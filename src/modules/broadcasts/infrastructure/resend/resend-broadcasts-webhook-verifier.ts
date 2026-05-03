@@ -98,7 +98,20 @@ function decodeBase64Loose(raw: string): Buffer {
     }
     // Round-trip mismatch → not valid base64 (paste error during
     // secret rotation, or operator pasted an already-utf8 value).
-    logger.warn(
+    //
+    // R7 staff-review LOW-E fix — promoted to `logger.error` (was
+    // `warn`) so the alert pipeline picks it up as a high-severity
+    // signal. A misconfigured webhook secret silently degrades into
+    // a stream of `bad_signature` audits without this signal — the
+    // existing alert rule on `bad_signature` cardinality fires
+    // AFTER traffic arrives, while this fires at process boot when
+    // the misconfiguration is first observed. Promoting the audit
+    // emit to a `broadcast_webhook_signature_rejected` event with
+    // `reason: 'secret_misconfigured'` would be cleaner but requires
+    // threading an audit port through the verifier — invasive
+    // refactor; the elevated log severity + metric counter below
+    // gives the same alerting pipeline coverage.
+    logger.error(
       { secretLen: raw.length },
       'broadcasts.webhook.secret_base64_round_trip_mismatch_falling_back_utf8',
     );
@@ -197,8 +210,13 @@ export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
     // also defends against payloads with `type: '__proto__'` /
     // `'constructor'` (review ERR-L2 + TYPES-#2 round 3).
     if (!isKnownResendEventType(parsed.type)) {
+      // R7 staff-review LOW-G fix — separate kind so route handler
+      // can 200-ack a new Resend event type (e.g. `email.opened` if
+      // Resend ever adds it) instead of recording a `bad_signature`
+      // audit and 401-ing the request, which would noise the alert
+      // pipeline.
       throw new WebhookSignatureError(
-        'malformed',
+        'unknown_event_type',
         `Unhandled Resend webhook event type: ${parsed.type}`,
       );
     }

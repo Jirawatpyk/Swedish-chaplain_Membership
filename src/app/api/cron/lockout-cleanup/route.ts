@@ -34,6 +34,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { verifyCronBearer } from '@/lib/cron-auth';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -43,7 +44,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const authHeader = request.headers.get('authorization');
   const expected = process.env.CRON_SECRET;
   if (expected) {
-    if (authHeader !== `Bearer ${expected}`) {
+    // R7 staff-review MED-S1 fix — timing-safe Bearer compare via
+    // `verifyCronBearer` to match F7 cron auth pattern.
+    if (!verifyCronBearer(authHeader, expected)) {
       logger.warn({ requestId }, 'cron.lockout_cleanup.unauthorized');
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }

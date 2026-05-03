@@ -66,25 +66,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const tenantCtx = resolveTenantFromRequest(request);
-  const tenant = asTenantContext(tenantCtx.slug);
-
   // Verify-fix R3 (Errors-H2, 2026-05-02): kill-switch check — without
   // this, a feature-flag rollback would NOT stop in-flight `approved`
   // broadcasts from going out (cron picks them up, calls Resend, sends
   // real emails, consumes member quota). Returns 200 + {skipped:true}
   // so cron-job.org does NOT retry-storm a dark-launch period.
+  //
+  // R7 staff-review LOW-F fix — moved kill-switch check BEFORE tenant
+  // resolution. `resolveTenantFromRequest` is currently a pure header
+  // lookup (no DB call), but ordering kill-switch first establishes
+  // the convention that disabled-feature cron ticks do zero work
+  // beyond auth + flag check, regardless of how heavy tenant
+  // resolution becomes in the future. We use the `request` headers
+  // for tenant slug just before metric emission to keep the
+  // observability label-cardinality bounded.
   if (!env.features.f7Broadcasts) {
+    const tenantSlug = resolveTenantFromRequest(request).slug;
     logger.info(
-      { tenantId: tenant.slug },
+      { tenantId: tenantSlug },
       'cron.broadcasts.dispatch.feature_disabled',
     );
-    broadcastsMetrics.cronSkippedCount(tenant.slug, 'kill_switch');
+    broadcastsMetrics.cronSkippedCount(tenantSlug, 'kill_switch');
     return NextResponse.json(
       { skipped: true, reason: 'feature_disabled' },
       { status: 200 },
     );
   }
+
+  const tenantCtx = resolveTenantFromRequest(request);
+  const tenant = asTenantContext(tenantCtx.slug);
 
   // Eligible-row pick goes through `runInTenant` so RLS+FORCE applies
   // (cron-system context). `FOR UPDATE SKIP LOCKED` prevents two ticks

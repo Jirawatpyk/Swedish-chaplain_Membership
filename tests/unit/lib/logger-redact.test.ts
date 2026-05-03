@@ -455,14 +455,44 @@ describe('F7 broadcasts redact paths (R6 B3 fix — FR-042 PDPA/GDPR)', () => {
         },
       },
     });
-    // Note: pino redact uses `*.recipient_emails` (depth 1) — this
-    // input is depth 2 (`audit.payload.recipient_emails`). Depth 2 is
-    // covered by `*.recipient_emails` only when the wildcard is a
-    // single segment. The redact list documents this as best-effort
-    // depth-1; deeper logs go through `redactPanValues` recursive
-    // walker for additional defense — which doesn't catch emails per
-    // se. So this test asserts that the depth-1 `*.body_html` AT LEAST
-    // catches the audit.payload.body_html shape via the existing path.
+    expect(out).toContain('[REDACTED]');
+  });
+
+  // R7 staff-review MED-S2 fix — explicit depth-2 assertions for
+  // `audit.payload.<F7_PII_field>` shape that production webhook +
+  // cron audit emits actually use. Without these, a future refactor
+  // that drops the `*.*.body_html` / `*.*.recipient_emails` patterns
+  // from REDACT_PATHS would not be caught by CI even though the
+  // production log line is the EXACT shape we care about.
+  it.each([
+    [
+      'audit.payload.body_html',
+      { audit: { payload: { body_html: '<p>SECRET_NEWSLETTER_CONTENT</p>' } } },
+      'SECRET_NEWSLETTER_CONTENT',
+    ],
+    [
+      'audit.payload.recipient_emails',
+      { audit: { payload: { recipient_emails: ['LIVE_CEO@example.com'] } } },
+      'LIVE_CEO@example.com',
+    ],
+    [
+      'audit.payload.recipientEmails (camelCase)',
+      { audit: { payload: { recipientEmails: ['LIVE_CTO@example.com'] } } },
+      'LIVE_CTO@example.com',
+    ],
+    [
+      'audit.payload.custom_recipient_emails',
+      { audit: { payload: { custom_recipient_emails: ['LIVE_CFO@example.com'] } } },
+      'LIVE_CFO@example.com',
+    ],
+    [
+      'audit.payload.recipient_email_lower',
+      { audit: { payload: { recipient_email_lower: 'LIVE_COO@example.com' } } },
+      'LIVE_COO@example.com',
+    ],
+  ])('depth-2 redact: %s', (_name, log, secret) => {
+    const out = captureLog(log as Record<string, unknown>);
+    expect(out).not.toContain(secret);
     expect(out).toContain('[REDACTED]');
   });
 

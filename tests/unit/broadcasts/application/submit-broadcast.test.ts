@@ -531,16 +531,28 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
   // exactly 200 (should pass). An off-by-one regression that flipped
   // the predicate from `> 200` to `>= 200` would not have been
   // caught.
-  it('subject boundary: exactly 200 chars → accepted (no broadcast_subject_too_long)', async () => {
+  it('subject boundary: exactly 200 chars → subject precondition does NOT fire', async () => {
     const { deps } = makeDeps({ primaryContact: 'me@example.com' });
     const exact = 'a'.repeat(200);
     const result = await submitBroadcast(deps, {
       ...baseInput,
       subject: exact,
     });
+    // R7 staff-review MED-T3 fix — narrow assertion to the actual
+    // boundary contract. The pre-fix conditional skipped silently;
+    // a hard `result.ok===true` assertion would couple this test to
+    // unrelated downstream preconditions that depend on the wider
+    // `baseInput` fixture state (rate limit, member lookup, etc.).
+    // The boundary contract is solely "subject length 200 chars
+    // does NOT trigger the subject preconditions". Assert that
+    // negatively.
     if (!result.ok) {
       expect(result.error.kind).not.toBe('broadcast_subject_too_long');
+      expect(result.error.kind).not.toBe('broadcast_subject_empty');
     }
+    // Either result.ok is true (full happy path) or the error is
+    // some OTHER precondition (rate limit, body, etc.) — never the
+    // subject-length one we're testing.
   });
 
   it('subject boundary: 201 chars → broadcast_subject_too_long', async () => {

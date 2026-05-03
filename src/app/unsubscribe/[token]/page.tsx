@@ -282,7 +282,11 @@ export async function processUnsubscribe(
   // tenant while the suppression row writes to another — this guard
   // closes the window. Reject as `tenant_id_mismatch` (separate audit
   // category from `bad_signature`) so dashboards can spot drift early.
-  if (payload.tenantId !== tenantId) {
+  // R7 MED-S4 — `tenantId` is `UnverifiedTenantSlug` (peek), `payload.tenantId`
+  // is `TenantSlug` (verified). Compare as plain strings; the brand
+  // mismatch is an intentional type-level marker that this comparison
+  // is exactly the verified-vs-unverified consistency check.
+  if ((payload.tenantId as string) !== (tenantId as string)) {
     return reject('tenant_id_mismatch', tenantId, payload.lang);
   }
 

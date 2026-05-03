@@ -189,7 +189,10 @@ type ThrowSpec =
       reason: string;
       resourceType: 'audience' | 'broadcast';
       resourceId: string;
-    };
+    }
+  // R7 staff-review HIGH-3 — idempotency_conflict thrown when a
+  // concurrent worker raced through createAudience/createBroadcast.
+  | { kind: 'idempotency_conflict'; reason: string };
 
 interface GatewayOpts {
   readonly throwOnCreateAudience?: ThrowSpec;
@@ -1797,5 +1800,70 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     );
     expect(skippedEvt).toBeDefined();
     expect((skippedEvt?.payload as Record<string, unknown>).memberId).toBe('m-1');
+  });
+
+  // R7 staff-review HIGH-3 fix — Errors-C1 distinct audit event was
+  // declared in F7_AUDIT_EVENT_TYPES + production emit path at
+  // dispatch-scheduled-broadcast.ts:703 but had no test pinning the
+  // emission. The audit-event-type-emission grep test only checks
+  // declarations, not emission paths in mock chains. A regression
+  // that drops the `try/audit.emit` block at line 700–713 would
+  // ship green.
+  it('R3 Errors-C1: idempotency_conflict on createAudience (pre-send) → emits broadcast_dispatch_idempotency_conflict_pre_send audit', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    // Concurrent worker raced through createAudience first. Resend
+    // returns 409 idempotency-key reuse — our wrapper surfaces this
+    // as `kind: 'idempotency_conflict'` BEFORE we can call
+    // sendBroadcast, so the use-case enters the `resendBroadcastId === ''`
+    // branch and emits the distinct pre-send audit event.
+    const gw = makeGateway({
+      throwOnCreateAudience: {
+        kind: 'idempotency_conflict',
+        reason: 'idempotency_key_already_used',
+      },
+    });
+    await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+    // Distinct pre-send audit MUST emit so on-call sees the
+    // "two workers raced" forensic signal separate from a generic
+    // permanent-error trail.
+    const preSendAudit = audit.emits.find(
+      (e) =>
+        e.eventType === 'broadcast_dispatch_idempotency_conflict_pre_send',
+    );
+    expect(preSendAudit).toBeDefined();
+    expect((preSendAudit?.payload as Record<string, unknown>).reason).toBe(
+      'idempotency_key_already_used',
+    );
+    // The permanent-failure handler runs after the pre-send emit so
+    // BOTH events together tell the full story — the test pins both
+    // audit kinds to lock the documented "two events together"
+    // contract from the production code's comment at line 698–699.
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_failed_to_dispatch'),
+    ).toBeDefined();
   });
 });

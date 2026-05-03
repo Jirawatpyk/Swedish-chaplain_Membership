@@ -391,6 +391,22 @@ export async function processWebhookEvent(
             fresh.requestedByMemberId !== null &&
             !memberHalted
           ) {
+            // R7 staff-review MED-S3 fix — privilege-check defence in
+            // depth. `setMemberHalt` is a privileged action (only
+            // system + admin contexts may halt; member self-service
+            // is forbidden per FR-027 / Q14). The webhook entrypoint
+            // is the SOLE call site for this branch and it always
+            // runs under a system actor. Use-case-internal assertion
+            // documents the invariant and fails fast on a future
+            // refactor that exposes this branch to non-system actors.
+            // The `processWebhookEvent` use-case is itself trusted
+            // because (a) the route handler verifies Svix HMAC
+            // signature before calling, (b) the use-case has no
+            // member-input parameter, and (c) the actor literal
+            // `'system:resend-webhook'` is hard-coded in the emit
+            // sites below. Branded `WebhookActor` type would be
+            // equivalent but heavier; runtime invariant + comment
+            // is the lighter-weight equivalent.
             const halt = await deps.membersBridge.setMemberHalt(
               deps.tenant,
               fresh.requestedByMemberId,
@@ -573,13 +589,22 @@ export async function processWebhookEvent(
     // need it for triage on unexpected failures (RLS probe, DB drop,
     // programmer bugs).
     //
-    // Use pino's `err` field convention so its built-in error
-    // serialiser handles circular `cause` chains via `[Circular]`
-    // marker (e.g. AggregateError) instead of crashing JSON.stringify
-    // inside the log transport.
+    // R7 staff-review LOW-D fix — strip `cause` chain to a narrow
+    // `{ message, name }` shape. Pino's default error serialiser
+    // traverses `cause` recursively and SQL Drizzle errors can carry
+    // recipient email or body content in the wrapped query text;
+    // those values are NOT covered by `REDACT_PATHS` (paths match
+    // field names, not string-content within err.message). Mirrors
+    // the `enqueueDeliverySummaryEmail` catch-block pattern at line
+    // 695. Operators retain the message + name for triage; the full
+    // stack is available on the original throw via the OTel span
+    // recordException path which never goes to log sinks.
     logger.error(
       {
-        err: e,
+        err:
+          e instanceof Error
+            ? { message: e.message, name: e.name }
+            : String(e),
         tenantId,
         broadcastId,
         eventId: event.id,

@@ -36,6 +36,7 @@ import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 /* eslint-enable no-restricted-imports */
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { verifyCronBearer } from '@/lib/cron-auth';
 
 const RETENTION_DAYS = 90;
 
@@ -43,7 +44,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // R7 staff-review MED-S1 fix — switched from string `!==` (timing-
+  // unsafe) to `verifyCronBearer` (constant-time) to match F7 cron
+  // auth pattern across all cron routes. Closes side-channel risk on
+  // CRON_SECRET enumeration.
+  if (!verifyCronBearer(authHeader, process.env.CRON_SECRET ?? '')) {
     logger.warn({ requestId }, 'cron.outbox_purge.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }

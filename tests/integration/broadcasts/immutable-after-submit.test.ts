@@ -173,6 +173,33 @@ describe('F7 immutable-after-submit DB trigger (R6 W-T1)', () => {
     ).rejects.toThrow(/broadcast_immutable_after_submit/);
   });
 
+  // R7 staff-review MED-T1 fix — segment_type + segment_params
+  // closure. The trigger guards 7 fields total
+  // (subject, body_html, body_source, segment_type, segment_params,
+  // custom_recipient_emails, scheduled_for); the prior 5 cases left
+  // segment_type + segment_params untested.
+  it('UPDATE segment_type after submitted → raises check_violation', async () => {
+    await expect(
+      runInTenant(tenant.ctx, (tx) =>
+        tx
+          .update(broadcasts)
+          .set({ segmentType: 'tier' })
+          .where(eq(broadcasts.broadcastId, broadcastId)),
+      ),
+    ).rejects.toThrow(/broadcast_immutable_after_submit/);
+  });
+
+  it('UPDATE segment_params after submitted → raises check_violation', async () => {
+    await expect(
+      runInTenant(tenant.ctx, (tx) =>
+        tx
+          .update(broadcasts)
+          .set({ segmentParams: { tierCodes: ['premium'] } })
+          .where(eq(broadcasts.broadcastId, broadcastId)),
+      ),
+    ).rejects.toThrow(/broadcast_immutable_after_submit/);
+  });
+
   it('UPDATE status (legitimate lifecycle transition) → succeeds', async () => {
     // Status is NOT in the trigger's guarded-fields list. The
     // legitimate use-case flow (submit → approved by admin) MUST

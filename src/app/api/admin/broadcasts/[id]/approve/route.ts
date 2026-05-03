@@ -92,6 +92,11 @@ export async function POST(
 
   // T174 — root span `admin_approve_send_now` (docs/observability.md
   // § 22). T172 — SLO-F7-004 latency histogram (target p95 < 1.5s).
+  // R7 staff-review LOW-P1 fix — moved histogram emit into `finally`
+  // so exception paths also record the latency. Without this, errors
+  // (Neon outage, Resend 5xx) silently exclude themselves from the
+  // SLO histogram, biasing the p95 toward happy-path-only and
+  // hiding real availability regressions.
   const startedAtMs = Date.now();
   try {
     const result = await broadcastsTracer().startActiveSpan(
@@ -129,10 +134,6 @@ export async function POST(
         }
       },
     );
-    broadcastsMetrics.approveSendNowDurationMs(
-      tenantCtx.slug,
-      Date.now() - startedAtMs,
-    );
     if (!result.ok) {
       return mapApproveError(result.error, correlationId);
     }
@@ -158,6 +159,11 @@ export async function POST(
       'admin.broadcasts.approve.unexpected_error',
     );
     return errorResponse(500, 'internal_error', correlationId);
+  } finally {
+    broadcastsMetrics.approveSendNowDurationMs(
+      tenantCtx.slug,
+      Date.now() - startedAtMs,
+    );
   }
 }
 

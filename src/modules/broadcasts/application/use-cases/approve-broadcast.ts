@@ -24,7 +24,7 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
-import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import { enqueueBroadcastMemberNotification } from '../enqueue-member-notification';
@@ -152,7 +152,17 @@ export async function approveBroadcast(
           },
           'submitted', // R4 Types-#5 — race-guard against concurrent action
         );
-      } catch {
+      } catch (e) {
+        // R7 staff-review HIGH-1 fix — narrow catch to the concurrency
+        // sentinel only. Mirrors W-R2 fix in cancel-broadcast.ts. The
+        // prior bare `catch` swallowed any throw including Neon
+        // outages on the refresh query, surfacing as
+        // `broadcast_concurrent_action_blocked` with `status='unknown'`
+        // — wrong HTTP code (409 vs 500), wrong metric counter,
+        // misleading on-call signal.
+        if (!(e instanceof BroadcastConcurrentMutationError)) {
+          throw e;
+        }
         const refresh = await deps.broadcastsRepo.findByIdInTx(
           tx,
           deps.tenant.slug,

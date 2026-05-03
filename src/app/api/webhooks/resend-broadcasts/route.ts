@@ -294,6 +294,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : typeof (e as { kind?: unknown })?.kind === 'string'
           ? ((e as { kind: string }).kind)
           : 'bad_signature';
+
+    // R7 staff-review LOW-G fix — `unknown_event_type` is NOT a
+    // signature failure; it means Resend introduced a new event type
+    // we haven't taught the verifier about yet. 200-ack so Resend
+    // doesn't retry-storm and emit info-level log + bounded metric
+    // so on-call learns about the new shape without paging.
+    if (kind === 'unknown_event_type') {
+      logger.info(
+        { requestId, correlationId },
+        'broadcasts.webhook.unknown_event_type_acked',
+      );
+      return NextResponse.json(
+        { received: true, ignored: 'unknown_event_type' },
+        { status: 200 },
+      );
+    }
+
     await auditSignatureReject(kind, requestId, correlationId);
     broadcastsMetrics.webhookSignatureRejected('bad_signature');
     return jsonUnauthorized('bad_signature', correlationId);

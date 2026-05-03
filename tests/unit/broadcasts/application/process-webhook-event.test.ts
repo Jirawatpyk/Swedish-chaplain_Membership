@@ -598,6 +598,65 @@ describe('process-webhook-event (T150 GREEN)', () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.kind).toBe('broadcast_terminal');
     expect(broadcasts.transitions).toHaveLength(0);
+    // R7 staff-review MED-T2 fix — assert delivery row IS recorded
+    // even on terminal-state path. FR-025 idempotency requires
+    // terminal path ≠ replay path: terminal still INSERTs the
+    // delivery row; replay returns 'duplicate' with no INSERT.
+    expect(deliveries.upserts).toHaveLength(1);
+  });
+
+  // R7 staff-review HIGH-2 fix — pin the audit event type emitted on
+  // a fresh `delivered` webhook event. R6 B1 changed this from
+  // `broadcast_send_started` to `broadcast_delivery_recorded`; without
+  // this test, a regression to the old event type would ship green
+  // (the audit-event-type-emission grep test only checks declarations,
+  // not emission paths in the mock chain).
+  it('delivered event (fresh insert) → emits broadcast_delivery_recorded (NOT broadcast_send_started)', async () => {
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({ estimatedRecipientCount: 100 }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 1,
+        bounced: 0,
+        softBounced: 0,
+        complained: 0,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      {
+        broadcastId,
+        event: buildEvent('delivered'),
+        requestId: null,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_delivery_recorded'),
+    ).toBeDefined();
+    // Pin the negative — old event must NOT be emitted on delivered
+    // webhook events (it's reserved for the dispatch use-case's
+    // send-init).
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_send_started'),
+    ).toBeUndefined();
   });
 });
 

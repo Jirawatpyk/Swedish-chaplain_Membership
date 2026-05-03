@@ -122,6 +122,16 @@ export async function cancelBroadcast(
 
       const policyResult = authorizeCancel(existing.status);
       if (!policyResult.ok) {
+        // R7 staff-review MED-R2 — `null` tx is intentional here: the
+        // policy reject branch performs NO state mutation (no UPDATE,
+        // no INSERT into broadcasts), so emitting the audit on
+        // auto-commit is safe — there is no broadcasts-row write that
+        // could roll back independently. This DIVERGES from the
+        // F5/F4 in-tx-audit pattern but the F5/F4 patterns wrap a
+        // mutation; here the audit is the sole side effect of a
+        // policy reject. If a future change adds a write to this
+        // branch (unlikely — it would conflict with FR-004a's
+        // "cancellation rejected" semantic), promote `null` → `tx`.
         try {
           await deps.audit.emit(null, {
             tenantId: deps.tenant.slug,
