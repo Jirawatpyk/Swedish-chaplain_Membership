@@ -437,7 +437,13 @@ export async function markPaidFromProcessor(
   options?: {
     onPaidCallbacks?: ((evt: F4InvoicePaidEvent) => Promise<void>)[]
   }
-): Promise<Result<F4InvoicePaidEvent, MarkPaidError>>
+): Promise<Result<Invoice, MarkPaidError>>
+// (E2 verify-run remediation 2026-05-03 Wave A: original draft declared
+// the return as Result<F4InvoicePaidEvent, ...> — implementation keeps
+// the existing F4 contract Result<Invoice, ...> because callers already
+// receive the raw `Invoice` for downstream PDF/email work, and the
+// canonical event payload is delivered to listeners via the callback
+// argument itself. No callsite needs the event in the return value.)
 
 // F4InvoicePaidEvent shape (canonical contract)
 export interface F4InvoicePaidEvent {
@@ -447,7 +453,13 @@ export interface F4InvoicePaidEvent {
   paidAt: Instant
   amountThb: Decimal
   vatThb: Decimal
-  paymentMethod: 'stripe_card' | 'stripe_promptpay' | 'bank_transfer' | 'cash' | 'cheque'
+  paymentMethod: 'stripe_card' | 'stripe_promptpay' | 'bank_transfer' | 'cash' | 'cheque' | 'other'
+  // 'other' added at /speckit.verify.run Wave A C1 remediation: F4's
+  // persisted invoices.payment_method enum already includes 'other' for
+  // mark-paid paths that don't fit the named rails (legacy reconciliation
+  // imports + future Stripe rails before F5 widens). The event surface
+  // mirrors the F4 enum verbatim so listeners never receive an unknown
+  // string at runtime.
   triggeredBy: 'webhook' | 'admin_manual' | 'admin_offline_mark'
 }
 ```

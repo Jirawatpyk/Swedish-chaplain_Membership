@@ -31,6 +31,8 @@
 - [X] T009 Add `F4InvoicePaidEvent` type to F4 barrel `src/modules/invoicing/index.ts` (canonical shape per research.md R12) — file at `src/modules/invoicing/domain/f4-invoice-paid-event.ts`; barrel `export type` only. Fields: `tenantId, invoiceId, memberId, paidAt (ISO 8601 UTC), amountSatang (bigint), currency ('THB' literal)`. `paymentId` omitted from MVP shape — F8 listeners only need `invoiceId` to resolve linked cycle.
 - [X] T010 Run F4 contract test green; merge F4 callback PR to main before continuing F8 work — 5/5 contract tests GREEN, 684/684 F4+F5 unit tests GREEN (zero regression), `pnpm typecheck` GREEN, `pnpm lint` GREEN. Solo-maintainer substitute (Constitution v1.4.0 § Governance): kept on `011-renewal-reminders` branch instead of separate PR; one Wave-A commit per plan commit strategy.
 
+> **TDD discipline restoration (F1 verify-run finding)**: Wave A collapsed test + impl into a single commit (pragmatic for solo-maintainer + small atomic change). Wave B onward MUST follow the strict Constitution Principle II (NON-NEGOTIABLE) cadence: failing-test commit → impl commit → green commit. Each contract test in T015 / T029 / T052 lands as a RED commit before the corresponding adapter/migration commit makes it GREEN.
+
 ### F2 Scheduled-Plan-Change Coordinated Code PR (per Complexity Tracking #4)
 
 - [ ] T011 Add F2 use-case `scheduleNextRenewalPlanChange` in `src/modules/plans/application/schedule-next-renewal-plan-change.ts`

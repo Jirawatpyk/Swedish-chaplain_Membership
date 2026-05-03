@@ -61,11 +61,16 @@ export { Sha256Hex } from './domain/value-objects/sha256-hex';
 // --- Audit event types (for F3 timeline integration US7) --------------------
 export type { F4AuditEventType, F4AuditEvent } from './application/ports/audit-port';
 
-// --- Cross-module callback events (F8 Phase 2 Wave A coordination) ----------
+// --- Cross-module callback events --------------------------------------------
 // `F4InvoicePaidEvent` is the canonical payload shape passed to listeners
-// registered on `RecordPaymentDeps.onPaidCallbacks`. Atomic semantics + field
-// rationale are documented at the type definition.
-export type { F4InvoicePaidEvent } from './domain/f4-invoice-paid-event';
+// registered on `RecordPaymentDeps.onPaidCallbacks` — fired atomically inside
+// the same DB transaction that flips the invoice `issued → paid`. Field
+// rationale + atomic semantics are documented at the type definition.
+export type {
+  F4InvoicePaidEvent,
+  F4InvoicePaidPaymentMethod,
+  F4InvoicePaidTrigger,
+} from './domain/f4-invoice-paid-event';
 
 /**
  * US7 — F4 audit event types surfaced in the F3 member timeline.

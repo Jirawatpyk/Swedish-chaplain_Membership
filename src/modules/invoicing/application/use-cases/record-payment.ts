@@ -37,7 +37,11 @@ import {
   type InvoiceId,
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
-import type { F4InvoicePaidEvent } from '@/modules/invoicing/domain/f4-invoice-paid-event';
+import type {
+  F4InvoicePaidEvent,
+  F4InvoicePaidPaymentMethod,
+  F4InvoicePaidTrigger,
+} from '@/modules/invoicing/domain/f4-invoice-paid-event';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { logger } from '@/lib/logger';
@@ -84,6 +88,24 @@ export const recordPaymentSchema = z.object({
    * this flag — pure boolean toggle, audit-trail unaffected.
    */
   suppressReceiptEmail: z.boolean().optional(),
+  /**
+   * F8 Phase 2 Wave A — origin of the mark-paid action. Surfaces in
+   * `F4InvoicePaidEvent.triggeredBy` so cross-module listeners can
+   * branch on the trigger. Defaults to `'admin_manual'` to preserve
+   * backward-compat for existing F4 admin paths that don't set it.
+   */
+  triggeredBy: z
+    .enum(['webhook', 'admin_manual', 'admin_offline_mark'])
+    .optional(),
+  /**
+   * F8 Phase 2 Wave A — F5-rail override for the callback event. F4's
+   * persisted `paymentMethod` enum is narrower than F5's processor rail
+   * set (Stripe rails serialise as `'other'` on the invoice row); this
+   * field carries the original processor rail string so listeners
+   * receive `stripe_card` / `stripe_promptpay` instead of `'other'`.
+   * F4 admin paths leave it undefined → callback uses `paymentMethod`.
+   */
+  processorMethod: z.enum(['stripe_card', 'stripe_promptpay']).optional(),
 });
 
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
@@ -519,13 +541,23 @@ export async function recordPayment(
     // contract). A failed adapter would have thrown before this point.
     const callbacks = deps.onPaidCallbacks;
     if (callbacks && callbacks.length > 0) {
+      // `processorMethod` overrides `paymentMethod` in the event for F5
+      // rails — see field doc on the input schema. `triggeredBy` defaults
+      // to `'admin_manual'` for back-compat with existing F4 admin paths.
+      const eventPaymentMethod: F4InvoicePaidPaymentMethod =
+        input.processorMethod ?? input.paymentMethod;
+      const eventTrigger: F4InvoicePaidTrigger =
+        input.triggeredBy ?? 'admin_manual';
       const evt: F4InvoicePaidEvent = {
         tenantId: input.tenantId,
         invoiceId,
         memberId: loaded.memberId,
         paidAt: updated.paidAt ?? deps.clock.nowIso(),
         amountSatang: loaded.total!.satang,
+        vatSatang: loaded.vat!.satang,
         currency: loaded.currency,
+        paymentMethod: eventPaymentMethod,
+        triggeredBy: eventTrigger,
       };
       for (const cb of callbacks) {
         await cb(evt);

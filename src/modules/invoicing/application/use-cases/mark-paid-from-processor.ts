@@ -173,5 +173,13 @@ export async function markPaidFromProcessor(
     ...(input.suppressReceiptEmail !== undefined
       ? { suppressReceiptEmail: input.suppressReceiptEmail }
       : {}),
+    // F8 Phase 2 Wave A — surface the F5 rail + webhook origin to
+    // `onPaidCallbacks` listeners (event shape per research.md R12).
+    // The wrapper is webhook-only by current contract; F5 admin
+    // reconciliation paths that go through this wrapper still set
+    // `'webhook'` because the trigger semantically means "Stripe
+    // webhook event was acked", not "automated vs human action".
+    processorMethod: input.method,
+    triggeredBy: 'webhook',
   });
 }

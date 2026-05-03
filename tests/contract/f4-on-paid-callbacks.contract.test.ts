@@ -246,7 +246,7 @@ describe('Contract — F4 onPaidCallbacks (cross-module hook for F8/F5)', () => 
   });
 
   // ── Contract 2 ─────────────────────────────────────────────────────────
-  it('Contract 2: callbacks receive canonical F4InvoicePaidEvent shape (tenantId, invoiceId, memberId, paidAt ISO, amountSatang bigint, currency THB)', async () => {
+  it('Contract 2: callbacks receive canonical F4InvoicePaidEvent shape (research.md R12 — full 9-field surface)', async () => {
     let received: F4InvoicePaidEvent | null = null;
     const cb = async (evt: F4InvoicePaidEvent) => {
       received = evt;
@@ -265,7 +265,40 @@ describe('Contract — F4 onPaidCallbacks (cross-module hook for F8/F5)', () => 
     expect(typeof evt.amountSatang).toBe('bigint');
     // Total = 1070 THB = 107000 satang (subtotal 1000 + VAT 70)
     expect(evt.amountSatang).toBe(107000n);
+    expect(typeof evt.vatSatang).toBe('bigint');
+    expect(evt.vatSatang).toBe(7000n); // VAT 70 THB = 7000 satang
     expect(evt.currency).toBe('THB');
+    // Default trigger when caller doesn't override
+    expect(evt.triggeredBy).toBe('admin_manual');
+    // Default paymentMethod = input.paymentMethod when no processorMethod override
+    expect(evt.paymentMethod).toBe('bank_transfer');
+  });
+
+  // ── Contract 2a ─────────────────────────────────────────────────────
+  it('Contract 2a: F5 webhook caller path — `processorMethod` overrides `paymentMethod` and `triggeredBy=webhook` is forwarded', async () => {
+    let received: F4InvoicePaidEvent | null = null;
+    const cb = async (evt: F4InvoicePaidEvent) => {
+      received = evt;
+    };
+    const deps = makeDepsWithCallbacks(makeIssuedInvoice(), makeSettings(), [cb]);
+
+    // Mirror what `markPaidFromProcessor` wrapper would forward into recordPayment
+    // for a Stripe card webhook event.
+    const f5Input = {
+      ...baseInput,
+      paymentMethod: 'other' as const, // F4 enum coerces stripe rails to 'other'
+      processorMethod: 'stripe_card' as const,
+      triggeredBy: 'webhook' as const,
+    };
+
+    const r = await recordPayment(deps, f5Input);
+    expect(r.ok).toBe(true);
+
+    expect(received).not.toBeNull();
+    const evt = received as unknown as F4InvoicePaidEvent;
+    // Event surfaces the SEMANTIC rail, not the F4 row enum
+    expect(evt.paymentMethod).toBe('stripe_card');
+    expect(evt.triggeredBy).toBe('webhook');
   });
 
   // ── Contract 3 ─────────────────────────────────────────────────────────
