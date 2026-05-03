@@ -29,6 +29,11 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@/lib/db';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { scheduledPlanChanges } from '@/modules/plans/infrastructure/db/schema-scheduled-plan-changes';
+import {
+  tenantRenewalSettings,
+  tenantRenewalSchedulePolicies,
+} from '@/modules/renewals/infrastructure/schema-tenant-renewal-config';
 import {
   auditLog,
   emailChangeTokens,
@@ -138,6 +143,24 @@ export async function createTestTenant(
     await db.delete(contacts).where(eq(contacts.tenantId, slug));
     await db.delete(members).where(eq(members.tenantId, slug));
     await db.delete(membershipPlans).where(eq(membershipPlans.tenantId, slug));
+    // F8 Wave C T017 — cross-module table delivered by F8 PR per
+    // research.md R13. Cleanup ordered AFTER members because
+    // scheduled_plan_changes has a member_id column referencing
+    // members (no FK constraint at DB level — Domain invariant only).
+    await db
+      .delete(scheduledPlanChanges)
+      .where(eq(scheduledPlanChanges.tenantId, slug));
+    // F8 Wave C T020 + verify-run B1 — per-test-tenant renewal config
+    // rows seeded by `helpers/seed-renewal-policies.ts`. tenant_renewal_
+    // schedule_policies cleanup ordered first because
+    // tenant_renewal_settings has no FK dependents in either direction;
+    // both tables are independent of each other.
+    await db
+      .delete(tenantRenewalSchedulePolicies)
+      .where(eq(tenantRenewalSchedulePolicies.tenantId, slug));
+    await db
+      .delete(tenantRenewalSettings)
+      .where(eq(tenantRenewalSettings.tenantId, slug));
     // R9 — tenant_fee_config DROPPED (migration 0029). Fiscal config
     // lives in tenant_invoice_settings which is cleaned above.
     // audit_log has an append-only trigger that BLOCKS DELETE — so we

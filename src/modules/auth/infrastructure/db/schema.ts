@@ -171,6 +171,16 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     row exhausts its retry budget (5y retention, ops event).
   'receipt_rendered',
   'pdf_render_permanently_failed',
+  // --- F8 Phase 2 Wave C T029a (migration 0095) — Wave B carry-overs.
+  //     `member_plan_manually_changed` is F3's specific-vs-generic
+  //     event for the F8 supersede listener; the four `plan_change_*`
+  //     events drive the F2 scheduled-plan-change lifecycle audit
+  //     trail (Wave B G1 verify-run remediation). ---
+  'member_plan_manually_changed',
+  'plan_change_scheduled',
+  'plan_change_superseded',
+  'plan_change_cancelled',
+  'plan_change_applied',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

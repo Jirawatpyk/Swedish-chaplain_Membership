@@ -32,6 +32,15 @@ export const F2_AUDIT_EVENT_TYPES = [
   'plan_not_found',
   'plan_cross_tenant_probe',
   'fee_config_updated',
+  // F8 Phase 2 Wave C T029c (migration 0095) — scheduled-plan-change
+  // lifecycle audit trail. Wave B G1 verify-run remediation carry-over.
+  // Emitted by the F2 scheduled-plan-change use-cases (Wave G+ when
+  // composition root wires the audit emit hook into the use-cases
+  // alongside the Drizzle adapter that ships per Phase 5+).
+  'plan_change_scheduled',
+  'plan_change_superseded',
+  'plan_change_cancelled',
+  'plan_change_applied',
 ] as const;
 
 export type F2AuditEventType = (typeof F2_AUDIT_EVENT_TYPES)[number];
@@ -51,6 +60,11 @@ export const EVENT_SEVERITY: Record<F2AuditEventType, AuditSeverity> = {
   plan_not_found: 'info',
   plan_cross_tenant_probe: 'high',
   fee_config_updated: 'info',
+  // F8 Phase 2 Wave C T029c — scheduled-plan-change lifecycle.
+  plan_change_scheduled: 'info',
+  plan_change_superseded: 'info',
+  plan_change_cancelled: 'info',
+  plan_change_applied: 'info',
 };
 
 // --- Normative diff shape (critique P9) ---------------------------------------
@@ -141,6 +155,40 @@ const feeConfigUpdatedPayload = z.object({
   diff: auditDiffSchema,
 });
 
+// --- F8 Phase 2 Wave C T029c — scheduled-plan-change lifecycle payloads ---
+
+const planChangeScheduledPayload = z.object({
+  member_id: z.string().uuid(),
+  scheduled_change_id: z.string().min(1),
+  effective_at_cycle_id: z.string().uuid(),
+  from_plan_id: z.string().min(1),
+  to_plan_id: z.string().min(1),
+  reason: z.string().max(500).nullable().optional(),
+});
+
+const planChangeSupersededPayload = z.object({
+  member_id: z.string().uuid(),
+  scheduled_change_id: z.string().min(1),
+  effective_at_cycle_id: z.string().uuid(),
+  superseded_by_scheduled_change_id: z.string().min(1).nullable().optional(),
+});
+
+const planChangeCancelledPayload = z.object({
+  member_id: z.string().uuid(),
+  scheduled_change_id: z.string().min(1),
+  effective_at_cycle_id: z.string().uuid(),
+  reason: z.string().max(500).nullable().optional(),
+});
+
+const planChangeAppliedPayload = z.object({
+  member_id: z.string().uuid(),
+  scheduled_change_id: z.string().min(1),
+  effective_at_cycle_id: z.string().uuid(),
+  from_plan_id: z.string().min(1),
+  to_plan_id: z.string().min(1),
+  applied_at_invoice_id: z.string().uuid().nullable().optional(),
+});
+
 // --- Discriminated-union top-level audit-payload schema ----------------------
 
 /**
@@ -164,6 +212,23 @@ export const auditPayloadSchema = z.discriminatedUnion('event_type', [
     payload: planCrossTenantProbePayload,
   }),
   z.object({ event_type: z.literal('fee_config_updated'), payload: feeConfigUpdatedPayload }),
+  // F8 Phase 2 Wave C T029c.
+  z.object({
+    event_type: z.literal('plan_change_scheduled'),
+    payload: planChangeScheduledPayload,
+  }),
+  z.object({
+    event_type: z.literal('plan_change_superseded'),
+    payload: planChangeSupersededPayload,
+  }),
+  z.object({
+    event_type: z.literal('plan_change_cancelled'),
+    payload: planChangeCancelledPayload,
+  }),
+  z.object({
+    event_type: z.literal('plan_change_applied'),
+    payload: planChangeAppliedPayload,
+  }),
 ]);
 
 export type F2AuditEvent = z.infer<typeof auditPayloadSchema>;

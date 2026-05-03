@@ -603,6 +603,97 @@
       "when": 1788912000000,
       "tag": "0085_audit_log_f7_r6_staff_review",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0086_f8_create_scheduled_plan_changes_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1789086400000,
+      "tag": "0087_f8_create_renewal_cycles_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1789172800000,
+      "tag": "0088_f8_create_renewal_reminder_events_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1789259200000,
+      "tag": "0089_f8_create_tenant_renewal_config_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1789345600000,
+      "tag": "0090_f8_create_at_risk_outreach_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1789432000000,
+      "tag": "0091_f8_create_tier_upgrade_suggestions_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1789518400000,
+      "tag": "0092_f8_create_renewal_escalation_tasks_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1789604800000,
+      "tag": "0093_f8_create_consumed_link_tokens_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1789691200000,
+      "tag": "0094_f8_extend_members_and_plans_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1789777600000,
+      "tag": "0095_f8_extend_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1789864000000,
+      "tag": "0096_f8_membership_plans_renewal_tier_bucket_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1789950400000,
+      "tag": "0097_f8_phase10_a_email_change_tokens_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1790036800000,
+      "tag": "0098_f8_phase10_a_notifications_outbox_rls",
+      "breakpoints": true
     }
   ]
 }

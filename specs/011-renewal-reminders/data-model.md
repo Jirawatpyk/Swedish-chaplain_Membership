@@ -60,7 +60,7 @@ ALTER TABLE renewal_cycles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE renewal_cycles FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON renewal_cycles
-  FOR ALL TO swecham_app_rw
+  FOR ALL TO chamber_app
   USING (tenant_id = current_setting('app.current_tenant', TRUE));
 
 -- Indexes (all CONCURRENTLY in separate migration)
@@ -174,7 +174,7 @@ ALTER TABLE renewal_reminder_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE renewal_reminder_events FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON renewal_reminder_events
-  FOR ALL TO swecham_app_rw
+  FOR ALL TO chamber_app
   USING (tenant_id = current_setting('app.current_tenant', TRUE));
 
 -- Idempotency primitive
@@ -219,7 +219,7 @@ ALTER TABLE tenant_renewal_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_renewal_settings FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON tenant_renewal_settings
-  FOR ALL TO swecham_app_rw
+  FOR ALL TO chamber_app
   USING (tenant_id = current_setting('app.current_tenant', TRUE));
 ```
 
@@ -256,7 +256,7 @@ ALTER TABLE tenant_renewal_schedule_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_renewal_schedule_policies FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON tenant_renewal_schedule_policies
-  FOR ALL TO swecham_app_rw
+  FOR ALL TO chamber_app
   USING (tenant_id = current_setting('app.current_tenant', TRUE));
 ```
 
@@ -297,7 +297,7 @@ ALTER TABLE at_risk_outreach ENABLE ROW LEVEL SECURITY;
 ALTER TABLE at_risk_outreach FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON at_risk_outreach
-  FOR ALL TO swecham_app_rw
+  FOR ALL TO chamber_app
   USING (tenant_id = current_setting('app.current_tenant', TRUE));
 
 CREATE INDEX at_risk_outreach_member_timeline_idx
@@ -343,7 +343,7 @@ ALTER TABLE tier_upgrade_suggestions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tier_upgrade_suggestions FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON tier_upgrade_suggestions
-  FOR ALL TO swecham_app_rw
+  FOR ALL TO chamber_app
   USING (tenant_id = current_setting('app.current_tenant', TRUE));
 
 -- At most one open OR pending suggestion per member
@@ -428,7 +428,7 @@ ALTER TABLE renewal_escalation_tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE renewal_escalation_tasks FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON renewal_escalation_tasks
-  FOR ALL TO swecham_app_rw
+  FOR ALL TO chamber_app
   USING (tenant_id = current_setting('app.current_tenant', TRUE));
 
 CREATE INDEX renewal_escalation_tasks_queue_idx
@@ -464,7 +464,7 @@ ALTER TABLE consumed_link_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE consumed_link_tokens FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON consumed_link_tokens
-  FOR ALL TO swecham_app_rw
+  FOR ALL TO chamber_app
   USING (tenant_id = current_setting('app.current_tenant', TRUE));
 
 -- TTL cleanup (consumed tokens >60d old can be pruned weekly)
@@ -522,13 +522,6 @@ CREATE INDEX scheduled_plan_changes_member_cycle_idx
 ALTER TABLE scheduled_plan_changes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scheduled_plan_changes FORCE ROW LEVEL SECURITY;
 
--- Role name `chamber_app` per F2 migration 0006 + F4 + F7 precedent
--- (verified at /speckit.verify.run Wave B finding E1). The earlier
--- F8 data-model § 2.1–2.8 tables nominally use `swecham_app_rw` —
--- a stale draft role name from before /speckit.plan locked the role
--- to `chamber_app`. Wave C migration authors MUST audit + reconcile
--- §§ 2.1–2.8 to `chamber_app` before scaffolding 0086–0094 SQL files
--- so the live DB grants line up with what's actually granted in 0006.
 CREATE POLICY tenant_isolation ON scheduled_plan_changes
   FOR ALL TO chamber_app
   USING (tenant_id = current_setting('app.current_tenant', TRUE))
@@ -711,7 +704,7 @@ All 8 new tables (`renewal_cycles`, `renewal_reminder_events`, `tenant_renewal_s
 
 - `ENABLE ROW LEVEL SECURITY`
 - `FORCE ROW LEVEL SECURITY` (so even table owner respects policies)
-- `CREATE POLICY tenant_isolation FOR ALL TO swecham_app_rw USING (tenant_id = current_setting('app.current_tenant', TRUE))`
+- `CREATE POLICY tenant_isolation FOR ALL TO chamber_app USING (tenant_id = current_setting('app.current_tenant', TRUE))`
 
 Cross-tenant integration test (`tests/integration/renewals/tenant-isolation.test.ts`) is the Review-Gate blocker per Constitution v1.4.0 Principle I clause 3.
 

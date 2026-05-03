@@ -1,45 +1,201 @@
 /**
- * D1 (F8 Phase 2 Wave B verify-run remediation) — sentinel integration
- * test for the `scheduled_plan_changes` partial-unique invariant.
+ * D1 (F8 Phase 2 Wave B verify-run remediation; promoted to live test
+ * at /speckit.implement Wave C T017) — `scheduled_plan_changes` partial-
+ * unique invariant + RLS+FORCE coverage.
  *
- * The contract test at `tests/contract/f2-scheduled-plan-change.contract.test.ts`
- * validates the use-case behaviour against an in-memory mock. This file
- * is the live-DB counterpart that proves the invariant is enforced at
- * the Postgres layer too — i.e. the partial unique
+ * Live-DB counterpart of the unit-mocked contract test at
+ * `tests/contract/f2-scheduled-plan-change.contract.test.ts`. Asserts
+ * three things only the real Postgres adapter can prove:
  *
- *   `(tenant_id, member_id, effective_at_cycle_id) WHERE status='pending'`
+ *   1. The partial unique
+ *      `(tenant_id, member_id, effective_at_cycle_id) WHERE status='pending'`
+ *      enforces "at most one pending row per (tenant, member, cycle)" at
+ *      the DB layer. Without it, a Drizzle-adapter bug that forgets the
+ *      supersede step would silently leave duplicate pending rows.
  *
- * defined in `data-model.md § 2.9` (delivered by Wave C migration 0086)
- * actually rejects a second `pending` row for the same (tenant, member,
- * cycle). Without it, a Drizzle-adapter bug that forgets the supersede
- * step would silently leave duplicate pending rows in the table.
+ *   2. The supersede + insert pair is atomic — either both writes commit
+ *      or neither does (Constitution Principle VIII Reliability + Wave B
+ *      verify-run F1 remediation).
  *
- * STATUS: `it.todo` until the Drizzle adapter for `ScheduledPlanChangeRepo`
- * ships (Phase 5+ when US5 wires the F4 renewal-invoice-creation hook).
- * The sentinel forces this file into the test suite NOW so the gap is
- * visible in CI output rather than silently absent.
- *
- * When implementing in Phase 5+:
- *   1. Seed two distinct test tenants via `createTwoTestTenants()`.
- *   2. INSERT a pending `scheduled_plan_changes` row in tenantA via the
- *      Drizzle adapter (NOT raw SQL — verifies adapter contract).
- *   3. Attempt a second pending INSERT for the SAME (member, cycle) →
- *      assert it raises a Postgres unique-violation (SQLSTATE 23505)
- *      surfaced as a typed Drizzle error.
- *   4. Flip the first row to `superseded` via `transitionStatus`.
- *   5. Insert a fresh pending row → assert SUCCESS (the partial unique
- *      no longer matches because the first row is no longer `pending`).
- *   6. Cross-tenant probe: assert tenantB cannot SELECT/UPDATE/DELETE
- *      tenantA's pending row when running inside `runInTenant(tenantB)`
- *      — RLS+FORCE blocks visibility.
+ *   3. RLS+FORCE blocks tenantB from observing tenantA's pending rows
+ *      when running inside `runInTenant(tenantB.ctx, ...)` (Constitution
+ *      Principle I clause 2 — DB-layer tenant isolation).
  */
-import { describe, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+
+import { runInTenant } from '@/lib/db';
+import { scheduledPlanChanges } from '@/modules/plans/infrastructure/db/schema-scheduled-plan-changes';
+import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo';
+import { createTwoTestTenants } from '../helpers/test-tenant';
 
 describe('Integration — scheduled_plan_changes partial-unique invariant', () => {
-  it.todo(
-    'Wave C+ — partial unique enforces at-most-one pending per (tenant, member, cycle); supersede unblocks new pending insert',
-  );
-  it.todo(
-    'Wave C+ — RLS+FORCE blocks tenantB from observing tenantA pending rows (cross-tenant probe)',
-  );
+  const cleanups: (() => Promise<void>)[] = [];
+
+  afterAll(async () => {
+    for (const fn of cleanups) await fn();
+  });
+
+  it('atomic supersede+insert: re-scheduling the same (member, cycle) flips prior pending → superseded + inserts new pending in one tx', async () => {
+    const pair = await createTwoTestTenants();
+    cleanups.push(pair.a.cleanup, pair.b.cleanup);
+    const tenant = pair.a;
+
+    const memberId = randomUUID();
+    const cycleId = randomUUID();
+    const adminId = randomUUID();
+
+    // First schedule — superseded should be null.
+    const r1 = await drizzleScheduledPlanChangeRepo.supersedeAndInsertPendingAtomically(
+      tenant.ctx,
+      {
+        memberId,
+        effectiveAtCycleId: cycleId,
+        fromPlanId: 'corporate-regular',
+        toPlanId: 'corporate-premier',
+        scheduledByUserId: adminId,
+        reason: 'tier upgrade accepted',
+      },
+    );
+    expect(r1.superseded).toBeNull();
+    expect(r1.inserted.status).toBe('pending');
+    expect(r1.inserted.toPlanId).toBe('corporate-premier');
+
+    // Re-schedule — prior pending must flip to superseded; new pending inserted.
+    const r2 = await drizzleScheduledPlanChangeRepo.supersedeAndInsertPendingAtomically(
+      tenant.ctx,
+      {
+        memberId,
+        effectiveAtCycleId: cycleId,
+        fromPlanId: 'corporate-regular',
+        toPlanId: 'corporate-elite',
+        scheduledByUserId: adminId,
+      },
+    );
+    expect(r2.superseded).not.toBeNull();
+    expect(r2.superseded?.status).toBe('superseded');
+    expect(r2.superseded?.toPlanId).toBe('corporate-premier');
+    expect(r2.inserted.status).toBe('pending');
+    expect(r2.inserted.toPlanId).toBe('corporate-elite');
+
+    // Both rows persisted in DB; partial unique held (only ONE pending).
+    const rowsAfter = await drizzleScheduledPlanChangeRepo.listForMember(
+      tenant.ctx,
+      memberId,
+    );
+    expect(rowsAfter.length).toBe(2);
+    const pendingCount = rowsAfter.filter((r) => r.status === 'pending').length;
+    expect(pendingCount).toBe(1);
+  }, 30_000);
+
+  it('partial unique rejects a second concurrent pending insert if supersede is skipped', async () => {
+    const pair = await createTwoTestTenants();
+    cleanups.push(pair.a.cleanup, pair.b.cleanup);
+    const tenant = pair.a;
+
+    const memberId = randomUUID();
+    const cycleId = randomUUID();
+    const adminId = randomUUID();
+
+    // Insert one pending row directly — bypassing the adapter to simulate
+    // a hypothetical buggy code path that "forgot" the supersede.
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(scheduledPlanChanges).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        effectiveAtCycleId: cycleId,
+        fromPlanId: 'p1',
+        toPlanId: 'p2',
+        scheduledByUserId: adminId,
+        status: 'pending',
+      });
+    });
+
+    // Second direct insert with status='pending' MUST be rejected by the
+    // partial unique. Postgres surfaces SQLSTATE 23505 (unique_violation).
+    let thrown: unknown = null;
+    try {
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(scheduledPlanChanges).values({
+          tenantId: tenant.ctx.slug,
+          memberId,
+          effectiveAtCycleId: cycleId,
+          fromPlanId: 'p1',
+          toPlanId: 'p3',
+          scheduledByUserId: adminId,
+          status: 'pending',
+        });
+      });
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).not.toBeNull();
+    // Postgres unique-violation. postgres-js wraps the original error
+    // and exposes the SQLSTATE on the `cause` chain rather than the
+    // top-level `.code` (varies by driver version), so we walk the chain.
+    const seen = new Set<unknown>();
+    let cause: unknown = thrown;
+    let pgCode: string | undefined;
+    let combinedMessage = '';
+    while (cause && !seen.has(cause)) {
+      seen.add(cause);
+      const rec = cause as { code?: string; message?: string; cause?: unknown };
+      if (rec.code === '23505') pgCode = rec.code;
+      if (rec.message) combinedMessage += rec.message + ' ';
+      cause = rec.cause;
+    }
+    // Either the SQLSTATE 23505 surfaced somewhere on the chain OR the
+    // partial unique name shows up in some error message in the chain.
+    const matchedByCode = pgCode === '23505';
+    const matchedByMessage =
+      combinedMessage.includes('scheduled_plan_changes_pending_uniq') ||
+      combinedMessage.toLowerCase().includes('duplicate key') ||
+      combinedMessage.toLowerCase().includes('unique');
+    expect(matchedByCode || matchedByMessage).toBe(true);
+  }, 30_000);
+
+  it('RLS+FORCE blocks tenantB from observing tenantA pending rows (cross-tenant probe)', async () => {
+    const pair = await createTwoTestTenants();
+    cleanups.push(pair.a.cleanup, pair.b.cleanup);
+    const { a: tenantA, b: tenantB } = pair;
+
+    const memberId = randomUUID();
+    const cycleId = randomUUID();
+    const adminId = randomUUID();
+
+    await drizzleScheduledPlanChangeRepo.supersedeAndInsertPendingAtomically(
+      tenantA.ctx,
+      {
+        memberId,
+        effectiveAtCycleId: cycleId,
+        fromPlanId: 'p1',
+        toPlanId: 'p2',
+        scheduledByUserId: adminId,
+      },
+    );
+
+    // tenantB cannot SELECT tenantA's row when running in tenantB's context.
+    const tenantBView = await drizzleScheduledPlanChangeRepo.findPendingForCycle(
+      tenantB.ctx,
+      memberId,
+      cycleId,
+    );
+    expect(tenantBView).toBeNull();
+
+    // tenantA still sees its own row.
+    const tenantAView = await drizzleScheduledPlanChangeRepo.findPendingForCycle(
+      tenantA.ctx,
+      memberId,
+      cycleId,
+    );
+    expect(tenantAView).not.toBeNull();
+    expect(tenantAView?.toPlanId).toBe('p2');
+
+    // tenantB's listForMember returns nothing for the same memberId.
+    const tenantBList = await drizzleScheduledPlanChangeRepo.listForMember(
+      tenantB.ctx,
+      memberId,
+    );
+    expect(tenantBList.length).toBe(0);
+  }, 30_000);
 });

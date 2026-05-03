@@ -209,13 +209,34 @@ export async function changePlan(
         throw new TxAbort({ type: 'audit_failed' });
       }
 
-      // T013 (F8 Phase 2) — `member_plan_manually_changed` emit
-      // deferred to Wave C alongside the DB-side `audit_event_type`
-      // pgEnum extension. Once the enum carries the new value AND the
-      // F3 union widens, this comment becomes the second
-      // `deps.audit.recordInTx(...)` call inside this same tx so F8
-      // supersede observes either both audits or neither (Principle
-      // VIII atomic state+audit). See members/application/ports/audit-port.ts.
+      // T029b (F8 Phase 2 Wave C, migration 0095) — emit
+      // `member_plan_manually_changed` alongside the generic
+      // `member_plan_changed` so F8's supersede listener (Phase 5+
+      // T184) can distinguish admin manual overrides from auto-
+      // applied scheduled plan changes. Same tx as the plan flip +
+      // generic audit so the supersede observes either ALL three
+      // events or NONE (Constitution Principle VIII — atomic
+      // state+audit). The carry-over of Wave B T013.
+      const manualAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_plan_manually_changed',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `member_plan_manually_changed ${memberId}`,
+        payload: {
+          member_id: memberId,
+          old_plan_id: current.planId,
+          old_plan_year: current.planYear,
+          new_plan_id: data.new_plan_id,
+          new_plan_year: data.new_plan_year,
+          ...(data.override_reason_code && {
+            override_reason_code: data.override_reason_code,
+            override_reason_note: data.override_reason_note ?? null,
+          }),
+        },
+      });
+      if (!manualAudit.ok) {
+        throw new TxAbort({ type: 'audit_failed' });
+      }
 
       if (bundleChanged) {
         const bundleAudit = await deps.audit.recordInTx(tx, deps.tenant, {

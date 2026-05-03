@@ -19,9 +19,11 @@ import {
   date,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   uuid,
@@ -108,6 +110,38 @@ export const members = pgTable(
     // white-label phase). Allowed values enforced by CHECK in migration
     // 0082 — must be one of `en|th|sv` to match `Locale` union.
     preferredLocale: text('preferred_locale'),
+
+    // F8 Phase 2 Wave C T025 — renewal opt-out + email-bounce + at-risk +
+    // auto-reactivate-blocked override. Migration `0094`.
+    renewalRemindersOptedOut: boolean('renewal_reminders_opted_out')
+      .notNull()
+      .default(false),
+    renewalRemindersOptedOutAt: timestamp('renewal_reminders_opted_out_at', {
+      withTimezone: true,
+    }),
+    emailUnverified: boolean('email_unverified').notNull().default(false),
+    emailUnverifiedAt: timestamp('email_unverified_at', { withTimezone: true }),
+    riskScore: smallint('risk_score'),
+    // 'healthy' | 'warning' | 'at-risk' | 'critical' (DB CHECK).
+    riskScoreBand: text('risk_score_band'),
+    riskScoreFactors: jsonb('risk_score_factors'),
+    riskScoreLastComputedAt: timestamp('risk_score_last_computed_at', {
+      withTimezone: true,
+    }),
+    riskSnoozedUntil: timestamp('risk_snoozed_until', { withTimezone: true }),
+    blockedFromAutoReactivation: boolean('blocked_from_auto_reactivation')
+      .notNull()
+      .default(false),
+    blockedFromAutoReactivationAt: timestamp(
+      'blocked_from_auto_reactivation_at',
+      { withTimezone: true },
+    ),
+    blockedFromAutoReactivationSetByUserId: uuid(
+      'blocked_from_auto_reactivation_set_by_user_id',
+    ),
+    blockedFromAutoReactivationReason: text(
+      'blocked_from_auto_reactivation_reason',
+    ),
 
     // Audit metadata
     createdAt: timestamp('created_at', { withTimezone: true })

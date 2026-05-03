@@ -27,6 +27,7 @@
     "check:layout": "tsx scripts/check-layout-container-usage.ts",
     "check:audit-events": "tsx scripts/check-audit-event-count.ts",
     "check:bundle-budgets": "tsx scripts/check-bundle-budgets.ts",
+    "check:multi-tenant": "node --env-file=.env.local --import tsx scripts/check-multi-tenant-ready.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=.env.local --import tsx scripts/run-migrations.ts",
     "db:migrate:prod": "node --env-file=.env.production --import tsx scripts/run-migrations.ts",
