@@ -66,17 +66,17 @@
 
 ### Domain Layer (zero framework imports)
 
-- [ ] T030 [P] Domain value object `tier-bucket.ts` in `src/modules/renewals/domain/value-objects/tier-bucket.ts` — 5-value enum
-- [ ] T031 [P] Domain value object `cycle-status.ts` — 7-value enum + invariants
-- [ ] T032 [P] Domain value object `risk-band.ts` — 4-value enum + threshold computation
-- [ ] T033 [P] Domain value object `reminder-step.ts` — schedule policy step shape
-- [ ] T034 [P] Domain entity `renewal-cycle.ts` in `src/modules/renewals/domain/renewal-cycle.ts` + spec.ts — state-machine invariants per data-model.md § 2.1
-- [ ] T035 [P] Domain entity `tier-upgrade-suggestion.ts` + spec.ts — 6-status state-machine + invariants
-- [ ] T036 [P] Domain entity `renewal-escalation-task.ts` + spec.ts — 3-status lifecycle
-- [ ] T037 [P] Domain entity `renewal-link-token.ts` + spec.ts — payload type + invariants per research.md R1
-- [ ] T038 [P] Domain entity `at-risk-score.ts` + property-based fast-check spec.ts — 8-factor formula + F6-readiness fallback per FR-029 + FR-029a
-- [ ] T039 [P] Domain entity `tenant-renewal-settings.ts` + spec.ts
-- [ ] T040 [P] Domain entity `tenant-renewal-schedule-policy.ts` + spec.ts — bucket→steps mapping
+- [X] T030 [P] Domain value object `tier-bucket.ts` in `src/modules/renewals/domain/value-objects/tier-bucket.ts` — 5-value enum
+- [X] T031 [P] Domain value object `cycle-status.ts` — 7-value enum + invariants
+- [X] T032 [P] Domain value object `risk-band.ts` — 4-value enum + threshold computation
+- [X] T033 [P] Domain value object `reminder-step.ts` — schedule policy step shape
+- [X] T034 [P] Domain entity `renewal-cycle.ts` in `src/modules/renewals/domain/renewal-cycle.ts` + spec.ts — state-machine invariants per data-model.md § 2.1
+- [X] T035 [P] Domain entity `tier-upgrade-suggestion.ts` + spec.ts — 6-status state-machine + invariants
+- [X] T036 [P] Domain entity `renewal-escalation-task.ts` + spec.ts — 3-status lifecycle
+- [X] T037 [P] Domain entity `renewal-link-token.ts` + spec.ts — payload type + invariants per research.md R1
+- [X] T038 [P] Domain entity `at-risk-score.ts` + property-based fast-check spec.ts — 8-factor formula + F6-readiness fallback per FR-029 + FR-029a
+- [X] T039 [P] Domain entity `tenant-renewal-settings.ts` + spec.ts
+- [X] T040 [P] Domain entity `tenant-renewal-schedule-policy.ts` + spec.ts — bucket→steps mapping
 
 ### Application Ports (interfaces only)
 
