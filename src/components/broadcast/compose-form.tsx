@@ -317,6 +317,20 @@ export function ComposeForm({
             tabIndex={-1}
             className="space-y-2 outline-none"
             aria-invalid={bodyInvalid || serverError?.field === 'body' || undefined}
+            // QA T191 fix (2026-05-03) — WCAG 3.3.1: SR users hearing
+            // `aria-invalid` need the error reason programmatically
+            // associated. The error <p> below carries id="broadcast-
+            // body-error"; this `aria-describedby` wires the chain.
+            // Note: ideally the inner Tiptap `contenteditable` would
+            // also receive the describedby via `editorProps.attributes`
+            // but that requires a TiptapEditor prop addition; the
+            // wrapper-div-level association is what most SR pipelines
+            // resolve to anyway when `aria-invalid` is on the wrapper.
+            aria-describedby={
+              bodyInvalid || serverError?.field === 'body'
+                ? 'broadcast-body-error'
+                : undefined
+            }
           >
             <Label id="broadcast-body-label">{t('fields.bodyLabel')}</Label>
             <TiptapEditor
@@ -329,11 +343,19 @@ export function ComposeForm({
               labelledById="broadcast-body-label"
             />
             {serverError?.field === 'body' ? (
-              <p className="text-xs text-destructive" role="alert">
+              <p
+                id="broadcast-body-error"
+                className="text-xs text-destructive"
+                role="alert"
+              >
                 {serverError.message}
               </p>
             ) : bodyInvalid ? (
-              <p className="text-xs text-destructive" role="alert">
+              <p
+                id="broadcast-body-error"
+                className="text-xs text-destructive"
+                role="alert"
+              >
                 {tErr('broadcast_body_too_large')}
               </p>
             ) : null}

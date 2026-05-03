@@ -21,7 +21,38 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 
 import { runInTenant } from '@/lib/db';
+import { errorChainMessage } from '@/lib/db-errors';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
+
+/**
+ * QA fix (2026-05-03) — Drizzle 0.45+ wraps the Postgres trigger
+ * exception so `rejects.toThrow(/broadcast_immutable_after_submit/)`
+ * does not match the top-level message. Use `errorChainMessage`
+ * (existing helper in `src/lib/db-errors.ts`) to walk the `cause`
+ * chain and substring-match against the trigger's RAISE EXCEPTION
+ * text.
+ */
+async function expectImmutableAfterSubmitTrigger(
+  fn: () => Promise<unknown>,
+): Promise<void> {
+  let caught: unknown = null;
+  try {
+    await fn();
+  } catch (e) {
+    caught = e;
+  }
+  if (caught === null) {
+    throw new Error(
+      'Expected trigger to raise but UPDATE succeeded silently',
+    );
+  }
+  const chain = errorChainMessage(caught);
+  if (!/broadcast_immutable_after_submit/.test(chain)) {
+    throw new Error(
+      `Expected trigger message in cause chain but got: ${chain}`,
+    );
+  }
+}
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -119,58 +150,58 @@ describe('F7 immutable-after-submit DB trigger (R6 W-T1)', () => {
   });
 
   it('UPDATE subject after submitted → raises check_violation', async () => {
-    await expect(
+    await expectImmutableAfterSubmitTrigger(() =>
       runInTenant(tenant.ctx, (tx) =>
         tx
           .update(broadcasts)
           .set({ subject: 'TAMPERED SUBJECT' })
           .where(eq(broadcasts.broadcastId, broadcastId)),
       ),
-    ).rejects.toThrow(/broadcast_immutable_after_submit/);
+    );
   });
 
   it('UPDATE body_html after submitted → raises check_violation', async () => {
-    await expect(
+    await expectImmutableAfterSubmitTrigger(() =>
       runInTenant(tenant.ctx, (tx) =>
         tx
           .update(broadcasts)
           .set({ bodyHtml: '<p>TAMPERED BODY</p>' })
           .where(eq(broadcasts.broadcastId, broadcastId)),
       ),
-    ).rejects.toThrow(/broadcast_immutable_after_submit/);
+    );
   });
 
   it('UPDATE body_source after submitted → raises check_violation', async () => {
-    await expect(
+    await expectImmutableAfterSubmitTrigger(() =>
       runInTenant(tenant.ctx, (tx) =>
         tx
           .update(broadcasts)
           .set({ bodySource: 'TAMPERED SOURCE' })
           .where(eq(broadcasts.broadcastId, broadcastId)),
       ),
-    ).rejects.toThrow(/broadcast_immutable_after_submit/);
+    );
   });
 
   it('UPDATE custom_recipient_emails after submitted → raises check_violation', async () => {
-    await expect(
+    await expectImmutableAfterSubmitTrigger(() =>
       runInTenant(tenant.ctx, (tx) =>
         tx
           .update(broadcasts)
           .set({ customRecipientEmails: ['extra@example.com'] })
           .where(eq(broadcasts.broadcastId, broadcastId)),
       ),
-    ).rejects.toThrow(/broadcast_immutable_after_submit/);
+    );
   });
 
   it('UPDATE scheduled_for after submitted → raises check_violation', async () => {
-    await expect(
+    await expectImmutableAfterSubmitTrigger(() =>
       runInTenant(tenant.ctx, (tx) =>
         tx
           .update(broadcasts)
           .set({ scheduledFor: new Date('2099-01-01T00:00:00Z') })
           .where(eq(broadcasts.broadcastId, broadcastId)),
       ),
-    ).rejects.toThrow(/broadcast_immutable_after_submit/);
+    );
   });
 
   // R7 staff-review MED-T1 fix — segment_type + segment_params
@@ -179,25 +210,25 @@ describe('F7 immutable-after-submit DB trigger (R6 W-T1)', () => {
   // custom_recipient_emails, scheduled_for); the prior 5 cases left
   // segment_type + segment_params untested.
   it('UPDATE segment_type after submitted → raises check_violation', async () => {
-    await expect(
+    await expectImmutableAfterSubmitTrigger(() =>
       runInTenant(tenant.ctx, (tx) =>
         tx
           .update(broadcasts)
           .set({ segmentType: 'tier' })
           .where(eq(broadcasts.broadcastId, broadcastId)),
       ),
-    ).rejects.toThrow(/broadcast_immutable_after_submit/);
+    );
   });
 
   it('UPDATE segment_params after submitted → raises check_violation', async () => {
-    await expect(
+    await expectImmutableAfterSubmitTrigger(() =>
       runInTenant(tenant.ctx, (tx) =>
         tx
           .update(broadcasts)
           .set({ segmentParams: { tierCodes: ['premium'] } })
           .where(eq(broadcasts.broadcastId, broadcastId)),
       ),
-    ).rejects.toThrow(/broadcast_immutable_after_submit/);
+    );
   });
 
   it('UPDATE status (legitimate lifecycle transition) → succeeds', async () => {

@@ -26,6 +26,7 @@ import type {
   Broadcast,
   BroadcastId,
 } from '@/modules/broadcasts/domain/broadcast';
+import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type {
   BroadcastsRepo,
 } from '@/modules/broadcasts/application/ports/broadcasts-repo';
@@ -126,7 +127,16 @@ function makeStubRepo(opts: {
         opts.applyTransitionThrows !== undefined &&
         idx === opts.applyTransitionThrows
       ) {
-        throw new Error('concurrent mutation: row in `sending`');
+        // QA fix (2026-05-03) — must be the typed sentinel because
+        // `cancelInFlightBroadcastsForMember` narrows catch to
+        // `instanceof BroadcastConcurrentMutationError` (R7 W-R2
+        // pattern); plain `Error` re-throws and the test counts
+        // 0 skippedConcurrent instead of 1.
+        throw new BroadcastConcurrentMutationError(
+          tenant.slug,
+          broadcastId,
+          'sending',
+        );
       }
       transitions.push({
         id: broadcastId as unknown as string,
