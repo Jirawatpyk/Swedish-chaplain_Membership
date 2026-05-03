@@ -1,0 +1,192 @@
+/**
+ * T051 (F8 Phase 2 Wave E) — `RenewalAuditEmitter` Application port.
+ *
+ * F8 emits **47 audit event types** to F1's existing `audit_log` table
+ * via this port. All events default to `retention_years = 5` (F8 has
+ * no tax-document overlap with F4's 10y retention). DB-side enum
+ * widening for the F8 events lands in subsequent Phase 5+ migrations
+ * as use-cases ship (Wave C migration 0095 already added 5 plan-change
+ * + manual-change events; the remaining 42 F8 events follow during
+ * user-story phases).
+ *
+ * Event taxonomy (mirrors specs/011-renewal-reminders/contracts/audit-port.md):
+ *   - Renewal lifecycle (20 events)
+ *   - Lapsed + bounce (3)
+ *   - At-risk (6)
+ *   - Tier-upgrade (10)
+ *   - Escalation (4)
+ *   - /speckit.clarify round 3 additions (6 — admin reactivation lifecycle)
+ *   - /speckit.critique round 1 additions (5)
+ *   = 54 total (audit-port.md drafts said 47/48 — actual count after
+ *     all clarify + critique adds is 54)
+ *
+ * Pure interface — no framework imports (Constitution Principle III).
+ */
+
+// ---------------------------------------------------------------------------
+// Event-type tuple + union
+// ---------------------------------------------------------------------------
+
+export const F8_AUDIT_EVENT_TYPES = [
+  // --- Renewal lifecycle (20 — data-model.md § 4) -------------------------
+  'renewal_cycle_created',
+  'renewal_cycle_cancelled',
+  'renewal_cycle_completed_offline',
+  'renewal_lapsed',
+  'renewal_reminder_sent',
+  'renewal_reminder_skipped',
+  'renewal_reminder_send_failed',
+  'renewal_schedule_rescheduled',
+  'renewal_schedule_policy_updated',
+  'renewal_self_service_initiated',
+  'renewal_invoice_created',
+  'renewal_with_plan_change',
+  'renewal_payment_failed',
+  'renewal_completed',
+  'renewal_completed_post_lapse',
+  'renewal_token_invalid',
+  'renewal_kill_switch_blocked',
+  'renewal_cross_tenant_probe',
+  'renewal_cross_member_probe',
+  'renewal_reminder_deferred_read_only',
+  // /speckit.clarify round 3 additions
+  'renewal_cycle_price_frozen',
+  'lapsed_member_admin_reactivated',
+  'lapsed_member_admin_reactivation_rejected',
+  'lapsed_member_admin_reactivation_timed_out',
+  'member_auto_reactivation_blocked',
+  'member_auto_reactivation_unblocked',
+  // --- Lapsed + bounce (3) ------------------------------------------------
+  'lapsed_member_action_blocked',
+  'member_email_unverified_threshold_crossed',
+  'f8_role_violation_blocked',
+  // --- At-risk (6) ---------------------------------------------------------
+  'at_risk_score_recomputed',
+  'at_risk_score_threshold_crossed',
+  'at_risk_snoozed',
+  'at_risk_outreach_recorded',
+  'at_risk_skipped_below_min_tenure',
+  'at_risk_compute_partial_failure',
+  // --- Tier upgrade (10) ---------------------------------------------------
+  'tier_upgrade_suggested',
+  'tier_upgrade_accepted',
+  'tier_upgrade_pending_member_notified',
+  'tier_upgrade_pending_admin_verification_due',
+  'tier_upgrade_applied_at_renewal',
+  'tier_upgrade_pending_superseded_by_manual_change',
+  'tier_upgrade_dismissed',
+  'tier_upgrade_already_at_target',
+  'tier_upgrade_tenant_disabled',
+  'tier_upgrade_skipped_no_thresholds_configured',
+  // --- Escalation (4) ------------------------------------------------------
+  'escalation_task_created',
+  'escalation_task_completed',
+  'escalation_task_skipped',
+  'escalation_task_reassigned',
+  // --- /speckit.critique 2026-05-03 round 1 additions (5) -----------------
+  'cron_dispatch_orchestrated',
+  'renewal_reminder_send_failed_permanent',
+  'renewal_reminder_retried',
+  'renewal_skipped_no_joined_at',
+  'tier_upgrade_pending_orphan_detected',
+] as const;
+
+export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
+
+/**
+ * Compile-time count check — keeps the const tuple in sync with the
+ * audit-port.md catalogue. F7 audit-port uses an identical pattern.
+ * If you add or remove an entry above, update both this assertion +
+ * the audit-port.md table verification at /speckit.review time.
+ */
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 54
+  ? true
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 54';
+const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
+// Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
+void _assertF8AuditEventCount;
+
+/** All F8 events ship with 5-year retention (no tax-doc overlap). */
+export const F8_AUDIT_RETENTION_YEARS = 5 as const;
+
+export function isF8AuditEventType(
+  eventType: unknown,
+): eventType is F8AuditEventType {
+  return (
+    typeof eventType === 'string' &&
+    (F8_AUDIT_EVENT_TYPES as readonly string[]).includes(eventType)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Event payload + emit input
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-event payload shape map. Wave E exposes a permissive
+ * `Record<string, unknown>` per event type so emit sites can land
+ * during user-story phases without refactoring this port file. The
+ * audit-emitter Infrastructure adapter (Wave G+) validates the
+ * concrete shape against zod schemas mirroring
+ * `specs/011-renewal-reminders/contracts/audit-port.md` § 2 before
+ * writing to F1's audit_log table.
+ *
+ * When a use-case ships emitting a specific event, refine the
+ * corresponding entry from `Record<string, unknown>` to a typed
+ * interface as a follow-up edit (small + reviewable).
+ */
+export type F8AuditPayloadShapes = {
+  readonly [K in F8AuditEventType]: Record<string, unknown>;
+};
+
+export type F8AuditPayloadFor<E extends F8AuditEventType> =
+  F8AuditPayloadShapes[E];
+
+export interface F8AuditEvent<E extends F8AuditEventType = F8AuditEventType> {
+  readonly type: E;
+  readonly payload: F8AuditPayloadFor<E>;
+}
+
+export interface AuditContext {
+  readonly tenantId: string;
+  /** Null for cron / system actors per audit-port.md. */
+  readonly actorUserId: string | null;
+  readonly actorRole:
+    | 'admin'
+    | 'manager'
+    | 'member'
+    | 'cron'
+    | 'webhook'
+    | 'system';
+  /** OTel trace id for log+trace correlation. */
+  readonly correlationId: string;
+  readonly requestId?: string | null;
+  /** Optional human-readable summary (truncated to 500 chars by adapter). */
+  readonly summary?: string;
+}
+
+/**
+ * Renewal audit emitter. Two flavours:
+ *
+ *   - `emit(event, ctx)` — fire-and-forget; adapter handles its own
+ *     retry/swallow internally + never throws into the caller. Used
+ *     by side-effects that must NOT block the use-case (e.g. probe
+ *     audits inside cross-tenant detection paths).
+ *
+ *   - `emitInTx(tx, event, ctx)` — atomic with the surrounding state
+ *     mutation per Constitution Principle VIII. Throws on failure
+ *     so the caller's tx rolls back. Used by every use-case that
+ *     mutates state + must guarantee state ↔ audit consistency.
+ */
+export interface RenewalAuditEmitter {
+  emit<E extends F8AuditEventType>(
+    event: F8AuditEvent<E>,
+    ctx: AuditContext,
+  ): Promise<void>;
+
+  emitInTx<E extends F8AuditEventType>(
+    tx: unknown,
+    event: F8AuditEvent<E>,
+    ctx: AuditContext,
+  ): Promise<void>;
+}

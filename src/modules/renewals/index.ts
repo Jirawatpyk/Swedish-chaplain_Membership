@@ -151,3 +151,89 @@ export {
   type TenantRenewalSchedulePolicy,
   type SchedulePolicyError,
 } from './domain/tenant-renewal-schedule-policy';
+
+// --- Application ports (Wave E T041-T051) -----------------------------------
+// Pure interfaces — no adapter implementations until Wave G+.
+export {
+  CycleNotFoundError,
+  CycleTransitionConflictError,
+  type RenewalCycleRepo,
+  type NewRenewalCycleInput,
+  type ListRenewalCyclesOpts,
+  type RenewalCyclePage,
+} from './application/ports/renewal-cycle-repo';
+
+export {
+  ReminderEventNotFoundError,
+  type RenewalReminderEventRepo,
+  type ReminderEvent,
+  type ReminderEventChannel,
+  type ReminderEventStatus,
+  type NewReminderEventInput,
+  type ReminderEventTransitionInput,
+} from './application/ports/renewal-reminder-event-repo';
+
+export {
+  TierUpgradeOpenConflictError,
+  TierUpgradeSuggestionNotFoundError,
+  type TierUpgradeSuggestionRepo,
+  type NewTierUpgradeSuggestionInput,
+} from './application/ports/tier-upgrade-suggestion-repo';
+
+export {
+  EscalationTaskNotFoundError,
+  type RenewalEscalationTaskRepo,
+  type NewEscalationTaskInput,
+  type ListEscalationTasksOpts,
+  type EscalationTaskPage,
+} from './application/ports/renewal-escalation-task-repo';
+
+export type {
+  TenantRenewalSettingsRepo,
+  UpdateTenantRenewalSettingsInput,
+} from './application/ports/tenant-renewal-settings-repo';
+
+export type {
+  TenantRenewalSchedulePolicyRepo,
+} from './application/ports/tenant-renewal-schedule-policy-repo';
+
+export type {
+  RenewalGateway,
+  SendRenewalEmailInput,
+  SendRenewalEmailResult,
+  SendRenewalEmailError,
+  RenewalEmailRecipient,
+  SupportedLocale,
+} from './application/ports/renewal-gateway';
+
+export type {
+  RenewalLinkTokenSigner,
+  SignedRenewalLinkToken,
+} from './application/ports/renewal-link-token-signer';
+
+export type {
+  RenewalLinkTokenVerifier,
+  VerifiedRenewalLinkToken,
+  VerifyTokenError,
+  VerifyTokenContext,
+} from './application/ports/renewal-link-token-verifier';
+
+export type {
+  EventAttendeesPort,
+  EventAttendanceRecord,
+  ListAttendancesOpts,
+} from './application/ports/event-attendees-port';
+
+export type { AtRiskScorer } from './application/ports/at-risk-scorer';
+
+export {
+  F8_AUDIT_EVENT_TYPES,
+  F8_AUDIT_RETENTION_YEARS,
+  isF8AuditEventType,
+  type RenewalAuditEmitter,
+  type F8AuditEvent,
+  type F8AuditEventType,
+  type F8AuditPayloadShapes,
+  type F8AuditPayloadFor,
+  type AuditContext,
+} from './application/ports/renewal-audit-emitter';

@@ -82,17 +82,17 @@
 
 ### Application Ports (interfaces only)
 
-- [ ] T041 [P] Port `renewal-cycle-repo.ts` in `src/modules/renewals/application/ports/`
-- [ ] T042 [P] Port `renewal-reminder-event-repo.ts`
-- [ ] T043 [P] Port `tier-upgrade-suggestion-repo.ts`
-- [ ] T044 [P] Port `renewal-escalation-task-repo.ts`
-- [ ] T045 [P] Port `tenant-renewal-settings-repo.ts`
-- [ ] T046 [P] Port `tenant-renewal-schedule-policy-repo.ts`
-- [ ] T047 [P] Port `renewal-gateway.ts` — transactional email dispatch (uses F1+F4 transactional Resend)
-- [ ] T048 [P] Port `renewal-link-token-signer.ts` + `renewal-link-token-verifier.ts` (HMAC + dual-key rotation per R16)
-- [ ] T049 [P] Port `event-attendees-port.ts` — F6 readiness probe per R5 contract assertion
-- [ ] T050 [P] Port `at-risk-scorer.ts`
-- [ ] T051 [P] Port `renewal-audit-emitter.ts` — emits all 58 audit events per audit-port.md
+- [X] T041 [P] Port `renewal-cycle-repo.ts` in `src/modules/renewals/application/ports/`
+- [X] T042 [P] Port `renewal-reminder-event-repo.ts`
+- [X] T043 [P] Port `tier-upgrade-suggestion-repo.ts`
+- [X] T044 [P] Port `renewal-escalation-task-repo.ts`
+- [X] T045 [P] Port `tenant-renewal-settings-repo.ts`
+- [X] T046 [P] Port `tenant-renewal-schedule-policy-repo.ts`
+- [X] T047 [P] Port `renewal-gateway.ts` — transactional email dispatch (uses F1+F4 transactional Resend)
+- [X] T048 [P] Port `renewal-link-token-signer.ts` + `renewal-link-token-verifier.ts` (HMAC + dual-key rotation per R16)
+- [X] T049 [P] Port `event-attendees-port.ts` — F6 readiness probe per R5 contract assertion
+- [X] T050 [P] Port `at-risk-scorer.ts`
+- [X] T051 [P] Port `renewal-audit-emitter.ts` — emits all 58 audit events per audit-port.md
 
 ### Cross-tenant Integration Test (Review-Gate Blocker per Constitution Principle I)
 
