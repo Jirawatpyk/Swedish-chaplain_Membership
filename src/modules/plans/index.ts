@@ -277,6 +277,38 @@ export {
   type PlanLookupError,
 } from './application/get-plan-for-member';
 
+// --- F8 cross-module use-cases (Wave B — Complexity Tracking #4) -----------
+// `scheduled_plan_changes` table ships in Wave C migration 0086
+// (data-model.md § 2.9). The Drizzle adapter implementing
+// `ScheduledPlanChangeRepo` lands when US5 wires the F4 renewal-
+// invoice-creation hook (Phase 5+); Wave B contract tests use an
+// in-memory mock.
+export { scheduleNextRenewalPlanChange } from './application/schedule-next-renewal-plan-change';
+export { getEffectivePlanForRenewal } from './application/get-effective-plan-for-renewal';
+export type {
+  ScheduleNextRenewalPlanChangeDeps,
+} from './application/schedule-next-renewal-plan-change';
+export type {
+  GetEffectivePlanForRenewalDeps,
+  GetEffectivePlanForRenewalInput,
+} from './application/get-effective-plan-for-renewal';
+export type {
+  ScheduledPlanChangeRepo,
+  CurrentPlanResolverPort,
+} from './application/ports';
+export {
+  SCHEDULED_PLAN_CHANGE_STATUSES,
+  isTerminalStatus,
+} from './domain/scheduled-plan-change';
+export type {
+  ScheduledPlanChange,
+  ScheduledPlanChangeStatus,
+  ScheduleNextRenewalPlanChangeInput,
+  ScheduleNextRenewalPlanChangeError,
+  EffectivePlanForRenewal,
+  GetEffectivePlanForRenewalError,
+} from './domain/scheduled-plan-change';
+
 // F7 bridge — concrete `PlanRepo` instance moved out of the public barrel
 // 2026-05-01: Public barrel re-exporting Infrastructure caused the client
 // bundler to pull postgres + pino into Client Components

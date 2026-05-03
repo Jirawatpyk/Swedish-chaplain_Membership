@@ -55,15 +55,18 @@ import {
 
 // ── In-memory repo helpers ────────────────────────────────────────────────────
 
+// Mutable mirror so the in-memory repo can flip readonly fields to
+// simulate the Drizzle adapter's UPDATE behaviour without `as any` casts.
+type MutableScheduledPlanChange = {
+  -readonly [K in keyof ScheduledPlanChange]: ScheduledPlanChange[K];
+};
+
 function makeMemoryRepo(seed: ScheduledPlanChange[] = []): ScheduledPlanChangeRepo {
-  const rows: ScheduledPlanChange[] = [...seed];
+  const rows: MutableScheduledPlanChange[] = seed.map((r) => ({ ...r }));
 
   return {
     insertPending: vi.fn(async (ctx, input) => {
-      // Mirror the partial unique: caller has already superseded any
-      // prior pending row for (member, cycle) before reaching insert,
-      // so this is unconditional.
-      const row: ScheduledPlanChange = {
+      const row: MutableScheduledPlanChange = {
         tenantId: ctx.slug,
         scheduledChangeId: `mem-${rows.length + 1}`,
         memberId: input.memberId,
@@ -98,7 +101,6 @@ function makeMemoryRepo(seed: ScheduledPlanChange[] = []): ScheduledPlanChangeRe
           r.tenantId === ctx.slug && r.scheduledChangeId === scheduledChangeId,
       );
       if (!row) throw new Error(`row not found: ${scheduledChangeId}`);
-      // Transition guard mirrored in the use-case Domain check.
       if (row.status !== 'pending') {
         throw new Error(
           `cannot transition from terminal status ${row.status} → ${nextStatus}`,

@@ -209,6 +209,14 @@ export async function changePlan(
         throw new TxAbort({ type: 'audit_failed' });
       }
 
+      // T013 (F8 Phase 2) — `member_plan_manually_changed` emit
+      // deferred to Wave C alongside the DB-side `audit_event_type`
+      // pgEnum extension. Once the enum carries the new value AND the
+      // F3 union widens, this comment becomes the second
+      // `deps.audit.recordInTx(...)` call inside this same tx so F8
+      // supersede observes either both audits or neither (Principle
+      // VIII atomic state+audit). See members/application/ports/audit-port.ts.
+
       if (bundleChanged) {
         const bundleAudit = await deps.audit.recordInTx(tx, deps.tenant, {
           type: 'plan_bundle_changed',
