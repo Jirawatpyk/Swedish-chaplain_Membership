@@ -474,6 +474,74 @@ CREATE INDEX consumed_link_tokens_age_idx
 
 ---
 
+### 2.9 `scheduled_plan_changes` (F2 cross-module table — F8-PR-delivered)
+
+> **Doc-sync remediation** (added during /speckit.implement Wave B; closes data-model.md gap discovered at T011 start). Schema is authoritative for Wave C migration 0086. F2 owns the **logical schema** (the use-cases that read/write it live in `src/modules/plans/application/`); F8 owns the **migration delivery** (per F7 precedent of F8-owns-all-9-migrations + research.md R13).
+
+One pending row per (tenant, member, target renewal cycle). Captures an admin's intent to switch a member's plan AT the next renewal boundary, NOT immediately. F4's renewal-invoice-creation hook resolves the effective plan via this table; F8's accepted-tier-upgrade flow inserts here; F4 invoice-paid path transitions `pending → applied` atomically with `members.plan_id` update.
+
+```sql
+CREATE TABLE scheduled_plan_changes (
+  tenant_id              TEXT NOT NULL,
+  scheduled_change_id    UUID NOT NULL DEFAULT gen_random_uuid(),
+  member_id              UUID NOT NULL,
+  -- Renewal cycle this change becomes effective at. Resolved at F4
+  -- renewal-invoice-creation time when the new cycle is created.
+  effective_at_cycle_id  UUID NOT NULL,
+  from_plan_id           TEXT NOT NULL,    -- plan_id at scheduling time (snapshotted)
+  to_plan_id             TEXT NOT NULL,    -- target plan_id
+  scheduled_by_user_id   UUID NOT NULL,    -- admin who initiated (FK to users.id)
+  reason                 TEXT,             -- free-form audit note (≤500 chars at app layer)
+  status                 TEXT NOT NULL DEFAULT 'pending',
+  -- Lifecycle timestamps
+  scheduled_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  applied_at             TIMESTAMPTZ,      -- set when status flips to 'applied'
+  superseded_at          TIMESTAMPTZ,      -- set when status flips to 'superseded' (admin manual change beats this row)
+  cancelled_at           TIMESTAMPTZ,      -- set when status flips to 'cancelled' (admin explicit cancel)
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (tenant_id, scheduled_change_id),
+  CONSTRAINT scheduled_plan_changes_status_check
+    CHECK (status IN ('pending', 'applied', 'superseded', 'cancelled'))
+);
+
+-- One pending row per (tenant, member, effective cycle) — research.md R13 +
+-- tasks.md T017. Admin re-scheduling supersedes the prior pending row by
+-- flipping its status to 'superseded' (NOT by deleting), so audit trail
+-- retains every intent ever scheduled. The partial unique guarantees the
+-- "at most one pending" invariant.
+CREATE UNIQUE INDEX scheduled_plan_changes_pending_uniq
+  ON scheduled_plan_changes (tenant_id, member_id, effective_at_cycle_id)
+  WHERE status = 'pending';
+
+-- Hot-path lookup by (tenant, member, cycle) — F4's getEffectivePlanForRenewal
+-- resolver hits this on every renewal-invoice creation.
+CREATE INDEX scheduled_plan_changes_member_cycle_idx
+  ON scheduled_plan_changes (tenant_id, member_id, effective_at_cycle_id);
+
+ALTER TABLE scheduled_plan_changes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scheduled_plan_changes FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON scheduled_plan_changes
+  FOR ALL TO swecham_app_rw
+  USING (tenant_id = current_setting('app.current_tenant', TRUE))
+  WITH CHECK (tenant_id = current_setting('app.current_tenant', TRUE));
+```
+
+**Status state machine** (Domain invariant):
+
+```
+pending ──schedule (insert) ──┐
+                              ▼
+pending ──apply (F4 paid)──→ applied   (terminal)
+pending ──supersede (admin manual change-plan) ──→ superseded (terminal)
+pending ──cancel (admin explicit)─→ cancelled (terminal)
+```
+
+No transitions out of terminal states. A new `pending` row may be created after a terminal row exists for the same (member, cycle) — the partial unique permits it.
+
+---
+
 ## 3. Column extensions on existing tables
 
 ### 3.1 F3 `members` — 9 new columns (migration 0094 — extended at /speckit.tasks audit M1; +1 column added at /speckit.clarify round 3 Q1 + M2 sync)
