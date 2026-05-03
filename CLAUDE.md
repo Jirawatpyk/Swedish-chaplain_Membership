@@ -258,6 +258,7 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
   - **F6 EventAttendees stub-port**: F7 ships stub returning `[]`; F6 swaps in real impl at F6 ship.
   - **SLO budgets** (UNVERIFIED until T215 prod RUM): compose TTFB <600ms · submit <1.2s · queue <500ms @ 1k · approve&send <1.5s · webhook <250ms · unsubscribe <400ms.
   - **Audit event taxonomy**: see `src/modules/broadcasts/application/ports/audit-port.ts:32-97` for canonical 43-event list.
+- TypeScript 5.7+ strict (`strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`) — unchanged from F1+F2+F3+F4+F5+F7 (011-renewal-reminders)
 
 ## Recent Changes
 
