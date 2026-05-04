@@ -123,6 +123,11 @@ export interface RenewalCycleCompletedOfflinePayload {
   payment_method: 'bank_transfer' | 'cash' | 'cheque'
   payment_reference: string
   payment_date: ISO8601String
+  new_expires_at: ISO8601String  // Forensics: the cycle's expires_at
+                                  // post-completion (period_to + plan
+                                  // term). Round 5 contract sync —
+                                  // emit-site at mark-paid-offline.ts
+                                  // already includes this field.
 }
 
 export interface RenewalLapsedPayload {

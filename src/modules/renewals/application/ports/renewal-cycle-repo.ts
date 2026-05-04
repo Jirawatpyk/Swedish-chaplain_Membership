@@ -72,6 +72,21 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle | null>;
 
   /**
+   * Same as `findById` but accepts the caller's tx handle so the read
+   * participates in the surrounding transaction (and any advisory lock
+   * held inside it). Required by mutating use-cases that re-read after
+   * acquiring `acquireCycleLockInTx` to defeat TOCTOU windows — using
+   * the non-tx `findById` would open a separate connection and the
+   * re-read could observe a different snapshot from the lock-holding
+   * tx. Constitution Principle VIII (state↔audit atomicity).
+   */
+  findByIdInTx(
+    tx: unknown,
+    tenantId: string,
+    cycleId: CycleId,
+  ): Promise<RenewalCycle | null>;
+
+  /**
    * Find the unique active cycle for a member (status NOT IN
    * lapsed/cancelled/completed) per data-model.md § 2.1 invariant
    * L135. Returns null when the member has no active cycle.

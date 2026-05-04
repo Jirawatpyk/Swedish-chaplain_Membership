@@ -122,6 +122,12 @@ export async function cancelCycle(
     });
   }
 
+  // Round 5 W-03 — strip CRLF + ANSI escapes from admin-supplied reason
+  // before it lands in audit_log.payload + audit_log.summary so a
+  // log-aggregation tool that interprets ANSI cannot be used as a
+  // log-injection vector via the reason free-text field.
+  const sanitizedReason = input.reason.replace(/[\r\n\x1b]/g, ' ');
+
   // Atomic transition + audit emit.
   try {
     const closedAt = new Date().toISOString();
@@ -133,8 +139,12 @@ export async function cancelCycle(
       await deps.cyclesRepo.acquireCycleLockInTx(tx, input.tenantId, cycleId);
 
       // Re-load inside lock to defeat TOCTOU (state may have changed
-      // between findById and lock acquisition).
-      const lockedCycle = await deps.cyclesRepo.findById(
+      // between findById and lock acquisition). Round 5 B2 fix: use
+      // findByIdInTx with the lock-holding tx so the re-read sees the
+      // same snapshot as the lock — `findById` would open a separate
+      // tx and could observe stale state.
+      const lockedCycle = await deps.cyclesRepo.findByIdInTx(
+        tx,
         input.tenantId,
         cycleId,
       );
@@ -161,7 +171,7 @@ export async function cancelCycle(
           payload: {
             cycle_id: cycleId,
             member_id: lockedCycle.memberId as MemberId,
-            reason: input.reason,
+            reason: sanitizedReason,
             previous_status: lockedCycle.status,
           },
         },
@@ -171,7 +181,7 @@ export async function cancelCycle(
           actorRole: input.actorRole,
           correlationId: input.correlationId,
           requestId: input.requestId ?? null,
-          summary: `Admin cancelled renewal cycle ${cycleId}: ${input.reason.slice(0, 200)}`,
+          summary: `Admin cancelled renewal cycle ${cycleId}: ${sanitizedReason.slice(0, 200)}`,
         },
       );
       return ok({ status: 'cancelled' as const, closedAt });

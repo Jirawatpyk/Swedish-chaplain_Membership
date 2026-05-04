@@ -77,7 +77,7 @@ describe('F8AuditPayloadShapes — Round 3 typed shapes round-trip', () => {
     });
   });
 
-  it('tier_upgrade_pending_superseded_by_manual_change — open + accepted both compile', () => {
+  it('tier_upgrade_pending_superseded_by_manual_change — open + accepted both round-trip through stub', () => {
     const fromOpen: F8AuditPayloadFor<'tier_upgrade_pending_superseded_by_manual_change'> = {
       suggestion_id: asSuggestionId('00000000-0000-0000-0000-000000000aa1'),
       superseded_from_status: 'open',
@@ -90,7 +90,21 @@ describe('F8AuditPayloadShapes — Round 3 typed shapes round-trip', () => {
       manual_change_actor_user_id: asUserId('admin-1'),
       superseding_plan_id: asPlanId('plan-99'),
     };
-    expect(fromOpen.superseded_from_status).toBe('open');
+    // Round 5 S-08 — assert the captured log object actually preserves
+    // every branded-ID field (forensics-grade contract test).
+    const capturedOpen = captureLog({
+      type: 'tier_upgrade_pending_superseded_by_manual_change',
+      payload: fromOpen,
+    });
+    expect(capturedOpen).toMatchObject({
+      eventType: 'tier_upgrade_pending_superseded_by_manual_change',
+      payload: {
+        suggestion_id: '00000000-0000-0000-0000-000000000aa1',
+        superseded_from_status: 'open',
+        manual_change_actor_user_id: 'admin-1',
+        superseding_plan_id: 'plan-99',
+      },
+    });
     expect(fromAccepted.superseded_from_status).toBe('accepted_pending_apply');
   });
 
@@ -161,6 +175,24 @@ describe('F8AuditPayloadShapes — Round 3 typed shapes round-trip', () => {
     };
     expect(withProviderId.bounce_class).toBe('hard_bounce');
     expect(withoutProviderId.provider_message_id).toBeNull();
+
+    // Round 5 S-08 — round-trip the Sha256Hex brand through stub
+    // logging to confirm the field survives serialisation.
+    const captured = captureLog({
+      type: 'renewal_reminder_send_failed_permanent',
+      payload: withProviderId,
+    });
+    expect(captured).toMatchObject({
+      eventType: 'renewal_reminder_send_failed_permanent',
+      payload: {
+        cycle_id: '00000000-0000-0000-0000-000000000ccc',
+        step_id: 'T-30',
+        recipient_email_hashed:
+          'sha256:0000000000000000000000000000000000000000000000000000000000000abc',
+        bounce_class: 'hard_bounce',
+        provider_message_id: 'resend-abc',
+      },
+    });
   });
 
   it('lapsed_member_admin_reactivation_rejected — actor + nullable refund CN', () => {

@@ -182,8 +182,15 @@ export function PipelineTable({ rows }: PipelineTableProps) {
     [t, tActions, fmt],
   );
 
+  // Round 5 S-05 — memoise the data array reference so TanStack Table
+  // does NOT rebuild its internal row model on every parent re-render.
+  // The cast to mutable PipelineRow[] is safe (TanStack does not mutate)
+  // but the new array reference per render would otherwise force a
+  // ~1-2ms row-model rebuild at the 200-row cap.
+  const data = useMemo(() => rows as PipelineRow[], [rows]);
+
   const table = useReactTable({
-    data: rows as PipelineRow[],
+    data,
     columns,
     getCoreRowModel: getCoreRowModel(),
   });

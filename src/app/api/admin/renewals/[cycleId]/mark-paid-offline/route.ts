@@ -17,9 +17,28 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { markPaidOffline, makeRenewalsDeps } from '@/modules/renewals';
 
+/**
+ * Round 5 W-01 — Reject `payment_reference` strings that contain a
+ * 13–19-digit run (the standard PAN length range). F8 mark-paid-offline
+ * is for bank-transfer / cash / cheque references — there is no
+ * legitimate reason to paste a card number here, and `payment_reference`
+ * is persisted verbatim in `audit_log.payload`. Defence-in-depth against
+ * accidental PCI-scope expansion via operator paste error. Embedded
+ * spaces between digit groups still trigger the regex via the `[\s-]?`
+ * tolerance (`4111 1111 1111 1111` → 16 digits matched).
+ */
+const PAN_LIKE_RE = /(?:\d[\s-]?){13,19}/;
+
 const BodySchema = z.object({
   payment_method: z.enum(['bank_transfer', 'cash', 'cheque']),
-  payment_reference: z.string().min(1).max(100),
+  payment_reference: z
+    .string()
+    .min(1)
+    .max(100)
+    .refine((v) => !PAN_LIKE_RE.test(v), {
+      message:
+        'payment_reference contains a digit sequence that resembles a card number — F8 stores this field verbatim in the audit trail; refuse to persist',
+    }),
   payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
@@ -98,26 +117,50 @@ export async function POST(
             details: { current_status: result.error.currentStatus },
           });
         case 'f4_failure':
+          // Round 5 W-02 — log the F4 internal `reason` server-side
+          // for ops triage but do NOT echo it to the client. F4's
+          // reason can include schema/column names and partial row
+          // data which would leak into the admin UI.
+          logger.warn(
+            {
+              correlationId: ctx.correlationId,
+              cycleId,
+              tenantId: tenantCtx.slug,
+              f4Stage: result.error.stage,
+              f4Reason: result.error.reason,
+            },
+            'mark-paid-offline: F4 chain failed (reason scrubbed from HTTP response)',
+          );
           return errorResponse({
             status: 502,
             code: 'f4_failure',
             correlationId: ctx.correlationId,
             details: {
               stage: result.error.stage,
-              reason: result.error.reason,
             },
           });
         case 'f4_orphan_invoice':
           // 409 (conflict) — admin must resume from F4 invoice list.
           // The error envelope carries the orphan invoice id so the UI
           // can deep-link "View invoice" + show DO-NOT-RETRY guidance.
+          // Round 5 W-02 — same reason-scrubbing rationale as
+          // f4_failure above.
+          logger.warn(
+            {
+              correlationId: ctx.correlationId,
+              cycleId,
+              tenantId: tenantCtx.slug,
+              orphanInvoiceId: result.error.orphanInvoiceId,
+              f4Reason: result.error.reason,
+            },
+            'mark-paid-offline: F4 orphan invoice (reason scrubbed from HTTP response)',
+          );
           return errorResponse({
             status: 409,
             code: 'f4_orphan_invoice',
             correlationId: ctx.correlationId,
             details: {
               orphan_invoice_id: result.error.orphanInvoiceId,
-              reason: result.error.reason,
             },
           });
       }

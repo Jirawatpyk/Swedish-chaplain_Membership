@@ -185,13 +185,23 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
     }
 
     // F4's `Invoice` carries a `paidAt` ISO string when status=paid.
-    // Defensive narrowing — `paidAt` is set on success per the
-    // `recordPayment` contract.
-    const paidAtRaw =
-      (paid.value as { paidAt?: string | Date | null }).paidAt ??
-      new Date().toISOString();
+    // Round 5 W-07 — drop the silent `new Date()` fallback. If F4's
+    // contract changes the field name or removes it, falling back to
+    // "now" would silently mis-stamp the audit + cycle.closedAt
+    // relative to F4's internal `paid_at`. Throw with cycle context so
+    // the outer runInTenant rolls back loudly + Sentry captures the
+    // contract drift instead of letting it propagate as a stale
+    // timestamp.
+    const paidAtField = (paid.value as { paidAt?: string | Date | null })
+      .paidAt;
+    if (paidAtField == null) {
+      throw new Error(
+        `f4-invoice-bridge: F4 recordPayment returned ok but value.paidAt is ` +
+          `null/undefined for invoiceId=${invoiceId} — F4 contract regression`,
+      );
+    }
     const paidAtIso =
-      paidAtRaw instanceof Date ? paidAtRaw.toISOString() : String(paidAtRaw);
+      paidAtField instanceof Date ? paidAtField.toISOString() : String(paidAtField);
 
     return ok({
       invoiceId,

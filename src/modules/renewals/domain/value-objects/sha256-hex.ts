@@ -36,6 +36,13 @@ export function asSha256Hex(raw: string): Sha256Hex {
 /**
  * Validates SHA-256 hex format. Lowercases input before regex check so
  * uppercase + mixed-case inputs are normalised to canonical form.
+ *
+ * TODO(F8-Phase4): Phase 4's `renewal_reminder_send_failed_permanent`
+ * emit site MUST hash the recipient email through this validator
+ * (NOT `asSha256Hex`) so the audit log never carries a plaintext or
+ * malformed digest. The `recipient_email_hashed` payload field is
+ * branded `Sha256Hex` to enforce this at the type level — the only
+ * way to construct the brand from raw input is `parseSha256Hex`.
  */
 export function parseSha256Hex(
   raw: string,

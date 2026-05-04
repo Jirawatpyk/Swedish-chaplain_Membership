@@ -109,6 +109,7 @@ function fakeDeps(
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     cyclesRepo: {
       findById: vi.fn(async () => cycle),
+      findByIdInTx: vi.fn(async () => cycle),
       transitionStatus: transitionMock,
       acquireCycleLockInTx: vi.fn(async () => {}),
     } as unknown as RenewalsDeps['cyclesRepo'],

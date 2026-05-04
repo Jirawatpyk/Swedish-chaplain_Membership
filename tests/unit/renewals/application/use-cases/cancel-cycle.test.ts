@@ -73,6 +73,7 @@ function fakeDeps(
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     cyclesRepo: {
       findById: vi.fn(async () => cycle),
+      findByIdInTx: vi.fn(async () => cycle),
       transitionStatus: transitionMock,
       acquireCycleLockInTx: acquireLockMock,
     } as unknown as RenewalsDeps['cyclesRepo'],
@@ -124,6 +125,28 @@ describe('cancelCycle (T058) — happy path', () => {
   // moves emitInTx ahead of the mutation, or wraps transitionStatus in
   // a swallowing try/catch, would silently break state↔audit atomicity
   // (Constitution Principle VIII).
+  // Round 5 W-10 — reverse-direction state↔audit atomicity. If audit
+  // emit fails inside the tx, the throw must propagate to the outer
+  // runInTenant which rolls the state mutation back. Without this, a
+  // future refactor that swallows emit errors would silently commit
+  // the state change without an audit row — Constitution Principle
+  // VIII violation.
+  it('throws on emitInTx DB-fault so the outer tx rolls back (state↔audit atomicity reverse)', async () => {
+    const cycle = buildCycle();
+    const { deps, transitionMock, emitInTxMock } = fakeDeps(cycle);
+    emitInTxMock.mockRejectedValueOnce(new Error('audit_log: insert failed'));
+    await expect(cancelCycle(deps, baseInput)).rejects.toThrow(
+      /audit_log.*insert failed/,
+    );
+    // The transition fired (it ran before the audit); the test's
+    // contract is that the OUTER runInTenant treats this as an
+    // unresolved error so the surrounding tx rolls back. The mock-tx
+    // doesn't actually persist anything — the assertion is that the
+    // throw propagates rather than being caught and converted to a
+    // success Result.
+    expect(transitionMock).toHaveBeenCalledTimes(1);
+  });
+
   it('does NOT emit audit if transitionStatus rejects (state↔audit atomicity)', async () => {
     const cycle = buildCycle();
     const { deps, emitInTxMock, acquireLockMock } = fakeDeps(cycle, async () => {

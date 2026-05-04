@@ -245,7 +245,15 @@ function buildNextCursor(
  *
  * Bucket boundaries (FR-046, half-open windows so each cycle lands in
  * exactly one bucket):
- *   t-90:  expires_at  > NOW() + 60 days     (60..90+ days out)
+ *   t-90:  expires_at  > NOW() + 60 days     (60..90 days — outer rim of the
+ *                                              90-day pipeline window. Bucket
+ *                                              name reflects "as of T-minus 90
+ *                                              days from expiry"; the upper
+ *                                              bound is enforced by the
+ *                                              surrounding `expires_at <= NOW()
+ *                                              + 90 days` baseFilter so cycles
+ *                                              90+ days out never enter the
+ *                                              result set.)
  *   t-60:  expires_at  > NOW() + 30 days     (30..60 days)
  *   t-30:  expires_at  > NOW() + 14 days     (14..30 days)
  *   t-14:  expires_at  > NOW() +  7 days     (7..14 days)
@@ -318,6 +326,30 @@ export function makeDrizzleRenewalCycleRepo(
           .limit(1);
         return rows[0] ? rowToDomain(rows[0]) : null;
       });
+    },
+
+    /**
+     * Tx-bound variant of `findById` — Round 5 staff review B2 fix.
+     * Uses the caller's tx handle so the read participates in the
+     * surrounding transaction (and any advisory lock held in it).
+     * Critical for the cancel-cycle + mark-paid-offline lock-protected
+     * re-read to defeat TOCTOU. Tenant context is established by the
+     * caller via `runInTenant` — this method does NOT re-open the
+     * scope, so it MUST only be called from inside a `runInTenant`
+     * block where `SET LOCAL app.current_tenant` is already set.
+     */
+    async findByIdInTx(
+      tx: unknown,
+      _tenantId: string,
+      cycleId: CycleId,
+    ): Promise<RenewalCycle | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select()
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1);
+      return rows[0] ? rowToDomain(rows[0]) : null;
     },
 
     async findActiveForMember(
@@ -550,7 +582,11 @@ export function makeDrizzleRenewalCycleRepo(
         // see accurate totals across the whole window even when paging.
         // Tenant-scoped automatically by the surrounding runInTenant
         // RLS context.
-        const summaryRows = await tx
+        //
+        // Round 5 W-13 — summary + lapsedCount run in parallel via
+        // Promise.all (independent queries). Saves ~5-10ms per page
+        // render under Neon serverless round-trip cost.
+        const summaryQueryPromise = tx
           .select({
             urgency: URGENCY_CASE_SQL.as('urgency'),
             count: sql<number>`count(*)::int`,
@@ -558,6 +594,26 @@ export function makeDrizzleRenewalCycleRepo(
           .from(renewalCycles)
           .where(and(...baseFilters))
           .groupBy(URGENCY_CASE_SQL);
+
+        // Lapsed count is queried separately because the window filter
+        // for non-lapsed pages excludes lapsed cycles entirely.
+        // Round 5 W-06 — apply the active tier filter so the lapsed
+        // badge reflects the SAME slice the user is viewing. Without
+        // this, the badge silently shows whole-tenant lapsed total
+        // even when the user filtered by tier.
+        const lapsedFilters: SQL[] = [eq(renewalCycles.status, 'lapsed')];
+        if (opts.tier) {
+          lapsedFilters.push(eq(renewalCycles.tierAtCycleStart, opts.tier));
+        }
+        const lapsedCountQueryPromise = tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(renewalCycles)
+          .where(and(...lapsedFilters));
+
+        const [summaryRows, lapsedCountRows] = await Promise.all([
+          summaryQueryPromise,
+          lapsedCountQueryPromise,
+        ]);
 
         const byUrgency: Record<UrgencyBucket, number> = {
           't-90': 0,
@@ -577,13 +633,6 @@ export function makeDrizzleRenewalCycleRepo(
             totalInWindow += r.count;
           }
         }
-
-        // Lapsed count is queried separately because the window filter
-        // for non-lapsed pages excludes lapsed cycles entirely.
-        const lapsedCountRows = await tx
-          .select({ count: sql<number>`count(*)::int` })
-          .from(renewalCycles)
-          .where(eq(renewalCycles.status, 'lapsed'));
         const lapsedCount = lapsedCountRows[0]?.count ?? 0;
 
         // Page query: filter + cursor + ORDER BY (expires_at, cycle_id) ASC + limit+1

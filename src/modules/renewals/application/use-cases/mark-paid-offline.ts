@@ -108,6 +108,17 @@ function deriveNewExpiresAt(currentPeriodToIso: string, termMonths: number): str
   return d.toISOString();
 }
 
+/**
+ * Round 5 S-04 — Bangkok fiscal year extraction. Asia/Bangkok is UTC+7
+ * with no DST so a fixed +7h offset converts a UTC instant to the
+ * corresponding BKK calendar year. Required because the F4 sequential
+ * -number allocator buckets per fiscal year and a UTC-year mismatch
+ * would burn a sequence in the wrong bucket at BKK midnight boundaries.
+ */
+function bangkokFiscalYearOf(utcIso: string): number {
+  return new Date(Date.parse(utcIso) + 7 * 3600_000).getUTCFullYear();
+}
+
 export async function markPaidOffline(
   deps: RenewalsDeps,
   rawInput: MarkPaidOfflineInput,
@@ -173,13 +184,15 @@ export async function markPaidOffline(
   // the fee. The cycle-vs-invoice price drift assertion lives in the
   // integration test for offline mark-paid; a runtime mismatch would
   // surface there before reaching production.
-  const planYear = new Date(preLoad.periodFrom).getUTCFullYear();
+  //
+  // Round 5 S-04 — Bangkok-local fiscal year. UTC `getUTCFullYear()` is
+  // wrong at BKK boundaries: a period_from of 2026-12-31T17:00:00Z =
+  // 2027-01-01 00:00 BKK belongs to fiscal year 2027, but UTC reads
+  // 2026. Add +7h offset before extracting the year so the F4 sequential
+  // -number allocator buckets the invoice in the correct fiscal year.
+  const planYear = bangkokFiscalYearOf(preLoad.periodFrom);
   const planId = preLoad.planIdAtCycleStart;
   const memberId = preLoad.memberId;
-  const newExpiresAt = deriveNewExpiresAt(
-    preLoad.periodTo,
-    preLoad.frozenPlanTermMonths,
-  );
 
   // Outer atomic boundary — F4 chain step 3 (recordPayment) reuses
   // this tx; cycle flip + audit emit ride along.
@@ -190,8 +203,12 @@ export async function markPaidOffline(
       // Principle III — Application has no SQL/ORM dependency).
       await deps.cyclesRepo.acquireCycleLockInTx(tx, input.tenantId, cycleId);
 
-      // Re-load inside lock to defeat TOCTOU.
-      const lockedCycle = await deps.cyclesRepo.findById(
+      // Re-load inside lock to defeat TOCTOU. Round 5 B2 fix: use
+      // findByIdInTx with the lock-holding tx so the re-read sees the
+      // same snapshot as the lock — `findById` would open a separate
+      // tx and could observe stale state.
+      const lockedCycle = await deps.cyclesRepo.findByIdInTx(
+        tx,
         input.tenantId,
         cycleId,
       );
@@ -204,6 +221,15 @@ export async function markPaidOffline(
           currentStatus: lockedCycle.status,
         });
       }
+
+      // Round 5 W-05 — re-derive `newExpiresAt` from the LOCKED cycle's
+      // periodTo, not the pre-lock snapshot. If a concurrent path
+      // mutated period anchors between preLoad and lock acquisition,
+      // the response + audit would otherwise carry a stale value.
+      const newExpiresAt = deriveNewExpiresAt(
+        lockedCycle.periodTo,
+        lockedCycle.frozenPlanTermMonths,
+      );
 
       // F4 chain — bridge composes createInvoiceDraft + issueInvoice +
       // recordPayment(externalTx=tx). The `onPaid` callback fires inside
