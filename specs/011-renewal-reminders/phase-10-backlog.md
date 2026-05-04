@@ -54,9 +54,9 @@ Surfaced by the readiness check at `scripts/check-multi-tenant-ready.ts` LEGACY_
 
 ### F2 audit emit wiring on `scheduleNextRenewalPlanChange` (Wave B G1 / Wave C-8 T029c)
 
-- **Status**: Wave C-8 shipped 4 audit event types + payload schemas + summariseEvent cases for the F2 plan-change lifecycle. The use-case `scheduleNextRenewalPlanChange` does NOT yet call `recordAuditEvent` — wiring deferred to Wave G when composition root threads the F2 `audit` port into `ScheduleNextRenewalPlanChangeDeps`.
-- **Pinning**: contract test `tests/contract/f2-plan-change-audit-payloads.contract.test.ts` exercises all 4 zod schemas + 1 negative case so the schema shapes can't bit-rot before Wave G.
-- **Trigger**: Wave G composition root work, OR earliest user-story phase that invokes the use-case in production.
+- **Status**: Wave C-8 shipped 4 audit event types + payload schemas + summariseEvent cases for the F2 plan-change lifecycle. Wave G composition root shipped WITHOUT wiring `recordAuditEvent` into `scheduleNextRenewalPlanChange` — the use-case still doesn't emit. **Re-targeted from Wave G to Phase 5+** at Phase 2 final verify-run C1 (2026-05-04): the audit emit naturally co-lands with the F4 invoice-paid hook + tier-upgrade-accepted use-case in Phase 5 US5 (T183-T188 cluster) since those are the call sites that drive the lifecycle (`schedule` from accept-tier-upgrade, `apply` from F4 hook, `supersede` from F2 manual change listener, `cancel` from explicit admin cancel). Implementing the emit in isolation now would leave it dead until Phase 5+ anyway.
+- **Pinning**: contract test `tests/contract/f2-plan-change-audit-payloads.contract.test.ts` exercises all 4 zod schemas + 1 negative case so the schema shapes can't bit-rot between Wave C-8 and Phase 5+ wiring.
+- **Trigger**: Phase 5 US5 — first user-story phase to invoke `scheduleNextRenewalPlanChange` from a route handler.
 
 ### F8 module Domain + Application + Adapter implementation (Waves D-G)
 

@@ -33,11 +33,40 @@ import {
 
 const PHASE_2_STUB_LOG_LEVEL = 'info' as const;
 
+/**
+ * Production-mode guard (Phase 2 final verify-run B1 remediation).
+ *
+ * F8 ships dark behind `FEATURE_F8_RENEWALS=false` until MVP-wide
+ * chamber go-live (Assumption A12 v3). The stub is acceptable in
+ * dev / staging / preview deployments where the feature flag is off.
+ * If a Phase 5+ user-story branch accidentally flips the flag in
+ * production WITHOUT swapping this stub for the real adapter, the
+ * audit-trail completeness invariant (Constitution Principle VIII)
+ * would silently break — F8 use-cases would believe their audits
+ * were durably persisted while only pino logs captured them.
+ *
+ * The guard fires on first `emit` / `emitInTx` call when
+ * `NODE_ENV === 'production'`, providing a loud-fail safeguard at
+ * runtime to force composition-root review before any production
+ * F8 surface ships.
+ */
+function assertNotProductionBeforeUse(): void {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'F8 audit-emitter-stub invoked in production — composition root MUST swap ' +
+        'this stub for the real adapter before flipping FEATURE_F8_RENEWALS=true. ' +
+        'See src/modules/renewals/infrastructure/audit-emitter-stub.ts for the ' +
+        'full Phase 2 boundary contract + Phase 5+ replacement requirement.',
+    );
+  }
+}
+
 export const renewalAuditEmitterStub: RenewalAuditEmitter = {
   async emit<E extends F8AuditEventType>(
     event: F8AuditEvent<E>,
     ctx: AuditContext,
   ): Promise<void> {
+    assertNotProductionBeforeUse();
     if (!isF8AuditEventType(event.type)) {
       logger.warn(
         { eventType: event.type, ctx },
