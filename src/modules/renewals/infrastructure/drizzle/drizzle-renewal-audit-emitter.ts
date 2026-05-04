@@ -31,13 +31,22 @@ import {
 import type { AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
 
 /**
- * F8 event types whose pgEnum value exists today (migrations 0095 +
- * 0099). Add to this set + ship a corresponding `ALTER TYPE … ADD VALUE`
- * migration when wiring a new emit site. Events not in this set fall
- * through to pino-logging (loud-fail in production).
+ * F8 event types whose pgEnum value exists today. Each entry MUST
+ * have a corresponding `ALTER TYPE "audit_event_type" ADD VALUE` in a
+ * shipped migration. Events not in this set fall through to pino-
+ * logging (loud-fail in production).
+ *
+ * Migration 0099 ships the 4 events emitted by Phase 3 use-cases:
+ *   - `renewal_cycle_cancelled`            (cancel-cycle.ts)
+ *   - `renewal_cycle_completed_offline`    (mark-paid-offline.ts)
+ *   - `renewal_cross_tenant_probe`         (3 use-cases probe path)
+ *   - `f8_role_violation_blocked`          (renewals-route-helpers)
+ *
+ * `renewal_cycle_created` is reserved for the Phase 4 cycle-creation
+ * hook (F4 invoice-paid callback) and will be added here alongside
+ * its ADD VALUE migration when that emit site lands.
  */
 const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
-  'renewal_cycle_created',
   'renewal_cycle_cancelled',
   'renewal_cycle_completed_offline',
   'renewal_cross_tenant_probe',
@@ -112,19 +121,21 @@ export function makeDrizzleRenewalAuditEmitter(
       event: F8AuditEvent<E>,
       ctx: AuditContext,
     ): Promise<void> {
-      // Wrap the WHOLE body — including the production-mode guard
-      // inside pinoFallback — in try/catch so emit() truly never
-      // throws to the caller (port contract: fire-and-forget).
-      // emitInTx remains throw-on-fail (Principle VIII tx rollback).
+      // Pre-flight enum checks run OUTSIDE the try/catch so the
+      // production-mode loud-fail in `pinoFallback` propagates to the
+      // caller — that throw exists specifically to detect emit-site
+      // drift before flag-flip and MUST NOT be swallowed.
+      // The fire-and-forget contract still applies to runtime DB faults
+      // (RLS misconfig, infra outage), which are caught + logged below.
+      if (!isF8AuditEventType(event.type)) {
+        pinoFallback(event, ctx, 'unknown_event_type');
+        return;
+      }
+      if (!F8_ENUM_SHIPPED.has(event.type)) {
+        pinoFallback(event, ctx, 'not_in_pgenum');
+        return;
+      }
       try {
-        if (!isF8AuditEventType(event.type)) {
-          pinoFallback(event, ctx, 'unknown_event_type');
-          return;
-        }
-        if (!F8_ENUM_SHIPPED.has(event.type)) {
-          pinoFallback(event, ctx, 'not_in_pgenum');
-          return;
-        }
         await runInTenant(tenant, async (tx) => {
           await tx.insert(auditLog).values(buildInsertValues(event, ctx));
         });
@@ -135,7 +146,7 @@ export function makeDrizzleRenewalAuditEmitter(
             eventType: event.type,
             tenantId: ctx.tenantId,
           },
-          'F8 audit emit failed (fire-and-forget swallowed)',
+          'F8 audit emit DB insert failed (fire-and-forget swallowed)',
         );
       }
     },

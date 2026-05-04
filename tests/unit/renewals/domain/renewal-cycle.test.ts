@@ -290,4 +290,22 @@ describe('cycleFrozenPriceSatang', () => {
     expect(cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '100.5' })))
       .toBe(10_050n);
   });
+
+  it('throws on malformed input (defensive guard for cross-module integration)', () => {
+    expect(() =>
+      cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '' })),
+    ).toThrow(/malformed/);
+    expect(() =>
+      cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: 'abc' })),
+    ).toThrow(/malformed/);
+    expect(() =>
+      cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '-100' })),
+    ).toThrow(/malformed/);
+    expect(() =>
+      cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '50000.999' })),
+    ).toThrow(/malformed/);
+    expect(() =>
+      cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '1e6' })),
+    ).toThrow(/malformed/);
+  });
 });

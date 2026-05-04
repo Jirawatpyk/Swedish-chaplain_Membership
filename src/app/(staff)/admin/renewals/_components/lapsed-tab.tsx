@@ -130,6 +130,9 @@ export function LapsedTab({ rows }: LapsedTabProps) {
                     <Link
                       href={`/admin/renewals/${r.cycleId}`}
                       className="text-sm text-primary hover:underline"
+                      aria-label={t('viewDetailFor', {
+                        company: r.companyName || r.memberId,
+                      })}
                     >
                       {t('viewDetail')}
                     </Link>

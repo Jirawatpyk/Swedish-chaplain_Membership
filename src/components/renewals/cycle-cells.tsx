@@ -9,7 +9,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useFormatter } from 'next-intl';
+import { useFormatter, useTranslations } from 'next-intl';
 import { TierBadge } from './tier-badge';
 import type { TierBucket } from '@/modules/renewals';
 
@@ -24,12 +24,17 @@ export function CycleCompanyCell({
   readonly memberId: string;
   readonly companyName: string;
 }) {
+  const t = useTranslations('admin.renewals.table');
+  // Fall back to a localised "unknown" placeholder when companyName
+  // is empty — never render the raw UUID as visible text (screen
+  // readers announce UUIDs character-by-character).
+  const display = companyName || t('unknownCompany');
   return (
     <Link
       href={`/admin/members/${memberId}`}
       className="font-medium text-foreground hover:text-primary hover:underline"
     >
-      {companyName || memberId}
+      {display}
     </Link>
   );
 }

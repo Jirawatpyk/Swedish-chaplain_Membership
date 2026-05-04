@@ -1613,7 +1613,7 @@
       },
       "urgencyBuckets": {
         "aria_label": "Filtrera efter förnyelsebrådska",
-        "countSr": "{count} medlemmar",
+        "countSr": "{count, plural, one {# medlem} other {# medlemmar}}",
         "t_90": "T-90",
         "t_60": "T-60",
         "t_30": "T-30",
@@ -1645,15 +1645,14 @@
         },
         "viewInvoice": "Visa faktura",
         "noRows": "Inga medlemmar i detta intervall.",
-        "srResultCount": "Visar {count} medlemmar i {urgency}"
+        "unknownCompany": "(Okänt företag)",
+        "srResultCount": "{count, plural, one {Visar # medlem i {urgency}} other {Visar # medlemmar i {urgency}}}"
       },
       "actions": {
         "open": "Öppna cykel",
         "sendReminder": "Skicka påminnelse",
         "markContacted": "Markera kontaktad",
-        "rowMenu": "Åtgärder för {company}",
-        "comingInUS2": "Kommer i US2",
-        "comingInUS4": "Kommer i US4"
+        "rowMenu": "Åtgärder för {company}"
       },
       "lapsed": {
         "banner": {
@@ -1663,7 +1662,8 @@
         "columns": {
           "reason": "Orsak"
         },
-        "viewDetail": "Visa detaljer"
+        "viewDetail": "Visa detaljer",
+        "viewDetailFor": "Visa detaljer för {company}"
       },
       "empty": {
         "title": "Inga förnyelser förfaller under de kommande 90 dagarna",

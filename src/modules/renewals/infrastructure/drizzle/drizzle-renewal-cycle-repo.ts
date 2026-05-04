@@ -96,44 +96,75 @@ function rowToDomain(row: RenewalCycleRow): RenewalCycle {
         closedReason: null,
         linkedInvoiceId,
       };
-    case 'pending_admin_reactivation':
+    case 'pending_admin_reactivation': {
+      if (enteredPendingAt == null) {
+        throw new Error(
+          `F8 invariant violation: cycle ${row.cycleId} status=pending_admin_reactivation but enteredPendingAt is null — DB CHECK constraint regression`,
+        );
+      }
       return {
         ...base,
         status,
-        // DB CHECK guarantees enteredPendingAt non-null here.
-        enteredPendingAt: enteredPendingAt!,
+        enteredPendingAt,
         closedAt: null,
         closedReason: null,
         linkedInvoiceId,
       };
-    case 'completed':
+    }
+    case 'completed': {
+      if (closedAt == null || linkedInvoiceId == null) {
+        throw new Error(
+          `F8 invariant violation: cycle ${row.cycleId} status=completed but closedAt or linkedInvoiceId is null — DB CHECK constraint regression`,
+        );
+      }
       return {
         ...base,
         status,
         enteredPendingAt: null,
-        closedAt: closedAt!,
+        closedAt,
         closedReason: closedReason as 'paid' | 'completed_offline' | 'admin_reactivated',
-        // DB CHECK guarantees linkedInvoiceId non-null on completed.
-        linkedInvoiceId: linkedInvoiceId!,
+        linkedInvoiceId,
       };
-    case 'lapsed':
+    }
+    case 'lapsed': {
+      if (closedAt == null) {
+        throw new Error(
+          `F8 invariant violation: cycle ${row.cycleId} status=lapsed but closedAt is null — DB CHECK constraint regression`,
+        );
+      }
       return {
         ...base,
         status,
         enteredPendingAt: null,
-        closedAt: closedAt!,
+        closedAt,
         closedReason: closedReason as 'lapsed' | 'pending_reactivation_timed_out',
         linkedInvoiceId,
       };
-    case 'cancelled':
+    }
+    case 'cancelled': {
+      if (closedAt == null) {
+        throw new Error(
+          `F8 invariant violation: cycle ${row.cycleId} status=cancelled but closedAt is null — DB CHECK constraint regression`,
+        );
+      }
       return {
         ...base,
         status,
         enteredPendingAt: null,
-        closedAt: closedAt!,
+        closedAt,
         closedReason: closedReason as 'cancelled' | 'admin_rejected_with_refund',
         linkedInvoiceId,
       };
+    }
+    default: {
+      // Compile-time exhaustiveness + runtime loud-fail for DB enum
+      // drift (e.g. a Phase 4+ migration adds a new status that an
+      // older app build hasn't been recompiled against).
+      const _exhaustive: never = status;
+      throw new Error(
+        `F8 row-mapper: unknown cycle status "${String(status)}" for cycle ${row.cycleId} — likely DB enum drift, app rebuild required (exhaustive: ${String(_exhaustive)})`,
+      );
+    }
   }
 }
 

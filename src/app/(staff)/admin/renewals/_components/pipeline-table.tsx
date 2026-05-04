@@ -46,7 +46,7 @@ import {
   CycleCompanyCell,
   CycleExpiresCell,
 } from '@/components/renewals/cycle-cells';
-import type { PipelineRow } from '@/modules/renewals';
+import type { CycleStatus, PipelineRow } from '@/modules/renewals';
 
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;
@@ -106,16 +106,10 @@ export function PipelineTable({ rows }: PipelineTableProps) {
         header: t('columns.status'),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
-            {t(
-              `status.${row.original.status}` as
-                | 'status.upcoming'
-                | 'status.reminded'
-                | 'status.awaiting_payment'
-                | 'status.completed'
-                | 'status.lapsed'
-                | 'status.cancelled'
-                | 'status.pending_admin_reactivation',
-            )}
+            {/* Template-literal type auto-tracks CycleStatus enum so a
+                future status addition becomes a compile error rather
+                than a missed translation. */}
+            {t(`status.${row.original.status}` as `status.${CycleStatus}`)}
           </span>
         ),
       },

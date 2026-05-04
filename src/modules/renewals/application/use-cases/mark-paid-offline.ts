@@ -14,8 +14,10 @@
  *   `invoicing:` and F5 `payments:`. Auto-released at tx end. Prevents
  *   double-mark-paid races between two concurrent admin clicks.
  *
- * State precondition: cycle must be in `awaiting_payment | upcoming |
- * grace`. Other states yield `cycle_not_payable`.
+ * State precondition: cycle status must be `upcoming` or
+ * `awaiting_payment`. (Grace is an urgency-bucket overlay on
+ * `awaiting_payment`, not a separate status — see PAYABLE_STATUSES
+ * note below.) Other statuses yield `cycle_not_payable`.
  *
  * Audit emits inside tx (atomic state+audit):
  *   - `renewal_cycle_completed_offline` (in pgEnum — H1 real adapter
@@ -201,7 +203,9 @@ export async function markPaidOffline(
       // recordPayment(externalTx=tx). The `onPaid` callback fires inside
       // F4's recordPayment tx (which IS our outer tx via externalTx),
       // flipping the cycle atomically.
+      let onPaidFired = false;
       const onPaid = async (evt: F4InvoicePaidEvent): Promise<void> => {
+        onPaidFired = true;
         // Flip cycle inside same tx — closedReason='completed_offline'.
         await deps.cyclesRepo.transitionStatus(
           tx,
@@ -271,8 +275,19 @@ export async function markPaidOffline(
         });
       }
 
-      // bridge.ok ⇒ recordPayment.ok ⇒ onPaid fired ⇒ cycle flipped.
-      // Trust the framework guarantee + return directly.
+      // Cross-module invariant guard: the F4 bridge MUST fire onPaid
+      // inside recordPayment's tx (which IS our outer tx). If a future
+      // F4 refactor decouples bridge.ok from onPaid invocation (e.g.
+      // a "skip if already paid" optimisation), the cycle would NOT be
+      // flipped while the response says completed — silent member-
+      // state desync. Throw so the outer runInTenant rolls back +
+      // surfaces the inconsistency loudly with cycle context.
+      if (!onPaidFired) {
+        throw new Error(
+          `mark-paid-offline: F4 bridge returned ok but onPaid never fired — ` +
+            `cycle ${cycleId} not flipped. F4 contract regression?`,
+        );
+      }
       return ok({
         cycleStatus: 'completed' as const,
         invoiceId: bridgeResult.value.invoiceId,

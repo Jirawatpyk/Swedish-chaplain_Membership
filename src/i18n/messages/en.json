@@ -1613,7 +1613,7 @@
       },
       "urgencyBuckets": {
         "aria_label": "Filter by renewal urgency",
-        "countSr": "{count} members",
+        "countSr": "{count, plural, one {# member} other {# members}}",
         "t_90": "T-90",
         "t_60": "T-60",
         "t_30": "T-30",
@@ -1645,15 +1645,14 @@
         },
         "viewInvoice": "View invoice",
         "noRows": "No members in this bucket.",
-        "srResultCount": "Showing {count} members in {urgency}"
+        "unknownCompany": "(Unknown company)",
+        "srResultCount": "{count, plural, one {Showing # member in {urgency}} other {Showing # members in {urgency}}}"
       },
       "actions": {
         "open": "Open cycle",
         "sendReminder": "Send reminder",
         "markContacted": "Mark contacted",
-        "rowMenu": "Actions for {company}",
-        "comingInUS2": "Coming in US2",
-        "comingInUS4": "Coming in US4"
+        "rowMenu": "Actions for {company}"
       },
       "lapsed": {
         "banner": {
@@ -1663,7 +1662,8 @@
         "columns": {
           "reason": "Reason"
         },
-        "viewDetail": "View detail"
+        "viewDetail": "View detail",
+        "viewDetailFor": "View detail for {company}"
       },
       "empty": {
         "title": "No renewals due in the next 90 days",

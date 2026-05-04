@@ -1645,15 +1645,14 @@
         },
         "viewInvoice": "ดูใบแจ้งหนี้",
         "noRows": "ไม่มีสมาชิกในกลุ่มนี้",
+        "unknownCompany": "(ไม่ระบุชื่อบริษัท)",
         "srResultCount": "แสดง {count} สมาชิก ใน {urgency}"
       },
       "actions": {
         "open": "เปิดรอบการต่ออายุ",
         "sendReminder": "ส่งเตือน",
         "markContacted": "ทำเครื่องหมายว่าติดต่อแล้ว",
-        "rowMenu": "การดำเนินการสำหรับ {company}",
-        "comingInUS2": "พร้อมใน US2",
-        "comingInUS4": "พร้อมใน US4"
+        "rowMenu": "การดำเนินการสำหรับ {company}"
       },
       "lapsed": {
         "banner": {
@@ -1663,7 +1662,8 @@
         "columns": {
           "reason": "สาเหตุ"
         },
-        "viewDetail": "ดูรายละเอียด"
+        "viewDetail": "ดูรายละเอียด",
+        "viewDetailFor": "ดูรายละเอียดของ {company}"
       },
       "empty": {
         "title": "ไม่มีรายการต่ออายุที่ครบกำหนดใน 90 วันข้างหน้า",

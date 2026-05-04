@@ -61,25 +61,27 @@ function fakeDeps(
   emitMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
+  acquireLockMock: ReturnType<typeof vi.fn>;
 } {
   const emitMock = vi.fn(async () => {});
   const emitInTxMock = vi.fn(async () => {});
   const transitionMock = vi.fn(
     transitionImpl ?? (async () => ({ ...cycle!, status: 'cancelled' as const })),
   );
+  const acquireLockMock = vi.fn(async () => {});
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     cyclesRepo: {
       findById: vi.fn(async () => cycle),
       transitionStatus: transitionMock,
-      acquireCycleLockInTx: vi.fn(async () => {}),
+      acquireCycleLockInTx: acquireLockMock,
     } as unknown as RenewalsDeps['cyclesRepo'],
     auditEmitter: {
       emit: emitMock,
       emitInTx: emitInTxMock,
     },
   } as unknown as RenewalsDeps;
-  return { deps, emitMock, emitInTxMock, transitionMock };
+  return { deps, emitMock, emitInTxMock, transitionMock, acquireLockMock };
 }
 
 const baseInput = {
@@ -103,8 +105,34 @@ describe('cancelCycle (T058) — happy path', () => {
     }
     expect(transitionMock).toHaveBeenCalledTimes(1);
     expect(emitInTxMock).toHaveBeenCalledTimes(1);
-    expect(emitInTxMock.mock.calls[0]![1]).toEqual(
-      expect.objectContaining({ type: 'renewal_cycle_cancelled' }),
+    // Typed payload assertion (TY1) — locks the contract that
+    // renewal_cycle_cancelled carries cycle_id + member_id + reason +
+    // previous_status. Future regression that drops a field fails here.
+    expect(emitInTxMock.mock.calls[0]![1]).toEqual({
+      type: 'renewal_cycle_cancelled',
+      payload: {
+        cycle_id: cycle.cycleId,
+        member_id: cycle.memberId,
+        reason: baseInput.reason,
+        previous_status: cycle.status,
+      },
+    });
+  });
+
+  it('acquires advisory lock BEFORE transitioning (TOCTOU defence)', async () => {
+    const cycle = buildCycle();
+    const { deps, transitionMock, acquireLockMock } = fakeDeps(cycle);
+    await cancelCycle(deps, baseInput);
+    expect(acquireLockMock).toHaveBeenCalledTimes(1);
+    expect(acquireLockMock).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      cycle.cycleId,
+    );
+    // Lock MUST acquire before transition — concurrent admin races
+    // depend on this ordering.
+    expect(acquireLockMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      transitionMock.mock.invocationCallOrder[0]!,
     );
   });
 });

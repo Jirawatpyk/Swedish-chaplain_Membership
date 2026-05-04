@@ -209,10 +209,21 @@ export function assertCycleInvariants(
  * conversion site — single source of truth + lossless rounding via
  * cents-multiplication.
  */
+/** Format permitted by Postgres `decimal(12,2)` — non-negative, ≤2 fractional. */
+const VALID_FROZEN_PRICE_RE = /^\d+(\.\d{1,2})?$/;
+
 export function cycleFrozenPriceSatang(cycle: RenewalCycle): bigint {
   const baht = cycle.frozenPlanPriceThb;
-  // The decimal string from `decimal(12,2)` always has at most 2
-  // fractional digits. Strip the dot, treat as integer satang.
+  // Defensive validation — DB CHECK + Application invariants should
+  // already reject malformed/negative values, but this helper is the
+  // single conversion site for cross-module bigint arithmetic
+  // (F4 invoice issue, F5 PaymentIntent.amount). A silent wrong-
+  // magnitude bigint here charges the wrong amount in production.
+  if (!VALID_FROZEN_PRICE_RE.test(baht)) {
+    throw new Error(
+      `cycleFrozenPriceSatang: malformed frozenPlanPriceThb "${baht}" for cycle ${cycle.cycleId} — expected decimal(12,2) format`,
+    );
+  }
   const [intPart, fracRaw = ''] = baht.split('.');
   const frac = (fracRaw + '00').slice(0, 2);
   return BigInt(`${intPart}${frac}`);

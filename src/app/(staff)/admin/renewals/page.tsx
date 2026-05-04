@@ -147,7 +147,11 @@ export default async function RenewalsPipelinePage({
             </div>
             <div className="flex gap-2">
               <Link
-                href="/admin/renewals"
+                // Thread correlationId so the URL is unique per error-
+                // render — Next.js App Router caches RSC payloads for ~30s
+                // and would otherwise serve the cached error on retry.
+                // The `_retry` param is parsed-and-ignored by loadPipeline.
+                href={`/admin/renewals?_retry=${correlationId}`}
                 className={buttonVariants({ variant: 'default', size: 'sm' })}
               >
                 {t('error.retry')}
