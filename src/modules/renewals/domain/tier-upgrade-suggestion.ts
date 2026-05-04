@@ -65,12 +65,34 @@ export const TIER_UPGRADE_REASON_CODES = [
 export type TierUpgradeReasonCode =
   (typeof TIER_UPGRADE_REASON_CODES)[number];
 
-export interface TierUpgradeEvidence {
-  readonly turnoverThb?: number;
-  readonly invoiceVolumeThb?: number;
-  readonly thresholdMetAt?: string;
-  readonly [key: string]: unknown;
-}
+/**
+ * Evidence shape — closed discriminated union by `reasonCode`. Each
+ * arm pairs the reason with the metric(s) that justify it, so a future
+ * emit site can't write `{ turnoverThb: 50_000_000 }` against a
+ * `paid_invoice_volume_above_threshold` reason (silent forensic drift).
+ *
+ * Open index signature was previously permitted (`[key: string]:
+ * unknown`) — a deliberate Round 3 tightening: every arm is now
+ * exhaustive, and consumers that need additional fields must amend the
+ * union explicitly.
+ */
+export type TierUpgradeEvidence =
+  | {
+      readonly reasonCode: 'declared_turnover_above_threshold';
+      readonly turnoverThb: number;
+      readonly thresholdMetAt: string;
+    }
+  | {
+      readonly reasonCode: 'paid_invoice_volume_above_threshold';
+      readonly invoiceVolumeThb: number;
+      readonly thresholdMetAt: string;
+    }
+  | {
+      readonly reasonCode: 'multi_signal';
+      readonly turnoverThb: number;
+      readonly invoiceVolumeThb: number;
+      readonly thresholdMetAt: string;
+    };
 
 /** Common fields across every tier-upgrade lifecycle state. */
 interface TierUpgradeSuggestionBase {

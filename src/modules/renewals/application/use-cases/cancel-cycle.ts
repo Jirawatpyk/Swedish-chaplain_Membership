@@ -30,6 +30,7 @@ import {
   CycleNotFoundError,
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
+import { asMemberId } from '@/modules/members';
 import { isTerminalCycleStatus } from '../../domain/value-objects/cycle-status';
 
 export const cancelCycleInputSchema = z.object({
@@ -153,7 +154,7 @@ export async function cancelCycle(
           type: 'renewal_cycle_cancelled',
           payload: {
             cycle_id: cycleId,
-            member_id: lockedCycle.memberId,
+            member_id: asMemberId(lockedCycle.memberId),
             reason: input.reason,
             previous_status: lockedCycle.status,
           },

@@ -12,7 +12,16 @@
  * fall through to pino-logging and loud-fail in production.
  *
  * Pure interface — no framework imports (Constitution Principle III).
+ * Type-only cross-module imports for branded IDs (zero runtime cost)
+ * so emit sites construct payloads with type-safe IDs rather than bare
+ * strings — silent ID swaps (member_id ↔ user_id) become compile errors.
  */
+import type { CycleId } from '../../domain/renewal-cycle';
+import type { SuggestionId } from '../../domain/tier-upgrade-suggestion';
+import type { MemberId, MemberPlanId as PlanId } from '@/modules/members';
+import type { UserId } from '@/modules/auth/domain/branded';
+import type { InvoiceId } from '@/modules/invoicing';
+import type { CreditNoteId } from '@/modules/invoicing';
 
 // ---------------------------------------------------------------------------
 // Event-type tuple + union
@@ -123,36 +132,81 @@ export function isF8AuditEventType(
  * Constitution Principle I clause 4 (every cross-tenant access attempt
  * must be auditable) — keep them typed.
  */
+// ---------------------------------------------------------------------------
+// Audit-payload value-object brands
+// ---------------------------------------------------------------------------
+
+/**
+ * SHA-256 hex digest brand. Used for `recipient_email_hashed` so a
+ * future emit-site cannot accidentally pass a plaintext email — type
+ * system enforces the redaction policy from CLAUDE.md "Forbidden in
+ * logs".
+ */
+declare const Sha256HexBrand: unique symbol;
+export type Sha256Hex = string & { readonly [Sha256HexBrand]: true };
+
+const RE_SHA256_HEX = /^(sha256:)?[0-9a-f]{64}$/i;
+
+/** Unchecked cast — for trusted call sites that have already validated. */
+export function asSha256Hex(raw: string): Sha256Hex {
+  return raw as Sha256Hex;
+}
+
+/** Validates SHA-256 hex format (`[sha256:]<64-hex>`). */
+export function parseSha256Hex(
+  raw: string,
+): { ok: true; value: Sha256Hex } | { ok: false; error: 'invalid_sha256_hex' } {
+  if (typeof raw !== 'string' || !RE_SHA256_HEX.test(raw)) {
+    return { ok: false, error: 'invalid_sha256_hex' };
+  }
+  return { ok: true, value: raw as Sha256Hex };
+}
+
+/**
+ * `at_risk_score_threshold_crossed` requires `previous_band !== new_band`
+ * — emitting "low → low" would be forensic noise. The DU below encodes
+ * the 12 valid 4×4-with-self-excluded transitions at compile time, so
+ * `{ previous_band: 'low', new_band: 'low' }` is a TS error rather than
+ * a runtime invariant probe.
+ */
+export type AtRiskBand = 'low' | 'medium' | 'high' | 'critical';
+
+export type BandTransition =
+  | { readonly previous_band: 'low'; readonly new_band: 'medium' | 'high' | 'critical' }
+  | { readonly previous_band: 'medium'; readonly new_band: 'low' | 'high' | 'critical' }
+  | { readonly previous_band: 'high'; readonly new_band: 'low' | 'medium' | 'critical' }
+  | { readonly previous_band: 'critical'; readonly new_band: 'low' | 'medium' | 'high' };
+
 export interface F8AuditPayloadShapes {
   readonly renewal_cycle_created: {
-    readonly cycle_id: string;
-    readonly member_id: string;
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
     readonly tier_bucket: string;
     readonly period_from: string;
     readonly period_to: string;
   };
   readonly renewal_cycle_cancelled: {
-    readonly cycle_id: string;
-    readonly member_id: string;
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
     readonly reason: string;
     readonly previous_status: string;
   };
   readonly renewal_cycle_completed_offline: {
-    readonly cycle_id: string;
-    readonly member_id: string;
-    readonly invoice_id: string;
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly invoice_id: InvoiceId;
     readonly payment_method: 'bank_transfer' | 'cash' | 'cheque';
     readonly payment_reference: string;
     readonly payment_date: string;
     readonly new_expires_at: string;
   };
   readonly renewal_cross_tenant_probe: {
-    readonly attempted_cycle_id: string;
+    readonly attempted_cycle_id: CycleId;
     readonly route: string;
   };
   readonly renewal_cross_member_probe: {
-    readonly actor_member_id: string;
-    readonly attempted_member_id: string;
+    readonly actor_member_id: MemberId;
+    readonly attempted_member_id: MemberId;
   };
   readonly f8_role_violation_blocked: {
     readonly resource: string;
@@ -173,41 +227,45 @@ export interface F8AuditPayloadShapes {
     readonly route: string;
   };
   readonly tier_upgrade_suggested: {
-    readonly suggestion_id: string;
-    readonly member_id: string;
-    readonly from_plan_id: string;
-    readonly to_plan_id: string;
+    readonly suggestion_id: SuggestionId;
+    readonly member_id: MemberId;
+    readonly from_plan_id: PlanId;
+    readonly to_plan_id: PlanId;
     readonly reason_code:
       | 'declared_turnover_above_threshold'
       | 'paid_invoice_volume_above_threshold'
       | 'multi_signal';
   };
   readonly tier_upgrade_pending_superseded_by_manual_change: {
-    readonly suggestion_id: string;
+    readonly suggestion_id: SuggestionId;
     readonly superseded_from_status: 'open' | 'accepted_pending_apply';
-    readonly manual_change_actor_user_id: string;
-    readonly superseding_plan_id: string;
+    readonly manual_change_actor_user_id: UserId;
+    readonly superseding_plan_id: PlanId;
   };
-  readonly at_risk_score_threshold_crossed: {
-    readonly member_id: string;
-    readonly previous_band: 'low' | 'medium' | 'high' | 'critical';
-    readonly new_band: 'low' | 'medium' | 'high' | 'critical';
+  /**
+   * The `BandTransition` DU prevents emitting same-band "transitions"
+   * at compile time (e.g. `{ previous_band: 'low', new_band: 'low' }`
+   * would be a TS error — there's no arm matching that pair). `score`
+   * is the absolute new score, not a delta.
+   */
+  readonly at_risk_score_threshold_crossed: BandTransition & {
+    readonly member_id: MemberId;
     readonly score: number;
   };
   readonly renewal_reminder_send_failed_permanent: {
-    readonly cycle_id: string;
+    readonly cycle_id: CycleId;
     readonly step_id: string;
-    readonly recipient_email_hashed: string;
+    readonly recipient_email_hashed: Sha256Hex;
     readonly bounce_class: 'hard_bounce' | 'spam_complaint' | 'invalid_address';
     readonly provider_message_id: string | null;
   };
   readonly lapsed_member_admin_reactivation_rejected: {
-    readonly cycle_id: string;
-    readonly actor_user_id: string;
-    readonly refund_credit_note_id: string | null;
+    readonly cycle_id: CycleId;
+    readonly actor_user_id: UserId;
+    readonly refund_credit_note_id: CreditNoteId | null;
   };
   readonly lapsed_member_admin_reactivation_timed_out: {
-    readonly cycle_id: string;
+    readonly cycle_id: CycleId;
     /** Null because the actor is the cron, not a human admin. */
     readonly actor_user_id: null;
   };

@@ -36,7 +36,8 @@ import {
   parseCycleId,
   type CycleId,
 } from '../../domain/renewal-cycle';
-import type { F4InvoicePaidEvent } from '@/modules/invoicing';
+import { asInvoiceId, type F4InvoicePaidEvent } from '@/modules/invoicing';
+import { asMemberId } from '@/modules/members';
 
 export const markPaidOfflineInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -225,8 +226,8 @@ export async function markPaidOffline(
             type: 'renewal_cycle_completed_offline',
             payload: {
               cycle_id: cycleId,
-              member_id: memberId,
-              invoice_id: evt.invoiceId,
+              member_id: asMemberId(memberId),
+              invoice_id: asInvoiceId(evt.invoiceId),
               payment_method: input.paymentMethod,
               payment_reference: input.paymentReference,
               payment_date: input.paymentDate,

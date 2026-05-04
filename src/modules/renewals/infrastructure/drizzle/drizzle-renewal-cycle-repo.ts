@@ -58,6 +58,28 @@ import type { TierBucket } from '../../domain/value-objects/tier-bucket';
  * since TS can't follow the conditional logic. Each branch maps the
  * row to exactly one union arm.
  */
+/**
+ * Asserts a value is non-null. Throws a uniform "F8 invariant violation"
+ * error naming the cycleId + field so Sentry triage is trivial. Used to
+ * collapse 5 near-identical null-checks across terminal-status arms in
+ * `rowToDomain` (Round 3 polish; preserves IM5 semantics).
+ *
+ * `asserts value is NonNullable<T>` makes the assertion narrow the type
+ * for callers — TS knows the value is non-null after the call.
+ */
+function assertPresent<T>(
+  value: T,
+  cycleId: string,
+  status: string,
+  field: string,
+): asserts value is NonNullable<T> {
+  if (value == null) {
+    throw new Error(
+      `F8 invariant violation: cycle ${cycleId} status=${status} but ${field} is null — DB CHECK constraint regression`,
+    );
+  }
+}
+
 function rowToDomain(row: RenewalCycleRow): RenewalCycle {
   const base = {
     tenantId: row.tenantId,
@@ -97,11 +119,7 @@ function rowToDomain(row: RenewalCycleRow): RenewalCycle {
         linkedInvoiceId,
       };
     case 'pending_admin_reactivation': {
-      if (enteredPendingAt == null) {
-        throw new Error(
-          `F8 invariant violation: cycle ${row.cycleId} status=pending_admin_reactivation but enteredPendingAt is null — DB CHECK constraint regression`,
-        );
-      }
+      assertPresent(enteredPendingAt, row.cycleId, status, 'enteredPendingAt');
       return {
         ...base,
         status,
@@ -112,11 +130,8 @@ function rowToDomain(row: RenewalCycleRow): RenewalCycle {
       };
     }
     case 'completed': {
-      if (closedAt == null || linkedInvoiceId == null) {
-        throw new Error(
-          `F8 invariant violation: cycle ${row.cycleId} status=completed but closedAt or linkedInvoiceId is null — DB CHECK constraint regression`,
-        );
-      }
+      assertPresent(closedAt, row.cycleId, status, 'closedAt');
+      assertPresent(linkedInvoiceId, row.cycleId, status, 'linkedInvoiceId');
       return {
         ...base,
         status,
@@ -127,11 +142,7 @@ function rowToDomain(row: RenewalCycleRow): RenewalCycle {
       };
     }
     case 'lapsed': {
-      if (closedAt == null) {
-        throw new Error(
-          `F8 invariant violation: cycle ${row.cycleId} status=lapsed but closedAt is null — DB CHECK constraint regression`,
-        );
-      }
+      assertPresent(closedAt, row.cycleId, status, 'closedAt');
       return {
         ...base,
         status,
@@ -142,11 +153,7 @@ function rowToDomain(row: RenewalCycleRow): RenewalCycle {
       };
     }
     case 'cancelled': {
-      if (closedAt == null) {
-        throw new Error(
-          `F8 invariant violation: cycle ${row.cycleId} status=cancelled but closedAt is null — DB CHECK constraint regression`,
-        );
-      }
+      assertPresent(closedAt, row.cycleId, status, 'closedAt');
       return {
         ...base,
         status,

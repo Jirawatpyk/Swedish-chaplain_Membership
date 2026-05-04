@@ -20,6 +20,8 @@ import type {
   F8AuditEvent,
   F8AuditEventType,
 } from '@/modules/renewals/application/ports/renewal-audit-emitter';
+import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
+import { asMemberId } from '@/modules/members';
 
 // Mock `runInTenant` so we can drive the DB-insert success/failure path
 // without a real Postgres connection.
@@ -53,8 +55,8 @@ const ctx: AuditContext = {
 const SHIPPED_EVENT: F8AuditEvent<'renewal_cycle_cancelled'> = {
   type: 'renewal_cycle_cancelled',
   payload: {
-    cycle_id: '00000000-0000-0000-0000-000000000aaa',
-    member_id: 'member-1',
+    cycle_id: asCycleId('00000000-0000-0000-0000-000000000aaa'),
+    member_id: asMemberId('member-1'),
     reason: 'admin requested',
     previous_status: 'upcoming',
   },
@@ -64,8 +66,8 @@ const NOT_IN_PGENUM_EVENT: F8AuditEvent<'renewal_cycle_created'> = {
   // Valid F8 event type but deliberately NOT in F8_ENUM_SHIPPED — Phase 4 reservation.
   type: 'renewal_cycle_created',
   payload: {
-    cycle_id: '00000000-0000-0000-0000-000000000bbb',
-    member_id: 'member-1',
+    cycle_id: asCycleId('00000000-0000-0000-0000-000000000bbb'),
+    member_id: asMemberId('member-1'),
     tier_bucket: 'regular',
     period_from: '2026-01-01T00:00:00Z',
     period_to: '2027-01-01T00:00:00Z',
