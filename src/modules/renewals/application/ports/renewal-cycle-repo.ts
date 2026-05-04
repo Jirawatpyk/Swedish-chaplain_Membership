@@ -128,6 +128,85 @@ export interface RenewalCycleRepo {
       readonly cursor?: string;
     },
   ): Promise<RenewalCyclePage>;
+
+  /**
+   * Per-(tenant, cycle) advisory lock for mark-paid-offline races.
+   * Namespace `renewals:` is disjoint from F4 `invoicing:` and F5
+   * `payments:`. Auto-released at tx end. Phase 3 H2 / T059 use.
+   */
+  acquireCycleLockInTx(
+    tx: unknown,
+    tenantId: string,
+    cycleId: CycleId,
+  ): Promise<void>;
+
+  /**
+   * Pipeline dashboard composite query (Phase 3 US1 / FR-046 / SC-003).
+   * Returns rows enriched with `members.company_name` + last reminder
+   * + DB-side derived `urgency` bucket + summary aggregates. Cursor is
+   * an opaque base64 string the adapter encodes from
+   * `(expires_at, cycle_id)` tuple.
+   *
+   * Separate from `list()` so the abstract Domain `RenewalCyclePage`
+   * shape remains pure — pipeline rows carry presentation-layer joins
+   * that don't belong on the Domain entity.
+   */
+  loadPipelinePage(
+    tenantId: string,
+    opts: PipelineQueryOpts,
+  ): Promise<PipelineQueryResult>;
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline-specific shapes (Phase 3 US1)
+// ---------------------------------------------------------------------------
+
+export type UrgencyBucket =
+  | 't-90'
+  | 't-60'
+  | 't-30'
+  | 't-14'
+  | 't-7'
+  | 't-0'
+  | 'grace'
+  | 'lapsed';
+
+export interface PipelineQueryOpts {
+  readonly tier?: TierBucket;
+  readonly urgency?: UrgencyBucket;
+  readonly cursor?: string | null;
+  readonly limit: number;
+}
+
+export interface PipelineRow {
+  readonly cycleId: CycleId;
+  readonly memberId: string;
+  readonly companyName: string;
+  readonly tierBucket: TierBucket;
+  readonly expiresAt: string;
+  readonly urgency: UrgencyBucket;
+  readonly status: CycleStatus;
+  readonly lastReminderAt: string | null;
+  readonly lastReminderStepId: string | null;
+  readonly linkedInvoiceId: string | null;
+  /**
+   * Frozen reason on terminal cycles. NULL for non-terminal rows.
+   * Surfaced on the lapsed-tab UI so admins see WHY a cycle lapsed
+   * (grace_expired vs payment_failed vs admin_marked) per spec AS3.
+   */
+  readonly closedReason: ClosedReason | null;
+}
+
+export interface PipelineSummary {
+  readonly totalInWindow: number;
+  readonly byUrgency: Readonly<Record<UrgencyBucket, number>>;
+  readonly lapsedCount: number;
+}
+
+export interface PipelineQueryResult {
+  readonly rows: ReadonlyArray<PipelineRow>;
+  readonly nextCursor: string | null;
+  readonly summary: PipelineSummary;
 }
 
 /** Use-case-side error narrowing for adapter throws. */

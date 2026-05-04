@@ -43,14 +43,22 @@ import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo';
 
-import { renewalAuditEmitterStub } from './audit-emitter-stub';
 import { eventAttendeesStub } from './event-attendees-stub';
 import { renewalLinkTokenSigner } from './renewal-link-token/hmac-signer';
 import { renewalLinkTokenVerifier } from './renewal-link-token/hmac-verifier';
+import { makeDrizzleRenewalCycleRepo } from './drizzle/drizzle-renewal-cycle-repo';
+import { makeDrizzleRenewalAuditEmitter } from './drizzle/drizzle-renewal-audit-emitter';
+import { f4InvoiceBridge, type F4InvoiceBridge } from './ports-adapters/f4-invoice-bridge';
 
 import type { ScheduledPlanChangeRepo } from '@/modules/plans/application/ports';
 import type { EventAttendeesPort } from '../application/ports/event-attendees-port';
-import type { RenewalAuditEmitter } from '../application/ports/renewal-audit-emitter';
+import type {
+  AuditContext,
+  F8AuditEvent,
+  F8AuditEventType,
+  RenewalAuditEmitter,
+} from '../application/ports/renewal-audit-emitter';
+import type { RenewalCycleRepo } from '../application/ports/renewal-cycle-repo';
 import type { RenewalLinkTokenSigner } from '../application/ports/renewal-link-token-signer';
 import type { RenewalLinkTokenVerifier } from '../application/ports/renewal-link-token-verifier';
 
@@ -63,6 +71,26 @@ export interface RenewalsDeps {
    * Phase 5+ T183.
    */
   readonly scheduledPlanChangeRepo: ScheduledPlanChangeRepo;
+  /**
+   * Phase 3 H1 (T060) — Drizzle repo against `renewal_cycles`. Used
+   * directly by `load-pipeline`, `load-cycle-detail`, `cancel-cycle`,
+   * `mark-paid-offline` use-cases.
+   */
+  readonly cyclesRepo: RenewalCycleRepo;
+  /**
+   * Phase 3 H1 (T061) — F8 → F4 cross-module bridge composing
+   * `createInvoiceDraft` + `issueInvoice` + `recordPayment` for the
+   * `mark-paid-offline` use-case. Threads outer tx + onPaid callback
+   * for atomic cycle-flip per Principle VIII.
+   */
+  readonly f4InvoiceBridge: F4InvoiceBridge;
+  /**
+   * Phase 3 H1 (T062) — Drizzle audit emitter persisting to
+   * `audit_log` for the 5 enum-shipped F8 event types; pino-logging
+   * fallback for the remaining 49 event types until their respective
+   * pgEnum-extension migrations ship in Phase 4+. Stub fallback is
+   * NOT used at this composition root — H1 ships the real adapter.
+   */
   readonly auditEmitter: RenewalAuditEmitter;
   readonly tokenSigner: RenewalLinkTokenSigner;
   readonly tokenVerifier: RenewalLinkTokenVerifier;
@@ -80,12 +108,21 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
   return {
     tenant,
     scheduledPlanChangeRepo: drizzleScheduledPlanChangeRepo,
-    auditEmitter: renewalAuditEmitterStub,
+    cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
+    f4InvoiceBridge,
+    auditEmitter: makeDrizzleRenewalAuditEmitter(tenant),
     tokenSigner: renewalLinkTokenSigner,
     tokenVerifier: renewalLinkTokenVerifier,
     eventAttendees: eventAttendeesStub,
   };
 }
+
+// Re-export the stub so test composition + early-Phase emit sites can
+// fall back to the in-memory pino logger when the real adapter is
+// undesirable (e.g. unit tests that don't want to write to audit_log).
+export { renewalAuditEmitterStub } from './audit-emitter-stub';
+// Re-export AuditContext + F8AuditEvent shapes for use-case consumers.
+export type { AuditContext, F8AuditEvent, F8AuditEventType };
 
 /**
  * F4 onPaidCallbacks registration factory. Phase 2 ships a NO-OP

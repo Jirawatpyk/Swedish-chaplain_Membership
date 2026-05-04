@@ -1578,6 +1578,92 @@
         "ackHelp": "Att häva spärren är en avsiktlig administratörsåtgärd. Granska utskickets innehåll och studsar innan du häver."
       }
     },
+    "renewals": {
+      "title": "Förnyelsepipeline",
+      "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
+      "tierBadge": {
+        "thai_alumni": "Thai-alumner",
+        "start_up": "Start-up",
+        "regular": "Standard",
+        "premium": "Premium",
+        "partnership": "Partnerskap"
+      },
+      "tierFilter": {
+        "aria_label": "Filtrera pipeline efter nivå",
+        "all": "Alla nivåer"
+      },
+      "lapsedReason": {
+        "paid": "Betald",
+        "cancelled": "Avbruten",
+        "lapsed": "Respit utgången",
+        "completed_offline": "Betald offline",
+        "admin_reactivated": "Återaktiverad",
+        "admin_rejected_with_refund": "Återbetald",
+        "pending_reactivation_timed_out": "Återaktivering tog slut"
+      },
+      "urgencyPill": {
+        "t_90": "Förfaller om 90 d",
+        "t_60": "Förfaller om 60 d",
+        "t_30": "Förfaller om 30 d",
+        "t_14": "Förfaller om 14 d",
+        "t_7": "Förfaller om 7 d",
+        "t_0": "Förfaller idag",
+        "grace": "Respitperiod",
+        "lapsed": "Förfallen"
+      },
+      "urgencyBuckets": {
+        "aria_label": "Filtrera efter förnyelsebrådska",
+        "t_90": "T-90",
+        "t_60": "T-60",
+        "t_30": "T-30",
+        "t_14": "T-14",
+        "t_7": "T-7",
+        "t_0": "T-0",
+        "grace": "Respit",
+        "lapsed": "Förfallen"
+      },
+      "table": {
+        "columns": {
+          "tier": "Nivå",
+          "company": "Företag",
+          "expires": "Går ut",
+          "urgency": "Brådska",
+          "lastReminder": "Senaste påminnelse",
+          "status": "Status",
+          "invoice": "Faktura",
+          "actions": "Åtgärder"
+        },
+        "viewInvoice": "Visa faktura",
+        "noRows": "Inga medlemmar i detta intervall."
+      },
+      "actions": {
+        "open": "Öppna cykel",
+        "sendReminder": "Skicka påminnelse",
+        "markContacted": "Markera kontaktad",
+        "rowMenu": "Åtgärder för {company}",
+        "comingInUS2": "Kommer i US2",
+        "comingInUS4": "Kommer i US4"
+      },
+      "lapsed": {
+        "banner": {
+          "title": "Förfallna medlemmar",
+          "description": "Dessa medlemmar har passerat respitperioden. Återaktivera eller arkivera när du återupprättar kontakten."
+        },
+        "columns": {
+          "reason": "Orsak"
+        },
+        "viewDetail": "Visa detaljer"
+      },
+      "empty": {
+        "title": "Inga förnyelser förfaller under de kommande 90 dagarna",
+        "description": "Alla aktiva medlemmar är betalade. Kom tillbaka när utgångsdatum närmar sig.",
+        "cta": "Visa alla medlemmar"
+      },
+      "error": {
+        "featureDisabled": "Förnyelseflödet är ännu inte aktiverat för denna kammare.",
+        "loadFailed": "Kunde inte ladda förnyelsepipelinen. Försök igen."
+      }
+    },
     "refund": {
       "title": "Utfärda återbetalning",
       "button": {

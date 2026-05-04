@@ -1578,6 +1578,92 @@
         "ackHelp": "Clearing the halt is a deliberate admin action. Investigate the broadcast content + bounces before clearing."
       }
     },
+    "renewals": {
+      "title": "Renewal pipeline",
+      "subtitle": "Active members by renewal date and tier.",
+      "tierBadge": {
+        "thai_alumni": "Thai alumni",
+        "start_up": "Start-up",
+        "regular": "Regular",
+        "premium": "Premium",
+        "partnership": "Partnership"
+      },
+      "tierFilter": {
+        "aria_label": "Filter pipeline by tier",
+        "all": "All tiers"
+      },
+      "lapsedReason": {
+        "paid": "Paid",
+        "cancelled": "Cancelled",
+        "lapsed": "Grace expired",
+        "completed_offline": "Paid offline",
+        "admin_reactivated": "Reactivated",
+        "admin_rejected_with_refund": "Refunded",
+        "pending_reactivation_timed_out": "Reactivation timed out"
+      },
+      "urgencyPill": {
+        "t_90": "Due in 90d",
+        "t_60": "Due in 60d",
+        "t_30": "Due in 30d",
+        "t_14": "Due in 14d",
+        "t_7": "Due in 7d",
+        "t_0": "Due today",
+        "grace": "Grace period",
+        "lapsed": "Lapsed"
+      },
+      "urgencyBuckets": {
+        "aria_label": "Filter by renewal urgency",
+        "t_90": "T-90",
+        "t_60": "T-60",
+        "t_30": "T-30",
+        "t_14": "T-14",
+        "t_7": "T-7",
+        "t_0": "T-0",
+        "grace": "Grace",
+        "lapsed": "Lapsed"
+      },
+      "table": {
+        "columns": {
+          "tier": "Tier",
+          "company": "Company",
+          "expires": "Expires",
+          "urgency": "Urgency",
+          "lastReminder": "Last reminder",
+          "status": "Status",
+          "invoice": "Invoice",
+          "actions": "Actions"
+        },
+        "viewInvoice": "View invoice",
+        "noRows": "No members in this bucket."
+      },
+      "actions": {
+        "open": "Open cycle",
+        "sendReminder": "Send reminder",
+        "markContacted": "Mark contacted",
+        "rowMenu": "Actions for {company}",
+        "comingInUS2": "Coming in US2",
+        "comingInUS4": "Coming in US4"
+      },
+      "lapsed": {
+        "banner": {
+          "title": "Lapsed members",
+          "description": "These members are past their grace period. Reactivate or archive them as you reconnect."
+        },
+        "columns": {
+          "reason": "Reason"
+        },
+        "viewDetail": "View detail"
+      },
+      "empty": {
+        "title": "No renewals due in the next 90 days",
+        "description": "All active members are paid up. Check back when expiry dates approach.",
+        "cta": "View all members"
+      },
+      "error": {
+        "featureDisabled": "The renewals workflow is not yet enabled for this chamber.",
+        "loadFailed": "Could not load the renewal pipeline. Please try again."
+      }
+    },
     "refund": {
       "title": "Issue refund",
       "button": {

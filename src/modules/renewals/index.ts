@@ -237,3 +237,47 @@ export {
   type F8AuditPayloadFor,
   type AuditContext,
 } from './application/ports/renewal-audit-emitter';
+
+export type {
+  PipelineQueryOpts,
+  PipelineQueryResult,
+  PipelineRow,
+  PipelineSummary,
+  UrgencyBucket,
+} from './application/ports/renewal-cycle-repo';
+
+// --- Phase 3 use-cases (Wave H2 T056-T059) ---------------------------------
+export {
+  loadPipeline,
+  loadPipelineInputSchema,
+  type LoadPipelineInput,
+  type LoadPipelineError,
+} from './application/use-cases/load-pipeline';
+
+export {
+  loadCycleDetail,
+  loadCycleDetailInputSchema,
+  type LoadCycleDetailInput,
+  type LoadCycleDetailOutput,
+  type LoadCycleDetailError,
+} from './application/use-cases/load-cycle-detail';
+
+export {
+  cancelCycle,
+  cancelCycleInputSchema,
+  type CancelCycleInput,
+  type CancelCycleOutput,
+  type CancelCycleError,
+} from './application/use-cases/cancel-cycle';
+
+export {
+  markPaidOffline,
+  markPaidOfflineInputSchema,
+  type MarkPaidOfflineInput,
+  type MarkPaidOfflineOutput,
+  type MarkPaidOfflineError,
+} from './application/use-cases/mark-paid-offline';
+
+// --- Composition root (Wave G T054 + H1 expansions) ------------------------
+export { makeRenewalsDeps, f8OnPaidCallbacks } from './infrastructure/renewals-deps';
+export type { RenewalsDeps } from './infrastructure/renewals-deps';

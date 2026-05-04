@@ -1,0 +1,159 @@
+/**
+ * F8 Phase 3 Wave H4 · T072 — `LapsedTab` panel.
+ *
+ * Renders when `?urgency=lapsed`. Shows lapsed cycles with reason
+ * badges + Reactivate / Archive CTAs (both stub-disabled in Phase 3
+ * — Reactivate ships in US3 P1 follow-on, Archive in US7).
+ *
+ * For Phase 3 the actual list reuses `PipelineTable` since the row
+ * shape is identical. This wrapper adds an explanatory banner so
+ * admins understand the operational difference between active +
+ * lapsed members.
+ */
+'use client';
+
+import { useFormatter, useTranslations } from 'next-intl';
+import Link from 'next/link';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertCircle } from 'lucide-react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { TierBadge } from '@/components/renewals/tier-badge';
+import { cn } from '@/lib/utils';
+import type { PipelineRow } from '@/modules/renewals';
+
+export interface LapsedTabProps {
+  readonly rows: ReadonlyArray<PipelineRow>;
+}
+
+const REASON_VARIANT_CLASSES: Record<string, string> = {
+  lapsed:
+    'bg-red-50 text-red-900 ring-red-200 dark:bg-red-950 dark:text-red-200 dark:ring-red-900',
+  cancelled:
+    'bg-gray-100 text-gray-700 ring-gray-300 dark:bg-gray-900 dark:text-gray-300',
+  paid: 'bg-emerald-50 text-emerald-900 ring-emerald-200',
+  completed_offline:
+    'bg-emerald-50 text-emerald-900 ring-emerald-200',
+  admin_reactivated: 'bg-blue-50 text-blue-900 ring-blue-200',
+  admin_rejected_with_refund:
+    'bg-amber-50 text-amber-900 ring-amber-200',
+  pending_reactivation_timed_out:
+    'bg-orange-50 text-orange-900 ring-orange-200',
+};
+
+export function LapsedTab({ rows }: LapsedTabProps) {
+  const t = useTranslations('admin.renewals.lapsed');
+  const tTable = useTranslations('admin.renewals.table');
+  const tReason = useTranslations('admin.renewals.lapsedReason');
+  const fmt = useFormatter();
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>{t('banner.title')}</AlertTitle>
+        <AlertDescription>{t('banner.description')}</AlertDescription>
+      </Alert>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{tTable('columns.tier')}</TableHead>
+            <TableHead>{tTable('columns.company')}</TableHead>
+            <TableHead>{tTable('columns.expires')}</TableHead>
+            <TableHead>{t('columns.reason')}</TableHead>
+            <TableHead className="sr-only">
+              {tTable('columns.actions')}
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.length === 0 ? (
+            <TableRow>
+              <TableCell
+                colSpan={5}
+                className="text-center text-muted-foreground py-8"
+              >
+                {tTable('noRows')}
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((r) => {
+              const reason = r.closedReason ?? 'lapsed';
+              return (
+                <TableRow key={r.cycleId}>
+                  <TableCell>
+                    <TierBadge tier={r.tierBucket} />
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/admin/members/${r.memberId}`}
+                      className="font-medium text-foreground hover:text-primary hover:underline"
+                    >
+                      {r.companyName || r.memberId}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <time
+                      dateTime={r.expiresAt}
+                      className="tabular-nums text-foreground/80"
+                    >
+                      {fmt.dateTime(new Date(r.expiresAt), {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </time>
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={cn(
+                        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
+                        REASON_VARIANT_CLASSES[reason] ??
+                          REASON_VARIANT_CLASSES.lapsed,
+                      )}
+                      aria-label={tReason(
+                        reason as
+                          | 'paid'
+                          | 'cancelled'
+                          | 'lapsed'
+                          | 'completed_offline'
+                          | 'admin_reactivated'
+                          | 'admin_rejected_with_refund'
+                          | 'pending_reactivation_timed_out',
+                      )}
+                    >
+                      {tReason(
+                        reason as
+                          | 'paid'
+                          | 'cancelled'
+                          | 'lapsed'
+                          | 'completed_offline'
+                          | 'admin_reactivated'
+                          | 'admin_rejected_with_refund'
+                          | 'pending_reactivation_timed_out',
+                      )}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/admin/renewals/${r.cycleId}`}
+                      className="text-sm text-primary hover:underline"
+                    >
+                      {t('viewDetail')}
+                    </Link>
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}

@@ -694,6 +694,13 @@
       "when": 1790036800000,
       "tag": "0098_f8_phase10_a_notifications_outbox_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1790123200000,
+      "tag": "0099_f8_phase3_audit_event_type_enum",
+      "breakpoints": true
     }
   ]
 }
