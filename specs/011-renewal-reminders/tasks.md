@@ -172,21 +172,21 @@
 
 ### Schedule Policy Domain & Admin UI
 
-- [ ] T081 [P] [US2] Use-case `load-schedule-policies.ts` — per tenant, 5 buckets
-- [ ] T082 [P] [US2] Use-case `update-schedule-policy.ts` — admin edit + audit `renewal_schedule_policy_updated`
-- [ ] T083 [P] [US2] Drizzle adapter `drizzle-tenant-renewal-schedule-policy-repo.ts`
-- [ ] T084 [US2] `GET /api/admin/renewals/settings/schedules` route handler
-- [ ] T085 [US2] `PUT /api/admin/renewals/settings/schedules/[tierBucket]` route handler — admin RBAC + zod validation of step shape
-- [ ] T086 [US2] Admin schedule editor page `src/app/(staff)/admin/renewals/settings/schedules/page.tsx`
-- [ ] T087 [US2] Schedule editor component `_components/schedule-editor.tsx` — 5 tabs (one per bucket); drag-reorder steps; save audit toast
+- [X] T081 [P] [US2] Use-case `load-schedule-policies.ts` — per tenant, 5 buckets
+- [X] T082 [P] [US2] Use-case `update-schedule-policy.ts` — admin edit + audit `renewal_schedule_policy_updated`
+- [X] T083 [P] [US2] Drizzle adapter `drizzle-tenant-renewal-schedule-policy-repo.ts`
+- [X] T084 [US2] `GET /api/admin/renewals/settings/schedules` route handler
+- [X] T085 [US2] `PUT /api/admin/renewals/settings/schedules/[tierBucket]` route handler — admin RBAC + zod validation of step shape
+- [X] T086 [US2] Admin schedule editor page `src/app/(staff)/admin/renewals/settings/schedules/page.tsx`
+- [X] T087 [US2] Schedule editor component `_components/schedule-editor.tsx` — 5 tabs (one per bucket); drag-reorder steps; save audit toast
 
 ### Reminder Dispatch Use-cases
 
-- [ ] T088 [P] [US2] Use-case `dispatch-renewal-cycle.ts` + spec.ts — daily cron entry; idempotency guard per FR-011; multi-year cycle handling per FR-010 (year_in_cycle); skip-reasons per FR-012 (including `multi_year_non_final_year`, `outreach_in_progress`, `no_primary_contact`, `member_below_min_tenure_for_step`); retry budget per FR-010a; **NULL primary_contact_email graceful skip per FR-019a (M3 audit fix)** — does NOT crash cron; creates idempotent `manual_outreach_required` escalation task; emits `renewal_reminder_skipped {reason: 'no_primary_contact'}` audit
-- [ ] T089 [P] [US2] Use-case `send-reminder-now.ts` + spec.ts — admin manual dispatch sharing same code path; `actor_user_id = admin_id`
-- [ ] T090 [P] [US2] Use-case `detect-bounce-threshold.ts` + spec.ts — F1 webhook synchronous-call hook per R8 rev-2; thresholds 1 hard / 3 soft-in-cycle / 5 soft-30d per FR-012a
-- [ ] T091 [P] [US2] Use-case `reset-email-unverified.ts` + spec.ts — F1 verification flow callback resets `members.email_unverified` + closes `manual_outreach_required` task
-- [ ] T092 [P] [US2] Use-case `pause-reminders-after-outreach.ts` + spec.ts — 7-day pause per FR-033 (P5-r1)
+- [X] T088 [P] [US2] Use-case `dispatch-renewal-cycle.ts` + spec.ts — daily cron entry; idempotency guard per FR-011; multi-year cycle handling per FR-010 (year_in_cycle); skip-reasons per FR-012 (including `multi_year_non_final_year`, `outreach_in_progress`, `no_primary_contact`, `member_below_min_tenure_for_step`); retry budget per FR-010a; **NULL primary_contact_email graceful skip per FR-019a (M3 audit fix)** — does NOT crash cron; creates idempotent `manual_outreach_required` escalation task; emits `renewal_reminder_skipped {reason: 'no_primary_contact'}` audit
+- [X] T089 [P] [US2] Use-case `send-reminder-now.ts` + spec.ts — admin manual dispatch sharing same code path; `actor_user_id = admin_id`
+- [X] T090 [P] [US2] Use-case `detect-bounce-threshold.ts` + spec.ts — F1 webhook synchronous-call hook per R8 rev-2; thresholds 1 hard / 3 soft-in-cycle / 5 soft-30d per FR-012a
+- [X] T091 [P] [US2] Use-case `reset-email-unverified.ts` + spec.ts — F1 verification flow callback resets `members.email_unverified` + closes `manual_outreach_required` task
+- [X] T092 [P] [US2] Use-case `pause-reminders-after-outreach.ts` + spec.ts — 7-day pause per FR-033 (P5-r1)
 
 ### Email Templates (5 buckets × 5–7 steps × 3 locales)
 

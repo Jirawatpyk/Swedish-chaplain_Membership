@@ -708,6 +708,41 @@
       "when": 1790381824000,
       "tag": "0100_f8_renewal_cycles_lapsed_tier_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1791532800000,
+      "tag": "0101_f8_phase4_audit_event_type_enum_schedule_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1791619200000,
+      "tag": "0102_f8_phase4_audit_event_type_enum_escalation_task_completed",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1791705600000,
+      "tag": "0103_f8_phase4_audit_event_type_enum_dispatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1791792000000,
+      "tag": "0104_f8_phase4_audit_event_type_enum_bounce_threshold",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791878400000,
+      "tag": "0105_f8_phase4_renewal_reminder_events_retry_budget",
+      "breakpoints": true
     }
   ]
 }

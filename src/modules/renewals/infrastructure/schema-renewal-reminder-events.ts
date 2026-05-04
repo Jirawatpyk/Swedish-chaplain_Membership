@@ -55,6 +55,14 @@ export const renewalReminderEvents = pgTable(
     actorUserId: uuid('actor_user_id'),
     yearInCycle: smallint('year_in_cycle').notNull().default(1),
 
+    // F8 Phase 4 Wave I2e (migration 0105) — FR-010a retry budget.
+    // `retry_until` = dispatched_at + 24h on transient failures; NULL for
+    // non-failed rows or permanent failures. `retry_exhausted_at` is set
+    // by the retry use-case when transitioning to permanent failure
+    // (idempotency primitive for permanent-audit emission).
+    retryUntil: timestamp('retry_until', { withTimezone: true }),
+    retryExhaustedAt: timestamp('retry_exhausted_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -85,6 +93,11 @@ export const renewalReminderEvents = pgTable(
     failedIdx: index('renewal_reminder_events_failed_idx')
       .on(table.tenantId, table.status)
       .where(sql`status = 'failed'`),
+    // Retry-eligible cursor — partial index keyed on (tenant_id,
+    // retry_until) for the FR-010a retry pass query.
+    retryEligibleIdx: index('renewal_reminder_events_retry_eligible_idx')
+      .on(table.tenantId, table.retryUntil)
+      .where(sql`status = 'failed' AND retry_until IS NOT NULL`),
   }),
 );
 

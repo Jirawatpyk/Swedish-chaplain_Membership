@@ -199,6 +199,16 @@ export type {
 } from './application/ports/tenant-renewal-schedule-policy-repo';
 
 export type {
+  AtRiskOutreachReadRepo,
+  OutreachWithinWindowResult,
+} from './application/ports/at-risk-outreach-read-repo';
+
+export type {
+  MemberRenewalFlagsRepo,
+  MemberRenewalFlagsMutationResult,
+} from './application/ports/member-renewal-flags-repo';
+
+export type {
   RenewalGateway,
   SendRenewalEmailInput,
   SendRenewalEmailResult,
@@ -278,6 +288,115 @@ export {
   type MarkPaidOfflineOutput,
   type MarkPaidOfflineError,
 } from './application/use-cases/mark-paid-offline';
+
+// --- Phase 4 Wave I1a use-cases (T081-T082) -------------------------------
+export {
+  loadSchedulePolicies,
+  loadSchedulePoliciesInputSchema,
+  type LoadSchedulePoliciesInput,
+  type LoadSchedulePoliciesOutput,
+  type LoadSchedulePoliciesError,
+} from './application/use-cases/load-schedule-policies';
+
+export {
+  updateSchedulePolicy,
+  updateSchedulePolicyInputSchema,
+  type UpdateSchedulePolicyInput,
+  type UpdateSchedulePolicyOutput,
+  type UpdateSchedulePolicyError,
+} from './application/use-cases/update-schedule-policy';
+
+// --- Phase 4 Wave I2a use-cases (T092) ------------------------------------
+export {
+  pauseRemindersAfterOutreach,
+  pauseRemindersAfterOutreachInputSchema,
+  REMINDER_PAUSE_WINDOW_DAYS,
+  type PauseRemindersAfterOutreachInput,
+  type PauseRemindersAfterOutreachOutput,
+  type PauseRemindersAfterOutreachError,
+  type PausedResult,
+  type NotPausedResult,
+} from './application/use-cases/pause-reminders-after-outreach';
+
+// --- Phase 4 Wave I2b use-cases (T091) ------------------------------------
+export {
+  resetEmailUnverified,
+  resetEmailUnverifiedInputSchema,
+  MANUAL_OUTREACH_TASK_TYPE,
+  type ResetEmailUnverifiedInput,
+  type ResetEmailUnverifiedOutput,
+  type ResetEmailUnverifiedError,
+} from './application/use-cases/reset-email-unverified';
+
+// --- Phase 4 Wave I2c use-cases (T088 + T089) -----------------------------
+export {
+  dispatchRenewalCycle,
+  dispatchRenewalCycleInputSchema,
+  DEFAULT_MAX_OFFSET_DAYS,
+  DEFAULT_PAGE_SIZE,
+  type DispatchRenewalCycleInput,
+  type DispatchRenewalCycleOutput,
+  type DispatchRenewalCycleError,
+  type DispatchRenewalCycleSummary,
+} from './application/use-cases/dispatch-renewal-cycle';
+
+export {
+  sendReminderNow,
+  sendReminderNowInputSchema,
+  type SendReminderNowInput,
+  type SendReminderNowOutput,
+  type SendReminderNowError,
+} from './application/use-cases/send-reminder-now';
+
+// SkipReason enum + DispatchCandidate types are referenced by route
+// handlers in Wave I5/I6 — exported via barrel for type-safety.
+export {
+  SKIP_REASONS,
+  type SkipReason,
+  type DispatchContext,
+  type DispatchOneCycleOutcome,
+} from './application/use-cases/_lib/dispatch-one-cycle';
+
+export type {
+  DispatchCandidate,
+  DispatchCandidateRepo,
+  DispatchCandidatePage,
+  DispatchCandidateListArgs,
+  DispatchCandidateMember,
+  DispatchCandidatePrimaryContact,
+} from './application/ports/dispatch-candidate-repo';
+
+// --- Phase 4 Wave I2d use-case (T090) -------------------------------------
+export {
+  detectBounceThreshold,
+  detectBounceThresholdInputSchema,
+  BOUNCE_THRESHOLD_HARD,
+  BOUNCE_THRESHOLD_SOFT_IN_CYCLE,
+  BOUNCE_THRESHOLD_SOFT_30D,
+  BOUNCE_TRIGGERS,
+  type DetectBounceThresholdInput,
+  type DetectBounceThresholdOutcome,
+  type DetectBounceThresholdError,
+  type BounceTrigger,
+} from './application/use-cases/detect-bounce-threshold';
+
+export type {
+  BounceEventQuery,
+  BounceCounts,
+} from './application/ports/bounce-event-query';
+
+// --- Phase 4 Wave I2e — FR-010a retry budget ------------------------------
+export {
+  retryFailedReminders,
+  retryFailedRemindersInputSchema,
+  DEFAULT_RETRY_PAGE_SIZE,
+  type RetryFailedRemindersInput,
+  type RetryFailedRemindersOutput,
+  type RetryFailedRemindersError,
+  type RetryFailedRemindersSummary,
+} from './application/use-cases/retry-failed-reminders';
+
+export { RETRY_BUDGET_HOURS } from './application/use-cases/_lib/dispatch-one-cycle';
 
 // --- Composition root (Wave G T054 + H1 expansions) ------------------------
 export { makeRenewalsDeps, f8OnPaidCallbacks } from './infrastructure/renewals-deps';

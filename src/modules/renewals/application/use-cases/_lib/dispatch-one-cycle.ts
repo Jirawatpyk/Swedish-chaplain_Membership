@@ -1,0 +1,634 @@
+/**
+ * F8 Phase 4 Wave I2c — `dispatchOneCycle` core function.
+ *
+ * Single per-cycle decision tree shared by T088 cron entry
+ * (`dispatchRenewalCycle`) and T089 admin entry (`sendReminderNow`)
+ * per FR-018 single-source-of-truth requirement.
+ *
+ * Decision tree (first match wins):
+ *   1. Feature flag off → skip `feature_flag_disabled`
+ *   2. Read-only mode → skip + emit `renewal_reminder_deferred_read_only`
+ *   3. Cycle terminal status → skip `cycle_terminal` (defensive)
+ *   4. Member archived → skip `member_archived`
+ *   5. Member opted out → skip `member_opted_out`
+ *   6. Member email unverified → skip `email_unverified`
+ *   7. No schedule policy for tier → skip `tenant_misconfigured`
+ *   8. Step not due today → no-op return (NOT a skip in audit terms)
+ *   9. Multi-year non-final year + email channel → skip `multi_year_non_final_year`
+ *  10. Outreach pause active → skip `outreach_in_progress`
+ *  11. Email channel + no primary contact → skip `no_primary_contact`
+ *      + idempotently create `manual_outreach_required` task (FR-019a)
+ *  12. Idempotency replay → skip `already_sent` (no audit — reminder
+ *      event already exists, prior run audited)
+ *  13. Channel branch:
+ *      - email: gateway.sendRenewalEmail → on success transition + audit
+ *        `renewal_reminder_sent`; on 4xx → `renewal_reminder_send_failed_permanent`;
+ *        on 5xx → `renewal_reminder_send_failed` (Wave I2d adds retry orchestration)
+ *      - task: escalationTaskRepo.insertIfAbsent + audit `escalation_task_created`
+ *
+ * Atomic state+audit per Constitution Principle VIII: all reminder-event
+ * status transitions + audit emits happen inside `runInTenant` tx. The
+ * external gateway call happens BEFORE the tx is opened (gateways are
+ * non-transactional); on success/failure the persistence + audit are
+ * wrapped in a fresh tx.
+ *
+ * Private file (`_lib/`) — NOT exported via the F8 barrel.
+ */
+import { randomUUID } from 'node:crypto';
+import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
+import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
+import { findStepForDate } from '../../../domain/tenant-renewal-schedule-policy';
+import { asCycleId } from '../../../domain/renewal-cycle';
+import { asTaskId } from '../../../domain/renewal-escalation-task';
+import type {
+  ReminderStep,
+} from '../../../domain/value-objects/reminder-step';
+import type { DispatchCandidate } from '../../ports/dispatch-candidate-repo';
+import { pauseRemindersAfterOutreach } from '../pause-reminders-after-outreach';
+import type { MemberId } from '@/modules/members';
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+/**
+ * F8 Phase 4 Wave I2e — FR-010a retry budget window. Transient gateway
+ * failures get `retry_until = dispatched_at + RETRY_BUDGET_HOURS`; the
+ * retry use-case re-attempts within this window. Beyond it, the event
+ * transitions to permanent failure with `renewal_reminder_send_failed_permanent`
+ * audit + `manual_outreach_required` task.
+ */
+export const RETRY_BUDGET_HOURS = 24 as const;
+
+/**
+ * The 11 skip reasons emitted by the dispatcher. Single audit event
+ * `renewal_reminder_skipped` carries `{reason}` payload. Distinct from
+ * `renewal_reminder_deferred_read_only` (its own event for backward
+ * compatibility with FR-012 audit-trail granularity).
+ */
+export const SKIP_REASONS = [
+  'feature_flag_disabled',
+  'read_only_mode',
+  'cycle_terminal',
+  'member_archived',
+  'member_opted_out',
+  'email_unverified',
+  'tenant_misconfigured',
+  'not_due_today',
+  'multi_year_non_final_year',
+  'outreach_in_progress',
+  'no_primary_contact',
+  'already_sent',
+] as const;
+export type SkipReason = (typeof SKIP_REASONS)[number];
+
+export interface DispatchContext {
+  readonly tenantId: string;
+  /** Null for cron actor; UUID for admin "Send reminder now" caller. */
+  readonly actorUserId: string | null;
+  readonly actorRole: 'cron' | 'admin';
+  readonly correlationId: string;
+  readonly requestId: string | null;
+  /** Injectable now-clock for tests. Default: real-time on each call. */
+  readonly nowIso: string;
+}
+
+export type DispatchOneCycleOutcome =
+  | {
+      readonly kind: 'sent';
+      readonly reminderEventId: string;
+      readonly deliveryId: string;
+      readonly dispatchedAt: string;
+    }
+  | {
+      readonly kind: 'skipped';
+      readonly reason: SkipReason;
+      /** Optional metadata included in the audit payload (e.g. `latest_outreach_at`). */
+      readonly metadata?: Record<string, unknown>;
+    }
+  | {
+      readonly kind: 'task_created';
+      readonly taskId: string;
+      readonly taskType: string;
+      readonly reminderEventId: string;
+    }
+  | {
+      readonly kind: 'failed_transient';
+      readonly reminderEventId: string;
+      readonly reason: string;
+    }
+  | {
+      readonly kind: 'failed_permanent';
+      readonly reminderEventId: string;
+      readonly reason: string;
+    };
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** `year_in_cycle = floor((now - period_from) / 365 days) + 1` per research.md:103. */
+export function computeYearInCycle(periodFromIso: string, nowIso: string): number {
+  const start = new Date(periodFromIso).getTime();
+  const now = new Date(nowIso).getTime();
+  const days = Math.floor((now - start) / MS_PER_DAY);
+  // Year-in-cycle is 1-indexed. Negative results (now < period_from)
+  // should not happen for active cycles; defensive clamp to 1.
+  return Math.max(1, Math.floor(days / 365) + 1);
+}
+
+/** Total years in a multi-year cycle (cycleLengthMonths / 12). */
+export function computeCycleYears(cycleLengthMonths: number): number {
+  return Math.max(1, Math.round(cycleLengthMonths / 12));
+}
+
+// ---------------------------------------------------------------------------
+// Skip-emit helper — emits `renewal_reminder_skipped` with reason payload.
+// Returns the outcome shape for caller convenience.
+// ---------------------------------------------------------------------------
+
+async function emitSkipAudit(
+  deps: RenewalsDeps,
+  candidate: DispatchCandidate,
+  ctx: DispatchContext,
+  reason: SkipReason,
+  metadata?: Record<string, unknown>,
+): Promise<void> {
+  const { cycle, member } = candidate;
+  // Special-case: read_only_mode emits a DISTINCT event per FR-012.
+  if (reason === 'read_only_mode') {
+    await deps.auditEmitter.emit(
+      {
+        type: 'renewal_reminder_deferred_read_only',
+        payload: {
+          cycle_id: cycle.cycleId,
+          member_id: member.memberId as MemberId,
+          tenant_id: ctx.tenantId,
+        },
+      },
+      {
+        tenantId: ctx.tenantId,
+        actorUserId: ctx.actorUserId,
+        actorRole: ctx.actorRole,
+        correlationId: ctx.correlationId,
+        requestId: ctx.requestId,
+      },
+    );
+    return;
+  }
+  // Skip events that don't need audit emission (FR-012 — `already_sent`
+  // is implicit from the prior reminder_event row already audited;
+  // `not_due_today` and `feature_flag_disabled` are too noisy).
+  if (
+    reason === 'already_sent' ||
+    reason === 'not_due_today' ||
+    reason === 'feature_flag_disabled'
+  ) {
+    return;
+  }
+  await deps.auditEmitter.emit(
+    {
+      type: 'renewal_reminder_skipped',
+      payload: {
+        cycle_id: cycle.cycleId,
+        member_id: member.memberId as MemberId,
+        reason,
+        ...(metadata ?? {}),
+      },
+    },
+    {
+      tenantId: ctx.tenantId,
+      actorUserId: ctx.actorUserId,
+      actorRole: ctx.actorRole,
+      correlationId: ctx.correlationId,
+      requestId: ctx.requestId,
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main dispatch decision tree
+// ---------------------------------------------------------------------------
+
+export async function dispatchOneCycle(
+  deps: RenewalsDeps,
+  candidate: DispatchCandidate,
+  ctx: DispatchContext,
+): Promise<DispatchOneCycleOutcome> {
+  const { cycle, member, primaryContact, schedulePolicy } = candidate;
+
+  // Gate 1 — feature flag.
+  if (!env.features.f8Renewals) {
+    return { kind: 'skipped', reason: 'feature_flag_disabled' };
+  }
+  // Gate 2 — read-only mode.
+  if (env.flags.readOnlyMode) {
+    await emitSkipAudit(deps, candidate, ctx, 'read_only_mode');
+    return { kind: 'skipped', reason: 'read_only_mode' };
+  }
+  // Gate 3 — cycle terminal (defensive; the repo should already filter).
+  if (
+    cycle.status === 'completed' ||
+    cycle.status === 'cancelled' ||
+    cycle.status === 'lapsed'
+  ) {
+    await emitSkipAudit(deps, candidate, ctx, 'cycle_terminal');
+    return { kind: 'skipped', reason: 'cycle_terminal' };
+  }
+  // Gate 4 — member archived.
+  if (member.status === 'archived') {
+    await emitSkipAudit(deps, candidate, ctx, 'member_archived');
+    return { kind: 'skipped', reason: 'member_archived' };
+  }
+  // Gate 5 — member opted out (FR-016).
+  if (member.renewalRemindersOptedOut) {
+    await emitSkipAudit(deps, candidate, ctx, 'member_opted_out');
+    return { kind: 'skipped', reason: 'member_opted_out' };
+  }
+  // Gate 6 — email unverified (FR-012a — bounce-threshold flag).
+  if (member.emailUnverified) {
+    await emitSkipAudit(deps, candidate, ctx, 'email_unverified');
+    return { kind: 'skipped', reason: 'email_unverified' };
+  }
+  // Gate 7 — no schedule policy (rare — SweCham seed populates 5 rows).
+  if (schedulePolicy === null) {
+    await emitSkipAudit(deps, candidate, ctx, 'tenant_misconfigured');
+    return { kind: 'skipped', reason: 'tenant_misconfigured' };
+  }
+  // Gate 8 — step not due today (silent no-op; not an audit event).
+  const dueStep: ReminderStep | null = findStepForDate(
+    schedulePolicy,
+    new Date(cycle.expiresAt),
+    new Date(ctx.nowIso),
+  );
+  if (!dueStep) {
+    return { kind: 'skipped', reason: 'not_due_today' };
+  }
+  // Gate 9 — multi-year non-final year for email steps (Q4 / FR-010).
+  const yearInCycle = computeYearInCycle(cycle.periodFrom, ctx.nowIso);
+  const cycleYears = computeCycleYears(cycle.cycleLengthMonths);
+  if (
+    dueStep.channel === 'email' &&
+    cycleYears > 1 &&
+    yearInCycle < cycleYears
+  ) {
+    await emitSkipAudit(deps, candidate, ctx, 'multi_year_non_final_year', {
+      year_in_cycle: yearInCycle,
+      cycle_years: cycleYears,
+      step_id: dueStep.stepId,
+    });
+    return { kind: 'skipped', reason: 'multi_year_non_final_year' };
+  }
+  // Gate 10 — 7-day pause after admin outreach (FR-033).
+  const pauseResult = await pauseRemindersAfterOutreach(deps, {
+    tenantId: ctx.tenantId,
+    memberId: member.memberId,
+  });
+  if (pauseResult.ok && pauseResult.value.paused) {
+    await emitSkipAudit(deps, candidate, ctx, 'outreach_in_progress', {
+      latest_outreach_at: pauseResult.value.latestOutreachAt,
+      expires_at: pauseResult.value.expiresAt,
+      step_id: dueStep.stepId,
+    });
+    return {
+      kind: 'skipped',
+      reason: 'outreach_in_progress',
+      metadata: { latest_outreach_at: pauseResult.value.latestOutreachAt },
+    };
+  }
+  // Gate 11 — email step + no primary contact (FR-019a graceful skip).
+  if (dueStep.channel === 'email' && primaryContact === null) {
+    // Idempotently create a manual_outreach_required escalation task
+    // so admin sees the queue. transitions inside a tx because we
+    // also emit `escalation_task_created` + `renewal_reminder_skipped`
+    // atomically (Principle VIII).
+    return runInTenant(deps.tenant, async (tx) => {
+      const taskId = asTaskId(randomUUID());
+      const dueAt = new Date(ctx.nowIso).toISOString();
+      const insert = await deps.escalationTaskRepo.insertIfAbsent(tx, {
+        tenantId: ctx.tenantId,
+        taskId,
+        memberId: member.memberId,
+        cycleId: cycle.cycleId,
+        taskType: 'manual_outreach_required',
+        assignedToRole: 'admin',
+        dueAt,
+      });
+      if (insert.created) {
+        await deps.auditEmitter.emitInTx(
+          tx,
+          {
+            type: 'escalation_task_created',
+            payload: {
+              task_id: insert.row.taskId,
+              task_type: 'manual_outreach_required',
+              member_id: member.memberId as MemberId,
+              cycle_id: cycle.cycleId,
+              trigger_reason: 'no_primary_contact',
+              step_id: dueStep.stepId,
+            },
+          },
+          {
+            tenantId: ctx.tenantId,
+            actorUserId: ctx.actorUserId,
+            actorRole: ctx.actorRole,
+            correlationId: ctx.correlationId,
+            requestId: ctx.requestId,
+            summary: `manual_outreach_required task created for member ${member.memberId} (no primary contact)`,
+          },
+        );
+      }
+      // Always emit the skipped audit, even when the task was already
+      // open (idempotency replay) — caller still wants the cron-pass
+      // record.
+      await deps.auditEmitter.emitInTx(
+        tx,
+        {
+          type: 'renewal_reminder_skipped',
+          payload: {
+            cycle_id: cycle.cycleId,
+            member_id: member.memberId as MemberId,
+            reason: 'no_primary_contact',
+            step_id: dueStep.stepId,
+            escalation_task_id: insert.row.taskId,
+          },
+        },
+        {
+          tenantId: ctx.tenantId,
+          actorUserId: ctx.actorUserId,
+          actorRole: ctx.actorRole,
+          correlationId: ctx.correlationId,
+          requestId: ctx.requestId,
+        },
+      );
+      return {
+        kind: 'skipped',
+        reason: 'no_primary_contact',
+        metadata: { escalation_task_id: insert.row.taskId },
+      } satisfies DispatchOneCycleOutcome;
+    });
+  }
+  // Gate 12 — idempotency. Insert reminder_event with status=pending.
+  // If the unique idem index already has a row, `created=false` and
+  // we treat the dispatch as a replay (no audit, no gateway call).
+  const reminderInsert = await runInTenant(deps.tenant, (tx) =>
+    deps.reminderEventRepo.insertIfAbsent(tx, {
+      tenantId: ctx.tenantId,
+      cycleId: asCycleId(cycle.cycleId),
+      stepId: dueStep.stepId,
+      yearInCycle,
+      channel: dueStep.channel,
+      ...(dueStep.channel === 'email'
+        ? { templateId: dueStep.templateId }
+        : { taskType: dueStep.taskType }),
+      ...(ctx.actorUserId !== null ? { actorUserId: ctx.actorUserId } : {}),
+    }),
+  );
+  if (!reminderInsert.created) {
+    return {
+      kind: 'skipped',
+      reason: 'already_sent',
+      metadata: {
+        existing_reminder_event_id: reminderInsert.row.reminderEventId,
+        existing_dispatched_at: reminderInsert.row.dispatchedAt,
+      },
+    };
+  }
+  // Channel branch — email vs task.
+  if (dueStep.channel === 'email') {
+    return await dispatchEmailStep(deps, candidate, ctx, dueStep, reminderInsert.row.reminderEventId);
+  }
+  return await dispatchTaskStep(deps, candidate, ctx, dueStep, reminderInsert.row.reminderEventId, yearInCycle);
+}
+
+// ---------------------------------------------------------------------------
+// Email step dispatch — gateway call + transition + audit
+// ---------------------------------------------------------------------------
+
+async function dispatchEmailStep(
+  deps: RenewalsDeps,
+  candidate: DispatchCandidate,
+  ctx: DispatchContext,
+  step: ReminderStep & { channel: 'email' },
+  reminderEventId: string,
+): Promise<DispatchOneCycleOutcome> {
+  const { cycle, member, primaryContact } = candidate;
+  // Type narrowing — Gate 11 already guarantees primaryContact !== null
+  // for email steps. Defensive null-check for compile-time correctness.
+  if (primaryContact === null) {
+    throw new Error(
+      `dispatchEmailStep invariant: primaryContact null reached email branch — gate 11 regression`,
+    );
+  }
+  // Resolve recipient locale: contact's preferred_language wins over
+  // member.preferred_locale (contact-level is more specific). Fallback
+  // to 'en' when both are null.
+  const locale = primaryContact.preferredLanguage ?? member.preferredLocale ?? 'en';
+
+  // External gateway call — outside tx (non-transactional).
+  const gatewayResult = await deps.renewalGateway.sendRenewalEmail({
+    tenantId: ctx.tenantId,
+    cycleId: asCycleId(cycle.cycleId),
+    stepId: step.stepId,
+    templateId: step.templateId,
+    recipient: {
+      memberId: member.memberId,
+      toEmail: primaryContact.email,
+      toName: `${primaryContact.firstName} ${primaryContact.lastName}`.trim(),
+      preferredLocale: locale,
+    },
+    templateVariables: {
+      member_company_name: member.companyName,
+      cycle_expires_at: cycle.expiresAt,
+      tier_bucket: cycle.tierAtCycleStart,
+      step_id: step.stepId,
+    },
+    idempotencyKey: reminderEventId,
+  });
+
+  // Persist outcome — transition reminder_event + audit emit, atomic.
+  return runInTenant(deps.tenant, async (tx) => {
+    if (gatewayResult.ok) {
+      await deps.reminderEventRepo.transitionStatus(tx, {
+        tenantId: ctx.tenantId,
+        reminderEventId,
+        nextStatus: 'sent',
+        dispatchedAt: gatewayResult.value.dispatchedAt,
+        deliveryId: gatewayResult.value.deliveryId,
+      });
+      await deps.auditEmitter.emitInTx(
+        tx,
+        {
+          type: 'renewal_reminder_sent',
+          payload: {
+            cycle_id: cycle.cycleId,
+            member_id: member.memberId as MemberId,
+            step_id: step.stepId,
+            channel: 'email',
+            template_id: step.templateId,
+            delivery_id: gatewayResult.value.deliveryId,
+            recipient_locale: locale,
+          },
+        },
+        {
+          tenantId: ctx.tenantId,
+          actorUserId: ctx.actorUserId,
+          actorRole: ctx.actorRole,
+          correlationId: ctx.correlationId,
+          requestId: ctx.requestId,
+          summary: `Reminder sent to ${member.companyName} (${step.stepId})`,
+        },
+      );
+      return {
+        kind: 'sent',
+        reminderEventId,
+        deliveryId: gatewayResult.value.deliveryId,
+        dispatchedAt: gatewayResult.value.dispatchedAt,
+      };
+    }
+    // Failure path. 4xx = permanent, 5xx + recipient-unsubscribed/unverified = boundary cases.
+    const err = gatewayResult.error;
+    const isPermanent =
+      err.kind === 'gateway_4xx' ||
+      err.kind === 'recipient_unsubscribed' ||
+      err.kind === 'recipient_email_unverified' ||
+      err.kind === 'template_variables_missing';
+    const failureReason =
+      err.kind === 'gateway_5xx' || err.kind === 'gateway_4xx'
+        ? err.message
+        : err.kind;
+    // Wave I2e — FR-010a: transient failures get a 24h retry budget;
+    // permanent failures get NULL (never re-attempted).
+    const retryUntilIso = isPermanent
+      ? null
+      : new Date(
+          new Date(ctx.nowIso).getTime() + RETRY_BUDGET_HOURS * 60 * 60 * 1000,
+        ).toISOString();
+    await deps.reminderEventRepo.transitionStatus(tx, {
+      tenantId: ctx.tenantId,
+      reminderEventId,
+      nextStatus: 'failed',
+      failureReason,
+      retryUntil: retryUntilIso,
+    });
+    await deps.auditEmitter.emitInTx(
+      tx,
+      {
+        type: isPermanent
+          ? 'renewal_reminder_send_failed_permanent'
+          : 'renewal_reminder_send_failed',
+        payload: {
+          cycle_id: cycle.cycleId,
+          member_id: member.memberId as MemberId,
+          step_id: step.stepId,
+          channel: 'email',
+          template_id: step.templateId,
+          failure_kind: err.kind,
+          failure_message: failureReason,
+        },
+      },
+      {
+        tenantId: ctx.tenantId,
+        actorUserId: ctx.actorUserId,
+        actorRole: ctx.actorRole,
+        correlationId: ctx.correlationId,
+        requestId: ctx.requestId,
+        summary: `Reminder send ${isPermanent ? 'permanently failed' : 'failed (transient)'} for ${member.companyName} (${step.stepId})`,
+      },
+    );
+    logger.warn(
+      {
+        cycleId: cycle.cycleId,
+        memberId: member.memberId,
+        stepId: step.stepId,
+        failureKind: err.kind,
+        failureMessage: failureReason,
+        permanent: isPermanent,
+      },
+      'dispatchOneCycle: gateway send failed',
+    );
+    return isPermanent
+      ? {
+          kind: 'failed_permanent' as const,
+          reminderEventId,
+          reason: failureReason,
+        }
+      : {
+          kind: 'failed_transient' as const,
+          reminderEventId,
+          reason: failureReason,
+        };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Task step dispatch — escalation_task creation + transition + audit
+// ---------------------------------------------------------------------------
+
+async function dispatchTaskStep(
+  deps: RenewalsDeps,
+  candidate: DispatchCandidate,
+  ctx: DispatchContext,
+  step: ReminderStep & { channel: 'task' },
+  reminderEventId: string,
+  yearInCycle: number,
+): Promise<DispatchOneCycleOutcome> {
+  const { cycle, member } = candidate;
+  return runInTenant(deps.tenant, async (tx) => {
+    const taskId = asTaskId(randomUUID());
+    const insert = await deps.escalationTaskRepo.insertIfAbsent(tx, {
+      tenantId: ctx.tenantId,
+      taskId,
+      memberId: member.memberId,
+      cycleId: cycle.cycleId,
+      taskType: step.taskType,
+      assignedToRole: step.assigneeRole,
+      // Due date: today (cron run date). Admin queue surface (Wave I8)
+      // shows overdue tasks via dueAt < NOW() filter.
+      dueAt: new Date(ctx.nowIso).toISOString(),
+    });
+    // Transition reminder_event to `sent` (task-channel "sent" =
+    // "task created" — there's no separate `task_created` reminder
+    // status; the channel field disambiguates).
+    await deps.reminderEventRepo.transitionStatus(tx, {
+      tenantId: ctx.tenantId,
+      reminderEventId,
+      nextStatus: 'sent',
+      dispatchedAt: ctx.nowIso,
+    });
+    await deps.auditEmitter.emitInTx(
+      tx,
+      {
+        type: 'escalation_task_created',
+        payload: {
+          task_id: insert.row.taskId,
+          task_type: step.taskType,
+          member_id: member.memberId as MemberId,
+          cycle_id: cycle.cycleId,
+          year_in_cycle: yearInCycle,
+          step_id: step.stepId,
+          assignee_role: step.assigneeRole,
+          idempotent_replay: !insert.created,
+        },
+      },
+      {
+        tenantId: ctx.tenantId,
+        actorUserId: ctx.actorUserId,
+        actorRole: ctx.actorRole,
+        correlationId: ctx.correlationId,
+        requestId: ctx.requestId,
+        summary: `Escalation task ${step.taskType} created for ${member.companyName} (year ${yearInCycle}/${computeCycleYears(cycle.cycleLengthMonths)})`,
+      },
+    );
+    return {
+      kind: 'task_created',
+      taskId: insert.row.taskId,
+      taskType: step.taskType,
+      reminderEventId,
+    };
+  });
+}

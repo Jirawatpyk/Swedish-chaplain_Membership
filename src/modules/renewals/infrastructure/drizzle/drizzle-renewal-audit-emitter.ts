@@ -41,6 +41,22 @@ import type { AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
  *   - `renewal_cycle_completed_offline`    (mark-paid-offline.ts)
  *   - `renewal_cross_tenant_probe`         (3 use-cases probe path)
  *   - `f8_role_violation_blocked`          (renewals-route-helpers)
+ *   - `renewal_schedule_policy_updated`    (update-schedule-policy.ts —
+ *                                           Phase 4 Wave I1a, migration 0101)
+ *   - `escalation_task_completed`          (reset-email-unverified.ts —
+ *                                           Phase 4 Wave I2b, migration 0102;
+ *                                           also emitted by Wave I8+ admin
+ *                                           task-queue UI)
+ *   - 8 dispatcher events                   (dispatch-one-cycle.ts —
+ *                                           Phase 4 Wave I2c, migration 0103):
+ *       - `renewal_reminder_sent`
+ *       - `renewal_reminder_skipped`
+ *       - `renewal_reminder_send_failed`
+ *       - `renewal_reminder_send_failed_permanent`
+ *       - `renewal_reminder_retried` (Wave I2d retry budget will emit)
+ *       - `renewal_reminder_deferred_read_only`
+ *       - `renewal_skipped_no_joined_at`
+ *       - `escalation_task_created` (also second emit site = task channel)
  *
  * `renewal_cycle_created` is reserved for the Phase 4 cycle-creation
  * hook (F4 invoice-paid callback) and will be added here alongside
@@ -51,6 +67,18 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   'renewal_cycle_completed_offline',
   'renewal_cross_tenant_probe',
   'f8_role_violation_blocked',
+  'renewal_schedule_policy_updated',
+  'escalation_task_completed',
+  'renewal_reminder_sent',
+  'renewal_reminder_skipped',
+  'renewal_reminder_send_failed',
+  'renewal_reminder_send_failed_permanent',
+  'renewal_reminder_retried',
+  'renewal_reminder_deferred_read_only',
+  'renewal_skipped_no_joined_at',
+  'escalation_task_created',
+  // --- Wave I2d (migration 0104) ----------------------------------------
+  'member_email_unverified_threshold_crossed',
 ]);
 
 function buildSummary<E extends F8AuditEventType>(

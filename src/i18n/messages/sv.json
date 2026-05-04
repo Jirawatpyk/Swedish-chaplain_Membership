@@ -1675,6 +1675,56 @@
         "loadFailed": "Kunde inte ladda förnyelsepipelinen.",
         "retry": "Försök igen",
         "goBack": "Gå tillbaka"
+      },
+      "settings": {
+        "schedules": {
+          "title": "Påminnelseschema",
+          "subtitle": "Bestäm hur medlemmar i varje nivå kontaktas före och efter sitt förnyelsedatum.",
+          "tabs": {
+            "thai_alumni": "Thai alumni",
+            "start_up": "Start-up",
+            "regular": "Regular",
+            "premium": "Premium",
+            "partnership": "Partnership"
+          },
+          "stepCard": {
+            "channel": {
+              "email": "E-post",
+              "task": "Uppgift"
+            },
+            "offsetDay": {
+              "before": "T-{days}",
+              "after": "T+{days}",
+              "exact": "T+0"
+            },
+            "stepIdLabel": "Steg-ID",
+            "templateIdLabel": "E-postmall",
+            "taskTypeLabel": "Uppgiftstyp",
+            "assigneeLabel": "Tilldelad roll"
+          },
+          "actions": {
+            "save": "Spara schema",
+            "saving": "Sparar…",
+            "addStep": "Lägg till steg",
+            "removeStep": "Ta bort steg",
+            "moveUp": "Flytta tidigare",
+            "moveDown": "Flytta senare",
+            "discard": "Ångra ändringar"
+          },
+          "saved": {
+            "toast": "Schemat för {tier} sparat (+{added} -{removed} ={unchanged})"
+          },
+          "error": {
+            "saveFailed": "Kunde inte spara schemat. Försök igen.",
+            "invalidSteps": "Ett eller flera steg är ogiltiga. Åtgärda markerade fält.",
+            "noPolicies": "Inga scheman är konfigurerade för denna kammare ännu. Spara valfri nivå för att skapa det första."
+          },
+          "manager": {
+            "readOnlyNotice": "Du har endast läsbehörighet till förnyelseschemat. Be en administratör att göra ändringar."
+          },
+          "lastSaved": "Senast sparad {date}",
+          "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}"
+        }
       }
     },
     "refund": {

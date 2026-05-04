@@ -73,6 +73,24 @@ export interface RenewalEscalationTaskRepo {
     userId: string,
   ): Promise<ReadonlyArray<RenewalEscalationTask>>;
 
+  /**
+   * F8 Phase 4 Wave I2b — Returns the open tasks for a member of the
+   * given type. Index-served by `renewal_escalation_tasks_open_idem_idx`
+   * (tenant, member, cycle, task_type) WHERE status='open' — typically
+   * returns 0 or 1 row.
+   *
+   * `cycleId` is intentionally OMITTED from the lookup signature so
+   * T091 reset-email-unverified closes ALL `manual_outreach_required`
+   * tasks across ALL of the member's cycles (defensive — eliminates
+   * the rare "cycle X bounced, then cycle Y bounced before X resolved"
+   * double-task case).
+   */
+  listOpenForMemberByType(
+    tenantId: string,
+    memberId: string,
+    taskType: string,
+  ): Promise<ReadonlyArray<RenewalEscalationTask>>;
+
   /** Transition open → done | skipped. */
   transitionStatus(
     tx: unknown,

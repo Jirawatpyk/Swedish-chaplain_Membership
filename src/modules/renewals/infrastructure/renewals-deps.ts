@@ -28,6 +28,14 @@ import { renewalLinkTokenSigner } from './renewal-link-token/hmac-signer';
 import { renewalLinkTokenVerifier } from './renewal-link-token/hmac-verifier';
 import { makeDrizzleRenewalCycleRepo } from './drizzle/drizzle-renewal-cycle-repo';
 import { makeDrizzleRenewalAuditEmitter } from './drizzle/drizzle-renewal-audit-emitter';
+import { makeDrizzleTenantRenewalSchedulePolicyRepo } from './drizzle/drizzle-tenant-renewal-schedule-policy-repo';
+import { makeDrizzleAtRiskOutreachReadRepo } from './drizzle/drizzle-at-risk-outreach-read-repo';
+import { makeDrizzleRenewalEscalationTaskRepo } from './drizzle/drizzle-renewal-escalation-task-repo';
+import { makeDrizzleMemberRenewalFlagsRepo } from './drizzle/drizzle-member-renewal-flags-repo';
+import { makeDrizzleDispatchCandidateRepo } from './drizzle/drizzle-dispatch-candidate-repo';
+import { makeDrizzleRenewalReminderEventRepo } from './drizzle/drizzle-renewal-reminder-event-repo';
+import { stubRenewalGateway } from './stub-renewal-gateway';
+import { stubBounceEventQuery } from './stub-bounce-event-query';
 import { f4InvoiceBridge, type F4InvoiceBridge } from './ports-adapters/f4-invoice-bridge';
 
 import type { ScheduledPlanChangeRepo } from '@/modules/plans/application/ports';
@@ -41,6 +49,14 @@ import type {
 import type { RenewalCycleRepo } from '../application/ports/renewal-cycle-repo';
 import type { RenewalLinkTokenSigner } from '../application/ports/renewal-link-token-signer';
 import type { RenewalLinkTokenVerifier } from '../application/ports/renewal-link-token-verifier';
+import type { TenantRenewalSchedulePolicyRepo } from '../application/ports/tenant-renewal-schedule-policy-repo';
+import type { AtRiskOutreachReadRepo } from '../application/ports/at-risk-outreach-read-repo';
+import type { RenewalEscalationTaskRepo } from '../application/ports/renewal-escalation-task-repo';
+import type { MemberRenewalFlagsRepo } from '../application/ports/member-renewal-flags-repo';
+import type { DispatchCandidateRepo } from '../application/ports/dispatch-candidate-repo';
+import type { RenewalReminderEventRepo } from '../application/ports/renewal-reminder-event-repo';
+import type { RenewalGateway } from '../application/ports/renewal-gateway';
+import type { BounceEventQuery } from '../application/ports/bounce-event-query';
 
 export interface RenewalsDeps {
   readonly tenant: TenantContext;
@@ -75,6 +91,64 @@ export interface RenewalsDeps {
   readonly tokenSigner: RenewalLinkTokenSigner;
   readonly tokenVerifier: RenewalLinkTokenVerifier;
   readonly eventAttendees: EventAttendeesPort;
+  /**
+   * Phase 4 Wave I1a (T083) — Drizzle adapter for `tenant_renewal_schedule_policies`
+   * (5-row-per-tenant tier-bucket → reminder ladder map). Read-dominant
+   * hot path for the dispatcher cron (T088); admin schedule editor uses
+   * `listAllForTenant` + `upsertSteps` for read/write.
+   */
+  readonly schedulePolicyRepo: TenantRenewalSchedulePolicyRepo;
+  /**
+   * Phase 4 Wave I2a — Drizzle read-only adapter for `at_risk_outreach`.
+   * Powers the `pauseRemindersAfterOutreach` use-case (T092 / FR-033)
+   * which the daily dispatcher cron consults per candidate member to
+   * skip email steps within 7 days of an admin's logged outreach.
+   * Mutating surface (record outreach) lands with US4 / Phase 6.
+   */
+  readonly atRiskOutreachReadRepo: AtRiskOutreachReadRepo;
+  /**
+   * Phase 4 Wave I2b — Drizzle adapter for `renewal_escalation_tasks`
+   * (full surface). Used by T091 reset-email-unverified to close
+   * `manual_outreach_required` tasks; reused by Wave I2c+ T088 +
+   * T090 for inserting new tasks; reused by Wave I8+ admin task queue
+   * for list/transition/reassign.
+   */
+  readonly escalationTaskRepo: RenewalEscalationTaskRepo;
+  /**
+   * Phase 4 Wave I2b — F8-internal Drizzle adapter for the F8-owned
+   * lifecycle of `members.email_unverified`. F3 owns the schema; F8
+   * owns the writes (set on bounce-threshold by T090; cleared on
+   * verification-success by T091).
+   */
+  readonly memberRenewalFlagsRepo: MemberRenewalFlagsRepo;
+  /**
+   * Phase 4 Wave I2c — Composite-query Drizzle adapter that joins
+   * cycles + members + primary contact + tier schedule policy in a
+   * single round-trip per page. Powers T088 dispatchRenewalCycle
+   * (cron entry) + T089 sendReminderNow (admin entry). Cursor-paginated
+   * for SC-005 60s budget @ 5k members.
+   */
+  readonly dispatchCandidateRepo: DispatchCandidateRepo;
+  /**
+   * Phase 4 Wave I2c — Drizzle adapter for `renewal_reminder_events`.
+   * Idempotency-aware (`insertIfAbsent` against the unique idem index)
+   * + `transitionStatus` defends against pending-state TOCTOU.
+   */
+  readonly reminderEventRepo: RenewalReminderEventRepo;
+  /**
+   * Phase 4 Wave I2c — Stub Resend gateway (returns mock delivery-id).
+   * Wave I3 T100 swaps this for the real
+   * `ResendTransactionalRenewalGateway` adapter that wraps F1's
+   * `emailSender` + renders React Email templates.
+   */
+  readonly renewalGateway: RenewalGateway;
+  /**
+   * Phase 4 Wave I2d — Stub bounce-event query reader (returns zeros).
+   * Wave I4 swaps this for the real Drizzle adapter that reads F1's
+   * `email_delivery_events` with bounce_type classification, alongside
+   * the F1 schema extension that stores bounce_type per event.
+   */
+  readonly bounceEventQuery: BounceEventQuery;
 }
 
 /**
@@ -94,6 +168,14 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     tokenSigner: renewalLinkTokenSigner,
     tokenVerifier: renewalLinkTokenVerifier,
     eventAttendees: eventAttendeesStub,
+    schedulePolicyRepo: makeDrizzleTenantRenewalSchedulePolicyRepo(tenant),
+    atRiskOutreachReadRepo: makeDrizzleAtRiskOutreachReadRepo(tenant),
+    escalationTaskRepo: makeDrizzleRenewalEscalationTaskRepo(tenant),
+    memberRenewalFlagsRepo: makeDrizzleMemberRenewalFlagsRepo(tenant),
+    dispatchCandidateRepo: makeDrizzleDispatchCandidateRepo(tenant),
+    reminderEventRepo: makeDrizzleRenewalReminderEventRepo(tenant),
+    renewalGateway: stubRenewalGateway,
+    bounceEventQuery: stubBounceEventQuery,
   };
 }
 
