@@ -97,11 +97,39 @@ export async function loadPipeline(
           : {}),
         limit: input.limit ?? 50,
       });
-      span.setAttribute('renewals.total_in_window', r.summary.totalInWindow);
-      span.setAttribute('renewals.lapsed_count', r.summary.lapsedCount);
+      // Round 9 W-R8-4 — bucket exact counts to coarse ranges. Combined
+      // with `tenant.id` already on the parent span, exact counts would
+      // let an APM operator infer per-tenant membership scale (LINDDUN
+      // Detectability/Linkability). Bucketed values preserve SLO +
+      // capacity-planning signal without leaking commercial-scale
+      // metadata. `page_size` (max 50) is low-sensitivity and stays
+      // exact for SLO debugging.
+      span.setAttribute(
+        'renewals.total_in_window_bucket',
+        bucketCount(r.summary.totalInWindow),
+      );
+      span.setAttribute(
+        'renewals.lapsed_count_bucket',
+        bucketCount(r.summary.lapsedCount),
+      );
       span.setAttribute('renewals.page_size', r.rows.length);
       return r;
     },
   );
   return ok(result);
+}
+
+/**
+ * Round 9 W-R8-4 — Coarse range bucketing for OTel span attributes.
+ * Buckets preserve SLO + capacity-planning signal without carrying
+ * exact per-tenant counts on the wire. Bucket boundaries align with
+ * SaaS-tier-typical sizes (single-tenant <10, small <50, mid <200,
+ * large <1000, enterprise 1000+).
+ */
+function bucketCount(n: number): string {
+  if (n <= 10) return '0_10';
+  if (n <= 50) return '11_50';
+  if (n <= 200) return '51_200';
+  if (n <= 1000) return '201_1000';
+  return '1001+';
 }

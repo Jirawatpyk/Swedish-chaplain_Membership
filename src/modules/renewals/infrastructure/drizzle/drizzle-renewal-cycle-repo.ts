@@ -213,9 +213,20 @@ interface CursorPayload {
 
 const CURSOR_MAC_BYTES = 16; // 128-bit truncation — tampering detection only
 
+// Round 9 W-R8-3 — domain-separation prefix. The HMAC secret
+// `RENEWAL_LINK_TOKEN_SECRET_PRIMARY` is shared with renewal-link
+// tokens (different wire format `v1.<payload>.<mac>`). The two message
+// domains are structurally disjoint TODAY but lack explicit context
+// binding — a future change to either format could create cross-purpose
+// MAC reuse. Adding a constant `cursor-v1:` prefix to the HMAC input
+// guarantees a renewal-link MAC NEVER verifies as a cursor MAC even if
+// the payload bytes happen to coincide.
+const CURSOR_MAC_DOMAIN_PREFIX = 'cursor-v1:';
+
 function cursorMac(payloadB64: string): string {
   const secret = env.renewals.linkTokenSecretPrimary;
   return createHmac('sha256', secret)
+    .update(CURSOR_MAC_DOMAIN_PREFIX, 'utf8')
     .update(payloadB64, 'utf8')
     .digest()
     .subarray(0, CURSOR_MAC_BYTES)

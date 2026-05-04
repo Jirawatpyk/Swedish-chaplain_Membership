@@ -194,35 +194,54 @@ describe('cancelCycle (T058) — happy path', () => {
     expect(findByIdInTxCalls[0]?.[0]).toBe(acquireLockTx);
   });
 
-  // Round 6 S-R5-3 / Round 8 W-R7-1 — assert audit payload `reason`
-  // has CRLF + ANSI + C0/C1 control bytes AND Unicode separator/format
-  // chars stripped. Round 7 added a 2nd-pass `.replace` for U+2028 /
-  // U+2029 / U+200B / U+FEFF; this test asserts BOTH passes so a
-  // regression that removes either is caught.
-  it('strips CRLF + ANSI + C0/C1 + Unicode separators from reason in audit payload (W-R5-3 + W-R7-1)', async () => {
+
+  // Round 6 S-R5-3 / Round 8 W-R7-1 / Round 9 W-R8-1 — assert audit
+  // payload `reason` has CRLF + ANSI + C0/C1 control bytes AND the
+  // FULL Unicode separator + format class (Round 8 W-R7-4
+  // consolidated regex) stripped. Round 9 W-R8-1 fixed the test gap
+  // where the 2-pass→1-pass consolidation extended the regex but
+  // the test only covered 4 codepoints — now asserts every
+  // codepoint in the consolidated range.
+  it('strips CRLF + ANSI + C0/C1 + full Unicode separator class from reason (W-R5-3 + W-R7-1 + W-R8-1)', async () => {
     const { deps, emitInTxMock } = fakeDeps(buildCycle());
+    // Inject every codepoint covered by the consolidated regex:
+    //   C0/C1 controls (CR/LF/ESC/BEL/8-bit-CSI)
+    //   U+00A0 NBSP, U+1680 OGHAM SPACE
+    //   U+2000-U+200F (en/em/thin/hair/zero-width spaces + format)
+    //   U+2028 LINE SEP, U+2029 PARAGRAPH SEP, U+202F NARROW NBSP
+    //   U+205F MEDIUM MATH SPACE, U+3000 IDEOGRAPHIC SPACE,
+    //   U+FEFF BOM
     await cancelCycle(deps, {
       ...baseInput,
       reason:
-        'injection\r\n\x1b[31mRED\x1b[0m\x9bspoof\x07bell' +
-        ' line-sep\u2028para-sep\u2029zwsp\u200bbom\ufeff',
+        'inj\r\n\x1b[31m\x9b\x07ction' +
+        ' \u00a0nbsp\u1680ogham' +
+        ' \u2003emsp\u2009thin\u200bzwsp\u200ezwj\u200frtm' +
+        ' \u2028lsep\u2029psep\u202fnnbsp' +
+        ' \u205fmsp\u3000ideo\ufeffbom',
     });
     const emittedReason = (
       emitInTxMock.mock.calls[0]?.[1] as {
         payload: { reason: string };
       }
     ).payload.reason;
-    // Pass 1: no C0 or C1 control bytes remain.
-    expect(emittedReason).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
-    // Pass 2: no Unicode separators / format chars remain.
-    expect(emittedReason).not.toMatch(/[\u2028\u2029\u200b\ufeff]/);
-    // Visible content preserved (word characters survive).
-    expect(emittedReason).toContain('injection');
-    expect(emittedReason).toContain('spoof');
-    expect(emittedReason).toContain('bell');
-    expect(emittedReason).toContain('line-sep');
-    expect(emittedReason).toContain('para-sep');
+    // Single-pass regex covers FULL class — assert no codepoint
+    // from the consolidated range survives.
+    expect(emittedReason).not.toMatch(
+      /[\u0000-\u001f\u007f-\u00a0\u1680\u2000-\u200f\u2028-\u202f\u205f\u3000\ufeff]/,
+    );
+    // Visible word content preserved (sanity-check no over-strip).
+    expect(emittedReason).toContain('inj');
+    expect(emittedReason).toContain('ction');
+    expect(emittedReason).toContain('nbsp');
+    expect(emittedReason).toContain('ogham');
+    expect(emittedReason).toContain('emsp');
     expect(emittedReason).toContain('zwsp');
+    expect(emittedReason).toContain('lsep');
+    expect(emittedReason).toContain('psep');
+    expect(emittedReason).toContain('nnbsp');
+    expect(emittedReason).toContain('msp');
+    expect(emittedReason).toContain('ideo');
     expect(emittedReason).toContain('bom');
   });
 });

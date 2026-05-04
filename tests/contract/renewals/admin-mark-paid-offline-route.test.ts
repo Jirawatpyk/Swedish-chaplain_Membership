@@ -180,6 +180,31 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     expect(body.error.current_status).toBe('completed');
   });
 
+  // Round 9 W-R8-5 — extend B-R7-1 stage-scrub coverage to the
+  // f4_orphan_invoice 409 path. The 502 f4_failure path was already
+  // pinned at line 183-209; the 409 path needs symmetric coverage so
+  // a future debugging-residue `stage` field on the orphan branch is
+  // caught by CI.
+  it('409 f4_orphan_invoice surfaces orphan_invoice_id with reason AND stage scrubbed (B-R7-1 + W-R8-5)', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    markPaidOfflineMock.mockResolvedValueOnce(
+      err({
+        kind: 'f4_orphan_invoice',
+        orphanInvoiceId: 'inv-orphan-999',
+        reason: 'F4_INTERNAL_RECORD_PAYMENT_DETAIL',
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('f4_orphan_invoice');
+    expect(body.error.orphan_invoice_id).toBe('inv-orphan-999');
+    // PCI / info-disclosure scrubs (Round 5 W-02 + Round 8 B-R7-1):
+    expect(body.error).not.toHaveProperty('reason');
+    expect(body.error).not.toHaveProperty('stage');
+  });
+
   it('502 f4_failure with reason AND stage scrubbed (W-02 + B-R7-1)', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     markPaidOfflineMock.mockResolvedValueOnce(
@@ -227,28 +252,49 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
   // so 12 digits should pass, 13+ should reject. These pin the
   // boundary so a future change to `\d{14,}` (or similar) is caught.
   it.each([
-    { len: 12, raw: '1'.repeat(12), expected: 'allow' as const },
-    { len: 13, raw: '1'.repeat(13), expected: 'reject' as const },
-    { len: 19, raw: '1'.repeat(19), expected: 'reject' as const },
-    { len: 20, raw: '1'.repeat(20), expected: 'reject' as const },
-  ])('PAN regex boundary: $len-digit reference is $expected', async ({ raw, expected }) => {
-    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
-    if (expected === 'allow') {
-      markPaidOfflineMock.mockResolvedValueOnce(
-        ok({
-          cycleStatus: 'completed' as const,
-          invoiceId: 'inv-1',
-          newExpiresAt: '2027-06-01T00:00:00Z',
-        }),
+    // ASCII boundaries (Round 7 S-R6-2)
+    { len: 12, raw: '1'.repeat(12), expected: 'allow' as const, script: 'ASCII' },
+    { len: 13, raw: '1'.repeat(13), expected: 'reject' as const, script: 'ASCII' },
+    { len: 19, raw: '1'.repeat(19), expected: 'reject' as const, script: 'ASCII' },
+    { len: 20, raw: '1'.repeat(20), expected: 'reject' as const, script: 'ASCII' },
+    // Round 9 W-R8-6 — Mathematical Bold (SMP, 4-byte codepoints)
+    // boundary partition. `/u` flag must count Unicode scalars not
+    // UTF-16 units. 12 codepoints = 24 UTF-16 units; if the regex
+    // accidentally counted UTF-16 units it would block at 7
+    // codepoints — boundary partition catches that off-by-one.
+    {
+      len: 12,
+      raw: '𝟒'.repeat(12),
+      expected: 'allow' as const,
+      script: 'Mathematical Bold',
+    },
+    {
+      len: 13,
+      raw: '𝟒'.repeat(13),
+      expected: 'reject' as const,
+      script: 'Mathematical Bold',
+    },
+  ])(
+    'PAN regex boundary: $len $script digits is $expected',
+    async ({ raw, expected }) => {
+      requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+      if (expected === 'allow') {
+        markPaidOfflineMock.mockResolvedValueOnce(
+          ok({
+            cycleStatus: 'completed' as const,
+            invoiceId: 'inv-1',
+            newExpiresAt: '2027-06-01T00:00:00Z',
+          }),
+        );
+      }
+      const POST = await loadHandler();
+      const res = await POST(
+        makeReq(makeBody({ payment_reference: raw })),
+        makeCtx(),
       );
-    }
-    const POST = await loadHandler();
-    const res = await POST(
-      makeReq(makeBody({ payment_reference: raw })),
-      makeCtx(),
-    );
-    expect(res.status).toBe(expected === 'allow' ? 200 : 400);
-  });
+      expect(res.status).toBe(expected === 'allow' ? 200 : 400);
+    },
+  );
 
   // Round 7 B-R6-2 — Unicode digit substitute bypass guard. NFKD does
   // NOT decompose Arabic-Indic / Devanagari / Thai digits, and the
