@@ -94,6 +94,19 @@ export interface AuditContext {
 
 ## 2. Payload schemas (TypeScript)
 
+> **Round 9 S-R8-2 — Timestamp type contract**: All `ISO8601String`
+> fields below carry an ISO-8601 UTC instant (e.g.
+> `"2027-06-01T00:00:00.000Z"`). The `*UtcString` brand alias used
+> in `admin-renewals-api.md` 200 response bodies (`new_expires_at:
+> ISO8601UtcString`) is identical at the wire format — both are
+> `Date.prototype.toISOString()` output. The audit-port keeps the
+> generic `ISO8601String` name for historical compatibility with
+> the F1/F2/F4 audit-port contract precedent; the `Utc` qualifier
+> is implied because the F8 emit code uses `.toISOString()` (always
+> UTC) at every emit site. Future F8 audit-port revisions MAY
+> rename to `ISO8601UtcString` for explicitness; current callers
+> rely on the existing identifier.
+
 ```ts
 export interface RenewalCycleCreatedPayload {
   member_id: MemberId

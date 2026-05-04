@@ -20,7 +20,7 @@ List active members in the renewal pipeline, grouped by urgency bucket.
 **Query params**:
 - `tier` — optional tier-bucket filter (`thai_alumni` | `start_up` | `regular` | `premium` | `partnership`)
 - `urgency` — optional urgency filter (`t-90` | `t-60` | `t-30` | `t-14` | `t-7` | `t-0` | `grace` | `lapsed`)
-- `cursor` — opaque pagination cursor
+- `cursor` — opaque pagination cursor (Phase 3.5 W-08 / S-R8-1: HMAC-signed; clients MUST treat as opaque and round-trip the value verbatim. Tampering returns an empty page (RLS-safe) without an error signal — do NOT serialise/deserialise or attempt to construct a cursor manually.)
 - `limit` — page size (default 50, max 200)
 
 **Response 200**:

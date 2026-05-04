@@ -14,7 +14,6 @@
  * attributes being present.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { SpanStatusCode } from '@opentelemetry/api';
 import type { Span, Tracer } from '@opentelemetry/api';
 import { loadPipeline } from '@/modules/renewals/application/use-cases/load-pipeline';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
