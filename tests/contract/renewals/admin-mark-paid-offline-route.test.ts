@@ -174,7 +174,7 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     expect(body.error.current_status).toBe('completed');
   });
 
-  it('502 f4_failure with stage + reason', async () => {
+  it('502 f4_failure with stage but reason scrubbed (W-02)', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     markPaidOfflineMock.mockResolvedValueOnce(
       err({
@@ -189,6 +189,47 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     const body = await res.json();
     expect(body.error.code).toBe('f4_failure');
     expect(body.error.stage).toBe('create_invoice_failed');
-    expect(body.error.reason).toBe('plan_not_found');
+    // Round 6 B-R5-2 — Round 5 W-02 scrubs the F4-internal `reason`
+    // from the HTTP response body so internal schema / column / row
+    // fragments cannot leak to the admin UI. Reason is logged
+    // server-side via `logger.warn` for ops triage.
+    expect(body.error).not.toHaveProperty('reason');
+  });
+
+  it('400 invalid_body when payment_reference is PAN-like (W-01)', async () => {
+    // Round 6 S-R5-2 — contract-layer guard so a future regression
+    // that drops the zod `refine` cannot land silently. 16 consecutive
+    // digits = canonical raw-paste card-number error pattern.
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    const POST = await loadHandler();
+    const res = await POST(
+      makeReq(makeBody({ payment_reference: '4111111111111111' })),
+      makeCtx(),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('invalid_body');
+    expect(markPaidOfflineMock).not.toHaveBeenCalled();
+  });
+
+  it('200 happy path accepts Thai bank reference format YYYYMMDD-NNNNN (B-R5-1 regression guard)', async () => {
+    // Round 6 B-R5-1 — Round 5's PAN regex `(\d[\s-]?){13,19}` falsely
+    // blocked legitimate Thai bank reference format. The fixed regex
+    // requires 13+ CONSECUTIVE digits (no separators) so this passes.
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    markPaidOfflineMock.mockResolvedValueOnce(
+      ok({
+        cycleStatus: 'completed' as const,
+        invoiceId: 'inv-1',
+        newExpiresAt: '2027-06-01T00:00:00Z',
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(
+      makeReq(makeBody({ payment_reference: 'KTB-20260504-12345' })),
+      makeCtx(),
+    );
+    expect(res.status).toBe(200);
+    expect(markPaidOfflineMock).toHaveBeenCalled();
   });
 });

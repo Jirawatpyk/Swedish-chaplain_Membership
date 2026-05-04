@@ -175,6 +175,46 @@ describe('cancelCycle (T058) — happy path', () => {
       transitionMock.mock.invocationCallOrder[0]!,
     );
   });
+
+  // Round 6 W-R5-5 — verify findByIdInTx receives the SAME tx handle
+  // that acquireLockInTx received. A regression where the use-case
+  // calls findById (without tx) instead would silently re-introduce
+  // the TOCTOU window.
+  it('post-lock re-read uses findByIdInTx with the lock-holding tx', async () => {
+    const cycle = buildCycle();
+    const { deps } = fakeDeps(cycle);
+    await cancelCycle(deps, baseInput);
+    const acquireLockTx = (
+      deps.cyclesRepo.acquireCycleLockInTx as ReturnType<typeof vi.fn>
+    ).mock.calls[0]?.[0];
+    const findByIdInTxCalls = (
+      deps.cyclesRepo.findByIdInTx as ReturnType<typeof vi.fn>
+    ).mock.calls;
+    expect(findByIdInTxCalls).toHaveLength(1);
+    expect(findByIdInTxCalls[0]?.[0]).toBe(acquireLockTx);
+  });
+
+  // Round 6 S-R5-3 — assert audit payload `reason` has CRLF + ANSI +
+  // C0/C1 control bytes stripped. Without this test, a future refactor
+  // that removes the .replace call would not be caught.
+  it('strips CRLF + ANSI + C0/C1 control bytes from reason in audit payload (W-R5-3)', async () => {
+    const { deps, emitInTxMock } = fakeDeps(buildCycle());
+    await cancelCycle(deps, {
+      ...baseInput,
+      reason: 'injection\r\n\x1b[31mRED\x1b[0m\x9bspoof\x07bell',
+    });
+    const emittedReason = (
+      emitInTxMock.mock.calls[0]?.[1] as {
+        payload: { reason: string };
+      }
+    ).payload.reason;
+    // No C0 (\x00-\x1f) or C1 (\x7f-\x9f) control bytes remain.
+    expect(emittedReason).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+    // Visible content preserved (word characters survive).
+    expect(emittedReason).toContain('injection');
+    expect(emittedReason).toContain('spoof');
+    expect(emittedReason).toContain('bell');
+  });
 });
 
 describe('cancelCycle — error paths', () => {

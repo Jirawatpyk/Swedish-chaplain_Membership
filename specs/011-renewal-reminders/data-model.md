@@ -622,8 +622,8 @@ All events emitted to F1's existing `audit_log` table with `retention_years = 5`
 | Event type | Trigger | Payload |
 |---|---|---|
 | `renewal_cycle_created` | New cycle materialised on member creation OR previous cycle paid | `{member_id, cycle_id, period_from, period_to, plan_id, tier_bucket}` |
-| `renewal_cycle_cancelled` | Admin manual cancel | `{member_id, cycle_id, reason, actor_user_id}` |
-| `renewal_cycle_completed_offline` | Admin "Mark renewal as paid offline" | `{member_id, cycle_id, payment_method, payment_reference, actor_user_id}` |
+| `renewal_cycle_cancelled` | Admin manual cancel | `{member_id, cycle_id, reason, previous_status, actor_user_id}` |
+| `renewal_cycle_completed_offline` | Admin "Mark renewal as paid offline" | `{member_id, cycle_id, invoice_id, payment_method, payment_reference, payment_date, new_expires_at, actor_user_id}` |
 | `renewal_lapsed` | grace_period_days exceeded without payment | `{member_id, cycle_id, expires_at, lapsed_at}` |
 | `renewal_reminder_sent` | Cron OR admin manual dispatch | `{member_id, cycle_id, step_id, channel, template_id, delivery_id, year_in_cycle, actor_user_id}` |
 | `renewal_reminder_skipped` | Cron skip path | `{member_id, cycle_id, step_id, reason}` (reason ∈ enum) |

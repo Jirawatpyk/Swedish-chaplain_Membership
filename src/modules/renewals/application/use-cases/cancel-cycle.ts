@@ -122,11 +122,19 @@ export async function cancelCycle(
     });
   }
 
-  // Round 5 W-03 — strip CRLF + ANSI escapes from admin-supplied reason
-  // before it lands in audit_log.payload + audit_log.summary so a
-  // log-aggregation tool that interprets ANSI cannot be used as a
-  // log-injection vector via the reason free-text field.
-  const sanitizedReason = input.reason.replace(/[\r\n\x1b]/g, ' ');
+  // Round 5 W-03 / Round 6 W-R5-3 — strip ALL C0 + C1 control bytes
+  // from admin-supplied reason before it lands in audit_log.payload +
+  // audit_log.summary. The Round 5 narrow `[\r\n\x1b]` regex left the
+  // following bytes through:
+  //   - 8-bit CSI `\x9b`        (alternate C1 ANSI escape)
+  //   - BEL `\x07`              (rings terminal bell on log readback)
+  //   - BS `\x08`               (overprint attack on log line)
+  //   - rest of C0 (\x00-\x1f) + C1 (\x80-\x9f) blocks
+  // A log-aggregation tool that interprets any of these can be used
+  // as a log-injection / spoofing vector. The full control-byte strip
+  // is the safest approach — admin "reason" text never legitimately
+  // contains control bytes.
+  const sanitizedReason = input.reason.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ');
 
   // Atomic transition + audit emit.
   try {

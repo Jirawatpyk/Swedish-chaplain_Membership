@@ -701,6 +701,13 @@
       "when": 1790123200000,
       "tag": "0099_f8_phase3_audit_event_type_enum",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1790381824000,
+      "tag": "0100_f8_renewal_cycles_lapsed_tier_idx",
+      "breakpoints": true
     }
   ]
 }

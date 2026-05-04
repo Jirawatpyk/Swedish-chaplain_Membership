@@ -273,6 +273,14 @@ export const REDACT_PATHS = [
   '*.error.reason',
   'result.error.reason',
   '*.result.error.reason',
+  // Round 6 W-R5-1 — F8 mark-paid-offline route logs F4 internal
+  // `reason` under the `f4Reason` key to disambiguate from the result
+  // envelope's own `reason`. Path-based redaction follows the field
+  // name verbatim, so bare `reason` paths above do NOT catch
+  // `f4Reason`. F4 internals (schema names, column names, row
+  // fragments) MUST never reach Sentry / Grafana.
+  'f4Reason',
+  '*.f4Reason',
   // review-20260428-102639.md S1 closure — defense-in-depth: F4 + F5
   // worker / cron paths carry `memberIdentitySnapshot` (member name +
   // address + email PII) in scan rows. Never logged today, but path-

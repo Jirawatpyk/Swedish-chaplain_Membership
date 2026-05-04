@@ -271,6 +271,53 @@ describe('markPaidOffline — error paths', () => {
     }
   });
 
+  // Round 6 S-R5-4 — Bangkok fiscal-year boundary. UTC 2026-12-31T17:00:00Z
+  // = 2027-01-01 00:00 BKK. The F4 sequential-numbering allocator buckets
+  // per fiscal year, so the planYear MUST be 2027 not 2026 — Round 5
+  // S-04 added the +7h offset; this test pins the contract.
+  it('threads BKK fiscal year (not UTC year) to F4 bridge for periodFrom near year boundary (S-04)', async () => {
+    const cycle = buildCycle({
+      periodFrom: '2026-12-31T17:00:00Z', // = 2027-01-01 00:00 BKK
+      periodTo: '2027-12-31T17:00:00Z',
+    });
+    const { deps, bridgeMock } = fakeDeps(cycle);
+    await markPaidOffline(deps, baseInput);
+    expect(bridgeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ planYear: 2027 }),
+    );
+  });
+
+  // Round 6 S-R5-5 — newExpiresAt source-of-truth. The Round 5 W-05 fix
+  // re-derives newExpiresAt from `lockedCycle.periodTo` inside the tx.
+  // Without this test, a future refactor that re-uses the pre-load
+  // value (which could be stale if a concurrent path mutated period
+  // anchors) would not be caught.
+  it('derives newExpiresAt from lockedCycle.periodTo (NOT pre-lock snapshot) (W-05)', async () => {
+    // Pre-load returns one periodTo, lock-protected re-read returns a
+    // DIFFERENT periodTo simulating a concurrent anchor mutation. The
+    // response + audit MUST use the locked value.
+    const preLoadCycle = buildCycle({
+      periodTo: '2027-06-01T00:00:00Z',
+      frozenPlanTermMonths: 12,
+    });
+    const lockedCycle = buildCycle({
+      periodTo: '2027-09-01T00:00:00Z', // 3 months later (concurrent shift)
+      frozenPlanTermMonths: 12,
+    });
+    const { deps } = fakeDeps(preLoadCycle);
+    // Override findByIdInTx to return the divergent locked cycle.
+    (deps.cyclesRepo.findByIdInTx as ReturnType<typeof vi.fn>).mockResolvedValue(
+      lockedCycle,
+    );
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // 2027-09-01 + 12 months = 2028-09-01 (locked-source); preLoad
+      // would have given 2028-06-01 if the regression returned.
+      expect(r.value.newExpiresAt).toBe('2028-09-01T00:00:00.000Z');
+    }
+  });
+
   // Round 3 IM2 regression-detector — guards against a future F4 contract
   // change that decouples bridge.ok from onPaid invocation. Without this
   // safety net the cycle would commit as still-awaiting-payment while

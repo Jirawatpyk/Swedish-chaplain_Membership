@@ -337,6 +337,15 @@ export function makeDrizzleRenewalCycleRepo(
      * caller via `runInTenant` — this method does NOT re-open the
      * scope, so it MUST only be called from inside a `runInTenant`
      * block where `SET LOCAL app.current_tenant` is already set.
+     *
+     * Round 6 S-R5-6: `_tenantId` is intentionally unused — RLS
+     * isolation comes from the inherited GUC, not a WHERE clause.
+     * Adding a `WHERE tenant_id = $1` predicate would be redundant
+     * AND would mask future RLS policy changes (the policy is the
+     * single source of truth for tenant scope). Future maintainers:
+     * do NOT add a tenant_id predicate, and do NOT remove the
+     * surrounding `runInTenant` wrapping at the use-case layer — the
+     * GUC chain is load-bearing.
      */
     async findByIdInTx(
       tx: unknown,
