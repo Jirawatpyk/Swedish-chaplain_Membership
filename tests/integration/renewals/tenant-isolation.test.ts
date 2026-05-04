@@ -97,8 +97,8 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
     const outreachId = randomUUID();
     const suggestionId = randomUUID();
     const taskId = randomUUID();
-    const tokenSha256 = Buffer.from(randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '').slice(0, 32 - 32 + 32), 'hex');
-    // Pad to exactly 32 bytes
+    // Build a 32-byte SHA-256-shaped digest from 2 random UUID halves —
+    // matches the consumed_link_tokens.token_sha256 length CHECK.
     const fullToken = Buffer.alloc(32);
     Buffer.from(randomUUID().replace(/-/g, ''), 'hex').copy(fullToken, 0);
     Buffer.from(randomUUID().replace(/-/g, ''), 'hex').copy(fullToken, 16);
@@ -325,6 +325,13 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
       expect(rows.map((r) => r.scheduledChangeId)).toEqual([seedA.schedChangeId]);
     });
 
+    it('B sees only B row', async () => {
+      const rows = await runInTenant(tenantB.ctx, (tx) =>
+        tx.select().from(scheduledPlanChanges),
+      );
+      expect(rows.map((r) => r.scheduledChangeId)).toEqual([seedB.schedChangeId]);
+    });
+
     it('A cannot SELECT B row by id', async () => {
       const rows = await runInTenant(tenantA.ctx, (tx) =>
         tx
@@ -383,6 +390,13 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
         tx.select().from(renewalCycles),
       );
       expect(rows.map((r) => r.cycleId)).toEqual([seedA.cycleId]);
+    });
+
+    it('B sees only B row', async () => {
+      const rows = await runInTenant(tenantB.ctx, (tx) =>
+        tx.select().from(renewalCycles),
+      );
+      expect(rows.map((r) => r.cycleId)).toEqual([seedB.cycleId]);
     });
 
     it('A cannot SELECT B row by id', async () => {
@@ -455,6 +469,13 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
       expect(rows.map((r) => r.reminderEventId)).toEqual([seedA.reminderEventId]);
     });
 
+    it('B sees only B row', async () => {
+      const rows = await runInTenant(tenantB.ctx, (tx) =>
+        tx.select().from(renewalReminderEvents),
+      );
+      expect(rows.map((r) => r.reminderEventId)).toEqual([seedB.reminderEventId]);
+    });
+
     it('A cannot SELECT B row by id', async () => {
       const rows = await runInTenant(tenantA.ctx, (tx) =>
         tx
@@ -478,6 +499,27 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
           .returning(),
       );
       expect(updated).toHaveLength(0);
+    });
+
+    it('A.DELETE(B row) affects 0 rows + B exists', async () => {
+      const deleted = await runInTenant(tenantA.ctx, (tx) =>
+        tx
+          .delete(renewalReminderEvents)
+          .where(
+            eq(renewalReminderEvents.reminderEventId, seedB.reminderEventId),
+          )
+          .returning(),
+      );
+      expect(deleted).toHaveLength(0);
+      const check = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select()
+          .from(renewalReminderEvents)
+          .where(
+            eq(renewalReminderEvents.reminderEventId, seedB.reminderEventId),
+          ),
+      );
+      expect(check).toHaveLength(1);
     });
 
     it('A.INSERT(tenant_id=B) rejected by RLS WITH CHECK', async () => {
@@ -507,6 +549,13 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
         tx.select().from(tenantRenewalSettings),
       );
       expect(rows.map((r) => r.tenantId)).toEqual([tenantA.ctx.slug]);
+    });
+
+    it('B sees only B row', async () => {
+      const rows = await runInTenant(tenantB.ctx, (tx) =>
+        tx.select().from(tenantRenewalSettings),
+      );
+      expect(rows.map((r) => r.tenantId)).toEqual([tenantB.ctx.slug]);
     });
 
     it('A cannot SELECT B row', async () => {
@@ -554,6 +603,13 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
       expect(rows.every((r) => r.tenantId === tenantA.ctx.slug)).toBe(true);
     });
 
+    it('B sees only B row', async () => {
+      const rows = await runInTenant(tenantB.ctx, (tx) =>
+        tx.select().from(tenantRenewalSchedulePolicies),
+      );
+      expect(rows.every((r) => r.tenantId === tenantB.ctx.slug)).toBe(true);
+    });
+
     it('A cannot SELECT B row by composite key', async () => {
       const rows = await runInTenant(tenantA.ctx, (tx) =>
         tx
@@ -594,6 +650,13 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
       expect(rows.map((r) => r.outreachId)).toEqual([seedA.outreachId]);
     });
 
+    it('B sees only B row', async () => {
+      const rows = await runInTenant(tenantB.ctx, (tx) =>
+        tx.select().from(atRiskOutreach),
+      );
+      expect(rows.map((r) => r.outreachId)).toEqual([seedB.outreachId]);
+    });
+
     it('A cannot SELECT B row by id', async () => {
       const rows = await runInTenant(tenantA.ctx, (tx) =>
         tx
@@ -613,6 +676,23 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
           .returning(),
       );
       expect(updated).toHaveLength(0);
+    });
+
+    it('A.DELETE(B row) affects 0 rows + B exists', async () => {
+      const deleted = await runInTenant(tenantA.ctx, (tx) =>
+        tx
+          .delete(atRiskOutreach)
+          .where(eq(atRiskOutreach.outreachId, seedB.outreachId))
+          .returning(),
+      );
+      expect(deleted).toHaveLength(0);
+      const check = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select()
+          .from(atRiskOutreach)
+          .where(eq(atRiskOutreach.outreachId, seedB.outreachId)),
+      );
+      expect(check).toHaveLength(1);
     });
 
     it('A.INSERT(tenant_id=B) rejected by RLS WITH CHECK', async () => {
@@ -641,6 +721,13 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
       expect(rows.map((r) => r.suggestionId)).toEqual([seedA.suggestionId]);
     });
 
+    it('B sees only B row', async () => {
+      const rows = await runInTenant(tenantB.ctx, (tx) =>
+        tx.select().from(tierUpgradeSuggestions),
+      );
+      expect(rows.map((r) => r.suggestionId)).toEqual([seedB.suggestionId]);
+    });
+
     it('A cannot SELECT B row by id', async () => {
       const rows = await runInTenant(tenantA.ctx, (tx) =>
         tx
@@ -664,6 +751,23 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
           .returning(),
       );
       expect(updated).toHaveLength(0);
+    });
+
+    it('A.DELETE(B row) affects 0 rows + B exists', async () => {
+      const deleted = await runInTenant(tenantA.ctx, (tx) =>
+        tx
+          .delete(tierUpgradeSuggestions)
+          .where(eq(tierUpgradeSuggestions.suggestionId, seedB.suggestionId))
+          .returning(),
+      );
+      expect(deleted).toHaveLength(0);
+      const check = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select()
+          .from(tierUpgradeSuggestions)
+          .where(eq(tierUpgradeSuggestions.suggestionId, seedB.suggestionId)),
+      );
+      expect(check).toHaveLength(1);
     });
 
     it('A.INSERT(tenant_id=B) rejected by RLS WITH CHECK', async () => {
@@ -695,6 +799,13 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
       expect(rows.map((r) => r.taskId)).toEqual([seedA.taskId]);
     });
 
+    it('B sees only B row', async () => {
+      const rows = await runInTenant(tenantB.ctx, (tx) =>
+        tx.select().from(renewalEscalationTasks),
+      );
+      expect(rows.map((r) => r.taskId)).toEqual([seedB.taskId]);
+    });
+
     it('A cannot SELECT B row by id', async () => {
       const rows = await runInTenant(tenantA.ctx, (tx) =>
         tx
@@ -714,6 +825,23 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
           .returning(),
       );
       expect(updated).toHaveLength(0);
+    });
+
+    it('A.DELETE(B row) affects 0 rows + B exists', async () => {
+      const deleted = await runInTenant(tenantA.ctx, (tx) =>
+        tx
+          .delete(renewalEscalationTasks)
+          .where(eq(renewalEscalationTasks.taskId, seedB.taskId))
+          .returning(),
+      );
+      expect(deleted).toHaveLength(0);
+      const check = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select()
+          .from(renewalEscalationTasks)
+          .where(eq(renewalEscalationTasks.taskId, seedB.taskId)),
+      );
+      expect(check).toHaveLength(1);
     });
 
     it('A.INSERT(tenant_id=B) rejected by RLS WITH CHECK', async () => {
@@ -744,6 +872,14 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
       );
       expect(rows).toHaveLength(1);
       expect(rows[0]?.tokenSha256.equals(seedA.tokenSha256)).toBe(true);
+    });
+
+    it('B sees only B row', async () => {
+      const rows = await runInTenant(tenantB.ctx, (tx) =>
+        tx.select().from(consumedLinkTokens),
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.tokenSha256.equals(seedB.tokenSha256)).toBe(true);
     });
 
     it("A cannot SELECT B's token by sha256", async () => {
