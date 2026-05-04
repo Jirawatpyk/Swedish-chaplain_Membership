@@ -105,7 +105,9 @@ describe('GET /api/admin/renewals/[cycleId] — contract', () => {
     vi.clearAllMocks();
   });
 
-  it('503 when feature flag off', async () => {
+  // Round 7 test-infra fix — see admin-mark-paid-offline-route.test.ts
+  // for rationale (cold-load timeout under heavy parallel load).
+  it('503 when feature flag off', { timeout: 30_000 }, async () => {
     f8FeatureFlag.value = false;
     const GET = await loadHandler();
     const res = await GET(makeReq(), makeCtx());

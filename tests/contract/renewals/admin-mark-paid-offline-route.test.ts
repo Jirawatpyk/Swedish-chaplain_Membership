@@ -102,7 +102,13 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     vi.clearAllMocks();
   });
 
-  it('503 when feature flag off', async () => {
+  // Round 7 test-infra fix — first test of each F8 contract file
+  // cold-loads the route handler chain (transitively imports
+  // @node-rs/argon2 + Upstash + Stripe SDK + react-pdf). Under heavy
+  // parallel load (`pnpm test` full suite ~314 files), the cold-load
+  // can exceed the 10s default per-test timeout. 30s ceiling matches
+  // the F4+F5 barrel-test precedent at vitest.config.ts:42-46.
+  it('503 when feature flag off', { timeout: 30_000 }, async () => {
     f8FeatureFlag.value = false;
     const POST = await loadHandler();
     const res = await POST(makeReq(), makeCtx());
