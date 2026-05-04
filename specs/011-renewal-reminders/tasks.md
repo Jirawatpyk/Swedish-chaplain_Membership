@@ -153,7 +153,14 @@
 
 ### Phase 3 Exit Checkpoint
 
-- [X] T080 [US1] Phase 3 exit: `pnpm test:integration tests/integration/renewals/{load-pipeline,cancel-cycle,mark-paid-offline}.test.ts` GREEN (12/12) + `pnpm typecheck` GREEN + `pnpm lint` GREEN (1 advisory warning — TanStack v8 pre-existing pattern) + `pnpm check:i18n` GREEN (1787 × 3) + `pnpm check:layout` GREEN (70 page/loading pairs) + `pnpm check:multi-tenant` GREEN (26/26 SCOPED tables; 2 LEGACY known gaps unchanged) + `tests/unit/renewals/` GREEN 196/196 + `tests/contract/renewals/` GREEN 28/28. Migration 0099 ships F8 audit pgEnum extension (4 events: renewal_cycle_cancelled + renewal_cycle_completed_offline + renewal_cross_tenant_probe + f8_role_violation_blocked). E2E (T078) gated on `FEATURE_F8_RENEWALS=true` env — runs at staging when kill-switch flips. Perf benchmark p95<500ms deferred to dedicated perf run pre-ship.
+- [X] T080 [US1] Phase 3 exit: `pnpm test:integration tests/integration/renewals/{load-pipeline,cancel-cycle,mark-paid-offline}.test.ts` GREEN (12/12) + `pnpm typecheck` GREEN + `pnpm lint` GREEN (1 advisory warning — TanStack v8 pre-existing pattern) + `pnpm check:i18n` GREEN (1787 × 3) + `pnpm check:layout` GREEN (70 page/loading pairs) + `pnpm check:multi-tenant` GREEN (26/26 SCOPED tables; 2 LEGACY known gaps unchanged) + `tests/unit/renewals/` GREEN 196/196 + `tests/contract/renewals/` GREEN 28/28. Migration 0099 ships F8 audit pgEnum extension (4 events: renewal_cycle_cancelled + renewal_cycle_completed_offline + renewal_cross_tenant_probe + f8_role_violation_blocked). E2E (T078) gated on `FEATURE_F8_RENEWALS=true` env — runs at staging when kill-switch flips.
+
+  **Phase 3 verify-run remediation (post-commit `ff643f6`):**
+  - C1 (LOW · resolved): `tests/integration/perf/renewals-pipeline-perf.test.ts` — 2 RUN_PERF-gated tests measuring p95 over 50 samples @ 5k members + 600 in window per tenant. Wired into `pnpm test:perf` script. Skip is observable when RUN_PERF≠1. Run pre-ship at staging: `RUN_PERF=1 pnpm test:perf`.
+  - C2 (LOW · accepted): F4 chain depth in `mark-paid-offline.test.ts` uses pre-seeded F4 invoice via direct insert (snapshots + PDF metadata stubs). Real F4 chain (createInvoiceDraft → issueInvoice → recordPayment with PDF render + Blob upload) is exercised by F4's own integration tests + Phase 3 E2E (T078) which seeds via admin UI. Documented inline in test comment.
+  - C3 (LOW · accepted): TanStack v8 ESLint advisory — pre-existing project pattern (F3 + F4 + F8 all carry the same warning). Library limitation; no action.
+  - C4 (LOW · accepted): i18n key over-delivery — plan estimated 90 entries; actual 180 (60 keys × 3 locales). Over-delivery improves UX coverage. No action.
+  - C5 (LOW · accepted): E2E suite gated on `FEATURE_F8_RENEWALS=true` per spec.md A12 v3 (ships dark in prod until MVP-wide go-live). Runs at staging when chamber onboarding triggers feature-flag flip. No action.
 
 ---
 

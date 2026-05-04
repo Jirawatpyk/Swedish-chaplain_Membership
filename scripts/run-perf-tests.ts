@@ -27,6 +27,8 @@ const perfSuites = [
   'tests/integration/invoicing/pdf-render-benchmark.test.ts',
   'tests/integration/invoicing/invoice-list-perf.test.ts',
   'tests/integration/invoicing/seq-number-atomicity.test.ts',
+  // F8 Phase 3 verify-run C1 — renewal pipeline p95 < 500ms (SC-003 / FR-046)
+  'tests/integration/perf/renewals-pipeline-perf.test.ts',
 ];
 
 const child = spawn(
