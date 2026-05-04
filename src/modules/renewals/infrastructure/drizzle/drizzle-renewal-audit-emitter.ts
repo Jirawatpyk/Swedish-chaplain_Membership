@@ -80,7 +80,10 @@ function pinoFallback<E extends F8AuditEventType>(
         'Add the event to the audit_event_type pgEnum migration before flipping FEATURE_F8_RENEWALS=true.',
     );
   }
-  logger.info(
+  // Emit at WARN so CI / staging log-based alerts trip on emit-site drift
+  // (an INFO log would blend into normal traffic). Log payload KEYS only
+  // — never values — so a future PII-bearing event never leaks raw.
+  logger.warn(
     {
       f8AuditFallthrough: true,
       reason,
@@ -88,7 +91,7 @@ function pinoFallback<E extends F8AuditEventType>(
       tenantId: ctx.tenantId,
       actorRole: ctx.actorRole,
       correlationId: ctx.correlationId,
-      payload: event.payload,
+      payloadKeys: Object.keys(event.payload as Record<string, unknown>),
     },
     'F8 audit emit fell back to pino — event type not in pgEnum yet',
   );
@@ -101,7 +104,7 @@ function buildInsertValues<E extends F8AuditEventType>(
   return {
     // event.type narrows to the F8AuditEventType union; the
     // auditEventTypeEnum union in the Drizzle schema includes these
-    // values after migration 0095. Cast through the canonical enum
+    // values after migration 0099. Cast through the canonical enum
     // type for safety.
     eventType: event.type as AuditLogInsert['eventType'],
     actorUserId: ctx.actorUserId ?? `system:${ctx.actorRole}`,
@@ -140,11 +143,25 @@ export function makeDrizzleRenewalAuditEmitter(
           await tx.insert(auditLog).values(buildInsertValues(event, ctx));
         });
       } catch (e) {
+        // Forensic log — fire-and-forget contract swallows the throw,
+        // but the log line is the ONLY signal that audit data was lost,
+        // so capture full diagnostic context (Sentry triage 6 months
+        // later depends on it). Never include raw event.payload here —
+        // payload keys only.
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
+            err: e,
+            errCode:
+              e instanceof Error && 'code' in e
+                ? (e as { code?: string }).code
+                : undefined,
             eventType: event.type,
             tenantId: ctx.tenantId,
+            actorUserId: ctx.actorUserId,
+            actorRole: ctx.actorRole,
+            correlationId: ctx.correlationId,
+            requestId: ctx.requestId,
+            payloadKeys: Object.keys(event.payload as Record<string, unknown>),
           },
           'F8 audit emit DB insert failed (fire-and-forget swallowed)',
         );
@@ -156,16 +173,26 @@ export function makeDrizzleRenewalAuditEmitter(
       event: F8AuditEvent<E>,
       ctx: AuditContext,
     ): Promise<void> {
+      // emitInTx MUST throw on any failure mode — caller relies on the
+      // throw to roll back the surrounding state mutation (Principle VIII).
+      // Both pre-flight enum checks throw explicitly here (NOT just via
+      // pinoFallback's prod-only throw) so a misconfigured emit site
+      // also rolls back atomically — the alternative (pinoFallback;
+      // return) would silently commit the state mutation without an
+      // audit row in dev/staging where pinoFallback warns rather than
+      // throws, breaking the state↔audit invariant.
       if (!isF8AuditEventType(event.type)) {
         pinoFallback(event, ctx, 'unknown_event_type');
-        return;
+        throw new Error(
+          `emitInTx: event type '${event.type}' is not a known F8 audit event — refusing to commit state mutation without atomic audit row`,
+        );
       }
       if (!F8_ENUM_SHIPPED.has(event.type)) {
         pinoFallback(event, ctx, 'not_in_pgenum');
-        return;
+        throw new Error(
+          `emitInTx: event type '${event.type}' is not yet in the audit_event_type pgEnum — ship its migration before atomic emit`,
+        );
       }
-      // emitInTx MUST throw on failure — caller relies on the throw
-      // to roll back the surrounding state mutation (Principle VIII).
       const txDb = tx as typeof db;
       await txDb.insert(auditLog).values(buildInsertValues(event, ctx));
     },

@@ -269,4 +269,22 @@ describe('markPaidOffline — error paths', () => {
       }
     }
   });
+
+  // Round 3 IM2 regression-detector — guards against a future F4 contract
+  // change that decouples bridge.ok from onPaid invocation. Without this
+  // safety net the cycle would commit as still-awaiting-payment while
+  // F4 has already issued a paid invoice — exactly the inconsistency
+  // Constitution Principle VIII forbids.
+  it('throws if F4 bridge returns ok WITHOUT firing onPaid (contract regression detector)', async () => {
+    const cycle = buildCycle();
+    // Bridge stub: returns ok but does NOT call input.onPaid — simulates
+    // a future regression where F4 forgets to invoke the callback.
+    const { deps } = fakeDeps(cycle, async () => ({
+      ok: true,
+      value: { invoiceId: 'inv-1', paidAt: '2026-05-15T10:00:00Z' },
+    }));
+    await expect(markPaidOffline(deps, baseInput)).rejects.toThrow(
+      /onPaid never fired|F4 contract regression/,
+    );
+  });
 });

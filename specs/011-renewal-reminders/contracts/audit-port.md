@@ -109,6 +109,11 @@ export interface RenewalCycleCancelledPayload {
   member_id: MemberId
   cycle_id: CycleId
   reason: string                // max 500 chars
+  previous_status: CycleStatus  // forensics: state at cancel time
+                                // (e.g. 'upcoming' vs 'awaiting_payment'
+                                // vs 'grace') — reviewers need to know
+                                // whether the cancel happened pre-issue,
+                                // mid-payment, or in grace
 }
 
 export interface RenewalCycleCompletedOfflinePayload {

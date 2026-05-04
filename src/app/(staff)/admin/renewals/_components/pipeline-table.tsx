@@ -139,8 +139,11 @@ export function PipelineTable({ rows }: PipelineTableProps) {
                   {...props}
                   variant="ghost"
                   size="icon"
-                  // 44×44px tap target per Chamber-OS internal a11y
-                  // standard (matches WCAG 2.5.5 AAA / iOS HIG).
+                  // 44×44px tap target — WCAG 2.5.5 Target Size (AAA)
+                  // + iOS HIG 44pt minimum. F3 baseline adopted WCAG
+                  // 2.5.8 (24×24, AA); F8 row-action triggers go a step
+                  // further to AAA because they sit inside a dense data
+                  // table where mis-taps would route to the wrong row.
                   className="h-11 w-11"
                   aria-label={tActions('rowMenu', {
                     company: row.original.companyName,

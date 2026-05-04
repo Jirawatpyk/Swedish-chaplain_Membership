@@ -74,18 +74,7 @@ const baseFields = {
   updatedAt: '2026-05-01T00:00:00Z',
 } as const;
 
-export function buildUpcomingCycle(): RenewalCycle {
-  return {
-    ...baseFields,
-    status: 'upcoming' as const,
-    enteredPendingAt: null,
-    closedAt: null,
-    closedReason: null,
-    linkedInvoiceId: null,
-  };
-}
-
-export function buildCompletedCycle(args: {
+function buildCompletedCycle(args: {
   closedAt: string;
   closedReason: 'paid' | 'completed_offline' | 'admin_reactivated';
   linkedInvoiceId: string;
@@ -100,7 +89,7 @@ export function buildCompletedCycle(args: {
   };
 }
 
-export function buildCancelledCycle(args: {
+function buildCancelledCycle(args: {
   closedAt: string;
   closedReason: 'cancelled' | 'admin_rejected_with_refund';
 }): RenewalCycle {
@@ -114,21 +103,7 @@ export function buildCancelledCycle(args: {
   };
 }
 
-export function buildLapsedCycle(args: {
-  closedAt: string;
-  closedReason: 'lapsed' | 'pending_reactivation_timed_out';
-}): RenewalCycle {
-  return {
-    ...baseFields,
-    status: 'lapsed' as const,
-    enteredPendingAt: null,
-    closedAt: args.closedAt,
-    closedReason: args.closedReason,
-    linkedInvoiceId: null,
-  };
-}
-
-export function buildPendingReactivationCycle(args: {
+function buildPendingReactivationCycle(args: {
   enteredPendingAt: string;
 }): RenewalCycle {
   return {
@@ -292,11 +267,14 @@ describe('assertCycleInvariants', () => {
     expect(_illegal).toBeDefined();
   });
 
+  // Round 3: switch from cast-using buildCycle to status-aware factories
+  // for these terminal-arm tests so the DU compile-time guarantee is
+  // exercised — any future field-shape drift becomes a TS error rather
+  // than a runtime Result.err.
   it('accepts completed cycle with full anchors', () => {
     expect(
       assertCycleInvariants(
-        buildCycle({
-          status: 'completed',
+        buildCompletedCycle({
           closedAt: '2026-12-01T00:00:00Z',
           closedReason: 'paid',
           linkedInvoiceId: '00000000-0000-0000-0000-0000000000d1',
@@ -308,8 +286,7 @@ describe('assertCycleInvariants', () => {
   it('accepts pending_admin_reactivation with entered_pending_at', () => {
     expect(
       assertCycleInvariants(
-        buildCycle({
-          status: 'pending_admin_reactivation',
+        buildPendingReactivationCycle({
           enteredPendingAt: '2026-07-15T00:00:00Z',
         }),
       ).ok,
@@ -332,12 +309,14 @@ describe('isOverdue', () => {
   });
 
   it('terminal status is never overdue', () => {
-    const cycle = buildCycle({
-      status: 'cancelled',
+    // Status-aware factory exercises DU guarantee.
+    const cycle = {
+      ...buildCancelledCycle({
+        closedAt: '2025-06-01T00:00:00Z',
+        closedReason: 'cancelled',
+      }),
       expiresAt: '2025-01-01T00:00:00Z',
-      closedAt: '2025-06-01T00:00:00Z',
-      closedReason: 'cancelled',
-    });
+    };
     expect(isOverdue(cycle, new Date('2026-05-01T00:00:00Z'))).toBe(false);
   });
 });

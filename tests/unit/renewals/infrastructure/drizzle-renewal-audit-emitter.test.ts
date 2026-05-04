@@ -1,0 +1,204 @@
+/**
+ * F8 Phase 3 Round 3 (CR1/CR2 behavioural test) — `drizzle-renewal-audit-emitter`.
+ *
+ * Verifies the four pre-flight + DB-fault paths that protect the audit
+ * trail invariant (Constitution Principle VIII):
+ *
+ *   1. unknown event type → `pinoFallback` reason=unknown_event_type, no DB insert
+ *   2. shipped-but-not-in-pgenum → `pinoFallback` reason=not_in_pgenum, no DB insert
+ *   3. NODE_ENV=production → `pinoFallback` THROWS so emit-site drift is loud
+ *   4. shipped event + DB insert fails → fire-and-forget swallows + logs forensics
+ *
+ * Plus the symmetric checks for `emitInTx`, which MUST throw (not swallow)
+ * on every failure mode so the surrounding state mutation rolls back.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '@/lib/logger';
+import type { TenantContext } from '@/modules/tenants';
+import type {
+  AuditContext,
+  F8AuditEvent,
+  F8AuditEventType,
+} from '@/modules/renewals/application/ports/renewal-audit-emitter';
+
+// Mock `runInTenant` so we can drive the DB-insert success/failure path
+// without a real Postgres connection.
+const runInTenantMock = vi.fn();
+vi.mock('@/lib/db', () => ({
+  db: {} as unknown,
+  runInTenant: (...args: unknown[]) => runInTenantMock(...args),
+}));
+
+// Schema import is type-only; we don't need a real auditLog object — the
+// tx.insert call is short-circuited by the mocked runInTenant.
+vi.mock('@/modules/auth/infrastructure/db/schema', () => ({
+  auditLog: { __mockTable: true },
+}));
+
+import { makeDrizzleRenewalAuditEmitter } from '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-audit-emitter';
+
+const tenant = {
+  tenantId: 'tenant-a',
+  __brand: 'TenantContext',
+} as unknown as TenantContext;
+
+const ctx: AuditContext = {
+  tenantId: 'tenant-a',
+  actorUserId: '00000000-0000-0000-0000-000000000001',
+  actorRole: 'admin',
+  correlationId: 'corr-1',
+  requestId: 'req-1',
+};
+
+const SHIPPED_EVENT: F8AuditEvent<'renewal_cycle_cancelled'> = {
+  type: 'renewal_cycle_cancelled',
+  payload: {
+    cycle_id: '00000000-0000-0000-0000-000000000aaa',
+    member_id: 'member-1',
+    reason: 'admin requested',
+    previous_status: 'upcoming',
+  },
+};
+
+const NOT_IN_PGENUM_EVENT: F8AuditEvent<'renewal_cycle_created'> = {
+  // Valid F8 event type but deliberately NOT in F8_ENUM_SHIPPED — Phase 4 reservation.
+  type: 'renewal_cycle_created',
+  payload: {
+    cycle_id: '00000000-0000-0000-0000-000000000bbb',
+    member_id: 'member-1',
+    tier_bucket: 'regular',
+    period_from: '2026-01-01T00:00:00Z',
+    period_to: '2027-01-01T00:00:00Z',
+  },
+};
+
+const UNKNOWN_EVENT = {
+  type: 'totally_made_up_event_type' as F8AuditEventType,
+  payload: { foo: 'bar' },
+} as F8AuditEvent;
+
+describe('makeDrizzleRenewalAuditEmitter — emit() (fire-and-forget)', () => {
+  beforeEach(() => {
+    runInTenantMock.mockReset();
+    vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    vi.stubEnv('NODE_ENV', 'test');
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('unknown event type — pinoFallback with reason=unknown_event_type, no DB call, no throw', async () => {
+    const emitter = makeDrizzleRenewalAuditEmitter(tenant);
+    await expect(emitter.emit(UNKNOWN_EVENT, ctx)).resolves.toBeUndefined();
+    expect(runInTenantMock).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        f8AuditFallthrough: true,
+        reason: 'unknown_event_type',
+        eventType: 'totally_made_up_event_type',
+      }),
+      expect.stringContaining('event type not in pgEnum'),
+    );
+  });
+
+  it('not-yet-in-pgenum event (renewal_cycle_created) — pinoFallback with reason=not_in_pgenum', async () => {
+    const emitter = makeDrizzleRenewalAuditEmitter(tenant);
+    await expect(
+      emitter.emit(NOT_IN_PGENUM_EVENT, ctx),
+    ).resolves.toBeUndefined();
+    expect(runInTenantMock).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'not_in_pgenum',
+        eventType: 'renewal_cycle_created',
+      }),
+      expect.any(String),
+    );
+  });
+
+  it('NODE_ENV=production + un-shipped event — pinoFallback THROWS so emit-site drift is loud', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const emitter = makeDrizzleRenewalAuditEmitter(tenant);
+    // The throw must propagate through emit() because pre-flight is OUTSIDE
+    // the try/catch (CR1). Without CR1 this would be silently swallowed.
+    await expect(emitter.emit(NOT_IN_PGENUM_EVENT, ctx)).rejects.toThrow(
+      /audit emit fell through to pino in production/,
+    );
+    expect(runInTenantMock).not.toHaveBeenCalled();
+  });
+
+  it('shipped event + DB insert fails — fire-and-forget swallows + logs forensic context', async () => {
+    runInTenantMock.mockRejectedValueOnce(new Error('connection reset'));
+    const emitter = makeDrizzleRenewalAuditEmitter(tenant);
+    await expect(emitter.emit(SHIPPED_EVENT, ctx)).resolves.toBeUndefined();
+    expect(runInTenantMock).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'renewal_cycle_cancelled',
+        tenantId: 'tenant-a',
+        actorUserId: '00000000-0000-0000-0000-000000000001',
+        correlationId: 'corr-1',
+        requestId: 'req-1',
+        payloadKeys: expect.arrayContaining([
+          'cycle_id',
+          'member_id',
+          'reason',
+          'previous_status',
+        ]),
+      }),
+      expect.stringContaining('DB insert failed'),
+    );
+  });
+
+  it('shipped event + DB insert succeeds — runInTenant invoked, no log', async () => {
+    runInTenantMock.mockResolvedValueOnce(undefined);
+    const emitter = makeDrizzleRenewalAuditEmitter(tenant);
+    await emitter.emit(SHIPPED_EVENT, ctx);
+    expect(runInTenantMock).toHaveBeenCalledOnce();
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('makeDrizzleRenewalAuditEmitter — emitInTx() (atomic, throws-on-failure)', () => {
+  beforeEach(() => {
+    runInTenantMock.mockReset();
+    vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    vi.stubEnv('NODE_ENV', 'test');
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('unknown event type — pinoFallback + THROWS so caller tx rolls back', async () => {
+    const emitter = makeDrizzleRenewalAuditEmitter(tenant);
+    const fakeTx = { insert: vi.fn() } as unknown;
+    await expect(emitter.emitInTx(fakeTx, UNKNOWN_EVENT, ctx)).rejects.toThrow(
+      /not a known F8 audit event/,
+    );
+    expect(logger.warn).toHaveBeenCalledOnce();
+  });
+
+  it('not-yet-in-pgenum event — pinoFallback + THROWS', async () => {
+    const emitter = makeDrizzleRenewalAuditEmitter(tenant);
+    const fakeTx = { insert: vi.fn() } as unknown;
+    await expect(
+      emitter.emitInTx(fakeTx, NOT_IN_PGENUM_EVENT, ctx),
+    ).rejects.toThrow(/not yet in the audit_event_type pgEnum/);
+    expect(logger.warn).toHaveBeenCalledOnce();
+  });
+
+  it('shipped event — inserts via supplied tx (no runInTenant)', async () => {
+    const insertMock = vi.fn().mockReturnValue({
+      values: vi.fn().mockResolvedValue(undefined),
+    });
+    const fakeTx = { insert: insertMock } as unknown;
+    const emitter = makeDrizzleRenewalAuditEmitter(tenant);
+    await emitter.emitInTx(fakeTx, SHIPPED_EVENT, ctx);
+    expect(insertMock).toHaveBeenCalledOnce();
+    expect(runInTenantMock).not.toHaveBeenCalled();
+  });
+});

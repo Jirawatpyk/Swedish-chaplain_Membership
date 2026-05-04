@@ -119,6 +119,23 @@ describe('cancelCycle (T058) — happy path', () => {
     });
   });
 
+  // Round 3: failure-path coverage — if transition rejects mid-tx, the
+  // audit emit MUST NOT fire. Without this guard a future refactor that
+  // moves emitInTx ahead of the mutation, or wraps transitionStatus in
+  // a swallowing try/catch, would silently break state↔audit atomicity
+  // (Constitution Principle VIII).
+  it('does NOT emit audit if transitionStatus rejects (state↔audit atomicity)', async () => {
+    const cycle = buildCycle();
+    const { deps, emitInTxMock, acquireLockMock } = fakeDeps(cycle, async () => {
+      throw new Error('db: serialization failure');
+    });
+    await expect(cancelCycle(deps, baseInput)).rejects.toThrow(
+      /serialization failure/,
+    );
+    expect(acquireLockMock).toHaveBeenCalledTimes(1);
+    expect(emitInTxMock).not.toHaveBeenCalled();
+  });
+
   it('acquires advisory lock BEFORE transitioning (TOCTOU defence)', async () => {
     const cycle = buildCycle();
     const { deps, transitionMock, acquireLockMock } = fakeDeps(cycle);

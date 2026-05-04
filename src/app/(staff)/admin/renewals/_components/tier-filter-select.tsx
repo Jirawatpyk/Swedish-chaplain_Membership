@@ -8,7 +8,7 @@
  */
 'use client';
 
-import { useCallback, useTransition } from 'react';
+import { useCallback, useId, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -33,6 +33,9 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
+  // useId() per-instance — guarantees uniqueness if the component is
+  // ever rendered twice on the same page (e.g. in a modal filter bar).
+  const labelId = `tier-filter-label-${useId()}`;
 
   const pushUrl = useCallback(
     (next: string | null) => {
@@ -51,19 +54,19 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
     [searchParams, router, pathname],
   );
 
-  // Use aria-labelledby + a visually-hidden label so the SelectValue
-  // text (the current selection) is preserved in the trigger's
-  // accessible name. `aria-label` would override the value text and
-  // make the current selection invisible to screen readers
-  // (WCAG 4.1.2 Name, Role, Value).
+  // Use aria-labelledby + a visually-hidden label. `aria-label` would
+  // replace the trigger's accessible *name* (the label text) and most
+  // SR comboboxes pair name + value when announcing — pointing at a
+  // hidden span via aria-labelledby keeps both the label and the
+  // current SelectValue audible (WCAG 4.1.2 Name, Role, Value).
   return (
     <div className="flex w-full sm:w-[14rem] flex-col">
-      <span id="tier-filter-label" className="sr-only">
+      <span id={labelId} className="sr-only">
         {t('aria_label')}
       </span>
       <Select value={current} onValueChange={pushUrl}>
         <SelectTrigger
-          aria-labelledby="tier-filter-label"
+          aria-labelledby={labelId}
           className="w-full"
         >
           <TranslatedSelectValue
