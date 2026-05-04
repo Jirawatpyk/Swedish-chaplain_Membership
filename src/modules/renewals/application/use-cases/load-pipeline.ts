@@ -20,6 +20,7 @@
  */
 import { z } from 'zod';
 import { ok, type Result } from '@/lib/result';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type {
   PipelineQueryResult,
@@ -73,13 +74,34 @@ export async function loadPipeline(
     };
   }
   const input = parsed.data;
-  const result = await deps.cyclesRepo.loadPipelinePage(input.tenantId, {
-    ...(input.tier !== undefined ? { tier: input.tier } : {}),
-    ...(input.urgency !== undefined ? { urgency: input.urgency } : {}),
-    ...(input.cursor !== undefined && input.cursor !== null
-      ? { cursor: input.cursor }
-      : {}),
-    limit: input.limit ?? 50,
-  });
+  // Phase 3.5 S-06 — wrap the composite-query repo call in an OTel
+  // span so the SLO alerting on SC-003 (p95<500ms) has a named hop in
+  // Vercel Observability traces. Auto-instrumented Drizzle child
+  // queries (summary GROUP BY, lapsed count, page query) parent under
+  // this span via `startActiveSpan`.
+  const result = await withActiveSpan(
+    renewalsTracer(),
+    'admin_pipeline_load',
+    {
+      'tenant.id': input.tenantId,
+      'renewals.tier_filter': input.tier ?? 'all',
+      'renewals.urgency_filter': input.urgency ?? 'all',
+      'renewals.page_limit': input.limit ?? 50,
+    },
+    async (span) => {
+      const r = await deps.cyclesRepo.loadPipelinePage(input.tenantId, {
+        ...(input.tier !== undefined ? { tier: input.tier } : {}),
+        ...(input.urgency !== undefined ? { urgency: input.urgency } : {}),
+        ...(input.cursor !== undefined && input.cursor !== null
+          ? { cursor: input.cursor }
+          : {}),
+        limit: input.limit ?? 50,
+      });
+      span.setAttribute('renewals.total_in_window', r.summary.totalInWindow);
+      span.setAttribute('renewals.lapsed_count', r.summary.lapsedCount);
+      span.setAttribute('renewals.page_size', r.rows.length);
+      return r;
+    },
+  );
   return ok(result);
 }

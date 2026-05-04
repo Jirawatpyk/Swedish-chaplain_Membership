@@ -65,6 +65,28 @@ export function broadcastsTracer(): Tracer {
 }
 
 /**
+ * F8 Phase 3.5 S-06 — OTel tracer for the renewals bounded context.
+ *
+ * Trace tree (US1 Phase 3 + Phase 4+ extensions):
+ * `admin_pipeline_load → load_cycle_detail → cancel_cycle →
+ *  mark_paid_offline → cron_dispatch_reminders → at_risk_recompute →
+ *  tier_upgrade_evaluate`.
+ *
+ * Attribute-redaction contract: no member email / phone / tax-id raw,
+ * no PAN-like payment_reference. Bounded-cardinality only:
+ * tenant.id, cycle.id, actor.role, urgency.bucket, tier.bucket.
+ */
+const RENEWALS_TRACER_NAME = 'swecham.renewals';
+let cachedRenewalsTracer: Tracer | null = null;
+
+export function renewalsTracer(): Tracer {
+  if (!cachedRenewalsTracer) {
+    cachedRenewalsTracer = trace.getTracer(RENEWALS_TRACER_NAME, '1.0.0');
+  }
+  return cachedRenewalsTracer;
+}
+
+/**
  * Round 5 simplification — span lifecycle helper.
  *
  * Wraps `tracer.startSpan(name, {attributes}) → fn(span) → catch:

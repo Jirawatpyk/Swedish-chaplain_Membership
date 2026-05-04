@@ -19,6 +19,7 @@
  */
 import { and, eq, sql, inArray, or, isNull, type SQL } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
+import { env } from '@/lib/env';
 import type { TenantContext } from '@/modules/tenants';
 import { renewalCycles, type RenewalCycleRow } from '../schema-renewal-cycles';
 import { renewalReminderEvents } from '../schema-renewal-reminder-events';
@@ -184,25 +185,68 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
 }
 
 // ---------------------------------------------------------------------------
-// Cursor encoding (opaque base64 of `expires_at|cycle_id`)
+// Cursor encoding — Phase 3.5 W-08 HMAC-signed cursors
 // ---------------------------------------------------------------------------
+//
+// Round 5 staff review flagged unsigned base64 cursors as a defence-in-
+// depth gap: a malicious admin in tenant A who knows a cycleId from
+// tenant B (via guessing or a previous probe) could craft a cursor
+// that shifts the pagination window to that arbitrary position. RLS
+// blocks the actual rows from being returned, but the crafted cursor
+// produces an empty page WITHOUT any error signal — silent attack-
+// surface noise.
+//
+// Phase 3.5 W-08 fix: HMAC-SHA256 sign the cursor payload with the
+// existing `RENEWAL_LINK_TOKEN_SECRET_PRIMARY` (already used by F8
+// renewal-link tokens). Cursors include a 16-byte (base64url-encoded,
+// 22-char) MAC tag; decode rejects on signature mismatch.
+//
+// Token format: `<base64url-payload>.<base64url-mac>`
+// MAC input: payload bytes (NOT including the dot separator).
+
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 interface CursorPayload {
   readonly expiresAt: string;
   readonly cycleId: string;
 }
 
-function encodeCursor(payload: CursorPayload): string {
-  return Buffer.from(
-    JSON.stringify(payload),
-    'utf8',
-  ).toString('base64url');
+const CURSOR_MAC_BYTES = 16; // 128-bit truncation — tampering detection only
+
+function cursorMac(payloadB64: string): string {
+  const secret = env.renewals.linkTokenSecretPrimary;
+  return createHmac('sha256', secret)
+    .update(payloadB64, 'utf8')
+    .digest()
+    .subarray(0, CURSOR_MAC_BYTES)
+    .toString('base64url');
 }
 
-function decodeCursor(cursor: string | null | undefined): CursorPayload | null {
+export function encodeCursor(payload: CursorPayload): string {
+  const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf8').toString(
+    'base64url',
+  );
+  const mac = cursorMac(payloadB64);
+  return `${payloadB64}.${mac}`;
+}
+
+export function decodeCursor(
+  cursor: string | null | undefined,
+): CursorPayload | null {
   if (!cursor) return null;
   try {
-    const json = Buffer.from(cursor, 'base64url').toString('utf8');
+    const dotIdx = cursor.lastIndexOf('.');
+    if (dotIdx <= 0) return null;
+    const payloadB64 = cursor.slice(0, dotIdx);
+    const macB64 = cursor.slice(dotIdx + 1);
+    const expectedMac = cursorMac(payloadB64);
+    // Constant-time compare to avoid timing side-channel on MAC verify.
+    const got = Buffer.from(macB64, 'base64url');
+    const want = Buffer.from(expectedMac, 'base64url');
+    if (got.length !== want.length || !timingSafeEqual(got, want)) {
+      return null;
+    }
+    const json = Buffer.from(payloadB64, 'base64url').toString('utf8');
     const parsed = JSON.parse(json) as Partial<CursorPayload>;
     if (
       typeof parsed.expiresAt !== 'string' ||

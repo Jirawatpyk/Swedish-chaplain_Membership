@@ -108,9 +108,17 @@ Admin records an out-of-band payment. F4 invoice is created and immediately mark
 - `payment_reference`: 1–100 chars. **MUST NOT** match the PAN paste-error pattern (`\d{13,}` ASCII OR 13+ Arabic-Indic / Eastern Arabic-Indic / Devanagari / Thai script digits in a row — Constitution Principle IV PCI DSS NON-NEGOTIABLE defence-in-depth). Hyphen- or space-separated PANs (`4111-1111-1111-1111` / `4111 1111 1111 1111`) are intentionally NOT blocked at this layer — operator workflow surfaces the value in the confirmation toast as second line of defence. Non-PAN references with separators (e.g. Thai bank format `KTB-20260504-12345`) MUST be accepted.
 - `payment_date`: `YYYY-MM-DD` (Bangkok-local).
 
-**Response 200**: `{ cycle_status: "completed", invoice_id, new_expires_at }`
+**Response 200**: `{ cycle_status: "completed", invoice_id: InvoiceId, new_expires_at: ISO8601UtcString }`
+
+> **Phase 3.5 S-R7-2 — Timezone contract**: `new_expires_at` is an
+> ISO-8601 UTC timestamp (e.g. `"2027-06-01T00:00:00.000Z"`). The
+> derivation uses Bangkok-local fiscal arithmetic at the use-case
+> boundary (Round 5 S-04 / `bangkokFiscalYearOf`), but the wire format
+> is always UTC. Member-portal display SHOULD localise to the member's
+> `preferred_locale` TZ; admin UI displays Bangkok-local by default.
+
 **Response 400**: `{ error: { code: "invalid_body", details: { fieldErrors: ... } } }` — includes the PAN-rejection case.
-**Response 502**: `{ error: { code: "f4_failure", stage } }` — `reason` field is intentionally scrubbed from the body (logged server-side; see Round 5 W-02).
+**Response 502**: `{ error: { code: "f4_failure" } }` — both `stage` AND `reason` are intentionally scrubbed from the body (logged server-side via `logger.warn { f4Stage, f4Reason }`; see Round 5 W-02 + Round 8 B-R7-1).
 **Response 409 (orphan)**: `{ error: { code: "f4_orphan_invoice", orphan_invoice_id } }` — `reason` likewise scrubbed.
 **Audit**: `renewal_invoice_created` + `renewal_completed` + `renewal_cycle_completed_offline`
 
