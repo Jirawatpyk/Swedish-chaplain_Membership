@@ -101,8 +101,8 @@
 
 ### Composition Root Scaffold
 
-- [ ] T054 Wire F8 composition root in `src/lib/composition-root-renewals.ts` (or equivalent) — instantiate ports + adapters + register F4 onPaidCallbacks per research.md R12 wiring example
-- [ ] T055 Verify Phase 2 checkpoint: `pnpm test src/modules/renewals/domain/` GREEN + `pnpm test:integration tests/integration/renewals/tenant-isolation.test.ts` GREEN + `pnpm typecheck` + `pnpm lint` GREEN
+- [X] T054 Wire F8 composition root in `src/lib/composition-root-renewals.ts` (or equivalent) — instantiate ports + adapters + register F4 onPaidCallbacks per research.md R12 wiring example
+- [X] T055 Verify Phase 2 checkpoint: `pnpm test src/modules/renewals/domain/` GREEN + `pnpm test:integration tests/integration/renewals/tenant-isolation.test.ts` GREEN + `pnpm typecheck` + `pnpm lint` GREEN
 
 ---
 
