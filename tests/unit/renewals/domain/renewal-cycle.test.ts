@@ -15,21 +15,28 @@ import {
 
 const VALID_UUID = '00000000-0000-0000-0000-0000000000c1';
 
+/**
+ * Builds an active (`upcoming`) cycle. Override any field including
+ * `status` to construct other variants. The cast is necessary because
+ * the discriminated union can't infer the union arm from a partial
+ * spread — production code uses status-aware factories instead, but
+ * tests are trusted to pass coherent overrides.
+ */
 function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
   return {
     tenantId: 't',
     cycleId: asCycleId(VALID_UUID),
     memberId: 'm',
-    status: 'upcoming',
+    status: 'upcoming' as const,
     periodFrom: '2026-06-01T00:00:00Z',
     periodTo: '2027-06-01T00:00:00Z',
     expiresAt: '2027-06-01T00:00:00Z',
     cycleLengthMonths: 12,
-    tierAtCycleStart: 'regular',
+    tierAtCycleStart: 'regular' as const,
     planIdAtCycleStart: 'p1',
     frozenPlanPriceThb: '50000.00',
     frozenPlanTermMonths: 12,
-    frozenPlanCurrency: 'THB',
+    frozenPlanCurrency: 'THB' as const,
     enteredPendingAt: null,
     linkedInvoiceId: null,
     linkedCreditNoteId: null,
@@ -38,7 +45,7 @@ function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
     createdAt: '2026-05-01T00:00:00Z',
     updatedAt: '2026-05-01T00:00:00Z',
     ...overrides,
-  };
+  } as RenewalCycle;
 }
 
 describe('CycleId brand', () => {
@@ -123,61 +130,73 @@ describe('assertCycleInvariants', () => {
     ).toBe(false);
   });
 
-  it('rejects completed without linked_invoice_id', () => {
-    const r = assertCycleInvariants(
-      buildCycle({
-        status: 'completed',
-        closedAt: '2026-12-01T00:00:00Z',
-        closedReason: 'paid',
-        linkedInvoiceId: null,
-      }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('completed_requires_invoice');
+  // The 5 status-conditional invariants previously asserted at runtime
+  // (`completed_requires_invoice`, `closed_at_terminal_mismatch` ×2,
+  // `pending_at_status_mismatch` ×2) are now enforced at COMPILE TIME
+  // by the RenewalCycle discriminated union — illegal combinations
+  // become TypeScript errors instead of runtime Result.err. The
+  // following tests document each rejected combination via
+  // `@ts-expect-error` so the type-system contract is locked in.
+
+  it('compile-error: completed without linkedInvoiceId', () => {
+    // @ts-expect-error — completed cycles require linkedInvoiceId: string
+    const _illegal: RenewalCycle = {
+      ...buildCycle(),
+      status: 'completed',
+      closedAt: '2026-12-01T00:00:00Z',
+      closedReason: 'paid',
+      linkedInvoiceId: null,
+      enteredPendingAt: null,
+    };
+    expect(_illegal).toBeDefined();
   });
 
-  it('rejects terminal status without closed_at', () => {
-    const r = assertCycleInvariants(
-      buildCycle({
-        status: 'lapsed',
-        closedAt: null,
-      }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('closed_at_terminal_mismatch');
+  it('compile-error: terminal status without closed_at', () => {
+    // @ts-expect-error — lapsed cycles require closedAt: string
+    const _illegal: RenewalCycle = {
+      ...buildCycle(),
+      status: 'lapsed',
+      closedAt: null,
+      closedReason: 'lapsed',
+      enteredPendingAt: null,
+    };
+    expect(_illegal).toBeDefined();
   });
 
-  it('rejects non-terminal status with closed_at set', () => {
-    const r = assertCycleInvariants(
-      buildCycle({
-        status: 'upcoming',
-        closedAt: '2026-05-01T00:00:00Z',
-      }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('closed_at_terminal_mismatch');
+  it('compile-error: non-terminal status with closed_at set', () => {
+    // @ts-expect-error — upcoming cycles require closedAt: null
+    const _illegal: RenewalCycle = {
+      ...buildCycle(),
+      status: 'upcoming',
+      closedAt: '2026-05-01T00:00:00Z',
+      closedReason: null,
+      enteredPendingAt: null,
+    };
+    expect(_illegal).toBeDefined();
   });
 
-  it('rejects pending_admin_reactivation without entered_pending_at', () => {
-    const r = assertCycleInvariants(
-      buildCycle({
-        status: 'pending_admin_reactivation',
-        enteredPendingAt: null,
-      }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('pending_at_status_mismatch');
+  it('compile-error: pending_admin_reactivation without entered_pending_at', () => {
+    // @ts-expect-error — pending_admin_reactivation requires enteredPendingAt: string
+    const _illegal: RenewalCycle = {
+      ...buildCycle(),
+      status: 'pending_admin_reactivation',
+      enteredPendingAt: null,
+      closedAt: null,
+      closedReason: null,
+    };
+    expect(_illegal).toBeDefined();
   });
 
-  it('rejects non-pending status with entered_pending_at set', () => {
-    const r = assertCycleInvariants(
-      buildCycle({
-        status: 'upcoming',
-        enteredPendingAt: '2026-05-01T00:00:00Z',
-      }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('pending_at_status_mismatch');
+  it('compile-error: non-pending status with entered_pending_at set', () => {
+    // @ts-expect-error — upcoming requires enteredPendingAt: null
+    const _illegal: RenewalCycle = {
+      ...buildCycle(),
+      status: 'upcoming',
+      enteredPendingAt: '2026-05-01T00:00:00Z',
+      closedAt: null,
+      closedReason: null,
+    };
+    expect(_illegal).toBeDefined();
   });
 
   it('accepts completed cycle with full anchors', () => {

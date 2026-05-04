@@ -32,16 +32,16 @@ function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
     tenantId: TENANT_ID,
     cycleId: asCycleId(VALID_UUID),
     memberId: 'mem-1',
-    status: 'awaiting_payment',
+    status: 'awaiting_payment' as const,
     periodFrom: '2026-06-01T00:00:00Z',
     periodTo: '2027-06-01T00:00:00Z',
     expiresAt: '2027-06-01T00:00:00Z',
     cycleLengthMonths: 12,
-    tierAtCycleStart: 'regular',
+    tierAtCycleStart: 'regular' as const,
     planIdAtCycleStart: 'p1',
     frozenPlanPriceThb: '50000.00',
     frozenPlanTermMonths: 12,
-    frozenPlanCurrency: 'THB',
+    frozenPlanCurrency: 'THB' as const,
     enteredPendingAt: null,
     linkedInvoiceId: null,
     linkedCreditNoteId: null,
@@ -50,7 +50,7 @@ function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
     createdAt: '2026-05-01T00:00:00Z',
     updatedAt: '2026-05-01T00:00:00Z',
     ...overrides,
-  };
+  } as RenewalCycle;
 }
 
 function fakeDeps(

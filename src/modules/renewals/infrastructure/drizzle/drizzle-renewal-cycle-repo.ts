@@ -49,12 +49,20 @@ import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 // Row → Domain translation
 // ---------------------------------------------------------------------------
 
+/**
+ * Translate a Drizzle row into a typed `RenewalCycle` discriminated
+ * union member. The DB CHECK constraints (`closed_at IS NULL ↔
+ * status terminal`, `pending_admin_reactivation ↔ entered_pending_at
+ * NOT NULL`, `completed → linked_invoice_id NOT NULL`) guarantee the
+ * narrowing assertions never fail in practice — but we use `as` here
+ * since TS can't follow the conditional logic. Each branch maps the
+ * row to exactly one union arm.
+ */
 function rowToDomain(row: RenewalCycleRow): RenewalCycle {
-  return {
+  const base = {
     tenantId: row.tenantId,
     cycleId: asCycleId(row.cycleId),
     memberId: row.memberId,
-    status: row.status as CycleStatus,
     periodFrom: row.periodFrom.toISOString(),
     periodTo: row.periodTo.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
@@ -64,16 +72,69 @@ function rowToDomain(row: RenewalCycleRow): RenewalCycle {
     frozenPlanPriceThb: row.frozenPlanPriceThb,
     frozenPlanTermMonths: row.frozenPlanTermMonths,
     frozenPlanCurrency: row.frozenPlanCurrency as 'THB',
-    enteredPendingAt: row.enteredPendingAt
-      ? row.enteredPendingAt.toISOString()
-      : null,
-    linkedInvoiceId: row.linkedInvoiceId,
     linkedCreditNoteId: row.linkedCreditNoteId,
-    closedAt: row.closedAt ? row.closedAt.toISOString() : null,
-    closedReason: row.closedReason as ClosedReason | null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+  const status = row.status as CycleStatus;
+  const closedAt = row.closedAt ? row.closedAt.toISOString() : null;
+  const closedReason = row.closedReason as ClosedReason | null;
+  const enteredPendingAt = row.enteredPendingAt
+    ? row.enteredPendingAt.toISOString()
+    : null;
+  const linkedInvoiceId = row.linkedInvoiceId;
+
+  switch (status) {
+    case 'upcoming':
+    case 'reminded':
+    case 'awaiting_payment':
+      return {
+        ...base,
+        status,
+        enteredPendingAt: null,
+        closedAt: null,
+        closedReason: null,
+        linkedInvoiceId,
+      };
+    case 'pending_admin_reactivation':
+      return {
+        ...base,
+        status,
+        // DB CHECK guarantees enteredPendingAt non-null here.
+        enteredPendingAt: enteredPendingAt!,
+        closedAt: null,
+        closedReason: null,
+        linkedInvoiceId,
+      };
+    case 'completed':
+      return {
+        ...base,
+        status,
+        enteredPendingAt: null,
+        closedAt: closedAt!,
+        closedReason: closedReason as 'paid' | 'completed_offline' | 'admin_reactivated',
+        // DB CHECK guarantees linkedInvoiceId non-null on completed.
+        linkedInvoiceId: linkedInvoiceId!,
+      };
+    case 'lapsed':
+      return {
+        ...base,
+        status,
+        enteredPendingAt: null,
+        closedAt: closedAt!,
+        closedReason: closedReason as 'lapsed' | 'pending_reactivation_timed_out',
+        linkedInvoiceId,
+      };
+    case 'cancelled':
+      return {
+        ...base,
+        status,
+        enteredPendingAt: null,
+        closedAt: closedAt!,
+        closedReason: closedReason as 'cancelled' | 'admin_rejected_with_refund',
+        linkedInvoiceId,
+      };
+  }
 }
 
 // ---------------------------------------------------------------------------
