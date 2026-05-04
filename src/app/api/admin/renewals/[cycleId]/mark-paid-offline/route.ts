@@ -61,12 +61,21 @@ import { markPaidOffline, makeRenewalsDeps } from '@/modules/renewals';
  *     coverage.
  */
 const PAN_LIKE_ASCII_RE = /\d{13,}/;
-// Pass 2: covers Arabic-Indic / Eastern Arabic-Indic / Devanagari / Thai
-// digit blocks. `/u` flag enables Unicode-aware matching but is not
-// strictly required for these BMP codepoints; included for clarity +
-// future-script extensibility.
+// Pass 2: covers script-digit blocks NFKD does NOT decompose to ASCII.
+// Round 8 W-R7-3 added `\u{1D7CE}-\u{1D7D7}` Mathematical Bold Digits
+// (`𝟎-𝟗`, U+1D7CE-U+1D7D7) — 4-byte codepoints in the SMP
+// (Supplementary Multilingual Plane). The `/u` flag is now load-bearing
+// for surrogate-pair handling on these codepoints. Mathematical Bold
+// is a realistic operator-paste vector via rich-text editors and
+// spreadsheet copy-paste.
+//
+// Accepted-deferred (low realistic-vector for Thai chamber operator
+// context): Bengali (U+09E6-U+09EF), Tamil (U+0BE6-U+0BEF), Khmer
+// (U+17E0-U+17E9), Lao (U+0ED0-U+0ED9), Myanmar (U+1040-U+1049),
+// Tibetan (U+0F20-U+0F29). Tracked as Phase 3.5 if real-world
+// incidents require coverage.
 const PAN_LIKE_UNICODE_DIGITS_RE =
-  /[٠-٩۰-۹०-९๐-๙]{13,}/u;
+  /[٠-٩۰-۹०-९๐-๙\u{1D7CE}-\u{1D7D7}]{13,}/u;
 
 function isPanLikeReference(raw: string): boolean {
   // Pass 1 — ASCII PAN after NFKD + non-ASCII strip.
@@ -179,13 +188,17 @@ export async function POST(
             },
             'mark-paid-offline: F4 chain failed (reason scrubbed from HTTP response)',
           );
+          // Round 8 B-R7-1 — drop `stage` from HTTP body. Round 7 W-R6-4
+          // added `f4Stage` to REDACT_PATHS (log path protected) but
+          // pino redaction does NOT apply to `NextResponse.json` —
+          // the stage names embed F4 internal use-case identifiers
+          // and would leak to admin UI + APM middleware capturing
+          // response bodies. Operators have `correlationId` + the
+          // server-side `logger.warn` line for support triage.
           return errorResponse({
             status: 502,
             code: 'f4_failure',
             correlationId: ctx.correlationId,
-            details: {
-              stage: result.error.stage,
-            },
           });
         case 'f4_orphan_invoice':
           // 409 (conflict) — admin must resume from F4 invoice list.

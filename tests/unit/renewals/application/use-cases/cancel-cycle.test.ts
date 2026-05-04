@@ -194,26 +194,36 @@ describe('cancelCycle (T058) — happy path', () => {
     expect(findByIdInTxCalls[0]?.[0]).toBe(acquireLockTx);
   });
 
-  // Round 6 S-R5-3 — assert audit payload `reason` has CRLF + ANSI +
-  // C0/C1 control bytes stripped. Without this test, a future refactor
-  // that removes the .replace call would not be caught.
-  it('strips CRLF + ANSI + C0/C1 control bytes from reason in audit payload (W-R5-3)', async () => {
+  // Round 6 S-R5-3 / Round 8 W-R7-1 — assert audit payload `reason`
+  // has CRLF + ANSI + C0/C1 control bytes AND Unicode separator/format
+  // chars stripped. Round 7 added a 2nd-pass `.replace` for U+2028 /
+  // U+2029 / U+200B / U+FEFF; this test asserts BOTH passes so a
+  // regression that removes either is caught.
+  it('strips CRLF + ANSI + C0/C1 + Unicode separators from reason in audit payload (W-R5-3 + W-R7-1)', async () => {
     const { deps, emitInTxMock } = fakeDeps(buildCycle());
     await cancelCycle(deps, {
       ...baseInput,
-      reason: 'injection\r\n\x1b[31mRED\x1b[0m\x9bspoof\x07bell',
+      reason:
+        'injection\r\n\x1b[31mRED\x1b[0m\x9bspoof\x07bell' +
+        ' line-sep\u2028para-sep\u2029zwsp\u200bbom\ufeff',
     });
     const emittedReason = (
       emitInTxMock.mock.calls[0]?.[1] as {
         payload: { reason: string };
       }
     ).payload.reason;
-    // No C0 (\x00-\x1f) or C1 (\x7f-\x9f) control bytes remain.
-    expect(emittedReason).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+    // Pass 1: no C0 or C1 control bytes remain.
+    expect(emittedReason).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+    // Pass 2: no Unicode separators / format chars remain.
+    expect(emittedReason).not.toMatch(/[\u2028\u2029\u200b\ufeff]/);
     // Visible content preserved (word characters survive).
     expect(emittedReason).toContain('injection');
     expect(emittedReason).toContain('spoof');
     expect(emittedReason).toContain('bell');
+    expect(emittedReason).toContain('line-sep');
+    expect(emittedReason).toContain('para-sep');
+    expect(emittedReason).toContain('zwsp');
+    expect(emittedReason).toContain('bom');
   });
 });
 

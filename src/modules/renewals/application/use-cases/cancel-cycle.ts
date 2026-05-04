@@ -122,22 +122,26 @@ export async function cancelCycle(
     });
   }
 
-  // Round 5 W-03 / Round 6 W-R5-3 / Round 7 W-R6-3 — strip ALL control
-  // and structural-format bytes from admin-supplied reason before it
-  // lands in audit_log.payload + audit_log.summary. Round 5's narrow
-  // `[\r\n\x1b]` left 8-bit CSI / BEL / BS through; Round 6 expanded
-  // to `[\x00-\x1f\x7f-\x9f]` (full C0+C1 control blocks). Round 7
-  // adds higher-plane Unicode separators that some log aggregators
-  // (Loki / Datadog / Splunk) interpret as record boundaries — used
-  // as a log-injection / record-splitting vector:
-  //   - U+2028 LINE SEPARATOR
-  //   - U+2029 PARAGRAPH SEPARATOR
-  //   - U+200B ZERO-WIDTH SPACE     (homoglyph / invisibility attack)
-  //   - U+FEFF BYTE ORDER MARK      (corrupts JSON renderers)
-  // Admin "reason" free-text never legitimately contains any of these.
-  const sanitizedReason = input.reason
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
-    .replace(/[\u2028\u2029\u200b\ufeff]/g, ' ');
+  // Round 5 W-03 / Round 6 W-R5-3 / Round 7 W-R6-3 / Round 8 W-R7-4 —
+  // strip ALL control + structural-format + non-canonical-space bytes
+  // from admin-supplied reason before audit_log persistence. Round 8
+  // consolidates the prior 2-pass approach into a single regex covering
+  // the full Unicode separator + format class. Coverage:
+  //   - U+0000-U+001F (C0 controls inc. CR/LF/TAB/BEL/BS/ESC)
+  //   - U+007F-U+009F (DEL + C1 inc. NEL, 8-bit CSI)
+  //   - U+00A0 (NBSP), U+1680 (OGHAM SPACE)
+  //   - U+2000-U+200F (en/em/thin/hair/zero-width spaces + format)
+  //   - U+2028/U+2029 (LINE/PARAGRAPH SEPARATOR)
+  //   - U+202F (NARROW NBSP), U+205F (MEDIUM MATH SPACE)
+  //   - U+3000 (IDEOGRAPHIC SPACE), U+FEFF (BOM)
+  // All are log-injection / homoglyph / record-splitting vectors
+  // against terminal-rendering log readers and \p{Z}-tokenising log
+  // aggregators (Loki / Datadog / Splunk). Admin "reason" free-text
+  // legitimately needs only ASCII + standard U+0020 spaces.
+  const sanitizedReason = input.reason.replace(
+    /[\u0000-\u001f\u007f-\u00a0\u1680\u2000-\u200f\u2028-\u202f\u205f\u3000\ufeff]/g,
+    ' ',
+  );
   // Atomic transition + audit emit.
   try {
     const closedAt = new Date().toISOString();

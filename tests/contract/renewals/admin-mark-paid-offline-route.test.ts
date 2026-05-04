@@ -180,7 +180,7 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     expect(body.error.current_status).toBe('completed');
   });
 
-  it('502 f4_failure with stage but reason scrubbed (W-02)', async () => {
+  it('502 f4_failure with reason AND stage scrubbed (W-02 + B-R7-1)', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     markPaidOfflineMock.mockResolvedValueOnce(
       err({
@@ -194,12 +194,17 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(body.error.code).toBe('f4_failure');
-    expect(body.error.stage).toBe('create_invoice_failed');
     // Round 6 B-R5-2 — Round 5 W-02 scrubs the F4-internal `reason`
     // from the HTTP response body so internal schema / column / row
     // fragments cannot leak to the admin UI. Reason is logged
     // server-side via `logger.warn` for ops triage.
     expect(body.error).not.toHaveProperty('reason');
+    // Round 8 B-R7-1 — also scrub `stage` from response body. Round 7
+    // W-R6-4 redacted `f4Stage` in logs but pino redaction does NOT
+    // apply to `NextResponse.json`. Stage names embed F4 internal
+    // use-case identifiers (`create_invoice_failed` etc.) — keeping
+    // them off the wire closes the W-R6-4 incomplete-fix gap.
+    expect(body.error).not.toHaveProperty('stage');
   });
 
   it('400 invalid_body when payment_reference is PAN-like (W-01)', async () => {
@@ -255,7 +260,13 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     { script: 'Eastern Arabic-Indic', raw: '۴'.repeat(16) },
     { script: 'Devanagari', raw: '४'.repeat(16) },
     { script: 'Thai', raw: '๔'.repeat(16) },
-  ])('400 invalid_body when payment_reference uses $script digits (B-R6-2)', async ({ raw }) => {
+    // Round 8 W-R7-3 — Mathematical Bold Digits 𝟒 (U+1D7D2). Realistic
+    // operator-paste vector via rich-text editors / spreadsheets.
+    // 4-byte SMP codepoints — `.repeat(16)` yields 32 UTF-16 code
+    // units but 16 actual digit codepoints; `/u` flag handles the
+    // surrogate pairs.
+    { script: 'Mathematical Bold', raw: '𝟒'.repeat(16) },
+  ])('400 invalid_body when payment_reference uses $script digits (B-R6-2 + W-R7-3)', async ({ raw }) => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     const POST = await loadHandler();
     const res = await POST(
