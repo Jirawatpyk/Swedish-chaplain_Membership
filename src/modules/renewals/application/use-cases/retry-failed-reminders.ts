@@ -164,33 +164,30 @@ async function attemptRetry(
 
   return runInTenant(deps.tenant, async (tx) => {
     if (gatewayResult.ok) {
-      // Success — transition failed → sent. The transitionStatus
-      // adapter requires source=pending, so we use a separate
-      // status-flip path: clear retry_until + set status=sent.
-      // Implementation: direct UPDATE via the same adapter, but the
-      // current adapter only supports pending→X. We use a small
-      // workaround: insertIfAbsent followed by transitionStatus
-      // doesn't apply here. Instead: cast to allow status=failed→sent
-      // via a fresh adapter call.
+      // Success — flip status='failed'→'sent' via the dedicated
+      // adapter method (Wave I2e refinement). Atomically:
+      //   1. transitionFailedToSent — sets status=sent, clears
+      //      retry_until, populates dispatched_at + delivery_id
+      //   2. audit `renewal_reminder_retried` (the attempt record)
+      //   3. audit `renewal_reminder_sent` (the delivery record)
       //
-      // For Wave I2e we accept an architectural concession: the retry
-      // success path emits the audit but DOES NOT mutate the row's
-      // status (it remains 'failed' with retry_until cleared). The
-      // dispatcher's idempotency primitive (insertIfAbsent on
-      // (cycle, step_id, year_in_cycle)) ensures no duplicate
-      // dispatch fires from T088. The audit log carries the
-      // authoritative success record.
-      //
-      // Future Wave I8+ refinement: extend the adapter with
-      // `markRetrySucceeded(tx, eventId, deliveryId, dispatchedAt)`
-      // that flips status='sent' + clears retry_until.
-      //
-      // Round-up of side effects this commit DOES make atomically:
-      //   - audit `renewal_reminder_retried` (the attempt)
-      //   - audit `renewal_reminder_sent`   (the delivery)
-      //   - clear retry_until via markRetryExhausted (semantic abuse
-      //     of that method — sets retry_exhausted_at to prevent
-      //     repeated retry attempts on this row).
+      // The adapter's UPDATE WHERE clause (status='failed' AND
+      // retry_exhausted_at IS NULL) defends against concurrent
+      // retry-pass invocations and races with the exhaustion pass.
+      try {
+        await deps.reminderEventRepo.transitionFailedToSent(tx, {
+          tenantId: event.tenantId,
+          reminderEventId: event.reminderEventId,
+          dispatchedAt: gatewayResult.value.dispatchedAt,
+          deliveryId: gatewayResult.value.deliveryId,
+        });
+      } catch {
+        // Concurrent retry-pass already won OR exhaustion-pass already
+        // marked the row permanent. Either way, the audit emit below
+        // is safe but the actual status change has been done by the
+        // winner. Treat as idempotent replay.
+        return { kind: 'succeeded' as const };
+      }
       await deps.auditEmitter.emitInTx(
         tx,
         {
@@ -235,15 +232,11 @@ async function attemptRetry(
           requestId,
         },
       );
-      // Mark exhausted to prevent re-pickup on next retry pass.
-      // (Technically a misnomer — it succeeded, not exhausted — but
-      // the column's semantic is "no longer eligible for retry pass"
-      // which covers both success and timeout.)
-      await deps.reminderEventRepo.markRetryExhausted(tx, {
-        tenantId: event.tenantId,
-        reminderEventId: event.reminderEventId,
-        exhaustedAtIso: nowIso,
-      });
+      // No need to call markRetryExhausted: the
+      // `transitionFailedToSent` already cleared retry_until + flipped
+      // status to 'sent', so the row no longer matches the
+      // listRetryEligible WHERE clause (status='failed' AND
+      // retry_until > now AND retry_exhausted_at IS NULL).
       return { kind: 'succeeded' as const };
     }
     // Retry failed.
@@ -368,12 +361,10 @@ async function emitPermanentFailure(
       );
     }
   }
-  // The typed payload shape for `renewal_reminder_send_failed_permanent`
-  // expects bounce_class fields (designed for T090 bounce-detected path).
-  // For retry-exhaustion we carry a different payload — cast through
-  // `Record<string, unknown>` since the audit-emitter accepts both
-  // typed and untyped payloads (renewal-audit-emitter.ts:263-266 mapped
-  // type fallback).
+  // Typed via the discriminated union added to `F8AuditPayloadShapes`
+  // (renewal-audit-emitter.ts) — paths 2+3 (dispatcher 4xx +
+  // retry-exhaustion) share the same shape with `via_retry_exhaustion`
+  // discriminating between first-attempt-permanent vs retry-exhausted.
   await deps.auditEmitter.emitInTx(
     tx,
     {
@@ -389,8 +380,8 @@ async function emitPermanentFailure(
         via_retry_exhaustion: true,
         retry_until: event.retryUntil,
         escalation_task_id: taskInsert?.taskId ?? null,
-      } as unknown as Record<string, unknown>,
-    } as Parameters<typeof deps.auditEmitter.emitInTx>[1],
+      },
+    },
     {
       tenantId: event.tenantId,
       actorUserId: null,

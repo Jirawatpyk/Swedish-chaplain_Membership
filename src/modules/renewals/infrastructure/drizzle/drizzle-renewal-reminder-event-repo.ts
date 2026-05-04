@@ -172,6 +172,43 @@ export function makeDrizzleRenewalReminderEventRepo(
       return rowToDomain(updated[0]);
     },
 
+    async transitionFailedToSent(
+      tx: unknown,
+      input: {
+        readonly tenantId: string;
+        readonly reminderEventId: string;
+        readonly dispatchedAt: string;
+        readonly deliveryId: string;
+      },
+    ): Promise<ReminderEvent> {
+      const txDb = tx as typeof db;
+      // WHERE status='failed' AND retry_exhausted_at IS NULL — defends
+      // against (a) concurrent retry passes both attempting flip and
+      // (b) flipping a row that was already permanently exhausted by a
+      // prior retry pass.
+      const updated = await txDb
+        .update(renewalReminderEvents)
+        .set({
+          status: 'sent',
+          dispatchedAt: new Date(input.dispatchedAt),
+          deliveryId: input.deliveryId,
+          retryUntil: null,
+          failureReason: null,
+        })
+        .where(
+          and(
+            eq(renewalReminderEvents.reminderEventId, input.reminderEventId),
+            eq(renewalReminderEvents.status, 'failed'),
+            sql`${renewalReminderEvents.retryExhaustedAt} IS NULL`,
+          ),
+        )
+        .returning();
+      if (!updated[0]) {
+        throw new ReminderEventNotFoundError(input.reminderEventId);
+      }
+      return rowToDomain(updated[0]);
+    },
+
     async listForCycle(
       _tenantId: string,
       cycleId: CycleId,

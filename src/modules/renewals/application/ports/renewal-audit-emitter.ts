@@ -236,13 +236,54 @@ export interface F8AuditPayloadShapes {
     readonly member_id: MemberId;
     readonly score: number;
   };
-  readonly renewal_reminder_send_failed_permanent: {
-    readonly cycle_id: CycleId;
-    readonly step_id: string;
-    readonly recipient_email_hashed: Sha256Hex;
-    readonly bounce_class: 'hard_bounce' | 'spam_complaint' | 'invalid_address';
-    readonly provider_message_id: string | null;
-  };
+  /**
+   * Discriminated union — `renewal_reminder_send_failed_permanent`
+   * fires from THREE distinct emit sites, each with its own payload
+   * shape:
+   *
+   *   1. **Bounce-classification path** — F1 webhook → T090 detect-
+   *      bounce-threshold → permanent flag flip. Carries
+   *      `bounce_class` from Resend's classification.
+   *
+   *   2. **Dispatcher 4xx path** — `dispatchOneCycle` (T088/T089)
+   *      gateway returns 4xx / recipient-unsubscribed / unverified
+   *      / template-vars-missing → permanent first-attempt failure.
+   *      Carries `via_retry_exhaustion: false`.
+   *
+   *   3. **Retry-exhaustion path** — Wave I2e `retryFailedReminders`
+   *      transitions an event to permanent after the 24h budget
+   *      expires (Pass 2) OR a retry attempt itself returns a
+   *      permanent gateway error (Pass 1 became_permanent). Carries
+   *      `via_retry_exhaustion: true`.
+   *
+   * Consumers can discriminate on the presence of `bounce_class`
+   * (path 1) vs `via_retry_exhaustion` (paths 2+3).
+   */
+  readonly renewal_reminder_send_failed_permanent:
+    | {
+        // Path 1 — bounce-detected (T090 → permanent flag flip)
+        readonly cycle_id: CycleId;
+        readonly step_id: string;
+        readonly recipient_email_hashed: Sha256Hex;
+        readonly bounce_class:
+          | 'hard_bounce'
+          | 'spam_complaint'
+          | 'invalid_address';
+        readonly provider_message_id: string | null;
+      }
+    | {
+        // Paths 2 + 3 — dispatcher 4xx OR retry exhaustion (Wave I2c+I2e)
+        readonly cycle_id: CycleId;
+        readonly member_id: MemberId;
+        readonly step_id: string;
+        readonly channel: 'email' | 'task';
+        readonly template_id: string | null;
+        readonly failure_kind: string;
+        readonly failure_message: string | null;
+        readonly via_retry_exhaustion: boolean;
+        readonly retry_until?: string | null;
+        readonly escalation_task_id?: string | null;
+      };
   readonly lapsed_member_admin_reactivation_rejected: {
     readonly cycle_id: CycleId;
     readonly actor_user_id: UserId;

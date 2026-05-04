@@ -112,10 +112,12 @@ function fakeDeps(opts: {
   candidate?: DispatchCandidate | null;
   gatewayResult?: ReturnType<typeof ok> | ReturnType<typeof err>;
   insertTaskCreated?: boolean;
+  transitionFailedToSentImpl?: () => Promise<ReminderEvent>;
 }): {
   deps: RenewalsDeps;
   emitInTxMock: ReturnType<typeof vi.fn>;
   markExhaustedMock: ReturnType<typeof vi.fn>;
+  transitionFailedToSentMock: ReturnType<typeof vi.fn>;
   insertTaskMock: ReturnType<typeof vi.fn>;
   gatewayMock: ReturnType<typeof vi.fn>;
 } {
@@ -124,6 +126,11 @@ function fakeDeps(opts: {
     ...buildFailedEvent({ reminderEventId: input.reminderEventId }),
     retryExhaustedAt: input.exhaustedAtIso,
   }));
+  const transitionFailedToSentMock = vi.fn(
+    opts.transitionFailedToSentImpl ??
+      (async () =>
+        buildFailedEvent({ status: 'sent' as const, retryUntil: null })),
+  );
   const insertTaskMock = vi.fn(async (_tx, input) => ({
     created: opts.insertTaskCreated ?? true,
     row: {
@@ -156,6 +163,7 @@ function fakeDeps(opts: {
     reminderEventRepo: {
       insertIfAbsent: vi.fn(),
       transitionStatus: vi.fn(),
+      transitionFailedToSent: transitionFailedToSentMock,
       listForCycle: vi.fn(),
       listFailedSince: vi.fn(),
       listRetryEligible: vi.fn(async () => opts.eligible ?? []),
@@ -177,7 +185,14 @@ function fakeDeps(opts: {
       emitInTx: emitInTxMock,
     } as unknown as RenewalsDeps['auditEmitter'],
   } as unknown as RenewalsDeps;
-  return { deps, emitInTxMock, markExhaustedMock, insertTaskMock, gatewayMock };
+  return {
+    deps,
+    emitInTxMock,
+    markExhaustedMock,
+    transitionFailedToSentMock,
+    insertTaskMock,
+    gatewayMock,
+  };
 }
 
 const VALID_INPUT = {
@@ -201,15 +216,18 @@ describe('retryFailedReminders', () => {
       expect(gatewayMock).not.toHaveBeenCalled();
     });
 
-    it('successful retry: emits 2 audits + marks exhausted', async () => {
-      const { deps, emitInTxMock, markExhaustedMock } = fakeDeps({
+    it('successful retry: flips status failed→sent + emits 2 audits', async () => {
+      const { deps, emitInTxMock, transitionFailedToSentMock, markExhaustedMock } = fakeDeps({
         eligible: [buildFailedEvent()],
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.summary.retrySucceeded).toBe(1);
-      expect(markExhaustedMock).toHaveBeenCalledTimes(1);
+      // Wave I2e G1+E1 fixes: status flip via dedicated method; no
+      // semantic-abuse of markRetryExhausted on success path.
+      expect(transitionFailedToSentMock).toHaveBeenCalledTimes(1);
+      expect(markExhaustedMock).not.toHaveBeenCalled();
       // Audits: renewal_reminder_retried + renewal_reminder_sent.
       expect(emitInTxMock).toHaveBeenCalledWith(
         expect.anything(),
@@ -221,6 +239,23 @@ describe('retryFailedReminders', () => {
         expect.objectContaining({ type: 'renewal_reminder_sent' }),
         expect.anything(),
       );
+    });
+
+    it('successful retry race: concurrent winner already flipped → idempotent succeeded outcome', async () => {
+      const { deps, transitionFailedToSentMock } = fakeDeps({
+        eligible: [buildFailedEvent()],
+        transitionFailedToSentImpl: async () => {
+          // Simulate concurrent retry pass winning the race.
+          throw new Error('reminder event not found (concurrent winner)');
+        },
+      });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Idempotent — counted as succeeded even though THIS pass didn't
+      // actually flip the row (the concurrent winner did).
+      expect(result.value.summary.retrySucceeded).toBe(1);
+      expect(transitionFailedToSentMock).toHaveBeenCalledTimes(1);
     });
 
     it('still-transient: counted as still_transient, retry_until preserved', async () => {

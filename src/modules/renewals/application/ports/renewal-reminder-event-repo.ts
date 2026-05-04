@@ -120,6 +120,27 @@ export interface RenewalReminderEventRepo {
   ): Promise<ReminderEvent>;
 
   /**
+   * F8 Phase 4 Wave I2e — transition `failed → sent` for the retry
+   * success path (FR-010a). Differs from `transitionStatus` in that
+   * the source state is `failed`, not `pending`. UPDATE WHERE
+   * `status='failed' AND retry_exhausted_at IS NULL` ensures only one
+   * caller wins (defends against concurrent retry-pass invocations).
+   * Also clears `retry_until` (no longer eligible for retry pickup).
+   *
+   * Throws `ReminderEventNotFoundError` when zero affected rows
+   * (concurrent retry won, or row was permanently exhausted).
+   */
+  transitionFailedToSent(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly reminderEventId: string;
+      readonly dispatchedAt: string;
+      readonly deliveryId: string;
+    },
+  ): Promise<ReminderEvent>;
+
+  /**
    * Per-cycle history for the admin pipeline detail page. Ordered by
    * `dispatched_at DESC` (with NULLs last so still-pending rows
    * surface above sent ones).
