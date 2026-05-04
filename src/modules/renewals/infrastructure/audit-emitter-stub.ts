@@ -1,26 +1,16 @@
 /**
- * F8 Phase 2 Wave G · T054 · part 4 — placeholder `RenewalAuditEmitter`.
+ * Logging-only fallback emitter for F8 audit events.
  *
- * Wave G ships a logging-only stub that:
- *   - Validates `event.type` against the F8 audit-event catalogue
- *     (compile-time via the port's discriminated union; runtime via
- *     `isF8AuditEventType`).
- *   - Logs the event payload at `info` level via the project pino
- *     instance — useful during Phase 2 exit smoke tests where wiring
- *     is exercised but no use-case calls `emit()` for real.
- *   - DOES NOT write to `audit_log` because most F8 events are NOT yet
- *     in the Postgres `audit_event_type` pgEnum (Wave C-8 added only 5
- *     of the 54; the rest land in subsequent migrations alongside the
- *     emit sites in Phase 5+ user-story phases).
+ * The composition root binds the **real** Drizzle adapter
+ * (`drizzle-renewal-audit-emitter.ts`) which writes to `audit_log`
+ * for events present in the `audit_event_type` pgEnum. This stub is
+ * exported via the barrel for explicit opt-in in unit tests that
+ * shouldn't touch the database, AND for transitional behaviour:
+ * F8 events not yet in the pgEnum (still being added across phases)
+ * fall through to `pinoFallback` in the real adapter — equivalent
+ * pino-only logging behaviour to this stub.
  *
- * The real adapter lands in Phase 5+ when:
- *   1. Subsequent enum-extension migrations add the remaining 49
- *      F8 event types to `audit_event_type`.
- *   2. Use-case adapters call `emit` / `emitInTx` from inside their
- *      `runInTenant` blocks per Constitution Principle VIII (atomic
- *      state+audit).
- *
- * Pure Infrastructure — only `@/lib/logger` import for observability.
+ * Pure Infrastructure — only `@/lib/logger` for observability.
  */
 import { logger } from '@/lib/logger';
 import {
@@ -31,32 +21,21 @@ import {
   type RenewalAuditEmitter,
 } from '../application/ports/renewal-audit-emitter';
 
-const PHASE_2_STUB_LOG_LEVEL = 'info' as const;
-
 /**
- * Production-mode guard (Phase 2 final verify-run B1 remediation).
+ * Production-mode guard.
  *
- * F8 ships dark behind `FEATURE_F8_RENEWALS=false` until MVP-wide
- * chamber go-live (Assumption A12 v3). The stub is acceptable in
- * dev / staging / preview deployments where the feature flag is off.
- * If a Phase 5+ user-story branch accidentally flips the flag in
- * production WITHOUT swapping this stub for the real adapter, the
- * audit-trail completeness invariant (Constitution Principle VIII)
- * would silently break — F8 use-cases would believe their audits
- * were durably persisted while only pino logs captured them.
- *
- * The guard fires on first `emit` / `emitInTx` call when
- * `NODE_ENV === 'production'`, providing a loud-fail safeguard at
- * runtime to force composition-root review before any production
- * F8 surface ships.
+ * The composition root binds the real Drizzle adapter for production;
+ * this stub is for unit tests + dev fallback only. If a future
+ * composition wires this stub in production, the audit-trail
+ * completeness invariant (Constitution Principle VIII) would silently
+ * break — fail loud at first call to force the issue back to review.
  */
 function assertNotProductionBeforeUse(): void {
   if (process.env.NODE_ENV === 'production') {
     throw new Error(
-      'F8 audit-emitter-stub invoked in production — composition root MUST swap ' +
-        'this stub for the real adapter before flipping FEATURE_F8_RENEWALS=true. ' +
-        'See src/modules/renewals/infrastructure/audit-emitter-stub.ts for the ' +
-        'full Phase 2 boundary contract + Phase 5+ replacement requirement.',
+      'F8 audit-emitter-stub invoked in production — composition root MUST bind ' +
+        'the Drizzle adapter (drizzle-renewal-audit-emitter.ts) before flipping ' +
+        'FEATURE_F8_RENEWALS=true.',
     );
   }
 }
@@ -74,7 +53,7 @@ export const renewalAuditEmitterStub: RenewalAuditEmitter = {
       );
       return;
     }
-    logger[PHASE_2_STUB_LOG_LEVEL](
+    logger.info(
       {
         f8AuditStub: true,
         eventType: event.type,
@@ -83,7 +62,7 @@ export const renewalAuditEmitterStub: RenewalAuditEmitter = {
         correlationId: ctx.correlationId,
         payload: event.payload,
       },
-      'F8 audit emit (Phase 2 stub — real adapter ships in Phase 5+)',
+      'F8 audit emit (logging-only stub — real adapter writes to audit_log)',
     );
   },
 
@@ -92,9 +71,10 @@ export const renewalAuditEmitterStub: RenewalAuditEmitter = {
     event: F8AuditEvent<E>,
     ctx: AuditContext,
   ): Promise<void> {
-    // Same Phase 2 behaviour as `emit` — Phase 5+ adapter writes to
-    // F1's audit_log inside the supplied tx (atomic state+audit per
-    // Constitution Principle VIII).
+    // The real adapter writes to F1's audit_log inside the supplied tx
+    // (atomic state+audit per Constitution Principle VIII). The stub
+    // delegates to its own emit() — used only when the test / dev
+    // composition explicitly opts out of DB writes.
     return this.emit(event, ctx);
   },
 };

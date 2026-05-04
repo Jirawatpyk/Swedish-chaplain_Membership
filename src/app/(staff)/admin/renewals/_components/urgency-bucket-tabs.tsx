@@ -52,9 +52,13 @@ export function UrgencyBucketTabs({
   }
 
   return (
-    <Tabs value={current} onValueChange={handleChange}>
-      <TabsList className="overflow-x-auto" aria-label={t('aria_label')}>
-        {TAB_ORDER.map((bucket) => {
+    // Outer wrapper handles horizontal scroll at narrow viewports
+    // (WCAG 1.4.10 Reflow). TabsList itself is `inline-flex w-fit` from
+    // base-ui, so `overflow-x-auto` only takes effect on the wrapper.
+    <div className="w-full overflow-x-auto">
+      <Tabs value={current} onValueChange={handleChange}>
+        <TabsList className="min-w-max" aria-label={t('aria_label')}>
+          {TAB_ORDER.map((bucket) => {
           const count =
             bucket === 'lapsed' ? lapsedCount : (counts[bucket] ?? 0);
           const i18nKey = bucket.replace('-', '_');
@@ -79,13 +83,20 @@ export function UrgencyBucketTabs({
                     | 'lapsed',
                 )}
               </span>
-              <span className="ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">
+              <span
+                className="ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"
+                aria-hidden
+              >
                 {count}
+              </span>
+              <span className="sr-only">
+                {t('countSr', { count })}
               </span>
             </TabsTrigger>
           );
         })}
-      </TabsList>
-    </Tabs>
+        </TabsList>
+      </Tabs>
+    </div>
   );
 }

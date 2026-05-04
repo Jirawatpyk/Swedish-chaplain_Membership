@@ -40,8 +40,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal } from 'lucide-react';
-import { TierBadge } from '@/components/renewals/tier-badge';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
+import {
+  CycleTierCell,
+  CycleCompanyCell,
+  CycleExpiresCell,
+} from '@/components/renewals/cycle-cells';
 import type { PipelineRow } from '@/modules/renewals';
 
 export interface PipelineTableProps {
@@ -58,35 +62,22 @@ export function PipelineTable({ rows }: PipelineTableProps) {
       {
         id: 'tier',
         header: t('columns.tier'),
-        cell: ({ row }) => <TierBadge tier={row.original.tierBucket} />,
+        cell: ({ row }) => <CycleTierCell tier={row.original.tierBucket} />,
       },
       {
         id: 'company',
         header: t('columns.company'),
         cell: ({ row }) => (
-          <Link
-            href={`/admin/members/${row.original.memberId}`}
-            className="font-medium text-foreground hover:text-primary hover:underline"
-          >
-            {row.original.companyName || row.original.memberId}
-          </Link>
+          <CycleCompanyCell
+            memberId={row.original.memberId}
+            companyName={row.original.companyName}
+          />
         ),
       },
       {
         id: 'expires',
         header: t('columns.expires'),
-        cell: ({ row }) => (
-          <time
-            dateTime={row.original.expiresAt}
-            className="tabular-nums text-foreground/80"
-          >
-            {fmt.dateTime(new Date(row.original.expiresAt), {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-            })}
-          </time>
-        ),
+        cell: ({ row }) => <CycleExpiresCell expiresAt={row.original.expiresAt} />,
       },
       {
         id: 'urgency',

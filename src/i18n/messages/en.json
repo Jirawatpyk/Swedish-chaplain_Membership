@@ -1613,6 +1613,7 @@
       },
       "urgencyBuckets": {
         "aria_label": "Filter by renewal urgency",
+        "countSr": "{count} members",
         "t_90": "T-90",
         "t_60": "T-60",
         "t_30": "T-30",
@@ -1643,7 +1644,8 @@
           "pending_admin_reactivation": "Pending reactivation"
         },
         "viewInvoice": "View invoice",
-        "noRows": "No members in this bucket."
+        "noRows": "No members in this bucket.",
+        "srResultCount": "Showing {count} members in {urgency}"
       },
       "actions": {
         "open": "Open cycle",

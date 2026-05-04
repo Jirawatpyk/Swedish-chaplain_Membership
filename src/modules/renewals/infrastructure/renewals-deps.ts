@@ -1,43 +1,23 @@
 /**
- * F8 Phase 2 Wave G · T054 — F8 composition root.
+ * F8 composition root — `makeRenewalsDeps(tenantId)`.
  *
- * Per-call factory `makeRenewalsDeps(tenantId)` mirroring F7
- * `broadcasts-deps.ts` precedent. Repos that need bound tenant context
- * are instantiated per-call; stateless adapters (audit emitter, token
- * signer/verifier, F6 stub) live as module-level singletons.
+ * Per-call factory mirroring the F7 `broadcasts-deps.ts` precedent.
+ * Tenant-scoped repos are instantiated per-call; stateless adapters
+ * (audit emitter, token signer/verifier, F6 stub) are reused.
  *
- * Phase 2 exit boundary scope:
- *   - `scheduledPlanChangeRepo` — REAL adapter (shipped in Wave C-1
- *     via `drizzle-scheduled-plan-change-repo.ts`)
- *   - `auditEmitter` — STUB (logging only; real adapter Phase 5+
- *     after enum extensions)
- *   - `tokenSigner` + `tokenVerifier` — REAL HMAC adapters (Wave G
- *     part 1+2 with R16 dual-key rotation)
- *   - `eventAttendees` — F6-readiness STUB (Phase 5+ swap to real
- *     F6 bridge when F6 ships)
- *   - All other 8 repos (`renewalCycleRepo`, `reminderEventRepo`,
- *     `tierUpgradeSuggestionRepo`, `escalationTaskRepo`, etc.) —
- *     NOT yet wired; ship in Phase 5+ user-story phases when the
- *     consuming use-cases land. `makeRenewalsDeps` returns deps
- *     limited to the surface that's wired today.
+ * F8 → F4 cross-module integration is two-pronged:
+ *   1. Per-call `onPaid` threading — the F8 `mark-paid-offline`
+ *      use-case passes a callback to `f4InvoiceBridge.issueAndMarkPaid`
+ *      so the cycle flip + audit emit run inside F4's `recordPayment`
+ *      tx (atomic state+audit per Constitution Principle VIII).
+ *   2. Future global registration on F4 webhook-driven `recordPayment`
+ *      for the dispatcher cron path — `f8OnPaidCallbacks` factory is
+ *      pre-staged to return `[]` today; the dispatcher cron will
+ *      register `markCycleCompleteFromInvoicePaid` once that use-case
+ *      ships.
  *
- * F4 onPaidCallbacks registration:
- *   Per research.md R12 + Wave A finding D8, F8's composition root
- *   pushes a `markCycleCompleteFromInvoicePaid` callback into
- *   F4's `RecordPaymentDeps.onPaidCallbacks` when F4 deps are minted.
- *   That use-case (`markCycleCompleteFromInvoicePaid`) ships in
- *   Phase 4 alongside the dispatcher cron + F4 invoice-paid hook
- *   wiring; until then this composition root exposes a NO-OP
- *   placeholder factory `f8OnPaidCallbacks` returning `[]`. F4
- *   composition (`makeRecordPaymentDeps`) currently passes
- *   `undefined` for callbacks, which is functionally equivalent to
- *   the empty array — composition wiring is pre-staged so the Phase
- *   4 hook is a 1-line `[markCycleCompleteFromInvoicePaid(ctx, evt)]`
- *   addition.
- *
- * Pure Infrastructure — only `@/lib/db` runInTenant + tenants barrel
- * imports (Constitution Principle III). Domain types come through
- * the port interfaces.
+ * Pure Infrastructure — only `@/lib/db` + tenants barrel imports
+ * (Constitution Principle III).
  */
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';

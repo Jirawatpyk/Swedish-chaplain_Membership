@@ -109,6 +109,23 @@ function decodeCursor(cursor: string | null | undefined): CursorPayload | null {
   }
 }
 
+/**
+ * Build the next-cursor token for a paginated cycle query.
+ * `pageRows` is the page-sized slice; `hasNextPage` is true when the
+ * adapter fetched limit+1 rows and at least one was excluded.
+ */
+function buildNextCursor(
+  pageRows: ReadonlyArray<{ expiresAt: Date; cycleId: string }>,
+  hasNextPage: boolean,
+): string | null {
+  if (!hasNextPage || pageRows.length === 0) return null;
+  const lastRow = pageRows[pageRows.length - 1]!;
+  return encodeCursor({
+    expiresAt: lastRow.expiresAt.toISOString(),
+    cycleId: lastRow.cycleId,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Urgency derivation SQL (DB-side per FR-046)
 // ---------------------------------------------------------------------------
@@ -249,17 +266,9 @@ export function makeDrizzleRenewalCycleRepo(
 
         const hasNextPage = rows.length > opts.pageSize;
         const pageRows = hasNextPage ? rows.slice(0, opts.pageSize) : rows;
-        const lastRow = pageRows[pageRows.length - 1];
-        const nextCursor =
-          hasNextPage && lastRow
-            ? encodeCursor({
-                expiresAt: lastRow.expiresAt.toISOString(),
-                cycleId: lastRow.cycleId,
-              })
-            : null;
         return {
           items: pageRows.map(rowToDomain),
-          nextCursor,
+          nextCursor: buildNextCursor(pageRows, hasNextPage),
         };
       });
     },
@@ -396,17 +405,9 @@ export function makeDrizzleRenewalCycleRepo(
 
         const hasNextPage = rows.length > args.pageSize;
         const pageRows = hasNextPage ? rows.slice(0, args.pageSize) : rows;
-        const lastRow = pageRows[pageRows.length - 1];
-        const nextCursor =
-          hasNextPage && lastRow
-            ? encodeCursor({
-                expiresAt: lastRow.expiresAt.toISOString(),
-                cycleId: lastRow.cycleId,
-              })
-            : null;
         return {
           items: pageRows.map(rowToDomain),
-          nextCursor,
+          nextCursor: buildNextCursor(pageRows, hasNextPage),
         };
       });
     },
@@ -438,24 +439,17 @@ export function makeDrizzleRenewalCycleRepo(
           baseFilters.push(eq(renewalCycles.tierAtCycleStart, opts.tier));
         }
 
-        // The summary is computed BEFORE pagination cursor — admins see
-        // accurate totals across the whole window even when paginating.
-        // Two queries; the second runs against the same `runInTenant`
-        // RLS context so the result is tenant-scoped automatically.
-        const summaryFilters = baseFilters.slice();
-        if (opts.tier) {
-          // Already in baseFilters
-        }
-
-        // Compute summary (group by urgency over the window).
-        // We materialise urgency in a subquery then aggregate.
+        // The summary is computed BEFORE the pagination cursor — admins
+        // see accurate totals across the whole window even when paging.
+        // Tenant-scoped automatically by the surrounding runInTenant
+        // RLS context.
         const summaryRows = await tx
           .select({
             urgency: URGENCY_CASE_SQL.as('urgency'),
             count: sql<number>`count(*)::int`,
           })
           .from(renewalCycles)
-          .where(and(...summaryFilters))
+          .where(and(...baseFilters))
           .groupBy(URGENCY_CASE_SQL);
 
         const byUrgency: Record<UrgencyBucket, number> = {
@@ -554,14 +548,7 @@ export function makeDrizzleRenewalCycleRepo(
 
         const hasNextPage = pageRows.length > limit;
         const slicedRows = hasNextPage ? pageRows.slice(0, limit) : pageRows;
-        const lastRow = slicedRows[slicedRows.length - 1];
-        const nextCursor =
-          hasNextPage && lastRow
-            ? encodeCursor({
-                expiresAt: lastRow.expiresAt.toISOString(),
-                cycleId: lastRow.cycleId,
-              })
-            : null;
+        const nextCursor = buildNextCursor(slicedRows, hasNextPage);
 
         const rowsOut: PipelineRow[] = slicedRows.map((r) => ({
           cycleId: asCycleId(r.cycleId),

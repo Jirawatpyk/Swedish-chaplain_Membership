@@ -189,6 +189,16 @@ export default async function RenewalsPipelinePage({
                 />
                 <TierFilterSelect current={tier ?? 'all'} />
               </div>
+              {/* Polite live region announces result count to screen
+                  readers when filter/tab changes re-render this page
+                  (UX-W2). aria-atomic so the whole sentence is read,
+                  not just the diff. */}
+              <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+                {t('table.srResultCount', {
+                  count: rows.length,
+                  urgency: t(`urgencyBuckets.${urgency.replace('-', '_') as 't_90'|'t_60'|'t_30'|'t_14'|'t_7'|'t_0'|'grace'|'lapsed'}`),
+                })}
+              </div>
               {urgency === 'lapsed' ? (
                 <LapsedTab rows={rows} />
               ) : (

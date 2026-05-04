@@ -1,24 +1,15 @@
 /**
- * T051 (F8 Phase 2 Wave E) — `RenewalAuditEmitter` Application port.
+ * `RenewalAuditEmitter` — F8 audit port writing to F1's `audit_log`.
  *
- * F8 emits **47 audit event types** to F1's existing `audit_log` table
- * via this port. All events default to `retention_years = 5` (F8 has
- * no tax-document overlap with F4's 10y retention). DB-side enum
- * widening for the F8 events lands in subsequent Phase 5+ migrations
- * as use-cases ship (Wave C migration 0095 already added 5 plan-change
- * + manual-change events; the remaining 42 F8 events follow during
- * user-story phases).
+ * 54 event types across 6 categories: lifecycle (20) · lapsed+bounce
+ * (3) · at-risk (6) · tier-upgrade (10) · escalation (4) · cron+failure
+ * (5) · admin-reactivation (6). All default to 5-year retention (F8 has
+ * no tax-document overlap with F4's 10y retention).
  *
- * Event taxonomy (mirrors specs/011-renewal-reminders/contracts/audit-port.md):
- *   - Renewal lifecycle (20 events)
- *   - Lapsed + bounce (3)
- *   - At-risk (6)
- *   - Tier-upgrade (10)
- *   - Escalation (4)
- *   - /speckit.clarify round 3 additions (6 — admin reactivation lifecycle)
- *   - /speckit.critique round 1 additions (5)
- *   = 54 total (audit-port.md drafts said 47/48 — actual count after
- *     all clarify + critique adds is 54)
+ * Enum-extension migrations co-ship with each use-case's first emit
+ * site. The Drizzle adapter's `F8_ENUM_SHIPPED` set is the canonical
+ * runtime list of currently-persistable event types; events outside it
+ * fall through to pino-logging and loud-fail in production.
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -94,10 +85,8 @@ export const F8_AUDIT_EVENT_TYPES = [
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
 
 /**
- * Compile-time count check — keeps the const tuple in sync with the
- * audit-port.md catalogue. F7 audit-port uses an identical pattern.
- * If you add or remove an entry above, update both this assertion +
- * the audit-port.md table verification at /speckit.review time.
+ * Compile-time count check — pins the const tuple length so a typo or
+ * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
 type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 54
   ? true

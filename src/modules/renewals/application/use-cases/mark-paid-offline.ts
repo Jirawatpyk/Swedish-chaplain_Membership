@@ -88,10 +88,11 @@ const PAYABLE_STATUSES = new Set(['awaiting_payment', 'upcoming']);
 
 /**
  * Compute the next cycle's expires_at by adding `frozenPlanTermMonths`
- * to the current `period_to`. Bangkok-local arithmetic — F8 stores all
- * timestamps in UTC but the calendar boundary is Bangkok. For the
- * MVP we add months naively in UTC; the dispatcher-cron in Phase 4
- * will refine with js-joda Asia/Bangkok if needed.
+ * to the current `period_to`. Direct UTC arithmetic is correct here
+ * because Asia/Bangkok is UTC+7 with no DST transitions: a
+ * `setUTCMonth(+N)` produces a UTC instant that lands at the same
+ * Bangkok calendar date for every supported plan term (1–60 months).
+ * No js-joda needed.
  */
 function deriveNewExpiresAt(currentPeriodToIso: string, termMonths: number): string {
   const d = new Date(currentPeriodToIso);
@@ -157,23 +158,13 @@ export async function markPaidOffline(
     });
   }
 
-  // Derive plan_year from cycle.periodFrom (the year the cycle was priced
-  // against). Bangkok-local year boundary — UTC year is good enough for
-  // SweCham (no plan-year boundary spans midnight Bangkok-time).
-  //
-  // FR-021a frozen-price assumption (verify-run C1):
-  //   F4 createInvoiceDraft fetches the plan's annual fee for `planYear`
-  //   from F2 — NOT from `cycle.frozen_plan_price_thb`. We rely on the
-  //   project invariant "F2 plan-year fees are immutable once issued
-  //   invoices reference them" (enforced by F2 plans `editable_until`
-  //   guard). If a tenant ever reprices a plan-year mid-cycle, the
-  //   issued offline-mark invoice would carry the new price + drift
-  //   from `cycle.frozen_plan_price_thb`. Acceptable for MVP because
-  //   (a) SweCham operates with stable annual fees and (b) the
-  //   integration test at T077 will cross-check `invoice.total ===
-  //   cycle.frozen_plan_price_thb` to fail loud on drift. A stricter
-  //   "frozen price override" surface on F4 createInvoiceDraft is
-  //   tracked for Phase 4+ if the assumption ever breaks in production.
+  // FR-021a frozen-price invariant: F4 `createInvoiceDraft` fetches
+  // the plan-year fee from F2 (NOT from `cycle.frozen_plan_price_thb`).
+  // This relies on F2's plan-year immutability rule — once any issued
+  // invoice references a plan-year, F2's `editable_until` guard freezes
+  // the fee. The cycle-vs-invoice price drift assertion lives in the
+  // integration test for offline mark-paid; a runtime mismatch would
+  // surface there before reaching production.
   const planYear = new Date(preLoad.periodFrom).getUTCFullYear();
   const planId = preLoad.planIdAtCycleStart;
   const memberId = preLoad.memberId;

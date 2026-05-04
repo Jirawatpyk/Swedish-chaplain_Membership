@@ -1613,6 +1613,7 @@
       },
       "urgencyBuckets": {
         "aria_label": "Filtrera efter förnyelsebrådska",
+        "countSr": "{count} medlemmar",
         "t_90": "T-90",
         "t_60": "T-60",
         "t_30": "T-30",
@@ -1643,7 +1644,8 @@
           "pending_admin_reactivation": "Väntar på återaktivering"
         },
         "viewInvoice": "Visa faktura",
-        "noRows": "Inga medlemmar i detta intervall."
+        "noRows": "Inga medlemmar i detta intervall.",
+        "srResultCount": "Visar {count} medlemmar i {urgency}"
       },
       "actions": {
         "open": "Öppna cykel",

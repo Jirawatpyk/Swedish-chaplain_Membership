@@ -1613,6 +1613,7 @@
       },
       "urgencyBuckets": {
         "aria_label": "กรองตามความเร่งด่วนของการต่ออายุ",
+        "countSr": "{count} สมาชิก",
         "t_90": "T-90",
         "t_60": "T-60",
         "t_30": "T-30",
@@ -1643,7 +1644,8 @@
           "pending_admin_reactivation": "รอผู้ดูแลฟื้นฟูสถานะ"
         },
         "viewInvoice": "ดูใบแจ้งหนี้",
-        "noRows": "ไม่มีสมาชิกในกลุ่มนี้"
+        "noRows": "ไม่มีสมาชิกในกลุ่มนี้",
+        "srResultCount": "แสดง {count} สมาชิก ใน {urgency}"
       },
       "actions": {
         "open": "เปิดรอบการต่ออายุ",

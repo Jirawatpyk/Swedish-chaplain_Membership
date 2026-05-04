@@ -1,32 +1,22 @@
 /**
- * F8 Phase 3 Wave H1 · T062 — Drizzle audit-emitter for F8 events.
+ * Drizzle adapter for F8 `RenewalAuditEmitter`.
  *
- * Replaces the Wave G `audit-emitter-stub.ts` for the **5 F8 event
- * types** that are present in the `audit_event_type` Postgres enum
- * (migration 0095). Un-shipped events fall through to the pino-logging
- * stub so a misconfigured emit site never silently drops audit data.
- *
- * Event types currently in pgEnum (Wave C-8 / migration 0095):
- *   - renewal_cycle_created
- *   - renewal_cycle_cancelled
- *   - renewal_cycle_completed_offline
- *   - renewal_cross_tenant_probe
- *   - f8_role_violation_blocked
- *
- * Subsequent enum-extension migrations (Phase 4+) will widen this list
- * as use-cases ship; this adapter is forward-compatible — adding a new
- * event-type to the const set below + the migration is enough.
+ * Persists F8 events to F1's `audit_log` for event types present in
+ * the `audit_event_type` pgEnum (see `F8_ENUM_SHIPPED` below — the
+ * canonical runtime list, kept in sync with enum-extension migrations).
+ * Events outside that set fall through to pino-logging via
+ * `pinoFallback` and loud-fail in production so a misconfigured emit
+ * site never silently drops audit data.
  *
  * Behaviour:
- *   - `emit(event, ctx)`: opens its own runInTenant tx, writes to
- *     audit_log. Used by fire-and-forget side-effects (probe audits).
- *   - `emitInTx(tx, event, ctx)`: writes inside the supplied tx so
- *     state+audit commit atomically (Constitution Principle VIII).
+ *   - `emit(event, ctx)`: own runInTenant tx; never throws to caller
+ *     (fire-and-forget; probe audits depend on this contract).
+ *   - `emitInTx(tx, event, ctx)`: writes inside supplied tx so state
+ *     + audit commit atomically (Constitution Principle VIII).
  *
- * NULL retention_years column lets the DB-level trigger (migration
- * 0055/0063) apply the F8 default of 5 years — we don't override.
+ * NULL `retention_years` lets the DB trigger apply the F8 default of
+ * 5 years — we don't override.
  */
-import { sql } from 'drizzle-orm';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { db, runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
@@ -41,9 +31,10 @@ import {
 import type { AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
 
 /**
- * F8 event types whose pgEnum value exists today (migration 0095).
- * Other F8 events fall through to pino-logging stub until their
- * enum-extension migration ships in Phase 4+.
+ * F8 event types whose pgEnum value exists today (migrations 0095 +
+ * 0099). Add to this set + ship a corresponding `ALTER TYPE … ADD VALUE`
+ * migration when wiring a new emit site. Events not in this set fall
+ * through to pino-logging (loud-fail in production).
  */
 const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   'renewal_cycle_created',
@@ -170,6 +161,3 @@ export function makeDrizzleRenewalAuditEmitter(
   };
 }
 
-// Suppress unused-import lint — `sql` is reserved for future SQL
-// expressions (e.g. `sql\`now()\`` retention overrides).
-void sql;

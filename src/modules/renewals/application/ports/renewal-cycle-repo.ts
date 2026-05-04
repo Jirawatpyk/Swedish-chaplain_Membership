@@ -1,9 +1,5 @@
 /**
- * T041 (F8 Phase 2 Wave E) — `RenewalCycleRepo` Application port.
- *
- * Domain-typed repository over the `renewal_cycles` table (Wave C
- * migration 0087). Concrete adapter ships at Phase 5+ when use-cases
- * land; Wave E is interface-only.
+ * `RenewalCycleRepo` — F8 application port over `renewal_cycles`.
  *
  * Method conventions (mirror F2 PlanRepo + F4 InvoiceRepo + F7
  * BroadcastsRepo):

@@ -12,8 +12,8 @@
  */
 'use client';
 
-import { useFormatter, useTranslations } from 'next-intl';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
 import {
@@ -24,9 +24,22 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { TierBadge } from '@/components/renewals/tier-badge';
+import {
+  CycleTierCell,
+  CycleCompanyCell,
+  CycleExpiresCell,
+} from '@/components/renewals/cycle-cells';
 import { cn } from '@/lib/utils';
 import type { PipelineRow } from '@/modules/renewals';
+
+type LapsedReasonKey =
+  | 'paid'
+  | 'cancelled'
+  | 'lapsed'
+  | 'completed_offline'
+  | 'admin_reactivated'
+  | 'admin_rejected_with_refund'
+  | 'pending_reactivation_timed_out';
 
 export interface LapsedTabProps {
   readonly rows: ReadonlyArray<PipelineRow>;
@@ -53,7 +66,6 @@ export function LapsedTab({ rows }: LapsedTabProps) {
   const t = useTranslations('admin.renewals.lapsed');
   const tTable = useTranslations('admin.renewals.table');
   const tReason = useTranslations('admin.renewals.lapsedReason');
-  const fmt = useFormatter();
 
   return (
     <div className="flex flex-col gap-3">
@@ -86,31 +98,21 @@ export function LapsedTab({ rows }: LapsedTabProps) {
             </TableRow>
           ) : (
             rows.map((r) => {
-              const reason = r.closedReason ?? 'lapsed';
+              const reason: LapsedReasonKey = (r.closedReason ?? 'lapsed') as LapsedReasonKey;
+              const reasonLabel = tReason(reason);
               return (
                 <TableRow key={r.cycleId}>
                   <TableCell>
-                    <TierBadge tier={r.tierBucket} />
+                    <CycleTierCell tier={r.tierBucket} />
                   </TableCell>
                   <TableCell>
-                    <Link
-                      href={`/admin/members/${r.memberId}`}
-                      className="font-medium text-foreground hover:text-primary hover:underline"
-                    >
-                      {r.companyName || r.memberId}
-                    </Link>
+                    <CycleCompanyCell
+                      memberId={r.memberId}
+                      companyName={r.companyName}
+                    />
                   </TableCell>
                   <TableCell>
-                    <time
-                      dateTime={r.expiresAt}
-                      className="tabular-nums text-foreground/80"
-                    >
-                      {fmt.dateTime(new Date(r.expiresAt), {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </time>
+                    <CycleExpiresCell expiresAt={r.expiresAt} />
                   </TableCell>
                   <TableCell>
                     <span
@@ -119,27 +121,9 @@ export function LapsedTab({ rows }: LapsedTabProps) {
                         REASON_VARIANT_CLASSES[reason] ??
                           REASON_VARIANT_CLASSES.lapsed,
                       )}
-                      aria-label={tReason(
-                        reason as
-                          | 'paid'
-                          | 'cancelled'
-                          | 'lapsed'
-                          | 'completed_offline'
-                          | 'admin_reactivated'
-                          | 'admin_rejected_with_refund'
-                          | 'pending_reactivation_timed_out',
-                      )}
+                      aria-label={reasonLabel}
                     >
-                      {tReason(
-                        reason as
-                          | 'paid'
-                          | 'cancelled'
-                          | 'lapsed'
-                          | 'completed_offline'
-                          | 'admin_reactivated'
-                          | 'admin_rejected_with_refund'
-                          | 'pending_reactivation_timed_out',
-                      )}
+                      {reasonLabel}
                     </span>
                   </TableCell>
                   <TableCell>

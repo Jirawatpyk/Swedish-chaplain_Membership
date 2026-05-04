@@ -19,11 +19,18 @@ export default async function Loading() {
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
         <CardContent className="flex flex-col gap-4">
-          {/* Urgency-bucket-tabs placeholder (8 tabs) */}
-          <div className="flex gap-1.5" aria-hidden>
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-20" />
-            ))}
+          {/* Filter row — matches page.tsx layout: 8 urgency tabs +
+              tier filter select. Stacks on mobile, row on sm+. */}
+          <div
+            className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+            aria-hidden
+          >
+            <div className="flex gap-1.5 overflow-x-auto">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-20 shrink-0" />
+              ))}
+            </div>
+            <Skeleton className="h-9 w-full sm:w-56" />
           </div>
           {/* Table header placeholder */}
           <div className="grid grid-cols-8 gap-4 border-b py-2" aria-hidden>
