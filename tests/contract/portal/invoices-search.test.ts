@@ -68,7 +68,12 @@ function makeRequest(q: string = ''): NextRequest {
 describe('contract: GET /api/portal/invoices/search (T086)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('401 when member-context returns a rejection (no session)', async () => {
+  // Round 7 test-infra fix — first test cold-loads the F4 portal route
+  // chain (transitively imports invoicing module barrel + member-context
+  // helper). Under heavy parallel load the import can exceed the 10s
+  // default per-test timeout. 30s ceiling matches the F4+F5 barrel-test
+  // precedent at vitest.config.ts:42-46.
+  it('401 when member-context returns a rejection (no session)', { timeout: 30_000 }, async () => {
     requireMemberContextMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
