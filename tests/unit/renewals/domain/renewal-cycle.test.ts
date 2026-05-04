@@ -16,11 +16,13 @@ import {
 const VALID_UUID = '00000000-0000-0000-0000-0000000000c1';
 
 /**
- * Builds an active (`upcoming`) cycle. Override any field including
- * `status` to construct other variants. The cast is necessary because
+ * Builds an active (`upcoming`) cycle. The cast is necessary because
  * the discriminated union can't infer the union arm from a partial
- * spread — production code uses status-aware factories instead, but
- * tests are trusted to pass coherent overrides.
+ * spread when callers pass `status` overrides. The cast is acceptable
+ * for tests where overrides are trusted; production code SHOULD use
+ * the status-aware factories below (`buildCompletedCycle`,
+ * `buildLapsedCycle`, etc.) which return the specific union arm WITHOUT
+ * a cast — those exercise the DU compile-time guarantee.
  */
 function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
   return {
@@ -46,6 +48,97 @@ function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
     updatedAt: '2026-05-01T00:00:00Z',
     ...overrides,
   } as RenewalCycle;
+}
+
+// ---------------------------------------------------------------------------
+// Status-aware factories — return the specific union arm WITHOUT a cast,
+// so the DU compile-time guarantee is exercised. Recommended for new
+// tests that want to lock the type contract.
+// ---------------------------------------------------------------------------
+
+const baseFields = {
+  tenantId: 't',
+  cycleId: asCycleId(VALID_UUID),
+  memberId: 'm',
+  periodFrom: '2026-06-01T00:00:00Z',
+  periodTo: '2027-06-01T00:00:00Z',
+  expiresAt: '2027-06-01T00:00:00Z',
+  cycleLengthMonths: 12,
+  tierAtCycleStart: 'regular' as const,
+  planIdAtCycleStart: 'p1',
+  frozenPlanPriceThb: '50000.00',
+  frozenPlanTermMonths: 12,
+  frozenPlanCurrency: 'THB' as const,
+  linkedCreditNoteId: null,
+  createdAt: '2026-05-01T00:00:00Z',
+  updatedAt: '2026-05-01T00:00:00Z',
+} as const;
+
+export function buildUpcomingCycle(): RenewalCycle {
+  return {
+    ...baseFields,
+    status: 'upcoming' as const,
+    enteredPendingAt: null,
+    closedAt: null,
+    closedReason: null,
+    linkedInvoiceId: null,
+  };
+}
+
+export function buildCompletedCycle(args: {
+  closedAt: string;
+  closedReason: 'paid' | 'completed_offline' | 'admin_reactivated';
+  linkedInvoiceId: string;
+}): RenewalCycle {
+  return {
+    ...baseFields,
+    status: 'completed' as const,
+    enteredPendingAt: null,
+    closedAt: args.closedAt,
+    closedReason: args.closedReason,
+    linkedInvoiceId: args.linkedInvoiceId,
+  };
+}
+
+export function buildCancelledCycle(args: {
+  closedAt: string;
+  closedReason: 'cancelled' | 'admin_rejected_with_refund';
+}): RenewalCycle {
+  return {
+    ...baseFields,
+    status: 'cancelled' as const,
+    enteredPendingAt: null,
+    closedAt: args.closedAt,
+    closedReason: args.closedReason,
+    linkedInvoiceId: null,
+  };
+}
+
+export function buildLapsedCycle(args: {
+  closedAt: string;
+  closedReason: 'lapsed' | 'pending_reactivation_timed_out';
+}): RenewalCycle {
+  return {
+    ...baseFields,
+    status: 'lapsed' as const,
+    enteredPendingAt: null,
+    closedAt: args.closedAt,
+    closedReason: args.closedReason,
+    linkedInvoiceId: null,
+  };
+}
+
+export function buildPendingReactivationCycle(args: {
+  enteredPendingAt: string;
+}): RenewalCycle {
+  return {
+    ...baseFields,
+    status: 'pending_admin_reactivation' as const,
+    enteredPendingAt: args.enteredPendingAt,
+    closedAt: null,
+    closedReason: null,
+    linkedInvoiceId: null,
+  };
 }
 
 describe('CycleId brand', () => {

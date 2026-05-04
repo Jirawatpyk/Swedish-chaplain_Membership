@@ -138,7 +138,10 @@ export function PipelineTable({ rows }: PipelineTableProps) {
                 <Button
                   {...props}
                   variant="ghost"
-                  size="sm"
+                  size="icon"
+                  // 44×44px tap target per Chamber-OS internal a11y
+                  // standard (matches WCAG 2.5.5 AAA / iOS HIG).
+                  className="h-11 w-11"
                   aria-label={tActions('rowMenu', {
                     company: row.original.companyName,
                   })}

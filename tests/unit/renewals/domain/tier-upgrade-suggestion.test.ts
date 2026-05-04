@@ -131,10 +131,29 @@ describe('assertSuggestionInvariants', () => {
     ).toBe(true);
   });
 
-  it('accepts superseded with closed_at', () => {
+  it('accepts superseded-from-open with closed_at', () => {
     expect(
       assertSuggestionInvariants(
-        buildSuggestion({ status: 'superseded', closedAt: '2026-06-01T00:00:00Z' }),
+        buildSuggestion({
+          status: 'superseded',
+          supersededFrom: 'open',
+          closedAt: '2026-06-01T00:00:00Z',
+        }),
+      ).ok,
+    ).toBe(true);
+  });
+
+  it('accepts superseded-from-accepted with full anchors', () => {
+    expect(
+      assertSuggestionInvariants(
+        buildSuggestion({
+          status: 'superseded',
+          supersededFrom: 'accepted_pending_apply',
+          acceptedAt: '2026-05-01T00:00:00Z',
+          acceptedByUserId: '00000000-0000-0000-0000-0000000000aa',
+          targetApplyAtCycleId: VALID_UUID,
+          closedAt: '2026-06-01T00:00:00Z',
+        }),
       ).ok,
     ).toBe(true);
   });

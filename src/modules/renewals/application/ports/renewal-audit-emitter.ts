@@ -172,6 +172,45 @@ export interface F8AuditPayloadShapes {
   readonly renewal_kill_switch_blocked: {
     readonly route: string;
   };
+  readonly tier_upgrade_suggested: {
+    readonly suggestion_id: string;
+    readonly member_id: string;
+    readonly from_plan_id: string;
+    readonly to_plan_id: string;
+    readonly reason_code:
+      | 'declared_turnover_above_threshold'
+      | 'paid_invoice_volume_above_threshold'
+      | 'multi_signal';
+  };
+  readonly tier_upgrade_pending_superseded_by_manual_change: {
+    readonly suggestion_id: string;
+    readonly superseded_from_status: 'open' | 'accepted_pending_apply';
+    readonly manual_change_actor_user_id: string;
+    readonly superseding_plan_id: string;
+  };
+  readonly at_risk_score_threshold_crossed: {
+    readonly member_id: string;
+    readonly previous_band: 'low' | 'medium' | 'high' | 'critical';
+    readonly new_band: 'low' | 'medium' | 'high' | 'critical';
+    readonly score: number;
+  };
+  readonly renewal_reminder_send_failed_permanent: {
+    readonly cycle_id: string;
+    readonly step_id: string;
+    readonly recipient_email_hashed: string;
+    readonly bounce_class: 'hard_bounce' | 'spam_complaint' | 'invalid_address';
+    readonly provider_message_id: string | null;
+  };
+  readonly lapsed_member_admin_reactivation_rejected: {
+    readonly cycle_id: string;
+    readonly actor_user_id: string;
+    readonly refund_credit_note_id: string | null;
+  };
+  readonly lapsed_member_admin_reactivation_timed_out: {
+    readonly cycle_id: string;
+    /** Null because the actor is the cron, not a human admin. */
+    readonly actor_user_id: null;
+  };
 }
 
 /**

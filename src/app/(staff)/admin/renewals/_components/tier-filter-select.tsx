@@ -51,27 +51,37 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
     [searchParams, router, pathname],
   );
 
+  // Use aria-labelledby + a visually-hidden label so the SelectValue
+  // text (the current selection) is preserved in the trigger's
+  // accessible name. `aria-label` would override the value text and
+  // make the current selection invisible to screen readers
+  // (WCAG 4.1.2 Name, Role, Value).
   return (
-    <Select value={current} onValueChange={pushUrl}>
-      <SelectTrigger
-        aria-label={t('aria_label')}
-        className="w-full sm:w-[14rem]"
-      >
-        <TranslatedSelectValue
-          translate={(value) => {
-            if (!value || value === ALL) return t('all');
-            return tBadge(value as TierBucket);
-          }}
-        />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={ALL}>{t('all')}</SelectItem>
-        {TIER_BUCKETS.map((bucket) => (
-          <SelectItem key={bucket} value={bucket}>
-            {tBadge(bucket)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex w-full sm:w-[14rem] flex-col">
+      <span id="tier-filter-label" className="sr-only">
+        {t('aria_label')}
+      </span>
+      <Select value={current} onValueChange={pushUrl}>
+        <SelectTrigger
+          aria-labelledby="tier-filter-label"
+          className="w-full"
+        >
+          <TranslatedSelectValue
+            translate={(value) => {
+              if (!value || value === ALL) return t('all');
+              return tBadge(value as TierBucket);
+            }}
+          />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL}>{t('all')}</SelectItem>
+          {TIER_BUCKETS.map((bucket) => (
+            <SelectItem key={bucket} value={bucket}>
+              {tBadge(bucket)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }

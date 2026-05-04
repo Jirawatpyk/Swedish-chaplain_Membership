@@ -135,12 +135,36 @@ interface DismissedTierUpgradeFields {
   readonly closedAt: string;
 }
 
-/** Terminal — admin manually changed plan via F2 before rollover. */
-interface SupersededTierUpgradeFields {
+/**
+ * Terminal — admin manually changed plan via F2 before rollover, while
+ * the suggestion was still `open` (no admin commitment). Pre-acceptance
+ * supersede.
+ */
+interface SupersededFromOpenFields {
   readonly status: 'superseded';
-  readonly acceptedAt: string | null;
-  readonly acceptedByUserId: string | null;
-  readonly targetApplyAtCycleId: string | null;
+  readonly supersededFrom: 'open';
+  readonly acceptedAt: null;
+  readonly acceptedByUserId: null;
+  readonly targetApplyAtCycleId: null;
+  readonly appliedAt: null;
+  readonly appliedAtInvoiceId: null;
+  readonly dismissedReason: null;
+  readonly closedAt: string;
+}
+
+/**
+ * Terminal — admin manually changed plan via F2 AFTER accepting the
+ * suggestion. Post-acceptance supersede; admin work was invalidated.
+ * Forensics matter: the audit trail must show admin previously
+ * accepted (acceptedByUserId) so reviewers can understand why a
+ * pending tier-upgrade was dropped.
+ */
+interface SupersededFromAcceptedFields {
+  readonly status: 'superseded';
+  readonly supersededFrom: 'accepted_pending_apply';
+  readonly acceptedAt: string;
+  readonly acceptedByUserId: string;
+  readonly targetApplyAtCycleId: string;
   readonly appliedAt: null;
   readonly appliedAtInvoiceId: null;
   readonly dismissedReason: null;
@@ -165,7 +189,8 @@ export type TierUpgradeSuggestion = TierUpgradeSuggestionBase &
     | AcceptedPendingApplyFields
     | AppliedTierUpgradeFields
     | DismissedTierUpgradeFields
-    | SupersededTierUpgradeFields
+    | SupersededFromOpenFields
+    | SupersededFromAcceptedFields
     | AutoResolvedTierUpgradeFields
   );
 
