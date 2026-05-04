@@ -212,6 +212,80 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     expect(markPaidOfflineMock).not.toHaveBeenCalled();
   });
 
+  // Round 7 W-R6-5 — PAN regex boundary tests. The regex is `\d{13,}`
+  // so 12 digits should pass, 13+ should reject. These pin the
+  // boundary so a future change to `\d{14,}` (or similar) is caught.
+  it.each([
+    { len: 12, raw: '1'.repeat(12), expected: 'allow' as const },
+    { len: 13, raw: '1'.repeat(13), expected: 'reject' as const },
+    { len: 19, raw: '1'.repeat(19), expected: 'reject' as const },
+    { len: 20, raw: '1'.repeat(20), expected: 'reject' as const },
+  ])('PAN regex boundary: $len-digit reference is $expected', async ({ raw, expected }) => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    if (expected === 'allow') {
+      markPaidOfflineMock.mockResolvedValueOnce(
+        ok({
+          cycleStatus: 'completed' as const,
+          invoiceId: 'inv-1',
+          newExpiresAt: '2027-06-01T00:00:00Z',
+        }),
+      );
+    }
+    const POST = await loadHandler();
+    const res = await POST(
+      makeReq(makeBody({ payment_reference: raw })),
+      makeCtx(),
+    );
+    expect(res.status).toBe(expected === 'allow' ? 200 : 400);
+  });
+
+  // Round 7 B-R6-2 — Unicode digit substitute bypass guard. NFKD does
+  // NOT decompose Arabic-Indic / Devanagari / Thai digits, and the
+  // non-ASCII strip removes them entirely; Round 6's pass-1 regex
+  // alone would silently accept these. Round 7 adds a pass-2 regex
+  // that scans the original raw input for script-digit blocks.
+  it.each([
+    { script: 'Arabic-Indic', raw: '٤'.repeat(16) },
+    { script: 'Eastern Arabic-Indic', raw: '۴'.repeat(16) },
+    { script: 'Devanagari', raw: '४'.repeat(16) },
+    { script: 'Thai', raw: '๔'.repeat(16) },
+  ])('400 invalid_body when payment_reference uses $script digits (B-R6-2)', async ({ raw }) => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    const POST = await loadHandler();
+    const res = await POST(
+      makeReq(makeBody({ payment_reference: raw })),
+      makeCtx(),
+    );
+    expect(res.status).toBe(400);
+    expect(markPaidOfflineMock).not.toHaveBeenCalled();
+  });
+
+  // Round 7 S-R6-4 / W-R6-2 — document the accepted trade-off that
+  // hyphen- and space-separated PANs slip through the guard
+  // (max consecutive digit run is 4, below the 13-digit threshold).
+  // This test makes the gap visible in coverage so a future review
+  // is aware that the workflow's confirmation toast is the second
+  // line of defence, not the regex.
+  it.each([
+    { sep: 'hyphens', raw: '4111-1111-1111-1111' },
+    { sep: 'spaces', raw: '4111 1111 1111 1111' },
+  ])('allows separator-formatted PAN with $sep (accepted trade-off — see route.ts comment)', async ({ raw }) => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    markPaidOfflineMock.mockResolvedValueOnce(
+      ok({
+        cycleStatus: 'completed' as const,
+        invoiceId: 'inv-1',
+        newExpiresAt: '2027-06-01T00:00:00Z',
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(
+      makeReq(makeBody({ payment_reference: raw })),
+      makeCtx(),
+    );
+    expect(res.status).toBe(200);
+  });
+
   it('200 happy path accepts Thai bank reference format YYYYMMDD-NNNNN (B-R5-1 regression guard)', async () => {
     // Round 6 B-R5-1 — Round 5's PAN regex `(\d[\s-]?){13,19}` falsely
     // blocked legitimate Thai bank reference format. The fixed regex

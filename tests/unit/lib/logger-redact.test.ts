@@ -127,6 +127,34 @@ describe('F5 logger path-based redaction (T032)', () => {
     expect(out).toContain('[REDACTED]');
   });
 
+  // Round 7 W-R6-1 — F8 mark-paid-offline route logs F4 internal
+  // reason under the `f4Reason` key to disambiguate from the result
+  // envelope's own `reason`. Path-based redaction is verbatim, so the
+  // bare `reason`/`*.reason` paths above do NOT cover `f4Reason`.
+  // Round 6 W-R5-1 added explicit `f4Reason` + `*.f4Reason` entries
+  // to REDACT_PATHS — these tests pin that contract so a future
+  // refactor that drops the entries surfaces immediately.
+  // Constitution Principle IV (NON-NEGOTIABLE PCI DSS).
+
+  it('Round 7 W-R6-1: redacts top-level `f4Reason`', () => {
+    const out = captureLog({
+      f4Reason: 'F4_INTERNAL_SCHEMA_DETAIL_THAT_MUST_NOT_LEAK',
+    });
+    expect(out).not.toContain('F4_INTERNAL_SCHEMA_DETAIL');
+    expect(out).toContain('[REDACTED]');
+  });
+
+  it('Round 7 W-R6-1: redacts nested `error.f4Reason`', () => {
+    const out = captureLog({
+      error: {
+        kind: 'f4_failure',
+        f4Reason: 'F4_NESTED_DETAIL_THAT_MUST_NOT_LEAK',
+      },
+    });
+    expect(out).not.toContain('F4_NESTED_DETAIL');
+    expect(out).toContain('[REDACTED]');
+  });
+
   // Staff-review R2 R024 (2026-04-28): negative assertion that a
   // synthetic Stripe webhook payload — the most common shape that
   // could leak `client_secret` or raw event body via stripe-webhook

@@ -271,21 +271,48 @@ describe('markPaidOffline — error paths', () => {
     }
   });
 
-  // Round 6 S-R5-4 — Bangkok fiscal-year boundary. UTC 2026-12-31T17:00:00Z
-  // = 2027-01-01 00:00 BKK. The F4 sequential-numbering allocator buckets
-  // per fiscal year, so the planYear MUST be 2027 not 2026 — Round 5
-  // S-04 added the +7h offset; this test pins the contract.
-  it('threads BKK fiscal year (not UTC year) to F4 bridge for periodFrom near year boundary (S-04)', async () => {
-    const cycle = buildCycle({
-      periodFrom: '2026-12-31T17:00:00Z', // = 2027-01-01 00:00 BKK
-      periodTo: '2027-12-31T17:00:00Z',
-    });
-    const { deps, bridgeMock } = fakeDeps(cycle);
+  // Round 7 B-R6-5 — verify findByIdInTx receives the SAME tx handle
+  // that acquireLockInTx received. cancel-cycle has the same test
+  // (Round 6 W-R5-5); mark-paid-offline shares the TOCTOU pattern so
+  // the B2 contract must be locked here too. Without this test, a
+  // regression where mark-paid-offline reverts to non-tx findById
+  // would silently re-introduce the TOCTOU window.
+  it('post-lock re-read uses findByIdInTx with the lock-holding tx (B2)', async () => {
+    const cycle = buildCycle();
+    const { deps } = fakeDeps(cycle);
     await markPaidOffline(deps, baseInput);
-    expect(bridgeMock).toHaveBeenCalledWith(
-      expect.objectContaining({ planYear: 2027 }),
-    );
+    const acquireLockTx = (
+      deps.cyclesRepo.acquireCycleLockInTx as ReturnType<typeof vi.fn>
+    ).mock.calls[0]?.[0];
+    const findByIdInTxCalls = (
+      deps.cyclesRepo.findByIdInTx as ReturnType<typeof vi.fn>
+    ).mock.calls;
+    expect(findByIdInTxCalls).toHaveLength(1);
+    expect(findByIdInTxCalls[0]?.[0]).toBe(acquireLockTx);
   });
+
+  // Round 6 S-R5-4 / Round 7 S-R6-2 — Bangkok fiscal-year boundary
+  // partition. UTC 2026-12-31T17:00:00Z = 2027-01-01 00:00 BKK; UTC
+  // 2026-12-31T16:59:59Z = 2026-12-31 23:59:59 BKK. Both partitions
+  // pin the `>=` vs `>` boundary correctness so a regression to a
+  // half-open interval is caught.
+  it.each([
+    { utcIso: '2026-12-31T17:00:00Z', expectedYear: 2027, label: 'BKK midnight' },
+    { utcIso: '2026-12-31T16:59:59Z', expectedYear: 2026, label: 'one second before BKK midnight' },
+  ])(
+    'threads BKK fiscal year ($expectedYear) to F4 bridge at $label (S-04 / S-R6-2)',
+    async ({ utcIso, expectedYear }) => {
+      const cycle = buildCycle({
+        periodFrom: utcIso,
+        periodTo: '2027-12-31T17:00:00Z',
+      });
+      const { deps, bridgeMock } = fakeDeps(cycle);
+      await markPaidOffline(deps, baseInput);
+      expect(bridgeMock).toHaveBeenCalledWith(
+        expect.objectContaining({ planYear: expectedYear }),
+      );
+    },
+  );
 
   // Round 6 S-R5-5 — newExpiresAt source-of-truth. The Round 5 W-05 fix
   // re-derives newExpiresAt from `lockedCycle.periodTo` inside the tx.
@@ -306,7 +333,10 @@ describe('markPaidOffline — error paths', () => {
     });
     const { deps } = fakeDeps(preLoadCycle);
     // Override findByIdInTx to return the divergent locked cycle.
-    (deps.cyclesRepo.findByIdInTx as ReturnType<typeof vi.fn>).mockResolvedValue(
+    // Round 7 S-R6-1 — `mockResolvedValueOnce` documents that this is
+    // a single-invocation contract within the tx (use-case calls
+    // findByIdInTx exactly once after acquiring the lock).
+    (deps.cyclesRepo.findByIdInTx as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       lockedCycle,
     );
     const r = await markPaidOffline(deps, baseInput);

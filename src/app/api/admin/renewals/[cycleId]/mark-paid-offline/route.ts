@@ -18,40 +18,63 @@ import {
 import { markPaidOffline, makeRenewalsDeps } from '@/modules/renewals';
 
 /**
- * Round 5 W-01 / Round 6 B-R5-1+W-R5-4 — Reject `payment_reference`
- * strings that contain 13+ CONSECUTIVE digits (PAN paste-error guard).
- * F8 mark-paid-offline is for bank-transfer / cash / cheque references
- * — there is no legitimate reason to paste a raw card number here, and
- * `payment_reference` is persisted verbatim in `audit_log.payload`.
- * Defence-in-depth against accidental PCI-scope expansion.
+ * Round 5 W-01 / Round 6 B-R5-1+W-R5-4 / Round 7 B-R6-2 — Reject
+ * `payment_reference` strings that contain 13+ CONSECUTIVE digits
+ * (PAN paste-error guard). F8 mark-paid-offline is for bank-transfer /
+ * cash / cheque references — there is no legitimate reason to paste a
+ * raw card number here, and `payment_reference` is persisted verbatim
+ * in `audit_log.payload`. Defence-in-depth against accidental
+ * PCI-scope expansion (Constitution Principle IV NON-NEGOTIABLE).
  *
- * Round 6 design rationale (replaces Round 5's flawed `(\d[\s-]?){13,19}`
- * which counted "digit + optional separator" repetitions and falsely
- * blocked standard Thai bank reference format `YYYYMMDD-NNNNN`):
+ * Detection passes (a value is rejected if EITHER pass matches):
  *
- *   - **Block**: ≥13 ASCII digits in a row (e.g. raw paste of
- *     `4111111111111111`). This is the dominant operator-paste-error
- *     pattern — operators rarely paste card numbers with manual
- *     spaces, since most card-storage UIs render the PAN as a single
- *     digit run.
- *   - **Allow**: Thai bank reference `YYYYMMDD-NNNNN` (max run of 8
- *     consecutive digits between hyphens), prefixed variants
- *     `KTB-20260504-12345`, `SCB-TT-20260504-00042`, etc.
- *   - **Trade-off accepted**: a manually-spaced PAN
- *     `4111 1111 1111 1111` slips through (max run 4 digits). This is
- *     a rare paste-error pattern and the operator workflow surfaces
- *     the value back in the confirmation toast before submission.
+ *   1. **ASCII fast-path**: `\d{13,}` after NFKD-decompose +
+ *      non-ASCII strip. Catches the dominant raw-paste error
+ *      pattern (e.g. `4111111111111111`).
  *
- * W-R5-4 Unicode handling: NFKD-decompose then strip non-ASCII BEFORE
- * the regex test so Arabic-Indic (٠-٩), Devanagari (०-९), or Thai
- * (๐-๙) digit substitutes cannot bypass `\d` (which is `[0-9]` only
- * without `/u` flag).
+ *   2. **Round 7 B-R6-2 — Unicode digit fallback**: NFKD does NOT
+ *      decompose Arabic-Indic (`٠-٩`, U+0660-U+0669), Eastern
+ *      Arabic-Indic (`۰-۹`, U+06F0-U+06F9), Devanagari
+ *      (`०-९`, U+0966-U+096F), or Thai (`๐-๙`, U+0E50-U+0E59) digits
+ *      — they remain at their original codepoints. The non-ASCII
+ *      strip in pass 1 then removes them ENTIRELY, leaving a string
+ *      `\d{13,}` cannot match. Round 6 review surfaced this as a PCI
+ *      bypass: `'٤١١١١١١١١١١١١١١١'` (16 Arabic-Indic) was silently
+ *      accepted. Pass 2 tests the original `raw` string with the
+ *      `/u` flag enabled and an explicit script-digit character
+ *      class so the four most likely substitution scripts are caught.
+ *
+ * Allowed (intentional trade-offs — Round 7 W-R6-2 + S-R6-4):
+ *   - Thai bank reference `YYYYMMDD-NNNNN` (max ASCII run 8) —
+ *     legitimate operator workflow.
+ *   - Manually-formatted PAN with spaces OR hyphens between groups —
+ *     `4111 1111 1111 1111` / `4111-1111-1111-1111` (max consecutive
+ *     run 4 digits). NFKD does NOT decompose ASCII hyphens (U+002D
+ *     has no decomposition), so the non-ASCII strip leaves them in
+ *     place; both separators result in the same max-run-4 outcome.
+ *     Both are rare paste-error patterns at the F8 surface; the
+ *     operator workflow surfaces the value in the confirmation toast
+ *     before submission as second line of defence. Coverage explicitly
+ *     documented in admin-mark-paid-offline-route.test.ts so the gap
+ *     is visible to future reviewers (not buried in this comment).
+ *     Tracked as Phase 3.5 if real-world incidents require tighter
+ *     coverage.
  */
-const PAN_LIKE_RE = /\d{13,}/;
+const PAN_LIKE_ASCII_RE = /\d{13,}/;
+// Pass 2: covers Arabic-Indic / Eastern Arabic-Indic / Devanagari / Thai
+// digit blocks. `/u` flag enables Unicode-aware matching but is not
+// strictly required for these BMP codepoints; included for clarity +
+// future-script extensibility.
+const PAN_LIKE_UNICODE_DIGITS_RE =
+  /[٠-٩۰-۹०-९๐-๙]{13,}/u;
 
 function isPanLikeReference(raw: string): boolean {
+  // Pass 1 — ASCII PAN after NFKD + non-ASCII strip.
   const normalised = raw.normalize('NFKD').replace(/[^\x00-\x7F]/g, '');
-  return PAN_LIKE_RE.test(normalised);
+  if (PAN_LIKE_ASCII_RE.test(normalised)) return true;
+  // Pass 2 — Unicode script-digit substitutes on the ORIGINAL raw input
+  // (NFKD-stripped form has already lost them).
+  return PAN_LIKE_UNICODE_DIGITS_RE.test(raw);
 }
 
 const BodySchema = z.object({

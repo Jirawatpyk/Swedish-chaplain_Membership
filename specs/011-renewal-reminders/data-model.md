@@ -78,6 +78,15 @@ CREATE INDEX renewal_cycles_eligibility_idx ON renewal_cycles (tenant_id, status
   WHERE status IN ('upcoming','reminded','awaiting_payment');
 CREATE INDEX renewal_cycles_active_member_idx ON renewal_cycles (tenant_id, member_id)
   WHERE status NOT IN ('lapsed','cancelled','completed');
+-- Round 7 B-R6-4 (migration 0100) — partial covering index for the
+-- tier-filtered lapsed-count query in the pipeline dashboard's
+-- LapsedTab badge. The pipeline_idx above does not include
+-- `tier_at_cycle_start`, so the planner falls back to a heap recheck
+-- after scanning the status partition. At MVP <500 cycles this is
+-- invisible; at 500-5000 it becomes the bottleneck. The partial
+-- predicate `WHERE status='lapsed'` keeps the index size minimal.
+CREATE INDEX renewal_cycles_lapsed_tier_idx ON renewal_cycles
+  (tenant_id, tier_at_cycle_start) WHERE status = 'lapsed';
 ```
 
 ### State machine (revised at /speckit.clarify round 3 Q1 + /speckit.critique round 2 / M3 — 7 states)
@@ -622,8 +631,8 @@ All events emitted to F1's existing `audit_log` table with `retention_years = 5`
 | Event type | Trigger | Payload |
 |---|---|---|
 | `renewal_cycle_created` | New cycle materialised on member creation OR previous cycle paid | `{member_id, cycle_id, period_from, period_to, plan_id, tier_bucket}` |
-| `renewal_cycle_cancelled` | Admin manual cancel | `{member_id, cycle_id, reason, previous_status, actor_user_id}` |
-| `renewal_cycle_completed_offline` | Admin "Mark renewal as paid offline" | `{member_id, cycle_id, invoice_id, payment_method, payment_reference, payment_date, new_expires_at, actor_user_id}` |
+| `renewal_cycle_cancelled` | Admin manual cancel | `{member_id, cycle_id, reason, previous_status}` *(actor via AuditContext)* |
+| `renewal_cycle_completed_offline` | Admin "Mark renewal as paid offline" | `{member_id, cycle_id, invoice_id, payment_method, payment_reference, payment_date, new_expires_at}` *(actor via AuditContext)* |
 | `renewal_lapsed` | grace_period_days exceeded without payment | `{member_id, cycle_id, expires_at, lapsed_at}` |
 | `renewal_reminder_sent` | Cron OR admin manual dispatch | `{member_id, cycle_id, step_id, channel, template_id, delivery_id, year_in_cycle, actor_user_id}` |
 | `renewal_reminder_skipped` | Cron skip path | `{member_id, cycle_id, step_id, reason}` (reason ∈ enum) |

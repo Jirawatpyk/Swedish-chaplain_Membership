@@ -122,20 +122,22 @@ export async function cancelCycle(
     });
   }
 
-  // Round 5 W-03 / Round 6 W-R5-3 — strip ALL C0 + C1 control bytes
-  // from admin-supplied reason before it lands in audit_log.payload +
-  // audit_log.summary. The Round 5 narrow `[\r\n\x1b]` regex left the
-  // following bytes through:
-  //   - 8-bit CSI `\x9b`        (alternate C1 ANSI escape)
-  //   - BEL `\x07`              (rings terminal bell on log readback)
-  //   - BS `\x08`               (overprint attack on log line)
-  //   - rest of C0 (\x00-\x1f) + C1 (\x80-\x9f) blocks
-  // A log-aggregation tool that interprets any of these can be used
-  // as a log-injection / spoofing vector. The full control-byte strip
-  // is the safest approach — admin "reason" text never legitimately
-  // contains control bytes.
-  const sanitizedReason = input.reason.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ');
-
+  // Round 5 W-03 / Round 6 W-R5-3 / Round 7 W-R6-3 — strip ALL control
+  // and structural-format bytes from admin-supplied reason before it
+  // lands in audit_log.payload + audit_log.summary. Round 5's narrow
+  // `[\r\n\x1b]` left 8-bit CSI / BEL / BS through; Round 6 expanded
+  // to `[\x00-\x1f\x7f-\x9f]` (full C0+C1 control blocks). Round 7
+  // adds higher-plane Unicode separators that some log aggregators
+  // (Loki / Datadog / Splunk) interpret as record boundaries — used
+  // as a log-injection / record-splitting vector:
+  //   - U+2028 LINE SEPARATOR
+  //   - U+2029 PARAGRAPH SEPARATOR
+  //   - U+200B ZERO-WIDTH SPACE     (homoglyph / invisibility attack)
+  //   - U+FEFF BYTE ORDER MARK      (corrupts JSON renderers)
+  // Admin "reason" free-text never legitimately contains any of these.
+  const sanitizedReason = input.reason
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+    .replace(/[\u2028\u2029\u200b\ufeff]/g, ' ');
   // Atomic transition + audit emit.
   try {
     const closedAt = new Date().toISOString();

@@ -103,7 +103,15 @@ Admin records an out-of-band payment. F4 invoice is created and immediately mark
 { "payment_method": "bank_transfer" | "cash" | "cheque", "payment_reference": "BT-2026-0042", "payment_date": "2026-05-15" }
 ```
 
+**Validation rules** (Round 7 S-R6-3):
+- `payment_method`: enum `{ bank_transfer | cash | cheque }` (no `other` — F8 mark-paid-offline is for known offline channels only).
+- `payment_reference`: 1–100 chars. **MUST NOT** match the PAN paste-error pattern (`\d{13,}` ASCII OR 13+ Arabic-Indic / Eastern Arabic-Indic / Devanagari / Thai script digits in a row — Constitution Principle IV PCI DSS NON-NEGOTIABLE defence-in-depth). Hyphen- or space-separated PANs (`4111-1111-1111-1111` / `4111 1111 1111 1111`) are intentionally NOT blocked at this layer — operator workflow surfaces the value in the confirmation toast as second line of defence. Non-PAN references with separators (e.g. Thai bank format `KTB-20260504-12345`) MUST be accepted.
+- `payment_date`: `YYYY-MM-DD` (Bangkok-local).
+
 **Response 200**: `{ cycle_status: "completed", invoice_id, new_expires_at }`
+**Response 400**: `{ error: { code: "invalid_body", details: { fieldErrors: ... } } }` — includes the PAN-rejection case.
+**Response 502**: `{ error: { code: "f4_failure", stage } }` — `reason` field is intentionally scrubbed from the body (logged server-side; see Round 5 W-02).
+**Response 409 (orphan)**: `{ error: { code: "f4_orphan_invoice", orphan_invoice_id } }` — `reason` likewise scrubbed.
 **Audit**: `renewal_invoice_created` + `renewal_completed` + `renewal_cycle_completed_offline`
 
 ---

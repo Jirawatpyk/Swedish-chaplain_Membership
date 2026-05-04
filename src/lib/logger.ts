@@ -281,6 +281,14 @@ export const REDACT_PATHS = [
   // fragments) MUST never reach Sentry / Grafana.
   'f4Reason',
   '*.f4Reason',
+  // Round 7 W-R6-4 — `f4Stage` is a closed enum of F4 use-case
+  // identifiers (`'create_invoice_failed'` / `'issue_invoice_failed'`
+  // / `'record_payment_failed'`) that embed internal operation names.
+  // Lower sensitivity than `f4Reason` but still schema-leaking;
+  // belt-and-suspenders redaction so a future F4 stage rename that
+  // reveals an internal column or path name does not silently leak.
+  'f4Stage',
+  '*.f4Stage',
   // review-20260428-102639.md S1 closure — defense-in-depth: F4 + F5
   // worker / cron paths carry `memberIdentitySnapshot` (member name +
   // address + email PII) in scan rows. Never logged today, but path-
