@@ -182,6 +182,25 @@ export function assertCycleInvariants(
   return ok(undefined);
 }
 
+/**
+ * Convert the cycle's frozen plan price to satang (bigint) — the F4
+ * + F5 monetary representation (`Money.satang`). The DB stores the
+ * frozen price as `decimal(12,2)` in THB units to match the existing
+ * F2 plan-fee storage convention, but cross-module callers (F4 invoice
+ * issuance, F5 payment intent amount) need bigint satang to integrate
+ * with their existing arithmetic. This helper is the canonical
+ * conversion site — single source of truth + lossless rounding via
+ * cents-multiplication.
+ */
+export function cycleFrozenPriceSatang(cycle: RenewalCycle): bigint {
+  const baht = cycle.frozenPlanPriceThb;
+  // The decimal string from `decimal(12,2)` always has at most 2
+  // fractional digits. Strip the dot, treat as integer satang.
+  const [intPart, fracRaw = ''] = baht.split('.');
+  const frac = (fracRaw + '00').slice(0, 2);
+  return BigInt(`${intPart}${frac}`);
+}
+
 /** True if the cycle is past its expires_at + still non-terminal. */
 export function isOverdue(cycle: RenewalCycle, now: Date): boolean {
   if (isTerminalCycleStatus(cycle.status)) return false;

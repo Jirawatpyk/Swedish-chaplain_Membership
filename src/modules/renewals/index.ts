@@ -17,9 +17,14 @@
  */
 
 // --- Domain value objects ---------------------------------------------------
+// Branded-type smart constructors are exported via `parse*` only (returns
+// Result<T,E>). The unsafe `as*` casts are intentionally NOT in the
+// barrel — they exist for Drizzle row mappers in `domain/value-objects/*`
+// which can deep-import within the renewals module. External callers
+// (Application use-cases, Presentation, cross-module) MUST go through
+// `parse*` so type-safety is enforced at the boundary.
 export {
   TIER_BUCKETS,
-  asTierBucket,
   parseTierBucket,
   isTierBucket,
   type TierBucket,
@@ -29,7 +34,6 @@ export {
 export {
   CYCLE_STATUSES,
   TERMINAL_CYCLE_STATUSES,
-  asCycleStatus,
   parseCycleStatus,
   isTerminalCycleStatus,
   canTransition,
@@ -43,7 +47,6 @@ export {
 export {
   RISK_BANDS,
   RISK_BAND_THRESHOLDS,
-  asRiskBand,
   parseRiskBand,
   bandForScore,
   isAtRiskWidgetBand,
@@ -69,9 +72,9 @@ export {
 // --- Domain entities --------------------------------------------------------
 export {
   CLOSED_REASONS,
-  asCycleId,
   parseCycleId,
   assertCycleInvariants,
+  cycleFrozenPriceSatang,
   isOverdue,
   daysUntilExpiry,
   type CycleId,
@@ -85,7 +88,6 @@ export {
   TIER_UPGRADE_STATUSES,
   TERMINAL_TIER_UPGRADE_STATUSES,
   TIER_UPGRADE_REASON_CODES,
-  asSuggestionId,
   parseSuggestionId,
   assertSuggestionInvariants,
   isTerminalTierUpgradeStatus,
@@ -102,7 +104,6 @@ export {
 export {
   ESCALATION_TASK_STATUSES,
   ESCALATION_ASSIGNEE_ROLES,
-  asTaskId,
   parseTaskId,
   assertEscalationTaskInvariants,
   isOverdueTask,

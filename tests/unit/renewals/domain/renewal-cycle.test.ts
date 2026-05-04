@@ -7,6 +7,7 @@ import {
   asCycleId,
   parseCycleId,
   assertCycleInvariants,
+  cycleFrozenPriceSatang,
   isOverdue,
   daysUntilExpiry,
   type RenewalCycle,
@@ -243,5 +244,31 @@ describe('daysUntilExpiry', () => {
   it('NaN when expires_at is malformed', () => {
     const cycle = buildCycle({ expiresAt: 'malformed' });
     expect(Number.isNaN(daysUntilExpiry(cycle, new Date()))).toBe(true);
+  });
+});
+
+describe('cycleFrozenPriceSatang', () => {
+  it('converts integer THB to satang (× 100)', () => {
+    expect(cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '50000' })))
+      .toBe(5_000_000n);
+  });
+
+  it('converts decimal THB to satang preserving fractional satang', () => {
+    expect(cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '50000.50' })))
+      .toBe(5_000_050n);
+    expect(cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '0.01' })))
+      .toBe(1n);
+  });
+
+  it('zero THB → 0n satang', () => {
+    expect(cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '0' })))
+      .toBe(0n);
+    expect(cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '0.00' })))
+      .toBe(0n);
+  });
+
+  it('handles single-digit fractional padding (.5 → .50)', () => {
+    expect(cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '100.5' })))
+      .toBe(10_050n);
   });
 });

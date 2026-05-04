@@ -112,24 +112,77 @@ export function isF8AuditEventType(
 // ---------------------------------------------------------------------------
 
 /**
- * Per-event payload shape map. Wave E exposes a permissive
- * `Record<string, unknown>` per event type so emit sites can land
- * during user-story phases without refactoring this port file. The
- * audit-emitter Infrastructure adapter (Wave G+) validates the
- * concrete shape against zod schemas mirroring
- * `specs/011-renewal-reminders/contracts/audit-port.md` § 2 before
- * writing to F1's audit_log table.
+ * Per-event payload shape map (F7 pattern). Typed shapes are listed for
+ * the security/forensics-critical events that have stable contracts in
+ * `specs/011-renewal-reminders/contracts/audit-port.md`; events not in
+ * this map default to the permissive `Record<string, unknown>` so
+ * use-cases that ship in later phases can refine their entries
+ * incrementally without churning this file.
  *
- * When a use-case ships emitting a specific event, refine the
- * corresponding entry from `Record<string, unknown>` to a typed
- * interface as a follow-up edit (small + reviewable).
+ * The cross-tenant + cross-member probe shapes are load-bearing for
+ * Constitution Principle I clause 4 (every cross-tenant access attempt
+ * must be auditable) — keep them typed.
  */
-export type F8AuditPayloadShapes = {
-  readonly [K in F8AuditEventType]: Record<string, unknown>;
-};
+export interface F8AuditPayloadShapes {
+  readonly renewal_cycle_created: {
+    readonly cycle_id: string;
+    readonly member_id: string;
+    readonly tier_bucket: string;
+    readonly period_from: string;
+    readonly period_to: string;
+  };
+  readonly renewal_cycle_cancelled: {
+    readonly cycle_id: string;
+    readonly member_id: string;
+    readonly reason: string;
+    readonly previous_status: string;
+  };
+  readonly renewal_cycle_completed_offline: {
+    readonly cycle_id: string;
+    readonly member_id: string;
+    readonly invoice_id: string;
+    readonly payment_method: 'bank_transfer' | 'cash' | 'cheque';
+    readonly payment_reference: string;
+    readonly payment_date: string;
+    readonly new_expires_at: string;
+  };
+  readonly renewal_cross_tenant_probe: {
+    readonly attempted_cycle_id: string;
+    readonly route: string;
+  };
+  readonly renewal_cross_member_probe: {
+    readonly actor_member_id: string;
+    readonly attempted_member_id: string;
+  };
+  readonly f8_role_violation_blocked: {
+    readonly resource: string;
+    readonly action: 'read' | 'write';
+    readonly attempted_role: 'admin' | 'manager' | 'member';
+    readonly route: string;
+  };
+  readonly renewal_token_invalid: {
+    readonly reason:
+      | 'malformed_token'
+      | 'mac_mismatch'
+      | 'expired'
+      | 'replayed'
+      | 'cross_tenant'
+      | 'member_not_found_in_tenant';
+  };
+  readonly renewal_kill_switch_blocked: {
+    readonly route: string;
+  };
+}
 
+/**
+ * Mapped type — `F8AuditPayloadFor<'renewal_cross_tenant_probe'>`
+ * resolves to the typed shape; events outside the typed-shapes map fall
+ * back to `Record<string, unknown>`.
+ */
 export type F8AuditPayloadFor<E extends F8AuditEventType> =
-  F8AuditPayloadShapes[E];
+  E extends keyof F8AuditPayloadShapes
+    ? F8AuditPayloadShapes[E]
+    : Record<string, unknown>;
 
 export interface F8AuditEvent<E extends F8AuditEventType = F8AuditEventType> {
   readonly type: E;
