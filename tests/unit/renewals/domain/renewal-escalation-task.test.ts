@@ -23,10 +23,10 @@ function buildTask(
     memberId: 'm',
     cycleId: null,
     taskType: 'phone_call',
-    assignedToRole: 'admin',
+    assignedToRole: 'admin' as const,
     assignedToUserId: null,
     dueAt: '2026-06-01T00:00:00Z',
-    status: 'open',
+    status: 'open' as const,
     outcomeNote: null,
     skippedReason: null,
     closedByUserId: null,
@@ -34,7 +34,7 @@ function buildTask(
     createdAt: '2026-05-01T00:00:00Z',
     closedAt: null,
     ...overrides,
-  };
+  } as RenewalEscalationTask;
 }
 
 describe('TaskId brand', () => {
@@ -64,20 +64,29 @@ describe('assertEscalationTaskInvariants', () => {
     expect(assertEscalationTaskInvariants(buildTask()).ok).toBe(true);
   });
 
-  it('rejects open + closed_at', () => {
-    const r = assertEscalationTaskInvariants(
-      buildTask({ closedAt: '2026-05-15T00:00:00Z' }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('open_has_closed_at');
+  // The 3 status-conditional invariants (open_has_closed_at,
+  // done_missing_anchors, skipped_missing_anchors) are now enforced
+  // at COMPILE TIME by the RenewalEscalationTask discriminated union.
+
+  it('compile-error: open task with closedAt set', () => {
+    // @ts-expect-error — open requires closedAt: null
+    const _illegal: RenewalEscalationTask = {
+      ...buildTask(),
+      status: 'open',
+      closedAt: '2026-05-15T00:00:00Z',
+    };
+    expect(_illegal).toBeDefined();
   });
 
-  it('rejects done without anchors', () => {
-    const r = assertEscalationTaskInvariants(
-      buildTask({ status: 'done', closedAt: '2026-05-15T00:00:00Z' }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('done_missing_anchors');
+  it('compile-error: done task without closedByUserId', () => {
+    // @ts-expect-error — done requires closedByUserId: string + closedAt: string
+    const _illegal: RenewalEscalationTask = {
+      ...buildTask(),
+      status: 'done',
+      closedAt: '2026-05-15T00:00:00Z',
+      closedByUserId: null,
+    };
+    expect(_illegal).toBeDefined();
   });
 
   it('accepts done with full anchors', () => {
@@ -93,12 +102,16 @@ describe('assertEscalationTaskInvariants', () => {
     ).toBe(true);
   });
 
-  it('rejects skipped without anchors', () => {
-    const r = assertEscalationTaskInvariants(
-      buildTask({ status: 'skipped', closedAt: '2026-05-15T00:00:00Z' }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('skipped_missing_anchors');
+  it('compile-error: skipped task without skippedReason', () => {
+    // @ts-expect-error — skipped requires skippedReason: string + closedByUserId: string + closedAt: string
+    const _illegal: RenewalEscalationTask = {
+      ...buildTask(),
+      status: 'skipped',
+      closedAt: '2026-05-15T00:00:00Z',
+      skippedReason: null,
+      closedByUserId: 'admin-1',
+    };
+    expect(_illegal).toBeDefined();
   });
 
   it('accepts skipped with full anchors', () => {
@@ -107,6 +120,7 @@ describe('assertEscalationTaskInvariants', () => {
         buildTask({
           status: 'skipped',
           closedAt: '2026-05-15T00:00:00Z',
+          closedByUserId: '00000000-0000-0000-0000-0000000000aa',
           skippedReason: 'member already cancelled',
         }),
       ).ok,

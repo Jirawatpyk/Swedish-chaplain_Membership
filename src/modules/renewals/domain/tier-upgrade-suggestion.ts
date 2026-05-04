@@ -72,7 +72,8 @@ export interface TierUpgradeEvidence {
   readonly [key: string]: unknown;
 }
 
-export interface TierUpgradeSuggestion {
+/** Common fields across every tier-upgrade lifecycle state. */
+interface TierUpgradeSuggestionBase {
   readonly tenantId: string;
   readonly suggestionId: SuggestionId;
   readonly memberId: string;
@@ -80,34 +81,105 @@ export interface TierUpgradeSuggestion {
   readonly toPlanId: string;
   readonly reasonCode: TierUpgradeReasonCode;
   readonly evidence: TierUpgradeEvidence;
-  readonly status: TierUpgradeStatus;
   readonly suppressedUntil: string | null;
-  readonly dismissedReason: string | null;
+  readonly memberNotifiedAt: string | null;
+  readonly adminVerificationTaskId: string | null;
+  readonly createdAt: string;
+}
 
-  // Pending-apply lifecycle (Q5 round 2).
+/** Open: no admin action yet. No accept/apply/close anchors set. */
+interface OpenTierUpgradeFields {
+  readonly status: 'open';
+  readonly acceptedAt: null;
+  readonly acceptedByUserId: null;
+  readonly targetApplyAtCycleId: null;
+  readonly appliedAt: null;
+  readonly appliedAtInvoiceId: null;
+  readonly dismissedReason: null;
+  readonly closedAt: null;
+}
+
+/** Admin accepted; waiting for next cycle to apply. */
+interface AcceptedPendingApplyFields {
+  readonly status: 'accepted_pending_apply';
+  readonly acceptedAt: string;
+  readonly acceptedByUserId: string;
+  readonly targetApplyAtCycleId: string;
+  readonly appliedAt: null;
+  readonly appliedAtInvoiceId: null;
+  readonly dismissedReason: null;
+  readonly closedAt: null;
+}
+
+/** Terminal — successfully applied at next renewal. */
+interface AppliedTierUpgradeFields {
+  readonly status: 'applied';
+  readonly acceptedAt: string;
+  readonly acceptedByUserId: string;
+  readonly targetApplyAtCycleId: string;
+  readonly appliedAt: string;
+  readonly appliedAtInvoiceId: string;
+  readonly dismissedReason: null;
+  readonly closedAt: string;
+}
+
+/** Terminal — admin dismissed. */
+interface DismissedTierUpgradeFields {
+  readonly status: 'dismissed';
+  readonly acceptedAt: null;
+  readonly acceptedByUserId: null;
+  readonly targetApplyAtCycleId: null;
+  readonly appliedAt: null;
+  readonly appliedAtInvoiceId: null;
+  readonly dismissedReason: string;
+  readonly closedAt: string;
+}
+
+/** Terminal — admin manually changed plan via F2 before rollover. */
+interface SupersededTierUpgradeFields {
+  readonly status: 'superseded';
   readonly acceptedAt: string | null;
   readonly acceptedByUserId: string | null;
   readonly targetApplyAtCycleId: string | null;
-  readonly appliedAt: string | null;
-  readonly appliedAtInvoiceId: string | null;
-  readonly memberNotifiedAt: string | null;
-  readonly adminVerificationTaskId: string | null;
-
-  readonly createdAt: string;
-  readonly closedAt: string | null;
+  readonly appliedAt: null;
+  readonly appliedAtInvoiceId: null;
+  readonly dismissedReason: null;
+  readonly closedAt: string;
 }
 
-export type TierUpgradeInvariantError =
-  | { readonly kind: 'accepted_missing_anchors'; readonly status: TierUpgradeStatus }
-  | { readonly kind: 'applied_missing_anchors'; readonly status: TierUpgradeStatus }
-  | { readonly kind: 'dismissed_missing_anchors'; readonly status: TierUpgradeStatus }
-  | { readonly kind: 'terminal_missing_closed_at'; readonly status: TierUpgradeStatus }
-  | { readonly kind: 'dismissed_reason_too_long'; readonly length: number }
-  | { readonly kind: 'open_has_closed_at' };
+/** Terminal — member reached target tier via other path. */
+interface AutoResolvedTierUpgradeFields {
+  readonly status: 'auto_resolved';
+  readonly acceptedAt: null;
+  readonly acceptedByUserId: null;
+  readonly targetApplyAtCycleId: null;
+  readonly appliedAt: null;
+  readonly appliedAtInvoiceId: null;
+  readonly dismissedReason: null;
+  readonly closedAt: string;
+}
+
+export type TierUpgradeSuggestion = TierUpgradeSuggestionBase &
+  (
+    | OpenTierUpgradeFields
+    | AcceptedPendingApplyFields
+    | AppliedTierUpgradeFields
+    | DismissedTierUpgradeFields
+    | SupersededTierUpgradeFields
+    | AutoResolvedTierUpgradeFields
+  );
+
+export type TierUpgradeInvariantError = {
+  readonly kind: 'dismissed_reason_too_long';
+  readonly length: number;
+};
 
 /**
- * Mirrors the migration 0091 status-lifecycle CHECK constraints. Useful
- * for in-memory adapters / tests that bypass the DB layer.
+ * Runtime invariants the type system can't express. Status-conditional
+ * anchor invariants (accepted_missing_anchors, applied_missing_anchors,
+ * dismissed_missing_anchors, terminal_missing_closed_at,
+ * open_has_closed_at) are enforced at compile time by the
+ * `TierUpgradeSuggestion` discriminated union.
  */
 export function assertSuggestionInvariants(
   s: TierUpgradeSuggestion,
@@ -117,37 +189,6 @@ export function assertSuggestionInvariants(
       kind: 'dismissed_reason_too_long',
       length: s.dismissedReason.length,
     });
-  }
-  if (s.status === 'open' && s.closedAt != null) {
-    return err({ kind: 'open_has_closed_at' });
-  }
-  if (s.status === 'accepted_pending_apply') {
-    if (
-      s.acceptedAt == null ||
-      s.acceptedByUserId == null ||
-      s.targetApplyAtCycleId == null
-    ) {
-      return err({ kind: 'accepted_missing_anchors', status: s.status });
-    }
-  }
-  if (s.status === 'applied') {
-    if (
-      s.appliedAt == null ||
-      s.appliedAtInvoiceId == null ||
-      s.closedAt == null
-    ) {
-      return err({ kind: 'applied_missing_anchors', status: s.status });
-    }
-  }
-  if (s.status === 'dismissed') {
-    if (s.dismissedReason == null || s.closedAt == null) {
-      return err({ kind: 'dismissed_missing_anchors', status: s.status });
-    }
-  }
-  if (s.status === 'superseded' || s.status === 'auto_resolved') {
-    if (s.closedAt == null) {
-      return err({ kind: 'terminal_missing_closed_at', status: s.status });
-    }
   }
   return ok(undefined);
 }

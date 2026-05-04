@@ -23,9 +23,9 @@ function buildSuggestion(
     memberId: 'm',
     fromPlanId: '00000000-0000-0000-0000-0000000000aa',
     toPlanId: '00000000-0000-0000-0000-0000000000ab',
-    reasonCode: 'declared_turnover_above_threshold',
+    reasonCode: 'declared_turnover_above_threshold' as const,
     evidence: { turnoverThb: 50_000_000 },
-    status: 'open',
+    status: 'open' as const,
     suppressedUntil: null,
     dismissedReason: null,
     acceptedAt: null,
@@ -38,7 +38,7 @@ function buildSuggestion(
     createdAt: '2026-05-01T00:00:00Z',
     closedAt: null,
     ...overrides,
-  };
+  } as TierUpgradeSuggestion;
 }
 
 describe('SuggestionId brand', () => {
@@ -83,21 +83,12 @@ describe('assertSuggestionInvariants', () => {
     expect(assertSuggestionInvariants(buildSuggestion()).ok).toBe(true);
   });
 
-  it('rejects open + closed_at set', () => {
-    const r = assertSuggestionInvariants(
-      buildSuggestion({ closedAt: '2026-05-01T00:00:00Z' }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('open_has_closed_at');
-  });
-
-  it('rejects accepted_pending_apply without anchors', () => {
-    const r = assertSuggestionInvariants(
-      buildSuggestion({ status: 'accepted_pending_apply' }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('accepted_missing_anchors');
-  });
+  // The 5 status-conditional invariants previously asserted at runtime
+  // (open_has_closed_at, accepted_missing_anchors, applied_missing_anchors,
+  // dismissed_missing_anchors, terminal_missing_closed_at) are now
+  // enforced at COMPILE TIME by the TierUpgradeSuggestion discriminated
+  // union. The happy-path cases below confirm the type-system permits
+  // each valid combination.
 
   it('accepts accepted_pending_apply with full anchors', () => {
     expect(
@@ -112,39 +103,20 @@ describe('assertSuggestionInvariants', () => {
     ).toBe(true);
   });
 
-  it('rejects applied without anchors', () => {
-    const r = assertSuggestionInvariants(
-      buildSuggestion({ status: 'applied' }),
-    );
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('applied_missing_anchors');
-  });
-
   it('accepts applied with full anchors', () => {
     expect(
       assertSuggestionInvariants(
         buildSuggestion({
           status: 'applied',
+          acceptedAt: '2026-05-01T00:00:00Z',
+          acceptedByUserId: '00000000-0000-0000-0000-0000000000aa',
+          targetApplyAtCycleId: VALID_UUID,
           appliedAt: '2026-06-01T00:00:00Z',
           appliedAtInvoiceId: '00000000-0000-0000-0000-0000000000d1',
           closedAt: '2026-06-01T00:00:00Z',
         }),
       ).ok,
     ).toBe(true);
-  });
-
-  it('rejects dismissed without reason or closed_at', () => {
-    const r1 = assertSuggestionInvariants(
-      buildSuggestion({ status: 'dismissed', closedAt: '2026-05-01T00:00:00Z' }),
-    );
-    expect(r1.ok).toBe(false);
-    if (!r1.ok) expect(r1.error.kind).toBe('dismissed_missing_anchors');
-
-    const r2 = assertSuggestionInvariants(
-      buildSuggestion({ status: 'dismissed', dismissedReason: 'no thanks' }),
-    );
-    expect(r2.ok).toBe(false);
-    if (!r2.ok) expect(r2.error.kind).toBe('dismissed_missing_anchors');
   });
 
   it('accepts dismissed with full anchors', () => {
@@ -159,21 +131,35 @@ describe('assertSuggestionInvariants', () => {
     ).toBe(true);
   });
 
-  it('rejects superseded/auto_resolved without closed_at', () => {
-    expect(
-      assertSuggestionInvariants(buildSuggestion({ status: 'superseded' })).ok,
-    ).toBe(false);
-    expect(
-      assertSuggestionInvariants(buildSuggestion({ status: 'auto_resolved' })).ok,
-    ).toBe(false);
-  });
-
   it('accepts superseded with closed_at', () => {
     expect(
       assertSuggestionInvariants(
         buildSuggestion({ status: 'superseded', closedAt: '2026-06-01T00:00:00Z' }),
       ).ok,
     ).toBe(true);
+  });
+
+  it('compile-error: open with closedAt set', () => {
+    // @ts-expect-error — open requires closedAt: null
+    const _illegal: TierUpgradeSuggestion = {
+      ...buildSuggestion(),
+      status: 'open',
+      closedAt: '2026-05-01T00:00:00Z',
+    };
+    expect(_illegal).toBeDefined();
+  });
+
+  it('compile-error: applied without acceptedAt anchor', () => {
+    // @ts-expect-error — applied requires acceptedAt: string (NOT NULL)
+    const _illegal: TierUpgradeSuggestion = {
+      ...buildSuggestion(),
+      status: 'applied',
+      acceptedAt: null,
+      appliedAt: '2026-06-01T00:00:00Z',
+      appliedAtInvoiceId: 'inv-1',
+      closedAt: '2026-06-01T00:00:00Z',
+    };
+    expect(_illegal).toBeDefined();
   });
 
   it('rejects dismissed_reason >500 chars', () => {

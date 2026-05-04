@@ -41,7 +41,8 @@ export const ESCALATION_ASSIGNEE_ROLES = [
 export type EscalationAssigneeRole =
   (typeof ESCALATION_ASSIGNEE_ROLES)[number];
 
-export interface RenewalEscalationTask {
+/** Common fields across every escalation-task lifecycle state. */
+interface RenewalEscalationTaskBase {
   readonly tenantId: string;
   readonly taskId: TaskId;
   readonly memberId: string;
@@ -51,22 +52,50 @@ export interface RenewalEscalationTask {
   readonly assignedToRole: EscalationAssigneeRole;
   readonly assignedToUserId: string | null;
   readonly dueAt: string;
-  readonly status: EscalationTaskStatus;
-  readonly outcomeNote: string | null;
-  readonly skippedReason: string | null;
-  readonly closedByUserId: string | null;
   readonly relatedSuggestionId: string | null;
   readonly createdAt: string;
-  readonly closedAt: string | null;
 }
 
+/** Open: not yet closed. No closedAt / outcome / skipped reason. */
+interface OpenEscalationTaskFields {
+  readonly status: 'open';
+  readonly outcomeNote: null;
+  readonly skippedReason: null;
+  readonly closedByUserId: null;
+  readonly closedAt: null;
+}
+
+/** Terminal — admin marked done. closedByUserId + closedAt required. */
+interface DoneEscalationTaskFields {
+  readonly status: 'done';
+  readonly outcomeNote: string | null;
+  readonly skippedReason: null;
+  readonly closedByUserId: string;
+  readonly closedAt: string;
+}
+
+/** Terminal — admin skipped with reason. */
+interface SkippedEscalationTaskFields {
+  readonly status: 'skipped';
+  readonly outcomeNote: null;
+  readonly skippedReason: string;
+  readonly closedByUserId: string;
+  readonly closedAt: string;
+}
+
+export type RenewalEscalationTask = RenewalEscalationTaskBase &
+  (OpenEscalationTaskFields | DoneEscalationTaskFields | SkippedEscalationTaskFields);
+
 export type EscalationTaskInvariantError =
-  | { readonly kind: 'open_has_closed_at' }
-  | { readonly kind: 'done_missing_anchors' }
-  | { readonly kind: 'skipped_missing_anchors' }
   | { readonly kind: 'outcome_note_too_long'; readonly length: number }
   | { readonly kind: 'skipped_reason_too_long'; readonly length: number };
 
+/**
+ * Runtime invariants the type system can't express (string length
+ * caps). Status-conditional anchor invariants (open_has_closed_at,
+ * done_missing_anchors, skipped_missing_anchors) are enforced at
+ * compile time by the `RenewalEscalationTask` discriminated union.
+ */
 export function assertEscalationTaskInvariants(
   t: RenewalEscalationTask,
 ): Result<void, EscalationTaskInvariantError> {
@@ -78,19 +107,6 @@ export function assertEscalationTaskInvariants(
       kind: 'skipped_reason_too_long',
       length: t.skippedReason.length,
     });
-  }
-  if (t.status === 'open' && t.closedAt != null) {
-    return err({ kind: 'open_has_closed_at' });
-  }
-  if (t.status === 'done') {
-    if (t.closedAt == null || t.closedByUserId == null) {
-      return err({ kind: 'done_missing_anchors' });
-    }
-  }
-  if (t.status === 'skipped') {
-    if (t.closedAt == null || t.skippedReason == null) {
-      return err({ kind: 'skipped_missing_anchors' });
-    }
   }
   return ok(undefined);
 }
