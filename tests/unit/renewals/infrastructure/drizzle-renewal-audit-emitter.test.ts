@@ -9,8 +9,12 @@
  *   3. NODE_ENV=production → `pinoFallback` THROWS so emit-site drift is loud
  *   4. shipped event + DB insert fails → fire-and-forget swallows + logs forensics
  *
- * Plus the symmetric checks for `emitInTx`, which MUST throw (not swallow)
- * on every failure mode so the surrounding state mutation rolls back.
+ * Plus the two pre-flight throws for `emitInTx` (unknown event type +
+ * not-yet-in-pgenum) — `emitInTx` MUST throw (not swallow) so the
+ * surrounding state mutation rolls back. The DB-fault rollback path
+ * for `emitInTx` is exercised at the use-case level (cancel-cycle.ts +
+ * mark-paid-offline.ts integration tests), not here, since this unit
+ * test mocks `runInTenant` and does not represent a real Postgres tx.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '@/lib/logger';

@@ -94,15 +94,23 @@ export type TierUpgradeEvidence =
       readonly thresholdMetAt: string;
     };
 
-/** Common fields across every tier-upgrade lifecycle state. */
-interface TierUpgradeSuggestionBase {
+/**
+ * Common fields across every tier-upgrade lifecycle state.
+ *
+ * Round 4: `reasonCode` and `evidence.reasonCode` are tied via the
+ * generic parameter `R extends TierUpgradeReasonCode` + `Extract<>`.
+ * This prevents the previously-allowed incoherent state
+ * `{ reasonCode: 'multi_signal', evidence: { reasonCode: 'declared_turnover_above_threshold', ... } }`
+ * — the compiler now requires both discriminators to agree.
+ */
+interface TierUpgradeSuggestionBase<R extends TierUpgradeReasonCode = TierUpgradeReasonCode> {
   readonly tenantId: string;
   readonly suggestionId: SuggestionId;
   readonly memberId: string;
   readonly fromPlanId: string;
   readonly toPlanId: string;
-  readonly reasonCode: TierUpgradeReasonCode;
-  readonly evidence: TierUpgradeEvidence;
+  readonly reasonCode: R;
+  readonly evidence: Extract<TierUpgradeEvidence, { reasonCode: R }>;
   readonly suppressedUntil: string | null;
   readonly memberNotifiedAt: string | null;
   readonly adminVerificationTaskId: string | null;
@@ -205,16 +213,24 @@ interface AutoResolvedTierUpgradeFields {
   readonly closedAt: string;
 }
 
-export type TierUpgradeSuggestion = TierUpgradeSuggestionBase &
-  (
-    | OpenTierUpgradeFields
-    | AcceptedPendingApplyFields
-    | AppliedTierUpgradeFields
-    | DismissedTierUpgradeFields
-    | SupersededFromOpenFields
-    | SupersededFromAcceptedFields
-    | AutoResolvedTierUpgradeFields
-  );
+/**
+ * `TierUpgradeSuggestion` distributes across reason codes so each
+ * suggestion's `reasonCode` is tied to its `evidence.reasonCode` via
+ * the `R` parameter on the base. Each lifecycle arm composes with all
+ * 3 reason codes, yielding 3×7 = 21 valid concrete shapes.
+ */
+export type TierUpgradeSuggestion = {
+  [R in TierUpgradeReasonCode]: TierUpgradeSuggestionBase<R> &
+    (
+      | OpenTierUpgradeFields
+      | AcceptedPendingApplyFields
+      | AppliedTierUpgradeFields
+      | DismissedTierUpgradeFields
+      | SupersededFromOpenFields
+      | SupersededFromAcceptedFields
+      | AutoResolvedTierUpgradeFields
+    );
+}[TierUpgradeReasonCode];
 
 export type TierUpgradeInvariantError = {
   readonly kind: 'dismissed_reason_too_long';

@@ -10,6 +10,7 @@ import {
   assertSuggestionInvariants,
   isTerminalTierUpgradeStatus,
   type TierUpgradeSuggestion,
+  type TierUpgradeEvidence,
 } from '@/modules/renewals/domain/tier-upgrade-suggestion';
 
 const VALID_UUID = '00000000-0000-0000-0000-0000000000a1';
@@ -17,6 +18,11 @@ const VALID_UUID = '00000000-0000-0000-0000-0000000000a1';
 function buildSuggestion(
   overrides: Partial<TierUpgradeSuggestion> = {},
 ): TierUpgradeSuggestion {
+  // Round 4: removed `as TierUpgradeSuggestion` cast that previously
+  // laundered the pre-Round-3 open-index evidence shape into the new
+  // closed DU. The factory now constructs a fully-typed
+  // `declared_turnover_above_threshold` arm — overrides remain typed
+  // via Partial<TierUpgradeSuggestion>.
   return {
     tenantId: 't',
     suggestionId: asSuggestionId(VALID_UUID),
@@ -24,7 +30,11 @@ function buildSuggestion(
     fromPlanId: '00000000-0000-0000-0000-0000000000aa',
     toPlanId: '00000000-0000-0000-0000-0000000000ab',
     reasonCode: 'declared_turnover_above_threshold' as const,
-    evidence: { turnoverThb: 50_000_000 },
+    evidence: {
+      reasonCode: 'declared_turnover_above_threshold',
+      turnoverThb: 50_000_000,
+      thresholdMetAt: '2026-04-01T00:00:00Z',
+    },
     status: 'open' as const,
     suppressedUntil: null,
     dismissedReason: null,
@@ -187,5 +197,36 @@ describe('assertSuggestionInvariants', () => {
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('dismissed_reason_too_long');
+  });
+
+  // Round 4: closed-DU evidence guards. The Round 3 tightening
+  // replaced `[key: string]: unknown` with 3 reasonCode-discriminated
+  // arms; these compile-time tests prove the closed shape is enforced.
+
+  it('compile-error: evidence missing reasonCode discriminator', () => {
+    // @ts-expect-error — bare { turnoverThb } no longer satisfies TierUpgradeEvidence (no arm matches)
+    const _illegal: TierUpgradeEvidence = { turnoverThb: 50_000_000 };
+    expect(_illegal).toBeDefined();
+  });
+
+  it('compile-error: evidence with mismatched reasonCode + metric pair', () => {
+    const _illegal: TierUpgradeEvidence = {
+      reasonCode: 'paid_invoice_volume_above_threshold',
+      // @ts-expect-error — paid_invoice_volume_above_threshold arm has no `turnoverThb` field
+      turnoverThb: 50_000_000,
+      invoiceVolumeThb: 1_000_000,
+      thresholdMetAt: '2026-04-01T00:00:00Z',
+    };
+    expect(_illegal).toBeDefined();
+  });
+
+  it('compile-error: multi_signal evidence missing one of the required metrics', () => {
+    // @ts-expect-error — multi_signal requires BOTH turnoverThb AND invoiceVolumeThb (invoiceVolumeThb omitted here)
+    const _illegal: TierUpgradeEvidence = {
+      reasonCode: 'multi_signal',
+      turnoverThb: 50_000_000,
+      thresholdMetAt: '2026-04-01T00:00:00Z',
+    };
+    expect(_illegal).toBeDefined();
   });
 });

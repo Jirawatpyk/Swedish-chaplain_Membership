@@ -36,8 +36,13 @@ import {
   parseCycleId,
   type CycleId,
 } from '../../domain/renewal-cycle';
-import { asInvoiceId, type F4InvoicePaidEvent } from '@/modules/invoicing';
-import { asMemberId } from '@/modules/members';
+// Type-only imports keep Application layer free of cross-module runtime
+// coupling (Constitution Principle III). Brands are compile-time no-op
+// casts; the upstream `memberId` (bare string in domain) and `invoiceId`
+// (returned by F4 bridge as bare string) are inline-cast at the emit
+// site.
+import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
+import type { MemberId } from '@/modules/members';
 
 export const markPaidOfflineInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -226,8 +231,8 @@ export async function markPaidOffline(
             type: 'renewal_cycle_completed_offline',
             payload: {
               cycle_id: cycleId,
-              member_id: asMemberId(memberId),
-              invoice_id: asInvoiceId(evt.invoiceId),
+              member_id: memberId as MemberId,
+              invoice_id: evt.invoiceId as InvoiceId,
               payment_method: input.paymentMethod,
               payment_reference: input.paymentReference,
               payment_date: input.paymentDate,

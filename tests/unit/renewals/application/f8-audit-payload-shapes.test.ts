@@ -53,7 +53,7 @@ function captureLog<E extends Parameters<typeof renewalAuditEmitterStub.emit>[0]
 }
 
 describe('F8AuditPayloadShapes — Round 3 typed shapes round-trip', () => {
-  it('tier_upgrade_suggested — all 5 contract fields preserved', () => {
+  it('tier_upgrade_suggested — all 5 contract fields preserved + branded IDs round-trip', () => {
     const payload: F8AuditPayloadFor<'tier_upgrade_suggested'> = {
       suggestion_id: asSuggestionId('00000000-0000-0000-0000-000000000aa1'),
       member_id: asMemberId('mem-1'),
@@ -62,7 +62,19 @@ describe('F8AuditPayloadShapes — Round 3 typed shapes round-trip', () => {
       reason_code: 'declared_turnover_above_threshold',
     };
     const captured = captureLog({ type: 'tier_upgrade_suggested', payload });
-    expect(captured).toBeDefined();
+    // Round 4: assert the captured log object actually preserves every
+    // field (forensics-grade contract test, not just wiring).
+    expect(captured).toMatchObject({
+      f8AuditStub: true,
+      eventType: 'tier_upgrade_suggested',
+      payload: {
+        suggestion_id: '00000000-0000-0000-0000-000000000aa1',
+        member_id: 'mem-1',
+        from_plan_id: '00000000-0000-0000-0000-0000000000aa',
+        to_plan_id: '00000000-0000-0000-0000-0000000000ab',
+        reason_code: 'declared_turnover_above_threshold',
+      },
+    });
   });
 
   it('tier_upgrade_pending_superseded_by_manual_change — open + accepted both compile', () => {
@@ -82,7 +94,7 @@ describe('F8AuditPayloadShapes — Round 3 typed shapes round-trip', () => {
     expect(fromAccepted.superseded_from_status).toBe('accepted_pending_apply');
   });
 
-  it('at_risk_score_threshold_crossed — BandTransition DU rejects same-band noise', () => {
+  it('at_risk_score_threshold_crossed — BandTransition DU rejects ALL 4 same-band noise cases', () => {
     const payload: F8AuditPayloadFor<'at_risk_score_threshold_crossed'> = {
       member_id: asMemberId('mem-1'),
       previous_band: 'low',
@@ -93,15 +105,43 @@ describe('F8AuditPayloadShapes — Round 3 typed shapes round-trip', () => {
     expect(payload.new_band).toBe('critical');
 
     // Compile-time invariant: same-band "transition" is a TS error
-    // because no arm of BandTransition matches `low → low`.
+    // because no arm of BandTransition matches `<X> → <X>`. All 4
+    // same-band cases are asserted so a future arm-shape regression
+    // (e.g., accidentally adding `new_band: 'low'` to the `low` arm)
+    // surfaces here, not in production forensics noise.
+
     // @ts-expect-error — BandTransition arm `low` does not allow new_band: 'low'
-    const _illegal: F8AuditPayloadFor<'at_risk_score_threshold_crossed'> = {
+    const _illegalLow: F8AuditPayloadFor<'at_risk_score_threshold_crossed'> = {
       member_id: asMemberId('mem-1'),
       previous_band: 'low',
       new_band: 'low',
       score: 0,
     };
-    expect(_illegal).toBeDefined();
+    // @ts-expect-error — BandTransition arm `medium` does not allow new_band: 'medium'
+    const _illegalMedium: F8AuditPayloadFor<'at_risk_score_threshold_crossed'> = {
+      member_id: asMemberId('mem-1'),
+      previous_band: 'medium',
+      new_band: 'medium',
+      score: 50,
+    };
+    // @ts-expect-error — BandTransition arm `high` does not allow new_band: 'high'
+    const _illegalHigh: F8AuditPayloadFor<'at_risk_score_threshold_crossed'> = {
+      member_id: asMemberId('mem-1'),
+      previous_band: 'high',
+      new_band: 'high',
+      score: 75,
+    };
+    // @ts-expect-error — BandTransition arm `critical` does not allow new_band: 'critical'
+    const _illegalCritical: F8AuditPayloadFor<'at_risk_score_threshold_crossed'> = {
+      member_id: asMemberId('mem-1'),
+      previous_band: 'critical',
+      new_band: 'critical',
+      score: 95,
+    };
+    expect(_illegalLow).toBeDefined();
+    expect(_illegalMedium).toBeDefined();
+    expect(_illegalHigh).toBeDefined();
+    expect(_illegalCritical).toBeDefined();
   });
 
   it('renewal_reminder_send_failed_permanent — bounce_class union + Sha256Hex brand', () => {

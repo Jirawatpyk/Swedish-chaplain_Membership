@@ -30,7 +30,13 @@ import {
   CycleNotFoundError,
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
-import { asMemberId } from '@/modules/members';
+// Type-only import keeps Application layer free of cross-module runtime
+// coupling (Constitution Principle III). The brand is a compile-time
+// no-op cast — `lockedCycle.memberId` is a bare `string` per the
+// RenewalCycle domain shape, so the inline `as MemberId` is semantically
+// identical to invoking `asMemberId(...)` and avoids importing a
+// runtime value from `@/modules/members`.
+import type { MemberId } from '@/modules/members';
 import { isTerminalCycleStatus } from '../../domain/value-objects/cycle-status';
 
 export const cancelCycleInputSchema = z.object({
@@ -154,7 +160,7 @@ export async function cancelCycle(
           type: 'renewal_cycle_cancelled',
           payload: {
             cycle_id: cycleId,
-            member_id: asMemberId(lockedCycle.memberId),
+            member_id: lockedCycle.memberId as MemberId,
             reason: input.reason,
             previous_status: lockedCycle.status,
           },

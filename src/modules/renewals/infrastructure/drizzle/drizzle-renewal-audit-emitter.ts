@@ -65,6 +65,17 @@ function buildSummary<E extends F8AuditEventType>(
   return `F8 ${event.type} (tenant=${ctx.tenantId})`.slice(0, 500);
 }
 
+/**
+ * Defensive `Object.keys` for audit payloads. `Object.keys(null)` and
+ * `Object.keys(undefined)` throw TypeError; the audit-emit catch path
+ * MUST NOT throw inside its own diagnostic logging or it masks the
+ * original signal. Returns `[]` for null/undefined/non-object payloads.
+ */
+function payloadKeysOf(payload: unknown): readonly string[] {
+  if (payload == null || typeof payload !== 'object') return [];
+  return Object.keys(payload as Record<string, unknown>);
+}
+
 function pinoFallback<E extends F8AuditEventType>(
   event: F8AuditEvent<E>,
   ctx: AuditContext,
@@ -91,7 +102,7 @@ function pinoFallback<E extends F8AuditEventType>(
       tenantId: ctx.tenantId,
       actorRole: ctx.actorRole,
       correlationId: ctx.correlationId,
-      payloadKeys: Object.keys(event.payload as Record<string, unknown>),
+      payloadKeys: payloadKeysOf(event.payload),
     },
     'F8 audit emit fell back to pino — event type not in pgEnum yet',
   );
@@ -161,7 +172,7 @@ export function makeDrizzleRenewalAuditEmitter(
             actorRole: ctx.actorRole,
             correlationId: ctx.correlationId,
             requestId: ctx.requestId,
-            payloadKeys: Object.keys(event.payload as Record<string, unknown>),
+            payloadKeys: payloadKeysOf(event.payload),
           },
           'F8 audit emit DB insert failed (fire-and-forget swallowed)',
         );

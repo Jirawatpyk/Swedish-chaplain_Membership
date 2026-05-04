@@ -18,10 +18,20 @@
  */
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { SuggestionId } from '../../domain/tier-upgrade-suggestion';
+import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
 import type { MemberId, MemberPlanId as PlanId } from '@/modules/members';
 import type { UserId } from '@/modules/auth/domain/branded';
 import type { InvoiceId } from '@/modules/invoicing';
 import type { CreditNoteId } from '@/modules/invoicing';
+
+// Re-export the moved Sha256Hex brand so existing callers via the
+// audit-emitter port keep working until they migrate to the Domain
+// import path.
+export type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
+export {
+  asSha256Hex,
+  parseSha256Hex,
+} from '../../domain/value-objects/sha256-hex';
 
 // ---------------------------------------------------------------------------
 // Event-type tuple + union
@@ -135,32 +145,6 @@ export function isF8AuditEventType(
 // ---------------------------------------------------------------------------
 // Audit-payload value-object brands
 // ---------------------------------------------------------------------------
-
-/**
- * SHA-256 hex digest brand. Used for `recipient_email_hashed` so a
- * future emit-site cannot accidentally pass a plaintext email — type
- * system enforces the redaction policy from CLAUDE.md "Forbidden in
- * logs".
- */
-declare const Sha256HexBrand: unique symbol;
-export type Sha256Hex = string & { readonly [Sha256HexBrand]: true };
-
-const RE_SHA256_HEX = /^(sha256:)?[0-9a-f]{64}$/i;
-
-/** Unchecked cast — for trusted call sites that have already validated. */
-export function asSha256Hex(raw: string): Sha256Hex {
-  return raw as Sha256Hex;
-}
-
-/** Validates SHA-256 hex format (`[sha256:]<64-hex>`). */
-export function parseSha256Hex(
-  raw: string,
-): { ok: true; value: Sha256Hex } | { ok: false; error: 'invalid_sha256_hex' } {
-  if (typeof raw !== 'string' || !RE_SHA256_HEX.test(raw)) {
-    return { ok: false, error: 'invalid_sha256_hex' };
-  }
-  return { ok: true, value: raw as Sha256Hex };
-}
 
 /**
  * `at_risk_score_threshold_crossed` requires `previous_band !== new_band`

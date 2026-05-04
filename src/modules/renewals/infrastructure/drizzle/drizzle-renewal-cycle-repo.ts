@@ -62,12 +62,20 @@ import type { TierBucket } from '../../domain/value-objects/tier-bucket';
  * Asserts a value is non-null. Throws a uniform "F8 invariant violation"
  * error naming the cycleId + field so Sentry triage is trivial. Used to
  * collapse 5 near-identical null-checks across terminal-status arms in
- * `rowToDomain` (Round 3 polish; preserves IM5 semantics).
+ * `rowToDomain` (Round 3 polish).
+ *
+ * Round 4: comment correction — the helper preserves IM5's
+ * **throw-on-null behaviour + Sentry-triage invariant** (`cycle X
+ * status=Y but Z is null`), but the error TEXT changed from the
+ * pre-helper combined form ("...closedAt or linkedInvoiceId is null...")
+ * to per-field ("...closedAt is null..." then "...linkedInvoiceId is
+ * null..."). Tests in tests/unit/renewals/infrastructure/
+ * rowToDomain-invariants.test.ts assert the new message format.
  *
  * `asserts value is NonNullable<T>` makes the assertion narrow the type
  * for callers — TS knows the value is non-null after the call.
  */
-function assertPresent<T>(
+export function assertPresent<T>(
   value: T,
   cycleId: string,
   status: string,
@@ -80,7 +88,7 @@ function assertPresent<T>(
   }
 }
 
-function rowToDomain(row: RenewalCycleRow): RenewalCycle {
+export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
   const base = {
     tenantId: row.tenantId,
     cycleId: asCycleId(row.cycleId),
