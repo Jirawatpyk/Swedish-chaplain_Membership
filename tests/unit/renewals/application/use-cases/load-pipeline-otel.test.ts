@@ -14,27 +14,42 @@
  * attributes being present.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { SpanStatusCode } from '@opentelemetry/api';
 import type { Span, Tracer } from '@opentelemetry/api';
 import { loadPipeline } from '@/modules/renewals/application/use-cases/load-pipeline';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 
 // Capture span attribute writes for assertion.
 const setAttributeMock = vi.fn();
+const setStatusMock = vi.fn();
+const recordExceptionMock = vi.fn();
 const fakeSpan = {
   setAttribute: setAttributeMock,
-  setStatus: vi.fn(),
-  recordException: vi.fn(),
+  setStatus: setStatusMock,
+  recordException: recordExceptionMock,
   end: vi.fn(),
   isRecording: () => true,
   spanContext: () => ({ traceId: 't', spanId: 's', traceFlags: 0 }),
 } as unknown as Span;
 
+// Round 10 I3 — fakeTracer.startActiveSpan now applies the
+// `opts.attributes` map to the span via setAttribute calls before
+// invoking fn. Without this, the test only verified the 3 post-repo
+// setAttribute calls and the 4 upfront attrs ('tenant.id', tier_filter,
+// urgency_filter, page_limit) would be undetectable if dropped.
 const fakeTracer = {
   startActiveSpan: (
     _name: string,
-    _opts: unknown,
+    opts: { attributes?: Record<string, unknown> },
     fn: (s: Span) => unknown,
-  ): unknown => fn(fakeSpan),
+  ): unknown => {
+    if (opts?.attributes) {
+      for (const [key, value] of Object.entries(opts.attributes)) {
+        setAttributeMock(key, value);
+      }
+    }
+    return fn(fakeSpan);
+  },
   startSpan: vi.fn(),
 } as unknown as Tracer;
 
@@ -71,6 +86,8 @@ const baseInput = {
 describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
   beforeEach(() => {
     setAttributeMock.mockClear();
+    setStatusMock.mockClear();
+    recordExceptionMock.mockClear();
   });
 
   it('sets all 7 attributes on the span (4 upfront + 3 post-repo)', async () => {
@@ -84,8 +101,24 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
       tier: 'premium',
       urgency: 't-30',
     });
-    // 3 post-repo setAttribute calls (4 upfront were passed via opts).
-    expect(setAttributeMock).toHaveBeenCalledTimes(3);
+    // Round 10 I3 — fakeTracer now applies opts.attributes via
+    // setAttribute, so all 7 attributes are visible to the mock:
+    // 4 upfront (tenant.id, tier_filter, urgency_filter, page_limit)
+    // + 3 post-repo (total_in_window_bucket, lapsed_count_bucket,
+    // page_size).
+    expect(setAttributeMock).toHaveBeenCalledTimes(7);
+    // 4 upfront attrs.
+    expect(setAttributeMock).toHaveBeenCalledWith('tenant.id', 'tenantA');
+    expect(setAttributeMock).toHaveBeenCalledWith(
+      'renewals.tier_filter',
+      'premium',
+    );
+    expect(setAttributeMock).toHaveBeenCalledWith(
+      'renewals.urgency_filter',
+      't-30',
+    );
+    expect(setAttributeMock).toHaveBeenCalledWith('renewals.page_limit', 50);
+    // 3 post-repo attrs.
     expect(setAttributeMock).toHaveBeenCalledWith(
       'renewals.total_in_window_bucket',
       expect.any(String),
@@ -94,9 +127,48 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
       'renewals.lapsed_count_bucket',
       expect.any(String),
     );
+    expect(setAttributeMock).toHaveBeenCalledWith('renewals.page_size', 0);
+  });
+
+  // Round 10 I4 — error-path coverage. If the repo throws, the span
+  // MUST receive setStatus(ERROR) + recordException via withActiveSpan,
+  // and the throw MUST propagate to the use-case caller.
+  it('on repo throw: span receives setStatus(ERROR) + recordException + throw propagates', async () => {
+    const repoError = new Error('db: connection lost');
+    const deps = {
+      tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
+      cyclesRepo: {
+        loadPipelinePage: vi.fn(async () => {
+          throw repoError;
+        }),
+      } as unknown as RenewalsDeps['cyclesRepo'],
+    } as unknown as RenewalsDeps;
+    await expect(loadPipeline(deps, baseInput)).rejects.toThrow(
+      /connection lost/,
+    );
+    expect(setStatusMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: SpanStatusCode.ERROR,
+        message: expect.stringContaining('connection lost'),
+      }),
+    );
+    expect(recordExceptionMock).toHaveBeenCalledWith(repoError);
+  });
+
+  // Round 10 S1 — bucketCount NaN/negative guard. If summary aggregation
+  // returns a corrupt count (Drizzle GROUP BY edge case), the span
+  // attribute MUST surface as 'invalid' (distinct alarm signal) rather
+  // than silently misclassify as '1001+' (fake enterprise-tier).
+  it('NaN totalInWindow surfaces as `invalid` bucket (S1 defensive guard)', async () => {
+    const deps = fakeDeps({
+      rows: [],
+      nextCursor: null,
+      summary: { totalInWindow: Number.NaN, lapsedCount: 0, byUrgency: {} },
+    });
+    await loadPipeline(deps, baseInput);
     expect(setAttributeMock).toHaveBeenCalledWith(
-      'renewals.page_size',
-      0,
+      'renewals.total_in_window_bucket',
+      'invalid',
     );
   });
 

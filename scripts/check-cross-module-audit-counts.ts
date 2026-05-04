@@ -8,12 +8,21 @@
  * only caught at staff-review Round 3, weeks after the source change.
  *
  * This script enforces at PR-time that:
- *   - F2 source const length === F2 spec catalogue count === F2 test assertion
- *   - F8 source const length === F8 spec catalogue count === F8 test assertion
+ *   - F2 source const length === F2 test assertion
+ *   - F8 source const length === F8 test assertion
  *
- * Pattern mirrors `scripts/check-audit-event-count.ts` (F5 precedent).
- * Wire into CI via `pnpm check:audit-counts` (companion to existing
- * `pnpm check:audit-events` for F5).
+ * Round 10 I2 — corrected scope claim. Original docstring said the
+ * script also validated against the spec-catalogue count, but the
+ * code only reads source const + test assertion. Spec-catalogue
+ * drift (the original W-R7-2 root cause for spec-vs-source) is
+ * caught by `scripts/check-audit-event-count.ts` (F5 precedent
+ * pattern, prose-vs-source). Both scripts together cover spec-vs-
+ * source AND test-vs-source drift; this script is the test-pinning
+ * half of the pair.
+ *
+ * Pattern mirrors `scripts/check-audit-event-count.ts` (F5 spec-prose
+ * drift). Wire into CI via `pnpm check:audit-counts` (companion to
+ * existing `pnpm check:audit-events`).
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -47,7 +56,17 @@ const CHECKS: readonly ModuleCheck[] = [
   },
 ];
 
-function countConstEntries(content: string, name: string): number {
+/**
+ * Round 10 I5 — exported as pure function so unit tests can pin the
+ * regex semantics with fixture strings. Returns:
+ *   `-1` when the const literal cannot be located (file refactor /
+ *        rename → caller treats as fail-loud)
+ *   `0`  when the const exists but no entries match (e.g. quote-style
+ *        refactor `'foo'` → `"foo"` → caller treats as fail-loud per
+ *        S2; no real audit catalogue ships with 0 entries)
+ *   `N`  count of single-quoted entries in the const literal
+ */
+export function countConstEntries(content: string, name: string): number {
   // Find `export const NAME = [` and count single-quoted entries until `] as const`.
   const startMatch = content.match(
     new RegExp(`export const ${name}\\s*=\\s*\\[`),
@@ -58,11 +77,14 @@ function countConstEntries(content: string, name: string): number {
   if (!endMatch) return -1;
   const block = content.slice(startIdx, startIdx + endMatch.index!);
   // Count single-quoted entries (excluding comments).
-  return (
-    block.match(/^\s*'[^']+'/gm)?.length ?? 0
-  );
+  return block.match(/^\s*'[^']+'/gm)?.length ?? 0;
 }
 
+// Round 10 I5 — wrap the script body so test files can `import
+// { countConstEntries }` without triggering the disk-reading body.
+// Vitest sets `import.meta.env.MODE = 'test'`; the `tsx` CLI invocation
+// does not, so this conditional executes only under direct CLI use.
+function main(): void {
 let exitCode = 0;
 for (const check of CHECKS) {
   const source = readFileSync(resolve(ROOT, check.sourceFile), 'utf-8');
@@ -70,6 +92,20 @@ for (const check of CHECKS) {
   if (sourceCount === -1) {
     console.error(
       `[check:audit-counts] ${check.module}: cannot find ${check.sourceConstName} in ${check.sourceFile}`,
+    );
+    exitCode = 1;
+    continue;
+  }
+  // Round 10 S2 — guard the silent "0 entries" failure mode where the
+  // const literal exists but a quote-style refactor (single→double or
+  // backtick) makes the regex find zero entries. Production audit
+  // catalogues always have ≥1 entry; treat 0 as a regex/refactor
+  // mismatch and fail loud.
+  if (sourceCount === 0) {
+    console.error(
+      `[check:audit-counts] ${check.module}: regex matched ${check.sourceConstName} ` +
+        `but found 0 single-quoted entries — possible quote-style refactor ` +
+        `(single→double quotes). Inspect ${check.sourceFile}.`,
     );
     exitCode = 1;
     continue;
@@ -108,3 +144,15 @@ if (exitCode !== 0) {
   process.exit(exitCode);
 }
 console.log('[check:audit-counts] OK — all cross-module audit catalogues in sync.');
+}
+
+// Run when invoked as a CLI entry point (not when imported by tests).
+// `process.argv[1]` ends with this filename for direct `tsx` calls; under
+// vitest, the worker entry differs.
+if (
+  typeof process !== 'undefined' &&
+  process.argv[1] &&
+  process.argv[1].includes('check-cross-module-audit-counts')
+) {
+  main();
+}

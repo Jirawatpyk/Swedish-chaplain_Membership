@@ -204,7 +204,7 @@ describe('cancelCycle (T058) — happy path', () => {
   // codepoint in the consolidated range.
   it('strips CRLF + ANSI + C0/C1 + full Unicode separator class from reason (W-R5-3 + W-R7-1 + W-R8-1)', async () => {
     const { deps, emitInTxMock } = fakeDeps(buildCycle());
-    // Inject every codepoint covered by the consolidated regex:
+    // Inject a REPRESENTATIVE codepoint from every range covered by
     //   C0/C1 controls (CR/LF/ESC/BEL/8-bit-CSI)
     //   U+00A0 NBSP, U+1680 OGHAM SPACE
     //   U+2000-U+200F (en/em/thin/hair/zero-width spaces + format)
@@ -216,7 +216,7 @@ describe('cancelCycle (T058) — happy path', () => {
       reason:
         'inj\r\n\x1b[31m\x9b\x07ction' +
         ' \u00a0nbsp\u1680ogham' +
-        ' \u2003emsp\u2009thin\u200bzwsp\u200ezwj\u200frtm' +
+        ' \u2003emsp\u2009thin\u200bzwsp\u200dzwj\u200elrm\u200frtm' +
         ' \u2028lsep\u2029psep\u202fnnbsp' +
         ' \u205fmsp\u3000ideo\ufeffbom',
     });
@@ -237,6 +237,8 @@ describe('cancelCycle (T058) — happy path', () => {
     expect(emittedReason).toContain('ogham');
     expect(emittedReason).toContain('emsp');
     expect(emittedReason).toContain('zwsp');
+    expect(emittedReason).toContain('zwj');
+    expect(emittedReason).toContain('lrm');
     expect(emittedReason).toContain('lsep');
     expect(emittedReason).toContain('psep');
     expect(emittedReason).toContain('nnbsp');

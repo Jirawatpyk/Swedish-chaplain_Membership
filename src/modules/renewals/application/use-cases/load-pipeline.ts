@@ -121,12 +121,29 @@ export async function loadPipeline(
 
 /**
  * Round 9 W-R8-4 — Coarse range bucketing for OTel span attributes.
- * Buckets preserve SLO + capacity-planning signal without carrying
- * exact per-tenant counts on the wire. Bucket boundaries align with
- * SaaS-tier-typical sizes (single-tenant <10, small <50, mid <200,
- * large <1000, enterprise 1000+).
+ *
+ * Boundaries are chosen for k-anonymity against the LINDDUN
+ * Detectability/Linkability concern documented at the call site:
+ * combined with `tenant.id` already on the parent span, exact counts
+ * would let an APM operator infer per-tenant scale. Each bucket
+ * contains enough plausible peer tenants that an integer membership
+ * count cannot identify a single tenant by size alone.
+ *
+ * Round 10 S1 + S3 — adds NaN/negative guard returning explicit
+ * `'invalid'` sentinel (vs prior silent-misclassification as
+ * `'1001+'`) + tightens return type to a literal union so callers
+ * have an exhaustive enum for compile-time `assertNever` fallthrough.
  */
-function bucketCount(n: number): string {
+type CountBucket =
+  | 'invalid'
+  | '0_10'
+  | '11_50'
+  | '51_200'
+  | '201_1000'
+  | '1001+';
+
+function bucketCount(n: number): CountBucket {
+  if (!Number.isFinite(n) || n < 0) return 'invalid';
   if (n <= 10) return '0_10';
   if (n <= 50) return '11_50';
   if (n <= 200) return '51_200';
