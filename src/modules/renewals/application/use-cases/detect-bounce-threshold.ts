@@ -39,6 +39,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { randomUUID } from 'node:crypto';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { asTaskId } from '../../domain/renewal-escalation-task';
 import { MANUAL_OUTREACH_TASK_TYPE } from './reset-email-unverified';
@@ -139,6 +140,29 @@ export async function detectBounceThreshold(
   }
   const input = parsed.data;
   const nowIso = input.nowIso ?? new Date().toISOString();
+
+  return withActiveSpan(
+    renewalsTracer(),
+    'bounce_threshold_check',
+    {
+      'tenant.id': input.tenantId,
+      'actor.role': input.actorRole,
+    },
+    async (span) => {
+      const result = await detectInner();
+      if (result.ok) {
+        span.setAttribute('renewals.outcome_kind', result.value.kind);
+        if (result.value.kind === 'threshold_crossed') {
+          span.setAttribute('renewals.bounce_trigger', result.value.trigger);
+        }
+      }
+      return result;
+    },
+  );
+
+  async function detectInner(): Promise<
+    Result<DetectBounceThresholdOutcome, DetectBounceThresholdError>
+  > {
 
   // Resolve current active cycle (may be null for pre-renewal members).
   const activeCycle = await deps.cyclesRepo.findActiveForMember(
@@ -269,4 +293,5 @@ export async function detectBounceThreshold(
       escalationTaskId: taskInsert.row.taskId,
     });
   });
+  }
 }

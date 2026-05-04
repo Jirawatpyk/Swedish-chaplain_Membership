@@ -27,6 +27,7 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { TenantRenewalSchedulePolicy } from '../../domain/tenant-renewal-schedule-policy';
 
@@ -53,15 +54,23 @@ export async function loadSchedulePolicies(
 ): Promise<
   Result<LoadSchedulePoliciesOutput, LoadSchedulePoliciesError>
 > {
-  const parsed = loadSchedulePoliciesInputSchema.safeParse(rawInput);
-  if (!parsed.success) {
-    return err({
-      kind: 'invalid_input',
-      message: parsed.error.issues[0]?.message ?? 'invalid input',
-    });
-  }
-  const policies = await deps.schedulePolicyRepo.listAllForTenant(
-    parsed.data.tenantId,
+  return withActiveSpan(
+    renewalsTracer(),
+    'load_schedule_policies',
+    { 'tenant.id': rawInput.tenantId },
+    async (span) => {
+      const parsed = loadSchedulePoliciesInputSchema.safeParse(rawInput);
+      if (!parsed.success) {
+        return err({
+          kind: 'invalid_input',
+          message: parsed.error.issues[0]?.message ?? 'invalid input',
+        });
+      }
+      const policies = await deps.schedulePolicyRepo.listAllForTenant(
+        parsed.data.tenantId,
+      );
+      span.setAttribute('renewals.policy_count', policies.length);
+      return ok({ policies });
+    },
   );
-  return ok({ policies });
 }

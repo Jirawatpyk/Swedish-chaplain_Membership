@@ -27,6 +27,7 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 
 /**
@@ -81,6 +82,25 @@ export async function pauseRemindersAfterOutreach(
     PauseRemindersAfterOutreachError
   >
 > {
+  return withActiveSpan(
+    renewalsTracer(),
+    'pause_reminders_check',
+    { 'tenant.id': rawInput.tenantId },
+    async (span) => {
+      const result = await pauseInner();
+      if (result.ok) {
+        span.setAttribute('renewals.paused', result.value.paused);
+      }
+      return result;
+    },
+  );
+
+  async function pauseInner(): Promise<
+    Result<
+      PauseRemindersAfterOutreachOutput,
+      PauseRemindersAfterOutreachError
+    >
+  > {
   const parsed = pauseRemindersAfterOutreachInputSchema.safeParse(rawInput);
   if (!parsed.success) {
     return err({
@@ -108,4 +128,5 @@ export async function pauseRemindersAfterOutreach(
     windowDays,
     expiresAt: new Date(expiresMs).toISOString(),
   });
+  }
 }

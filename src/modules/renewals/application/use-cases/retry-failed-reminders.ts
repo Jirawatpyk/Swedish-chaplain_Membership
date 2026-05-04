@@ -36,6 +36,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { randomUUID } from 'node:crypto';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { asCycleId } from '../../domain/renewal-cycle';
 import { asTaskId } from '../../domain/renewal-escalation-task';
@@ -436,6 +437,42 @@ export async function retryFailedReminders(
   const nowIso = input.nowIso ?? new Date().toISOString();
   const pageSize = input.pageSize ?? DEFAULT_RETRY_PAGE_SIZE;
 
+  return withActiveSpan(
+    renewalsTracer(),
+    'cron_renewal_retry_pass',
+    {
+      'tenant.id': input.tenantId,
+      'renewals.page_size': pageSize,
+      'renewals.now_iso': nowIso,
+    },
+    async (span) => {
+      const outcome = await runRetryPasses();
+      span.setAttribute(
+        'renewals.retry_succeeded',
+        outcome.summary.retrySucceeded,
+      );
+      span.setAttribute(
+        'renewals.retry_still_transient',
+        outcome.summary.retryStillTransient,
+      );
+      span.setAttribute(
+        'renewals.retry_became_permanent',
+        outcome.summary.retryBecamePermanent,
+      );
+      span.setAttribute(
+        'renewals.exhausted_marked',
+        outcome.summary.exhaustedMarked,
+      );
+      span.setAttribute('renewals.pass_errors', outcome.summary.passErrors);
+      span.setAttribute('renewals.duration_ms', outcome.summary.durationMs);
+      return ok({ summary: outcome.summary });
+    },
+  );
+
+  async function runRetryPasses(): Promise<{
+    summary: RetryFailedRemindersSummary;
+  }> {
+
   const summary = {
     retryEligibleProcessed: 0,
     retrySucceeded: 0,
@@ -538,5 +575,6 @@ export async function retryFailedReminders(
     },
     'retryFailedReminders: pass complete',
   );
-  return ok({ summary });
+  return { summary };
+  }
 }

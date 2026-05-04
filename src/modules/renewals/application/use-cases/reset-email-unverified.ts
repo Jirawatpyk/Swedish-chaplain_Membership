@@ -36,6 +36,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { EscalationTaskNotFoundError } from '../ports/renewal-escalation-task-repo';
 // Type-only import for branded MemberId — keeps Application layer free
@@ -98,6 +99,29 @@ export async function resetEmailUnverified(
     });
   }
   const input = parsed.data;
+  return withActiveSpan(
+    renewalsTracer(),
+    'email_verification_reset',
+    {
+      'tenant.id': input.tenantId,
+      'actor.role': input.actorRole,
+    },
+    async (span) => {
+      const result = await resetInner();
+      if (result.ok) {
+        span.setAttribute('renewals.cleared', result.value.cleared);
+        span.setAttribute(
+          'renewals.closed_task_count',
+          result.value.closedTaskCount,
+        );
+      }
+      return result;
+    },
+  );
+
+  async function resetInner(): Promise<
+    Result<ResetEmailUnverifiedOutput, ResetEmailUnverifiedError>
+  > {
   // Pre-fetch open tasks OUTSIDE the tx — index-served read; the list
   // is used only to decide which tasks to attempt closing inside the
   // tx. The transitionStatus UPDATE inside the tx re-checks
@@ -192,4 +216,5 @@ export async function resetEmailUnverified(
       closedTaskCount: closedTaskIds.length,
     });
   });
+  }
 }

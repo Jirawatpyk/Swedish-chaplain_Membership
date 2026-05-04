@@ -31,6 +31,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
   TIER_BUCKETS,
@@ -118,6 +119,37 @@ export async function updateSchedulePolicy(
   deps: RenewalsDeps,
   rawInput: UpdateSchedulePolicyInput,
 ): Promise<Result<UpdateSchedulePolicyOutput, UpdateSchedulePolicyError>> {
+  return withActiveSpan(
+    renewalsTracer(),
+    'admin_schedule_policy_update',
+    {
+      'tenant.id': rawInput.tenantId,
+      'tier.bucket': rawInput.tierBucket,
+      'actor.role': rawInput.actorRole,
+    },
+    async (span) => {
+      const result = await updateInner();
+      if (result.ok) {
+        span.setAttribute(
+          'renewals.added_count',
+          result.value.changeDiff.added.length,
+        );
+        span.setAttribute(
+          'renewals.removed_count',
+          result.value.changeDiff.removed.length,
+        );
+        span.setAttribute(
+          'renewals.unchanged_count',
+          result.value.changeDiff.unchanged.length,
+        );
+      }
+      return result;
+    },
+  );
+
+  async function updateInner(): Promise<
+    Result<UpdateSchedulePolicyOutput, UpdateSchedulePolicyError>
+  > {
   const parsed = updateSchedulePolicyInputSchema.safeParse(rawInput);
   if (!parsed.success) {
     return err({
@@ -203,5 +235,6 @@ export async function updateSchedulePolicy(
       'updateSchedulePolicy: unexpected error',
     );
     throw e;
+  }
   }
 }

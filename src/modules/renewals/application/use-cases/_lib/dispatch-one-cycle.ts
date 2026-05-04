@@ -38,6 +38,7 @@ import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
 import { findStepForDate } from '../../../domain/tenant-renewal-schedule-policy';
 import { asCycleId } from '../../../domain/renewal-cycle';
@@ -215,6 +216,31 @@ async function emitSkipAudit(
 // ---------------------------------------------------------------------------
 
 export async function dispatchOneCycle(
+  deps: RenewalsDeps,
+  candidate: DispatchCandidate,
+  ctx: DispatchContext,
+): Promise<DispatchOneCycleOutcome> {
+  return withActiveSpan(
+    renewalsTracer(),
+    'dispatch_one_cycle',
+    {
+      'tenant.id': ctx.tenantId,
+      'cycle.id': candidate.cycle.cycleId,
+      'tier.bucket': candidate.cycle.tierAtCycleStart,
+      'actor.role': ctx.actorRole,
+    },
+    async (span) => {
+      const outcome = await dispatchOneCycleInner(deps, candidate, ctx);
+      span.setAttribute('renewals.outcome_kind', outcome.kind);
+      if (outcome.kind === 'skipped') {
+        span.setAttribute('renewals.skip_reason', outcome.reason);
+      }
+      return outcome;
+    },
+  );
+}
+
+async function dispatchOneCycleInner(
   deps: RenewalsDeps,
   candidate: DispatchCandidate,
   ctx: DispatchContext,

@@ -28,6 +28,7 @@
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
   dispatchOneCycle,
@@ -35,6 +36,27 @@ import {
   type SkipReason,
   SKIP_REASONS,
 } from './_lib/dispatch-one-cycle';
+
+/**
+ * F8 Phase 4 Wave I2e/F1 — bucket count for k-anonymity in span
+ * attributes. Mirrors load-pipeline.ts bucketing so APM operators
+ * can't infer per-tenant scale from exact counters.
+ */
+type CountBucket =
+  | 'invalid'
+  | '0_10'
+  | '11_50'
+  | '51_200'
+  | '201_1000'
+  | '1001+';
+function bucketCount(n: number): CountBucket {
+  if (!Number.isFinite(n) || n < 0) return 'invalid';
+  if (n <= 10) return '0_10';
+  if (n <= 50) return '11_50';
+  if (n <= 200) return '51_200';
+  if (n <= 1000) return '201_1000';
+  return '1001+';
+}
 
 /**
  * Maximum negative offset across all 5 tier-bucket schedule policies.
@@ -130,6 +152,49 @@ export async function dispatchRenewalCycle(
     requestId: input.requestId ?? null,
   };
 
+  // F8 Phase 4 Wave I9 prep / F1 fix — wrap the cron pass in a root
+  // span (FR-055). Children: composite query + per-cycle dispatch
+  // spans (auto-instrumented from inside dispatchOneCycle).
+  return withActiveSpan(
+    renewalsTracer(),
+    'cron_renewal_dispatch',
+    {
+      'tenant.id': input.tenantId,
+      'renewals.page_size': pageSize,
+      'renewals.max_offset_days': maxOffsetDays,
+      'renewals.now_iso': nowIso,
+    },
+    async (span) => {
+      const out = await runDispatchLoop();
+      // Bucketed outcome counters per W-R8-4 k-anonymity convention.
+      span.setAttribute(
+        'renewals.candidates_processed_bucket',
+        bucketCount(out.summary.candidatesProcessed),
+      );
+      span.setAttribute(
+        'renewals.emails_sent_bucket',
+        bucketCount(out.summary.emailsSent),
+      );
+      span.setAttribute(
+        'renewals.tasks_created_bucket',
+        bucketCount(out.summary.tasksCreated),
+      );
+      span.setAttribute(
+        'renewals.failed_transient_bucket',
+        bucketCount(out.summary.failedTransient),
+      );
+      span.setAttribute(
+        'renewals.failed_permanent_bucket',
+        bucketCount(out.summary.failedPermanent),
+      );
+      span.setAttribute('renewals.duration_ms', out.summary.durationMs);
+      return ok({ summary: out.summary });
+    },
+  );
+
+  async function runDispatchLoop(): Promise<{
+    summary: DispatchRenewalCycleSummary;
+  }> {
   let cursor: string | undefined = undefined;
   let pages = 0;
   while (true) {
@@ -217,5 +282,6 @@ export async function dispatchRenewalCycle(
     },
     'dispatchRenewalCycle: cron pass complete',
   );
-  return ok({ summary });
+  return { summary };
+  }
 }

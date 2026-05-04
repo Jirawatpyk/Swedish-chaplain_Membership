@@ -21,6 +21,7 @@
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { parseCycleId } from '../../domain/renewal-cycle';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
@@ -50,6 +51,26 @@ export async function sendReminderNow(
   deps: RenewalsDeps,
   rawInput: SendReminderNowInput,
 ): Promise<Result<SendReminderNowOutput, SendReminderNowError>> {
+  return withActiveSpan(
+    renewalsTracer(),
+    'admin_send_reminder_now',
+    {
+      'tenant.id': rawInput.tenantId,
+      'cycle.id': rawInput.cycleId,
+      'actor.role': rawInput.actorRole,
+    },
+    async (span) => {
+      const result = await sendInner();
+      if (result.ok) {
+        span.setAttribute('renewals.outcome_kind', result.value.kind);
+      }
+      return result;
+    },
+  );
+
+  async function sendInner(): Promise<
+    Result<SendReminderNowOutput, SendReminderNowError>
+  > {
   const parsed = sendReminderNowInputSchema.safeParse(rawInput);
   if (!parsed.success) {
     return err({
@@ -94,5 +115,6 @@ export async function sendReminderNow(
       'sendReminderNow: dispatch unexpected error',
     );
     throw e;
+  }
   }
 }
