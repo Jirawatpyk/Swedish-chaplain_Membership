@@ -96,8 +96,8 @@
 
 ### Cross-tenant Integration Test (Review-Gate Blocker per Constitution Principle I)
 
-- [ ] T052 Author `tests/integration/renewals/tenant-isolation.test.ts` — 2-tenant seed + cross-tenant probe (SELECT/INSERT/UPDATE/DELETE bidirectional) + `renewal_cross_tenant_probe` audit assertion across **all 9 F8-owned tables** (8 F8 tables + 1 F2 cross-module `scheduled_plan_changes` delivered via F8 migration 0086 per F7 precedent — resolves /speckit.analyze finding D1)
-- [ ] T053 Run T052 against live Neon `ap-southeast-1`; assert ZERO cross-tenant visibility — Review-Gate blocker
+- [X] T052 Author `tests/integration/renewals/tenant-isolation.test.ts` — 2-tenant seed + cross-tenant probe (SELECT/INSERT/UPDATE/DELETE bidirectional) + `renewal_cross_tenant_probe` audit assertion across **all 9 F8-owned tables** (8 F8 tables + 1 F2 cross-module `scheduled_plan_changes` delivered via F8 migration 0086 per F7 precedent — resolves /speckit.analyze finding D1)
+- [X] T053 Run T052 against live Neon `ap-southeast-1`; assert ZERO cross-tenant visibility — Review-Gate blocker
 
 ### Composition Root Scaffold
 
