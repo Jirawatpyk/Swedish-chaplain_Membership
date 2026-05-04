@@ -115,7 +115,16 @@ export function PipelineTable({ rows }: PipelineTableProps) {
         header: t('columns.status'),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
-            {row.original.status}
+            {t(
+              `status.${row.original.status}` as
+                | 'status.upcoming'
+                | 'status.reminded'
+                | 'status.awaiting_payment'
+                | 'status.completed'
+                | 'status.lapsed'
+                | 'status.cancelled'
+                | 'status.pending_admin_reactivation',
+            )}
           </span>
         ),
       },
@@ -154,8 +163,12 @@ export function PipelineTable({ rows }: PipelineTableProps) {
               )}
             />
             <DropdownMenuContent align="end">
+              {/* Send reminder + Mark contacted ship in Phase 4 (US2)
+                  + Phase 6 (US4). Keep the menu items disabled but
+                  drop the "Coming in USx" parenthetical — production
+                  UI doesn't expose phase identifiers. */}
               <DropdownMenuItem disabled>
-                {tActions('sendReminder')} ({tActions('comingInUS2')})
+                {tActions('sendReminder')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 render={(props) => (
@@ -168,7 +181,7 @@ export function PipelineTable({ rows }: PipelineTableProps) {
                 )}
               />
               <DropdownMenuItem disabled>
-                {tActions('markContacted')} ({tActions('comingInUS4')})
+                {tActions('markContacted')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

@@ -20,6 +20,7 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
   parseCycleId,
@@ -78,23 +79,35 @@ export async function loadCycleDetail(
   if (!cycle) {
     // Probe audit — emits on either cross-tenant attempt OR truly
     // missing cycle. The latter is harmless noise; the former is the
-    // attack signal we want to surface.
-    await deps.auditEmitter.emit(
-      {
-        type: 'renewal_cross_tenant_probe',
-        payload: {
-          attempted_cycle_id: cycleId,
-          route: 'load-cycle-detail',
+    // attack signal we want to surface. Defence-in-depth try/catch:
+    // probe audit MUST NOT block the 404 response (per EH4).
+    try {
+      await deps.auditEmitter.emit(
+        {
+          type: 'renewal_cross_tenant_probe',
+          payload: {
+            attempted_cycle_id: cycleId,
+            route: 'load-cycle-detail',
+          },
         },
-      },
-      {
-        tenantId: input.tenantId,
-        actorUserId: input.actorUserId,
-        actorRole: input.actorRole,
-        correlationId: input.correlationId,
-        requestId: input.requestId ?? null,
-      },
-    );
+        {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          actorRole: input.actorRole,
+          correlationId: input.correlationId,
+          requestId: input.requestId ?? null,
+        },
+      );
+    } catch (e) {
+      logger.warn(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          cycleId,
+          correlationId: input.correlationId,
+        },
+        'loadCycleDetail: probe audit emit failed (swallowed — never blocks 404)',
+      );
+    }
     return err({ kind: 'cycle_not_found' });
   }
 
@@ -120,8 +133,24 @@ export async function loadCycleDetail(
         totalSatang: inv.total?.satang ?? 0n,
       };
     } else {
-      // F4 reported not-found / forbidden — surface stub so UI can
-      // still link out without breaking the page.
+      // F4 reported error — log loudly so operators see RLS / outage /
+      // stale-link incidents. A cross-tenant-leaked linked-invoice-id
+      // would land here; the audit emitter inside getInvoice already
+      // emits `invoice_cross_tenant_probe` when actor context is set,
+      // but we add an F8-context warning so triage starts from this
+      // surface. Stub still returned so the UI doesn't crash; the
+      // route maps to a degraded card with the orphan invoice id.
+      logger.warn(
+        {
+          tenantId: input.tenantId,
+          cycleId,
+          linkedInvoiceId: cycle.linkedInvoiceId,
+          f4Error: invoiceResult.error.code,
+          actorUserId: input.actorUserId,
+          requestId: input.requestId ?? null,
+        },
+        'load-cycle-detail: linked invoice fetch failed — degraded card returned',
+      );
       linkedInvoice = {
         invoiceId: cycle.linkedInvoiceId,
         invoiceNumber: null,

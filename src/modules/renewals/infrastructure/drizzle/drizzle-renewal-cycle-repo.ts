@@ -116,29 +116,31 @@ function decodeCursor(cursor: string | null | undefined): CursorPayload | null {
 /**
  * Build the SQL CASE expression that maps `(status, expires_at)` to one
  * of 8 urgency buckets. `lapsed` short-circuits on status; everything
- * else is derived from days-until-expiry.
+ * else is derived from days-until-expiry by direct interval comparison
+ * (sargable — uses `expires_at` index instead of EPOCH math per branch).
  *
- * Bucket boundaries (data-model.md § 2.1 + spec.md FR-046):
- *   t-90:  91 ≤ days ≤  90  → "approaching renewal"
- *   t-60:  60 ≤ days ≤  61  → ...
- *   t-30:  30 ≤ days ≤  31
- *   t-14:  14 ≤ days ≤  15
- *   t-7:   7  ≤ days ≤   8
- *   t-0:   0  ≤ days ≤   1
- *   grace: -30 ≤ days ≤  -1
- *   lapsed: status='lapsed' OR days < -30
+ * Bucket boundaries (FR-046, half-open windows so each cycle lands in
+ * exactly one bucket):
+ *   t-90:  expires_at  > NOW() + 60 days     (60..90+ days out)
+ *   t-60:  expires_at  > NOW() + 30 days     (30..60 days)
+ *   t-30:  expires_at  > NOW() + 14 days     (14..30 days)
+ *   t-14:  expires_at  > NOW() +  7 days     (7..14 days)
+ *   t-7:   expires_at  > NOW() +  1 day      (1..7 days)
+ *   t-0:   expires_at  > NOW()               (0..1 day, due today/tomorrow)
+ *   grace: expires_at >= NOW() - 30 days     (post-expiry, in grace window)
+ *   lapsed: status='lapsed' OR > 30 days past expiry
  */
 const URGENCY_CASE_SQL = sql<UrgencyBucket>`
   CASE
     WHEN ${renewalCycles.status} = 'lapsed' THEN 'lapsed'
-    WHEN EXTRACT(EPOCH FROM (${renewalCycles.expiresAt} - NOW())) / 86400 > 60 THEN 't-90'
-    WHEN EXTRACT(EPOCH FROM (${renewalCycles.expiresAt} - NOW())) / 86400 > 30 THEN 't-60'
-    WHEN EXTRACT(EPOCH FROM (${renewalCycles.expiresAt} - NOW())) / 86400 > 14 THEN 't-30'
-    WHEN EXTRACT(EPOCH FROM (${renewalCycles.expiresAt} - NOW())) / 86400 > 7  THEN 't-14'
-    WHEN EXTRACT(EPOCH FROM (${renewalCycles.expiresAt} - NOW())) / 86400 > 0  THEN 't-7'
-    WHEN EXTRACT(EPOCH FROM (${renewalCycles.expiresAt} - NOW())) / 86400 >= -30 AND ${renewalCycles.expiresAt} <= NOW() THEN 'grace'
-    WHEN EXTRACT(EPOCH FROM (${renewalCycles.expiresAt} - NOW())) / 86400 < -30 THEN 'lapsed'
-    ELSE 't-0'
+    WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '60 days' THEN 't-90'
+    WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '30 days' THEN 't-60'
+    WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '14 days' THEN 't-30'
+    WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '7 days'  THEN 't-14'
+    WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '1 day'   THEN 't-7'
+    WHEN ${renewalCycles.expiresAt} > NOW()                       THEN 't-0'
+    WHEN ${renewalCycles.expiresAt} >= NOW() - INTERVAL '30 days' THEN 'grace'
+    ELSE 'lapsed'
   END
 `;
 
@@ -292,11 +294,24 @@ export function makeDrizzleRenewalCycleRepo(
       const setClause: Record<string, unknown> = {
         status: args.to,
       };
+      const TERMINAL_STATUSES = new Set([
+        'completed',
+        'lapsed',
+        'cancelled',
+      ]);
+      const fromTerminal = TERMINAL_STATUSES.has(args.from);
+      const toTerminal = TERMINAL_STATUSES.has(args.to);
       if (args.closedAt !== undefined) {
         setClause.closedAt = new Date(args.closedAt);
+      } else if (fromTerminal && !toTerminal) {
+        // Auto-clear when leaving terminal — DB CHECK constraint
+        // `closed_at IS NULL ↔ status terminal` would otherwise fail.
+        setClause.closedAt = null;
       }
       if (args.closedReason !== undefined) {
         setClause.closedReason = args.closedReason;
+      } else if (fromTerminal && !toTerminal) {
+        setClause.closedReason = null;
       }
       if (args.enteredPendingAt !== undefined) {
         setClause.enteredPendingAt = new Date(args.enteredPendingAt);

@@ -107,6 +107,19 @@ export async function POST(
               reason: result.error.reason,
             },
           });
+        case 'f4_orphan_invoice':
+          // 409 (conflict) — admin must resume from F4 invoice list.
+          // The error envelope carries the orphan invoice id so the UI
+          // can deep-link "View invoice" + show DO-NOT-RETRY guidance.
+          return errorResponse({
+            status: 409,
+            code: 'f4_orphan_invoice',
+            correlationId: ctx.correlationId,
+            details: {
+              orphan_invoice_id: result.error.orphanInvoiceId,
+              reason: result.error.reason,
+            },
+          });
       }
     }
     return successResponse(

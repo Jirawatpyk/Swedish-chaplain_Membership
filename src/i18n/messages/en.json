@@ -1633,6 +1633,15 @@
           "invoice": "Invoice",
           "actions": "Actions"
         },
+        "status": {
+          "upcoming": "Upcoming",
+          "reminded": "Reminded",
+          "awaiting_payment": "Awaiting payment",
+          "completed": "Completed",
+          "lapsed": "Lapsed",
+          "cancelled": "Cancelled",
+          "pending_admin_reactivation": "Pending reactivation"
+        },
         "viewInvoice": "View invoice",
         "noRows": "No members in this bucket."
       },
@@ -1661,7 +1670,9 @@
       },
       "error": {
         "featureDisabled": "The renewals workflow is not yet enabled for this chamber.",
-        "loadFailed": "Could not load the renewal pipeline. Please try again."
+        "loadFailed": "Could not load the renewal pipeline.",
+        "retry": "Try again",
+        "goBack": "Go back"
       }
     },
     "refund": {

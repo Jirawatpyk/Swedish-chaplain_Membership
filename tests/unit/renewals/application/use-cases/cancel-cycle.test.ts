@@ -72,6 +72,7 @@ function fakeDeps(
     cyclesRepo: {
       findById: vi.fn(async () => cycle),
       transitionStatus: transitionMock,
+      acquireCycleLockInTx: vi.fn(async () => {}),
     } as unknown as RenewalsDeps['cyclesRepo'],
     auditEmitter: {
       emit: emitMock,

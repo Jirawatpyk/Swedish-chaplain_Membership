@@ -121,20 +121,23 @@ export function makeDrizzleRenewalAuditEmitter(
       event: F8AuditEvent<E>,
       ctx: AuditContext,
     ): Promise<void> {
-      if (!isF8AuditEventType(event.type)) {
-        pinoFallback(event, ctx, 'unknown_event_type');
-        return;
-      }
-      if (!F8_ENUM_SHIPPED.has(event.type)) {
-        pinoFallback(event, ctx, 'not_in_pgenum');
-        return;
-      }
+      // Wrap the WHOLE body — including the production-mode guard
+      // inside pinoFallback — in try/catch so emit() truly never
+      // throws to the caller (port contract: fire-and-forget).
+      // emitInTx remains throw-on-fail (Principle VIII tx rollback).
       try {
+        if (!isF8AuditEventType(event.type)) {
+          pinoFallback(event, ctx, 'unknown_event_type');
+          return;
+        }
+        if (!F8_ENUM_SHIPPED.has(event.type)) {
+          pinoFallback(event, ctx, 'not_in_pgenum');
+          return;
+        }
         await runInTenant(tenant, async (tx) => {
           await tx.insert(auditLog).values(buildInsertValues(event, ctx));
         });
       } catch (e) {
-        // Fire-and-forget — never throw into the caller (per port doc).
         logger.error(
           {
             err: e instanceof Error ? e.message : String(e),

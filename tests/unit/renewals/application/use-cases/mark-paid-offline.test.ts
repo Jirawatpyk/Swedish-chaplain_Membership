@@ -162,7 +162,7 @@ describe('markPaidOffline (T059) — happy path', () => {
     );
   });
 
-  it('accepts upcoming + grace cycle states', async () => {
+  it('accepts both payable cycle statuses (upcoming + awaiting_payment)', async () => {
     for (const status of ['upcoming', 'awaiting_payment'] as const) {
       const { deps } = fakeDeps(buildCycle({ status }));
       const r = await markPaidOffline(deps, baseInput);
@@ -250,14 +250,23 @@ describe('markPaidOffline — error paths', () => {
     }
   });
 
-  it('throws when bridge ok but onPaid did not fire (unreachable invariant)', async () => {
+  it('returns f4_orphan_invoice when bridge reports record_payment_failed', async () => {
     const cycle = buildCycle();
     const { deps } = fakeDeps(cycle, async () => ({
-      ok: true,
-      value: { invoiceId: 'inv-1', paidAt: '2026-05-15T10:00:00Z' },
+      ok: false,
+      error: {
+        kind: 'record_payment_failed',
+        reason: 'concurrent_state_change',
+        orphanInvoiceId: 'orphan-inv-99',
+      },
     }));
-    await expect(markPaidOffline(deps, baseInput)).rejects.toThrow(
-      /onPaid did not capture/,
-    );
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('f4_orphan_invoice');
+      if (r.error.kind === 'f4_orphan_invoice') {
+        expect(r.error.orphanInvoiceId).toBe('orphan-inv-99');
+      }
+    }
   });
 });

@@ -60,14 +60,31 @@ export type MarkPaidOfflineError =
   | { readonly kind: 'invalid_input'; readonly message: string }
   | { readonly kind: 'cycle_not_found' }
   | { readonly kind: 'cycle_not_payable'; readonly currentStatus: string }
-  | { readonly kind: 'f4_failure'; readonly stage: string; readonly reason: string };
+  | { readonly kind: 'f4_failure'; readonly stage: string; readonly reason: string }
+  /**
+   * F4 step 3 (recordPayment) failed AFTER an invoice was issued with
+   * a consumed §87 sequence number. The orphan invoice exists in F4 in
+   * 'issued' state. Admin MUST resume from the F4 invoice list and mark
+   * paid there — DO NOT retry mark-paid-offline (it will issue a
+   * duplicate §87 invoice).
+   */
+  | {
+      readonly kind: 'f4_orphan_invoice';
+      readonly orphanInvoiceId: string;
+      readonly reason: string;
+    };
 
-const PAYABLE_STATUSES = new Set([
-  'awaiting_payment',
-  'upcoming',
-  // grace cycles are post-T-0 but pre-lapse — admin can still mark paid
-  // to bring the member back without admin reactivation flow.
-]);
+// Cycles in these statuses can be marked paid offline. Lapsed cycles
+// require the explicit reactivation flow (US3+); cancelled and completed
+// cycles are terminal. `pending_admin_reactivation` is in the admin's
+// review queue — not the offline-mark path.
+//
+// Note: there is no separate `grace` status in the 7-state machine —
+// grace is an URGENCY bucket (post-expiry, pre-lapse) that overlays
+// `awaiting_payment` cycles whose expires_at is in the past but within
+// the tenant's grace_period_days. Admins marking those paid use the
+// same `awaiting_payment` codepath; the urgency derivation is read-only.
+const PAYABLE_STATUSES = new Set(['awaiting_payment', 'upcoming']);
 
 /**
  * Compute the next cycle's expires_at by adding `frozenPlanTermMonths`
@@ -103,22 +120,34 @@ export async function markPaidOffline(
   // Pre-load cycle to surface clean errors before opening the F4 chain.
   const preLoad = await deps.cyclesRepo.findById(input.tenantId, cycleId);
   if (!preLoad) {
-    await deps.auditEmitter.emit(
-      {
-        type: 'renewal_cross_tenant_probe',
-        payload: {
-          attempted_cycle_id: cycleId,
-          route: 'mark-paid-offline',
+    // Probe audit defence-in-depth — never block the 404 (see EH4).
+    try {
+      await deps.auditEmitter.emit(
+        {
+          type: 'renewal_cross_tenant_probe',
+          payload: {
+            attempted_cycle_id: cycleId,
+            route: 'mark-paid-offline',
+          },
         },
-      },
-      {
-        tenantId: input.tenantId,
-        actorUserId: input.actorUserId,
-        actorRole: input.actorRole,
-        correlationId: input.correlationId,
-        requestId: input.requestId ?? null,
-      },
-    );
+        {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          actorRole: input.actorRole,
+          correlationId: input.correlationId,
+          requestId: input.requestId ?? null,
+        },
+      );
+    } catch (e) {
+      logger.warn(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          cycleId,
+          correlationId: input.correlationId,
+        },
+        'markPaidOffline: probe audit emit failed (swallowed — never blocks 404)',
+      );
+    }
     return err({ kind: 'cycle_not_found' });
   }
   if (!PAYABLE_STATUSES.has(preLoad.status)) {
@@ -181,11 +210,7 @@ export async function markPaidOffline(
       // recordPayment(externalTx=tx). The `onPaid` callback fires inside
       // F4's recordPayment tx (which IS our outer tx via externalTx),
       // flipping the cycle atomically.
-      let invoiceIdCaptured: string | null = null;
-      let paidAtCaptured: string | null = null;
       const onPaid = async (evt: F4InvoicePaidEvent): Promise<void> => {
-        invoiceIdCaptured = evt.invoiceId;
-        paidAtCaptured = evt.paidAt;
         // Flip cycle inside same tx — closedReason='completed_offline'.
         await deps.cyclesRepo.transitionStatus(
           tx,
@@ -239,6 +264,15 @@ export async function markPaidOffline(
       });
 
       if (!bridgeResult.ok) {
+        // Distinct error code on the orphan-invoice path so the route
+        // handler can surface "DO NOT retry — resume from F4 list".
+        if (bridgeResult.error.kind === 'record_payment_failed') {
+          return err({
+            kind: 'f4_orphan_invoice' as const,
+            orphanInvoiceId: bridgeResult.error.orphanInvoiceId,
+            reason: bridgeResult.error.reason,
+          });
+        }
         return err({
           kind: 'f4_failure' as const,
           stage: bridgeResult.error.kind,
@@ -246,16 +280,8 @@ export async function markPaidOffline(
         });
       }
 
-      // Sanity check — onPaid must have run if the bridge returned ok.
-      if (!invoiceIdCaptured || !paidAtCaptured) {
-        // Should be unreachable — bridge ok implies recordPayment ok
-        // implies onPaid fired. If it doesn't, the cycle wasn't
-        // flipped + the audit didn't emit — fail loud.
-        throw new Error(
-          'mark-paid-offline: bridge reported ok but onPaid did not capture invoiceId/paidAt',
-        );
-      }
-
+      // bridge.ok ⇒ recordPayment.ok ⇒ onPaid fired ⇒ cycle flipped.
+      // Trust the framework guarantee + return directly.
       return ok({
         cycleStatus: 'completed' as const,
         invoiceId: bridgeResult.value.invoiceId,

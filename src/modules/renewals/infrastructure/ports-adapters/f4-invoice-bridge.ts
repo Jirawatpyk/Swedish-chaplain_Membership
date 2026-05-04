@@ -28,8 +28,8 @@
  * Pure Infrastructure-layer composition — only F4 barrel imports +
  * F4 dep factories from the invoicing module's public surface.
  */
-import { randomUUID } from 'node:crypto';
 import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import {
   createInvoiceDraft,
   issueInvoice,
@@ -72,7 +72,19 @@ export interface IssueAndMarkPaidResult {
 export type F4BridgeError =
   | { readonly kind: 'create_invoice_failed'; readonly reason: string }
   | { readonly kind: 'issue_invoice_failed'; readonly reason: string }
-  | { readonly kind: 'record_payment_failed'; readonly reason: string };
+  /**
+   * Step 3 (recordPayment) failed AFTER step 1+2 successfully committed
+   * an issued invoice with a §87 sequence number. This is recoverable
+   * but the admin MUST be told to resume from the F4 invoice list (NOT
+   * retry mark-paid-offline) — otherwise step 1+2 will create a duplicate
+   * invoice on retry, burning another §87 number. The orphan invoice id
+   * is surfaced so the route can render an actionable error message.
+   */
+  | {
+      readonly kind: 'record_payment_failed';
+      readonly reason: string;
+      readonly orphanInvoiceId: string;
+    };
 
 export interface F4InvoiceBridge {
   issueAndMarkPaid(
@@ -144,13 +156,31 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
       paymentDate: input.paymentDate,
       // F8 surface — distinct from webhook + admin_manual paths.
       triggeredBy: 'admin_offline_mark',
-      // Idempotency key derives from cycle context for replay safety.
-      idempotencyKey: `f8-offline-${invoiceId}-${randomUUID().slice(0, 8)}`,
+      // Deterministic idempotency key — derives from stable inputs so
+      // a retry of the same logical action produces the same key + F4
+      // recognises the duplicate. paymentReference is admin-entered and
+      // stable across retries (e.g. "BT-2026-0042"); invoiceId is fixed
+      // once createInvoiceDraft commits. F5 precedent: `inv-{id}-attempt-{n}`.
+      idempotencyKey: `f8-offline-${invoiceId}-${input.paymentReference}`,
     });
     if (!paid.ok) {
+      // Steps 1+2 already committed — invoice exists in 'issued' state
+      // with a consumed §87 sequence number. Loud-log so support can
+      // find the orphan + surface the invoice id to the route handler.
+      logger.error(
+        {
+          orphanInvoiceId: invoiceId,
+          tenantId: input.tenantId,
+          memberId: input.memberId,
+          recordPaymentError: paid.error.code,
+          requestId: input.requestId ?? null,
+        },
+        'f4-invoice-bridge: record_payment_failed AFTER invoice issued — orphan §87 invoice requires admin resume from F4 list, NOT retry mark-paid-offline',
+      );
       return err({
         kind: 'record_payment_failed',
         reason: paid.error.code,
+        orphanInvoiceId: invoiceId,
       });
     }
 

@@ -11,10 +11,14 @@
  * unavailable" placeholder rather than crashing.
  */
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
+import { randomUUID } from 'node:crypto';
+import { AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { buttonVariants } from '@/components/ui/button';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
@@ -76,7 +80,11 @@ export default async function RenewalsPipelinePage({
       <TableContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
+          <CardContent
+            role="status"
+            aria-live="polite"
+            className="py-12 text-center text-muted-foreground"
+          >
             {t('error.featureDisabled')}
           </CardContent>
         </Card>
@@ -112,16 +120,48 @@ export default async function RenewalsPipelinePage({
   });
 
   if (!result.ok) {
+    const correlationId = randomUUID();
     logger.error(
-      { tenantId: tenantCtx.slug, error: result.error.kind },
+      {
+        tenantId: tenantCtx.slug,
+        error: result.error.kind,
+        correlationId,
+      },
       'renewals pipeline page: load-pipeline failed',
     );
     return (
       <TableContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
-          <CardContent className="py-12 text-center text-destructive">
-            {t('error.loadFailed')}
+          <CardContent
+            role="alert"
+            aria-live="assertive"
+            className="flex flex-col items-center gap-4 py-12 text-center"
+          >
+            <AlertTriangle
+              aria-hidden="true"
+              className="h-10 w-10 text-destructive"
+            />
+            <div className="text-base font-medium text-destructive">
+              {t('error.loadFailed')}
+            </div>
+            <div className="flex gap-2">
+              <Link
+                href="/admin/renewals"
+                className={buttonVariants({ variant: 'default', size: 'sm' })}
+              >
+                {t('error.retry')}
+              </Link>
+              <Link
+                href="/admin"
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              >
+                {t('error.goBack')}
+              </Link>
+            </div>
+            <code className="text-xs text-muted-foreground font-mono">
+              {correlationId}
+            </code>
           </CardContent>
         </Card>
       </TableContainer>
