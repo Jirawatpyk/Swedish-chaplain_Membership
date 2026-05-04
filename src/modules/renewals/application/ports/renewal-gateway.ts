@@ -14,6 +14,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { Result } from '@/lib/result';
 import type { CycleId } from '../../domain/renewal-cycle';
 
 export type SupportedLocale = 'en' | 'th' | 'sv';
@@ -80,8 +81,5 @@ export interface RenewalGateway {
    */
   sendRenewalEmail(
     input: SendRenewalEmailInput,
-  ): Promise<
-    | { readonly ok: true; readonly value: SendRenewalEmailResult }
-    | { readonly ok: false; readonly error: SendRenewalEmailError }
-  >;
+  ): Promise<Result<SendRenewalEmailResult, SendRenewalEmailError>>;
 }

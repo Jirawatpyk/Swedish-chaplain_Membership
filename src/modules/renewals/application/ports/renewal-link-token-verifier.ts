@@ -17,6 +17,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { Result } from '@/lib/result';
 import type { RenewalLinkTokenPayload } from '../../domain/renewal-link-token';
 
 export interface VerifiedRenewalLinkToken {
@@ -46,7 +47,5 @@ export interface RenewalLinkTokenVerifier {
   verify(
     rawToken: string,
     ctx: VerifyTokenContext,
-  ):
-    | { readonly ok: true; readonly value: VerifiedRenewalLinkToken }
-    | { readonly ok: false; readonly error: VerifyTokenError };
+  ): Result<VerifiedRenewalLinkToken, VerifyTokenError>;
 }

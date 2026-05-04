@@ -5,7 +5,7 @@
 **Date**: 2026-05-03
 **Status**: Phase 1 contract output
 
-F8 emits **47 audit event types** to F1's existing `audit_log` table (no new audit infra). All events have `retention_years = 5` (F8 has no tax-document overlap with F4's 10-year retention). Total updated at /speckit.critique 2026-05-03 round 1: added `cron_dispatch_orchestrated` (X1), `renewal_reminder_send_failed_permanent` (E6), `renewal_reminder_retried` (E6), `renewal_skipped_no_joined_at` (P13), `tier_upgrade_pending_orphan_detected` (E19).
+F8 emits **54 audit event types** to F1's existing `audit_log` table (no new audit infra). All events have `retention_years = 5` (F8 has no tax-document overlap with F4's 10-year retention). Total updated at /speckit.critique 2026-05-03 round 1 (5 events): added `cron_dispatch_orchestrated` (X1), `renewal_reminder_send_failed_permanent` (E6), `renewal_reminder_retried` (E6), `renewal_skipped_no_joined_at` (P13), `tier_upgrade_pending_orphan_detected` (E19). Total updated again at /speckit.implement Wave E verify-run C1 (2026-05-04, 6 events): clarify R3 admin-reactivation lifecycle events that landed in spec.md FR-005a-c + data-model.md § 4 but were missed in this contract: `lapsed_member_admin_reactivated` (Q1), `lapsed_member_admin_reactivation_rejected` (Q1), `lapsed_member_admin_reactivation_timed_out` (M3), `member_auto_reactivation_blocked` (Q1), `member_auto_reactivation_unblocked` (Q1), `renewal_cycle_price_frozen` (Q2).
 
 The `RenewalAuditEmitter` port is the canonical interface; Infrastructure adapter is `audit-emitter.ts` writing through F1's audit pipeline.
 
@@ -66,6 +66,17 @@ export type F8AuditEvent =
   | { type: 'renewal_reminder_retried'; payload: RenewalReminderRetriedPayload }
   | { type: 'renewal_skipped_no_joined_at'; payload: RenewalSkippedNoJoinedAtPayload }
   | { type: 'tier_upgrade_pending_orphan_detected'; payload: TierUpgradePendingOrphanDetectedPayload }
+  // Added at /speckit.implement Wave E verify-run C1 (2026-05-04) — synced
+  // from /speckit.clarify round 3 admin-reactivation lifecycle. These 6
+  // events were already in data-model.md § 4 + spec.md FR-005a-c +
+  // Wave E impl `renewal-audit-emitter.ts` F8_AUDIT_EVENT_TYPES tuple;
+  // contract had drifted out of sync until now.
+  | { type: 'lapsed_member_admin_reactivated'; payload: LapsedMemberAdminReactivatedPayload }
+  | { type: 'lapsed_member_admin_reactivation_rejected'; payload: LapsedMemberAdminReactivationRejectedPayload }
+  | { type: 'lapsed_member_admin_reactivation_timed_out'; payload: LapsedMemberAdminReactivationTimedOutPayload }
+  | { type: 'member_auto_reactivation_blocked'; payload: MemberAutoReactivationBlockedPayload }
+  | { type: 'member_auto_reactivation_unblocked'; payload: MemberAutoReactivationUnblockedPayload }
+  | { type: 'renewal_cycle_price_frozen'; payload: RenewalCyclePriceFrozenPayload }
 
 export interface RenewalAuditEmitter {
   emit(event: F8AuditEvent, context: AuditContext): Promise<void>
@@ -423,13 +434,59 @@ export interface TierUpgradePendingOrphanDetectedPayload {
   target_cycle_status: 'completed' | 'lapsed' | 'cancelled'
   suggestion_age_days: number
 }
+
+// --- /speckit.clarify round 3 admin-reactivation lifecycle (synced at
+//     /speckit.implement Wave E verify-run C1, 2026-05-04). Payload
+//     shapes mirror data-model.md § 4 entries. ---
+
+export interface LapsedMemberAdminReactivatedPayload {
+  member_id: MemberId
+  cycle_id: CycleId
+  actor_user_id: UserId
+}
+
+export interface LapsedMemberAdminReactivationRejectedPayload {
+  member_id: MemberId
+  cycle_id: CycleId
+  actor_user_id: UserId
+  refund_id: RefundId
+  credit_note_id: CreditNoteId
+}
+
+export interface LapsedMemberAdminReactivationTimedOutPayload {
+  member_id: MemberId
+  cycle_id: CycleId
+  entered_pending_at: ISO8601String
+  refund_id: RefundId
+  credit_note_id: CreditNoteId
+}
+
+export interface MemberAutoReactivationBlockedPayload {
+  member_id: MemberId
+  actor_user_id: UserId
+  reason: string                // max 500 chars
+}
+
+export interface MemberAutoReactivationUnblockedPayload {
+  member_id: MemberId
+  actor_user_id: UserId
+  reason: string                // max 500 chars
+}
+
+export interface RenewalCyclePriceFrozenPayload {
+  cycle_id: CycleId
+  plan_id: PlanId
+  frozen_price_thb: string      // decimal(12,2) string
+  frozen_term_months: number
+  frozen_currency: 'THB'
+}
 ```
 
 ---
 
 ## 3. Retention
 
-All 43 events: `retention_years = 5`. This is the F8 default — no tax-document overlap means the F4 10-year backfill (per F5 R2-E4 Review-Gate blocker) does NOT apply.
+All 54 events: `retention_years = 5`. This is the F8 default — no tax-document overlap means the F4 10-year backfill (per F5 R2-E4 Review-Gate blocker) does NOT apply.
 
 ---
 
