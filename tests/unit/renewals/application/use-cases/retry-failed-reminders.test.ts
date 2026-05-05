@@ -30,6 +30,7 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/env', () => ({
   env: {
     log: { level: 'silent' },
+    app: { baseUrl: 'http://localhost:3100' },
     isProduction: false,
     isDevelopment: false,
     isTest: true,

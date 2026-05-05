@@ -507,10 +507,16 @@ async function dispatchEmailStep(
       preferredLocale: locale,
     },
     templateVariables: {
+      member_first_name: primaryContact.firstName,
       member_company_name: member.companyName,
       cycle_expires_at: cycle.expiresAt,
       tier_bucket: cycle.tierAtCycleStart,
       step_id: step.stepId,
+      // J1-B1: populate CTA target. Uses the member portal landing
+      // (`/portal/account`) until the signed-token renewal route lands;
+      // a blank href would leave every dispatched email with a broken
+      // CTA button, defeating the reminder's primary purpose.
+      renewal_link_url: `${env.app.baseUrl}/portal/account`,
     },
     idempotencyKey: reminderEventId,
   });

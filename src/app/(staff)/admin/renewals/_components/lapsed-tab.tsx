@@ -60,7 +60,7 @@ const REASON_VARIANT_CLASSES: Record<string, string> = {
   admin_rejected_with_refund:
     'bg-amber-50 text-amber-900 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-900',
   pending_reactivation_timed_out:
-    'bg-orange-50 text-orange-900 ring-orange-200 dark:bg-orange-950 dark:text-orange-200 dark:ring-orange-800',
+    'bg-orange-50 text-orange-900 ring-orange-200 dark:bg-orange-950 dark:text-orange-200 dark:ring-orange-600',
 };
 
 export function LapsedTab({ rows }: LapsedTabProps) {

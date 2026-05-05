@@ -35,6 +35,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
 import { randomUUID } from 'node:crypto';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
@@ -155,10 +156,13 @@ async function attemptRetry(
       preferredLocale: locale,
     },
     templateVariables: {
+      member_first_name: candidate.primaryContact.firstName,
       member_company_name: candidate.member.companyName,
       cycle_expires_at: candidate.cycle.expiresAt,
       tier_bucket: candidate.cycle.tierAtCycleStart,
       step_id: event.stepId,
+      // J1-B1: same CTA URL as the original dispatch path.
+      renewal_link_url: `${env.app.baseUrl}/portal/account`,
     },
     idempotencyKey: event.reminderEventId,
   });

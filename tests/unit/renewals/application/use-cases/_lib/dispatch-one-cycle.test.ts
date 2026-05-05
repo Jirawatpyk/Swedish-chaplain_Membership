@@ -37,6 +37,7 @@ vi.mock('@/lib/env', () => ({
     features: { f8Renewals: true },
     flags: { readOnlyMode: false },
     log: { level: 'silent' },
+    app: { baseUrl: 'http://localhost:3100' },
     isProduction: false,
     isDevelopment: false,
     isTest: true,

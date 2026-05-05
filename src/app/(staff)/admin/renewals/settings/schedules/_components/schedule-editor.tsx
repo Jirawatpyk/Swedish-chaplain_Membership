@@ -20,7 +20,7 @@
  * canonical gate — this UI affordance is defence-in-depth.
  */
 import { useCallback, useState, useTransition } from 'react';
-import { useTranslations } from 'next-intl';
+import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   Plus,
@@ -108,6 +108,7 @@ function formatOffset(
 // ---------------------------------------------------------------------------
 
 interface StepRowProps {
+  readonly tierBucket: TierBucket;
   readonly step: ScheduleStepWire;
   readonly index: number;
   readonly total: number;
@@ -119,6 +120,7 @@ interface StepRowProps {
 }
 
 function StepRow({
+  tierBucket,
   step,
   index,
   total,
@@ -129,6 +131,12 @@ function StepRow({
   onMoveDown,
 }: StepRowProps) {
   const t = useTranslations('admin.renewals.settings.schedules');
+  // J1-B10: prefix every form-field id with `tierBucket` because base-ui
+  // `Tabs.Panel` keeps inactive panels mounted via `hidden`. Without the
+  // prefix the same `step-id-0` exists 5 times in the DOM and
+  // `<Label htmlFor>` resolves to the wrong field on 4 of 5 tabs
+  // (WCAG 4.1.1 Parsing — duplicate id attributes).
+  const idPrefix = `${tierBucket}-${index}`;
   return (
     <div className="rounded-md border bg-card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -171,20 +179,20 @@ function StepRow({
       </div>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <Label htmlFor={`step-id-${index}`}>{t('stepCard.stepIdLabel')}</Label>
+          <Label htmlFor={`step-id-${idPrefix}`}>{t('stepCard.stepIdLabel')}</Label>
           <Input
-            id={`step-id-${index}`}
+            id={`step-id-${idPrefix}`}
             value={step.step_id}
             disabled={readOnly}
             onChange={(e) => onChange({ ...step, step_id: e.target.value })}
           />
         </div>
         <div>
-          <Label htmlFor={`offset-days-${index}`}>
+          <Label htmlFor={`offset-days-${idPrefix}`}>
             {t('stepCard.offsetDay.before', { days: 30 }).slice(0, 1)}±
           </Label>
           <Input
-            id={`offset-days-${index}`}
+            id={`offset-days-${idPrefix}`}
             type="number"
             value={step.offset_days}
             disabled={readOnly}
@@ -194,7 +202,7 @@ function StepRow({
           />
         </div>
         <div>
-          <Label htmlFor={`channel-${index}`}>
+          <Label htmlFor={`channel-${idPrefix}`}>
             {t('stepCard.channel.email')} / {t('stepCard.channel.task')}
           </Label>
           <Select
@@ -220,7 +228,7 @@ function StepRow({
               }
             }}
           >
-            <SelectTrigger id={`channel-${index}`}>
+            <SelectTrigger id={`channel-${idPrefix}`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -235,11 +243,11 @@ function StepRow({
         </div>
         {step.channel === 'email' ? (
           <div>
-            <Label htmlFor={`template-${index}`}>
+            <Label htmlFor={`template-${idPrefix}`}>
               {t('stepCard.templateIdLabel')}
             </Label>
             <Input
-              id={`template-${index}`}
+              id={`template-${idPrefix}`}
               value={step.template_id ?? ''}
               disabled={readOnly}
               onChange={(e) =>
@@ -250,11 +258,11 @@ function StepRow({
         ) : (
           <>
             <div>
-              <Label htmlFor={`task-type-${index}`}>
+              <Label htmlFor={`task-type-${idPrefix}`}>
                 {t('stepCard.taskTypeLabel')}
               </Label>
               <Input
-                id={`task-type-${index}`}
+                id={`task-type-${idPrefix}`}
                 value={step.task_type ?? ''}
                 disabled={readOnly}
                 onChange={(e) =>
@@ -263,7 +271,7 @@ function StepRow({
               />
             </div>
             <div>
-              <Label htmlFor={`assignee-${index}`}>
+              <Label htmlFor={`assignee-${idPrefix}`}>
                 {t('stepCard.assigneeLabel')}
               </Label>
               <Select
@@ -279,7 +287,7 @@ function StepRow({
                   })
                 }
               >
-                <SelectTrigger id={`assignee-${index}`}>
+                <SelectTrigger id={`assignee-${idPrefix}`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -307,6 +315,10 @@ export function ScheduleEditor({
   readOnly,
 }: ScheduleEditorProps) {
   const t = useTranslations('admin.renewals.settings.schedules');
+  // J1-B8: locale-aware date formatter (next-intl) replaces raw
+  // `toLocaleString()` which leaks browser default locale and never
+  // surfaces Buddhist Era for `th-TH` users.
+  const fmt = useFormatter();
   const [byBucket, setByBucket] = useState(() => policiesByBucket(initialPolicies));
   const [activeBucket, setActiveBucket] = useState<TierBucket>(
     TIER_BUCKETS[0],
@@ -417,7 +429,7 @@ export function ScheduleEditor({
             aria-live="polite"
             className="flex items-center gap-2 py-3 text-sm"
           >
-            <AlertCircle aria-hidden="true" className="h-4 w-4 text-amber-600" />
+            <AlertCircle aria-hidden="true" className="h-4 w-4 text-amber-700 dark:text-amber-500" />
             {t('manager.readOnlyNotice')}
           </CardContent>
         </Card>
@@ -442,6 +454,7 @@ export function ScheduleEditor({
               {steps.map((step, idx) => (
                 <StepRow
                   key={`${b}-${idx}`}
+                  tierBucket={b}
                   step={step}
                   index={idx}
                   total={steps.length}
@@ -484,7 +497,13 @@ export function ScheduleEditor({
                   {lastSavedAt ? (
                     <span>
                       {t('lastSaved', {
-                        date: new Date(lastSavedAt).toLocaleString(),
+                        date: fmt.dateTime(new Date(lastSavedAt), {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        }),
                       })}
                     </span>
                   ) : null}
