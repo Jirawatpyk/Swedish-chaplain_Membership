@@ -256,6 +256,7 @@ export async function dispatchRenewalCycle(
             logger.error(
               {
                 err: e instanceof Error ? e.message : String(e),
+                stack: e instanceof Error ? e.stack : undefined,
                 cycleId: candidate.cycle.cycleId,
                 memberId: candidate.member.memberId,
                 tenantId: input.tenantId,
@@ -263,7 +264,23 @@ export async function dispatchRenewalCycle(
               },
               'dispatchRenewalCycle: per-cycle dispatch failed (isolated)',
             );
-            return { kind: 'failed_transient' as const, error: e };
+            // J2-H8: conform to DispatchOneCycleOutcome.failed_transient
+            // shape (the previous `{kind, error}` shape was a structural
+            // mismatch — accepted at runtime by the switch reading only
+            // .kind, but TypeScript inference widened the union and any
+            // future code reading reminderEventId/reason would crash).
+            // Note: dispatchOneCycleInner's defensive cleanup (J2-B2)
+            // also catches throws inside dispatchEmailStep/dispatchTaskStep,
+            // so this outer catch typically only fires for throws BEFORE
+            // Gate 12's insertIfAbsent (no reminder_event row exists yet
+            // → empty reminderEventId is correct).
+            const errMsg =
+              e instanceof Error ? e.message : String(e);
+            return {
+              kind: 'failed_transient' as const,
+              reminderEventId: '',
+              reason: `dispatcher_crash: ${errMsg.slice(0, 200)}`,
+            };
           }
         }),
       );

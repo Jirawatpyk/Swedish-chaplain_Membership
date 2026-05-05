@@ -43,7 +43,10 @@ import { asCycleId } from '../../domain/renewal-cycle';
 import { asTaskId } from '../../domain/renewal-escalation-task';
 import { MANUAL_OUTREACH_TASK_TYPE } from './reset-email-unverified';
 import type { DispatchCandidate } from '../ports/dispatch-candidate-repo';
-import type { ReminderEvent } from '../ports/renewal-reminder-event-repo';
+import {
+  ReminderEventNotFoundError,
+  type ReminderEvent,
+} from '../ports/renewal-reminder-event-repo';
 import type { MemberId } from '@/modules/members';
 
 export const DEFAULT_RETRY_PAGE_SIZE = 200 as const;
@@ -63,8 +66,16 @@ export type RetryFailedRemindersInput = z.infer<
 export interface RetryFailedRemindersSummary {
   /** Pass 1 — events evaluated for re-attempt. */
   readonly retryEligibleProcessed: number;
-  /** Pass 1 — successful retries. */
+  /** Pass 1 — successful retries (THIS pass actually flipped the row). */
   readonly retrySucceeded: number;
+  /**
+   * Pass 1 — concurrent retry pass already flipped the row before this
+   * pass acquired the row; gateway dedupe via Resend ensures exactly-once
+   * delivery, but THIS pass did NOT emit any audit (the winner already
+   * did). Kept distinct from `retrySucceeded` so the summary metric does
+   * not double-count delivery audit emissions on concurrent retries.
+   */
+  readonly retryConcurrentWin: number;
   /** Pass 1 — still transient (will retry next pass). */
   readonly retryStillTransient: number;
   /** Pass 1 — became permanent during retry (gateway returned 4xx). */
@@ -73,6 +84,14 @@ export interface RetryFailedRemindersSummary {
   readonly retryBlockedByGate: number;
   /** Pass 2 — events marked permanently exhausted. */
   readonly exhaustedMarked: number;
+  /**
+   * Pass 2 — exhausted-cursor entries that another worker won (the
+   * `markRetryExhausted` row update returned zero affected rows because
+   * `retry_exhausted_at` was already non-null). No audit emit, no task
+   * creation — silent abort to prevent duplicate
+   * `renewal_reminder_send_failed_permanent` audit (J2-B3).
+   */
+  readonly exhaustedConcurrentWin: number;
   /** Per-event errors that were isolated (loop did not crash). */
   readonly passErrors: number;
   readonly durationMs: number;
@@ -94,6 +113,7 @@ export type RetryFailedRemindersError = {
 interface RetryAttemptOutcome {
   readonly kind:
     | 'succeeded'
+    | 'won_by_concurrent_pass'
     | 'still_transient'
     | 'became_permanent'
     | 'blocked_by_gate'
@@ -186,12 +206,31 @@ async function attemptRetry(
           dispatchedAt: gatewayResult.value.dispatchedAt,
           deliveryId: gatewayResult.value.deliveryId,
         });
-      } catch {
-        // Concurrent retry-pass already won OR exhaustion-pass already
-        // marked the row permanent. Either way, the audit emit below
-        // is safe but the actual status change has been done by the
-        // winner. Treat as idempotent replay.
-        return { kind: 'succeeded' as const };
+      } catch (e) {
+        // J2-B4: distinguish "concurrent winner" (zero affected rows
+        // → ReminderEventNotFoundError) from "real DB fault" (other).
+        // The previous code swallowed BOTH and returned 'succeeded',
+        // inflating the retrySucceeded counter without emitting any
+        // audit + masking real DB faults. Now:
+        //   - ReminderEventNotFoundError → distinct outcome
+        //     'won_by_concurrent_pass' that the summary tallies
+        //     separately. NO audit emitted (the winner already did).
+        //   - any other throw → rethrow so the per-event try/catch in
+        //     runRetryPasses tallies it as `passErrors` and emits an
+        //     error log.
+        if (e instanceof ReminderEventNotFoundError) {
+          logger.info(
+            {
+              reminderEventId: event.reminderEventId,
+              cycleId: event.cycleId,
+              tenantId: event.tenantId,
+              correlationId,
+            },
+            'attemptRetry: row already transitioned by concurrent retry pass — no audit emit (winner owns the audit trail)',
+          );
+          return { kind: 'won_by_concurrent_pass' as const };
+        }
+        throw e;
       }
       await deps.auditEmitter.emitInTx(
         tx,
@@ -326,10 +365,55 @@ async function emitPermanentFailure(
   nowIso: string,
   correlationId: string,
   requestId: string | null,
-): Promise<{ taskCreated: boolean; taskId: string | null }> {
-  // Emit permanent audit + create task. Both wrapped by markRetryExhausted
-  // ON UPDATE WHERE retry_exhausted_at IS NULL — concurrent retry passes
-  // race deterministically.
+): Promise<{
+  taskCreated: boolean;
+  taskId: string | null;
+  /**
+   * J2-B3: true when this caller WON the markRetryExhausted CAS race —
+   * audits + task were emitted. False when a concurrent worker already
+   * marked the row exhausted; this caller silently aborted to prevent
+   * duplicate `renewal_reminder_send_failed_permanent` audit emission.
+   */
+  wonExhaustionRace: boolean;
+}> {
+  // J2-B3: markRetryExhausted FIRST as the atomic CAS gate. Previously
+  // this was the LAST step (after both `escalation_task_created` and
+  // `renewal_reminder_send_failed_permanent` were already emitted) —
+  // which meant two concurrent retry-pass invocations would BOTH emit
+  // `renewal_reminder_send_failed_permanent` and only one would
+  // succeed at marking exhausted. Audit-log integrity (Principle VIII)
+  // requires exactly-once emission per row.
+  //
+  // Reordered: only the winner of the markRetryExhausted UPDATE
+  // (WHERE retry_exhausted_at IS NULL) proceeds to create the task +
+  // emit audits. Losers detect ReminderEventNotFoundError and abort
+  // silently with `wonExhaustionRace: false` so the caller can tally
+  // the concurrent-win counter without double-counting.
+  try {
+    await deps.reminderEventRepo.markRetryExhausted(tx, {
+      tenantId: event.tenantId,
+      reminderEventId: event.reminderEventId,
+      exhaustedAtIso: nowIso,
+    });
+  } catch (e) {
+    if (e instanceof ReminderEventNotFoundError) {
+      logger.info(
+        {
+          reminderEventId: event.reminderEventId,
+          cycleId: event.cycleId,
+          tenantId: event.tenantId,
+          correlationId,
+        },
+        'emitPermanentFailure: concurrent exhaustion winner — silent abort (no audit, no task, no double-emit)',
+      );
+      return { taskCreated: false, taskId: null, wonExhaustionRace: false };
+    }
+    // Genuine DB fault — propagate so outer per-event catch tallies as
+    // passErrors + emits an error log.
+    throw e;
+  }
+
+  // Winner — create task + emit audits.
   let taskInsert: { created: boolean; taskId: string } | null = null;
   if (candidate) {
     const taskId = asTaskId(randomUUID());
@@ -366,7 +450,7 @@ async function emitPermanentFailure(
       );
     }
   }
-  // Typed via the discriminated union added to `F8AuditPayloadShapes`
+  // Typed via the discriminated union in `F8AuditPayloadShapes`
   // (renewal-audit-emitter.ts) — paths 2+3 (dispatcher 4xx +
   // retry-exhaustion) share the same shape with `via_retry_exhaustion`
   // discriminating between first-attempt-permanent vs retry-exhausted.
@@ -395,29 +479,10 @@ async function emitPermanentFailure(
       requestId,
     },
   );
-  // Idempotency primitive — markRetryExhausted is the WHERE-guard
-  // that ensures permanent emit + task creation each happen exactly
-  // once per row.
-  try {
-    await deps.reminderEventRepo.markRetryExhausted(tx, {
-      tenantId: event.tenantId,
-      reminderEventId: event.reminderEventId,
-      exhaustedAtIso: nowIso,
-    });
-  } catch (e) {
-    // Concurrent retry pass already marked exhausted — swallow.
-    logger.warn(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        reminderEventId: event.reminderEventId,
-        correlationId,
-      },
-      'retryFailedReminders: concurrent exhaustion-mark — swallowed',
-    );
-  }
   return {
     taskCreated: taskInsert?.created ?? false,
     taskId: taskInsert?.taskId ?? null,
+    wonExhaustionRace: true,
   };
 }
 
@@ -480,10 +545,12 @@ export async function retryFailedReminders(
   const summary = {
     retryEligibleProcessed: 0,
     retrySucceeded: 0,
+    retryConcurrentWin: 0,
     retryStillTransient: 0,
     retryBecamePermanent: 0,
     retryBlockedByGate: 0,
     exhaustedMarked: 0,
+    exhaustedConcurrentWin: 0,
     passErrors: 0,
     durationMs: 0,
   };
@@ -506,6 +573,9 @@ export async function retryFailedReminders(
       switch (outcome.kind) {
         case 'succeeded':
           summary.retrySucceeded += 1;
+          break;
+        case 'won_by_concurrent_pass':
+          summary.retryConcurrentWin += 1;
           break;
         case 'still_transient':
           summary.retryStillTransient += 1;
@@ -543,19 +613,28 @@ export async function retryFailedReminders(
         event.tenantId,
         asCycleId(event.cycleId),
       );
-      await runInTenant(deps.tenant, async (tx) => {
-        await emitPermanentFailure(
-          deps,
-          tx,
-          event,
-          candidate,
-          event.failureReason ?? 'retry_budget_exhausted',
-          nowIso,
-          input.correlationId,
-          input.requestId ?? null,
-        );
-      });
-      summary.exhaustedMarked += 1;
+      const exhaustedOutcome = await runInTenant(
+        deps.tenant,
+        async (tx) =>
+          emitPermanentFailure(
+            deps,
+            tx,
+            event,
+            candidate,
+            event.failureReason ?? 'retry_budget_exhausted',
+            nowIso,
+            input.correlationId,
+            input.requestId ?? null,
+          ),
+      );
+      // J2-B3: tally winner vs concurrent-loser separately so the
+      // summary metric does not falsely inflate exhaustedMarked when a
+      // second worker raced and aborted silently.
+      if (exhaustedOutcome.wonExhaustionRace) {
+        summary.exhaustedMarked += 1;
+      } else {
+        summary.exhaustedConcurrentWin += 1;
+      }
     } catch (e) {
       summary.passErrors += 1;
       logger.error(

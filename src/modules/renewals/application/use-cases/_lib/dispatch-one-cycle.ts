@@ -50,6 +50,7 @@ import type {
   ReminderStep,
 } from '../../../domain/value-objects/reminder-step';
 import type { DispatchCandidate } from '../../ports/dispatch-candidate-repo';
+import { ReminderEventNotFoundError } from '../../ports/renewal-reminder-event-repo';
 import { pauseRemindersAfterOutreach } from '../pause-reminders-after-outreach';
 import type { MemberId } from '@/modules/members';
 
@@ -353,7 +354,35 @@ async function dispatchOneCycleInner(
     tenantId: ctx.tenantId,
     memberId: member.memberId,
   });
-  if (pauseResult.ok && pauseResult.value.paused) {
+  if (!pauseResult.ok) {
+    // J2-B6: pause-check returned err Result (Zod parse fail or
+    // repo fault). Without this guard the previous code silently
+    // fell through and dispatched the email — direct FR-033
+    // violation (system reminder collides with admin's logged
+    // outreach). Defensive: emit `renewal_reminder_skipped` with
+    // `tenant_misconfigured` reason + structured metadata so ops
+    // can triage. logger.error elevates this above other skips
+    // because the input shape was rejected by our internal Zod
+    // schema, indicating a real bug or schema drift upstream.
+    logger.error(
+      {
+        cycleId: cycle.cycleId,
+        memberId: member.memberId,
+        tenantId: ctx.tenantId,
+        correlationId: ctx.correlationId,
+        errKind: pauseResult.error.kind,
+        errMessage: pauseResult.error.message,
+      },
+      'dispatchOneCycleInner: pause-check returned err — defensive skip to preserve FR-033 invariant',
+    );
+    await emitSkipAudit(deps, candidate, ctx, 'tenant_misconfigured', {
+      gate: 'outreach_pause_check',
+      err_kind: pauseResult.error.kind,
+      step_id: dueStep.stepId,
+    });
+    return { kind: 'skipped', reason: 'tenant_misconfigured' };
+  }
+  if (pauseResult.value.paused) {
     await emitSkipAudit(deps, candidate, ctx, 'outreach_in_progress', {
       latest_outreach_at: pauseResult.value.latestOutreachAt,
       expires_at: pauseResult.value.expiresAt,
@@ -463,11 +492,158 @@ async function dispatchOneCycleInner(
       },
     };
   }
-  // Channel branch — email vs task.
-  if (dueStep.channel === 'email') {
-    return await dispatchEmailStep(deps, candidate, ctx, dueStep, reminderInsert.row.reminderEventId);
+  // Channel branch — email vs task. J2-B2: wrap both branches in a
+  // try/catch + defensive cleanup. Any uncaught throw between the
+  // `insertIfAbsent` above (row now at status='pending') and the
+  // success-path `transitionStatus` would leave the row orphaned —
+  // retry-pass filters `status='failed'`, dispatcher skips via
+  // `already_sent`, so a 'pending' row never gets touched again.
+  // `defensivelyMarkFailedForRetry` opens a fresh tx to flip
+  // pending → failed with `retry_until = now+24h` so the retry pass
+  // picks it up. Constitution Principle VIII state↔audit atomicity
+  // preserved (the cleanup tx writes BOTH the status flip + the
+  // `renewal_reminder_send_failed` audit in the same tx).
+  const reminderEventId = reminderInsert.row.reminderEventId;
+  try {
+    if (dueStep.channel === 'email') {
+      return await dispatchEmailStep(deps, candidate, ctx, dueStep, reminderEventId);
+    }
+    return await dispatchTaskStep(deps, candidate, ctx, dueStep, reminderEventId, yearInCycle);
+  } catch (e) {
+    return await defensivelyMarkFailedForRetry(
+      deps,
+      candidate,
+      ctx,
+      dueStep,
+      reminderEventId,
+      e,
+    );
   }
-  return await dispatchTaskStep(deps, candidate, ctx, dueStep, reminderInsert.row.reminderEventId, yearInCycle);
+}
+
+// ---------------------------------------------------------------------------
+// J2-B2 — defensive cleanup for orphan pending rows
+// ---------------------------------------------------------------------------
+
+/**
+ * Defensively transition a pending reminder_event row to `failed`
+ * with `retry_until = now+24h` after the dispatcher crashed mid-flight
+ * (gateway exception, inner-tx fault, etc). Ensures the row enters the
+ * retry-pass queue rather than orphaning at `pending` forever.
+ *
+ * Contract: best-effort cleanup. If the cleanup tx itself fails (rare —
+ * Neon connectivity loss), we log at error level and rely on the
+ * exhaustion sweep (Wave I2e Pass 2) to eventually mark the row
+ * permanently failed once retry_until expires.
+ */
+async function defensivelyMarkFailedForRetry(
+  deps: RenewalsDeps,
+  candidate: DispatchCandidate,
+  ctx: DispatchContext,
+  dueStep: ReminderStep,
+  reminderEventId: string,
+  origError: unknown,
+): Promise<DispatchOneCycleOutcome> {
+  const { cycle, member } = candidate;
+  const errMsg =
+    origError instanceof Error ? origError.message : String(origError);
+  const stack = origError instanceof Error ? origError.stack : undefined;
+  const truncatedMsg = errMsg.slice(0, 400);
+  const failureReason = `dispatcher_crash: ${truncatedMsg}`;
+  const retryUntilIso = new Date(
+    new Date(ctx.nowIso).getTime() + RETRY_BUDGET_HOURS * 60 * 60 * 1000,
+  ).toISOString();
+
+  logger.error(
+    {
+      err: errMsg,
+      stack,
+      cycleId: cycle.cycleId,
+      memberId: member.memberId,
+      reminderEventId,
+      stepId: dueStep.stepId,
+      channel: dueStep.channel,
+      tenantId: ctx.tenantId,
+      correlationId: ctx.correlationId,
+    },
+    'dispatchOneCycle: dispatcher crashed mid-flight — defensively transitioning pending row to failed for retry pickup',
+  );
+
+  try {
+    await runInTenant(deps.tenant, async (tx) => {
+      try {
+        await deps.reminderEventRepo.transitionStatus(tx, {
+          tenantId: ctx.tenantId,
+          reminderEventId,
+          nextStatus: 'failed',
+          failureReason,
+          retryUntil: retryUntilIso,
+        });
+        await deps.auditEmitter.emitInTx(
+          tx,
+          {
+            type: 'renewal_reminder_send_failed',
+            payload: {
+              cycle_id: cycle.cycleId,
+              member_id: member.memberId as MemberId,
+              step_id: dueStep.stepId,
+              channel: dueStep.channel,
+              template_id:
+                dueStep.channel === 'email' ? dueStep.templateId : null,
+              failure_kind: 'dispatcher_crash',
+              failure_message: truncatedMsg,
+            },
+          },
+          {
+            tenantId: ctx.tenantId,
+            actorUserId: ctx.actorUserId,
+            actorRole: ctx.actorRole,
+            correlationId: ctx.correlationId,
+            requestId: ctx.requestId,
+            summary: `Dispatcher crashed for ${member.companyName} (${dueStep.stepId}); row transitioned to failed for retry within 24h`,
+          },
+        );
+      } catch (innerErr) {
+        if (innerErr instanceof ReminderEventNotFoundError) {
+          // Row was already transitioned by another path (concurrent
+          // worker, or a partial inner-tx success that committed before
+          // the throw). Idempotent — no audit emit, no second update.
+          logger.info(
+            {
+              reminderEventId,
+              cycleId: cycle.cycleId,
+              correlationId: ctx.correlationId,
+            },
+            'defensivelyMarkFailedForRetry: row no longer pending — concurrent transition won',
+          );
+          return;
+        }
+        throw innerErr;
+      }
+    });
+  } catch (cleanupErr) {
+    logger.error(
+      {
+        err:
+          cleanupErr instanceof Error
+            ? cleanupErr.message
+            : String(cleanupErr),
+        origErr: errMsg,
+        cycleId: cycle.cycleId,
+        memberId: member.memberId,
+        reminderEventId,
+        tenantId: ctx.tenantId,
+        correlationId: ctx.correlationId,
+      },
+      'defensivelyMarkFailedForRetry: cleanup tx itself failed — row may orphan as pending; exhaustion sweep will eventually mark permanent',
+    );
+  }
+
+  return {
+    kind: 'failed_transient',
+    reminderEventId,
+    reason: failureReason.slice(0, 200),
+  };
 }
 
 // ---------------------------------------------------------------------------

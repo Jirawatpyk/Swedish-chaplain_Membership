@@ -11,7 +11,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { retryFailedReminders } from '@/modules/renewals/application/use-cases/retry-failed-reminders';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
-import type { ReminderEvent } from '@/modules/renewals/application/ports/renewal-reminder-event-repo';
+import {
+  ReminderEventNotFoundError,
+  type ReminderEvent,
+} from '@/modules/renewals/application/ports/renewal-reminder-event-repo';
 import type { DispatchCandidate } from '@/modules/renewals/application/ports/dispatch-candidate-repo';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import { ok, err } from '@/lib/result';
@@ -242,21 +245,48 @@ describe('retryFailedReminders', () => {
       );
     });
 
-    it('successful retry race: concurrent winner already flipped → idempotent succeeded outcome', async () => {
-      const { deps, transitionFailedToSentMock } = fakeDeps({
+    it('J2-B4: concurrent winner (ReminderEventNotFoundError) → tallied as retryConcurrentWin, NOT retrySucceeded; no audits emitted', async () => {
+      const { deps, transitionFailedToSentMock, emitInTxMock } = fakeDeps({
         eligible: [buildFailedEvent()],
         transitionFailedToSentImpl: async () => {
-          // Simulate concurrent retry pass winning the race.
-          throw new Error('reminder event not found (concurrent winner)');
+          // Concurrent retry pass already flipped the row → adapter
+          // throws ReminderEventNotFoundError on zero affected rows.
+          throw new ReminderEventNotFoundError(REMINDER_EVENT_ID);
         },
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      // Idempotent — counted as succeeded even though THIS pass didn't
-      // actually flip the row (the concurrent winner did).
-      expect(result.value.summary.retrySucceeded).toBe(1);
+      // J2-B4: distinct counter so summary metrics don't inflate
+      // retrySucceeded with rows we didn't actually emit audits for.
+      expect(result.value.summary.retryConcurrentWin).toBe(1);
+      expect(result.value.summary.retrySucceeded).toBe(0);
       expect(transitionFailedToSentMock).toHaveBeenCalledTimes(1);
+      // No audit emit on concurrent-winner path — winner owns the trail.
+      const retriedAudit = emitInTxMock.mock.calls.find(
+        (c) => c[1].type === 'renewal_reminder_retried',
+      );
+      const sentAudit = emitInTxMock.mock.calls.find(
+        (c) => c[1].type === 'renewal_reminder_sent',
+      );
+      expect(retriedAudit).toBeUndefined();
+      expect(sentAudit).toBeUndefined();
+    });
+
+    it('J2-B4: non-ReminderEventNotFoundError throw propagates → counted as passErrors (real DB fault should not be silenced)', async () => {
+      const { deps } = fakeDeps({
+        eligible: [buildFailedEvent()],
+        transitionFailedToSentImpl: async () => {
+          throw new Error('db: serialization failure');
+        },
+      });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Genuine DB fault must NOT be classified as a concurrent win.
+      expect(result.value.summary.retryConcurrentWin).toBe(0);
+      expect(result.value.summary.retrySucceeded).toBe(0);
+      expect(result.value.summary.passErrors).toBe(1);
     });
 
     it('still-transient: counted as still_transient, retry_until preserved', async () => {
@@ -397,6 +427,54 @@ describe('retryFailedReminders', () => {
         (c) => c[1].type === 'renewal_reminder_send_failed_permanent',
       );
       expect(permanentAudit).toBeDefined();
+    });
+
+    it('J2-B3: concurrent exhaustion winner (markRetryExhausted ReminderEventNotFoundError) → silent abort, NO duplicate audits, exhaustedConcurrentWin counter', async () => {
+      const { deps, emitInTxMock, insertTaskMock, markExhaustedMock } =
+        fakeDeps({
+          exhausted: [buildFailedEvent()],
+        });
+      // Override markRetryExhausted to throw ReminderEventNotFoundError
+      // — simulates a concurrent retry pass having already won the
+      // exhaust-mark race.
+      markExhaustedMock.mockImplementation(async () => {
+        throw new ReminderEventNotFoundError(REMINDER_EVENT_ID);
+      });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Tallied as concurrent-win, NOT exhaustedMarked (avoids
+      // double-counting when 2 retry passes race).
+      expect(result.value.summary.exhaustedConcurrentWin).toBe(1);
+      expect(result.value.summary.exhaustedMarked).toBe(0);
+      // J2-B3 critical assertion: NO permanent audit emitted by loser
+      // (the winner already emitted it). Audit-log integrity preserved.
+      const permanentAudits = emitInTxMock.mock.calls.filter(
+        (c) => c[1].type === 'renewal_reminder_send_failed_permanent',
+      );
+      expect(permanentAudits).toHaveLength(0);
+      // No task created either — winner already created it.
+      expect(insertTaskMock).not.toHaveBeenCalled();
+    });
+
+    it('J2-B3: markRetryExhausted non-ReminderEventNotFoundError throw propagates → counted as passErrors', async () => {
+      const { deps, emitInTxMock, markExhaustedMock } = fakeDeps({
+        exhausted: [buildFailedEvent()],
+      });
+      markExhaustedMock.mockImplementation(async () => {
+        throw new Error('db: connection lost');
+      });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.summary.passErrors).toBe(1);
+      expect(result.value.summary.exhaustedMarked).toBe(0);
+      expect(result.value.summary.exhaustedConcurrentWin).toBe(0);
+      // The throw aborted the tx BEFORE any audit was emitted.
+      const permanentAudits = emitInTxMock.mock.calls.filter(
+        (c) => c[1].type === 'renewal_reminder_send_failed_permanent',
+      );
+      expect(permanentAudits).toHaveLength(0);
     });
   });
 

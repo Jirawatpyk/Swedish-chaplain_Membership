@@ -158,15 +158,23 @@ describe('cron per-tenant dispatch route (T104)', () => {
     expect(retryMock).not.toHaveBeenCalled();
   });
 
-  it('retry failure does NOT block response (counted as 0 retried)', async () => {
+  it('J2-B5: retry pass err Result is logged + flagged in response (NOT silently 0-coerced)', async () => {
     retryMock.mockResolvedValueOnce(
       err({ kind: 'invalid_input', message: 'bad input' }),
     );
     const res = await POST(makeRequest(VALID_AUTH), validParams);
+    // Stays 200 to avoid cron-job.org retry storms — dispatch already
+    // succeeded and we don't want duplicate dispatch attempts.
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.reminders_retried).toBe(0);
+    expect(body.reminders_exhausted).toBe(0);
     expect(body.reminders_dispatched).toBe(3);
+    // J2-B5 critical: retry-pass health surfaced for coordinator audit
+    // + ops dashboards. Without these flags a coordinator audit would
+    // show "succeeded" while retry pass had silently no-op'd.
+    expect(body.retry_pass_failed).toBe(true);
+    expect(body.retry_pass_error).toBe('invalid_input');
   });
 
   it('unexpected throw inside tx returns 500 + server_error code', async () => {
@@ -190,6 +198,9 @@ describe('cron per-tenant dispatch route (T104)', () => {
       reminders_failed_permanent: 0,
       reminders_retried: 0,
       reminders_exhausted: 0,
+      // J2-B5: explicit retry-health flags on happy path too.
+      retry_pass_failed: false,
+      retry_pass_error: null,
     });
   });
 });

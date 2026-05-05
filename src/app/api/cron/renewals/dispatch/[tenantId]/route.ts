@@ -126,6 +126,29 @@ export async function POST(
         tenantId,
         correlationId,
       });
+      // J2-B5: previously a `retryResult.ok === false` was silently
+      // coerced to `0 retried / 0 exhausted` and the per-tenant route
+      // returned 200 with green metrics — the coordinator then emitted
+      // `cron_dispatch_orchestrated` "succeeded" while the retry pass
+      // had completely no-op'd. Now we elevate the err Result to an
+      // error log + surface `retry_pass_failed: true` in the response
+      // body so the coordinator audit + observability dashboards
+      // distinguish "no retries needed" from "retry pass crashed".
+      // We deliberately keep HTTP 200 (rather than 5xx) to avoid
+      // cron-job.org retry storms — the dispatch pass already
+      // succeeded; one ops alert is preferable to a flood of duplicate
+      // dispatch attempts.
+      if (!retryResult.ok) {
+        logger.error(
+          {
+            tenantId,
+            correlationId,
+            errKind: retryResult.error.kind,
+            errMessage: retryResult.error.message,
+          },
+          'cron.renewals.dispatch.retry_pass_failed',
+        );
+      }
 
       const responseBody = {
         skipped: false as const,
@@ -143,6 +166,11 @@ export async function POST(
         reminders_exhausted: retryResult.ok
           ? retryResult.value.summary.exhaustedMarked
           : 0,
+        // J2-B5: surfaced retry-pass health for coordinator audit +
+        // ops dashboards. `retry_pass_failed=false` on success;
+        // `retry_pass_error` carries the Result error kind on failure.
+        retry_pass_failed: !retryResult.ok,
+        retry_pass_error: retryResult.ok ? null : retryResult.error.kind,
         candidates_processed:
           dispatchResult.value.summary.candidatesProcessed,
         duration_ms: Date.now() - startedAt,

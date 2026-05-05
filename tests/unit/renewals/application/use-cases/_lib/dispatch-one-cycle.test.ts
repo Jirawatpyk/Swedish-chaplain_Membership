@@ -437,6 +437,39 @@ describe('dispatchOneCycle', () => {
       expect(result.metadata?.latest_outreach_at).toBe('2026-05-12T00:00:00Z');
     });
 
+    it('J2-B6: Gate 10 — pause-check returns err Result → defensive skip tenant_misconfigured (NOT silent fall-through)', async () => {
+      // Force pauseRemindersAfterOutreach Zod input rejection by
+      // passing a non-UUID memberId. Previously the dispatcher silently
+      // fell through and dispatched the email, violating FR-033's
+      // "system reminder must not collide with logged outreach"
+      // invariant. Defensive skip preserves the FR contract.
+      const { deps, emitMock, gatewayMock } = fakeDeps({});
+      const candidate = buildHappyCandidate({
+        member: {
+          memberId: 'not-a-uuid', // Zod rejects → pauseResult.ok=false
+        },
+      });
+      const result = await dispatchOneCycle(deps, candidate, happyCtx);
+      expect(result.kind).toBe('skipped');
+      if (result.kind !== 'skipped') return;
+      expect(result.reason).toBe('tenant_misconfigured');
+      // Gateway MUST NOT be called — that's the FR-033 violation we
+      // are preventing.
+      expect(gatewayMock).not.toHaveBeenCalled();
+      // Audit emit carries the gate metadata so ops can triage which
+      // gate failed.
+      expect(emitMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'renewal_reminder_skipped',
+          payload: expect.objectContaining({
+            reason: 'tenant_misconfigured',
+            gate: 'outreach_pause_check',
+          }),
+        }),
+        expect.anything(),
+      );
+    });
+
     it('Gate 11 — email step + no primary contact: skip no_primary_contact + create task', async () => {
       const { deps, insertTaskMock, emitInTxMock } = fakeDeps({});
       const result = await dispatchOneCycle(
@@ -518,6 +551,97 @@ describe('dispatchOneCycle', () => {
       });
       const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
       expect(result.kind).toBe('failed_permanent');
+    });
+
+    it('J2-B2: gateway throws uncaught → row defensively transitioned to failed for retry pickup (no orphan pending row)', async () => {
+      const { deps, transitionReminderMock, emitInTxMock } = fakeDeps({});
+      // Override gateway to throw exception (NOT return err Result)
+      // — simulates network panic, SDK crash, or any uncaught throw
+      // between insertIfAbsent (row=pending) and transitionStatus.
+      const gateway = deps.renewalGateway as {
+        sendRenewalEmail: ReturnType<typeof vi.fn>;
+      };
+      gateway.sendRenewalEmail = vi.fn(async () => {
+        throw new Error('SDK panic: ECONNRESET');
+      });
+
+      const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
+
+      // Outcome: failed_transient with dispatcher_crash reason — caller
+      // (cron) tallies this as a transient failure, allowing retry-pass
+      // pickup within 24h.
+      expect(result.kind).toBe('failed_transient');
+      if (result.kind !== 'failed_transient') return;
+      expect(result.reason).toMatch(/^dispatcher_crash: /);
+
+      // Critical: the orphan pending row was transitioned. Without
+      // this fix the row would orphan forever (retry-pass filters
+      // status='failed', dispatcher skips via 'already_sent').
+      expect(transitionReminderMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          nextStatus: 'failed',
+          failureReason: expect.stringMatching(/^dispatcher_crash: /),
+          retryUntil: expect.any(String),
+        }),
+      );
+
+      // Audit emitted in the SAME defensive tx as the transition
+      // (Principle VIII state↔audit atomicity).
+      const failedAudit = emitInTxMock.mock.calls.find(
+        (c) =>
+          c[1].type === 'renewal_reminder_send_failed' &&
+          c[1].payload.failure_kind === 'dispatcher_crash',
+      );
+      expect(failedAudit).toBeDefined();
+    });
+
+    it('J2-B2: inner persistence tx throws → defensive cleanup catches + ensures row not orphaned', async () => {
+      // Gateway succeeds, but the success-path runInTenant throws
+      // mid-flight (e.g., audit_log INSERT serialization failure).
+      // Without defensive cleanup the row would orphan at 'pending'.
+      const { deps, transitionReminderMock } = fakeDeps({});
+      const reminderRepo = deps.reminderEventRepo as {
+        transitionStatus: ReturnType<typeof vi.fn>;
+      };
+      let callCount = 0;
+      reminderRepo.transitionStatus = vi.fn(async (_tx, input) => {
+        callCount += 1;
+        // First call (success path) throws; second call (defensive
+        // cleanup) succeeds.
+        if (callCount === 1) {
+          throw new Error('audit_log: insert failed');
+        }
+        return {
+          tenantId: TENANT_ID,
+          reminderEventId: 'rem-1',
+          cycleId: CYCLE_ID,
+          stepId: 't-30.email',
+          channel: 'email' as const,
+          templateId: 'renewal.t-30.regular',
+          taskType: null,
+          dispatchedAt: null,
+          deliveryId: null,
+          status: input.nextStatus,
+          skipReason: null,
+          failureReason: input.failureReason ?? null,
+          actorUserId: null,
+          yearInCycle: 1,
+          createdAt: NOW_ISO,
+          retryUntil: input.retryUntil ?? null,
+          retryExhaustedAt: null,
+        };
+      });
+
+      const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
+
+      expect(result.kind).toBe('failed_transient');
+      // transitionStatus called TWICE: first for success path
+      // (threw), second for defensive cleanup (succeeded).
+      expect(reminderRepo.transitionStatus).toHaveBeenCalledTimes(2);
+      // Voiding the unused mock var avoids lint while documenting
+      // the cleanup-tx success.
+      void transitionReminderMock;
     });
   });
 
