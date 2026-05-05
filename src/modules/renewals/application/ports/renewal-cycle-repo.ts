@@ -206,6 +206,18 @@ export interface PipelineRow {
    * (grace_expired vs payment_failed vs admin_marked) per spec AS3.
    */
   readonly closedReason: ClosedReason | null;
+  /**
+   * J4-H13 (smart-feature #2 — at-risk visibility): mirror of
+   * `members.email_unverified` so the pipeline UI can render an
+   * inline indicator on rows whose primary contact email has hit
+   * a bounce threshold (T090 detect-bounce-threshold). Without this
+   * field admins only learn email is unverified by clicking
+   * "Send reminder" and reading the toast — by then the cycle may
+   * already be at T+0 lapsed. Surfacing it on the row itself lets
+   * the admin remediate (chase a new contact email) before the
+   * grace window closes.
+   */
+  readonly emailUnverified: boolean;
 }
 
 export interface PipelineSummary {

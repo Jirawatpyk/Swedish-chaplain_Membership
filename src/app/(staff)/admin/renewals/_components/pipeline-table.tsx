@@ -73,6 +73,7 @@ export function PipelineTable({ rows }: PipelineTableProps) {
           <CycleCompanyCell
             memberId={row.original.memberId}
             companyName={row.original.companyName}
+            emailUnverified={row.original.emailUnverified}
           />
         ),
       },

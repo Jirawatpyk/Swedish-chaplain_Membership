@@ -1646,6 +1646,7 @@
         "viewInvoice": "Visa faktura",
         "noRows": "Inga medlemmar i detta intervall.",
         "unknownCompany": "(Okänt företag)",
+        "emailUnverifiedHint": "E-postadressen är overifierad — nyligen upptäckta studsar; systempåminnelser är pausade tills kontaktens e-post uppdateras och verifieras på nytt.",
         "srResultCount": "{count, plural, one {Visar # medlem i {urgency}} other {Visar # medlemmar i {urgency}}}"
       },
       "actions": {
@@ -1886,7 +1887,9 @@
       "invoicesList": "Fakturalista",
       "invoicesPaidOnline": "Fakturor: betalda online (avstämning)",
       "creditNotesList": "Kreditnotalista",
-      "broadcastsQueue": "Granskningskö för E-Blast"
+      "broadcastsQueue": "Granskningskö för E-Blast",
+      "renewalsList": "Förnyelsepipeline",
+      "renewalSchedules": "Förnyelseschemaprinciper"
     }
   },
   "nav": {

@@ -110,6 +110,7 @@ export function LapsedTab({ rows }: LapsedTabProps) {
                     <CycleCompanyCell
                       memberId={r.memberId}
                       companyName={r.companyName}
+                      emailUnverified={r.emailUnverified}
                     />
                   </TableCell>
                   <TableCell>

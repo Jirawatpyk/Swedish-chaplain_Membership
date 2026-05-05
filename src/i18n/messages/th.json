@@ -1646,6 +1646,7 @@
         "viewInvoice": "ดูใบแจ้งหนี้",
         "noRows": "ไม่มีสมาชิกในกลุ่มนี้",
         "unknownCompany": "(ไม่ระบุชื่อบริษัท)",
+        "emailUnverifiedHint": "อีเมลยังไม่ได้รับการยืนยัน — ระบบตรวจพบการตีกลับเมื่อเร็ว ๆ นี้ และได้หยุดการแจ้งเตือนอัตโนมัติไว้จนกว่าผู้ติดต่อจะอัปเดตและยืนยันอีเมลใหม่",
         "srResultCount": "แสดง {count} สมาชิก ใน {urgency}"
       },
       "actions": {
@@ -1886,7 +1887,9 @@
       "invoicesList": "รายการใบแจ้งหนี้",
       "invoicesPaidOnline": "ใบแจ้งหนี้: ชำระออนไลน์ (กระทบยอด)",
       "creditNotesList": "รายการใบลดหนี้",
-      "broadcastsQueue": "คิวตรวจสอบ E-Blast"
+      "broadcastsQueue": "คิวตรวจสอบ E-Blast",
+      "renewalsList": "ไทม์ไลน์การต่ออายุสมาชิก",
+      "renewalSchedules": "นโยบายตารางการต่ออายุ"
     }
   },
   "nav": {

@@ -203,6 +203,26 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/broadcasts',
     requires: 'read',
   },
+  // J4-B9 (smart-feature #4 MVP) — F8 Phase 4 surfaces. Without
+  // these entries, ⌘K-driven jumps to the renewal pipeline +
+  // schedule editor are missing — every other major admin surface
+  // (plans, members, invoices, broadcasts) is reachable via the
+  // palette so omitting renewals would be an explicit smart-UX gap.
+  {
+    id: 'nav.renewals',
+    label: 'palette.navigate.renewalsList',
+    url: '/admin/renewals',
+    requires: 'read',
+  },
+  {
+    id: 'nav.renewalSchedules',
+    label: 'palette.navigate.renewalSchedules',
+    url: '/admin/renewals/settings/schedules',
+    // Manager role can READ the schedule editor (it renders read-only
+    // for them server-side per `requireRenewalAdminContext('read')`).
+    // Admin-only mutations are still gated at the route handler.
+    requires: 'read',
+  },
 ];
 
 function filterByRole<T extends { requires: 'admin' | 'read' }>(

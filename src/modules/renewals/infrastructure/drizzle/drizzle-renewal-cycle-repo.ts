@@ -747,6 +747,10 @@ export function makeDrizzleRenewalCycleRepo(
             lastReminderStepId: lastReminderSubq.stepId,
             linkedInvoiceId: renewalCycles.linkedInvoiceId,
             closedReason: renewalCycles.closedReason,
+            // J4-H13: surface members.email_unverified to the UI
+            // — already JOIN'd above, so adding the column to the
+            // projection is zero extra cost.
+            emailUnverified: members.emailUnverified,
           })
           .from(renewalCycles)
           .leftJoin(
@@ -785,6 +789,10 @@ export function makeDrizzleRenewalCycleRepo(
           lastReminderStepId: r.lastReminderStepId ?? null,
           linkedInvoiceId: r.linkedInvoiceId,
           closedReason: r.closedReason as ClosedReason | null,
+          // J4-H13: defaults to false when the LEFT JOIN didn't match
+          // (orphan cycle without a member row — should never happen
+          // under normal F8 operation; defensive).
+          emailUnverified: r.emailUnverified ?? false,
         }));
 
         const summary: PipelineSummary = {

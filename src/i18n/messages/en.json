@@ -1646,6 +1646,7 @@
         "viewInvoice": "View invoice",
         "noRows": "No members in this bucket.",
         "unknownCompany": "(Unknown company)",
+        "emailUnverifiedHint": "Email unverified — recent bounces detected; system reminders are paused until the contact's email is updated and re-verified.",
         "srResultCount": "{count, plural, one {Showing # member in {urgency}} other {Showing # members in {urgency}}}"
       },
       "actions": {
@@ -1886,7 +1887,9 @@
       "invoicesList": "Invoices list",
       "invoicesPaidOnline": "Invoices: paid online (reconciliation)",
       "creditNotesList": "Credit notes list",
-      "broadcastsQueue": "E-Blast review queue"
+      "broadcastsQueue": "E-Blast review queue",
+      "renewalsList": "Renewal pipeline",
+      "renewalSchedules": "Renewal schedule policies"
     }
   },
   "nav": {
