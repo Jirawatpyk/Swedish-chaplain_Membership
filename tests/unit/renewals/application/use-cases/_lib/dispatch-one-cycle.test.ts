@@ -601,7 +601,7 @@ describe('dispatchOneCycle', () => {
       // mid-flight (e.g., audit_log INSERT serialization failure).
       // Without defensive cleanup the row would orphan at 'pending'.
       const { deps, transitionReminderMock } = fakeDeps({});
-      const reminderRepo = deps.reminderEventRepo as {
+      const reminderRepo = deps.reminderEventRepo as unknown as {
         transitionStatus: ReturnType<typeof vi.fn>;
       };
       let callCount = 0;
