@@ -25,7 +25,9 @@ vi.mock('@/lib/env', () => ({
   },
 }));
 
-const auditEmitMock = vi.hoisted(() => vi.fn(async () => {}));
+const auditEmitMock = vi.hoisted(() =>
+  vi.fn(async (_event: { type: string; payload: unknown }, _ctx: unknown) => {}),
+);
 vi.mock('@/modules/renewals', () => ({
   makeRenewalsDeps: vi.fn(() => ({
     tenant: { slug: 'tenanta' },

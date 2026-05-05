@@ -34,7 +34,7 @@ import { makeDrizzleRenewalEscalationTaskRepo } from './drizzle/drizzle-renewal-
 import { makeDrizzleMemberRenewalFlagsRepo } from './drizzle/drizzle-member-renewal-flags-repo';
 import { makeDrizzleDispatchCandidateRepo } from './drizzle/drizzle-dispatch-candidate-repo';
 import { makeDrizzleRenewalReminderEventRepo } from './drizzle/drizzle-renewal-reminder-event-repo';
-import { stubRenewalGateway } from './stub-renewal-gateway';
+import { resendTransactionalRenewalGateway } from './resend-transactional-renewal-gateway';
 import { makeDrizzleBounceEventQuery } from './drizzle/drizzle-bounce-event-query';
 import { f4InvoiceBridge, type F4InvoiceBridge } from './ports-adapters/f4-invoice-bridge';
 
@@ -174,7 +174,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     memberRenewalFlagsRepo: makeDrizzleMemberRenewalFlagsRepo(tenant),
     dispatchCandidateRepo: makeDrizzleDispatchCandidateRepo(tenant),
     reminderEventRepo: makeDrizzleRenewalReminderEventRepo(tenant),
-    renewalGateway: stubRenewalGateway,
+    renewalGateway: resendTransactionalRenewalGateway,
     bounceEventQuery: makeDrizzleBounceEventQuery(tenant),
   };
 }

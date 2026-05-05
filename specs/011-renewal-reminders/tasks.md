@@ -190,14 +190,14 @@
 
 ### Email Templates (5 buckets × 5–7 steps × 3 locales)
 
-- [ ] T093 [P] [US2] React Email template `renewal.t-30.thai-alumni.tsx` + EN/TH/SV i18n
-- [ ] T094 [P] [US2] React Email template `renewal.t-30.start-up.tsx` + i18n
-- [ ] T095 [P] [US2] React Email template `renewal.t-30.regular.tsx` + i18n
-- [ ] T096 [P] [US2] React Email templates `renewal.t-90.premium.tsx` + `renewal.t-30.premium.tsx` + i18n
-- [ ] T097 [P] [US2] React Email templates `renewal.t-120.partnership.tsx` + `renewal.t-90.partnership.tsx` + `renewal.t-30.partnership.tsx` + i18n
-- [ ] T098 [P] [US2] React Email templates for T-14, T-7, T+0, T+7 across applicable buckets + i18n
-- [ ] T099 [P] [US2] Dual-format date footer component for emails per FR-014 (BE + Gregorian for `th-TH` body + footer; footer-only for `en`/`sv`)
-- [ ] T100 [P] [US2] Resend transactional gateway adapter `resend-transactional-renewal-gateway.ts` — uses F1+F4 client (NOT F7 Broadcasts) per FR-019; reuses F1 retry budget per R12 §F1 retry alignment
+- [X] T093 [P] [US2] React Email template `renewal.t-30.thai-alumni.tsx` + EN/TH/SV i18n
+- [X] T094 [P] [US2] React Email template `renewal.t-30.start-up.tsx` + i18n
+- [X] T095 [P] [US2] React Email template `renewal.t-30.regular.tsx` + i18n
+- [X] T096 [P] [US2] React Email templates `renewal.t-90.premium.tsx` + `renewal.t-30.premium.tsx` + i18n
+- [X] T097 [P] [US2] React Email templates `renewal.t-120.partnership.tsx` + `renewal.t-90.partnership.tsx` + `renewal.t-30.partnership.tsx` + i18n
+- [X] T098 [P] [US2] React Email templates for T-14, T-7, T+0, T+7 across applicable buckets + i18n
+- [X] T099 [P] [US2] Dual-format date footer component for emails per FR-014 (BE + Gregorian for `th-TH` body + footer; footer-only for `en`/`sv`)
+- [X] T100 [P] [US2] Resend transactional gateway adapter `resend-transactional-renewal-gateway.ts` — uses F1+F4 client (NOT F7 Broadcasts) per FR-019; reuses F1 retry budget per R12 §F1 retry alignment
 
 ### F1 Webhook Integration (synchronous in-process call per R8 rev-2)
 
