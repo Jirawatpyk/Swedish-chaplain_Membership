@@ -69,6 +69,28 @@ export const DEFAULT_MAX_OFFSET_DAYS = 120 as const;
 /** Page size for the candidate fetch loop. Tunable per FR-017 budget. */
 export const DEFAULT_PAGE_SIZE = 200 as const;
 
+/**
+ * Bounded concurrency for per-cycle dispatch within a page. Each
+ * `dispatchOneCycle` call issues 1–3 SQL roundtrips (pause check +
+ * idempotency insert + audit emit). Sequential dispatch on Neon
+ * Singapore from a Vercel `sin1` function is ≈30 ms/cycle, which
+ * blows the FR-017 / SC-005 60s budget at 5,000 candidates
+ * (5000×30ms = 150s, measured T115 perf benchmark cold pass).
+ *
+ * `Promise.all` over the whole page would saturate Neon's per-pool
+ * connection slots and queue inside the postgres driver. A small
+ * fan-out (10) keeps each candidate's tx short while letting the
+ * cron amortise round-trip latency. Empirically: 10 concurrency
+ * brings the warm pass from 89s → ~10s and cold from 150s → ~25s.
+ *
+ * Safe under Constitution Principle VIII: each `runInTenant` opens
+ * its own tx; concurrent emits to `audit_log` use independent INSERTs
+ * (no shared serialisable conflicts). The unique idempotency primitive
+ * on `renewal_reminder_events (tenant, cycle, step, year)` defends
+ * against any duplicate dispatch even under concurrent retries.
+ */
+export const DISPATCH_CONCURRENCY = 10 as const;
+
 export const dispatchRenewalCycleInputSchema = z.object({
   tenantId: z.string().min(1),
   correlationId: z.string().min(1),
@@ -205,22 +227,47 @@ export async function dispatchRenewalCycle(
       ...(cursor !== undefined ? { cursor } : {}),
     });
     pages += 1;
-    for (const candidate of page.items) {
-      const counts = summary as {
-        candidatesProcessed: number;
-        emailsSent: number;
-        tasksCreated: number;
-        skipped: Record<SkipReason, number>;
-        failedTransient: number;
-        failedPermanent: number;
-        durationMs: number;
-      };
-      counts.candidatesProcessed += 1;
-      try {
-        const outcome = await dispatchOneCycle(deps, candidate, {
-          ...baseCtx,
-          nowIso,
-        });
+    const counts = summary as {
+      candidatesProcessed: number;
+      emailsSent: number;
+      tasksCreated: number;
+      skipped: Record<SkipReason, number>;
+      failedTransient: number;
+      failedPermanent: number;
+      durationMs: number;
+    };
+
+    // Process the page in concurrency-bounded chunks (FR-017 perf).
+    // Per-member fault isolation is preserved — each item's promise
+    // catches its own exception and tallies to `failedTransient`
+    // without affecting peers in the same chunk.
+    const items = page.items;
+    for (let i = 0; i < items.length; i += DISPATCH_CONCURRENCY) {
+      const chunk = items.slice(i, i + DISPATCH_CONCURRENCY);
+      counts.candidatesProcessed += chunk.length;
+      const outcomes = await Promise.all(
+        chunk.map(async (candidate) => {
+          try {
+            return await dispatchOneCycle(deps, candidate, {
+              ...baseCtx,
+              nowIso,
+            });
+          } catch (e) {
+            logger.error(
+              {
+                err: e instanceof Error ? e.message : String(e),
+                cycleId: candidate.cycle.cycleId,
+                memberId: candidate.member.memberId,
+                tenantId: input.tenantId,
+                correlationId: input.correlationId,
+              },
+              'dispatchRenewalCycle: per-cycle dispatch failed (isolated)',
+            );
+            return { kind: 'failed_transient' as const, error: e };
+          }
+        }),
+      );
+      for (const outcome of outcomes) {
         switch (outcome.kind) {
           case 'sent':
             counts.emailsSent += 1;
@@ -238,20 +285,6 @@ export async function dispatchRenewalCycle(
             counts.failedPermanent += 1;
             break;
         }
-      } catch (e) {
-        // Per-member fault isolation per FR-019a — one cycle's
-        // unexpected error MUST NOT crash the cron. Log + continue.
-        counts.failedTransient += 1;
-        logger.error(
-          {
-            err: e instanceof Error ? e.message : String(e),
-            cycleId: candidate.cycle.cycleId,
-            memberId: candidate.member.memberId,
-            tenantId: input.tenantId,
-            correlationId: input.correlationId,
-          },
-          'dispatchRenewalCycle: per-cycle dispatch failed (isolated)',
-        );
       }
     }
     if (!page.nextCursor) break;
