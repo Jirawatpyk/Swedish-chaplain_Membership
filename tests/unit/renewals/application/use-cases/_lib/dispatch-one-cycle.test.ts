@@ -336,6 +336,21 @@ describe('dispatchOneCycle', () => {
       expect(emitMock.mock.calls[0]![0].payload.reason).toBe('member_archived');
     });
 
+    it('Gate 4.5 — empty registrationDate: skip no_joined_at + emit renewal_skipped_no_joined_at', async () => {
+      const { deps, emitMock } = fakeDeps({});
+      const result = await dispatchOneCycle(
+        deps,
+        buildHappyCandidate({ member: { registrationDate: '' } }),
+        happyCtx,
+      );
+      expect(result.kind).toBe('skipped');
+      if (result.kind !== 'skipped') return;
+      expect(result.reason).toBe('no_joined_at');
+      // T106 dedicated audit type — NOT the generic renewal_reminder_skipped.
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      expect(emitMock.mock.calls[0]![0].type).toBe('renewal_skipped_no_joined_at');
+    });
+
     it('Gate 5 — member opted out: skip member_opted_out', async () => {
       const { deps } = fakeDeps({});
       const result = await dispatchOneCycle(

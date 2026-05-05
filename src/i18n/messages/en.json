@@ -1654,6 +1654,31 @@
         "markContacted": "Mark contacted",
         "rowMenu": "Actions for {company}"
       },
+      "sendReminderNow": {
+        "toast": {
+          "sent": {
+            "title": "Reminder sent",
+            "description": "Email queued for delivery to {company}"
+          },
+          "skipped": {
+            "alreadySent": "Already sent {ago}",
+            "memberArchived": "Skipped — member is archived",
+            "memberOptedOut": "Skipped — member opted out",
+            "emailUnverified": "Skipped — email is unverified",
+            "outreachInProgress": "Skipped — recent outreach already logged",
+            "noPrimaryContact": "Skipped — no primary contact email on file",
+            "generic": "Skipped — {reason}"
+          },
+          "failedTransient": "Send failed temporarily — automatic retry within 24h",
+          "failedPermanent": "Send failed — admin review needed",
+          "error": {
+            "network": "Could not send — check connection and retry",
+            "unauthorized": "Not authorized to send",
+            "rateLimited": "Too many requests — try again in {seconds}s",
+            "generic": "Could not send reminder"
+          }
+        }
+      },
       "lapsed": {
         "banner": {
           "title": "Lapsed members",

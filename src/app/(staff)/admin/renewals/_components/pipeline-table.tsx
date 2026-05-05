@@ -15,9 +15,10 @@
  */
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useTransition } from 'react';
 import Link from 'next/link';
-import { useTranslations, useFormatter } from 'next-intl';
+import { useTranslations, useFormatter, useLocale } from 'next-intl';
+import { toast } from 'sonner';
 import {
   flexRender,
   getCoreRowModel,
@@ -54,7 +55,6 @@ export interface PipelineTableProps {
 
 export function PipelineTable({ rows }: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
-  const tActions = useTranslations('admin.renewals.actions');
   const fmt = useFormatter();
 
   const columns = useMemo<ColumnDef<PipelineRow>[]>(
@@ -132,54 +132,14 @@ export function PipelineTable({ rows }: PipelineTableProps) {
         id: 'actions',
         header: () => <span className="sr-only">{t('columns.actions')}</span>,
         cell: ({ row }) => (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={(props) => (
-                <Button
-                  {...props}
-                  variant="ghost"
-                  size="icon"
-                  // 44×44px tap target — WCAG 2.5.5 Target Size (AAA)
-                  // + iOS HIG 44pt minimum. F3 baseline adopted WCAG
-                  // 2.5.8 (24×24, AA); F8 row-action triggers go a step
-                  // further to AAA because they sit inside a dense data
-                  // table where mis-taps would route to the wrong row.
-                  className="h-11 w-11"
-                  aria-label={tActions('rowMenu', {
-                    company: row.original.companyName,
-                  })}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              )}
-            />
-            <DropdownMenuContent align="end">
-              {/* Send reminder + Mark contacted ship in Phase 4 (US2)
-                  + Phase 6 (US4). Keep the menu items disabled but
-                  drop the "Coming in USx" parenthetical — production
-                  UI doesn't expose phase identifiers. */}
-              <DropdownMenuItem disabled>
-                {tActions('sendReminder')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                render={(props) => (
-                  <a
-                    {...props}
-                    href={`/admin/renewals/${row.original.cycleId}`}
-                  >
-                    {tActions('open')}
-                  </a>
-                )}
-              />
-              <DropdownMenuItem disabled>
-                {tActions('markContacted')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <RowActionsMenu
+            cycleId={row.original.cycleId}
+            companyName={row.original.companyName}
+          />
         ),
       },
     ],
-    [t, tActions, fmt],
+    [t, fmt],
   );
 
   // Round 5 S-05 — memoise the data array reference so TanStack Table
@@ -234,4 +194,178 @@ export function PipelineTable({ rows }: PipelineTableProps) {
       </TableBody>
     </Table>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Wave I6+I7 · T108 — RowActionsMenu
+// ---------------------------------------------------------------------------
+
+/**
+ * Row-level actions dropdown. Owns its own `useTransition` state so the
+ * pipeline table's columns memo stays stable across renders. Mark
+ * contacted remains disabled until US4 (Wave J).
+ */
+function RowActionsMenu({
+  cycleId,
+  companyName,
+}: {
+  readonly cycleId: string;
+  readonly companyName: string;
+}): React.JSX.Element {
+  const tActions = useTranslations('admin.renewals.actions');
+  const tToast = useTranslations('admin.renewals.sendReminderNow.toast');
+  const locale = useLocale();
+  const [isPending, startTransition] = useTransition();
+
+  const handleSendReminder = (): void => {
+    startTransition(async () => {
+      try {
+        const res = await fetch(
+          `/api/admin/renewals/${cycleId}/send-reminder-now`,
+          { method: 'POST' },
+        );
+        if (res.status === 401 || res.status === 403) {
+          toast.error(tToast('error.unauthorized'));
+          return;
+        }
+        if (res.status === 429) {
+          const retry = res.headers.get('Retry-After') ?? '60';
+          toast.error(tToast('error.rateLimited', { seconds: retry }));
+          return;
+        }
+        if (res.status === 409) {
+          const body = (await res.json().catch(() => null)) as {
+            error?: { existing_dispatched_at?: string };
+          } | null;
+          const dispatchedAt = body?.error?.existing_dispatched_at;
+          const ago = dispatchedAt ? formatRelativeAgo(dispatchedAt, locale) : '';
+          toast.warning(tToast('skipped.alreadySent', { ago }));
+          return;
+        }
+        if (!res.ok) {
+          toast.error(tToast('error.network'));
+          return;
+        }
+        const body = (await res.json().catch(() => null)) as {
+          outcome?: { kind: string; reason?: string };
+        } | null;
+        const outcome = body?.outcome;
+        if (!outcome) {
+          toast.error(tToast('error.generic'));
+          return;
+        }
+        switch (outcome.kind) {
+          case 'sent':
+          case 'task_created':
+            toast.success(tToast('sent.title'), {
+              description: tToast('sent.description', { company: companyName }),
+            });
+            break;
+          case 'skipped':
+            toast.info(toastLabelForSkipReason(outcome.reason ?? 'generic', tToast));
+            break;
+          case 'failed_transient':
+            toast.warning(tToast('failedTransient'));
+            break;
+          case 'failed_permanent':
+            toast.error(tToast('failedPermanent'));
+            break;
+          default:
+            toast.error(tToast('error.generic'));
+        }
+      } catch {
+        toast.error(tToast('error.network'));
+      }
+    });
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={(props) => (
+          <Button
+            {...props}
+            variant="ghost"
+            size="icon"
+            // 44×44px tap target — WCAG 2.5.5 Target Size (AAA) +
+            // iOS HIG 44pt minimum. F3 baseline adopted WCAG 2.5.8
+            // (24×24, AA); F8 row-action triggers go a step further
+            // because they sit inside a dense data table where
+            // mis-taps would route to the wrong row.
+            className="h-11 w-11"
+            aria-label={tActions('rowMenu', { company: companyName })}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        )}
+      />
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          disabled={isPending}
+          onClick={handleSendReminder}
+        >
+          {tActions('sendReminder')}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          render={(props) => (
+            <a {...props} href={`/admin/renewals/${cycleId}`}>
+              {tActions('open')}
+            </a>
+          )}
+        />
+        {/* Mark contacted ships in US4 (Wave J). */}
+        <DropdownMenuItem disabled>
+          {tActions('markContacted')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * Render an ISO timestamp as a relative-time phrase ("5 minutes ago" /
+ * "ก่อน 5 นาที" / "5 minuter sedan"). Falls back to the raw ISO when
+ * `Intl.RelativeTimeFormat` is unavailable.
+ */
+function formatRelativeAgo(iso: string, locale: string): string {
+  const rtfLocale = mapToRtfLocale(locale);
+  let target: number;
+  try {
+    target = new Date(iso).getTime();
+    if (!Number.isFinite(target)) return iso;
+  } catch {
+    return iso;
+  }
+  const deltaMs = target - Date.now();
+  const absSec = Math.abs(deltaMs) / 1000;
+  const rtf = new Intl.RelativeTimeFormat(rtfLocale, { numeric: 'auto' });
+  if (absSec < 60) return rtf.format(Math.round(deltaMs / 1000), 'second');
+  if (absSec < 3600) return rtf.format(Math.round(deltaMs / 60_000), 'minute');
+  if (absSec < 86_400) return rtf.format(Math.round(deltaMs / 3_600_000), 'hour');
+  return rtf.format(Math.round(deltaMs / 86_400_000), 'day');
+}
+
+function mapToRtfLocale(locale: string): string {
+  // next-intl 'en' / 'th' / 'sv' map directly to BCP-47 tags.
+  return locale === 'th' ? 'th-TH' : locale === 'sv' ? 'sv-SE' : 'en-US';
+}
+
+function toastLabelForSkipReason(
+  reason: string,
+  t: ReturnType<typeof useTranslations<'admin.renewals.sendReminderNow.toast'>>,
+): string {
+  switch (reason) {
+    case 'member_archived':
+      return t('skipped.memberArchived');
+    case 'member_opted_out':
+      return t('skipped.memberOptedOut');
+    case 'email_unverified':
+      return t('skipped.emailUnverified');
+    case 'outreach_in_progress':
+      return t('skipped.outreachInProgress');
+    case 'no_primary_contact':
+      return t('skipped.noPrimaryContact');
+    default:
+      return t('skipped.generic', { reason });
+  }
 }

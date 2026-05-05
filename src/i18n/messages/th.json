@@ -1654,6 +1654,31 @@
         "markContacted": "ทำเครื่องหมายว่าติดต่อแล้ว",
         "rowMenu": "การดำเนินการสำหรับ {company}"
       },
+      "sendReminderNow": {
+        "toast": {
+          "sent": {
+            "title": "ส่งคำเตือนแล้ว",
+            "description": "อีเมลถูกส่งให้ {company}"
+          },
+          "skipped": {
+            "alreadySent": "ส่งไปแล้ว {ago}",
+            "memberArchived": "ข้าม — สมาชิกถูกเก็บเข้าคลัง",
+            "memberOptedOut": "ข้าม — สมาชิกยกเลิกการรับเตือน",
+            "emailUnverified": "ข้าม — อีเมลยังไม่ได้ยืนยัน",
+            "outreachInProgress": "ข้าม — มีบันทึกการติดต่อล่าสุดแล้ว",
+            "noPrimaryContact": "ข้าม — ไม่มีอีเมลผู้ติดต่อหลัก",
+            "generic": "ข้าม — {reason}"
+          },
+          "failedTransient": "ส่งไม่สำเร็จชั่วคราว — ระบบจะลองอีกครั้งภายใน 24 ชั่วโมง",
+          "failedPermanent": "ส่งไม่สำเร็จ — ผู้ดูแลต้องตรวจสอบ",
+          "error": {
+            "network": "ส่งไม่ได้ — ตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง",
+            "unauthorized": "ไม่มีสิทธิ์ส่ง",
+            "rateLimited": "ส่งบ่อยเกินไป — ลองอีกครั้งใน {seconds} วินาที",
+            "generic": "ส่งคำเตือนไม่ได้"
+          }
+        }
+      },
       "lapsed": {
         "banner": {
           "title": "สมาชิกที่หมดอายุ",

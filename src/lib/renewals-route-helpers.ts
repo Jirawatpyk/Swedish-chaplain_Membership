@@ -26,6 +26,13 @@ export interface RenewalsErrorOptions {
   readonly code: string;
   readonly correlationId: string;
   readonly details?: Record<string, unknown>;
+  /**
+   * Extra response headers merged on top of the standard
+   * `X-Correlation-Id` + `Cache-Control` pair. Used by 429 responses
+   * to set `Retry-After` (Wave I6+I7 T107) without bypassing the
+   * envelope helper.
+   */
+  readonly headers?: Record<string, string>;
 }
 
 /** Standard F8 error envelope: `{ error: { code, …details }, correlationId }`. */
@@ -37,6 +44,7 @@ export function errorResponse(opts: RenewalsErrorOptions): NextResponse {
       headers: {
         'X-Correlation-Id': opts.correlationId,
         'Cache-Control': 'no-store, private',
+        ...(opts.headers ?? {}),
       },
     },
   );

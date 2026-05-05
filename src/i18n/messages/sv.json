@@ -1654,6 +1654,31 @@
         "markContacted": "Markera kontaktad",
         "rowMenu": "Åtgärder för {company}"
       },
+      "sendReminderNow": {
+        "toast": {
+          "sent": {
+            "title": "Påminnelse skickad",
+            "description": "E-post i kö för leverans till {company}"
+          },
+          "skipped": {
+            "alreadySent": "Redan skickad {ago}",
+            "memberArchived": "Hoppade över — medlemmen är arkiverad",
+            "memberOptedOut": "Hoppade över — medlemmen har avregistrerat sig",
+            "emailUnverified": "Hoppade över — e-postadressen är inte verifierad",
+            "outreachInProgress": "Hoppade över — kontakt har redan loggats nyligen",
+            "noPrimaryContact": "Hoppade över — ingen e-post till primärkontakt",
+            "generic": "Hoppade över — {reason}"
+          },
+          "failedTransient": "Sändning misslyckades tillfälligt — automatiskt försök igen inom 24 h",
+          "failedPermanent": "Sändning misslyckades — administratör behöver granska",
+          "error": {
+            "network": "Kunde inte skicka — kontrollera anslutningen och försök igen",
+            "unauthorized": "Saknar behörighet att skicka",
+            "rateLimited": "För många förfrågningar — försök igen om {seconds} s",
+            "generic": "Kunde inte skicka påminnelsen"
+          }
+        }
+      },
       "lapsed": {
         "banner": {
           "title": "Förfallna medlemmar",

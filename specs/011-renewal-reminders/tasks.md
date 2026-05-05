@@ -212,12 +212,12 @@
 
 ### Audit Events
 
-- [ ] T106 [P] [US2] Audit emitter wiring for reminder events: `renewal_reminder_sent`, `renewal_reminder_skipped`, `renewal_reminder_send_failed`, `renewal_reminder_send_failed_permanent`, `renewal_reminder_retried`, `renewal_reminder_deferred_read_only`, `renewal_skipped_no_joined_at`, `member_email_unverified_threshold_crossed`
+- [X] T106 [P] [US2] Audit emitter wiring for reminder events: `renewal_reminder_sent`, `renewal_reminder_skipped`, `renewal_reminder_send_failed`, `renewal_reminder_send_failed_permanent`, `renewal_reminder_retried`, `renewal_reminder_deferred_read_only`, `renewal_skipped_no_joined_at`, `member_email_unverified_threshold_crossed` — Wave I6+I7: Gate 4.5 added in `dispatch-one-cycle.ts` to wire `renewal_skipped_no_joined_at` (final residual emit; remaining 7/8 already shipped via Wave I2c-I2d)
 
 ### Send-Reminder-Now Admin Action
 
-- [ ] T107 [US2] `POST /api/admin/renewals/[cycleId]/send-reminder-now` route handler — admin RBAC + rate-limit 30/5min + idempotency 409 with toast info per Edge Cases concurrent admin
-- [ ] T108 [US2] Admin "Send reminder" button component in pipeline + toast feedback per FR-058
+- [X] T107 [US2] `POST /api/admin/renewals/[cycleId]/send-reminder-now` route handler — admin RBAC + rate-limit 30/5min + idempotency 409 with toast info per Edge Cases concurrent admin
+- [X] T108 [US2] Admin "Send reminder" button component in pipeline + toast feedback per FR-058
 
 ### Tests
 

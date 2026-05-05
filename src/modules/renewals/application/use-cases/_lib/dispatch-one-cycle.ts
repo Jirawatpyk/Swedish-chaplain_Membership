@@ -10,6 +10,9 @@
  *   2. Read-only mode → skip + emit `renewal_reminder_deferred_read_only`
  *   3. Cycle terminal status → skip `cycle_terminal` (defensive)
  *   4. Member archived → skip `member_archived`
+ *   4.5. Member has no joined_at → skip `no_joined_at` + emit
+ *      `renewal_skipped_no_joined_at` (spec.md Edge Case backstop;
+ *      defensive — F8 normally never creates cycles for such members)
  *   5. Member opted out → skip `member_opted_out`
  *   6. Member email unverified → skip `email_unverified`
  *   7. No schedule policy for tier → skip `tenant_misconfigured`
@@ -74,6 +77,7 @@ export const SKIP_REASONS = [
   'read_only_mode',
   'cycle_terminal',
   'member_archived',
+  'no_joined_at',
   'member_opted_out',
   'email_unverified',
   'tenant_misconfigured',
@@ -181,6 +185,28 @@ async function emitSkipAudit(
     );
     return;
   }
+  // Special-case: no_joined_at emits a DISTINCT event per spec.md Edge Case
+  // ("Member with `joined_at IS NULL` ... Audit event `renewal_skipped_no_joined_at`").
+  if (reason === 'no_joined_at') {
+    await deps.auditEmitter.emit(
+      {
+        type: 'renewal_skipped_no_joined_at',
+        payload: {
+          cycle_id: cycle.cycleId,
+          member_id: member.memberId as MemberId,
+          tenant_id: ctx.tenantId,
+        },
+      },
+      {
+        tenantId: ctx.tenantId,
+        actorUserId: ctx.actorUserId,
+        actorRole: ctx.actorRole,
+        correlationId: ctx.correlationId,
+        requestId: ctx.requestId,
+      },
+    );
+    return;
+  }
   // Skip events that don't need audit emission (FR-012 — `already_sent`
   // is implicit from the prior reminder_event row already audited;
   // `not_due_today` and `feature_flag_disabled` are too noisy).
@@ -269,6 +295,19 @@ async function dispatchOneCycleInner(
   if (member.status === 'archived') {
     await emitSkipAudit(deps, candidate, ctx, 'member_archived');
     return { kind: 'skipped', reason: 'member_archived' };
+  }
+  // Gate 4.5 — member has no joined_at (data-hygiene defence per spec.md
+  // Edge Case "Member with `joined_at IS NULL` (data hygiene from F3 /
+  // Excel import)"). F3's `registration_date` is NOT NULL at the schema
+  // level, but Excel-imported rows can carry empty strings; if F8
+  // dispatcher reaches this gate with a missing joined_at the cycle's
+  // expires_at math would be unreliable, so we emit the dedicated audit
+  // event and abort dispatch. In practice this never fires because
+  // cycles are not created for members lacking joined_at, but the gate
+  // is the contracted backstop.
+  if (!member.registrationDate || member.registrationDate.length === 0) {
+    await emitSkipAudit(deps, candidate, ctx, 'no_joined_at');
+    return { kind: 'skipped', reason: 'no_joined_at' };
   }
   // Gate 5 — member opted out (FR-016).
   if (member.renewalRemindersOptedOut) {
