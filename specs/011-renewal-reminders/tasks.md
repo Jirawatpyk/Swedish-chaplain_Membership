@@ -221,16 +221,16 @@
 
 ### Tests
 
-- [ ] T109 [P] [US2] Integration test `tests/integration/renewals/dispatch-cron-idempotency.test.ts` — re-run cron 3× same day produces zero duplicates per FR-011
-- [ ] T110 [P] [US2] Integration test `tests/integration/renewals/multi-year-cycle.test.ts` — 3-year Partnership cycle + email skips year 1+2; tasks fire annually per FR-010 + Q4 round 1
-- [ ] T111 [P] [US2] Integration test `tests/integration/renewals/bounce-threshold.test.ts` — 1 hard bounce / 3 soft-in-cycle / 5 soft-30d trigger paths per FR-012a
-- [ ] T112 [P] [US2] Integration test `tests/integration/renewals/reminder-pause-after-outreach.test.ts` — admin records outreach + cron skips emails 7d
-- [ ] T113 [US2] E2E test `tests/e2e/tier-aware-reminder-cron.spec.ts` — US2 AS1-AS7
-- [ ] T114 [US2] i18n keys for ~50 reminder template strings × 3 locales = 150 entries
+- [X] T109 [P] [US2] Integration test `tests/integration/renewals/dispatch-cron-idempotency.test.ts` — re-run cron 3× same day produces zero duplicates per FR-011 — Wave I8 GREEN on live Neon (1 reminder_event + 1 audit + 1 gateway call across 3 cron passes)
+- [X] T110 [P] [US2] Integration test `tests/integration/renewals/multi-year-cycle.test.ts` — 3-year Partnership cycle + email skips year 1+2; tasks fire annually per FR-010 + Q4 round 1 — Wave I8 GREEN (Gate 9 email skip + task channel fire)
+- [X] T111 [P] [US2] Integration test `tests/integration/renewals/bounce-threshold.test.ts` — 1 hard bounce / 3 soft-in-cycle / 5 soft-30d trigger paths per FR-012a — Wave I8 GREEN
+- [X] T112 [P] [US2] Integration test `tests/integration/renewals/reminder-pause-after-outreach.test.ts` — admin records outreach + cron skips emails 7d — Wave I8 GREEN (fresh + stale outreach windows)
+- [ ] T113 [US2] E2E test `tests/e2e/tier-aware-reminder-cron.spec.ts` — US2 AS1-AS7 — **DEFERRED**: cron is HTTP-Bearer authed (not a UI surface) so a Playwright browser test is awkward; the 9 admin pipeline + send-reminder UI scenarios from US2 AS1-AS7 are covered by Wave I6+I7 unit tests (12 route + 24 dispatch) + Wave I8 integration tests (10 dispatch on live Neon). Manual SR pass on staging before flag flip is the contracted compensating control.
+- [X] T114 [US2] i18n keys for ~50 reminder template strings × 3 locales = 150 entries — VERIFIED Wave I8: shipped via `src/modules/renewals/infrastructure/email/templates/copy.ts` (132 inline copy entries spanning tier × offset × locale; co-located per F4 precedent rather than `src/i18n/messages/*.json` because the strings are template-internal not user-facing UI). `pnpm check:i18n` validates the 1843 user-facing keys × 3 locales separately.
 
 ### Phase 4 Exit Checkpoint
 
-- [ ] T115 [US2] Phase 4 exit: integration tests T109-T112 GREEN + E2E `tier-aware-reminder-cron.spec.ts` GREEN + cron pass <60s @ 5k members measured + i18n parity 
+- [ ] T115 [US2] Phase 4 exit: integration tests T109-T112 GREEN + E2E `tier-aware-reminder-cron.spec.ts` GREEN + cron pass <60s @ 5k members measured + i18n parity — **PARTIAL** Wave I8+I9: T109-T112 ✅ GREEN on live Neon (10 dispatch tests in 4 files, ~10s total). i18n parity ✅ 1843 keys × 3 locales. **DEFERRED**: T113 E2E (rationale above) + cron <60s @ 5k members benchmark (requires staging seed of 5k members — practical only post-flag-flip with real data). Phase 4 ships dark behind `FEATURE_F8_RENEWALS=false`; perf benchmark + manual SR pass execute pre-flag-flip.
 
 ---
 
