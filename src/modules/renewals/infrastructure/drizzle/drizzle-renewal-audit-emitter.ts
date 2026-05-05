@@ -79,6 +79,8 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   'escalation_task_created',
   // --- Wave I2d (migration 0104) ----------------------------------------
   'member_email_unverified_threshold_crossed',
+  // --- Wave I5 (migration 0107) -----------------------------------------
+  'cron_dispatch_orchestrated',
 ]);
 
 function buildSummary<E extends F8AuditEventType>(

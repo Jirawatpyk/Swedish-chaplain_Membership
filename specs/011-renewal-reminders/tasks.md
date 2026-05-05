@@ -206,9 +206,9 @@
 
 ### Cron Coordinator + Per-Tenant (per R14)
 
-- [ ] T103 [US2] Coordinator route handler `src/app/api/cron/renewals/dispatch-coordinator/route.ts` — Bearer-auth + 401 audit `cron_bearer_auth_rejected` per R17 + Upstash rate-limit on 401s + iterate active tenants + parallel fetch to per-tenant endpoints + emit `cron_dispatch_orchestrated` audit (M4 audit-emit fix); zero-tenant edge case returns 200 with `tenants_enqueued: 0` per Edge Cases
-- [ ] T104 [US2] Per-tenant route handler `src/app/api/cron/renewals/dispatch/[tenantId]/route.ts` — `runInTenant` bind + `pg_advisory_xact_lock(hashtextextended('renewals:dispatch:'||tenantId, 0))` + invoke `dispatch-renewal-cycle` use-case
-- [ ] T105 [P] [US2] cron-job.org configuration entry for daily 06:00 Asia/Bangkok dispatch coordinator
+- [X] T103 [US2] Coordinator route handler `src/app/api/cron/renewals/dispatch-coordinator/route.ts` — Bearer-auth + 401 audit `cron_bearer_auth_rejected` per R17 + Upstash rate-limit on 401s + iterate active tenants + parallel fetch to per-tenant endpoints + emit `cron_dispatch_orchestrated` audit (M4 audit-emit fix); zero-tenant edge case returns 200 with `tenants_enqueued: 0` per Edge Cases
+- [X] T104 [US2] Per-tenant route handler `src/app/api/cron/renewals/dispatch/[tenantId]/route.ts` — `runInTenant` bind + `pg_advisory_xact_lock(hashtextextended('renewals:dispatch:'||tenantId, 0))` + invoke `dispatch-renewal-cycle` use-case
+- [X] T105 [P] [US2] cron-job.org configuration entry for daily 06:00 Asia/Bangkok dispatch coordinator
 
 ### Audit Events
 

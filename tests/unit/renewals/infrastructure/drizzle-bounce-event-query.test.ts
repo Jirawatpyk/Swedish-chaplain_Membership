@@ -8,7 +8,8 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const tenantContext = { slug: 'tenantA' } as { slug: string };
+import { asTenantContext } from '@/modules/tenants';
+const tenantContext = asTenantContext('tenanta');
 
 // Module-level mock state — the mocked db / runInTenant capture the
 // last-queried tenant + return scripted values per test.

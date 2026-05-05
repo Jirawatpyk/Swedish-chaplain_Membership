@@ -750,6 +750,13 @@
       "when": 1791964800000,
       "tag": "0106_f1_email_delivery_events_bounce_type",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1792051200000,
+      "tag": "0107_f8_phase4_audit_event_type_enum_cron_orchestrated",
+      "breakpoints": true
     }
   ]
 }
