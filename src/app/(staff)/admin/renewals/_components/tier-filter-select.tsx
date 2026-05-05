@@ -18,7 +18,11 @@ import {
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
-import { TIER_BUCKETS, type TierBucket } from '@/modules/renewals';
+// Use the client-safe sub-barrel (`@/modules/renewals/client`).
+// Importing the full F8 barrel from a client component drags every
+// server-only use-case (cancel-cycle → @/lib/db → postgres → fs) into
+// the client bundle under Turbopack 16's eager re-export walking.
+import { TIER_BUCKETS, type TierBucket } from '@/modules/renewals/client';
 
 const ALL = 'all' as const;
 

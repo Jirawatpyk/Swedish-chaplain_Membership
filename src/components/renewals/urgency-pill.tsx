@@ -10,7 +10,8 @@
  */
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import type { UrgencyBucket } from '@/modules/renewals';
+// Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
+import type { UrgencyBucket } from '@/modules/renewals/client';
 
 const VARIANT_CLASSES: Record<UrgencyBucket, string> = {
   't-90':

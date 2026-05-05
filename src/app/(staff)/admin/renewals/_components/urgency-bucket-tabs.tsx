@@ -14,7 +14,8 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import type { UrgencyBucket } from '@/modules/renewals';
+// Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
+import type { UrgencyBucket } from '@/modules/renewals/client';
 
 const TAB_ORDER: ReadonlyArray<UrgencyBucket> = [
   't-90',

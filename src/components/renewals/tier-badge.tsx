@@ -16,7 +16,8 @@
  */
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import type { TierBucket } from '@/modules/renewals';
+// Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
+import type { TierBucket } from '@/modules/renewals/client';
 
 const VARIANT_CLASSES: Record<TierBucket, string> = {
   thai_alumni:

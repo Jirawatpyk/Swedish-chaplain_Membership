@@ -11,7 +11,8 @@
 import Link from 'next/link';
 import { useFormatter, useTranslations } from 'next-intl';
 import { TierBadge } from './tier-badge';
-import type { TierBucket } from '@/modules/renewals';
+// Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
+import type { TierBucket } from '@/modules/renewals/client';
 
 export function CycleTierCell({ tier }: { readonly tier: TierBucket }) {
   return <TierBadge tier={tier} />;

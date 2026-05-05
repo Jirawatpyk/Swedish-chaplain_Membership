@@ -47,7 +47,9 @@ import {
   CycleCompanyCell,
   CycleExpiresCell,
 } from '@/components/renewals/cycle-cells';
-import type { CycleStatus, PipelineRow } from '@/modules/renewals';
+// Client-safe sub-barrel — see `tier-filter-select.tsx` for the
+// rationale (Turbopack 16 + F8 barrel + server-only deps).
+import type { CycleStatus, PipelineRow } from '@/modules/renewals/client';
 
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;

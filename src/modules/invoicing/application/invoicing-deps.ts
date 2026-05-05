@@ -22,7 +22,13 @@ import { memberIdentityAdapter } from '../infrastructure/adapters/member-identit
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { f4AuditAdapter } from '../infrastructure/adapters/audit-adapter';
 import { overdueAuditAdapter } from '../infrastructure/adapters/overdue-audit-adapter';
-import { sharpImageReencodeAdapter } from '../infrastructure/adapters/sharp-image-reencode-adapter';
+// `sharp` is a Node-only native dep (libvips → detect-libc →
+// child_process). The only place it's needed is the upload-tenant-logo
+// route — its dep factory lives in `./make-upload-tenant-logo-deps.ts`,
+// imported only by that route. Keeping it OUT of `invoicing-deps.ts`
+// is what allows F8 client surfaces (e.g. `tier-filter-select.tsx`)
+// that touch the F8 barrel to compile cleanly under Turbopack 16
+// without dragging `sharp` into the client bundle.
 import { CURRENT_TEMPLATE_VERSION } from '../infrastructure/pdf/template-registry';
 
 import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
@@ -94,17 +100,9 @@ export function makeUpdateTenantInvoiceSettingsDeps(): {
   };
 }
 
-export function makeUploadTenantLogoDeps(): {
-  blob: typeof vercelBlobAdapter;
-  audit: typeof f4AuditAdapter;
-  imageReencode: typeof sharpImageReencodeAdapter;
-} {
-  return {
-    blob: vercelBlobAdapter,
-    audit: f4AuditAdapter,
-    imageReencode: sharpImageReencodeAdapter,
-  };
-}
+// `makeUploadTenantLogoDeps` lives in `./make-upload-tenant-logo-deps.ts`
+// — see header comment above for rationale. The F4 barrel re-exports it
+// directly from that path so route handlers see no API change.
 
 /**
  * R7 consolidation — F2 plan module calls this when it needs to

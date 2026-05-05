@@ -67,11 +67,23 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     await page.goto('/admin/renewals');
     await page.waitForLoadState('networkidle');
 
-    // Open the tier select trigger
-    await page.getByLabel(/filter pipeline by tier/i).click();
-    // Pick Premium
-    await page.getByRole('option', { name: /premium/i }).click();
-    await page.waitForLoadState('networkidle');
+    // Open the tier select trigger via its accessible role.
+    // The visually-hidden label and the combobox both match
+    // `/filter pipeline by tier/i`, so we narrow to the combobox role
+    // for a stable target.
+    await page
+      .getByRole('combobox', { name: /filter pipeline by tier/i })
+      .click();
+    // Wait for the listbox to render before clicking. base-ui mounts
+    // options in a portal, so they aren't queryable until the popover
+    // commits.
+    const premiumOption = page.getByRole('option', { name: /^premium$/i });
+    await premiumOption.waitFor({ state: 'visible', timeout: 5_000 });
+    await premiumOption.click();
+    // URL-driven assertion is more reliable than networkidle here —
+    // router.replace() updates the URL synchronously, but networkidle
+    // can fire in either order depending on RSC streaming timing.
+    await page.waitForURL(/[?&]tier=premium\b/, { timeout: 10_000 });
     expect(page.url()).toContain('tier=premium');
   });
 
@@ -82,10 +94,12 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     await page.goto('/admin/renewals');
     await page.waitForLoadState('networkidle');
 
-    // Click the "Lapsed" tab (last in the tablist)
-    const lapsedTab = page.getByRole('tab', { name: /lapsed/i });
+    // Click the "Lapsed" tab (last in the tablist). Using
+    // `waitForURL` instead of `networkidle` because RSC streaming
+    // races the URL push under Turbopack dev.
+    const lapsedTab = page.getByRole('tab', { name: /^lapsed/i });
     await lapsedTab.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForURL(/[?&]urgency=lapsed\b/, { timeout: 10_000 });
     expect(page.url()).toContain('urgency=lapsed');
 
     // Lapsed banner + Reason column header visible (regardless of row count)

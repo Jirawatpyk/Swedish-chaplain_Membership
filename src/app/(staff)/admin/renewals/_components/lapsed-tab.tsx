@@ -30,7 +30,8 @@ import {
   CycleExpiresCell,
 } from '@/components/renewals/cycle-cells';
 import { cn } from '@/lib/utils';
-import type { PipelineRow } from '@/modules/renewals';
+// Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
+import type { PipelineRow } from '@/modules/renewals/client';
 
 type LapsedReasonKey =
   | 'paid'

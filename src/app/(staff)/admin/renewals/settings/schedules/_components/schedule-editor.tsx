@@ -43,7 +43,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
-import { TIER_BUCKETS, type TierBucket } from '@/modules/renewals';
+// Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
+import { TIER_BUCKETS, type TierBucket } from '@/modules/renewals/client';
 
 // ---------------------------------------------------------------------------
 // Wire-shape types — match the route-handler JSON contract.

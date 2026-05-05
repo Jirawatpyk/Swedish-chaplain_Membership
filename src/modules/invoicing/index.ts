@@ -326,10 +326,18 @@ export {
   makeGetCreditNotePdfSignedUrlDeps,
   makeUpdateInvoiceDraftDeps,
   makeUpdateTenantInvoiceSettingsDeps,
-  makeUploadTenantLogoDeps,
   makeGetTenantTaxPolicyDeps,
   makeResendPdfDeps,
   makeOverdueAuditPort,
   makeF4AuditPort,
   isTenantInvoiceSetupComplete,
 } from './application/invoicing-deps';
+
+// `makeUploadTenantLogoDeps` is intentionally NOT re-exported from this
+// barrel. It pulls in the Node-only `sharp` native dep (libvips →
+// detect-libc → child_process); re-exporting it here causes Turbopack
+// 16 to walk the F4 barrel into client bundles and break F8's
+// renewals page (tier-filter-select.tsx → @/modules/renewals →
+// load-cycle-detail → @/modules/invoicing). The single
+// `/api/tenant-invoice-settings/logo` route handler deep-imports
+// directly from `./application/make-upload-tenant-logo-deps`.

@@ -10,6 +10,13 @@
  * runtimes, handles both PNG and JPEG in a single API surface, and
  * defaults to stripping metadata on re-encode (no opt-in required).
  */
+// `sharp` is a Node-only native dep (libvips → detect-libc → child_process).
+// Hard-fail any client component that transitively imports this adapter
+// — defence-in-depth alongside the dynamic-import in
+// `invoicing-deps.ts:makeUploadTenantLogoDeps`. Without this guard, a
+// stray static import from a barrel re-export causes Turbopack 16 to
+// pull `sharp` into client bundles and break the build.
+import 'server-only';
 import sharp from 'sharp';
 import type {
   ImageReEncodePort,
