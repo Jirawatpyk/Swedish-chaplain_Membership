@@ -33,6 +33,7 @@ import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
+import { renewalsMetrics } from '@/lib/metrics';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
 export const runtime = 'nodejs';
@@ -104,13 +105,23 @@ async function emitOrchestratedAudit(
       },
     );
   } catch (e) {
-    logger.warn(
+    // J5-H9: elevated to logger.error — `cron_dispatch_orchestrated`
+    // is the ONLY operational record that the daily F8 cron actually
+    // ran across tenants. Losing this audit silently breaks the
+    // Principle VIII compliance trail — the team has no way to
+    // distinguish "no work today" from "audit emit silently dropped".
+    // Counter increment fires the alert pipeline (any non-zero rate =
+    // stop-the-line per `renewalsMetrics.coordinatorAuditEmitFailed`
+    // docstring).
+    logger.error(
       {
         err: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
         correlationId,
       },
       'cron.renewals.coordinator.audit_emit_failed',
     );
+    renewalsMetrics.coordinatorAuditEmitFailed();
   }
 }
 
@@ -194,18 +205,39 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 },
               },
             );
-            const json = (await r.json().catch(() => ({}))) as Record<
-              string,
-              unknown
-            >;
-            return { tenantId, ok: r.ok, status: r.status, json };
+            // J5-H10: previously `r.json().catch(() => ({}))` silently
+            // coerced ANY parse error to an empty object — including
+            // the case where the per-tenant route returned 200 with a
+            // Vercel edge HTML error page. The coordinator would then
+            // count the tenant as succeeded with `reminders_dispatched=0`,
+            // producing a clean audit record while the dispatch had
+            // actually no-op'd. Now: track the parse outcome explicitly
+            // so the per-tenant tally below can downgrade to failed.
+            let json: Record<string, unknown> = {};
+            let jsonParseFailed = false;
+            try {
+              json = (await r.json()) as Record<string, unknown>;
+            } catch (e) {
+              jsonParseFailed = true;
+              logger.error(
+                {
+                  err: e instanceof Error ? e.message : String(e),
+                  tenantId,
+                  status: r.status,
+                  contentType: r.headers.get('content-type'),
+                  correlationId,
+                },
+                'cron.renewals.coordinator.json_parse_failed',
+              );
+            }
+            return { tenantId, ok: r.ok, status: r.status, json, jsonParseFailed };
           })(),
         ),
       );
 
       const perTenantResults: PerTenantResult[] = settled.map((r, i) => {
         const tenantId = activeTenants[i]!;
-        if (r.status === 'fulfilled' && r.value.ok) {
+        if (r.status === 'fulfilled' && r.value.ok && !r.value.jsonParseFailed) {
           return {
             tenant_id: tenantId,
             skipped: Boolean(r.value.json.skipped),
@@ -223,9 +255,44 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 : 0,
           };
         }
+        // J5-H1 + H10: log per-tenant failures at error level + emit
+        // observability counter so dashboards graph failure mix and
+        // alerting can fire on per-tenant patterns. Previously the
+        // coordinator only logged the aggregate via `logger.info`
+        // without per-tenant context — operators had to grep audit
+        // payloads to identify which tenant failed.
         if (r.status === 'rejected') {
-          return { tenant_id: tenantId, error: String(r.reason) };
+          const reasonStr = String(r.reason);
+          logger.error(
+            {
+              tenantId,
+              correlationId,
+              reason: reasonStr.slice(0, 400),
+            },
+            'cron.renewals.coordinator.tenant_fetch_rejected',
+          );
+          renewalsMetrics.coordinatorTenantFailed(tenantId, 'rejected');
+          return { tenant_id: tenantId, error: reasonStr };
         }
+        if (r.value.jsonParseFailed) {
+          renewalsMetrics.coordinatorTenantFailed(tenantId, 'json_parse_failed');
+          return {
+            tenant_id: tenantId,
+            error: `http_${r.value.status}_json_parse_failed`,
+          };
+        }
+        const kind: 'http_5xx' | 'http_4xx' =
+          r.value.status >= 500 ? 'http_5xx' : 'http_4xx';
+        logger.error(
+          {
+            tenantId,
+            correlationId,
+            status: r.value.status,
+            errorBody: r.value.json,
+          },
+          'cron.renewals.coordinator.tenant_http_error',
+        );
+        renewalsMetrics.coordinatorTenantFailed(tenantId, kind);
         return {
           tenant_id: tenantId,
           error: `http_${r.value.status}`,

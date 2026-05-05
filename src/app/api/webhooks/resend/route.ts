@@ -40,6 +40,7 @@ import {
 } from '@/modules/auth/infrastructure/db/schema';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
   detectBounceThreshold,
@@ -172,10 +173,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const parsed = webhookBodySchema.safeParse(payload);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: 'invalid-input', message: 'Invalid webhook body' },
-      { status: 400 },
+    // J5-H11: previously returned 400 → Resend retries with 24h
+    // exponential backoff. If Resend ever evolves the payload schema
+    // (e.g. their 2024 `bounce.type` addition), every webhook would
+    // become a retry storm. Now we return 200 + log.error + metric so
+    // the schema-drift alert pipeline triggers without breaking
+    // delivery. Matches the unknown_event_type pattern below
+    // (forward-compat philosophy).
+    const eventType =
+      typeof (payload as { type?: unknown })?.type === 'string'
+        ? ((payload as { type: string }).type as string)
+        : null;
+    logger.error(
+      {
+        requestId,
+        eventType,
+        zodIssues: parsed.error.issues.slice(0, 5),
+      },
+      'resend_webhook.schema_rejected',
     );
+    renewalsMetrics.webhookSchemaRejected(eventType);
+    return NextResponse.json({ ok: true, schema_drift: true }, { status: 200 });
   }
 
   // Map Resend event type → our enum. Unknown types: log + 200
@@ -251,16 +269,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
       }
     } catch (e) {
-      logger.warn(
+      // J5-H2: elevated to logger.error + metric. Without this, a
+      // hard-bouncing member's `email_unverified` flag stays FALSE
+      // → the F8 dispatcher (Gate 6) keeps mailing the bouncing
+      // address → Resend reputation pool degrades. FR-012a is
+      // silently broken until Sender-Score telemetry catches up
+      // hours later. The metric is the alert-pipeline trigger.
+      // Webhook still returns 200 (intentionally) to prevent
+      // Resend retry storm.
+      logger.error(
         {
           err: e instanceof Error ? e.message : String(e),
+          stack: e instanceof Error ? e.stack : undefined,
           requestId,
           toEmail,
         },
         'resend_webhook.f8_bounce_hook_failed',
       );
-      // intentionally do NOT propagate — webhook MUST 200 to prevent
-      // Resend retry storm.
+      // We don't have a tenantId here if lookup itself failed — the
+      // metric label falls back to 'unknown' in that case.
+      renewalsMetrics.bounceHookFailed(null);
     }
   }
 

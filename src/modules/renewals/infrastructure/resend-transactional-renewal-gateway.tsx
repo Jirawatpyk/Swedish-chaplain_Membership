@@ -236,13 +236,19 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
     });
 
     // 4. Render React Email template → HTML + plain-text.
+    // J5-M3: parallelise the two renders. `@react-email/components`'
+    // `render` is async + traverses the React tree — calling it
+    // sequentially doubles wall-clock render time per email. With
+    // DISPATCH_CONCURRENCY=10 in dispatchRenewalCycle and the 5k
+    // perf benchmark (T115), halving the per-email render shaves
+    // measurable time off the cron pass duration.
     let html: string;
     let text: string;
     try {
-      html = await render(<RenewalReminderEmail {...props} />);
-      text = await render(<RenewalReminderEmail {...props} />, {
-        plainText: true,
-      });
+      [html, text] = await Promise.all([
+        render(<RenewalReminderEmail {...props} />),
+        render(<RenewalReminderEmail {...props} />, { plainText: true }),
+      ]);
     } catch (e) {
       logger.error(
         {

@@ -1313,3 +1313,111 @@ export const broadcastsMetrics = {
     });
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// F8 Renewals (J5 — observability hardening per /speckit-review Round 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Failure-kind enum for the cron coordinator's per-tenant fan-out. Bounded
+ * cardinality so dashboards can graph failure mix without label explosion.
+ *   - `http_5xx`         — per-tenant route returned 5xx (server fault)
+ *   - `http_4xx`         — per-tenant route returned 4xx (e.g. 401 auth, 400 unknown_tenant)
+ *   - `rejected`         — fetch rejected (network error, timeout)
+ *   - `json_parse_failed` — 200 returned but body wasn't parseable JSON
+ *                          (malformed gateway response — Vercel edge HTML
+ *                          error page would land here)
+ */
+export type RenewalsCoordinatorFailureKind =
+  | 'http_5xx'
+  | 'http_4xx'
+  | 'rejected'
+  | 'json_parse_failed';
+
+export const renewalsMetrics = {
+  /**
+   * `renewals_bounce_hook_errors_total{tenant}` — H2: F1 Resend webhook →
+   * F8 detectBounceThreshold throw. Previously a `logger.warn` whose
+   * absence in alerting silently broke FR-012a (a hard-bouncing
+   * member's `email_unverified` flag would never flip → dispatcher
+   * keeps mailing the bouncing address → Resend reputation pool
+   * degrades). Any non-zero rate sustained for 5 minutes pages on-call.
+   */
+  bounceHookFailed(tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'renewals_bounce_hook_errors_total',
+        'F1 Resend webhook → F8 detectBounceThreshold callback failed (FR-012a alert trigger)',
+      ).add(1, { tenant: tenantId ?? 'unknown' });
+    });
+  },
+
+  /**
+   * `renewals_reset_hook_errors_total{tenant}` — H2 sibling: F1 verify-
+   * contact-email → F8 resetEmailUnverified throw. Less critical than
+   * the bounce hook (the F1 verification still succeeded; the F8 flag
+   * stays TRUE until a future cron pass / admin action reconciles)
+   * but observability-equal — silent failures hide F1↔F8 desync.
+   */
+  resetHookFailed(tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reset_hook_errors_total',
+        'F1 verify-contact-email → F8 resetEmailUnverified callback failed',
+      ).add(1, { tenant: tenantId ?? 'unknown' });
+    });
+  },
+
+  /**
+   * `renewals_coordinator_tenant_failures_total{tenant, kind}` — H1:
+   * cron coordinator per-tenant fan-out failures. Previously the
+   * coordinator emitted a single `cron_dispatch_orchestrated` audit
+   * with `tenants_failed` count but no per-tenant alert; F8 SaaS
+   * needs to know WHICH tenant failed to triage. Pages on-call when
+   * the same tenant fails 3 successive coordinator runs.
+   */
+  coordinatorTenantFailed(
+    tenantId: string,
+    kind: RenewalsCoordinatorFailureKind,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_coordinator_tenant_failures_total',
+        'F8 cron coordinator per-tenant fan-out failure',
+      ).add(1, { tenant: tenantId, kind });
+    });
+  },
+
+  /**
+   * `renewals_coordinator_audit_emit_failed_total` — H9: the
+   * `cron_dispatch_orchestrated` audit is the ONLY operational
+   * record of what the daily F8 cron did. Losing it silently breaks
+   * Principle VIII compliance trail. Mirrors `broadcastsMetrics.
+   * auditEmitFailed` semantics — any non-zero rate is stop-the-line.
+   */
+  coordinatorAuditEmitFailed(): void {
+    safeMetric(() => {
+      counter(
+        'renewals_coordinator_audit_emit_failed_total',
+        'F8 cron coordinator failed to emit cron_dispatch_orchestrated audit (compliance trail loss)',
+      ).add(1);
+    });
+  },
+
+  /**
+   * `renewals_webhook_schema_rejected_total{event_type}` — H11: Resend
+   * webhook payload failed our zod schema (Resend renamed/removed a
+   * field, e.g. the `bounce.type` addition that landed in 2024). The
+   * route returns HTTP 200 to prevent Resend retry storm; this counter
+   * is the alert-pipeline trigger for schema drift. Any non-zero rate
+   * means our webhook handler may be silently dropping events.
+   */
+  webhookSchemaRejected(eventType: string | null): void {
+    safeMetric(() => {
+      counter(
+        'renewals_webhook_schema_rejected_total',
+        'Resend webhook body rejected our zod schema (schema-drift alert trigger)',
+      ).add(1, { event_type: eventType ?? 'unknown' });
+    });
+  },
+} as const;

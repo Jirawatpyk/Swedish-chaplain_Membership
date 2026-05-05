@@ -138,6 +138,7 @@ describe('cron dispatch-coordinator route (T103)', () => {
     fetchMock.mockResolvedValue({
       ok: false,
       status: 500,
+      headers: new Map([['content-type', 'application/json']]),
       json: async () => ({ error: { code: 'dispatch_failed' } }),
     });
     const res = await POST(makeRequest(VALID_AUTH));
@@ -145,6 +146,33 @@ describe('cron dispatch-coordinator route (T103)', () => {
     const body = await res.json();
     expect(body.tenants_failed).toBe(1);
     expect(body.per_tenant_results[0].error).toBe('http_500');
+  });
+
+  it('J5-H10: per-tenant returns 200 but JSON unparseable (Vercel HTML error page) → counted as failed, NOT silently green', async () => {
+    // Previously `r.json().catch(() => ({}))` coerced parse errors
+    // to `{}`, so the coordinator counted the tenant as succeeded
+    // with `reminders_dispatched=0` while the dispatch had actually
+    // crashed. Now: JSON parse failure routes through the failure
+    // path with `kind: 'json_parse_failed'`.
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Map([['content-type', 'text/html']]),
+      json: async () => {
+        throw new Error('Unexpected token < in JSON at position 0');
+      },
+    });
+    const res = await POST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tenants_succeeded).toBe(0);
+    expect(body.tenants_failed).toBe(1);
+    expect(body.per_tenant_results[0].error).toBe(
+      'http_200_json_parse_failed',
+    );
+    // Audit emit still fires so the orchestration row records the
+    // failure (Principle VIII compliance trail).
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
   });
 
   it('audit emit failure swallowed (does not break response)', async () => {
