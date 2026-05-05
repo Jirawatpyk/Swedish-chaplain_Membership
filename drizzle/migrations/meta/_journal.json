@@ -743,6 +743,13 @@
       "when": 1791878400000,
       "tag": "0105_f8_phase4_renewal_reminder_events_retry_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791964800000,
+      "tag": "0106_f1_email_delivery_events_bounce_type",
+      "breakpoints": true
     }
   ]
 }

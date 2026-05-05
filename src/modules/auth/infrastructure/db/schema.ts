@@ -392,6 +392,11 @@ export const emailDeliveryEvents = pgTable(
     relatedUserId: uuid('related_user_id').references(() => users.id, {
       onDelete: 'set null',
     }),
+    // F8 Phase 4 Wave I4 (migration 0106) — Resend's bounce.type field
+    // ('permanent' | 'transient'). NULL on non-bounced events. F8's
+    // BounceEventQuery adapter (FR-012a threshold computation) reads
+    // this column. TEXT (not enum) for forward compatibility.
+    bounceType: text('bounce_type'),
   },
   (table) => [
     index('email_delivery_events_message_id_idx').on(table.messageId),

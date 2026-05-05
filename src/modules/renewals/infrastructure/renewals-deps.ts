@@ -35,7 +35,7 @@ import { makeDrizzleMemberRenewalFlagsRepo } from './drizzle/drizzle-member-rene
 import { makeDrizzleDispatchCandidateRepo } from './drizzle/drizzle-dispatch-candidate-repo';
 import { makeDrizzleRenewalReminderEventRepo } from './drizzle/drizzle-renewal-reminder-event-repo';
 import { stubRenewalGateway } from './stub-renewal-gateway';
-import { stubBounceEventQuery } from './stub-bounce-event-query';
+import { makeDrizzleBounceEventQuery } from './drizzle/drizzle-bounce-event-query';
 import { f4InvoiceBridge, type F4InvoiceBridge } from './ports-adapters/f4-invoice-bridge';
 
 import type { ScheduledPlanChangeRepo } from '@/modules/plans/application/ports';
@@ -175,7 +175,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     dispatchCandidateRepo: makeDrizzleDispatchCandidateRepo(tenant),
     reminderEventRepo: makeDrizzleRenewalReminderEventRepo(tenant),
     renewalGateway: stubRenewalGateway,
-    bounceEventQuery: stubBounceEventQuery,
+    bounceEventQuery: makeDrizzleBounceEventQuery(tenant),
   };
 }
 

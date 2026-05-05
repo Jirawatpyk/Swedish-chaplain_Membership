@@ -398,6 +398,13 @@ export {
 
 export { RETRY_BUDGET_HOURS } from './application/use-cases/_lib/dispatch-one-cycle';
 
+// --- Phase 4 Wave I4 — cross-cutting webhook lookups ---------------------
+export {
+  lookupMemberByEmail,
+  lookupMemberByContactId,
+  type MemberLookupResult,
+} from './infrastructure/lookup-member-by-email';
+
 // --- Composition root (Wave G T054 + H1 expansions) ------------------------
 export { makeRenewalsDeps, f8OnPaidCallbacks } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';

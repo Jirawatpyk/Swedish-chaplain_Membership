@@ -201,8 +201,8 @@
 
 ### F1 Webhook Integration (synchronous in-process call per R8 rev-2)
 
-- [ ] T101 [US2] Extend F1 Resend webhook handler at `src/app/api/webhooks/resend/route.ts` (or equivalent) with 4-line addition: when `FEATURE_F8_RENEWALS=true` AND member_id resolved AND event is bounce, await F8's `detectBounceThreshold(ctx, memberId)` from F8 barrel
-- [ ] T102 [US2] F1 verification handler extension: on `email_verification_succeeded`, call F8's `resetEmailUnverified` from barrel
+- [X] T101 [US2] Extend F1 Resend webhook handler at `src/app/api/webhooks/resend/route.ts` (or equivalent) with 4-line addition: when `FEATURE_F8_RENEWALS=true` AND member_id resolved AND event is bounce, await F8's `detectBounceThreshold(ctx, memberId)` from F8 barrel
+- [X] T102 [US2] F1 verification handler extension: on `email_verification_succeeded`, call F8's `resetEmailUnverified` from barrel
 
 ### Cron Coordinator + Per-Tenant (per R14)
 

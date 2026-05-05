@@ -41,6 +41,11 @@ import {
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import {
+  detectBounceThreshold,
+  makeRenewalsDeps,
+  lookupMemberByEmail,
+} from '@/modules/renewals';
 
 // Subset of the Resend webhook event type enum — only the ones our
 // `email_delivery_events` enum column supports. Unknown event types
@@ -66,6 +71,17 @@ const webhookBodySchema = z.object({
       email_id: z.string().optional(),
       to: z.array(z.string()).optional(),
       subject: z.string().optional(),
+      // F8 Phase 4 Wave I4 / T101 — Resend's bounce metadata.
+      // `type` is `'permanent' | 'transient'`; `subType` is a free-text
+      // classifier (mailbox-not-found, dns-failure, etc.). We persist
+      // only `type` since FR-012a thresholds discriminate on
+      // permanent vs transient only.
+      bounce: z
+        .object({
+          type: z.string().optional(),
+          subType: z.string().optional(),
+        })
+        .optional(),
     })
     .passthrough(),
 });
@@ -177,12 +193,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const messageId = parsed.data.data.email_id ?? 'unknown';
   const toEmail = parsed.data.data.to?.[0]?.toLowerCase() ?? 'unknown';
 
+  // F8 Phase 4 Wave I4 / T101 — capture Resend bounce.type for
+  // FR-012a threshold computation. NULL on non-bounced events.
+  const bounceType =
+    mapped === 'bounced' ? parsed.data.data.bounce?.type ?? null : null;
+
   // svixId is guaranteed non-null past the signature check.
   const insertRow: EmailDeliveryEventInsert = {
     eventType: mapped,
     messageId,
     toEmail,
     svixId: svixId!,
+    bounceType,
   };
 
   // Idempotent insert — the UNIQUE constraint on `svix_id` catches
@@ -209,6 +231,37 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       'resend_webhook.negative_signal',
     );
+  }
+
+  // F8 Phase 4 Wave I4 / T101 — synchronous-call hook into F8's
+  // detectBounceThreshold (FR-012a). Gated by feature flag; failures
+  // wrapped in try/catch + WARN log so a F8 internal error NEVER
+  // propagates to a webhook 5xx (which would trigger Resend retry
+  // storms with 24h exponential backoff).
+  if (mapped === 'bounced' && env.features.f8Renewals && toEmail !== 'unknown') {
+    try {
+      const lookup = await lookupMemberByEmail(toEmail);
+      if (lookup) {
+        const deps = makeRenewalsDeps(lookup.tenantId);
+        await detectBounceThreshold(deps, {
+          tenantId: lookup.tenantId,
+          memberId: lookup.memberId,
+          correlationId: requestId,
+          actorRole: 'webhook',
+        });
+      }
+    } catch (e) {
+      logger.warn(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          requestId,
+          toEmail,
+        },
+        'resend_webhook.f8_bounce_hook_failed',
+      );
+      // intentionally do NOT propagate — webhook MUST 200 to prevent
+      // Resend retry storm.
+    }
   }
 
   return NextResponse.json({ ok: true }, { status: 200 });
