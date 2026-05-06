@@ -19,6 +19,7 @@ import type { DispatchCandidate } from '@/modules/renewals/application/ports/dis
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import { ok, err } from '@/lib/result';
 import { assertOk } from '../../_helpers/assert-result';
+import { buildDispatchCandidate } from '../../_helpers/build-cycle';
 
 const TENANT_ID = 'tenantA';
 const NOW_ISO = '2026-05-15T12:00:00.000Z';
@@ -68,47 +69,21 @@ function buildFailedEvent(
 }
 
 function buildHappyCandidate(): DispatchCandidate {
-  return {
+  // Override the shared default with this test's tenant + cycle/member ids
+  // and the 30-day-out expiresAt the retry tests assume.
+  return buildDispatchCandidate({
     cycle: {
       tenantId: TENANT_ID,
       cycleId: asCycleId(CYCLE_ID),
       memberId: MEMBER_ID,
-      status: 'awaiting_payment' as const,
       periodFrom: '2026-05-01T00:00:00Z',
       periodTo: '2027-05-01T00:00:00Z',
       expiresAt: '2026-06-14T00:00:00Z',
-      cycleLengthMonths: 12,
-      tierAtCycleStart: 'regular' as const,
-      planIdAtCycleStart: 'p1',
-      frozenPlanPriceThb: '50000.00',
-      frozenPlanTermMonths: 12,
-      frozenPlanCurrency: 'THB' as const,
-      enteredPendingAt: null,
-      linkedInvoiceId: null,
-      linkedCreditNoteId: null,
-      closedAt: null,
-      closedReason: null,
-      createdAt: '2026-05-01T00:00:00Z',
-      updatedAt: '2026-05-01T00:00:00Z',
     },
     member: {
       memberId: MEMBER_ID,
-      status: 'active',
-      companyName: 'Acme',
-      preferredLocale: 'en',
-      emailUnverified: false,
-      renewalRemindersOptedOut: false,
-      registrationDate: '2024-01-01',
     },
-    primaryContact: {
-      contactId: 'c1',
-      email: 'a@b.co',
-      firstName: 'A',
-      lastName: 'B',
-      preferredLanguage: 'en',
-    },
-    schedulePolicy: null,
-  };
+  });
 }
 
 function fakeDeps(opts: {

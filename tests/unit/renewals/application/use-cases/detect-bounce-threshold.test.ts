@@ -7,6 +7,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { assertOk } from '../../_helpers/assert-result';
+import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
 import {
   detectBounceThreshold,
   BOUNCE_THRESHOLD_HARD,
@@ -38,7 +39,7 @@ vi.mock('@/lib/env', () => ({
 }));
 
 function buildActiveCycle(): RenewalCycle {
-  return {
+  return buildCycleShared({
     tenantId: TENANT_ID,
     cycleId: asCycleId(CYCLE_ID),
     memberId: MEMBER_ID,
@@ -46,20 +47,7 @@ function buildActiveCycle(): RenewalCycle {
     periodFrom: '2026-05-01T00:00:00Z',
     periodTo: '2027-05-01T00:00:00Z',
     expiresAt: '2027-05-01T00:00:00Z',
-    cycleLengthMonths: 12,
-    tierAtCycleStart: 'regular' as const,
-    planIdAtCycleStart: 'p1',
-    frozenPlanPriceThb: '50000.00',
-    frozenPlanTermMonths: 12,
-    frozenPlanCurrency: 'THB' as const,
-    enteredPendingAt: null,
-    linkedInvoiceId: null,
-    linkedCreditNoteId: null,
-    closedAt: null,
-    closedReason: null,
-    createdAt: '2026-05-01T00:00:00Z',
-    updatedAt: '2026-05-01T00:00:00Z',
-  } as RenewalCycle;
+  });
 }
 
 function fakeDeps(opts: {

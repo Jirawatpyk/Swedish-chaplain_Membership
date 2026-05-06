@@ -21,6 +21,7 @@ import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-de
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import { ok, err } from '@/lib/result';
+import { buildCycle as buildCycleShared } from '../../../_helpers/build-cycle';
 
 const TENANT_ID = 'tenantA';
 const MEMBER_ID = '00000000-0000-0000-0000-000000000aaa';
@@ -46,7 +47,7 @@ vi.mock('@/lib/env', () => ({
 }));
 
 function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
-  return {
+  return buildCycleShared({
     tenantId: TENANT_ID,
     cycleId: asCycleId(CYCLE_ID),
     memberId: MEMBER_ID,
@@ -54,21 +55,10 @@ function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
     periodFrom: '2026-05-15T00:00:00.000Z',
     periodTo: '2027-05-15T00:00:00.000Z',
     expiresAt: '2026-06-14T00:00:00.000Z', // T-30 from NOW_ISO
-    cycleLengthMonths: 12,
-    tierAtCycleStart: 'regular' as const,
-    planIdAtCycleStart: 'p1',
-    frozenPlanPriceThb: '50000.00',
-    frozenPlanTermMonths: 12,
-    frozenPlanCurrency: 'THB' as const,
-    enteredPendingAt: null,
-    linkedInvoiceId: null,
-    linkedCreditNoteId: null,
-    closedAt: null,
-    closedReason: null,
     createdAt: '2026-05-01T00:00:00.000Z',
     updatedAt: '2026-05-01T00:00:00.000Z',
     ...overrides,
-  } as RenewalCycle;
+  });
 }
 
 function buildHappyCandidate(

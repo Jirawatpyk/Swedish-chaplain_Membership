@@ -10,6 +10,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { assertOk } from '../../_helpers/assert-result';
+import { buildDispatchCandidate } from '../../_helpers/build-cycle';
 import { sendReminderNow } from '@/modules/renewals/application/use-cases/send-reminder-now';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import type { DispatchCandidate } from '@/modules/renewals/application/ports/dispatch-candidate-repo';
@@ -53,47 +54,16 @@ vi.mock(
 import { dispatchOneCycle } from '@/modules/renewals/application/use-cases/_lib/dispatch-one-cycle';
 
 function buildCandidate(): DispatchCandidate {
-  return {
+  return buildDispatchCandidate({
     cycle: {
       tenantId: TENANT_ID,
       cycleId: asCycleId(CYCLE_ID),
-      memberId: 'mem-1',
       status: 'upcoming' as const,
       periodFrom: '2026-05-15T00:00:00.000Z',
       periodTo: '2027-05-15T00:00:00.000Z',
       expiresAt: '2026-06-14T00:00:00.000Z',
-      cycleLengthMonths: 12,
-      tierAtCycleStart: 'regular' as const,
-      planIdAtCycleStart: 'p1',
-      frozenPlanPriceThb: '50000.00',
-      frozenPlanTermMonths: 12,
-      frozenPlanCurrency: 'THB' as const,
-      enteredPendingAt: null,
-      linkedInvoiceId: null,
-      linkedCreditNoteId: null,
-      closedAt: null,
-      closedReason: null,
-      createdAt: '2026-05-01T00:00:00Z',
-      updatedAt: '2026-05-01T00:00:00Z',
     },
-    member: {
-      memberId: 'mem-1',
-      status: 'active',
-      companyName: 'Acme',
-      preferredLocale: 'en',
-      emailUnverified: false,
-      renewalRemindersOptedOut: false,
-      registrationDate: '2024-01-01',
-    },
-    primaryContact: {
-      contactId: 'c1',
-      email: 'a@b.co',
-      firstName: 'A',
-      lastName: 'B',
-      preferredLanguage: 'en',
-    },
-    schedulePolicy: null,
-  };
+  });
 }
 
 function fakeDeps(candidate: DispatchCandidate | null): RenewalsDeps {

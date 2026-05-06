@@ -18,6 +18,7 @@ import {
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
+import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
 
 const VALID_UUID = '00000000-0000-0000-0000-0000000000c2';
 const TENANT_ID = 'tenantA';
@@ -28,29 +29,11 @@ vi.mock('@/lib/db', () => ({
 }));
 
 function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
-  return {
+  return buildCycleShared({
     tenantId: TENANT_ID,
     cycleId: asCycleId(VALID_UUID),
-    memberId: 'mem-1',
-    status: 'awaiting_payment' as const,
-    periodFrom: '2026-06-01T00:00:00Z',
-    periodTo: '2027-06-01T00:00:00Z',
-    expiresAt: '2027-06-01T00:00:00Z',
-    cycleLengthMonths: 12,
-    tierAtCycleStart: 'regular' as const,
-    planIdAtCycleStart: 'p1',
-    frozenPlanPriceThb: '50000.00',
-    frozenPlanTermMonths: 12,
-    frozenPlanCurrency: 'THB' as const,
-    enteredPendingAt: null,
-    linkedInvoiceId: null,
-    linkedCreditNoteId: null,
-    closedAt: null,
-    closedReason: null,
-    createdAt: '2026-05-01T00:00:00Z',
-    updatedAt: '2026-05-01T00:00:00Z',
     ...overrides,
-  } as RenewalCycle;
+  });
 }
 
 function fakeDeps(
