@@ -68,6 +68,7 @@ function buildCandidate(cycleId: string): DispatchCandidate {
 function fakeDeps(pages: ReadonlyArray<DispatchCandidate>[]): {
   deps: RenewalsDeps;
   listMock: ReturnType<typeof vi.fn>;
+  auditEmitMock: ReturnType<typeof vi.fn>;
 } {
   let pageIdx = 0;
   const listMock = vi.fn(async () => {
@@ -76,11 +77,17 @@ function fakeDeps(pages: ReadonlyArray<DispatchCandidate>[]): {
     const hasMore = pageIdx < pages.length;
     return { items, nextCursor: hasMore ? `c-${pageIdx}` : null };
   });
+  // K12-7 (TST-K-2): wire an audit-emitter mock so the K1-C8 outer-
+  // catch `renewal_reminder_send_failed` emission path is testable.
+  // Previously fakeDeps had no auditEmitter at all, so the outer
+  // catch's audit emit was unobservable in unit tests.
+  const auditEmitMock = vi.fn(async () => undefined);
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     dispatchCandidateRepo: { list: listMock, findOne: vi.fn() } as unknown as RenewalsDeps['dispatchCandidateRepo'],
+    auditEmitter: { emit: auditEmitMock } as unknown as RenewalsDeps['auditEmitter'],
   } as unknown as RenewalsDeps;
-  return { deps, listMock };
+  return { deps, listMock, auditEmitMock };
 }
 
 const VALID_INPUT = {
@@ -166,6 +173,89 @@ describe('dispatchRenewalCycle', () => {
     expect(result.value.summary.candidatesProcessed).toBe(2);
     expect(result.value.summary.failedTransient).toBe(1);
     expect(result.value.summary.emailsSent).toBe(1);
+  });
+
+  it('K12-7 (TST-K-2): outer-catch per-cycle exception emits renewal_reminder_send_failed audit before synthetic failed_transient', async () => {
+    // K1-C8 closed Constitution Principle VIII state↔audit atomicity
+    // drift: when dispatchOneCycle throws (uncaught beyond its own
+    // runInTenant boundary), the cron summary count was incremented to
+    // failedTransient but no audit_log row was written. This test
+    // pins the K1-C8 contract so a future refactor that drops the
+    // audit emit (or re-orders past the synthetic Result) fails CI.
+    const candidate = buildCandidate('c-007');
+    (dispatchOneCycle as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => {
+        throw new Error('upstream went away');
+      },
+    );
+    const { deps, auditEmitMock } = fakeDeps([[candidate]]);
+    const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+    assertOk(result);
+    expect(result.value.summary.failedTransient).toBe(1);
+
+    // The audit emitter must have been called exactly once with the
+    // canonical dispatcher_crash payload — failure_kind locks the
+    // emit-site identity (vs the inline retry-pass emits which use
+    // gateway_4xx / gateway_5xx / unsubscribed / etc.).
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    const emitCall = auditEmitMock.mock.calls[0]!;
+    const event = emitCall[0] as {
+      type: string;
+      payload: {
+        cycle_id: string;
+        member_id: string;
+        failure_kind: string;
+        failure_message: string;
+        via_retry_pass: boolean;
+      };
+    };
+    expect(event.type).toBe('renewal_reminder_send_failed');
+    expect(event.payload.cycle_id).toBe('c-007');
+    expect(event.payload.failure_kind).toBe('dispatcher_crash');
+    expect(event.payload.via_retry_pass).toBe(false);
+    // The error message is forwarded (truncated to 200 chars upstream)
+    // so on-call can correlate the audit row to the log line.
+    expect(event.payload.failure_message).toContain('upstream went away');
+
+    // Actor context: cron path (no human actor); correlationId
+    // forwarded so the audit row joins the cron's log trail.
+    const ctx = emitCall[1] as {
+      tenantId: string;
+      actorRole: string;
+      actorUserId: string | null;
+      correlationId: string;
+    };
+    expect(ctx.tenantId).toBe(TENANT_ID);
+    expect(ctx.actorRole).toBe('cron');
+    expect(ctx.actorUserId).toBeNull();
+    expect(ctx.correlationId).toBe('corr-1');
+  });
+
+  it('K12-7 (TST-K-2): audit-emit failure on outer-catch path does NOT throw (peer isolation invariant preserved)', async () => {
+    // Ensures the inner try/catch around the audit emit (lines 308-
+    // 324 of dispatch-renewal-cycle.ts) holds: if the audit emitter
+    // itself throws (e.g. DB unreachable during catastrophic failure),
+    // the loop must continue to the next candidate. Without this, an
+    // audit-emit blip during an upstream outage cascades into total
+    // cron failure.
+    const candidates = [buildCandidate('c-008'), buildCandidate('c-009')];
+    (dispatchOneCycle as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => {
+        throw new Error('upstream blip');
+      },
+    );
+    const { deps, auditEmitMock } = fakeDeps([candidates]);
+    auditEmitMock.mockImplementation(async () => {
+      throw new Error('audit DB unreachable');
+    });
+    const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+    // Use-case still succeeds; both candidates counted.
+    assertOk(result);
+    expect(result.value.summary.candidatesProcessed).toBe(2);
+    expect(result.value.summary.failedTransient).toBe(2);
+    // Both audit emits attempted (peer isolation: emit-failure does
+    // NOT short-circuit the next candidate's emit).
+    expect(auditEmitMock).toHaveBeenCalledTimes(2);
   });
 
   it('failed_permanent + failed_transient counted separately', async () => {

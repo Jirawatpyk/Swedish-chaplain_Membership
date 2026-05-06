@@ -1705,7 +1705,8 @@
         "featureDisabled": "The renewals workflow is not yet enabled for this chamber.",
         "loadFailed": "Could not load the renewal pipeline.",
         "retry": "Try again",
-        "goBack": "Go back"
+        "goBack": "Go back",
+        "referenceLabel": "Reference ID"
       },
       "settings": {
         "schedules": {

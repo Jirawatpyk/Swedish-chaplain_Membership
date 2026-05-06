@@ -1705,7 +1705,8 @@
         "featureDisabled": "Förnyelseflödet är ännu inte aktiverat för denna kammare.",
         "loadFailed": "Kunde inte ladda förnyelsepipelinen.",
         "retry": "Försök igen",
-        "goBack": "Gå tillbaka"
+        "goBack": "Gå tillbaka",
+        "referenceLabel": "Referens-ID"
       },
       "settings": {
         "schedules": {

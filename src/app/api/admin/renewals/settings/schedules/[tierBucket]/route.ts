@@ -152,7 +152,9 @@ export async function PUT(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
+        // serializer captures stack + type.
+        err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         tierBucket,
         tenantId: tenantCtx.slug,

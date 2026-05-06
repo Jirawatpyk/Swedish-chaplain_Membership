@@ -34,7 +34,29 @@ import { verifyCronBearer } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+import { getClientIp } from '@/lib/client-ip';
 import { makeRenewalsDeps } from '@/modules/renewals';
+
+/**
+ * K12-6 (SEC-K-5): cap audit-DB-write amplification on the 401 path.
+ *
+ * Without this, sustained bad-Bearer probing at 1k req/s would emit
+ * 1k INSERT/s into `audit_log`. Vercel's per-region concurrency
+ * provides some defence but does NOT eliminate the burst window.
+ *
+ * 60 requests / 60 sec is generous for legitimate rotation-window
+ * scenarios (cron-job.org may briefly retry with the old secret
+ * during a CRON_SECRET rotation; F4/F5/F7 cron jobs share the same
+ * IP) while bounding the audit-write burst to 60 rows/min/IP. After
+ * the limit is hit, subsequent 401s short-circuit with no DB write —
+ * the `cron_bearer_auth_rejected` rate is preserved (one row per IP
+ * per minute) which is sufficient for forensic detection of a
+ * sustained probe.
+ */
+const BEARER_REJECT_RL_LIMIT = 60;
+const BEARER_REJECT_RL_WINDOW_SECONDS = 60;
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -123,8 +145,10 @@ async function emitOrchestratedAudit(
     // docstring).
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
-        stack: e instanceof Error ? e.stack : undefined,
+        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
+        // serializer captures stack + type without the manual stack
+        // field below.
+        err: e instanceof Error ? e : new Error(String(e)),
         correlationId,
       },
       'cron.renewals.coordinator.audit_emit_failed',
@@ -138,6 +162,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (
     !verifyCronBearer(request.headers.get('authorization'), env.cron.secret)
   ) {
+    // K12-6 (SEC-K-5): rate-limit the 401 path BEFORE the audit emit
+    // to cap audit-DB-write amplification under brute-force probing.
+    // Once the limit is hit subsequent 401s short-circuit with no DB
+    // write; the bearer_rejected rate signal is preserved at the
+    // capped cadence (sufficient for forensic detection).
+    const ip = getClientIp(request);
+    const rl = await rateLimiter.check(
+      `f8:cron:bearer-rejected:${ip}`,
+      BEARER_REJECT_RL_LIMIT,
+      BEARER_REJECT_RL_WINDOW_SECONDS,
+    );
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: { code: 'rate_limited' } },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
+        },
+      );
+    }
+
     // K6 / spec.md taxonomy line 365: emit `cron_bearer_auth_rejected`
     // audit so a sustained Bearer-rejection rate (e.g. CRON_SECRET
     // rotation incident, attacker probing) is forensically traceable.
@@ -264,7 +309,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               jsonParseFailed = true;
               logger.error(
                 {
-                  err: e instanceof Error ? e.message : String(e),
+                  // K12-3 (REL-K-1): pass the Error instance so pino's
+                  // `err` serializer captures stack + type.
+                  err: e instanceof Error ? e : new Error(String(e)),
                   tenantId,
                   status: r.status,
                   contentType: r.headers.get('content-type'),

@@ -162,7 +162,11 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
+        // serializer captures stack + type. Passing the bare message
+        // string drops the stack trace and breaks Sentry/Grafana
+        // `err.type` filters.
+        err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         tenantId: tenantCtx.slug,
       },

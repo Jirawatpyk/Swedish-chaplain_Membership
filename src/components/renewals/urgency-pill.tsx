@@ -44,6 +44,11 @@ export function UrgencyPill({ urgency, className }: UrgencyPillProps) {
   // tokens at the boundary.
   const i18nKey = urgency.replace('-', '_');
   const label = t(i18nKey as 't_90' | 't_60' | 't_30' | 't_14' | 't_7' | 't_0' | 'grace' | 'lapsed');
+  // K12-2 (UX-K-6): no aria-label — the visible text serves as the
+  // accessible name for this non-interactive `<span>`. Setting both
+  // causes older VoiceOver versions to double-announce; WCAG 1.1 +
+  // 4.1.2 prefer the visible text alone when it is sufficient.
+  // Sibling pattern: TierBadge (K9) + LapsedTab reason badge (K9).
   return (
     <span
       className={cn(
@@ -51,7 +56,6 @@ export function UrgencyPill({ urgency, className }: UrgencyPillProps) {
         VARIANT_CLASSES[urgency],
         className,
       )}
-      aria-label={label}
     >
       {label}
     </span>

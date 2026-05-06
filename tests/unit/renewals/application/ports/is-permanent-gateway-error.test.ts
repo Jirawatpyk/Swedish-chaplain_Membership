@@ -56,4 +56,15 @@ describe('isPermanentGatewayError (K6)', () => {
     };
     expect(isPermanentGatewayError(err)).toBe(false);
   });
+
+  it('K12-S (TST-K-1 + CON-K-2): exhaustiveness defence — unknown future variant returns false', () => {
+    // The classifier converted to switch + `never` exhaustiveness in
+    // CON-K-2 — a new variant that bypasses the switch falls through
+    // to the default branch which returns false (transient bias) and
+    // would fail compile if added to the union without a switch arm.
+    // This test pins the runtime fallback so a `// @ts-expect-error`
+    // bypass during refactoring is still caught at runtime.
+    const future = { kind: 'unknown_future_variant' } as unknown as SendRenewalEmailError;
+    expect(isPermanentGatewayError(future)).toBe(false);
+  });
 });

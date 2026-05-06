@@ -24,7 +24,12 @@ export function RenewalsEmptyState() {
         <div className="flex flex-col items-center gap-2 sm:flex-row">
           <Link
             href="/admin/members"
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            // K12-S (UX-K-5): primary CTA is `default` (solid) per
+            // ux-standards.md § 3.1 — `outline` was a stylistic
+            // mistake; primary actions ought to carry the most
+            // visual weight. Secondary "settings" link below stays
+            // muted text to preserve the hierarchy.
+            className={buttonVariants({ variant: 'default', size: 'sm' })}
           >
             {t('cta')}
           </Link>

@@ -218,6 +218,20 @@ export interface F8AuditPayloadShapes {
   readonly renewal_kill_switch_blocked: {
     readonly route: string;
   };
+  /**
+   * K12-9 (CON-K-3): typed payload for the cron-coordinator 401 path
+   * Bearer-rejection audit. Previously fell back to generic
+   * `Record<string, unknown>` because no entry existed here, which
+   * meant a future caller typo (e.g. `path` instead of `route`) would
+   * not be caught at compile time. Aligns with `renewal_kill_switch_
+   * blocked` shape — `route` is the request path so dashboards can
+   * group rejections by surface (currently only the coordinator
+   * emits this; per-tenant + housekeeping crons would extend the
+   * pattern in future waves).
+   */
+  readonly cron_bearer_auth_rejected: {
+    readonly route: string;
+  };
   readonly tier_upgrade_suggested: {
     readonly suggestion_id: SuggestionId;
     readonly member_id: MemberId;

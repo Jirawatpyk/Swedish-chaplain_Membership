@@ -35,6 +35,20 @@ vi.mock('@/modules/renewals', () => ({
   })),
 }));
 
+// K12-6 (SEC-K-5): rate-limiter mock for the new bearer-rejected
+// rate-limit on the 401 path. Default success=true so existing tests
+// remain unaffected; per-test override re-binds for the rate-limited
+// case.
+const rateLimiterCheckMock = vi.hoisted(() =>
+  vi.fn(async () => ({ success: true, reset: 0 })),
+);
+vi.mock('@/lib/auth-deps', () => ({
+  rateLimiter: { check: rateLimiterCheckMock },
+}));
+vi.mock('@/lib/rate-limit-helpers', () => ({
+  retryAfterSecondsFromRl: vi.fn(() => 42),
+}));
+
 // Mock global fetch — coordinator fans out via fetch().
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
@@ -61,6 +75,16 @@ describe('cron dispatch-coordinator route (T103)', () => {
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error.code).toBe('unauthorized');
+    // K12-8 (TST-K-4): pin K6 cron_bearer_auth_rejected audit emission
+    // so a future refactor that drops the emit fails CI. The audit is
+    // the ONLY forensic signal of sustained Bearer-rejection
+    // (CRON_SECRET rotation incident, attacker probing).
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    const event = auditEmitMock.mock.calls[0]![0];
+    expect(event.type).toBe('cron_bearer_auth_rejected');
+    expect((event.payload as { route: string }).route).toBe(
+      '/api/cron/renewals/dispatch-coordinator',
+    );
   });
 
   it('401 on wrong Bearer (timing-safe)', async () => {
@@ -68,6 +92,26 @@ describe('cron dispatch-coordinator route (T103)', () => {
       makeRequest({ authorization: 'Bearer wrong-secret-32-bytes-long-aaaa' }),
     );
     expect(res.status).toBe(401);
+    // K12-8 (TST-K-4): same audit must fire on wrong-Bearer path.
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    expect(auditEmitMock.mock.calls[0]![0].type).toBe(
+      'cron_bearer_auth_rejected',
+    );
+  });
+
+  it('K12-6 (SEC-K-5): 429 + Retry-After when bearer-rejected rate limit exceeded; NO audit emitted', async () => {
+    // Caps audit-DB-write amplification under brute-force probing.
+    // After the limit is hit, subsequent 401s short-circuit with no
+    // INSERT into audit_log — the audit signal stays at the capped
+    // cadence (sufficient for forensic detection).
+    rateLimiterCheckMock.mockResolvedValueOnce({ success: false, reset: 0 });
+    const res = await POST(makeRequest({}));
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error.code).toBe('rate_limited');
+    expect(res.headers.get('Retry-After')).toBe('42');
+    // No audit emit — that is the whole point of the rate-limit guard.
+    expect(auditEmitMock).not.toHaveBeenCalled();
   });
 
   it('200 + skipped on FEATURE_F8_RENEWALS=false (kill-switch)', async () => {

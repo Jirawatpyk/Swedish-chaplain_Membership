@@ -33,6 +33,12 @@ vi.mock('@/lib/db', () => ({
 
 const dispatchMock = vi.hoisted(() => vi.fn());
 const retryMock = vi.hoisted(() => vi.fn());
+// K12-8 (TST-K-4): wire audit-emitter mock so the new
+// cron_bearer_auth_rejected audit emission on the per-tenant 401
+// path is testable.
+const auditEmitMock = vi.hoisted(() =>
+  vi.fn(async (_event: { type: string; payload: unknown }, _ctx: unknown) => {}),
+);
 vi.mock('@/modules/renewals', async () => {
   const actual = await vi.importActual<typeof import('@/modules/renewals')>(
     '@/modules/renewals',
@@ -43,9 +49,23 @@ vi.mock('@/modules/renewals', async () => {
     retryFailedReminders: retryMock,
     makeRenewalsDeps: vi.fn(() => ({
       tenant: { slug: 'tenanta' },
+      auditEmitter: { emit: auditEmitMock, emitInTx: vi.fn() },
     })),
   };
 });
+
+// K12-6 (SEC-K-5): mock the bearer-rejected rate-limiter (default
+// success=true so existing tests are unaffected; per-test override
+// re-binds for the rate-limited case).
+const rateLimiterCheckMock = vi.hoisted(() =>
+  vi.fn(async () => ({ success: true, reset: 0 })),
+);
+vi.mock('@/lib/auth-deps', () => ({
+  rateLimiter: { check: rateLimiterCheckMock },
+}));
+vi.mock('@/lib/rate-limit-helpers', () => ({
+  retryAfterSecondsFromRl: vi.fn(() => 42),
+}));
 
 import { POST } from '@/app/api/cron/renewals/dispatch/[tenantId]/route';
 
@@ -96,6 +116,15 @@ describe('cron per-tenant dispatch route (T104)', () => {
   it('401 on missing Bearer', async () => {
     const res = await POST(makeRequest({}), validParams);
     expect(res.status).toBe(401);
+    // K12-8 (TST-K-4): per-tenant route now also emits
+    // cron_bearer_auth_rejected on 401 so per-tenant probing leaves
+    // a forensic trail (consistency with coordinator route).
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    const event = auditEmitMock.mock.calls[0]![0];
+    expect(event.type).toBe('cron_bearer_auth_rejected');
+    expect((event.payload as { route: string }).route).toBe(
+      '/api/cron/renewals/dispatch/[tenantId]',
+    );
   });
 
   it('401 on wrong Bearer', async () => {
@@ -104,6 +133,21 @@ describe('cron per-tenant dispatch route (T104)', () => {
       validParams,
     );
     expect(res.status).toBe(401);
+    // K12-8 (TST-K-4): same audit must fire on wrong-Bearer path.
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    expect(auditEmitMock.mock.calls[0]![0].type).toBe(
+      'cron_bearer_auth_rejected',
+    );
+  });
+
+  it('K12-6 (SEC-K-5): 429 + Retry-After when bearer-rejected rate limit exceeded; NO audit emitted', async () => {
+    rateLimiterCheckMock.mockResolvedValueOnce({ success: false, reset: 0 });
+    const res = await POST(makeRequest({}), validParams);
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error.code).toBe('rate_limited');
+    expect(res.headers.get('Retry-After')).toBe('42');
+    expect(auditEmitMock).not.toHaveBeenCalled();
   });
 
   it('200 + skipped on FEATURE_F8_RENEWALS=false', async () => {

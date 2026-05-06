@@ -13,14 +13,12 @@
  * returns 404 with audit `renewal_kill_switch_blocked` (FR-052b).
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
@@ -39,6 +37,7 @@ import { UrgencyBucketTabs } from './_components/urgency-bucket-tabs';
 import { PipelineTable } from './_components/pipeline-table';
 import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
+import { ErrorCardActions } from './_components/error-card-actions';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -148,27 +147,22 @@ export default async function RenewalsPipelinePage({
             <div className="text-base font-medium text-destructive">
               {t('error.loadFailed')}
             </div>
-            <div className="flex gap-2">
-              <Link
-                // Thread correlationId so the URL is unique per error-
-                // render — Next.js App Router caches RSC payloads for ~30s
-                // and would otherwise serve the cached error on retry.
-                // The `_retry` param is parsed-and-ignored by loadPipeline.
-                href={`/admin/renewals?_retry=${correlationId}`}
-                className={buttonVariants({ variant: 'default', size: 'sm' })}
-              >
-                {t('error.retry')}
-              </Link>
-              <Link
-                href="/admin"
-                className={buttonVariants({ variant: 'outline', size: 'sm' })}
-              >
-                {t('error.goBack')}
-              </Link>
-            </div>
-            <code className="text-xs text-muted-foreground font-mono">
-              {correlationId}
-            </code>
+            {/*
+              K12-1 (UX-K-3): Retry was a `<Link>` with `?_retry=${id}`
+              query-string cache-bust which (a) read as "navigation" to
+              AT (WCAG SC 4.1.2) and (b) polluted browser history with
+              accumulating retry IDs. ErrorCardActions runs
+              `router.refresh()` inside `useTransition` — semantic
+              button, no URL mutation, pending state for the in-flight
+              RSC re-fetch.
+            */}
+            <ErrorCardActions
+              correlationId={correlationId}
+              goBackHref="/admin"
+              retryLabel={t('error.retry')}
+              goBackLabel={t('error.goBack')}
+              referenceLabel={t('error.referenceLabel')}
+            />
           </CardContent>
         </Card>
       </TableContainer>

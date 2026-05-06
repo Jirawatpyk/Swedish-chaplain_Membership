@@ -66,9 +66,16 @@ describe('<UrgencyPill>', () => {
     expect(container.querySelector('span')!.className).toMatch(/bg-gray-100/);
   });
 
-  it('exposes aria-label', () => {
-    renderPill('t-7');
-    expect(screen.getByLabelText('Due in 7d')).toBeDefined();
+  it('K12-2 (UX-K-6): visible text serves as accessible name (no redundant aria-label)', () => {
+    // K12-2 polish: removed `aria-label={label}` from UrgencyPill —
+    // mirrors K9 closure on TierBadge + LapsedTab reason badge. Older
+    // VoiceOver versions double-announce when aria-label matches the
+    // visible text on a non-interactive `<span>`. The visible text
+    // alone correctly serves as the accessible name (WCAG 1.1 + 4.1.2).
+    const { container } = renderPill('t-7');
+    const el = container.querySelector('span')!;
+    expect(el.textContent).toBe('Due in 7d');
+    expect(el.getAttribute('aria-label')).toBeNull();
   });
 
   it('applies whitespace-nowrap to keep pill on single line', () => {

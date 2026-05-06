@@ -1420,4 +1420,28 @@ export const renewalsMetrics = {
       ).add(1, { event_type: eventType ?? 'unknown' });
     });
   },
+
+  /**
+   * `renewals_unknown_resend_error_name_total{error_name}` — K12-4
+   * (REL-K-2): Resend SDK returned an error with a name not in the
+   * `PERMANENT_RESEND_ERROR_PATTERNS` allowlist. The classifier
+   * defaults to transient (`gateway_5xx`) → 24h retry budget burns
+   * before giving up. Without this counter the team only sees a
+   * `logger.warn` line that requires log-grep to discover. Alert rule:
+   * any non-zero rate over a 5-min window pages on-call so the team
+   * can extend the allowlist before the retry storm escalates.
+   *
+   * `error_name` is the Resend-supplied `error.name` (bounded
+   * cardinality in steady state — Resend's error taxonomy is small;
+   * a sustained high-cardinality spike here is itself the alert
+   * signal that something is wrong upstream).
+   */
+  unknownResendErrorName(errorName: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_unknown_resend_error_name_total',
+        'Resend SDK returned an error.name outside the PERMANENT allowlist (alert trigger)',
+      ).add(1, { error_name: errorName });
+    });
+  },
 } as const;

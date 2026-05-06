@@ -87,12 +87,24 @@ export type SendRenewalEmailError =
 export function isPermanentGatewayError(
   err: SendRenewalEmailError,
 ): boolean {
-  return (
-    err.kind === 'gateway_4xx' ||
-    err.kind === 'recipient_unsubscribed' ||
-    err.kind === 'recipient_email_unverified' ||
-    err.kind === 'template_variables_missing'
-  );
+  // K12-S (CON-K-2): switch with `never` exhaustiveness pin so a new
+  // `SendRenewalEmailError` variant fails to typecheck against this
+  // classifier instead of silently slipping through the if-chain.
+  // Mirrors the K1-E1 exhaustiveness pattern in route handlers.
+  switch (err.kind) {
+    case 'gateway_4xx':
+    case 'recipient_unsubscribed':
+    case 'recipient_email_unverified':
+    case 'template_variables_missing':
+      return true;
+    case 'gateway_5xx':
+      return false;
+    default: {
+      const _exhaustive: never = err;
+      void _exhaustive;
+      return false;
+    }
+  }
 }
 
 export interface RenewalGateway {

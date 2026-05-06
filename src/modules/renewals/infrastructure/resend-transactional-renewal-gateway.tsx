@@ -27,6 +27,7 @@ import { Resend } from 'resend';
 import { render } from '@react-email/components';
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
 import {
   RenewalReminderEmail,
@@ -183,18 +184,26 @@ function mapResendError(
   if (isPermanentResendName(name)) {
     return { kind: 'gateway_4xx', retryable: false, message };
   }
-  // Truly-unknown name → log a WARN so the team can extend the
-  // allowlist before the next retry storm. The default classification
-  // stays transient (gateway_5xx) — defaulting NEW Resend error codes
-  // to permanent could starve legitimate retries during a Resend
-  // incident with novel error names.
+  // Truly-unknown name → log a WARN + emit metrics counter so the team
+  // can extend the allowlist before the next retry storm. The default
+  // classification stays transient (gateway_5xx) — defaulting NEW
+  // Resend error codes to permanent could starve legitimate retries
+  // during a Resend incident with novel error names.
   if (name === 'unknown' || name === '' || resendError.name === undefined) {
     // Best-effort: empty/missing name is genuine "we don't know".
   } else {
+    // K12-5 (SEC-K-2): log ONLY the error name — the freeform message
+    // from the Resend SDK can leak account-scoped identifiers (sending
+    // domain, API-key prefix, account ID) on novel error shapes; the
+    // `*.message` field is NOT covered by REDACT_PATHS today. Name is
+    // bounded enum-like and safe.
     logger.warn(
-      { resendErrorName: resendError.name, resendErrorMessage: message },
+      { resendErrorName: resendError.name },
       'resend.renewals.send.unknown_error_name_classified_as_transient',
     );
+    // K12-4 (REL-K-2): metrics counter pages on-call without requiring
+    // log-grep. Alert rule: non-zero rate over 5 min.
+    renewalsMetrics.unknownResendErrorName(resendError.name);
   }
   return { kind: 'gateway_5xx', retryable: true, message };
 }

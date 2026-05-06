@@ -33,6 +33,9 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+import { getClientIp } from '@/lib/client-ip';
 import { asTenantContext } from '@/modules/tenants';
 import {
   dispatchRenewalCycle,
@@ -51,6 +54,51 @@ export async function POST(
   if (
     !verifyCronBearer(request.headers.get('authorization'), env.cron.secret)
   ) {
+    // K12-6 + K12-8 (SEC-K-5 + TST-K-4): rate-limit the 401 path
+    // BEFORE the audit emit and emit `cron_bearer_auth_rejected` so
+    // a sustained Bearer-rejection rate is forensically traceable on
+    // the per-tenant cron surface too (coordinator already does this
+    // since K6). 60 requests / 60 sec / IP — same parameters as the
+    // coordinator. Once the limit is hit we short-circuit with no
+    // INSERT into audit_log.
+    const ip = getClientIp(request);
+    const rl = await rateLimiter.check(
+      `f8:cron:bearer-rejected:${ip}`,
+      60,
+      60,
+    );
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: { code: 'rate_limited' } },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
+        },
+      );
+    }
+    try {
+      const deps = makeRenewalsDeps(env.tenant.slug);
+      await deps.auditEmitter.emit(
+        {
+          type: 'cron_bearer_auth_rejected',
+          payload: { route: '/api/cron/renewals/dispatch/[tenantId]' },
+        },
+        {
+          tenantId: env.tenant.slug,
+          actorUserId: null,
+          actorRole: 'cron',
+          correlationId: uuidv7(),
+          requestId: null,
+        },
+      );
+    } catch (e) {
+      logger.error(
+        {
+          err: e instanceof Error ? e : new Error(String(e)),
+        },
+        'cron.renewals.dispatch.bearer_rejected_audit_failed',
+      );
+    }
     return NextResponse.json(
       { error: { code: 'unauthorized' } },
       { status: 401 },
@@ -202,7 +250,9 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // K12-3 (REL-K-1): pass the Error instance so pino's `err`
+        // serializer captures stack + type.
+        err: e instanceof Error ? e : new Error(String(e)),
         tenantId,
         correlationId,
       },

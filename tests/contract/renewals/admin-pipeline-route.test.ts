@@ -11,6 +11,12 @@ import { ok, err } from '@/lib/result';
 
 const requireRenewalAdminContextMock = vi.fn();
 const loadPipelineMock = vi.fn();
+// K12-S (TST-K-3): track renewal_kill_switch_blocked audit emission
+// on the FR-052b 404 path so a future refactor that drops the audit
+// emit fails CI.
+const auditEmitMock = vi.fn(
+  async (_event: { type: string; payload: unknown }, _ctx: unknown) => {},
+);
 const f8FeatureFlag = { value: true };
 
 vi.mock('@/lib/env', async () => {
@@ -50,7 +56,9 @@ vi.mock('@/modules/renewals', async () => {
   return {
     ...actual,
     loadPipeline: (...args: unknown[]) => loadPipelineMock(...args),
-    makeRenewalsDeps: () => ({}),
+    makeRenewalsDeps: () => ({
+      auditEmitter: { emit: auditEmitMock, emitInTx: vi.fn() },
+    }),
   };
 });
 
@@ -111,6 +119,16 @@ describe('GET /api/admin/renewals — contract', () => {
     const res = await GET(makeReq());
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe('feature_disabled');
+    // K12-S (TST-K-3): pin the audit emission so a refactor that
+    // drops the renewal_kill_switch_blocked audit (silently weakening
+    // the FR-052b forensic trail) fails CI. Audit type + route
+    // payload locked to the canonical shape.
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    const event = auditEmitMock.mock.calls[0]![0];
+    expect(event.type).toBe('renewal_kill_switch_blocked');
+    expect((event.payload as { route: string }).route).toBe(
+      '/api/admin/renewals',
+    );
   });
 
   it('passes through 401 from helper when no session', async () => {
