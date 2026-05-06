@@ -131,6 +131,38 @@ function deriveDaysFromOffset(offset: RenewalReminderOffset): number {
 // Resend error mapping
 // ---------------------------------------------------------------------------
 
+/**
+ * K5: Permanent-error allowlist — Resend error names that should NEVER
+ * be retried for the FR-010a 24h budget. Defaulting unknown errors to
+ * `gateway_5xx` (transient) was previously eating quota for permanent
+ * configuration errors (`domain_not_verified`, `restricted_api_key`,
+ * `quota_exceeded`, `from_blocked`) — they'd be retried for 24h while
+ * never resolvable without operator intervention. The audit trail
+ * would also report `failure_kind: 'gateway_5xx'` for what's really
+ * a permanent config error, defeating the J9-M17 closed-set forensic
+ * value.
+ *
+ * Match rule: `name.includes(...)` (lowercased) so Resend's
+ * variants (`api_key_restricted`, `restricted_api_key`,
+ * `daily_quota_exceeded`, `monthly_quota_exceeded`, etc.) all fold to
+ * the right classification.
+ */
+const PERMANENT_RESEND_ERROR_PATTERNS: ReadonlyArray<string> = [
+  'domain_not_verified',
+  'domain_unverified',
+  'restricted_api_key',
+  'api_key_restricted',
+  'quota_exceeded',
+  'rate_limited_total', // Resend's permanent-quota signal (vs transient rate_limit)
+  'from_blocked',
+  'from_address_blocked',
+  'sender_blocked',
+];
+
+function isPermanentResendName(nameLower: string): boolean {
+  return PERMANENT_RESEND_ERROR_PATTERNS.some((p) => nameLower.includes(p));
+}
+
 function mapResendError(
   resendError: { name?: string; message?: string },
 ): SendRenewalEmailError {
@@ -145,7 +177,25 @@ function mapResendError(
   if (name.includes('email_not_verified')) {
     return { kind: 'recipient_email_unverified' };
   }
-  // Default: transient (5xx, rate-limit, unknown).
+  // K5: Known-permanent allowlist (closes a 24h-retry-storm hazard for
+  // permanent config errors that the previous catch-all-5xx default
+  // would otherwise hammer).
+  if (isPermanentResendName(name)) {
+    return { kind: 'gateway_4xx', retryable: false, message };
+  }
+  // Truly-unknown name → log a WARN so the team can extend the
+  // allowlist before the next retry storm. The default classification
+  // stays transient (gateway_5xx) — defaulting NEW Resend error codes
+  // to permanent could starve legitimate retries during a Resend
+  // incident with novel error names.
+  if (name === 'unknown' || name === '' || resendError.name === undefined) {
+    // Best-effort: empty/missing name is genuine "we don't know".
+  } else {
+    logger.warn(
+      { resendErrorName: resendError.name, resendErrorMessage: message },
+      'resend.renewals.send.unknown_error_name_classified_as_transient',
+    );
+  }
   return { kind: 'gateway_5xx', retryable: true, message };
 }
 

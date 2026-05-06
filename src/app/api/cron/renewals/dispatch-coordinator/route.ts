@@ -58,6 +58,13 @@ interface OrchestratedSummary {
   readonly tenants_enqueued: number;
   readonly tenants_succeeded: number;
   readonly tenants_failed: number;
+  // K5: tenants where the per-tenant route short-circuited via
+  // kill-switch (feature_flag_disabled) or read-only-mode. Counted
+  // separately from succeeded so ops dashboards distinguish "no work
+  // because feature off" from "no work because nothing was due".
+  // Without this, a dark-launched tenant flag-flapping silently
+  // appears as "100% healthy" while no dispatches ran.
+  readonly tenants_skipped_kill_switch: number;
   readonly duration_ms: number;
 }
 
@@ -81,6 +88,7 @@ async function emitOrchestratedAudit(
           tenants_enqueued: summary.tenants_enqueued,
           tenants_succeeded: summary.tenants_succeeded,
           tenants_failed: summary.tenants_failed,
+          tenants_skipped_kill_switch: summary.tenants_skipped_kill_switch,
           duration_ms: summary.duration_ms,
           // bounded-cardinality summary — no PII in the per-tenant payload.
           per_tenant_summaries: perTenantResults.map((r) =>
@@ -177,6 +185,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           tenants_enqueued: 0,
           tenants_succeeded: 0,
           tenants_failed: 0,
+          tenants_skipped_kill_switch: 0,
           duration_ms: Date.now() - startedAt,
         };
         await emitOrchestratedAudit(
@@ -306,15 +315,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         };
       });
 
-      const tenantsSucceeded = perTenantResults.filter(
+      // K5: distinguish kill-switch-skipped tenants from genuinely-
+      // succeeded ones. A dark-launched tenant returning
+      // `{skipped: true, reason: 'feature_flag_disabled'}` was
+      // previously counted as `tenants_succeeded` — ops dashboards
+      // green-flagged "100% healthy" while no work ran. Now the
+      // skipped count surfaces alongside succeeded so an alert can
+      // fire if a tenant unexpectedly drops to skipped state.
+      const tenantsSucceededOrSkipped = perTenantResults.filter(
         (r): r is PerTenantResultOk => !('error' in r),
+      );
+      const tenantsSkippedKillSwitch = tenantsSucceededOrSkipped.filter(
+        (r) => r.skipped,
       ).length;
-      const tenantsFailed = perTenantResults.length - tenantsSucceeded;
+      const tenantsSucceeded =
+        tenantsSucceededOrSkipped.length - tenantsSkippedKillSwitch;
+      const tenantsFailed =
+        perTenantResults.length - tenantsSucceededOrSkipped.length;
 
       const summary: OrchestratedSummary = {
         tenants_enqueued: activeTenants.length,
         tenants_succeeded: tenantsSucceeded,
         tenants_failed: tenantsFailed,
+        tenants_skipped_kill_switch: tenantsSkippedKillSwitch,
         duration_ms: Date.now() - startedAt,
       };
 

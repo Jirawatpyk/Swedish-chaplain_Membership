@@ -326,6 +326,16 @@ export interface F8AuditPayloadShapes {
     readonly tenants_enqueued: number;
     readonly tenants_succeeded: number;
     readonly tenants_failed: number;
+    /**
+     * K5: tenants whose per-tenant route short-circuited via the F8
+     * kill-switch (`FEATURE_F8_RENEWALS=false` returns `{skipped: true,
+     * reason: 'feature_flag_disabled'}`) or read-only mode. Surfaced
+     * separately from `tenants_succeeded` so a dark-launched tenant
+     * flag-flap doesn't silently appear as "100% healthy" on
+     * dashboards. Optional for backward compat with audit rows
+     * written before this field landed.
+     */
+    readonly tenants_skipped_kill_switch?: number;
     readonly duration_ms: number;
     readonly per_tenant_summaries: ReadonlyArray<
       | {

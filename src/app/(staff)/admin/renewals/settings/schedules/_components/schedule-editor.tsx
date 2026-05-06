@@ -566,7 +566,16 @@ export function ScheduleEditor({
               ) : null}
               {steps.map((step, idx) => (
                 <StepRow
-                  key={`${b}-${idx}`}
+                  // K5: previously `${b}-${idx}` — array-index keys
+                  // make React reconciliation diff by position, so when
+                  // admin clicks Move-up/Move-down the input field
+                  // values appeared to swap (state stayed bound to the
+                  // index that no longer pointed at the same step).
+                  // step_id is unique-per-row (enforced by `emptyStep()`
+                  // via `crypto.randomUUID()`) and stable across
+                  // reorders — React now correctly tracks the same
+                  // logical row even when its index changes.
+                  key={`${b}-${step.step_id}`}
                   tierBucket={b}
                   step={step}
                   index={idx}
