@@ -46,10 +46,50 @@ const ListQuerySchema = z.object({
 
 export async function GET(request: NextRequest) {
   if (!env.features.f8Renewals) {
+    // K2 / FR-052(b): dashboard route MUST return 404 (not 503) when
+    // kill-switch is off and emit a `renewal_kill_switch_blocked`
+    // audit event. The 404 (rather than 503) hides the feature's
+    // existence from operators who shouldn't know F8 is dark-launched
+    // — matches "feature does not exist on this tenant" UX. The audit
+    // emit captures forensic intent ("an admin tried to load the
+    // pipeline while F8 was disabled") which is operationally valuable
+    // when ops triages a flag-flip incident.
+    //
+    // Per spec.md FR-052: "(b) the dashboard route (return 404 with
+    // audit event `renewal_kill_switch_blocked`)".
+    const correlationId = randomUUID();
+    try {
+      const tenantCtx = resolveTenantFromRequest(request);
+      const deps = makeRenewalsDeps(tenantCtx.slug);
+      await deps.auditEmitter.emit(
+        {
+          type: 'renewal_kill_switch_blocked',
+          payload: { route: '/api/admin/renewals' },
+        },
+        {
+          tenantId: tenantCtx.slug,
+          actorUserId: null,
+          actorRole: 'admin',
+          correlationId,
+          requestId: null,
+        },
+      );
+    } catch (e) {
+      // Audit emit failure must NOT block the 404 response. Log loudly
+      // so ops can detect a sustained failure pattern.
+      logger.error(
+        {
+          err: e instanceof Error ? e : new Error(String(e)),
+          correlationId,
+          route: '/api/admin/renewals',
+        },
+        'load-pipeline route: kill_switch_blocked audit emit failed',
+      );
+    }
     return errorResponse({
-      status: 503,
+      status: 404,
       code: 'feature_disabled',
-      correlationId: randomUUID(),
+      correlationId,
     });
   }
 

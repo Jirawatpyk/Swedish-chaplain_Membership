@@ -405,6 +405,66 @@ export const REDACT_PATHS = [
   // suppression-trigger ability for that recipient.
   'tokenPlaintext',
   '*.tokenPlaintext',
+  // --- F8 renewals secrets + tokens + member contact PII (K2 / FR-049)
+  // ---
+  // F8 spec FR-049 explicitly lists 7 forbidden-in-logs paths. Most are
+  // already covered above by F3/F4/F7 wildcards (email,
+  // memberLegalNameSnapshot, payment_reference) but the F8-specific
+  // tokens + the env-var name + the explicit nested member shape need
+  // dedicated entries so a future contributor can grep for FR-049 keys
+  // and find them in this file.
+  //
+  // `member.email` and `member.primary_contact_email` — pino path
+  // wildcards `*.email` already redact `{member: {email}}`, but the
+  // explicit nested-key form makes the spec-mandated path traceable.
+  // We list both forms (snake + camel) of `primary_contact_email`
+  // since members module uses camelCase + audit payloads use snake_case.
+  'primary_contact_email',
+  '*.primary_contact_email',
+  '*.*.primary_contact_email',
+  'primaryContactEmail',
+  '*.primaryContactEmail',
+  '*.*.primaryContactEmail',
+  // Renewal link tokens — the HMAC-signed self-service deep link token
+  // (research.md § 4 + renewal-link-token/hmac-signer.ts). Plaintext
+  // token MUST never reach logs; we log sha256(token) + the verified
+  // claims when forensic correlation is needed. Both raw + verified
+  // shapes appear in code paths today.
+  'renewal_token',
+  '*.renewal_token',
+  '*.*.renewal_token',
+  'renewalToken',
+  '*.renewalToken',
+  '*.*.renewalToken',
+  'renewal_link',
+  '*.renewal_link',
+  '*.*.renewal_link',
+  'renewalLink',
+  '*.renewalLink',
+  '*.*.renewalLink',
+  // F8 renewal-link HMAC secret env var (separate rotation cadence
+  // from F1 AUTH_COOKIE_SIGNING_SECRET + F7 UNSUBSCRIBE_TOKEN_SECRET).
+  // If this ever appears in a log object it's a programming bug; mask
+  // it before exfiltration.
+  'RENEWAL_LINK_TOKEN_SECRET',
+  'renewal_link_token_secret',
+  '*.renewal_link_token_secret',
+  'renewalLinkTokenSecret',
+  '*.renewalLinkTokenSecret',
+  // F8 mark-paid-offline + future Stripe-shaped payment method
+  // payloads. The bare F8 audit `payment_method` value is a closed enum
+  // ('bank_transfer' | 'cash' | 'cheque') which is non-sensitive — but
+  // FR-049 lists `payment_method` defensively because a future caller
+  // serialising a Stripe PaymentMethod object (with embedded card
+  // metadata: brand/last4/exp_month/exp_year) into a log under this key
+  // would silently leak PCI-adjacent data. Erring on over-redaction is
+  // correct for SAQ-A scope.
+  'payment_method',
+  '*.payment_method',
+  '*.*.payment_method',
+  'paymentMethod',
+  '*.paymentMethod',
+  '*.*.paymentMethod',
 ];
 
 /**

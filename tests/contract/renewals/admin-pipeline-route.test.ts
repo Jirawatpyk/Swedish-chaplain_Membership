@@ -102,11 +102,14 @@ describe('GET /api/admin/renewals — contract', () => {
 
   // Round 7 test-infra fix — see admin-mark-paid-offline-route.test.ts
   // for rationale (cold-load timeout under heavy parallel load).
-  it('503 when feature flag off', { timeout: 30_000 }, async () => {
+  it('404 when feature flag off (FR-052b — K2 spec compliance)', { timeout: 30_000 }, async () => {
+    // K2 / FR-052: dashboard route returns 404 (not 503) + emits
+    // `renewal_kill_switch_blocked` audit. The previous test pinned
+    // the WRONG behaviour (503) — the contract is now corrected.
     f8FeatureFlag.value = false;
     const GET = await loadHandler();
     const res = await GET(makeReq());
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe('feature_disabled');
   });
 
