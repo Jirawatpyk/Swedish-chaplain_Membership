@@ -39,6 +39,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      // K11: see vitest.config.ts for rationale — `server-only` is a
+      // Next.js compile-time virtual module; stub it for Vitest.
+      'server-only': resolve(__dirname, './tests/stubs/server-only.ts'),
     },
   },
 });

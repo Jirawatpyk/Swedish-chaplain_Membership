@@ -30,21 +30,24 @@ export default defineConfig({
     // Raised from the 5s Vitest default because contract tests import
     // route handlers that transitively cold-load `@node-rs/argon2`
     // (native addon) + instantiate Upstash Redis clients at module
-    // evaluation time. Under heavy parallel file load (~46 files on a
+    // evaluation time. Under heavy parallel file load (~340 files on a
     // dev laptop), the serialized native-addon loader + HTTP client
     // construction can push a single `await import(...)` past the 5s
     // budget even though the test body itself is fully mocked and
-    // finishes in <50 ms once imports resolve. See QA investigation
-    // notes in specs/002-membership-plans/qa/.
+    // finishes in <50 ms once imports resolve.
     //
-    // 2026-04-24: the 2 dynamic-import barrel tests (tests/unit/invoicing/
-    // barrel-exports + tests/unit/payments/index-barrel) carry explicit
-    // per-test `{ timeout: 30_000 }` ceilings instead of raising the
-    // global default — isolated run ~2s but full-parallel run (~150
-    // files) scales to 10-15s from cold alias resolution + vi.mock wiring
-    // across the F4+F5 public surfaces. Keeping the global at 10s
-    // preserves fail-fast signal for non-barrel tests.
-    testTimeout: 10_000,
+    // K11 (2026-05-06): bumped 10_000 → 30_000 to match the per-test
+    // ceiling that the 2 dynamic-import barrel tests already carry
+    // (tests/unit/invoicing/barrel-exports +
+    // tests/unit/payments/index-barrel). With 337 files now in the
+    // suite (F1+F2+F3+F4+F5+F7+F8 contract+unit), the FIRST
+    // happy-path test in each F3 contract file (tests/contract/
+    // members/*.test.ts) was deterministically timing out at 10s
+    // during full-parallel runs even though isolated runs finished
+    // in 2-6s. The 30s ceiling keeps fail-fast signal for real test
+    // bugs (assertion failures + syntax errors land in <100ms
+    // regardless) and absorbs the cold-import variance.
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary', 'lcov'],
@@ -226,6 +229,16 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      // K11: `server-only` is a virtual module Next.js auto-resolves at
+      // build time to enforce server/client boundary. Vitest doesn't
+      // know about it (the package is intentionally absent from
+      // node_modules — it exists only via Next's compiler plugin).
+      // Without this alias, any file that does `import 'server-only'`
+      // (e.g. src/modules/invoicing/infrastructure/adapters/
+      // sharp-image-reencode-adapter.ts) breaks every test that
+      // transitively imports it. Stub to a noop file so the import
+      // resolves but adds no runtime side effect.
+      'server-only': resolve(__dirname, './tests/stubs/server-only.ts'),
     },
   },
 });
