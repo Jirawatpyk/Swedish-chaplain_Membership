@@ -45,25 +45,12 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { renewalReminderEvents } from '@/modules/renewals/infrastructure/schema-renewal-reminder-events';
-import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { dispatchRenewalCycle, makeRenewalsDeps } from '@/modules/renewals';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
+import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 
-const TEST_BENEFIT_MATRIX: BenefitMatrix = {
-  eblast_per_year: 1,
-  website_page_type: 'member_news_update',
-  homepage_logo_category: 'regular',
-  directory_listing_size: 'half_page',
-  event_discount_scope: 'all_employees',
-  events_cobranded_access: false,
-  cultural_tickets_per_year: 0,
-  m2m_benefits_access: true,
-  business_referrals: true,
-  tailor_made_services: false,
-  partnership: null,
-};
 
 // T-30 cycle — pin the dispatcher's clock so the schedule policy
 // resolves the regular-tier T-30 step deterministically.
@@ -102,7 +89,7 @@ describe('F8 audit-emit failure rollback (J7-H5) — Principle VIII state↔audi
         maxTurnoverMinorUnits: null,
         maxDurationYears: null,
         maxMemberAge: null,
-        benefitMatrix: TEST_BENEFIT_MATRIX,
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
         isActive: true,
         createdBy: user.userId,
         updatedBy: user.userId,

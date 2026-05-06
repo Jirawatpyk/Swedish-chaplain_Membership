@@ -27,7 +27,6 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { loadPipeline, makeRenewalsDeps } from '@/modules/renewals';
-import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import {
   createTestTenant,
   type TestTenant,
@@ -36,22 +35,10 @@ import {
   createActiveTestUser,
   type TestUser,
 } from '../helpers/test-users';
+import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 
 const RUN_PERF = process.env.RUN_PERF === '1';
 
-const MATRIX: BenefitMatrix = {
-  eblast_per_year: 1,
-  website_page_type: 'member_news_update',
-  homepage_logo_category: 'regular',
-  directory_listing_size: 'half_page',
-  event_discount_scope: 'all_employees',
-  events_cobranded_access: false,
-  cultural_tickets_per_year: 0,
-  m2m_benefits_access: true,
-  business_referrals: true,
-  tailor_made_services: false,
-  partnership: null,
-};
 
 const P95_BUDGET_MS = 500; // SC-003 / FR-046
 const MEMBERS_PER_TENANT = 5_000;
@@ -93,7 +80,7 @@ async function seedTenant(tenant: TestTenant, user: TestUser): Promise<void> {
       maxTurnoverMinorUnits: null,
       maxDurationYears: null,
       maxMemberAge: null,
-      benefitMatrix: MATRIX,
+      benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
       isActive: true,
       createdBy: user.userId,
       updatedBy: user.userId,

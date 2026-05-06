@@ -52,23 +52,10 @@ import { atRiskOutreach } from '@/modules/renewals/infrastructure/schema-at-risk
 import { tierUpgradeSuggestions } from '@/modules/renewals/infrastructure/schema-tier-upgrade-suggestions';
 import { renewalEscalationTasks } from '@/modules/renewals/infrastructure/schema-renewal-escalation-tasks';
 import { consumedLinkTokens } from '@/modules/renewals/infrastructure/schema-consumed-link-tokens';
-import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 
-const F8_ISOLATION_MATRIX: BenefitMatrix = {
-  eblast_per_year: 1,
-  website_page_type: 'member_news_update',
-  homepage_logo_category: 'regular',
-  directory_listing_size: 'half_page',
-  event_discount_scope: 'all_employees',
-  events_cobranded_access: false,
-  cultural_tickets_per_year: 0,
-  m2m_benefits_access: true,
-  business_referrals: true,
-  tailor_made_services: false,
-  partnership: null,
-};
 
 interface TenantSeed {
   readonly memberId: string;
@@ -121,7 +108,7 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
         maxTurnoverMinorUnits: null,
         maxDurationYears: null,
         maxMemberAge: null,
-        benefitMatrix: F8_ISOLATION_MATRIX,
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
         isActive: true,
         createdBy: user.userId,
         updatedBy: user.userId,

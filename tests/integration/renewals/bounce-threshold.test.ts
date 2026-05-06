@@ -32,24 +32,11 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { renewalEscalationTasks } from '@/modules/renewals/infrastructure/schema-renewal-escalation-tasks';
-import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { detectBounceThreshold, makeRenewalsDeps } from '@/modules/renewals';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 
-const BENEFITS: BenefitMatrix = {
-  eblast_per_year: 1,
-  website_page_type: 'member_news_update',
-  homepage_logo_category: 'regular',
-  directory_listing_size: 'half_page',
-  event_discount_scope: 'all_employees',
-  events_cobranded_access: false,
-  cultural_tickets_per_year: 0,
-  m2m_benefits_access: true,
-  business_referrals: true,
-  tailor_made_services: false,
-  partnership: null,
-};
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const REAL_NOW_MS = Date.now();
@@ -85,7 +72,7 @@ async function seedMember(
       maxTurnoverMinorUnits: null,
       maxDurationYears: null,
       maxMemberAge: null,
-      benefitMatrix: BENEFITS,
+      benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
       isActive: true,
       createdBy: user.userId,
       updatedBy: user.userId,

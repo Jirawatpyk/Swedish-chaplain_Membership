@@ -31,11 +31,11 @@ import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { renewalReminderEvents } from '@/modules/renewals/infrastructure/schema-renewal-reminder-events';
 import { renewalEscalationTasks } from '@/modules/renewals/infrastructure/schema-renewal-escalation-tasks';
-import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { dispatchRenewalCycle, makeRenewalsDeps } from '@/modules/renewals';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
+import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 
 // Use a corporate-tier benefit matrix on the underlying membership_plans
 // row — the partnership-bundles-corporate CHECK constraint requires
@@ -43,19 +43,6 @@ import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 // which would force seeding two plans. The dispatcher's schedule lookup
 // reads `renewal_cycles.tier_at_cycle_start` (set to 'partnership' below)
 // so the integration scenario still exercises the partnership policy.
-const BENEFITS: BenefitMatrix = {
-  eblast_per_year: 1,
-  website_page_type: 'member_news_update',
-  homepage_logo_category: 'regular',
-  directory_listing_size: 'half_page',
-  event_discount_scope: 'all_employees',
-  events_cobranded_access: false,
-  cultural_tickets_per_year: 0,
-  m2m_benefits_access: true,
-  business_referrals: true,
-  tailor_made_services: false,
-  partnership: null,
-};
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const REAL_NOW_MS = Date.now();
@@ -87,7 +74,7 @@ async function seedPartnership(
       maxTurnoverMinorUnits: null,
       maxDurationYears: null,
       maxMemberAge: null,
-      benefitMatrix: BENEFITS,
+      benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
       isActive: true,
       createdBy: user.userId,
       updatedBy: user.userId,

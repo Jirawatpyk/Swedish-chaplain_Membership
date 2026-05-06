@@ -20,22 +20,9 @@ import { db, runInTenant } from '@/lib/db';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
-import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { loadPipeline, makeRenewalsDeps } from '@/modules/renewals';
+import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 
-const TEST_BENEFIT_MATRIX: BenefitMatrix = {
-  eblast_per_year: 1,
-  website_page_type: 'member_news_update',
-  homepage_logo_category: 'regular',
-  directory_listing_size: 'half_page',
-  event_discount_scope: 'all_employees',
-  events_cobranded_access: false,
-  cultural_tickets_per_year: 0,
-  m2m_benefits_access: true,
-  business_referrals: true,
-  tailor_made_services: false,
-  partnership: null,
-};
 import {
   createTwoTestTenants,
   type TestTenant,
@@ -76,7 +63,7 @@ describe('F8 loadPipeline — integration (T075)', () => {
         maxTurnoverMinorUnits: null,
         maxDurationYears: null,
         maxMemberAge: null,
-        benefitMatrix: TEST_BENEFIT_MATRIX,
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
         isActive: true,
         createdBy: user.userId,
         updatedBy: user.userId,
