@@ -6,6 +6,7 @@
  * `_lib/dispatch-one-cycle.test.ts`; here we mock the core fn.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { assertOk } from '../../_helpers/assert-result';
 import {
   dispatchRenewalCycle,
   DEFAULT_PAGE_SIZE,
@@ -130,8 +131,7 @@ describe('dispatchRenewalCycle', () => {
     );
     const { deps } = fakeDeps([candidates]);
     const result = await dispatchRenewalCycle(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.summary.candidatesProcessed).toBe(2);
     expect(result.value.summary.emailsSent).toBe(2);
     expect(result.value.summary.tasksCreated).toBe(0);
@@ -150,8 +150,7 @@ describe('dispatchRenewalCycle', () => {
     );
     const { deps, listMock } = fakeDeps(pages);
     const result = await dispatchRenewalCycle(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.summary.candidatesProcessed).toBe(3);
     expect(listMock).toHaveBeenCalledTimes(3);
   });
@@ -173,8 +172,7 @@ describe('dispatchRenewalCycle', () => {
     );
     const { deps } = fakeDeps([candidates]);
     const result = await dispatchRenewalCycle(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.summary.skipped.member_archived).toBe(2);
     expect(result.value.summary.skipped.already_sent).toBe(1);
   });
@@ -194,8 +192,7 @@ describe('dispatchRenewalCycle', () => {
     );
     const { deps } = fakeDeps([candidates]);
     const result = await dispatchRenewalCycle(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.summary.candidatesProcessed).toBe(2);
     expect(result.value.summary.failedTransient).toBe(1);
     expect(result.value.summary.emailsSent).toBe(1);
@@ -220,8 +217,7 @@ describe('dispatchRenewalCycle', () => {
     );
     const { deps } = fakeDeps([candidates]);
     const result = await dispatchRenewalCycle(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.summary.failedPermanent).toBe(1);
     expect(result.value.summary.failedTransient).toBe(1);
     expect(result.value.summary.tasksCreated).toBe(1);
@@ -258,8 +254,7 @@ describe('dispatchRenewalCycle', () => {
   it('zero candidates: summary counters all zero', async () => {
     const { deps } = fakeDeps([[]]);
     const result = await dispatchRenewalCycle(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.summary.candidatesProcessed).toBe(0);
     expect(result.value.summary.emailsSent).toBe(0);
   });

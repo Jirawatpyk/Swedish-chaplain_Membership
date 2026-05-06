@@ -9,6 +9,7 @@
  *   - expiresAt math (latestAt + windowDays)
  */
 import { describe, expect, it, vi } from 'vitest';
+import { assertOk } from '../../_helpers/assert-result';
 import {
   pauseRemindersAfterOutreach,
   REMINDER_PAUSE_WINDOW_DAYS,
@@ -39,8 +40,7 @@ describe('pauseRemindersAfterOutreach', () => {
       tenantId: TENANT_ID,
       memberId: MEMBER_ID,
     });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.paused).toBe(false);
   });
 
@@ -53,8 +53,7 @@ describe('pauseRemindersAfterOutreach', () => {
         memberId: MEMBER_ID,
       },
     );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.paused).toBe(true);
     if (!result.value.paused) return;
     expect(result.value.latestOutreachAt).toBe(latestAt);
@@ -108,8 +107,7 @@ describe('pauseRemindersAfterOutreach', () => {
       tenantId: TENANT_ID,
       memberId: MEMBER_ID,
     });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.paused).toBe(false);
   });
 

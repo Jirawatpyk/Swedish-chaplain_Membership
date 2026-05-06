@@ -18,6 +18,7 @@ import {
 import type { DispatchCandidate } from '@/modules/renewals/application/ports/dispatch-candidate-repo';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import { ok, err } from '@/lib/result';
+import { assertOk } from '../../_helpers/assert-result';
 
 const TENANT_ID = 'tenantA';
 const NOW_ISO = '2026-05-15T12:00:00.000Z';
@@ -214,8 +215,7 @@ describe('retryFailedReminders', () => {
     it('zero eligible: summary all-zero, gateway never called', async () => {
       const { deps, gatewayMock } = fakeDeps({});
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.retryEligibleProcessed).toBe(0);
       expect(gatewayMock).not.toHaveBeenCalled();
     });
@@ -225,8 +225,7 @@ describe('retryFailedReminders', () => {
         eligible: [buildFailedEvent()],
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.retrySucceeded).toBe(1);
       // Wave I2e G1+E1 fixes: status flip via dedicated method; no
       // semantic-abuse of markRetryExhausted on success path.
@@ -255,8 +254,7 @@ describe('retryFailedReminders', () => {
         },
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       // J2-B4: distinct counter so summary metrics don't inflate
       // retrySucceeded with rows we didn't actually emit audits for.
       expect(result.value.summary.retryConcurrentWin).toBe(1);
@@ -281,8 +279,7 @@ describe('retryFailedReminders', () => {
         },
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       // Genuine DB fault must NOT be classified as a concurrent win.
       expect(result.value.summary.retryConcurrentWin).toBe(0);
       expect(result.value.summary.retrySucceeded).toBe(0);
@@ -295,8 +292,7 @@ describe('retryFailedReminders', () => {
         gatewayResult: err({ kind: 'gateway_5xx' as const, retryable: true, message: 'timeout' }),
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.retryStillTransient).toBe(1);
       expect(markExhaustedMock).not.toHaveBeenCalled();
       expect(emitInTxMock).toHaveBeenCalledWith(
@@ -317,8 +313,7 @@ describe('retryFailedReminders', () => {
         }),
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.retryBecamePermanent).toBe(1);
       expect(insertTaskMock).toHaveBeenCalledTimes(1);
       expect(markExhaustedMock).toHaveBeenCalledTimes(1);
@@ -338,8 +333,7 @@ describe('retryFailedReminders', () => {
         },
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.retryBlockedByGate).toBe(1);
       expect(gatewayMock).not.toHaveBeenCalled();
     });
@@ -357,8 +351,7 @@ describe('retryFailedReminders', () => {
         candidate: null,
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.retryCandidateMissing).toBe(1);
       expect(result.value.summary.retryBlockedByGate).toBe(0);
       expect(gatewayMock).not.toHaveBeenCalled();
@@ -379,8 +372,7 @@ describe('retryFailedReminders', () => {
         ...VALID_INPUT,
         nowIso: '2026-05-15T22:00:00.000Z', // == retry_until on buildFailedEvent
       });
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.retryEligibleProcessed).toBe(0);
       expect(result.value.summary.retrySucceeded).toBe(0);
     });
@@ -396,8 +388,7 @@ describe('retryFailedReminders', () => {
         ...VALID_INPUT,
         nowIso: '2026-05-15T22:00:00.001Z', // 1ms after retry_until
       });
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.retryEligibleProcessed).toBe(0);
     });
 
@@ -417,8 +408,7 @@ describe('retryFailedReminders', () => {
         return ok({ deliveryId: 'd2', dispatchedAt: NOW_ISO });
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.passErrors).toBe(1);
       expect(result.value.summary.retrySucceeded).toBe(1);
     });
@@ -430,8 +420,7 @@ describe('retryFailedReminders', () => {
         exhausted: [buildFailedEvent({ retryUntil: '2026-05-15T06:00:00Z' })],
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.exhaustedMarked).toBe(1);
       expect(insertTaskMock).toHaveBeenCalledTimes(1);
       expect(markExhaustedMock).toHaveBeenCalledTimes(1);
@@ -464,8 +453,7 @@ describe('retryFailedReminders', () => {
         candidate: null,
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.exhaustedMarked).toBe(1);
       expect(insertTaskMock).not.toHaveBeenCalled();
       const permanentAudit = emitInTxMock.mock.calls.find(
@@ -486,8 +474,7 @@ describe('retryFailedReminders', () => {
         throw new ReminderEventNotFoundError(REMINDER_EVENT_ID);
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       // Tallied as concurrent-win, NOT exhaustedMarked (avoids
       // double-counting when 2 retry passes race).
       expect(result.value.summary.exhaustedConcurrentWin).toBe(1);
@@ -510,8 +497,7 @@ describe('retryFailedReminders', () => {
         throw new Error('db: connection lost');
       });
       const result = await retryFailedReminders(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.summary.passErrors).toBe(1);
       expect(result.value.summary.exhaustedMarked).toBe(0);
       expect(result.value.summary.exhaustedConcurrentWin).toBe(0);
@@ -544,8 +530,7 @@ describe('retryFailedReminders', () => {
   it('summary durationMs is non-negative', async () => {
     const { deps } = fakeDeps({});
     const result = await retryFailedReminders(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.summary.durationMs).toBeGreaterThanOrEqual(0);
   });
 });

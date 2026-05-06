@@ -5,6 +5,7 @@
  * input validation + repo passthrough.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { assertOk } from '../../_helpers/assert-result';
 import { loadSchedulePolicies } from '@/modules/renewals/application/use-cases/load-schedule-policies';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import type { TenantRenewalSchedulePolicy } from '@/modules/renewals/domain/tenant-renewal-schedule-policy';
@@ -51,8 +52,7 @@ describe('loadSchedulePolicies', () => {
     const result = await loadSchedulePolicies(fakeDeps([a, b]), {
       tenantId: TENANT_ID,
     });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.policies).toHaveLength(2);
     expect(result.value.policies[0]!.tierBucket).toBe('thai_alumni');
     expect(result.value.policies[1]!.tierBucket).toBe('premium');
@@ -62,8 +62,7 @@ describe('loadSchedulePolicies', () => {
     const result = await loadSchedulePolicies(fakeDeps([]), {
       tenantId: TENANT_ID,
     });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.policies).toHaveLength(0);
   });
 

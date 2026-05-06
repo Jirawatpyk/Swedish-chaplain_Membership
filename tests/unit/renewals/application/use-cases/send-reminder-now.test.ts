@@ -9,6 +9,7 @@
  *   - actor_user_id + actor_role='admin' threading
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { assertOk } from '../../_helpers/assert-result';
 import { sendReminderNow } from '@/modules/renewals/application/use-cases/send-reminder-now';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import type { DispatchCandidate } from '@/modules/renewals/application/ports/dispatch-candidate-repo';
@@ -129,8 +130,7 @@ describe('sendReminderNow', () => {
       }),
     );
     const result = await sendReminderNow(fakeDeps(buildCandidate()), VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.kind).toBe('sent');
   });
 
@@ -150,8 +150,7 @@ describe('sendReminderNow', () => {
       }),
     );
     const result = await sendReminderNow(fakeDeps(buildCandidate()), VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.kind).toBe('skipped');
     if (result.value.kind !== 'skipped') return;
     expect(result.value.reason).toBe('already_sent');

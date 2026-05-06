@@ -11,6 +11,7 @@
  * `auditEmitter.emitInTx` regardless of tx mechanics.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { assertOk } from '../../_helpers/assert-result';
 import {
   resetEmailUnverified,
   MANUAL_OUTREACH_TASK_TYPE,
@@ -116,8 +117,7 @@ describe('resetEmailUnverified', () => {
       flagAffected: 1,
     });
     const result = await resetEmailUnverified(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.cleared).toBe(true);
     expect(result.value.closedTaskCount).toBe(1);
     expect(result.value.closedTaskIds).toEqual([TASK_ID_1]);
@@ -140,8 +140,7 @@ describe('resetEmailUnverified', () => {
       flagAffected: 1,
     });
     const result = await resetEmailUnverified(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.closedTaskCount).toBe(2);
     expect(transitionMock).toHaveBeenCalledTimes(2);
     expect(emitInTxMock).toHaveBeenCalledTimes(2);
@@ -154,8 +153,7 @@ describe('resetEmailUnverified', () => {
       flagAffected: 1,
     });
     const result = await resetEmailUnverified(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.cleared).toBe(false);
     expect(result.value.closedTaskCount).toBe(0);
     expect(emitInTxMock).not.toHaveBeenCalled();
@@ -168,8 +166,7 @@ describe('resetEmailUnverified', () => {
       flagAffected: 0,
     });
     const result = await resetEmailUnverified(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.cleared).toBe(false);
     expect(result.value.closedTaskCount).toBe(0);
   });
@@ -181,8 +178,7 @@ describe('resetEmailUnverified', () => {
       flagAffected: 0,
     });
     const result = await resetEmailUnverified(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.cleared).toBe(false);
   });
 
@@ -199,8 +195,7 @@ describe('resetEmailUnverified', () => {
       },
     });
     const result = await resetEmailUnverified(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     // Task 1 was concurrently closed → swallowed, NOT in closedTaskIds.
     // Task 2 was closed normally → audit emit fired.
     expect(result.value.closedTaskIds).toEqual([TASK_ID_2]);

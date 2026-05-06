@@ -6,6 +6,7 @@
  * reminders for the member).
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { assertOk } from '../../_helpers/assert-result';
 import {
   detectBounceThreshold,
   BOUNCE_THRESHOLD_HARD,
@@ -154,8 +155,7 @@ describe('detectBounceThreshold', () => {
         counts: { hardBounces: 0, softBouncesInCycle: 0, softBouncesIn30Days: 0 },
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('no_threshold_crossed');
       expect(setFlagMock).not.toHaveBeenCalled();
       expect(emitInTxMock).not.toHaveBeenCalled();
@@ -170,8 +170,7 @@ describe('detectBounceThreshold', () => {
         },
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('no_threshold_crossed');
     });
 
@@ -184,8 +183,7 @@ describe('detectBounceThreshold', () => {
         },
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('no_threshold_crossed');
     });
 
@@ -195,8 +193,7 @@ describe('detectBounceThreshold', () => {
         counts: { hardBounces: 0, softBouncesInCycle: null, softBouncesIn30Days: 4 },
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('no_threshold_crossed');
     });
   });
@@ -207,8 +204,7 @@ describe('detectBounceThreshold', () => {
         counts: { hardBounces: BOUNCE_THRESHOLD_HARD, softBouncesInCycle: 0, softBouncesIn30Days: 0 },
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('threshold_crossed');
       if (result.value.kind !== 'threshold_crossed') return;
       expect(result.value.trigger).toBe('hard_bounce');
@@ -237,8 +233,7 @@ describe('detectBounceThreshold', () => {
         },
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('threshold_crossed');
       if (result.value.kind !== 'threshold_crossed') return;
       expect(result.value.trigger).toBe('soft_streak');
@@ -254,8 +249,7 @@ describe('detectBounceThreshold', () => {
         },
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('threshold_crossed');
       if (result.value.kind !== 'threshold_crossed') return;
       expect(result.value.trigger).toBe('soft_rolling');
@@ -271,8 +265,7 @@ describe('detectBounceThreshold', () => {
         },
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('threshold_crossed');
       if (result.value.kind !== 'threshold_crossed') return;
       expect(result.value.trigger).toBe('hard_bounce'); // hard wins
@@ -287,8 +280,7 @@ describe('detectBounceThreshold', () => {
         },
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('threshold_crossed');
       if (result.value.kind !== 'threshold_crossed') return;
       expect(result.value.trigger).toBe('soft_streak'); // streak wins
@@ -335,8 +327,7 @@ describe('detectBounceThreshold', () => {
         flagPreviouslyUnverified: true,
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('already_unverified');
       expect(insertTaskMock).not.toHaveBeenCalled();
       expect(emitInTxMock).not.toHaveBeenCalled();
@@ -353,8 +344,7 @@ describe('detectBounceThreshold', () => {
         flagAffectedRows: 0,
       });
       const result = await detectBounceThreshold(deps, VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      assertOk(result);
       expect(result.value.kind).toBe('member_not_found');
       expect(insertTaskMock).not.toHaveBeenCalled();
       expect(emitInTxMock).not.toHaveBeenCalled();

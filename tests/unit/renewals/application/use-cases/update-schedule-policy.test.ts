@@ -10,6 +10,7 @@
  * mechanics.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { assertOk } from '../../_helpers/assert-result';
 import { updateSchedulePolicy } from '@/modules/renewals/application/use-cases/update-schedule-policy';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import type { TenantRenewalSchedulePolicy } from '@/modules/renewals/domain/tenant-renewal-schedule-policy';
@@ -108,8 +109,7 @@ describe('updateSchedulePolicy', () => {
   it('happy path: persists steps + emits renewal_schedule_policy_updated audit', async () => {
     const { deps, upsertMock, emitInTxMock } = fakeDeps(buildPriorPolicy());
     const result = await updateSchedulePolicy(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(upsertMock).toHaveBeenCalledTimes(1);
     expect(emitInTxMock).toHaveBeenCalledTimes(1);
     const auditCall = emitInTxMock.mock.calls[0]!;
@@ -120,8 +120,7 @@ describe('updateSchedulePolicy', () => {
   it('computes change_diff against prior policy: added t-14, removed t-7, unchanged t-30', async () => {
     const { deps, emitInTxMock } = fakeDeps(buildPriorPolicy());
     const result = await updateSchedulePolicy(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.changeDiff.added).toContain('t-14.email');
     expect(result.value.changeDiff.removed).toContain('t-7.email');
     expect(result.value.changeDiff.unchanged).toContain('t-30.email');
@@ -134,8 +133,7 @@ describe('updateSchedulePolicy', () => {
   it('handles fresh tenant (no prior policy): every step counts as added', async () => {
     const { deps, emitInTxMock } = fakeDeps(null);
     const result = await updateSchedulePolicy(deps, VALID_INPUT);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    assertOk(result);
     expect(result.value.changeDiff.added).toEqual([
       't-30.email',
       't-14.email',
