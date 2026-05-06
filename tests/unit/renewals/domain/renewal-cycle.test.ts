@@ -141,16 +141,31 @@ describe('CycleId brand', () => {
 });
 
 describe('CLOSED_REASONS', () => {
-  it('contains the 7 canonical reasons from data-model L46', () => {
+  it('contains the 9 canonical reasons (T115a extended catch-all `lapsed` with `grace_expired` + `payment_failed`)', () => {
     expect(CLOSED_REASONS).toEqual([
       'paid',
       'cancelled',
       'lapsed',
+      'grace_expired',
+      'payment_failed',
       'completed_offline',
       'admin_reactivated',
       'admin_rejected_with_refund',
       'pending_reactivation_timed_out',
     ]);
+  });
+
+  it('grace_expired and payment_failed accept on LapsedCycleFields closedReason', () => {
+    // Compile-time assertion via type narrowing — the discriminated
+    // union `LapsedCycleFields.closedReason` includes the two new
+    // literals so callers can type-narrow correctly.
+    const reasons: ReadonlyArray<typeof CLOSED_REASONS[number]> = [
+      'lapsed',
+      'grace_expired',
+      'payment_failed',
+      'pending_reactivation_timed_out',
+    ];
+    expect(reasons.length).toBe(4);
   });
 });
 

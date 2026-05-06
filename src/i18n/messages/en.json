@@ -1596,6 +1596,8 @@
         "paid": "Paid",
         "cancelled": "Cancelled",
         "lapsed": "Grace expired",
+        "grace_expired": "Grace expired",
+        "payment_failed": "Payment failed",
         "completed_offline": "Paid offline",
         "admin_reactivated": "Reactivated",
         "admin_rejected_with_refund": "Refunded",

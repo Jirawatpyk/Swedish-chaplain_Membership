@@ -1596,6 +1596,8 @@
         "paid": "ชำระแล้ว",
         "cancelled": "ยกเลิก",
         "lapsed": "พ้นช่วงผ่อนผัน",
+        "grace_expired": "พ้นช่วงผ่อนผัน",
+        "payment_failed": "ชำระไม่สำเร็จ",
         "completed_offline": "ชำระนอกระบบ",
         "admin_reactivated": "ฟื้นฟูสถานะ",
         "admin_rejected_with_refund": "คืนเงินแล้ว",

@@ -37,6 +37,8 @@ type LapsedReasonKey =
   | 'paid'
   | 'cancelled'
   | 'lapsed'
+  | 'grace_expired'
+  | 'payment_failed'
   | 'completed_offline'
   | 'admin_reactivated'
   | 'admin_rejected_with_refund'
@@ -49,6 +51,12 @@ export interface LapsedTabProps {
 const REASON_VARIANT_CLASSES: Record<string, string> = {
   lapsed:
     'bg-red-50 text-red-900 ring-red-200 dark:bg-red-950 dark:text-red-200 dark:ring-red-900',
+  // T115a: forward-compat for the two specific reasons; same red treatment
+  // as catch-all `lapsed` until Phase 5 wires the dispatcher decision branch.
+  grace_expired:
+    'bg-red-50 text-red-900 ring-red-200 dark:bg-red-950 dark:text-red-200 dark:ring-red-900',
+  payment_failed:
+    'bg-rose-50 text-rose-900 ring-rose-200 dark:bg-rose-950 dark:text-rose-200 dark:ring-rose-900',
   cancelled:
     'bg-gray-100 text-gray-700 ring-gray-300 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700',
   paid:

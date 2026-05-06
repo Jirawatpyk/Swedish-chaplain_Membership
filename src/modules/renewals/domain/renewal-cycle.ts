@@ -45,11 +45,31 @@ export function parseCycleId(raw: string): Result<CycleId, CycleIdError> {
   return ok(raw as CycleId);
 }
 
-/** Mirrors data-model.md § 2.1 closed_reason enum verbatim. */
+/**
+ * Mirrors data-model.md § 2.1 closed_reason enum verbatim.
+ *
+ * `'lapsed'` is the legacy catch-all for "any non-paid expiry path"
+ * — kept for backward compat with rows written before the lapse-
+ * decision branch ships in Phase 5 (T115a). Two more specific
+ * reasons land in the same enum forward-compatibly:
+ *
+ *   - `'grace_expired'` — `now > expires_at + grace_period_days`
+ *     and the member never attempted payment (or all attempts
+ *     remained `pending`/`processing`)
+ *   - `'payment_failed'` — at least one F5 payment attempt failed
+ *     permanently before the grace window ended
+ *
+ * The two literals are present in the enum so the DB CHECK +
+ * Domain narrowing accept them today; the dispatcher writes only
+ * `'lapsed'` until Phase 5 wires the decision branch in the
+ * cycle-state-reconciler use-case (T138 scope extension).
+ */
 export const CLOSED_REASONS = [
   'paid',
   'cancelled',
   'lapsed',
+  'grace_expired',
+  'payment_failed',
   'completed_offline',
   'admin_reactivated',
   'admin_rejected_with_refund',
@@ -123,7 +143,14 @@ interface LapsedCycleFields {
   readonly status: 'lapsed';
   readonly enteredPendingAt: null;
   readonly closedAt: string;
-  readonly closedReason: 'lapsed' | 'pending_reactivation_timed_out';
+  // T115a forward-compat: `'grace_expired'` and `'payment_failed'`
+  // accepted today; dispatcher writes only `'lapsed'` until Phase 5
+  // wires the lapse-decision branch.
+  readonly closedReason:
+    | 'lapsed'
+    | 'grace_expired'
+    | 'payment_failed'
+    | 'pending_reactivation_timed_out';
   readonly linkedInvoiceId: string | null;
 }
 

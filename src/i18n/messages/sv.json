@@ -1596,6 +1596,8 @@
         "paid": "Betald",
         "cancelled": "Avbruten",
         "lapsed": "Respit utgången",
+        "grace_expired": "Respit utgången",
+        "payment_failed": "Betalning misslyckades",
         "completed_offline": "Betald offline",
         "admin_reactivated": "Återaktiverad",
         "admin_rejected_with_refund": "Återbetald",
