@@ -117,6 +117,23 @@ export async function PUT(
             correlationId: ctx.correlationId,
             details: { error: result.error.error },
           });
+        case 'server_error':
+          // K1-C7: server_error variant from updateSchedulePolicy.
+          return errorResponse({
+            status: 500,
+            code: 'server_error',
+            correlationId: ctx.correlationId,
+          });
+        default: {
+          // K1-E1: exhaustiveness pin.
+          const _exhaustive: never = result.error;
+          void _exhaustive;
+          return errorResponse({
+            status: 500,
+            code: 'server_error',
+            correlationId: ctx.correlationId,
+          });
+        }
       }
     }
     return successResponse(

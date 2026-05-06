@@ -83,7 +83,10 @@ export interface UpdateSchedulePolicyOutput {
 
 export type UpdateSchedulePolicyError =
   | { readonly kind: 'invalid_input'; readonly message: string }
-  | { readonly kind: 'invalid_steps'; readonly error: SchedulePolicyError };
+  | { readonly kind: 'invalid_steps'; readonly error: SchedulePolicyError }
+  // K1-C7: explicit server_error variant — Application throws are
+  // forbidden by Principle III. See cancel-cycle for full rationale.
+  | { readonly kind: 'server_error'; readonly message: string };
 
 // ---------------------------------------------------------------------------
 // Diff helper — compares prior step_id set vs new step_id set.
@@ -228,14 +231,17 @@ export async function updateSchedulePolicy(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: e instanceof Error ? e : new Error(String(e)),
         tenantId: input.tenantId,
         tierBucket,
         correlationId: input.correlationId,
       },
       'updateSchedulePolicy: unexpected error',
     );
-    throw e;
+    return err({
+      kind: 'server_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
   }
   }
 }

@@ -170,14 +170,22 @@ describe('sendReminderNow', () => {
     expect(result.error.kind).toBe('invalid_input');
   });
 
-  it('unexpected dispatchOneCycle exception propagates (does not swallow)', async () => {
+  it('unexpected dispatchOneCycle exception → server_error Result (K1-C7 — no longer throws)', async () => {
     (dispatchOneCycle as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       async () => {
         throw new Error('db: connection lost');
       },
     );
-    await expect(
-      sendReminderNow(fakeDeps(buildCandidate()), VALID_INPUT),
-    ).rejects.toThrow(/connection lost/);
+    const result = await sendReminderNow(
+      fakeDeps(buildCandidate()),
+      VALID_INPUT,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('server_error');
+      if (result.error.kind === 'server_error') {
+        expect(result.error.message).toMatch(/connection lost/);
+      }
+    }
   });
 });

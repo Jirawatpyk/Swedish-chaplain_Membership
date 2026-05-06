@@ -114,19 +114,24 @@ describe('cancelCycle (T058) — happy path', () => {
   // future refactor that swallows emit errors would silently commit
   // the state change without an audit row — Constitution Principle
   // VIII violation.
-  it('throws on emitInTx DB-fault so the outer tx rolls back (state↔audit atomicity reverse)', async () => {
+  it('returns server_error on emitInTx DB-fault so caller can map to 500 (state↔audit atomicity reverse)', async () => {
     const cycle = buildCycle();
     const { deps, transitionMock, emitInTxMock } = fakeDeps(cycle);
     emitInTxMock.mockRejectedValueOnce(new Error('audit_log: insert failed'));
-    await expect(cancelCycle(deps, baseInput)).rejects.toThrow(
-      /audit_log.*insert failed/,
-    );
-    // The transition fired (it ran before the audit); the test's
-    // contract is that the OUTER runInTenant treats this as an
-    // unresolved error so the surrounding tx rolls back. The mock-tx
-    // doesn't actually persist anything — the assertion is that the
-    // throw propagates rather than being caught and converted to a
-    // success Result.
+    // K1-C7: Application use-cases now return Result<server_error>
+    // rather than throwing — the route handler maps this to 500. The
+    // surrounding runInTenant tx still rolls back (the inner emitInTx
+    // throw escaped the tx boundary), so state+audit consistency
+    // holds; the use-case just narrates the failure as a typed
+    // Result instead of propagating an exception.
+    const result = await cancelCycle(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('server_error');
+      if (result.error.kind === 'server_error') {
+        expect(result.error.message).toMatch(/audit_log.*insert failed/);
+      }
+    }
     expect(transitionMock).toHaveBeenCalledTimes(1);
   });
 
@@ -135,9 +140,15 @@ describe('cancelCycle (T058) — happy path', () => {
     const { deps, emitInTxMock, acquireLockMock } = fakeDeps(cycle, async () => {
       throw new Error('db: serialization failure');
     });
-    await expect(cancelCycle(deps, baseInput)).rejects.toThrow(
-      /serialization failure/,
-    );
+    // K1-C7: now returns server_error rather than throwing.
+    const result = await cancelCycle(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('server_error');
+      if (result.error.kind === 'server_error') {
+        expect(result.error.message).toMatch(/serialization failure/);
+      }
+    }
     expect(acquireLockMock).toHaveBeenCalledTimes(1);
     expect(emitInTxMock).not.toHaveBeenCalled();
   });
@@ -308,13 +319,18 @@ describe('cancelCycle — error paths', () => {
     if (!r.ok) expect(r.error.kind).toBe('cycle_not_found');
   });
 
-  it('rethrows unexpected errors', async () => {
+  it('returns server_error on unexpected exceptions (K1-C7 — no longer throws)', async () => {
     const cycle = buildCycle();
     const { deps } = fakeDeps(cycle, async () => {
       throw new Error('db connection lost');
     });
-    await expect(cancelCycle(deps, baseInput)).rejects.toThrow(
-      'db connection lost',
-    );
+    const r = await cancelCycle(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('server_error');
+      if (r.error.kind === 'server_error') {
+        expect(r.error.message).toMatch(/db connection lost/);
+      }
+    }
   });
 });

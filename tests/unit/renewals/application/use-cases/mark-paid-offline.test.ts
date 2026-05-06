@@ -336,16 +336,25 @@ describe('markPaidOffline — error paths', () => {
   // safety net the cycle would commit as still-awaiting-payment while
   // F4 has already issued a paid invoice — exactly the inconsistency
   // Constitution Principle VIII forbids.
-  it('throws if F4 bridge returns ok WITHOUT firing onPaid (contract regression detector)', async () => {
+  it('returns server_error if F4 bridge returns ok WITHOUT firing onPaid (contract regression detector — K1-C7)', async () => {
     const cycle = buildCycle();
     // Bridge stub: returns ok but does NOT call input.onPaid — simulates
-    // a future regression where F4 forgets to invoke the callback.
+    // a future regression where F4 forgets to invoke the callback. The
+    // use-case throws an Error inside the runInTenant tx (so the tx
+    // rolls back) which the outer catch maps to server_error Result.
     const { deps } = fakeDeps(cycle, async () => ({
       ok: true,
       value: { invoiceId: 'inv-1', paidAt: '2026-05-15T10:00:00Z' },
     }));
-    await expect(markPaidOffline(deps, baseInput)).rejects.toThrow(
-      /onPaid never fired|F4 contract regression/,
-    );
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('server_error');
+      if (r.error.kind === 'server_error') {
+        expect(r.error.message).toMatch(
+          /onPaid never fired|F4 contract regression/,
+        );
+      }
+    }
   });
 });

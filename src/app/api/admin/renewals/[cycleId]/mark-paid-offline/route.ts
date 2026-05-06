@@ -224,6 +224,28 @@ export async function POST(
               orphan_invoice_id: result.error.orphanInvoiceId,
             },
           });
+        case 'server_error':
+          // K1-C7: server_error variant from Application use-case body.
+          // Already logged with full stack inside markPaidOffline; here
+          // we surface a generic 500 (no message echo to avoid leaking
+          // F4 internals to admin UI).
+          return errorResponse({
+            status: 500,
+            code: 'server_error',
+            correlationId: ctx.correlationId,
+          });
+        default: {
+          // K1-E1: exhaustiveness pin. Adding a new MarkPaidOfflineError
+          // variant now produces a TS error rather than silently 200ing
+          // with `undefined` value.
+          const _exhaustive: never = result.error;
+          void _exhaustive;
+          return errorResponse({
+            status: 500,
+            code: 'server_error',
+            correlationId: ctx.correlationId,
+          });
+        }
       }
     }
     return successResponse(

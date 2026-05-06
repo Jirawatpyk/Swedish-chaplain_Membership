@@ -259,10 +259,10 @@ export async function dispatchRenewalCycle(
               nowIso,
             });
           } catch (e) {
+            const errMsg = e instanceof Error ? e.message : String(e);
             logger.error(
               {
-                err: e instanceof Error ? e.message : String(e),
-                stack: e instanceof Error ? e.stack : undefined,
+                err: e instanceof Error ? e : new Error(String(e)),
                 cycleId: candidate.cycle.cycleId,
                 memberId: candidate.member.memberId,
                 tenantId: input.tenantId,
@@ -270,18 +270,64 @@ export async function dispatchRenewalCycle(
               },
               'dispatchRenewalCycle: per-cycle dispatch failed (isolated)',
             );
+            // K1-C8: emit a per-cycle `renewal_reminder_send_failed`
+            // audit BEFORE returning the synthetic outcome so the cron
+            // summary count and the audit_log forensic record agree.
+            // Without this emit the cron tally said "1 failure" but no
+            // row existed in audit_log — operators querying
+            // `audit_log WHERE type LIKE 'renewal_reminder_send_failed%'`
+            // and the cron summary would mismatch. Principle VIII
+            // state↔audit atomicity drift.
+            //
+            // Standalone (non-tx) emit because no tx is open here —
+            // dispatchOneCycle's failure escaped its own runInTenant
+            // boundary (typically Gate 12's insertIfAbsent never ran,
+            // so no reminder_event row exists). The fire-and-forget
+            // emit semantics are appropriate: a probe-audit emit
+            // failure must NOT block the next cycle's processing.
+            try {
+              await deps.auditEmitter.emit(
+                {
+                  type: 'renewal_reminder_send_failed',
+                  payload: {
+                    cycle_id: candidate.cycle.cycleId,
+                    member_id: candidate.member.memberId,
+                    failure_kind: 'dispatcher_crash',
+                    failure_message: errMsg.slice(0, 200),
+                    via_retry_pass: false,
+                  },
+                },
+                {
+                  tenantId: input.tenantId,
+                  actorUserId: null,
+                  actorRole: 'cron',
+                  correlationId: input.correlationId,
+                  requestId: null,
+                },
+              );
+            } catch (auditErr) {
+              // Audit-emit failure on the failure path is itself a
+              // failure — log loudly but do NOT throw (would break the
+              // peer-isolation invariant of the chunk).
+              logger.error(
+                {
+                  err:
+                    auditErr instanceof Error
+                      ? auditErr
+                      : new Error(String(auditErr)),
+                  cycleId: candidate.cycle.cycleId,
+                  tenantId: input.tenantId,
+                  correlationId: input.correlationId,
+                },
+                'dispatchRenewalCycle: dispatcher_crash audit emit failed',
+              );
+            }
             // J2-H8: conform to DispatchOneCycleOutcome.failed_transient
-            // shape (the previous `{kind, error}` shape was a structural
-            // mismatch — accepted at runtime by the switch reading only
-            // .kind, but TypeScript inference widened the union and any
-            // future code reading reminderEventId/reason would crash).
-            // Note: dispatchOneCycleInner's defensive cleanup (J2-B2)
-            // also catches throws inside dispatchEmailStep/dispatchTaskStep,
-            // so this outer catch typically only fires for throws BEFORE
-            // Gate 12's insertIfAbsent (no reminder_event row exists yet
-            // → empty reminderEventId is correct).
-            const errMsg =
-              e instanceof Error ? e.message : String(e);
+            // shape. Note: dispatchOneCycleInner's defensive cleanup
+            // (J2-B2) also catches throws inside the inner dispatch
+            // helpers, so this outer catch typically only fires for
+            // throws BEFORE Gate 13's insertIfAbsent (no reminder_event
+            // row exists yet → empty reminderEventId is correct).
             return {
               kind: 'failed_transient' as const,
               reminderEventId: '',

@@ -100,6 +100,23 @@ export async function POST(
             code: 'cycle_not_found',
             correlationId: ctx.correlationId,
           });
+        case 'server_error':
+          // K1-C7: server_error variant from sendReminderNow.
+          return errorResponse({
+            status: 500,
+            code: 'server_error',
+            correlationId: ctx.correlationId,
+          });
+        default: {
+          // K1-E1: exhaustiveness pin.
+          const _exhaustive: never = result.error;
+          void _exhaustive;
+          return errorResponse({
+            status: 500,
+            code: 'server_error',
+            correlationId: ctx.correlationId,
+          });
+        }
       }
     }
 

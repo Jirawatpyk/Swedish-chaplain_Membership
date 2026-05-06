@@ -31,7 +31,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
-import { requestIdFromHeaders } from '@/lib/request-id';
+import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
 import { makeRenewalsDeps } from '@/modules/renewals';
@@ -145,7 +145,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const correlationId = requestIdFromHeaders(request.headers);
+  // K1-C1: generate a fresh server-side UUID rather than honouring an
+  // inbound `x-request-id`. cron-job.org does not legitimately set this
+  // header — and an attacker with `CRON_SECRET` could otherwise inject a
+  // chosen correlationId that propagates verbatim into the
+  // `cron_dispatch_orchestrated` audit + per-tenant emit sites,
+  // fabricating forensic-trail attribution. Generating fresh closes that
+  // class of incident-response forgery.
+  const correlationId = uuidv7();
 
   return withActiveSpan(
     renewalsTracer(),

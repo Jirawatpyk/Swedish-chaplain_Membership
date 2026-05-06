@@ -303,8 +303,20 @@ function RowActionsMenu({
           default:
             toast.error(tToast('error.generic'));
         }
-      } catch {
-        toast.error(tToast('error.network'));
+      } catch (e) {
+        // K1-E5: previously `catch {}` swallowed every non-network
+        // error (TypeError, SyntaxError, AbortController, locale
+        // formatter, i18n missing-key) and collapsed all causes to
+        // "network error" — admins saw "network error" while their
+        // network was fine and a real bug was invisible. Capture +
+        // log + use the generic toast so client-side bugs are at
+        // least visible in browser console.
+        // eslint-disable-next-line no-console
+        console.error(
+          '[F8] send-reminder-now: client handler failed',
+          e,
+        );
+        toast.error(tToast('error.generic'));
       }
     });
   };

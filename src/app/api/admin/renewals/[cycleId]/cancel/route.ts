@@ -94,6 +94,28 @@ export async function POST(
             correlationId: ctx.correlationId,
             details: { current_status: result.error.currentStatus },
           });
+        case 'server_error':
+          // K1-C7: server_error variant from Application use-case.
+          // The use-case already logged via pino with full stack; here
+          // we surface a generic 500 envelope (no message echo to avoid
+          // leaking internals to admin UI).
+          return errorResponse({
+            status: 500,
+            code: 'server_error',
+            correlationId: ctx.correlationId,
+          });
+        default: {
+          // K1-E1: exhaustiveness pin. New error variants now cause a
+          // TS error here instead of silently falling through to
+          // successResponse with `undefined` value.
+          const _exhaustive: never = result.error;
+          void _exhaustive;
+          return errorResponse({
+            status: 500,
+            code: 'server_error',
+            correlationId: ctx.correlationId,
+          });
+        }
       }
     }
     return successResponse(

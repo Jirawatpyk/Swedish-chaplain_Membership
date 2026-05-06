@@ -414,25 +414,56 @@ export function ScheduleEditor({
             },
           );
           if (!res.ok) {
+            // K1-E6: route returns `{error: {code: '...'}, correlationId}`
+            // (per `errorResponse` in renewals-route-helpers). Previously
+            // `body?.error === 'invalid_steps'` always evaluated false
+            // because `body.error` is an OBJECT, not a bare string —
+            // every save failure showed the generic "save failed" toast.
+            // Now read `body.error.code` to match the actual envelope.
             const body = (await res.json().catch(() => null)) as
-              | { error?: string }
+              | { error?: { code?: string } }
               | null;
             setSaveError(
-              body?.error === 'invalid_steps'
+              body?.error?.code === 'invalid_steps'
                 ? t('error.invalidSteps')
                 : t('error.saveFailed'),
             );
             toast.error(t('error.saveFailed'));
             return;
           }
-          const body = (await res.json()) as {
-            change_diff: {
-              added: string[];
-              removed: string[];
-              unchanged: string[];
+          // K1-E6: `res.json()` here previously had NO `.catch`. A 200
+          // with malformed body (e.g. Vercel edge HTML error page)
+          // would throw SyntaxError that landed in the empty
+          // `catch {}` below — the user saw "save failed" while the
+          // server actually persisted the change, leading to duplicate
+          // saves on retry + double `renewal_schedule_policy_updated`
+          // audit entries. Wrap in `.catch` so a malformed-body case
+          // surfaces explicitly (no silent rollback of UI state).
+          const body = (await res.json().catch(() => null)) as {
+            change_diff?: {
+              added?: string[];
+              removed?: string[];
+              unchanged?: string[];
             };
-            updated_at: string;
-          };
+            updated_at?: string;
+          } | null;
+          if (
+            !body ||
+            !body.change_diff ||
+            typeof body.updated_at !== 'string'
+          ) {
+            // K1-E6: Treat malformed-but-OK response as an error toast.
+            // The save MAY have succeeded server-side; surface honestly
+            // rather than silently flipping local state to "saved".
+            // eslint-disable-next-line no-console
+            console.error(
+              '[F8] schedule save: malformed success body',
+              body,
+            );
+            setSaveError(t('error.saveFailed'));
+            toast.error(t('error.saveFailed'));
+            return;
+          }
           // Refresh local cache with server-confirmed policy.
           setByBucket((prev) => ({
             ...prev,
@@ -445,12 +476,18 @@ export function ScheduleEditor({
           toast.success(
             t('saved.toast', {
               tier: t(`tabs.${b}`),
-              added: body.change_diff.added.length,
-              removed: body.change_diff.removed.length,
-              unchanged: body.change_diff.unchanged.length,
+              added: body.change_diff.added?.length ?? 0,
+              removed: body.change_diff.removed?.length ?? 0,
+              unchanged: body.change_diff.unchanged?.length ?? 0,
             }),
           );
-        } catch {
+        } catch (e) {
+          // K1-E6: previously `catch {}` collapsed every cause
+          // (network, JSON parse, DOM exception) to "save failed". Log
+          // for diagnosability while keeping the same user-facing
+          // toast.
+          // eslint-disable-next-line no-console
+          console.error('[F8] schedule save: client handler failed', e);
           setSaveError(t('error.saveFailed'));
           toast.error(t('error.saveFailed'));
         }

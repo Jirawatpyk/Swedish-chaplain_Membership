@@ -45,7 +45,10 @@ export type SendReminderNowOutput = DispatchOneCycleOutcome;
 
 export type SendReminderNowError =
   | { readonly kind: 'invalid_input'; readonly message: string }
-  | { readonly kind: 'cycle_not_found' };
+  | { readonly kind: 'cycle_not_found' }
+  // K1-C7: see CancelCycleError docstring — Application throws are
+  // forbidden by Principle III; surface as a Result variant instead.
+  | { readonly kind: 'server_error'; readonly message: string };
 
 export async function sendReminderNow(
   deps: RenewalsDeps,
@@ -106,7 +109,7 @@ export async function sendReminderNow(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: e instanceof Error ? e : new Error(String(e)),
         cycleId: input.cycleId,
         actorUserId: input.actorUserId,
         tenantId: input.tenantId,
@@ -114,7 +117,10 @@ export async function sendReminderNow(
       },
       'sendReminderNow: dispatch unexpected error',
     );
-    throw e;
+    return err({
+      kind: 'server_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
   }
   }
 }

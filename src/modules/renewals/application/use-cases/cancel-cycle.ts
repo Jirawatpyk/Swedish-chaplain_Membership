@@ -59,7 +59,14 @@ export interface CancelCycleOutput {
 export type CancelCycleError =
   | { readonly kind: 'invalid_input'; readonly message: string }
   | { readonly kind: 'cycle_not_found' }
-  | { readonly kind: 'cycle_not_cancellable'; readonly currentStatus: string };
+  | { readonly kind: 'cycle_not_cancellable'; readonly currentStatus: string }
+  // K1-C7: explicit server_error variant for unexpected throws inside
+  // the use-case body. Application use-cases MUST surface failure as a
+  // Result, not a thrown exception (Constitution Principle III).
+  // Throwing escapes the type system — callers that don't wrap in
+  // try/catch silently get TypeScript-typed Result<...> returning
+  // calls that actually throw at runtime.
+  | { readonly kind: 'server_error'; readonly message: string };
 
 export async function cancelCycle(
   deps: RenewalsDeps,
@@ -215,12 +222,15 @@ export async function cancelCycle(
     }
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: e instanceof Error ? e : new Error(String(e)),
         cycleId,
         tenantId: input.tenantId,
       },
       'cancelCycle: unexpected error',
     );
-    throw e;
+    return err({
+      kind: 'server_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
   }
 }

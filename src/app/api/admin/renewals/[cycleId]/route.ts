@@ -59,6 +59,18 @@ export async function GET(
             code: 'cycle_not_found',
             correlationId: ctx.correlationId,
           });
+        default: {
+          // K1-E1: exhaustiveness pin. Adding a new
+          // LoadCycleDetailError variant now produces a TS error rather
+          // than silently 200ing with `undefined` value.
+          const _exhaustive: never = result.error;
+          void _exhaustive;
+          return errorResponse({
+            status: 500,
+            code: 'server_error',
+            correlationId: ctx.correlationId,
+          });
+        }
       }
     }
     const v = result.value;

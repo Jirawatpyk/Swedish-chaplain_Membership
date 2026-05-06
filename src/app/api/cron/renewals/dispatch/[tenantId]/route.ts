@@ -32,7 +32,7 @@ import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
-import { requestIdFromHeaders } from '@/lib/request-id';
+import { uuidv7 } from '@/lib/request-id';
 import { asTenantContext } from '@/modules/tenants';
 import {
   dispatchRenewalCycle,
@@ -81,7 +81,14 @@ export async function POST(
     );
   }
 
-  const correlationId = requestIdFromHeaders(request.headers);
+  // K1-C1: generate fresh UUID — never trust inbound `x-request-id`
+  // even when called by the trusted coordinator. Defence-in-depth
+  // against an attacker who has `CRON_SECRET` and bypasses the
+  // coordinator to call this route directly with a forged
+  // correlationId. The coordinator already logs its own correlationId;
+  // per-tenant + coordinator runs are joinable via `tenant_id` +
+  // `started_at` window (both audit + log).
+  const correlationId = uuidv7();
   const tenantCtx = asTenantContext(tenantId);
   const deps = makeRenewalsDeps(tenantId);
   const startedAt = Date.now();

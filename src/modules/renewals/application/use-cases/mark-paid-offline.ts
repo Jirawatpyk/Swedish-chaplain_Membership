@@ -69,6 +69,10 @@ export type MarkPaidOfflineError =
   | { readonly kind: 'cycle_not_found' }
   | { readonly kind: 'cycle_not_payable'; readonly currentStatus: string }
   | { readonly kind: 'f4_failure'; readonly stage: string; readonly reason: string }
+  // K1-C7: explicit server_error variant — Application throws are
+  // forbidden by Principle III. Surface as Result so the route handler
+  // type-checks the case rather than relying on the outer try/catch.
+  | { readonly kind: 'server_error'; readonly message: string }
   /**
    * F4 step 3 (recordPayment) failed AFTER an invoice was issued with
    * a consumed §87 sequence number. The orphan invoice exists in F4 in
@@ -329,12 +333,15 @@ export async function markPaidOffline(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: e instanceof Error ? e : new Error(String(e)),
         cycleId,
         tenantId: input.tenantId,
       },
       'markPaidOffline: unexpected error',
     );
-    throw e;
+    return err({
+      kind: 'server_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
   }
 }
