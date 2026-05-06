@@ -26,7 +26,6 @@ import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
-import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
@@ -36,6 +35,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 
 
 // Pin the dispatcher's clock to a deterministic instant. Schedule
@@ -62,25 +62,12 @@ describe('F8 dispatchRenewalCycle — idempotency on live Neon (T109)', () => {
     cycleId = randomUUID();
 
     await runInTenant(tenantA.ctx, async (tx) => {
-      await tx.insert(membershipPlans).values({
-        tenantId: tenantA.ctx.slug,
+      await seedF8MembershipPlan(tx, {
+        tenantSlug: tenantA.ctx.slug,
         planId,
-        planYear: 2026,
         planName: { en: 'Idem Plan' },
-        description: { en: '' },
-        sortOrder: 10,
-        planCategory: 'corporate',
-        memberTypeScope: 'company',
-        annualFeeMinorUnits: 5_000_000,
-        includesCorporatePlanId: null,
-        minTurnoverMinorUnits: null,
-        maxTurnoverMinorUnits: null,
-        maxDurationYears: null,
-        maxMemberAge: null,
         benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
-        isActive: true,
         createdBy: user.userId,
-        updatedBy: user.userId,
       });
       await tx.insert(members).values({
         tenantId: tenantA.ctx.slug,

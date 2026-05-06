@@ -23,7 +23,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
-import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { loadPipeline, makeRenewalsDeps } from '@/modules/renewals';
@@ -36,6 +35,7 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 
 const RUN_PERF = process.env.RUN_PERF === '1';
 
@@ -65,25 +65,13 @@ async function seedTenant(tenant: TestTenant, user: TestUser): Promise<void> {
   // is per (tenant, member) — but we want N distinct members so the
   // pipeline JOIN to members is realistic. Seed N members in batches.
   await runInTenant(tenant.ctx, async (tx) => {
-    await tx.insert(membershipPlans).values({
-      tenantId: tenant.ctx.slug,
+    await seedF8MembershipPlan(tx, {
+      tenantSlug: tenant.ctx.slug,
       planId,
-      planYear: 2026,
       planName: { en: 'Perf Plan' },
-      description: { en: '' },
-      sortOrder: 10,
-      planCategory: 'corporate',
-      memberTypeScope: 'company',
       annualFeeMinorUnits: 1_000_000,
-      includesCorporatePlanId: null,
-      minTurnoverMinorUnits: null,
-      maxTurnoverMinorUnits: null,
-      maxDurationYears: null,
-      maxMemberAge: null,
       benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
-      isActive: true,
       createdBy: user.userId,
-      updatedBy: user.userId,
     });
   });
 

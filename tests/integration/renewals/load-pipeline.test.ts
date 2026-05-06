@@ -17,11 +17,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
-import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { loadPipeline, makeRenewalsDeps } from '@/modules/renewals';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 
 import {
   createTwoTestTenants,
@@ -48,25 +48,12 @@ describe('F8 loadPipeline — integration (T075)', () => {
   async function seedCycles(t: TestTenant, specs: SeedCycle[]) {
     const planId = `f8-load-${randomUUID().slice(0, 8)}`;
     await runInTenant(t.ctx, (tx) =>
-      tx.insert(membershipPlans).values({
-        tenantId: t.ctx.slug,
+      seedF8MembershipPlan(tx, {
+        tenantSlug: t.ctx.slug,
         planId,
-        planYear: 2026,
         planName: { en: 'F8 Load Plan' },
-        description: { en: '' },
-        sortOrder: 10,
-        planCategory: 'corporate',
-        memberTypeScope: 'company',
-        annualFeeMinorUnits: 5_000_000,
-        includesCorporatePlanId: null,
-        minTurnoverMinorUnits: null,
-        maxTurnoverMinorUnits: null,
-        maxDurationYears: null,
-        maxMemberAge: null,
         benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
-        isActive: true,
         createdBy: user.userId,
-        updatedBy: user.userId,
       }),
     );
 

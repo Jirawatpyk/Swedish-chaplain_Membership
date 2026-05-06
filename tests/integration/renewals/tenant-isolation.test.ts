@@ -39,7 +39,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
-import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { scheduledPlanChanges } from '@/modules/plans/infrastructure/db/schema-scheduled-plan-changes';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
@@ -55,6 +54,7 @@ import { consumedLinkTokens } from '@/modules/renewals/infrastructure/schema-con
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 
 
 interface TenantSeed {
@@ -93,25 +93,13 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
 
     // F2 plan + F3 member
     await runInTenant(t.ctx, (tx) =>
-      tx.insert(membershipPlans).values({
-        tenantId: t.ctx.slug,
+      seedF8MembershipPlan(tx, {
+        tenantSlug: t.ctx.slug,
         planId,
-        planYear: 2026,
         planName: { en: 'F8 Iso Plan' },
-        description: { en: '' },
-        sortOrder: 10,
-        planCategory: 'corporate',
-        memberTypeScope: 'company',
         annualFeeMinorUnits: 1_000_000,
-        includesCorporatePlanId: null,
-        minTurnoverMinorUnits: null,
-        maxTurnoverMinorUnits: null,
-        maxDurationYears: null,
-        maxMemberAge: null,
         benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
-        isActive: true,
         createdBy: user.userId,
-        updatedBy: user.userId,
       }),
     );
     await runInTenant(t.ctx, (tx) =>

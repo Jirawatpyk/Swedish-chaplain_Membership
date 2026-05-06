@@ -11,11 +11,11 @@ import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
-import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { cancelCycle, makeRenewalsDeps } from '@/modules/renewals';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 
 import {
   createTwoTestTenants,
@@ -45,25 +45,12 @@ describe('F8 cancelCycle — integration (T076)', () => {
     cycleIdA = randomUUID();
 
     await runInTenant(tenantA.ctx, (tx) =>
-      tx.insert(membershipPlans).values({
-        tenantId: tenantA.ctx.slug,
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenantA.ctx.slug,
         planId: planIdA,
-        planYear: 2026,
         planName: { en: 'Cancel Plan' },
-        description: { en: '' },
-        sortOrder: 10,
-        planCategory: 'corporate',
-        memberTypeScope: 'company',
-        annualFeeMinorUnits: 5_000_000,
-        includesCorporatePlanId: null,
-        minTurnoverMinorUnits: null,
-        maxTurnoverMinorUnits: null,
-        maxDurationYears: null,
-        maxMemberAge: null,
         benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
-        isActive: true,
         createdBy: user.userId,
-        updatedBy: user.userId,
       }),
     );
     await runInTenant(tenantA.ctx, (tx) =>
