@@ -1734,8 +1734,7 @@
             "addStep": "เพิ่มขั้นตอน",
             "removeStep": "ลบขั้นตอน",
             "moveUp": "เลื่อนเร็วขึ้น",
-            "moveDown": "เลื่อนช้าลง",
-            "discard": "ยกเลิกการแก้ไข"
+            "moveDown": "เลื่อนช้าลง"
           },
           "saved": {
             "toast": "บันทึกตาราง {tier} แล้ว (+{added} -{removed} ={unchanged})"

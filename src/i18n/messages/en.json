@@ -1734,8 +1734,7 @@
             "addStep": "Add step",
             "removeStep": "Remove step",
             "moveUp": "Move step earlier",
-            "moveDown": "Move step later",
-            "discard": "Discard changes"
+            "moveDown": "Move step later"
           },
           "saved": {
             "toast": "Schedule for {tier} saved (+{added} -{removed} ={unchanged})"

@@ -302,7 +302,13 @@ function RowActionsMenu({
           </Button>
         )}
       />
-      <DropdownMenuContent align="end">
+      {/*
+       * J7-H15: `min-w-56 whitespace-nowrap` per ux-standards § 19.
+       * Without this the dropdown's default `min-w-32` (128px) wraps
+       * the long Thai/Swedish action labels mid-word
+       * ("ส่งอีเมลเตือนการต่ออายุ" / "Skicka förnyelsepåminnelse").
+       */}
+      <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
         <DropdownMenuItem
           disabled={isPending}
           onClick={handleSendReminder}

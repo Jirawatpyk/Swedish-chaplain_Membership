@@ -178,12 +178,22 @@ function StepRow({
         </div>
       </div>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {/*
+         * J7-H17: required + aria-required on text inputs so the
+         * server's `invalid_steps` 422 has a matching client-side
+         * cue (HTML5 invalid pseudo-class fires too). Empty step_id
+         * fails the wire-level zod (.min(1)) anyway — the attr
+         * stops admin from submitting before the round-trip.
+         */}
         <div>
           <Label htmlFor={`step-id-${idPrefix}`}>{t('stepCard.stepIdLabel')}</Label>
           <Input
             id={`step-id-${idPrefix}`}
             value={step.step_id}
             disabled={readOnly}
+            required
+            aria-required="true"
+            maxLength={100}
             onChange={(e) => onChange({ ...step, step_id: e.target.value })}
           />
         </div>
@@ -196,6 +206,11 @@ function StepRow({
             type="number"
             value={step.offset_days}
             disabled={readOnly}
+            required
+            aria-required="true"
+            min={-365}
+            max={365}
+            step={1}
             onChange={(e) =>
               onChange({ ...step, offset_days: Number(e.target.value) })
             }
@@ -246,10 +261,16 @@ function StepRow({
             <Label htmlFor={`template-${idPrefix}`}>
               {t('stepCard.templateIdLabel')}
             </Label>
+            {/* J7-H17: email steps require a template_id (server zod
+             * enforces .min(1) when channel='email'); mirror the rule
+             * client-side via required+aria-required. */}
             <Input
               id={`template-${idPrefix}`}
               value={step.template_id ?? ''}
               disabled={readOnly}
+              required
+              aria-required="true"
+              maxLength={200}
               onChange={(e) =>
                 onChange({ ...step, template_id: e.target.value })
               }
@@ -261,10 +282,15 @@ function StepRow({
               <Label htmlFor={`task-type-${idPrefix}`}>
                 {t('stepCard.taskTypeLabel')}
               </Label>
+              {/* J7-H17: task steps require task_type (server zod
+               * enforces .min(1) when channel='task'). */}
               <Input
                 id={`task-type-${idPrefix}`}
                 value={step.task_type ?? ''}
                 disabled={readOnly}
+                required
+                aria-required="true"
+                maxLength={100}
                 onChange={(e) =>
                   onChange({ ...step, task_type: e.target.value })
                 }

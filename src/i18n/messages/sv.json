@@ -1734,8 +1734,7 @@
             "addStep": "Lägg till steg",
             "removeStep": "Ta bort steg",
             "moveUp": "Flytta tidigare",
-            "moveDown": "Flytta senare",
-            "discard": "Ångra ändringar"
+            "moveDown": "Flytta senare"
           },
           "saved": {
             "toast": "Schemat för {tier} sparat (+{added} -{removed} ={unchanged})"
