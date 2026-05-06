@@ -167,21 +167,44 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Once the limit is hit subsequent 401s short-circuit with no DB
     // write; the bearer_rejected rate signal is preserved at the
     // capped cadence (sufficient for forensic detection).
+    //
+    // K13-1 (REL-R12-1): Upstash outages must NOT cascade into 5xx on
+    // the cron auth path. We FAIL OPEN — when `rateLimiter.check`
+    // throws (Upstash unreachable, network timeout), we proceed with
+    // the audit emit + 401 as if rate-limit had passed. The
+    // `redisFallback` warn-log fires the alert pipeline so on-call
+    // sees the Upstash degradation. The transient amplification window
+    // during an Upstash outage is acceptable vs the alternative of
+    // turning every cron auth-failure into a spurious 500 that pages
+    // the F8 cron team while Upstash is unrelated to renewals.
     const ip = getClientIp(request);
-    const rl = await rateLimiter.check(
-      `f8:cron:bearer-rejected:${ip}`,
-      BEARER_REJECT_RL_LIMIT,
-      BEARER_REJECT_RL_WINDOW_SECONDS,
-    );
-    if (!rl.success) {
-      return NextResponse.json(
-        { error: { code: 'rate_limited' } },
-        {
-          status: 429,
-          headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
-        },
+    let rateLimited = false;
+    try {
+      const rl = await rateLimiter.check(
+        `f8:cron:bearer-rejected:${ip}`,
+        BEARER_REJECT_RL_LIMIT,
+        BEARER_REJECT_RL_WINDOW_SECONDS,
       );
+      if (!rl.success) {
+        return NextResponse.json(
+          { error: { code: 'rate_limited' } },
+          {
+            status: 429,
+            headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
+          },
+        );
+      }
+    } catch (e) {
+      logger.warn(
+        {
+          err: e instanceof Error ? e : new Error(String(e)),
+          route: '/api/cron/renewals/dispatch-coordinator',
+        },
+        'cron.renewals.coordinator.rate_limit_check_failed_fail_open',
+      );
+      rateLimited = false;
     }
+    void rateLimited;
 
     // K6 / spec.md taxonomy line 365: emit `cron_bearer_auth_rejected`
     // audit so a sustained Bearer-rejection rate (e.g. CRON_SECRET

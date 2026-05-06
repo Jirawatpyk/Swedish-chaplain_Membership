@@ -116,6 +116,10 @@ describe('cron per-tenant dispatch route (T104)', () => {
   it('401 on missing Bearer', async () => {
     const res = await POST(makeRequest({}), validParams);
     expect(res.status).toBe(401);
+    // K13-6 (TST-R12-2): pin error.code === 'unauthorized' (matches
+    // coordinator-route assertion symmetry).
+    const body = await res.json();
+    expect(body.error.code).toBe('unauthorized');
     // K12-8 (TST-K-4): per-tenant route now also emits
     // cron_bearer_auth_rejected on 401 so per-tenant probing leaves
     // a forensic trail (consistency with coordinator route).

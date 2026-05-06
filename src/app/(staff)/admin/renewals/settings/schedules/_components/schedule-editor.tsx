@@ -493,13 +493,24 @@ export function ScheduleEditor({
           );
         } catch (e) {
           // K1-E6: previously `catch {}` collapsed every cause
-          // (network, JSON parse, DOM exception) to "save failed". Log
-          // for diagnosability while keeping the same user-facing
-          // toast.
-           
+          // (network, JSON parse, DOM exception) to "save failed".
+          // Log for diagnosability while keeping a user-facing toast.
+          //
+          // K13-8 (UX-K-2): differentiate offline (TypeError from a
+          // failed fetch — typical browser message "Failed to fetch"
+          // or "NetworkError" depending on browser) from server-error
+          // / JSON-parse / DOM exceptions. ux-standards § 4.4 prefers
+          // context-specific copy over a generic "save failed" so the
+          // admin's recovery action is obvious ("check connection" vs
+          // "contact support").
+
           console.error('[F8] schedule save: client handler failed', e);
-          setSaveError(t('error.saveFailed'));
-          toast.error(t('error.saveFailed'));
+          const isOffline =
+            e instanceof TypeError &&
+            (/fetch/i.test(e.message) || /network/i.test(e.message));
+          const messageKey = isOffline ? 'error.offline' : 'error.saveFailed';
+          setSaveError(t(messageKey));
+          toast.error(t(messageKey));
         }
       });
     },

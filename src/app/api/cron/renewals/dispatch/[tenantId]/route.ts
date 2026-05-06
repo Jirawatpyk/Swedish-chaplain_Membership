@@ -61,19 +61,32 @@ export async function POST(
     // since K6). 60 requests / 60 sec / IP — same parameters as the
     // coordinator. Once the limit is hit we short-circuit with no
     // INSERT into audit_log.
+    //
+    // K13-1 (REL-R12-1): fail-open on Upstash outage — see
+    // dispatch-coordinator/route.ts for full rationale.
     const ip = getClientIp(request);
-    const rl = await rateLimiter.check(
-      `f8:cron:bearer-rejected:${ip}`,
-      60,
-      60,
-    );
-    if (!rl.success) {
-      return NextResponse.json(
-        { error: { code: 'rate_limited' } },
+    try {
+      const rl = await rateLimiter.check(
+        `f8:cron:bearer-rejected:${ip}`,
+        60,
+        60,
+      );
+      if (!rl.success) {
+        return NextResponse.json(
+          { error: { code: 'rate_limited' } },
+          {
+            status: 429,
+            headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
+          },
+        );
+      }
+    } catch (e) {
+      logger.warn(
         {
-          status: 429,
-          headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
+          err: e instanceof Error ? e : new Error(String(e)),
+          route: '/api/cron/renewals/dispatch/[tenantId]',
         },
+        'cron.renewals.dispatch.rate_limit_check_failed_fail_open',
       );
     }
     try {

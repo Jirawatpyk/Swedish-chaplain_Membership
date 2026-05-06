@@ -224,11 +224,17 @@ describe('dispatchRenewalCycle', () => {
       actorRole: string;
       actorUserId: string | null;
       correlationId: string;
+      requestId: string | null;
     };
     expect(ctx.tenantId).toBe(TENANT_ID);
     expect(ctx.actorRole).toBe('cron');
     expect(ctx.actorUserId).toBeNull();
     expect(ctx.correlationId).toBe('corr-1');
+    // K13-6 (TST-R12-1): pin requestId is null on cron path so a
+    // future refactor that wires a non-null requestId here is caught.
+    // The cron has no inbound HTTP request to forward correlation
+    // from; the source-of-truth is correlationId.
+    expect(ctx.requestId).toBeNull();
   });
 
   it('K12-7 (TST-K-2): audit-emit failure on outer-catch path does NOT throw (peer isolation invariant preserved)', async () => {

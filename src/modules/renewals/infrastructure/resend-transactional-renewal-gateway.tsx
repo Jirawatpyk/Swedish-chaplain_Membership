@@ -164,11 +164,56 @@ function isPermanentResendName(nameLower: string): boolean {
   return PERMANENT_RESEND_ERROR_PATTERNS.some((p) => nameLower.includes(p));
 }
 
+/**
+ * K13-3 (SEC-R12-2): sanitize the freeform Resend `error.message` BEFORE
+ * it can flow into `audit_log.payload.failure_message` (5-year retention)
+ * or any log surface. Resend SDK error messages are user-facing strings
+ * that can embed account-scoped identifiers — sending domains, API-key
+ * prefixes (`re_…`), recipient email addresses — depending on which
+ * error path is hit. Once they land in audit_log they persist for 5
+ * years (Constitution Principle I + PDPA §28 retention).
+ *
+ * Sanitisation strategy (defence-in-depth on top of REDACT_PATHS):
+ *   1. Strip Resend API-key prefixes: `re_xxxxxxxxxxxx…` patterns.
+ *   2. Strip email addresses (RFC-light pattern).
+ *   3. Strip domain-like tokens (anything that looks like
+ *      `something.tld`).
+ *   4. Truncate to 100 chars (down from 200) — error names + cause
+ *      classification carry the forensic value; the freeform suffix
+ *      adds little.
+ *
+ * The resulting string is safe to persist in audit_log AND to log via
+ * pino in dev/staging. Tradeoff: a sanitised "Could not send to
+ * [REDACTED] because [REDACTED]" is less debuggable than the raw
+ * message, but raw debugging happens via the `resendErrorName` field
+ * (bounded enum) which carries enough signal to classify the issue.
+ */
+export function sanitizeResendErrorMessage(message: string): string {
+  return (
+    message
+      // 1. Resend API-key prefix tokens
+      .replace(/re_[A-Za-z0-9_-]{8,}/g, '[REDACTED_KEY]')
+      // 2. Email addresses (RFC-light)
+      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[REDACTED_EMAIL]')
+      // 3. Domain-like tokens (catches sending domains + bare URLs)
+      .replace(/\b[A-Za-z0-9-]+\.(?:com|net|org|io|co|app|dev|tech|cloud|ai|to|me|info|biz|email|mail|tld)\b/gi, '[REDACTED_DOMAIN]')
+      // 4. Cap length
+      .slice(0, 100)
+      .trim()
+  );
+}
+
 function mapResendError(
   resendError: { name?: string; message?: string },
 ): SendRenewalEmailError {
   const name = (resendError.name ?? 'unknown').toLowerCase();
-  const message = resendError.message ?? 'unknown resend error';
+  // K13-3 (SEC-R12-2): sanitise the message at the gateway boundary
+  // BEFORE it propagates to `SendRenewalEmailError.message` →
+  // `audit_log.payload.failure_message`. Account-scoped identifiers
+  // would otherwise persist for 5 years.
+  const message = sanitizeResendErrorMessage(
+    resendError.message ?? 'unknown resend error',
+  );
   if (name.includes('validation') || name.includes('invalid_to_address')) {
     return { kind: 'gateway_4xx', retryable: false, message };
   }
@@ -311,17 +356,26 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
     } catch (e) {
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          // K13-5 (CON-R12-2): Error instance for pino's `err`
+          // serializer (stack + type capture).
+          err: e instanceof Error ? e : new Error(String(e)),
           tenantId: input.tenantId,
           tier,
           offset,
         },
         'resend.renewals.send.render_failed',
       );
+      // K13-3 (SEC-R12-2): sanitise the React Email render exception
+      // message before it lands in the Result envelope (then
+      // audit_log.failure_message). Render errors typically don't
+      // contain account-scoped identifiers but we apply the same
+      // discipline here as for Resend SDK errors — defence in depth.
       return err({
         kind: 'gateway_4xx',
         retryable: false,
-        message: e instanceof Error ? e.message : 'render failed',
+        message: sanitizeResendErrorMessage(
+          e instanceof Error ? e.message : 'render failed',
+        ),
       });
     }
 
@@ -372,14 +426,22 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
           });
         }
       } catch (e) {
+        // K13-3 (SEC-R12-2): sanitise the SDK exception message before
+        // it lands in lastError.message → audit_log.failure_message.
+        // Resend SDK exception strings can include sending-domain or
+        // API-key fragments depending on the network failure mode.
         lastError = {
           kind: 'gateway_5xx',
           retryable: true,
-          message: e instanceof Error ? e.message : 'unknown',
+          message: sanitizeResendErrorMessage(
+            e instanceof Error ? e.message : 'unknown',
+          ),
         };
         logger.warn(
           {
-            err: e instanceof Error ? e.message : String(e),
+            // K13-5 (CON-R12-2): Error instance for pino's `err`
+            // serializer (stack + type capture).
+            err: e instanceof Error ? e : new Error(String(e)),
             tenantId: input.tenantId,
             attempt,
           },

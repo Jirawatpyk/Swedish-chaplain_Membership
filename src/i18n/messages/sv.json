@@ -1705,6 +1705,8 @@
         "featureDisabled": "Förnyelseflödet är ännu inte aktiverat för denna kammare.",
         "loadFailed": "Kunde inte ladda förnyelsepipelinen.",
         "retry": "Försök igen",
+        "retrying": "Försöker igen…",
+        "retryFailed": "Försöket misslyckades — servern returnerade ett nytt fel",
         "goBack": "Gå tillbaka",
         "referenceLabel": "Referens-ID"
       },
@@ -1760,6 +1762,7 @@
           },
           "error": {
             "saveFailed": "Kunde inte spara schemat. Försök igen.",
+            "offline": "Kunde inte nå servern — kontrollera din anslutning och försök igen.",
             "invalidSteps": "Ett eller flera steg är ogiltiga. Åtgärda markerade fält.",
             "noPolicies": "Inga scheman är konfigurerade för denna kammare ännu. Spara valfri nivå för att skapa det första."
           },

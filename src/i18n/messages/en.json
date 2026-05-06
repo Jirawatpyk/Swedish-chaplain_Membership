@@ -1705,6 +1705,8 @@
         "featureDisabled": "The renewals workflow is not yet enabled for this chamber.",
         "loadFailed": "Could not load the renewal pipeline.",
         "retry": "Try again",
+        "retrying": "Retrying…",
+        "retryFailed": "Retry failed — the server returned another error",
         "goBack": "Go back",
         "referenceLabel": "Reference ID"
       },
@@ -1760,6 +1762,7 @@
           },
           "error": {
             "saveFailed": "Could not save schedule. Please retry.",
+            "offline": "Could not reach the server — check your connection and retry.",
             "invalidSteps": "One or more steps are invalid. Fix highlighted fields.",
             "noPolicies": "No schedule policies are configured for this chamber yet. Save any tier to create the first one."
           },

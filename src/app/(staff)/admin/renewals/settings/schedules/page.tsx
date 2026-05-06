@@ -121,6 +121,8 @@ export default async function RenewalSchedulesSettingsPage() {
               correlationId={correlationId}
               goBackHref="/admin/renewals"
               retryLabel={tShared('error.retry')}
+              pendingLabel={tShared('error.retrying')}
+              retryFailedLabel={tShared('error.retryFailed')}
               goBackLabel={tShared('error.goBack')}
               referenceLabel={tShared('error.referenceLabel')}
             />

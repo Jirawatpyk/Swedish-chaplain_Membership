@@ -160,6 +160,8 @@ export default async function RenewalsPipelinePage({
               correlationId={correlationId}
               goBackHref="/admin"
               retryLabel={t('error.retry')}
+              pendingLabel={t('error.retrying')}
+              retryFailedLabel={t('error.retryFailed')}
               goBackLabel={t('error.goBack')}
               referenceLabel={t('error.referenceLabel')}
             />
