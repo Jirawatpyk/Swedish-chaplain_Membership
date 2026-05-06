@@ -28,8 +28,10 @@ import {
   ChevronUp,
   ChevronDown,
   AlertCircle,
+  CalendarPlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/shell/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -75,8 +77,13 @@ export interface ScheduleEditorProps {
 // ---------------------------------------------------------------------------
 
 function emptyStep(): ScheduleStepWire {
+  // J8-M33: random suffix so multiple "Add step" clicks within one
+  // session produce unique step_ids — server zod's distinct-step_ids
+  // invariant otherwise rejects the save with `invalid_steps` 422.
+  // 8-hex chars from a v4 UUID gives 16M possibilities, plenty for the
+  // 20-step cap on a single bucket.
   return {
-    step_id: 'new-step',
+    step_id: `new-${crypto.randomUUID().slice(0, 8)}`,
     offset_days: -30,
     channel: 'email',
     template_id: 'renewal.t-30',
@@ -198,8 +205,15 @@ function StepRow({
           />
         </div>
         <div>
+          {/*
+           * J8-M19: replaced the legacy `T±` mangled label
+           * (.slice(0,1)+'±' built from "T-30") with a proper
+           * localized i18n key. Previous code rendered "T±" in EN
+           * and the same mangled string in TH/SV — admin had no
+           * idea what the offset_days field was for.
+           */}
           <Label htmlFor={`offset-days-${idPrefix}`}>
-            {t('stepCard.offsetDay.before', { days: 30 }).slice(0, 1)}±
+            {t('stepCard.offsetDaysLabel')}
           </Label>
           <Input
             id={`offset-days-${idPrefix}`}
@@ -317,10 +331,20 @@ function StepRow({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="admin">admin</SelectItem>
-                  <SelectItem value="manager">manager</SelectItem>
+                  {/*
+                   * J8-M20: previously rendered raw enum values
+                   * ("admin"/"manager"/"executive_director"). TH+SV
+                   * admins saw English-only role names — break of
+                   * ux-standards § i18n no-hardcoded-strings rule.
+                   */}
+                  <SelectItem value="admin">
+                    {t('stepCard.assigneeRole.admin')}
+                  </SelectItem>
+                  <SelectItem value="manager">
+                    {t('stepCard.assigneeRole.manager')}
+                  </SelectItem>
                   <SelectItem value="executive_director">
-                    executive_director
+                    {t('stepCard.assigneeRole.executive_director')}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -468,14 +492,30 @@ export function ScheduleEditor({
           <TabsContent key={b} value={b} className="mt-4">
             <div className="flex flex-col gap-4">
               {steps.length === 0 ? (
-                <Card>
-                  <CardContent
-                    role="status"
-                    className="py-8 text-center text-muted-foreground"
-                  >
-                    {t('error.noPolicies')}
-                  </CardContent>
-                </Card>
+                /*
+                 * J8-M28: replaced the bare-text "No schedule policies"
+                 * placeholder with the standard `<EmptyState>` anatomy
+                 * from `docs/ux-standards.md` § 3.1 — icon + title +
+                 * description + primary CTA. The CTA inserts the first
+                 * step locally so admin can immediately start editing
+                 * (the save button persists at the bottom of the tab).
+                 */
+                <EmptyState
+                  icon={CalendarPlus}
+                  title={t('empty.noPoliciesTitle')}
+                  description={t('empty.noPoliciesDescription')}
+                  action={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={readOnly}
+                      onClick={() => replaceSteps(b, [emptyStep()])}
+                    >
+                      <Plus aria-hidden="true" className="mr-1 h-4 w-4" />
+                      {t('actions.addStep')}
+                    </Button>
+                  }
+                />
               ) : null}
               {steps.map((step, idx) => (
                 <StepRow
@@ -491,9 +531,31 @@ export function ScheduleEditor({
                     replaceSteps(b, arr);
                   }}
                   onRemove={() => {
+                    /*
+                     * J8-M26: Remove-step is locally destructive (the
+                     * step disappears from the editor's draft list)
+                     * but reversible until the admin clicks Save —
+                     * after Save the server-side upsert removes the
+                     * step from the policy's persisted JSONB. ux-
+                     * standards § 5.3 calls for an Undo affordance
+                     * on reversible destructive actions; sonner's
+                     * `action` prop renders an inline 8s Undo button.
+                     * The captured `previousSteps` snapshot restores
+                     * the exact array (including the removed step's
+                     * field values) — admin can experiment freely
+                     * before committing.
+                     */
+                    const previousSteps = [...steps];
                     const arr = [...steps];
                     arr.splice(idx, 1);
                     replaceSteps(b, arr);
+                    toast.info(t('actions.stepRemoved'), {
+                      duration: 8_000,
+                      action: {
+                        label: t('actions.undo'),
+                        onClick: () => replaceSteps(b, previousSteps),
+                      },
+                    });
                   }}
                   onMoveUp={() => {
                     if (idx === 0) return;

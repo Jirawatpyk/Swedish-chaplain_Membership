@@ -15,6 +15,17 @@
  */
 'use client';
 
+/*
+ * J8-M34 — mobile responsive treatment deferred. Per
+ * `docs/ux-standards.md` § 9.4, data tables should collapse to a
+ * card stack at ≤md breakpoints. The pipeline table currently uses
+ * `overflow-x-auto` (WCAG 1.4.10 Reflow exception for data tables).
+ * The admin renewals dashboard is staff-only — sized at lg+ in
+ * production usage — so the card-stack layout is a post-J wave
+ * polish item rather than a ship blocker. Tracked alongside the
+ * smart-features backlog.
+ */
+
 import { useMemo, useTransition } from 'react';
 import Link from 'next/link';
 import { useTranslations, useFormatter, useLocale } from 'next-intl';
@@ -184,11 +195,19 @@ export function PipelineTable({ rows }: PipelineTableProps) {
       <TableBody>
         {table.getRowModel().rows.length === 0 ? (
           <TableRow>
+            {/*
+             * J8-M30: extended the bare "No members in this bucket"
+             * placeholder with an actionable hint pointing admins at
+             * the urgency-tab switcher. Keeps the table-cell skin
+             * (vs upgrading to <EmptyState> — that would break the
+             * single-cell-row table pattern).
+             */}
             <TableCell
               colSpan={columns.length}
               className="text-center text-muted-foreground py-8"
             >
-              {t('noRows')}
+              <p className="text-sm font-medium text-foreground">{t('noRows')}</p>
+              <p className="mt-1 text-xs">{t('noRowsInBucket')}</p>
             </TableCell>
           </TableRow>
         ) : (
@@ -305,6 +324,13 @@ function RowActionsMenu({
             // mis-taps would route to the wrong row.
             className="h-11 w-11"
             aria-label={tActions('rowMenu', { company: companyName })}
+            // J8-M31: native browser tooltip on hover (sighted-mouse
+            // users) complementing the aria-label that SR users get
+            // on focus. Wrapping in `<Tooltip>` primitive would
+            // collide with the DropdownMenu popup positioning; the
+            // native `title` attr is simpler + universally supported
+            // for an icon-only trigger like this row-actions button.
+            title={tActions('rowMenu', { company: companyName })}
           >
             <MoreHorizontal className="h-4 w-4" />
           </Button>
@@ -330,10 +356,26 @@ function RowActionsMenu({
             </a>
           )}
         />
-        {/* Mark contacted ships in US4 (Wave J). */}
-        <DropdownMenuItem disabled>
+        {/*
+         * J8-M21: disabled DropdownMenuItem renders without context
+         * for screen-reader users — they hear "Mark contacted, dimmed"
+         * but no explanation why the action is disabled. The
+         * `aria-describedby` + sr-only span exposes the reason
+         * (per WCAG 4.1.2 Name/Role/Value) without affecting
+         * sighted UX.
+         */}
+        <DropdownMenuItem
+          disabled
+          aria-describedby={`mark-contacted-hint-${cycleId}`}
+        >
           {tActions('markContacted')}
         </DropdownMenuItem>
+        <span
+          id={`mark-contacted-hint-${cycleId}`}
+          className="sr-only"
+        >
+          {tActions('markContactedComingSoon')}
+        </span>
       </DropdownMenuContent>
     </DropdownMenu>
   );

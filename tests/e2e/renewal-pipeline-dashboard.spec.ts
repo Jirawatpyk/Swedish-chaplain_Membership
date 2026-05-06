@@ -42,7 +42,15 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     await signInAsAdmin(page);
     const start = performance.now();
     await page.goto('/admin/renewals');
-    await page.waitForLoadState('networkidle');
+    // J8-M22: replaced `waitForLoadState('networkidle')` with
+    // a deterministic role-based wait. Turbopack + RSC streaming
+    // races the network-idle event in dev, causing flake on this
+    // and other E2E specs. Waiting for the page heading guarantees
+    // the SSR render completed without depending on side-channel
+    // network timing.
+    await expect(
+      page.getByRole('heading', { name: /renewal pipeline/i }),
+    ).toBeVisible({ timeout: 10_000 });
     const elapsed = performance.now() - start;
 
     // Page header + subtitle present
@@ -65,7 +73,15 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
   test('AS2: tier filter updates URL with ?tier=premium', async ({ page }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals');
-    await page.waitForLoadState('networkidle');
+    // J8-M22: replaced `waitForLoadState('networkidle')` with
+    // a deterministic role-based wait. Turbopack + RSC streaming
+    // races the network-idle event in dev, causing flake on this
+    // and other E2E specs. Waiting for the page heading guarantees
+    // the SSR render completed without depending on side-channel
+    // network timing.
+    await expect(
+      page.getByRole('heading', { name: /renewal pipeline/i }),
+    ).toBeVisible({ timeout: 10_000 });
 
     // Open the tier select trigger via its accessible role.
     // The visually-hidden label and the combobox both match
@@ -92,7 +108,15 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
   }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals');
-    await page.waitForLoadState('networkidle');
+    // J8-M22: replaced `waitForLoadState('networkidle')` with
+    // a deterministic role-based wait. Turbopack + RSC streaming
+    // races the network-idle event in dev, causing flake on this
+    // and other E2E specs. Waiting for the page heading guarantees
+    // the SSR render completed without depending on side-channel
+    // network timing.
+    await expect(
+      page.getByRole('heading', { name: /renewal pipeline/i }),
+    ).toBeVisible({ timeout: 10_000 });
 
     // Click the "Lapsed" tab (last in the tablist). Using
     // `waitForURL` instead of `networkidle` because RSC streaming
@@ -138,7 +162,15 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
   }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals');
-    await page.waitForLoadState('networkidle');
+    // J8-M22: replaced `waitForLoadState('networkidle')` with
+    // a deterministic role-based wait. Turbopack + RSC streaming
+    // races the network-idle event in dev, causing flake on this
+    // and other E2E specs. Waiting for the page heading guarantees
+    // the SSR render completed without depending on side-channel
+    // network timing.
+    await expect(
+      page.getByRole('heading', { name: /renewal pipeline/i }),
+    ).toBeVisible({ timeout: 10_000 });
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa'])
       .analyze();

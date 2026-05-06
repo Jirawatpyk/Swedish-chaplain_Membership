@@ -1645,6 +1645,7 @@
         },
         "viewInvoice": "View invoice",
         "noRows": "No members in this bucket.",
+        "noRowsInBucket": "No members are due to renew in this window. Switch to another urgency tab to see pending renewals.",
         "unknownCompany": "(Unknown company)",
         "emailUnverifiedHint": "Email unverified — recent bounces detected; system reminders are paused until the contact's email is updated and re-verified.",
         "srResultCount": "{count, plural, one {Showing # member in {urgency}} other {Showing # members in {urgency}}}"
@@ -1653,6 +1654,7 @@
         "open": "Open cycle",
         "sendReminder": "Send reminder",
         "markContacted": "Mark contacted",
+        "markContactedComingSoon": "Coming in a future phase — admin can manually log contact attempts",
         "rowMenu": "Actions for {company}"
       },
       "sendReminderNow": {
@@ -1724,9 +1726,15 @@
               "exact": "T+0"
             },
             "stepIdLabel": "Step ID",
+            "offsetDaysLabel": "Offset days",
             "templateIdLabel": "Email template",
             "taskTypeLabel": "Task type",
-            "assigneeLabel": "Assignee role"
+            "assigneeLabel": "Assignee role",
+            "assigneeRole": {
+              "admin": "Administrator",
+              "manager": "Manager",
+              "executive_director": "Executive Director"
+            }
           },
           "actions": {
             "save": "Save schedule",
@@ -1734,10 +1742,16 @@
             "addStep": "Add step",
             "removeStep": "Remove step",
             "moveUp": "Move step earlier",
-            "moveDown": "Move step later"
+            "moveDown": "Move step later",
+            "undo": "Undo",
+            "stepRemoved": "Step removed"
           },
           "saved": {
             "toast": "Schedule for {tier} saved (+{added} -{removed} ={unchanged})"
+          },
+          "empty": {
+            "noPoliciesTitle": "No reminder steps yet",
+            "noPoliciesDescription": "Add the first step to start sending renewal reminders for this tier."
           },
           "error": {
             "saveFailed": "Could not save schedule. Please retry.",

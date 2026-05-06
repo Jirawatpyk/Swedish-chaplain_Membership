@@ -76,6 +76,15 @@ export interface ReminderEmailCopy {
  * Per-tier label localization. Used by the body/subject interpolation
  * to resolve the `{tier}` placeholder into a human-readable string
  * matching the locale.
+ *
+ * J8-M29 decision: tier labels are kept in English across all 3
+ * locales because they are SweCham brand-package names, NOT generic
+ * descriptors. "Thai Alumni" / "Start-up" / "Premium" / "Partnership"
+ * appear with the same English form on the chamber's marketing
+ * collateral, contracts, and invoices — translating them in email
+ * copy would create inconsistency with the printed-document trail.
+ * Only the surrounding sentences are localized (TH/SV body copy in
+ * the matrix below); the tier label itself stays as a brand mark.
  */
 export const TIER_LABELS: Record<
   RenewalEmailLocale,

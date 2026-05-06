@@ -37,6 +37,7 @@ import { UrgencyBucketTabs } from './_components/urgency-bucket-tabs';
 import { PipelineTable } from './_components/pipeline-table';
 import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
+import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals');
@@ -193,16 +194,19 @@ export default async function RenewalsPipelinePage({
                 />
                 <TierFilterSelect current={tier ?? 'all'} />
               </div>
-              {/* Polite live region announces result count to screen
-                  readers when filter/tab changes re-render this page
-                  (UX-W2). aria-atomic so the whole sentence is read,
-                  not just the diff. */}
-              <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-                {t('table.srResultCount', {
-                  count: rows.length,
-                  urgency: t(`urgencyBuckets.${urgency.replace('-', '_') as 't_90'|'t_60'|'t_30'|'t_14'|'t_7'|'t_0'|'grace'|'lapsed'}`),
-                })}
-              </div>
+              {/*
+               * J8-M27: extracted to client component so RSC
+               * re-renders don't re-mount the live region (SRs
+               * may not re-announce a wholesale-replaced node).
+               * Polite live region announces result count to screen
+               * readers when filter/tab changes re-render this page
+               * (UX-W2). aria-atomic so the whole sentence is read,
+               * not just the diff.
+               */}
+              <ResultCountAnnouncer
+                count={rows.length}
+                urgencyKey={urgency}
+              />
               {urgency === 'lapsed' ? (
                 <LapsedTab rows={rows} />
               ) : (

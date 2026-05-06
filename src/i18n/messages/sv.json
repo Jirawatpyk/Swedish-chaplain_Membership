@@ -1645,6 +1645,7 @@
         },
         "viewInvoice": "Visa faktura",
         "noRows": "Inga medlemmar i detta intervall.",
+        "noRowsInBucket": "Inga medlemmar ska förnya i detta intervall. Växla till en annan brådskandeflik för att se väntande förnyelser.",
         "unknownCompany": "(Okänt företag)",
         "emailUnverifiedHint": "E-postadressen är overifierad — nyligen upptäckta studsar; systempåminnelser är pausade tills kontaktens e-post uppdateras och verifieras på nytt.",
         "srResultCount": "{count, plural, one {Visar # medlem i {urgency}} other {Visar # medlemmar i {urgency}}}"
@@ -1653,6 +1654,7 @@
         "open": "Öppna cykel",
         "sendReminder": "Skicka påminnelse",
         "markContacted": "Markera kontaktad",
+        "markContactedComingSoon": "Kommer i en framtida fas — administratörer kommer att kunna registrera kontaktförsök",
         "rowMenu": "Åtgärder för {company}"
       },
       "sendReminderNow": {
@@ -1724,9 +1726,15 @@
               "exact": "T+0"
             },
             "stepIdLabel": "Steg-ID",
+            "offsetDaysLabel": "Antal dagar (negativt = före, positivt = efter)",
             "templateIdLabel": "E-postmall",
             "taskTypeLabel": "Uppgiftstyp",
-            "assigneeLabel": "Tilldelad roll"
+            "assigneeLabel": "Tilldelad roll",
+            "assigneeRole": {
+              "admin": "Administratör",
+              "manager": "Chef",
+              "executive_director": "Verkställande direktör"
+            }
           },
           "actions": {
             "save": "Spara schema",
@@ -1734,10 +1742,16 @@
             "addStep": "Lägg till steg",
             "removeStep": "Ta bort steg",
             "moveUp": "Flytta tidigare",
-            "moveDown": "Flytta senare"
+            "moveDown": "Flytta senare",
+            "undo": "Ångra",
+            "stepRemoved": "Steg borttaget"
           },
           "saved": {
             "toast": "Schemat för {tier} sparat (+{added} -{removed} ={unchanged})"
+          },
+          "empty": {
+            "noPoliciesTitle": "Inga påminnelsesteg ännu",
+            "noPoliciesDescription": "Lägg till det första steget för att börja skicka förnyelsepåminnelser för denna nivå."
           },
           "error": {
             "saveFailed": "Kunde inte spara schemat. Försök igen.",
