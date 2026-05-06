@@ -40,6 +40,11 @@ export interface TierBadgeProps {
 export function TierBadge({ tier, className }: TierBadgeProps) {
   const t = useTranslations('admin.renewals.tierBadge');
   const label = t(tier);
+  // K9: removed `aria-label={label}` — when aria-label is identical to
+  // the visible text content of a non-interactive element, some screen
+  // readers (older VoiceOver) double-announce. Removing the redundant
+  // label lets the text content serve as the accessible name (WCAG
+  // recommends NOT setting aria-label when visible text is sufficient).
   return (
     <span
       className={cn(
@@ -47,7 +52,6 @@ export function TierBadge({ tier, className }: TierBadgeProps) {
         VARIANT_CLASSES[tier],
         className,
       )}
-      aria-label={label}
     >
       {label}
     </span>

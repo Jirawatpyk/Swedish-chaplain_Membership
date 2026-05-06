@@ -125,13 +125,18 @@ export function LapsedTab({ rows }: LapsedTabProps) {
                     <CycleExpiresCell expiresAt={r.expiresAt} />
                   </TableCell>
                   <TableCell>
+                    {/*
+                      K9: removed redundant aria-label — text content
+                      already serves as the accessible name. Older
+                      VoiceOver double-announces when aria-label
+                      duplicates visible text on non-interactive spans.
+                    */}
                     <span
                       className={cn(
                         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
                         REASON_VARIANT_CLASSES[reason] ??
                           REASON_VARIANT_CLASSES.lapsed,
                       )}
-                      aria-label={reasonLabel}
                     >
                       {reasonLabel}
                     </span>

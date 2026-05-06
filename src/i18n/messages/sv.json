@@ -1698,7 +1698,8 @@
       "empty": {
         "title": "Inga förnyelser förfaller under de kommande 90 dagarna",
         "description": "Alla aktiva medlemmar är betalade. Kom tillbaka när utgångsdatum närmar sig.",
-        "cta": "Visa alla medlemmar"
+        "cta": "Visa alla medlemmar",
+        "settingsLink": "Granska schemainställningar"
       },
       "error": {
         "featureDisabled": "Förnyelseflödet är ännu inte aktiverat för denna kammare.",

@@ -1698,7 +1698,8 @@
       "empty": {
         "title": "No renewals due in the next 90 days",
         "description": "All active members are paid up. Check back when expiry dates approach.",
-        "cta": "View all members"
+        "cta": "View all members",
+        "settingsLink": "Review schedule settings"
       },
       "error": {
         "featureDisabled": "The renewals workflow is not yet enabled for this chamber.",
