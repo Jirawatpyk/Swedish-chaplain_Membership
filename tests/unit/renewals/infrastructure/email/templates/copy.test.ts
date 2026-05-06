@@ -64,6 +64,44 @@ describe('renewal email copy matrix', () => {
       }
     });
 
+    it('J7b-H16: every schedule-policy email step has TH copy (no FR-013 fallback expected on production cron)', () => {
+      for (const key of REQUIRED_EN_KEYS) {
+        expect(
+          RENEWAL_COPY.th[key as keyof typeof RENEWAL_COPY.th],
+          `TH copy missing for ${key} — adding a new step without TH translation would silently fall back to EN for Thai-locale members. Add to copy.ts before merging.`,
+        ).toBeDefined();
+      }
+    });
+
+    it('J7b-H16: every schedule-policy email step has SV copy (no FR-013 fallback expected on production cron)', () => {
+      for (const key of REQUIRED_EN_KEYS) {
+        expect(
+          RENEWAL_COPY.sv[key as keyof typeof RENEWAL_COPY.sv],
+          `SV copy missing for ${key} — Swedish-locale members would silently get EN fallback. Add to copy.ts before merging.`,
+        ).toBeDefined();
+      }
+    });
+
+    it('J7b-H16: TH copy entries have non-empty subject/body/cta', () => {
+      for (const [key, copy] of Object.entries(RENEWAL_COPY.th)) {
+        expect(copy?.subject.length, `TH ${key} subject empty`).toBeGreaterThan(
+          0,
+        );
+        expect(copy?.body.length, `TH ${key} body empty`).toBeGreaterThan(0);
+        expect(copy?.cta.length, `TH ${key} cta empty`).toBeGreaterThan(0);
+      }
+    });
+
+    it('J7b-H16: SV copy entries have non-empty subject/body/cta', () => {
+      for (const [key, copy] of Object.entries(RENEWAL_COPY.sv)) {
+        expect(copy?.subject.length, `SV ${key} subject empty`).toBeGreaterThan(
+          0,
+        );
+        expect(copy?.body.length, `SV ${key} body empty`).toBeGreaterThan(0);
+        expect(copy?.cta.length, `SV ${key} cta empty`).toBeGreaterThan(0);
+      }
+    });
+
     it('TIER_LABELS has entry for every tier in every locale', () => {
       for (const locale of ['en', 'th', 'sv'] as const) {
         for (const tier of RENEWAL_REMINDER_TIERS) {
@@ -84,11 +122,25 @@ describe('renewal email copy matrix', () => {
     });
 
     it('falls back to EN when locale missing (FR-013)', () => {
-      // Pick a tier × offset that exists in EN but NOT in TH
-      // (e.g., partnership.t-120 — only in EN per copy.ts).
-      const r = resolveCopy('partnership', 't-120', 'th');
-      expect(r.usedFallback).toBe(true);
-      expect(r.copy.subject).toContain('renews in');
+      // J7b-H16: full TH/SV coverage now ships, so we can no longer
+      // rely on a "perpetually missing" key for this test. Pin the
+      // FR-013 fallback contract via a synthetic gap — temporarily
+      // delete the TH entry, verify fallback, then restore. Other
+      // tests are unaffected because the deletion is reverted in a
+      // try/finally.
+      const KEY = 'partnership.t-120' as const;
+      const original = (RENEWAL_COPY.th as Record<string, unknown>)[KEY];
+      delete (RENEWAL_COPY.th as Record<string, unknown>)[KEY];
+      try {
+        const r = resolveCopy('partnership', 't-120', 'th');
+        expect(r.usedFallback).toBe(true);
+        // Assert the fallback returned the EN copy (not the TH one).
+        expect(r.copy.subject).toContain("let's plan ahead");
+      } finally {
+        if (original !== undefined) {
+          (RENEWAL_COPY.th as Record<string, unknown>)[KEY] = original;
+        }
+      }
     });
 
     it('throws when EN itself is missing (catches schedule drift)', () => {

@@ -265,11 +265,21 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
 };
 
-// Thai locale — Thai Alumni gets full Thai copy; other tiers use Thai
-// translations. For Thai Alumni T-30 example (FR-014 inline dual-format
-// requirement): `"การเป็นสมาชิกของคุณจะหมดอายุในวันที่ {expiresAt}"`
-// where {expiresAt} is rendered dual-format by the gateway.
+// Thai locale — full coverage across all 5 tiers × all 29 schedule
+// steps (J7b-H16). Tone:
+//   - Long-cadence openers (T-90/T-120/T-60 advance notice): "เรียนคุณ"
+//     formal opener for premium/partnership; "สวัสดีคุณ" friendlier
+//     casual opener for thai_alumni/start_up/regular early notices.
+//   - Mid-cadence (T-30/T-14): "สวัสดีคุณ" universal friendly tone.
+//   - Final-window (T-7/T-3/T+0): tighter, action-oriented.
+//   - Post-grace (T+0+/T+7/T+14/T+30): empathetic, restorative.
+// FR-014 dual-format date: `{expiresAt}` is rendered dual-format
+// (e.g., "15 ส.ค. 2569 (15 August 2026)") by the gateway before
+// interpolation, so body strings just reference {expiresAt} verbatim.
 const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
+  // -------------------------------------------------------------------------
+  // Thai Alumni (4 emails) — light cadence
+  // -------------------------------------------------------------------------
   'thai_alumni.t-30': {
     subject: 'การเป็นสมาชิก {tier} ของคุณจะหมดอายุในอีก {daysUntilExpiry} วัน',
     body: 'เรียนคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาคลิกปุ่มด้านล่างเพื่อต่ออายุการเป็นสมาชิกและคงสิทธิประโยชน์ทั้งหมดไว้',
@@ -277,7 +287,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'thai_alumni.t-14': {
     subject: 'แจ้งเตือน: สมาชิก {tier} จะหมดอายุในอีก {daysUntilExpiry} วัน',
-    body: 'สวัสดีคุณ {firstName} ขอแจ้งเตือนว่าการเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุวันนี้',
+    body: 'สวัสดีคุณ {firstName} ขอแจ้งเตือนว่าการเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุวันนี้เพื่อไม่ให้สิทธิประโยชน์ของคุณขาดช่วง',
     cta: 'ต่ออายุสมาชิก',
   },
   'thai_alumni.t-3': {
@@ -287,34 +297,166 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'thai_alumni.t+7': {
     subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} กรุณาเปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} กรุณาเปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์และเชื่อมต่อกับเครือข่ายของหอการค้า',
     cta: 'เปิดใช้งานอีกครั้ง',
   },
-  // start_up + regular share Thai copy structure (skip distinguishing in MVP).
+
+  // -------------------------------------------------------------------------
+  // Start-up (6 emails) — full cadence
+  // -------------------------------------------------------------------------
+  'start_up.t-60': {
+    subject: 'การเป็นสมาชิก {tier} ของคุณจะหมดอายุในอีก {daysUntilExpiry} วัน',
+    body: 'เรียนคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} วางแผนล่วงหน้าและต่ออายุตั้งแต่วันนี้เพื่อรักษาสิทธิประโยชน์ของหอการค้าให้ต่อเนื่อง',
+    cta: 'ต่ออายุสมาชิก',
+  },
   'start_up.t-30': {
     subject: 'แจ้งเตือนการต่ออายุ: สมาชิก {tier} ในอีก {daysUntilExpiry} วัน',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุวันนี้',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุวันนี้เพื่อให้คุณยังเข้าร่วมกิจกรรมและเครือข่ายธุรกิจได้อย่างต่อเนื่อง',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'start_up.t-14': {
+    subject: 'เหลืออีก 2 สัปดาห์: การต่ออายุสมาชิก {tier}',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} เหลือเวลาอีกเพียง 2 สัปดาห์ คลิกด้านล่างเพื่อต่ออายุ',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'start_up.t-7': {
+    subject: 'เหลืออีก 1 สัปดาห์: การต่ออายุสมาชิก {tier}',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} โปรดต่ออายุภายในสัปดาห์นี้เพื่อไม่ให้สิทธิประโยชน์ของหอการค้าขาดช่วง',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'start_up.t+0': {
+    subject: 'การเป็นสมาชิก {tier} ของคุณจะหมดอายุวันนี้',
+    body: 'สวัสดีคุณ {firstName} วันนี้คือวันสุดท้ายของการเป็นสมาชิก {tier} ของ {companyName} กรุณาต่ออายุทันทีเพื่อรักษาสิทธิประโยชน์ไว้โดยไม่ขาดช่วง',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'start_up.t+7': {
+    subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ทั้งหมด',
+    cta: 'เปิดใช้งานอีกครั้ง',
+  },
+
+  // -------------------------------------------------------------------------
+  // Regular (6 emails) — full cadence (mirrors start_up structure)
+  // -------------------------------------------------------------------------
+  'regular.t-60': {
+    subject: 'การเป็นสมาชิก {tier} ของคุณจะหมดอายุในอีก {daysUntilExpiry} วัน',
+    body: 'เรียนคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} ต่ออายุตั้งแต่วันนี้เพื่อรักษาสิทธิเข้าร่วมหอการค้าและสิทธิประโยชน์ทั้งหมด',
     cta: 'ต่ออายุสมาชิก',
   },
   'regular.t-30': {
     subject: 'แจ้งเตือนการต่ออายุ: สมาชิก {tier} ในอีก {daysUntilExpiry} วัน',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุวันนี้',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุวันนี้เพื่อให้สิทธิประโยชน์ของคุณยังคงใช้ได้',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'regular.t-14': {
+    subject: 'เหลืออีก 2 สัปดาห์: การต่ออายุสมาชิก {tier}',
+    body: 'สวัสดีคุณ {firstName} ขอแจ้งเตือนว่าการเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} คลิกเพื่อต่ออายุทันที',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'regular.t-7': {
+    subject: 'เหลืออีก 1 สัปดาห์: การต่ออายุสมาชิก {tier}',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุภายในสัปดาห์นี้',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'regular.t+0': {
+    subject: 'การเป็นสมาชิก {tier} ของคุณจะหมดอายุวันนี้',
+    body: 'สวัสดีคุณ {firstName} วันนี้คือวันสุดท้ายของการเป็นสมาชิก {tier} ของ {companyName} ต่ออายุทันทีเพื่อรักษาสิทธิประโยชน์',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'regular.t+7': {
+    subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ของหอการค้า',
+    cta: 'เปิดใช้งานอีกครั้ง',
+  },
+
+  // -------------------------------------------------------------------------
+  // Premium (7 emails) — extended cadence (T-90 advance + T+14 grace)
+  // -------------------------------------------------------------------------
+  'premium.t-90': {
+    subject: 'การเป็นสมาชิก {tier} ของคุณจะหมดอายุในอีก {daysUntilExpiry} วัน',
+    body: 'เรียนคุณ {firstName} ขอบคุณที่ร่วมเป็นสมาชิก {tier} กับเรา การเป็นสมาชิกของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุเพื่อวางแผนกิจกรรมร่วมกับหอการค้าตลอดทั้งปี',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'premium.t-60': {
+    subject: 'การต่ออายุ {tier}: เหลือเวลา {daysUntilExpiry} วัน',
+    body: 'เรียนคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} คลิกด้านล่างเพื่อต่ออายุในอัตรา Premium ปัจจุบัน',
     cta: 'ต่ออายุสมาชิก',
   },
   'premium.t-30': {
     subject: 'หนึ่งเดือนสุดท้าย: การต่ออายุสมาชิก {tier}',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุเพื่อรักษาสิทธิประโยชน์ระดับ Premium',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุเพื่อรักษาสิทธิประโยชน์ระดับ Premium สำหรับปีถัดไป',
     cta: 'ต่ออายุสมาชิก',
+  },
+  'premium.t-14': {
+    subject: 'เหลืออีก 2 สัปดาห์: การต่ออายุสมาชิก {tier}',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุภายในสัปดาห์นี้เพื่อไม่ให้ขาดช่วง',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'premium.t-7': {
+    subject: 'เหลืออีก 1 สัปดาห์: การต่ออายุสมาชิก {tier}',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาต่ออายุทันที',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'premium.t+0': {
+    subject: 'การเป็นสมาชิก {tier} ของคุณจะหมดอายุวันนี้',
+    body: 'สวัสดีคุณ {firstName} วันนี้คือวันสุดท้ายของการเป็นสมาชิก {tier} ของ {companyName} ต่ออายุทันทีเพื่อรักษาสิทธิประโยชน์ระดับ Premium ไว้',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'premium.t+14': {
+    subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ระดับ Premium',
+    cta: 'เปิดใช้งานอีกครั้ง',
+  },
+
+  // -------------------------------------------------------------------------
+  // Partnership (6 emails) — long cadence; ED-led + agreement-tone
+  // -------------------------------------------------------------------------
+  'partnership.t-120': {
+    subject: 'ข้อตกลง {tier} ของคุณจะหมดอายุในอีก {daysUntilExpiry} วัน — มาวางแผนล่วงหน้ากัน',
+    body: 'เรียนคุณ {firstName} ข้อตกลง {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} ทีมผู้บริหารของเราจะติดต่อเพื่อวางแผนการต่ออายุร่วมกัน',
+    cta: 'ตรวจสอบสิทธิประโยชน์',
+  },
+  'partnership.t-90': {
+    subject: 'การต่ออายุ {tier}: เหลือเวลา {daysUntilExpiry} วันก่อนหมดอายุ',
+    body: 'เรียนคุณ {firstName} ขอแจ้งเตือนว่าข้อตกลง {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาตรวจสอบสรุปการใช้สิทธิประโยชน์ตามลิงก์ด้านล่าง',
+    cta: 'ตรวจสอบสิทธิประโยชน์',
   },
   'partnership.t-30': {
     subject: 'เดือนสุดท้าย: การต่ออายุ {tier} ในอีก {daysUntilExpiry} วัน',
     body: 'เรียนคุณ {firstName} ข้อตกลง {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณาคลิกเพื่อต่ออายุหรือนัดประชุมกับ Executive Director',
     cta: 'ต่ออายุสมาชิก',
   },
+  'partnership.t-14': {
+    subject: 'เหลืออีก 2 สัปดาห์: การต่ออายุข้อตกลง {tier}',
+    body: 'เรียนคุณ {firstName} ข้อตกลง {tier} ของ {companyName} จะหมดอายุในวันที่ {expiresAt} กรุณายืนยันเงื่อนไขการต่ออายุ',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'partnership.t+0': {
+    subject: 'ข้อตกลง {tier} ของคุณจะหมดอายุวันนี้',
+    body: 'เรียนคุณ {firstName} วันนี้คือวันสุดท้ายของข้อตกลง {tier} ของ {companyName} กรุณาติดต่อเราเพื่อต่ออายุข้อตกลง',
+    cta: 'ต่ออายุสมาชิก',
+  },
+  'partnership.t+30': {
+    subject: 'ข้อตกลง {tier} ของคุณหมดอายุแล้ว',
+    body: 'เรียนคุณ {firstName} ข้อตกลง {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งหรือติดต่อเราเพื่อหารือเรื่องการต่ออายุ',
+    cta: 'เปิดใช้งานอีกครั้ง',
+  },
 };
 
-// Swedish locale — same structure as EN for early ship.
+// Swedish locale — full coverage across all 5 tiers × all 29 schedule
+// steps (J7b-H16). Tone:
+//   - "Hej {firstName}" — friendly opener for thai_alumni / start_up /
+//     regular cadence (matches Swedish chamber norms).
+//   - "Bästa {firstName}" — formal opener for premium / partnership
+//     long-cadence advance notices (T-90/T-120/T-60 premium first
+//     touch). Reverts to "Hej" mid-cadence (T-30 onward).
+//   - Verb forms: "förnyas" (passive — renews), "löper ut" (expires),
+//     "återaktivera" (reactivate). Avoid English borrowings ("renew") —
+//     the SV speakers in chamber comms expect native Swedish vocabulary.
 const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
+  // -------------------------------------------------------------------------
+  // Thai Alumni (4 emails)
+  // -------------------------------------------------------------------------
   'thai_alumni.t-30': {
     subject: 'Ditt {tier}-medlemskap förnyas om {daysUntilExpiry} dagar',
     body: 'Hej {firstName}, ditt {companyName} {tier}-medlemskap förnyas den {expiresAt}. Klicka nedan för att förnya nu och behålla dina förmåner.',
@@ -322,12 +464,60 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'thai_alumni.t-14': {
     subject: 'Påminnelse: {tier}-medlemskap förnyas om {daysUntilExpiry} dagar',
-    body: 'Hej {firstName}, en påminnelse om att {companyName}s {tier}-medlemskap löper ut den {expiresAt}. Förnya idag för att undvika avbrott.',
+    body: 'Hej {firstName}, en påminnelse om att {companyName}s {tier}-medlemskap löper ut den {expiresAt}. Förnya idag för att undvika avbrott i förmånerna.',
+    cta: 'Förnya nu',
+  },
+  'thai_alumni.t-3': {
+    subject: 'Sista påminnelsen: {tier}-medlemskap löper ut om {daysUntilExpiry} dagar',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löper ut den {expiresAt} — det är bara om {daysUntilExpiry} dagar. Klicka för att förnya nu.',
+    cta: 'Förnya nu',
+  },
+  'thai_alumni.t+7': {
+    subject: 'Ditt {tier}-medlemskap har löpt ut',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå dina förmåner och hålla kontakten med kammaren.',
+    cta: 'Återaktivera nu',
+  },
+
+  // -------------------------------------------------------------------------
+  // Start-up (6 emails)
+  // -------------------------------------------------------------------------
+  'start_up.t-60': {
+    subject: 'Ditt {tier}-medlemskap förnyas om {daysUntilExpiry} dagar',
+    body: 'Hej {firstName}, ditt {companyName} {tier}-medlemskap förnyas den {expiresAt}. Planera i förväg och förnya nu för att hålla kammarens förmåner aktiva.',
     cta: 'Förnya nu',
   },
   'start_up.t-30': {
     subject: 'Förnyelsepåminnelse: {tier}-medlemskap om {daysUntilExpiry} dagar',
-    body: 'Hej {firstName}, ditt {companyName} {tier}-medlemskap löper ut den {expiresAt}. Förnya idag för att säkerställa fortsatt tillgång.',
+    body: 'Hej {firstName}, ditt {companyName} {tier}-medlemskap löper ut den {expiresAt}. Förnya idag för att säkerställa oavbruten tillgång till evenemang och nätverk.',
+    cta: 'Förnya nu',
+  },
+  'start_up.t-14': {
+    subject: 'Två veckor kvar: {tier}-medlemskap förnyas',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löper ut den {expiresAt} — bara två veckor bort. Klicka nedan för att förnya.',
+    cta: 'Förnya nu',
+  },
+  'start_up.t-7': {
+    subject: 'En vecka kvar: {tier}-medlemskap förnyas',
+    body: 'Hej {firstName}, ditt {companyName} {tier}-medlemskap löper ut den {expiresAt}. Förnya denna vecka för att inte förlora kammarens förmåner.',
+    cta: 'Förnya nu',
+  },
+  'start_up.t+0': {
+    subject: 'Ditt {tier}-medlemskap löper ut idag',
+    body: 'Hej {firstName}, idag är sista dagen för {companyName}s {tier}-medlemskap. Förnya nu för att behålla förmånerna utan avbrott.',
+    cta: 'Förnya nu',
+  },
+  'start_up.t+7': {
+    subject: 'Ditt {tier}-medlemskap har löpt ut',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå förmånerna.',
+    cta: 'Återaktivera nu',
+  },
+
+  // -------------------------------------------------------------------------
+  // Regular (6 emails)
+  // -------------------------------------------------------------------------
+  'regular.t-60': {
+    subject: 'Ditt {tier}-medlemskap förnyas om {daysUntilExpiry} dagar',
+    body: 'Hej {firstName}, ditt {companyName} {tier}-medlemskap förnyas den {expiresAt}. Förnya nu för att behålla din kammartillhörighet och förmåner.',
     cta: 'Förnya nu',
   },
   'regular.t-30': {
@@ -335,15 +525,98 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
     body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löper ut den {expiresAt}. Förnya idag för att behålla dina förmåner.',
     cta: 'Förnya nu',
   },
+  'regular.t-14': {
+    subject: 'Två veckor kvar: {tier}-medlemskap förnyas',
+    body: 'Hej {firstName}, en påminnelse om att {companyName}s {tier}-medlemskap löper ut den {expiresAt}. Klicka för att förnya nu.',
+    cta: 'Förnya nu',
+  },
+  'regular.t-7': {
+    subject: 'En vecka kvar: {tier}-medlemskap förnyas',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löper ut den {expiresAt}. Vänligen förnya denna vecka.',
+    cta: 'Förnya nu',
+  },
+  'regular.t+0': {
+    subject: 'Ditt {tier}-medlemskap löper ut idag',
+    body: 'Hej {firstName}, idag är sista dagen för {companyName}s {tier}-medlemskap. Förnya nu för att hålla förmånerna aktiva.',
+    cta: 'Förnya nu',
+  },
+  'regular.t+7': {
+    subject: 'Ditt {tier}-medlemskap har löpt ut',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap löpte ut den {expiresAt}. Återaktivera nu för att återfå dina kammarförmåner.',
+    cta: 'Återaktivera nu',
+  },
+
+  // -------------------------------------------------------------------------
+  // Premium (7 emails) — extended cadence (T-90 advance + T+14 grace)
+  // -------------------------------------------------------------------------
+  'premium.t-90': {
+    subject: 'Ditt {tier}-medlemskap förnyas om {daysUntilExpiry} dagar',
+    body: 'Bästa {firstName}, tack för att du är en {tier}-medlem. Ditt {companyName}-medlemskap förnyas den {expiresAt}. Förnya nu för att planera ditt år tillsammans med kammaren.',
+    cta: 'Förnya nu',
+  },
+  'premium.t-60': {
+    subject: '{tier}-förnyelse: {daysUntilExpiry} dagar kvar',
+    body: 'Bästa {firstName}, ditt {companyName} {tier}-medlemskap förnyas den {expiresAt}. Klicka nedan för att förnya till nuvarande Premium-pris.',
+    cta: 'Förnya nu',
+  },
   'premium.t-30': {
     subject: 'En månad kvar: {tier}-medlemskap förnyas',
-    body: 'Hej {firstName}, ditt {companyName} {tier}-medlemskap löper ut den {expiresAt}. Förnya nu för att behålla Premium-förmånerna.',
+    body: 'Hej {firstName}, ditt {companyName} {tier}-medlemskap löper ut den {expiresAt}. Förnya nu för att låsa in din förmånssammanställning för det nya året.',
     cta: 'Förnya nu',
+  },
+  'premium.t-14': {
+    subject: 'Två veckor kvar: {tier}-medlemskap förnyas',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löper ut den {expiresAt}. Förnya denna vecka för att undvika avbrott.',
+    cta: 'Förnya nu',
+  },
+  'premium.t-7': {
+    subject: 'En vecka kvar: {tier}-medlemskap förnyas',
+    body: 'Hej {firstName}, ditt {companyName} {tier}-medlemskap löper ut den {expiresAt}. Förnya nu.',
+    cta: 'Förnya nu',
+  },
+  'premium.t+0': {
+    subject: 'Ditt {tier}-medlemskap löper ut idag',
+    body: 'Hej {firstName}, idag är sista dagen för {companyName}s {tier}-medlemskap. Förnya nu för att behålla Premium-förmånerna.',
+    cta: 'Förnya nu',
+  },
+  'premium.t+14': {
+    subject: 'Ditt {tier}-medlemskap har löpt ut',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå Premium-förmånerna.',
+    cta: 'Återaktivera nu',
+  },
+
+  // -------------------------------------------------------------------------
+  // Partnership (6 emails) — long cadence; ED-led + agreement-tone
+  // -------------------------------------------------------------------------
+  'partnership.t-120': {
+    subject: 'Ditt {tier} förnyas om {daysUntilExpiry} dagar — låt oss planera framåt',
+    body: 'Bästa {firstName}, ditt {companyName} {tier}-avtal förnyas den {expiresAt}. Vårt ledningsteam kommer att höra av sig för att planera förnyelsen.',
+    cta: 'Granska förmåner',
+  },
+  'partnership.t-90': {
+    subject: '{tier}-förnyelse: {daysUntilExpiry} dagar till utgång',
+    body: 'Bästa {firstName}, en påminnelse om att ditt {companyName} {tier} förnyas den {expiresAt}. Granska sammanfattningen av förmånsleverans i länken nedan.',
+    cta: 'Granska förmåner',
   },
   'partnership.t-30': {
     subject: 'Sista månaden: {tier}-förnyelse om {daysUntilExpiry} dagar',
-    body: 'Bästa {firstName}, ditt {companyName} {tier}-avtal löper ut den {expiresAt}. Klicka för att förnya eller boka ett förnyelsemöte.',
+    body: 'Bästa {firstName}, ditt {companyName} {tier} löper ut den {expiresAt}. Klicka för att förnya eller boka ett förnyelsemöte med vår Executive Director.',
     cta: 'Förnya nu',
+  },
+  'partnership.t-14': {
+    subject: 'Två veckor: {tier}-medlemskap förnyas',
+    body: 'Bästa {firstName}, ditt {tier}-avtal för {companyName} löper ut den {expiresAt}. Vänligen bekräfta förnyelsevillkoren.',
+    cta: 'Förnya nu',
+  },
+  'partnership.t+0': {
+    subject: 'Ditt {tier}-avtal löper ut idag',
+    body: 'Bästa {firstName}, idag är sista dagen för ditt {companyName} {tier}-avtal. Vänligen kontakta oss för att förnya.',
+    cta: 'Förnya nu',
+  },
+  'partnership.t+30': {
+    subject: 'Ditt {tier}-avtal har löpt ut',
+    body: 'Bästa {firstName}, ditt {tier}-avtal för {companyName} löpte ut den {expiresAt}. Återaktivera nu eller kontakta oss för att diskutera förnyelse.',
+    cta: 'Återaktivera nu',
   },
 };
 
