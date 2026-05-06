@@ -279,7 +279,20 @@ export interface F8AuditPayloadShapes {
         readonly step_id: string;
         readonly channel: 'email' | 'task';
         readonly template_id: string | null;
-        readonly failure_kind: string;
+        /**
+         * J9-M17: closed set of gateway-error classifiers.
+         * Previously typed as bare `string` which silently accepted
+         * typos (e.g. `'gateway_500'`) + made forensic queries
+         * unreliable. Mirrors `DispatchFailureKind` from
+         * dispatch-one-cycle.ts.
+         */
+        readonly failure_kind:
+          | 'gateway_5xx'
+          | 'gateway_4xx'
+          | 'recipient_unsubscribed'
+          | 'recipient_email_unverified'
+          | 'template_variables_missing'
+          | 'dispatcher_crash';
         readonly failure_message: string | null;
         readonly via_retry_exhaustion: boolean;
         readonly retry_until?: string | null;
@@ -294,6 +307,39 @@ export interface F8AuditPayloadShapes {
     readonly cycle_id: CycleId;
     /** Null because the actor is the cron, not a human admin. */
     readonly actor_user_id: null;
+  };
+  /**
+   * J9-M14 — `cron_dispatch_orchestrated` audit shape (previously fell
+   * through to `Record<string, unknown>`). This is the single
+   * operational record of every daily F8 cron run: SLO calculations,
+   * compliance trail, dashboards all read from it. Pinning the shape
+   * makes typo-driven divergence (e.g. someone emitting
+   * `tenants_succeded` with one s) a compile error.
+   *
+   * `per_tenant_summaries` carries bounded-cardinality outcome rows
+   * (≤ MVP single tenant; post-F10 multi-tenant ≤ ~hundreds). Two
+   * variants per tenant: success (with metric counters) or error (with
+   * a string error code from the failure-kind enum). Discriminate on
+   * the presence of `error` (lookup the literal first).
+   */
+  readonly cron_dispatch_orchestrated: {
+    readonly tenants_enqueued: number;
+    readonly tenants_succeeded: number;
+    readonly tenants_failed: number;
+    readonly duration_ms: number;
+    readonly per_tenant_summaries: ReadonlyArray<
+      | {
+          readonly tenant_id: string;
+          readonly error: string;
+        }
+      | {
+          readonly tenant_id: string;
+          readonly skipped: boolean;
+          readonly reminders_dispatched: number;
+          readonly tasks_created: number;
+          readonly duration_ms: number;
+        }
+    >;
   };
 }
 
@@ -312,17 +358,35 @@ export interface F8AuditEvent<E extends F8AuditEventType = F8AuditEventType> {
   readonly payload: F8AuditPayloadFor<E>;
 }
 
+/**
+ * J9-M15 — single source-of-truth for the F8 actor-role enum.
+ * Previously duplicated in three sites (`AuditContext.actorRole` 6
+ * values; `DispatchContext.actorRole` 2 values; `DetectBounceThreshold
+ * Input.actorRole` 2 values). Each narrower context defines its own
+ * subset by intersecting/picking from this union — no single source of
+ * truth meant a 7th value (e.g. `'service-account'` for a future
+ * non-human SaaS-provisioning actor) would have to be added in three
+ * places, easy to miss.
+ *
+ * The union covers every observed F8 actor:
+ *   - `admin` / `manager` / `member` — F1 RBAC roles
+ *   - `cron` — daily dispatch / retry-pass / coordinator (no UserId)
+ *   - `webhook` — F1 Resend webhook → F8 bounce hook (no UserId)
+ *   - `system` — replays + bookkeeping + tests
+ */
+export type RenewalActorRole =
+  | 'admin'
+  | 'manager'
+  | 'member'
+  | 'cron'
+  | 'webhook'
+  | 'system';
+
 export interface AuditContext {
   readonly tenantId: string;
   /** Null for cron / system actors per audit-port.md. */
   readonly actorUserId: string | null;
-  readonly actorRole:
-    | 'admin'
-    | 'manager'
-    | 'member'
-    | 'cron'
-    | 'webhook'
-    | 'system';
+  readonly actorRole: RenewalActorRole;
   /** OTel trace id for log+trace correlation. */
   readonly correlationId: string;
   readonly requestId?: string | null;

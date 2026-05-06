@@ -80,13 +80,25 @@ export type DetectBounceThresholdInput = z.infer<
 
 export type DetectBounceThresholdOutcome =
   | { readonly kind: 'no_threshold_crossed'; readonly counts: BounceCounts }
+  /**
+   * J9-M4: split off from the previous catch-all `'already_unverified'`
+   * outcome. Now distinguishes:
+   *   - `already_unverified` — flag was TRUE before THIS detection
+   *     ran (idempotent replay; legitimate no-op).
+   *   - `member_not_found` — `setEmailUnverified` returned 0 rows,
+   *     meaning the member is RLS-hidden, deleted, or never existed
+   *     under this tenant. Webhook caller can elevate this to
+   *     `logger.error` + alert (F1↔F8 desync) without conflating
+   *     it with normal idempotent replays.
+   */
   | { readonly kind: 'already_unverified'; readonly counts: BounceCounts }
+  | { readonly kind: 'member_not_found'; readonly counts: BounceCounts }
   | {
       readonly kind: 'threshold_crossed';
       readonly trigger: BounceTrigger;
       readonly bounceCount: number;
       readonly counts: BounceCounts;
-      /** Null when the escalation task was already open (idempotent replay). */
+      /** False when the escalation task was already open (idempotent replay). */
       readonly escalationTaskCreated: boolean;
       readonly escalationTaskId: string;
     };
@@ -197,18 +209,21 @@ export async function detectBounceThreshold(
       input.memberId,
     );
     if (flagResult.affectedRows === 0) {
-      // Member RLS-hidden / not found. T090 should never reach this
-      // path under normal F1 webhook → F8 callback flow because F1
-      // already resolved the member. Defensive return.
+      // J9-M4: distinguish "member not found / RLS-hidden" from
+      // "member exists with email_unverified already TRUE". The
+      // previous code conflated both into `already_unverified`,
+      // hiding F1↔F8 desync from operators (a legitimate
+      // idempotent replay looks identical in audit + log to a
+      // member-deleted-between-webhook-and-callback race).
       logger.warn(
         {
           tenantId: input.tenantId,
           memberId: input.memberId,
           correlationId: input.correlationId,
         },
-        'detectBounceThreshold: member row not found (RLS-hidden or deleted) — defensive return',
+        'detectBounceThreshold: member row not found (RLS-hidden or deleted) — F1↔F8 desync candidate',
       );
-      return ok({ kind: 'already_unverified' as const, counts });
+      return ok({ kind: 'member_not_found' as const, counts });
     }
     if (flagResult.previouslyUnverified) {
       // Idempotent replay — flag was already TRUE from a prior threshold

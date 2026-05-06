@@ -344,7 +344,14 @@ describe('retryFailedReminders', () => {
       expect(gatewayMock).not.toHaveBeenCalled();
     });
 
-    it('candidate not found (cycle deleted/RLS): blocked_by_gate', async () => {
+    it('J9-M7: candidate not found (cycle deleted/RLS) → retryCandidateMissing (distinct from retryBlockedByGate)', async () => {
+      // J9-M7 split the previous catch-all `retryBlockedByGate`
+      // counter so operators can distinguish:
+      //   - gate flipped (member opted out / archived / unverified)
+      //     = expected high-cardinality ops signal
+      //   - candidate missing (cycle deleted or RLS-hidden) =
+      //     rare desync / cross-tenant probe signal that pages
+      //     on-call when sustained
       const { deps, gatewayMock } = fakeDeps({
         eligible: [buildFailedEvent()],
         candidate: null,
@@ -352,7 +359,8 @@ describe('retryFailedReminders', () => {
       const result = await retryFailedReminders(deps, VALID_INPUT);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.summary.retryBlockedByGate).toBe(1);
+      expect(result.value.summary.retryCandidateMissing).toBe(1);
+      expect(result.value.summary.retryBlockedByGate).toBe(0);
       expect(gatewayMock).not.toHaveBeenCalled();
     });
 

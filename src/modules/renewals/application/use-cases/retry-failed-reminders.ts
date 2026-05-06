@@ -47,6 +47,7 @@ import {
   ReminderEventNotFoundError,
   type ReminderEvent,
 } from '../ports/renewal-reminder-event-repo';
+import type { DispatchFailureKind } from './_lib/dispatch-one-cycle';
 import type { MemberId } from '@/modules/members';
 
 export const DEFAULT_RETRY_PAGE_SIZE = 200 as const;
@@ -80,8 +81,25 @@ export interface RetryFailedRemindersSummary {
   readonly retryStillTransient: number;
   /** Pass 1 — became permanent during retry (gateway returned 4xx). */
   readonly retryBecamePermanent: number;
-  /** Pass 1 — gates blocked retry (member opted out / archived). */
+  /**
+   * Pass 1 — gates blocked retry (member opted out / archived /
+   * email-unverified flag flipped between original failure and
+   * retry-pass attempt).
+   */
   readonly retryBlockedByGate: number;
+  /**
+   * J9-M7: split off from `retryBlockedByGate`. Counts the case where
+   * `dispatchCandidateRepo.findOne` returned `null` — the cycle was
+   * deleted, RLS-hidden, or the row never existed in this tenant.
+   * Distinct from gate-blocking because it indicates either a
+   * deletion race (admin force-deleted a cycle while the retry-pass
+   * was queued) OR a cross-tenant RLS misconfig (Principle I clause
+   * 1 forensic signal). Operators graphing the two metrics
+   * independently can distinguish "expected gate flip" (high cardinality
+   * in normal ops) from "rare RLS regression" (any non-zero rate
+   * pages on-call).
+   */
+  readonly retryCandidateMissing: number;
   /** Pass 2 — events marked permanently exhausted. */
   readonly exhaustedMarked: number;
   /**
@@ -361,7 +379,9 @@ async function emitPermanentFailure(
   tx: TenantTx,
   event: ReminderEvent,
   candidate: DispatchCandidate | null,
-  failureKind: string,
+  // J9-M17: tightened from `string` to the closed `DispatchFailureKind`
+  // union mirroring the audit shape contract.
+  failureKind: DispatchFailureKind,
   nowIso: string,
   correlationId: string,
   requestId: string | null,
@@ -549,6 +569,7 @@ export async function retryFailedReminders(
     retryStillTransient: 0,
     retryBecamePermanent: 0,
     retryBlockedByGate: 0,
+    retryCandidateMissing: 0,
     exhaustedMarked: 0,
     exhaustedConcurrentWin: 0,
     passErrors: 0,
@@ -584,8 +605,13 @@ export async function retryFailedReminders(
           summary.retryBecamePermanent += 1;
           break;
         case 'blocked_by_gate':
-        case 'candidate_not_found':
           summary.retryBlockedByGate += 1;
+          break;
+        case 'candidate_not_found':
+          // J9-M7: separate counter so operators can distinguish
+          // "gate flipped legitimately" from "candidate deleted /
+          // RLS-hidden" — different ops semantics.
+          summary.retryCandidateMissing += 1;
           break;
         default: {
           // J6-H7 — exhaustiveness pin. Adding a new RetryAttemptOutcome
@@ -629,7 +655,15 @@ export async function retryFailedReminders(
             tx,
             event,
             candidate,
-            event.failureReason ?? 'retry_budget_exhausted',
+            // J9-M17: pass-2 always exhausts a transient (gateway_5xx)
+            // failure — only transient errors get `retry_until` set
+            // and become eligible for the exhaust-cursor (Wave I2e
+            // FR-010a contract). The original `event.failureReason`
+            // column carries the free-form provider message text;
+            // the closed `failure_kind` slot uses the literal here +
+            // forwards the message via `event.failureReason` →
+            // `failure_message` in `emitPermanentFailure`.
+            'gateway_5xx',
             nowIso,
             input.correlationId,
             input.requestId ?? null,

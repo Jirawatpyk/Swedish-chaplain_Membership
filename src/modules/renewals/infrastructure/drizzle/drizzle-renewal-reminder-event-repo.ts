@@ -110,11 +110,22 @@ export function makeDrizzleRenewalReminderEventRepo(
         return { created: true, row: rowToDomain(inserted[0]) };
       }
       // Conflict → SELECT the existing row.
+      // J9-M1: include `tenant_id` in the WHERE clause as defence-
+      // in-depth. RLS already enforces tenant scoping at the SQL
+      // layer, so the previous query was correct under MTA+STD —
+      // but Constitution Principle I clause 1 mandates application-
+      // layer + database-layer tenant filters. If a future RLS
+      // misconfig or a `runInTenant` regression caused this SELECT
+      // to run unbound, a UUID collision (`cycle_id, step_id,
+      // year_in_cycle` matches across tenants) would silently
+      // return another tenant's row. Adding the tenant_id filter
+      // closes the leak even if RLS is somehow bypassed.
       const existing = await txDb
         .select()
         .from(renewalReminderEvents)
         .where(
           and(
+            eq(renewalReminderEvents.tenantId, tenant.slug),
             eq(renewalReminderEvents.cycleId, input.cycleId),
             eq(renewalReminderEvents.stepId, input.stepId),
             eq(renewalReminderEvents.yearInCycle, input.yearInCycle),

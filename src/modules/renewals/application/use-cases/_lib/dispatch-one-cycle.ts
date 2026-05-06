@@ -51,6 +51,7 @@ import type {
 } from '../../../domain/value-objects/reminder-step';
 import type { DispatchCandidate } from '../../ports/dispatch-candidate-repo';
 import { ReminderEventNotFoundError } from '../../ports/renewal-reminder-event-repo';
+import type { RenewalActorRole } from '../../ports/renewal-audit-emitter';
 import { pauseRemindersAfterOutreach } from '../pause-reminders-after-outreach';
 import type { MemberId } from '@/modules/members';
 
@@ -107,12 +108,39 @@ export interface DispatchContext {
   readonly tenantId: string;
   /** Null for cron actor; UUID for admin "Send reminder now" caller. */
   readonly actorUserId: string | null;
-  readonly actorRole: 'cron' | 'admin';
+  /**
+   * J9-M15: narrowed `RenewalActorRole` to the two F8-dispatch-eligible
+   * actors. Sourced from the shared union in `renewal-audit-emitter.ts`
+   * so adding a future role propagates here at compile time.
+   */
+  readonly actorRole: Extract<RenewalActorRole, 'cron' | 'admin'>;
   readonly correlationId: string;
   readonly requestId: string | null;
   /** Injectable now-clock for tests. Default: real-time on each call. */
   readonly nowIso: string;
 }
+
+/**
+ * J9-M17 — closed set of gateway-error classifiers used by the audit
+ * emit (`failure_kind` field on `renewal_reminder_send_failed` /
+ * `renewal_reminder_send_failed_permanent`). Mirrors
+ * `SendRenewalEmailError.kind` plus `dispatcher_crash` (J2-B2 synthetic
+ * for uncaught throws). Forensic queries on `failure_kind` rely on
+ * this closed set; previously the audit shape had `failure_kind: string`
+ * which would silently accept typos like `'gateway_500'`.
+ *
+ * Outcome.reason still carries free-form text (provider error message)
+ * because the legacy wire format mixes literal-kind + message text in
+ * the same field — splitting that would be a contract break for
+ * downstream toast UI strings.
+ */
+export type DispatchFailureKind =
+  | 'gateway_5xx'
+  | 'gateway_4xx'
+  | 'recipient_unsubscribed'
+  | 'recipient_email_unverified'
+  | 'template_variables_missing'
+  | 'dispatcher_crash';
 
 export type DispatchOneCycleOutcome =
   | {
@@ -130,6 +158,14 @@ export type DispatchOneCycleOutcome =
   | {
       readonly kind: 'task_created';
       readonly taskId: string;
+      /**
+       * J9-M16 (deferred): `taskType` stays `string` because schedule-
+       * policy steps allow admins to author custom task types via the
+       * editor's free-form input. Pinning to a closed literal union
+       * would over-constrain the customer-facing flexibility. The
+       * audit-payload shape pins the closed set for security-critical
+       * triggers (e.g. `manual_outreach_required`) elsewhere.
+       */
       readonly taskType: string;
       readonly reminderEventId: string;
     }

@@ -342,7 +342,12 @@ describe('detectBounceThreshold', () => {
       expect(emitInTxMock).not.toHaveBeenCalled();
     });
 
-    it('member RLS-hidden (affectedRows=0) → already_unverified (defensive)', async () => {
+    it('J9-M4: member RLS-hidden (affectedRows=0) → member_not_found (distinct from already_unverified)', async () => {
+      // Previously this case rolled up to `already_unverified` along
+      // with the legitimate "flag-was-already-true" idempotent replay.
+      // J9-M4 split the outcomes so operators can elevate the
+      // member-not-found path to `logger.error` + alert (F1↔F8 desync
+      // signal) without conflating it with normal idempotent traffic.
       const { deps, insertTaskMock, emitInTxMock } = fakeDeps({
         counts: { hardBounces: 1, softBouncesInCycle: 0, softBouncesIn30Days: 0 },
         flagAffectedRows: 0,
@@ -350,7 +355,7 @@ describe('detectBounceThreshold', () => {
       const result = await detectBounceThreshold(deps, VALID_INPUT);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.kind).toBe('already_unverified');
+      expect(result.value.kind).toBe('member_not_found');
       expect(insertTaskMock).not.toHaveBeenCalled();
       expect(emitInTxMock).not.toHaveBeenCalled();
     });
