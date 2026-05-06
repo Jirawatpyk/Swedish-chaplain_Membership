@@ -149,7 +149,7 @@ async function seedTenant(
   for (let offset = 0; offset < MEMBERS_PER_TENANT; offset += batch) {
     const rows = memberIds
       .slice(offset, offset + batch)
-      .map((mid, i) => {
+      .map((mid) => {
         // Spread over 5..89 days from now so cycles distribute across
         // T-90/T-60/T-30/T-14/T-7/T-3/T+0/grace urgency buckets.
         const days = 5 + Math.floor(Math.random() * 85);

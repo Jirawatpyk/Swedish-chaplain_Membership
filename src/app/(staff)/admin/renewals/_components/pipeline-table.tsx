@@ -152,6 +152,14 @@ export function PipelineTable({ rows }: PipelineTableProps) {
   // ~1-2ms row-model rebuild at the 200-row cap.
   const data = useMemo(() => rows as PipelineRow[], [rows]);
 
+  // React Compiler's `react-hooks/incompatible-library` flags
+  // `useReactTable()` because TanStack Table's API returns helper
+  // functions that the compiler cannot safely memoize. The warning is
+  // a known, documented compiler skip for this exact API; we are
+  // already using `useMemo` upstream on `data` to keep the row-model
+  // stable, which is the actual perf-critical invariant. Suppressing
+  // here so a clean lint run flags only real regressions.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,
