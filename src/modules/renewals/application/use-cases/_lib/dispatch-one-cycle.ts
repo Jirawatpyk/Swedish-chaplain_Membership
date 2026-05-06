@@ -40,6 +40,7 @@ import type {
 } from '../../../domain/value-objects/reminder-step';
 import type { DispatchCandidate } from '../../ports/dispatch-candidate-repo';
 import { ReminderEventNotFoundError } from '../../ports/renewal-reminder-event-repo';
+import { isPermanentGatewayError } from '../../ports/renewal-gateway';
 import type { RenewalActorRole } from '../../ports/renewal-audit-emitter';
 import { pauseRemindersAfterOutreach } from '../pause-reminders-after-outreach';
 import type { MemberId } from '@/modules/members';
@@ -776,13 +777,11 @@ async function dispatchEmailStep(
         dispatchedAt: gatewayResult.value.dispatchedAt,
       };
     }
-    // Failure path. 4xx = permanent, 5xx + recipient-unsubscribed/unverified = boundary cases.
+    // Failure path. Classification policy lives in renewal-gateway.ts
+    // (`isPermanentGatewayError`) so the dispatcher + retry use-case
+    // share one source of truth (J12 S7).
     const err = gatewayResult.error;
-    const isPermanent =
-      err.kind === 'gateway_4xx' ||
-      err.kind === 'recipient_unsubscribed' ||
-      err.kind === 'recipient_email_unverified' ||
-      err.kind === 'template_variables_missing';
+    const isPermanent = isPermanentGatewayError(err);
     const failureReason =
       err.kind === 'gateway_5xx' || err.kind === 'gateway_4xx'
         ? err.message

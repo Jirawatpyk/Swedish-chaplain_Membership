@@ -72,6 +72,29 @@ export type SendRenewalEmailError =
   | { readonly kind: 'gateway_5xx'; readonly retryable: true; readonly message: string }
   | { readonly kind: 'gateway_4xx'; readonly retryable: false; readonly message: string };
 
+/**
+ * Classify a gateway error as permanent (no retry) vs transient (eligible
+ * for the FR-010a 24h retry budget). Single source of truth — referenced
+ * by the dispatcher (`dispatch-one-cycle.ts`) AND the retry use-case
+ * (`retry-failed-reminders.ts`) so the policy never drifts between the
+ * first-attempt and retry paths.
+ *
+ * Permanent: 4xx (validation), recipient unsubscribed/unverified (already
+ * a fixed state), and template-variable misconfiguration (will reproduce
+ * on every attempt).
+ * Transient: 5xx (provider hiccup; retryable for 24h).
+ */
+export function isPermanentGatewayError(
+  err: SendRenewalEmailError,
+): boolean {
+  return (
+    err.kind === 'gateway_4xx' ||
+    err.kind === 'recipient_unsubscribed' ||
+    err.kind === 'recipient_email_unverified' ||
+    err.kind === 'template_variables_missing'
+  );
+}
+
 export interface RenewalGateway {
   /**
    * Dispatch one transactional renewal email. Adapter handles the

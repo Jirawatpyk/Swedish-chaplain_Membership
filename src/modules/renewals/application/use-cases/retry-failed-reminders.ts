@@ -47,6 +47,7 @@ import {
   ReminderEventNotFoundError,
   type ReminderEvent,
 } from '../ports/renewal-reminder-event-repo';
+import { isPermanentGatewayError } from '../ports/renewal-gateway';
 import type { DispatchFailureKind } from './_lib/dispatch-one-cycle';
 import type { MemberId } from '@/modules/members';
 
@@ -301,13 +302,11 @@ async function attemptRetry(
       // retry_until > now AND retry_exhausted_at IS NULL).
       return { kind: 'succeeded' as const };
     }
-    // Retry failed.
+    // Retry failed. Classification policy lives in renewal-gateway.ts
+    // (`isPermanentGatewayError`) so the dispatcher + retry use-case
+    // share one source of truth (J12 S7).
     const e = gatewayResult.error;
-    const isPermanent =
-      e.kind === 'gateway_4xx' ||
-      e.kind === 'recipient_unsubscribed' ||
-      e.kind === 'recipient_email_unverified' ||
-      e.kind === 'template_variables_missing';
+    const isPermanent = isPermanentGatewayError(e);
     if (isPermanent) {
       // Became permanent during retry — emit the permanent audit +
       // task + mark exhausted.

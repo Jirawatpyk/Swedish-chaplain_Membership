@@ -93,6 +93,151 @@ function parsePolicyOrNull(
 }
 
 // ---------------------------------------------------------------------------
+// Shared projection + row mapper (S1 dedup — Wave J12)
+//
+// `list` and `findOne` query the same composite shape (cycle ⋈ member ⟕
+// primary-contact ⟕ schedule-policy). Centralising the 35-column SELECT
+// list and the row-to-domain mapper here keeps both methods in sync —
+// adding/removing a column happens in exactly one place.
+// ---------------------------------------------------------------------------
+
+const dispatchCandidateProjection = {
+  cycleTenantId: renewalCycles.tenantId,
+  cycleId: renewalCycles.cycleId,
+  cycleMemberId: renewalCycles.memberId,
+  cyclePeriodFrom: renewalCycles.periodFrom,
+  cyclePeriodTo: renewalCycles.periodTo,
+  cycleExpiresAt: renewalCycles.expiresAt,
+  cycleLengthMonths: renewalCycles.cycleLengthMonths,
+  cycleTierAtCycleStart: renewalCycles.tierAtCycleStart,
+  cyclePlanIdAtCycleStart: renewalCycles.planIdAtCycleStart,
+  cycleFrozenPlanPriceThb: renewalCycles.frozenPlanPriceThb,
+  cycleFrozenPlanTermMonths: renewalCycles.frozenPlanTermMonths,
+  cycleFrozenPlanCurrency: renewalCycles.frozenPlanCurrency,
+  cycleStatus: renewalCycles.status,
+  cycleEnteredPendingAt: renewalCycles.enteredPendingAt,
+  cycleLinkedInvoiceId: renewalCycles.linkedInvoiceId,
+  cycleLinkedCreditNoteId: renewalCycles.linkedCreditNoteId,
+  cycleClosedAt: renewalCycles.closedAt,
+  cycleClosedReason: renewalCycles.closedReason,
+  cycleCreatedAt: renewalCycles.createdAt,
+  cycleUpdatedAt: renewalCycles.updatedAt,
+  memberStatus: members.status,
+  memberCompanyName: members.companyName,
+  memberPreferredLocale: members.preferredLocale,
+  memberEmailUnverified: members.emailUnverified,
+  memberRenewalRemindersOptedOut: members.renewalRemindersOptedOut,
+  memberRegistrationDate: members.registrationDate,
+  contactId: contacts.contactId,
+  contactEmail: contacts.email,
+  contactFirstName: contacts.firstName,
+  contactLastName: contacts.lastName,
+  contactPreferredLanguage: contacts.preferredLanguage,
+  policyStepsJsonb: tenantRenewalSchedulePolicies.stepsJsonb,
+  policyCreatedAt: tenantRenewalSchedulePolicies.createdAt,
+  policyUpdatedAt: tenantRenewalSchedulePolicies.updatedAt,
+} as const;
+
+// Drizzle widens LEFT-JOINed columns (contacts.*, tenantRenewalSchedulePolicies.*)
+// to nullable in the query result even when source columns are NOT NULL.
+// We mirror that widening here so the shared mapper accepts both
+// `list` and `findOne` rows.
+type DispatchCandidateRow = {
+  cycleTenantId: string;
+  cycleId: string;
+  cycleMemberId: string;
+  cyclePeriodFrom: Date;
+  cyclePeriodTo: Date;
+  cycleExpiresAt: Date;
+  cycleLengthMonths: number;
+  cycleTierAtCycleStart: string;
+  cyclePlanIdAtCycleStart: string;
+  cycleFrozenPlanPriceThb: string;
+  cycleFrozenPlanTermMonths: number;
+  cycleFrozenPlanCurrency: string;
+  cycleStatus: string;
+  cycleEnteredPendingAt: Date | null;
+  cycleLinkedInvoiceId: string | null;
+  cycleLinkedCreditNoteId: string | null;
+  cycleClosedAt: Date | null;
+  cycleClosedReason: string | null;
+  cycleCreatedAt: Date;
+  cycleUpdatedAt: Date;
+  memberStatus: string;
+  memberCompanyName: string;
+  memberPreferredLocale: string | null;
+  memberEmailUnverified: boolean;
+  memberRenewalRemindersOptedOut: boolean;
+  memberRegistrationDate: string;
+  contactId: string | null;
+  contactEmail: string | null;
+  contactFirstName: string | null;
+  contactLastName: string | null;
+  contactPreferredLanguage: string | null;
+  policyStepsJsonb: readonly ScheduleStepJson[] | null;
+  policyCreatedAt: Date | null;
+  policyUpdatedAt: Date | null;
+};
+
+function rowToDispatchCandidate(r: DispatchCandidateRow): DispatchCandidate {
+  const cycle = cycleRowToDomain({
+    tenantId: r.cycleTenantId,
+    cycleId: r.cycleId,
+    memberId: r.cycleMemberId,
+    periodFrom: r.cyclePeriodFrom,
+    periodTo: r.cyclePeriodTo,
+    expiresAt: r.cycleExpiresAt,
+    cycleLengthMonths: r.cycleLengthMonths,
+    tierAtCycleStart: r.cycleTierAtCycleStart,
+    planIdAtCycleStart: r.cyclePlanIdAtCycleStart,
+    frozenPlanPriceThb: r.cycleFrozenPlanPriceThb,
+    frozenPlanTermMonths: r.cycleFrozenPlanTermMonths,
+    frozenPlanCurrency: r.cycleFrozenPlanCurrency,
+    status: r.cycleStatus,
+    enteredPendingAt: r.cycleEnteredPendingAt,
+    linkedInvoiceId: r.cycleLinkedInvoiceId,
+    linkedCreditNoteId: r.cycleLinkedCreditNoteId,
+    closedAt: r.cycleClosedAt,
+    closedReason: r.cycleClosedReason,
+    createdAt: r.cycleCreatedAt,
+    updatedAt: r.cycleUpdatedAt,
+  });
+  return {
+    cycle,
+    member: {
+      memberId: r.cycleMemberId,
+      status: narrowMemberStatus(r.memberStatus),
+      companyName: r.memberCompanyName,
+      preferredLocale: narrowLocale(r.memberPreferredLocale),
+      emailUnverified: r.memberEmailUnverified,
+      renewalRemindersOptedOut: r.memberRenewalRemindersOptedOut,
+      registrationDate: String(r.memberRegistrationDate),
+    },
+    primaryContact:
+      r.contactId &&
+      r.contactEmail &&
+      r.contactFirstName &&
+      r.contactLastName &&
+      r.contactPreferredLanguage
+        ? {
+            contactId: r.contactId,
+            email: r.contactEmail,
+            firstName: r.contactFirstName,
+            lastName: r.contactLastName,
+            preferredLanguage: narrowContactLanguage(r.contactPreferredLanguage),
+          }
+        : null,
+    schedulePolicy: parsePolicyOrNull(
+      r.cycleTenantId,
+      r.cycleTierAtCycleStart as TierBucket,
+      r.policyStepsJsonb as readonly ScheduleStepJson[] | null,
+      r.policyCreatedAt,
+      r.policyUpdatedAt,
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Per-tenant factory
 // ---------------------------------------------------------------------------
 
@@ -132,46 +277,7 @@ export function makeDrizzleDispatchCandidateRepo(
         // IS NULL` (enforced unique by the partial index
         // `contacts_one_primary_per_member`).
         const rows = await tx
-          .select({
-            // cycle columns (full row for cycleRowToDomain)
-            cycleTenantId: renewalCycles.tenantId,
-            cycleId: renewalCycles.cycleId,
-            cycleMemberId: renewalCycles.memberId,
-            cyclePeriodFrom: renewalCycles.periodFrom,
-            cyclePeriodTo: renewalCycles.periodTo,
-            cycleExpiresAt: renewalCycles.expiresAt,
-            cycleLengthMonths: renewalCycles.cycleLengthMonths,
-            cycleTierAtCycleStart: renewalCycles.tierAtCycleStart,
-            cyclePlanIdAtCycleStart: renewalCycles.planIdAtCycleStart,
-            cycleFrozenPlanPriceThb: renewalCycles.frozenPlanPriceThb,
-            cycleFrozenPlanTermMonths: renewalCycles.frozenPlanTermMonths,
-            cycleFrozenPlanCurrency: renewalCycles.frozenPlanCurrency,
-            cycleStatus: renewalCycles.status,
-            cycleEnteredPendingAt: renewalCycles.enteredPendingAt,
-            cycleLinkedInvoiceId: renewalCycles.linkedInvoiceId,
-            cycleLinkedCreditNoteId: renewalCycles.linkedCreditNoteId,
-            cycleClosedAt: renewalCycles.closedAt,
-            cycleClosedReason: renewalCycles.closedReason,
-            cycleCreatedAt: renewalCycles.createdAt,
-            cycleUpdatedAt: renewalCycles.updatedAt,
-            // member columns
-            memberStatus: members.status,
-            memberCompanyName: members.companyName,
-            memberPreferredLocale: members.preferredLocale,
-            memberEmailUnverified: members.emailUnverified,
-            memberRenewalRemindersOptedOut: members.renewalRemindersOptedOut,
-            memberRegistrationDate: members.registrationDate,
-            // primary contact (LATERAL)
-            contactId: contacts.contactId,
-            contactEmail: contacts.email,
-            contactFirstName: contacts.firstName,
-            contactLastName: contacts.lastName,
-            contactPreferredLanguage: contacts.preferredLanguage,
-            // schedule policy (LEFT JOIN)
-            policyStepsJsonb: tenantRenewalSchedulePolicies.stepsJsonb,
-            policyCreatedAt: tenantRenewalSchedulePolicies.createdAt,
-            policyUpdatedAt: tenantRenewalSchedulePolicies.updatedAt,
-          })
+          .select(dispatchCandidateProjection)
           .from(renewalCycles)
           .innerJoin(
             members,
@@ -209,65 +315,7 @@ export function makeDrizzleDispatchCandidateRepo(
         const hasMore = rows.length > args.pageSize;
         const pageRows = hasMore ? rows.slice(0, args.pageSize) : rows;
 
-        const items: DispatchCandidate[] = pageRows.map((r) => {
-          const cycle = cycleRowToDomain({
-            tenantId: r.cycleTenantId,
-            cycleId: r.cycleId,
-            memberId: r.cycleMemberId,
-            periodFrom: r.cyclePeriodFrom,
-            periodTo: r.cyclePeriodTo,
-            expiresAt: r.cycleExpiresAt,
-            cycleLengthMonths: r.cycleLengthMonths,
-            tierAtCycleStart: r.cycleTierAtCycleStart,
-            planIdAtCycleStart: r.cyclePlanIdAtCycleStart,
-            frozenPlanPriceThb: r.cycleFrozenPlanPriceThb,
-            frozenPlanTermMonths: r.cycleFrozenPlanTermMonths,
-            frozenPlanCurrency: r.cycleFrozenPlanCurrency,
-            status: r.cycleStatus,
-            enteredPendingAt: r.cycleEnteredPendingAt,
-            linkedInvoiceId: r.cycleLinkedInvoiceId,
-            linkedCreditNoteId: r.cycleLinkedCreditNoteId,
-            closedAt: r.cycleClosedAt,
-            closedReason: r.cycleClosedReason,
-            createdAt: r.cycleCreatedAt,
-            updatedAt: r.cycleUpdatedAt,
-          });
-          return {
-            cycle,
-            member: {
-              memberId: r.cycleMemberId,
-              status: narrowMemberStatus(r.memberStatus),
-              companyName: r.memberCompanyName,
-              preferredLocale: narrowLocale(r.memberPreferredLocale),
-              emailUnverified: r.memberEmailUnverified,
-              renewalRemindersOptedOut: r.memberRenewalRemindersOptedOut,
-              registrationDate: String(r.memberRegistrationDate),
-            },
-            primaryContact:
-              r.contactId &&
-              r.contactEmail &&
-              r.contactFirstName &&
-              r.contactLastName &&
-              r.contactPreferredLanguage
-                ? {
-                    contactId: r.contactId,
-                    email: r.contactEmail,
-                    firstName: r.contactFirstName,
-                    lastName: r.contactLastName,
-                    preferredLanguage: narrowContactLanguage(
-                      r.contactPreferredLanguage,
-                    ),
-                  }
-                : null,
-            schedulePolicy: parsePolicyOrNull(
-              r.cycleTenantId,
-              r.cycleTierAtCycleStart as TierBucket,
-              r.policyStepsJsonb as readonly ScheduleStepJson[] | null,
-              r.policyCreatedAt,
-              r.policyUpdatedAt,
-            ),
-          };
-        });
+        const items: DispatchCandidate[] = pageRows.map(rowToDispatchCandidate);
 
         const nextCursor =
           hasMore && pageRows.length > 0
@@ -287,42 +335,7 @@ export function makeDrizzleDispatchCandidateRepo(
     ): Promise<DispatchCandidate | null> {
       return runInTenant(tenant, async (tx) => {
         const rows = await tx
-          .select({
-            cycleTenantId: renewalCycles.tenantId,
-            cycleId: renewalCycles.cycleId,
-            cycleMemberId: renewalCycles.memberId,
-            cyclePeriodFrom: renewalCycles.periodFrom,
-            cyclePeriodTo: renewalCycles.periodTo,
-            cycleExpiresAt: renewalCycles.expiresAt,
-            cycleLengthMonths: renewalCycles.cycleLengthMonths,
-            cycleTierAtCycleStart: renewalCycles.tierAtCycleStart,
-            cyclePlanIdAtCycleStart: renewalCycles.planIdAtCycleStart,
-            cycleFrozenPlanPriceThb: renewalCycles.frozenPlanPriceThb,
-            cycleFrozenPlanTermMonths: renewalCycles.frozenPlanTermMonths,
-            cycleFrozenPlanCurrency: renewalCycles.frozenPlanCurrency,
-            cycleStatus: renewalCycles.status,
-            cycleEnteredPendingAt: renewalCycles.enteredPendingAt,
-            cycleLinkedInvoiceId: renewalCycles.linkedInvoiceId,
-            cycleLinkedCreditNoteId: renewalCycles.linkedCreditNoteId,
-            cycleClosedAt: renewalCycles.closedAt,
-            cycleClosedReason: renewalCycles.closedReason,
-            cycleCreatedAt: renewalCycles.createdAt,
-            cycleUpdatedAt: renewalCycles.updatedAt,
-            memberStatus: members.status,
-            memberCompanyName: members.companyName,
-            memberPreferredLocale: members.preferredLocale,
-            memberEmailUnverified: members.emailUnverified,
-            memberRenewalRemindersOptedOut: members.renewalRemindersOptedOut,
-            memberRegistrationDate: members.registrationDate,
-            contactId: contacts.contactId,
-            contactEmail: contacts.email,
-            contactFirstName: contacts.firstName,
-            contactLastName: contacts.lastName,
-            contactPreferredLanguage: contacts.preferredLanguage,
-            policyStepsJsonb: tenantRenewalSchedulePolicies.stepsJsonb,
-            policyCreatedAt: tenantRenewalSchedulePolicies.createdAt,
-            policyUpdatedAt: tenantRenewalSchedulePolicies.updatedAt,
-          })
+          .select(dispatchCandidateProjection)
           .from(renewalCycles)
           .innerJoin(
             members,
@@ -356,64 +369,7 @@ export function makeDrizzleDispatchCandidateRepo(
           .where(eq(renewalCycles.cycleId, cycleId))
           .limit(1);
         const r = rows[0];
-        if (!r) return null;
-        const cycle = cycleRowToDomain({
-          tenantId: r.cycleTenantId,
-          cycleId: r.cycleId,
-          memberId: r.cycleMemberId,
-          periodFrom: r.cyclePeriodFrom,
-          periodTo: r.cyclePeriodTo,
-          expiresAt: r.cycleExpiresAt,
-          cycleLengthMonths: r.cycleLengthMonths,
-          tierAtCycleStart: r.cycleTierAtCycleStart,
-          planIdAtCycleStart: r.cyclePlanIdAtCycleStart,
-          frozenPlanPriceThb: r.cycleFrozenPlanPriceThb,
-          frozenPlanTermMonths: r.cycleFrozenPlanTermMonths,
-          frozenPlanCurrency: r.cycleFrozenPlanCurrency,
-          status: r.cycleStatus,
-          enteredPendingAt: r.cycleEnteredPendingAt,
-          linkedInvoiceId: r.cycleLinkedInvoiceId,
-          linkedCreditNoteId: r.cycleLinkedCreditNoteId,
-          closedAt: r.cycleClosedAt,
-          closedReason: r.cycleClosedReason,
-          createdAt: r.cycleCreatedAt,
-          updatedAt: r.cycleUpdatedAt,
-        });
-        return {
-          cycle,
-          member: {
-            memberId: r.cycleMemberId,
-            status: narrowMemberStatus(r.memberStatus),
-            companyName: r.memberCompanyName,
-            preferredLocale: narrowLocale(r.memberPreferredLocale),
-            emailUnverified: r.memberEmailUnverified,
-            renewalRemindersOptedOut: r.memberRenewalRemindersOptedOut,
-            registrationDate: String(r.memberRegistrationDate),
-          },
-          primaryContact:
-            r.contactId &&
-            r.contactEmail &&
-            r.contactFirstName &&
-            r.contactLastName &&
-            r.contactPreferredLanguage
-              ? {
-                  contactId: r.contactId,
-                  email: r.contactEmail,
-                  firstName: r.contactFirstName,
-                  lastName: r.contactLastName,
-                  preferredLanguage: narrowContactLanguage(
-                    r.contactPreferredLanguage,
-                  ),
-                }
-              : null,
-          schedulePolicy: parsePolicyOrNull(
-            r.cycleTenantId,
-            r.cycleTierAtCycleStart as TierBucket,
-            r.policyStepsJsonb as readonly ScheduleStepJson[] | null,
-            r.policyCreatedAt,
-            r.policyUpdatedAt,
-          ),
-        };
+        return r ? rowToDispatchCandidate(r) : null;
       });
     },
   };
