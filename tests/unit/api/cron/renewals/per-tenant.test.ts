@@ -154,6 +154,26 @@ describe('cron per-tenant dispatch route (T104)', () => {
     expect(auditEmitMock).not.toHaveBeenCalled();
   });
 
+  it('K14-3 (R13-W3): fail-open on Upstash outage — still returns 401 + emits cron_bearer_auth_rejected (NOT 500)', async () => {
+    // K13-1 fail-open per-tenant route mirror: Upstash throw must
+    // route through audit emit + 401, not cascade to 500. R13-W3
+    // closure for the second cron route.
+    rateLimiterCheckMock.mockRejectedValueOnce(
+      new Error('upstash unreachable'),
+    );
+    const res = await POST(makeRequest({}), validParams);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error.code).toBe('unauthorized');
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    expect(auditEmitMock.mock.calls[0]![0].type).toBe(
+      'cron_bearer_auth_rejected',
+    );
+    expect(
+      (auditEmitMock.mock.calls[0]![0].payload as { route: string }).route,
+    ).toBe('/api/cron/renewals/dispatch/[tenantId]');
+  });
+
   it('200 + skipped on FEATURE_F8_RENEWALS=false', async () => {
     const env = (await import('@/lib/env')).env as { features: { f8Renewals: boolean } };
     env.features.f8Renewals = false;

@@ -114,6 +114,30 @@ describe('cron dispatch-coordinator route (T103)', () => {
     expect(auditEmitMock).not.toHaveBeenCalled();
   });
 
+  it('K14-3 (R13-W3): fail-open on Upstash outage — still returns 401 + emits cron_bearer_auth_rejected (NOT 500)', async () => {
+    // K13-1 fail-open: when `rateLimiter.check` itself throws
+    // (Upstash unreachable, network timeout), the route MUST proceed
+    // through the audit emit and 401 — NOT cascade into a 500 that
+    // would flood the F8 cron team with spurious alerts during an
+    // unrelated Upstash incident. K14 closes the test gap that
+    // would have allowed a future re-throw inside the catch to slip
+    // past CI silently. (R13-W3 finding from senior-tester +
+    // chamber-os-architect.)
+    rateLimiterCheckMock.mockRejectedValueOnce(
+      new Error('upstash unreachable'),
+    );
+    const res = await POST(makeRequest({}));
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error.code).toBe('unauthorized');
+    // Audit MUST still fire on the fail-open path so the forensic
+    // trail of bearer-rejection is preserved during Upstash outages.
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    expect(auditEmitMock.mock.calls[0]![0].type).toBe(
+      'cron_bearer_auth_rejected',
+    );
+  });
+
   it('200 + skipped on FEATURE_F8_RENEWALS=false (kill-switch)', async () => {
     const env = (await import('@/lib/env')).env as { features: { f8Renewals: boolean } };
     env.features.f8Renewals = false;

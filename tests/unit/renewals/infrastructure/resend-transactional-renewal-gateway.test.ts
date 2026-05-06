@@ -294,3 +294,100 @@ describe('resendTransactionalRenewalGateway', () => {
     });
   });
 });
+
+/**
+ * K14-2 (R13-W2) — `sanitizeResendErrorMessage` direct unit tests.
+ *
+ * Closes the Constitution Principle II gap on a security-critical
+ * function: K13-3 introduced this regex pipeline to prevent Resend
+ * account-scoped identifiers (API key prefixes, sending domains,
+ * recipient emails) from persisting in `audit_log.payload.failure_
+ * message` (5-year retention). The function was exported for
+ * testability but never exercised — a regex regression would have
+ * silently leaked PII for 5 years.
+ *
+ * Branches under test:
+ *   1. API key prefix `re_xxx…` → `[REDACTED_KEY]`
+ *   2. Email address → `[REDACTED_EMAIL]`
+ *   3. Single-label domain (`example.com`) → `[REDACTED_DOMAIN]`
+ *   4. Multi-label domain (K14-7 R13-S4 fix: `swecham.zyncdata.app`
+ *      fully redacts, not leaving `swecham.` exposed)
+ *   5. Combined (key + email + domain in one string)
+ *   6. Truncation at exactly 100 chars (> 100 chars input)
+ *   7. Pass-through for safe input (no regex matches → unchanged)
+ */
+describe('sanitizeResendErrorMessage (K14-2 R13-W2)', () => {
+  // Re-import via dynamic import to dodge Vitest module-load timing
+  // around the gateway-level mocks. The function is pure and has no
+  // dependencies on the mocked Resend SDK / logger / metrics.
+  let sanitize: (msg: string) => string;
+  beforeAll(async () => {
+    const mod = await import(
+      '@/modules/renewals/infrastructure/resend-transactional-renewal-gateway'
+    );
+    sanitize = mod.sanitizeResendErrorMessage;
+  });
+
+  it('redacts a Resend API-key prefix', () => {
+    const out = sanitize('Failed using key re_abc123def456 for sending');
+    expect(out).toContain('[REDACTED_KEY]');
+    expect(out).not.toContain('re_abc123def456');
+  });
+
+  it('redacts an email address', () => {
+    const out = sanitize('Bounced for user@example.com');
+    expect(out).toContain('[REDACTED_EMAIL]');
+    expect(out).not.toContain('user@example.com');
+  });
+
+  it('redacts a single-label domain', () => {
+    const out = sanitize('Sender swecham.com is not verified');
+    expect(out).toContain('[REDACTED_DOMAIN]');
+    expect(out).not.toContain('swecham.com');
+  });
+
+  it('K14-7 (R13-S4): redacts a multi-label subdomain fully — no prefix leak', () => {
+    const out = sanitize('Could not send from swecham.zyncdata.app');
+    expect(out).toContain('[REDACTED_DOMAIN]');
+    // Prior-K14 regex matched only `zyncdata.app`, leaving `swecham.`
+    // unredacted. K14-7 multi-label LHS captures the entire FQDN.
+    expect(out).not.toContain('swecham.zyncdata.app');
+    expect(out).not.toContain('swecham.');
+  });
+
+  it('redacts ALL three patterns when combined in one string', () => {
+    const out = sanitize(
+      'Key re_abc12345 sent to user@example.com via swecham.zyncdata.app',
+    );
+    expect(out).toContain('[REDACTED_KEY]');
+    expect(out).toContain('[REDACTED_EMAIL]');
+    expect(out).toContain('[REDACTED_DOMAIN]');
+    expect(out).not.toMatch(/re_abc/);
+    expect(out).not.toContain('user@example.com');
+    expect(out).not.toContain('swecham.zyncdata.app');
+  });
+
+  it('truncates at 100 characters (cap applied AFTER redaction)', () => {
+    // 200-char safe input — no regex matches → truncation only.
+    const long = 'a'.repeat(200);
+    const out = sanitize(long);
+    expect(out.length).toBeLessThanOrEqual(100);
+  });
+
+  it('passes through a safe input with no PII unchanged (within length cap)', () => {
+    const safe = 'request timed out at upstream';
+    expect(sanitize(safe)).toBe(safe);
+  });
+
+  it('empty string input returns empty string', () => {
+    expect(sanitize('')).toBe('');
+  });
+
+  it('trims trailing whitespace after truncation', () => {
+    // 99 chars + ' '.repeat(20) → after slice(0,100) = 99 chars + ' '
+    // → trim() removes the trailing space.
+    const input = 'a'.repeat(99) + '                    ';
+    const out = sanitize(input);
+    expect(out).toBe('a'.repeat(99));
+  });
+});

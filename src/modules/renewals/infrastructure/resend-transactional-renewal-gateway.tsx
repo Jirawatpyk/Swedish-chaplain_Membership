@@ -195,8 +195,13 @@ export function sanitizeResendErrorMessage(message: string): string {
       .replace(/re_[A-Za-z0-9_-]{8,}/g, '[REDACTED_KEY]')
       // 2. Email addresses (RFC-light)
       .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[REDACTED_EMAIL]')
-      // 3. Domain-like tokens (catches sending domains + bare URLs)
-      .replace(/\b[A-Za-z0-9-]+\.(?:com|net|org|io|co|app|dev|tech|cloud|ai|to|me|info|biz|email|mail|tld)\b/gi, '[REDACTED_DOMAIN]')
+      // 3. Domain-like tokens (catches sending domains + bare URLs).
+      //    K14-7 (R13-S4): the LHS uses `(?:[A-Za-z0-9-]+\.)+` so
+      //    multi-label hostnames (e.g. `swecham.zyncdata.app`) are
+      //    captured whole instead of leaving the leftmost subdomain
+      //    label unredacted. Single-label form (`example.com`) still
+      //    matches because `+` allows exactly one repetition.
+      .replace(/\b(?:[A-Za-z0-9-]+\.)+(?:com|net|org|io|co|app|dev|tech|cloud|ai|to|me|info|biz|email|mail|tld)\b/gi, '[REDACTED_DOMAIN]')
       // 4. Cap length
       .slice(0, 100)
       .trim()

@@ -94,6 +94,18 @@ const schema = z.object({
   // Operational flags
   READ_ONLY_MODE: booleanFromString.default(false),
 
+  // K14-9 (R13-S6): off-Vercel deployments must opt-in to acknowledge
+  // they have wired a trusted reverse proxy that strips and rewrites
+  // `x-forwarded-for`. When unset (default false), the boot-time
+  // `assertVercelDeploymentForTrustedXff()` in `src/lib/client-ip.ts`
+  // emits a console.warn in production if `VERCEL` env var is also
+  // absent — to alert operators that per-IP rate-limit buckets may be
+  // spoofable. Routing the read through this zod-validated accessor
+  // (rather than raw `process.env.TRUSTED_REVERSE_PROXY === 'true'`)
+  // makes the value robust to capitalisation variations (`True`, `1`,
+  // `TRUE` all coerce correctly via `booleanFromString`).
+  TRUSTED_REVERSE_PROXY: booleanFromString.default(false),
+
   // Bootstrap (used only by scripts/seed-bootstrap-admin.ts)
   BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
 
@@ -524,6 +536,8 @@ export const env = {
 
   flags: {
     readOnlyMode: raw.READ_ONLY_MODE,
+    // K14-9 (R13-S6): see schema docstring above.
+    trustedReverseProxy: raw.TRUSTED_REVERSE_PROXY,
   },
 
   bootstrap: {

@@ -36,6 +36,7 @@ import { uuidv7 } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { getClientIp } from '@/lib/client-ip';
+import { renewalsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import {
   dispatchRenewalCycle,
@@ -81,13 +82,21 @@ export async function POST(
         );
       }
     } catch (e) {
+      // K14-5/6 (R13-S2+S3+S8): redisFallback metric for alert pipeline
+      // + truncated err.message to cap Upstash endpoint-URL leakage +
+      // ip in warn-log for ops triage. See coordinator route for the
+      // full rationale.
+      const errInstance = e instanceof Error ? e : new Error(String(e));
       logger.warn(
         {
-          err: e instanceof Error ? e : new Error(String(e)),
+          errMsg: errInstance.message.slice(0, 200),
+          errName: errInstance.name,
+          ip,
           route: '/api/cron/renewals/dispatch/[tenantId]',
         },
         'cron.renewals.dispatch.rate_limit_check_failed_fail_open',
       );
+      renewalsMetrics.redisFallback();
     }
     try {
       const deps = makeRenewalsDeps(env.tenant.slug);

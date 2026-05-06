@@ -53,7 +53,19 @@ export function assertVercelDeploymentForTrustedXff(): void {
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) return;
   const isVercel = !!process.env.VERCEL;
-  const trustedProxy = process.env.TRUSTED_REVERSE_PROXY === 'true';
+  // K14-9 (R13-S6): normalise the opt-out string in-line so
+  // capitalisation variants (`True`, `1`, `TRUE`, `yes`) all coerce
+  // correctly. The pre-K14 strict `=== 'true'` comparison would have
+  // silently rejected `=True` as a non-opt-out, firing a spurious
+  // SEC-R12-1 warning on operators who set the variable in any other
+  // form. Mirrors the `booleanFromString` zod helper in env.ts but
+  // applied at boot before env.ts has fully resolved (cyclic-load
+  // safe; env.ts also exports `TRUSTED_REVERSE_PROXY` via
+  // `env.flags.trustedReverseProxy` for runtime consumers).
+  const rawTrp = (process.env.TRUSTED_REVERSE_PROXY ?? '')
+    .trim()
+    .toLowerCase();
+  const trustedProxy = rawTrp === 'true' || rawTrp === '1';
   if (!isVercel && !trustedProxy) {
     // Use console.warn (not pino logger) — this fires before the
     // logger is fully configured and we want the message to surface

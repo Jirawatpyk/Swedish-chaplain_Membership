@@ -505,9 +505,19 @@ export function ScheduleEditor({
           // "contact support").
 
           console.error('[F8] schedule save: client handler failed', e);
+          // K14-8 (R13-S5): browser coverage for the offline-detection
+          // regex —
+          //   • Chrome: `TypeError: Failed to fetch`         → /fetch/i
+          //   • Firefox: `TypeError: NetworkError when…`     → /network/i
+          //   • Safari: `TypeError: Load failed`             → /load failed/i
+          // Without the third branch Safari users got the generic
+          // "saveFailed" copy. The `error.offline` translation gives
+          // them the actionable "check connection" hint instead.
           const isOffline =
             e instanceof TypeError &&
-            (/fetch/i.test(e.message) || /network/i.test(e.message));
+            (/fetch/i.test(e.message) ||
+              /network/i.test(e.message) ||
+              /load failed/i.test(e.message));
           const messageKey = isOffline ? 'error.offline' : 'error.saveFailed';
           setSaveError(t(messageKey));
           toast.error(t(messageKey));

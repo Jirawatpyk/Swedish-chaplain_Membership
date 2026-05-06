@@ -178,7 +178,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // turning every cron auth-failure into a spurious 500 that pages
     // the F8 cron team while Upstash is unrelated to renewals.
     const ip = getClientIp(request);
-    let rateLimited = false;
     try {
       const rl = await rateLimiter.check(
         `f8:cron:bearer-rejected:${ip}`,
@@ -195,16 +194,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
       }
     } catch (e) {
+      // K14-4/5/6 (R13-S1+S2+S3+S8):
+      //   • Removed dead `rateLimited` variable (refactor residue from K13-1
+      //     draft); fail-open semantics are fully expressed by the try/catch
+      //     shape itself.
+      //   • Added `renewalsMetrics.redisFallback()` so Vercel alert rules
+      //     (which key on OTel counters, not log strings) receive the
+      //     Upstash-outage signal. Mirrors `authMetrics.redisFallback`
+      //     pattern from F1 sign-in.
+      //   • Added `ip` field to warn-log payload for ops triage; truncated
+      //     `err.message` to 200 chars to cap potential Upstash endpoint-
+      //     URL leakage into log drains.
+      const errInstance = e instanceof Error ? e : new Error(String(e));
       logger.warn(
         {
-          err: e instanceof Error ? e : new Error(String(e)),
+          errMsg: errInstance.message.slice(0, 200),
+          errName: errInstance.name,
+          ip,
           route: '/api/cron/renewals/dispatch-coordinator',
         },
         'cron.renewals.coordinator.rate_limit_check_failed_fail_open',
       );
-      rateLimited = false;
+      renewalsMetrics.redisFallback();
     }
-    void rateLimited;
 
     // K6 / spec.md taxonomy line 365: emit `cron_bearer_auth_rejected`
     // audit so a sustained Bearer-rejection rate (e.g. CRON_SECRET

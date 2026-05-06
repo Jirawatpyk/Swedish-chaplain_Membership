@@ -1444,4 +1444,22 @@ export const renewalsMetrics = {
       ).add(1, { error_name: errorName });
     });
   },
+
+  /**
+   * `renewals_redis_fallback_total` — K14-5 (R13-S2): Upstash outage on
+   * the cron-401 rate-limit path. K13-1 fail-open semantics route the
+   * request through to audit-emit + 401 (correct), but Vercel alert
+   * rules attach to OTel counters not log strings — without this
+   * metric the warn-log alone would not page on-call. Mirrors
+   * `authMetrics.redisFallback` + `outboxMetrics.stuckRows` patterns.
+   * Alert rule: any non-zero rate sustained for 5 min.
+   */
+  redisFallback(): void {
+    safeMetric(() => {
+      counter(
+        'renewals_redis_fallback_total',
+        'Count of Upstash fail-open events on F8 cron rate-limit paths (alert any non-zero rate)',
+      ).add(1);
+    });
+  },
 } as const;
