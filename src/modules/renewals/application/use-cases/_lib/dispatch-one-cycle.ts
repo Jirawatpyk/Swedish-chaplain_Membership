@@ -258,6 +258,22 @@ async function emitSkipAudit(
   ) {
     return;
   }
+  // K7: explicit exhaustiveness check on the `SkipReason` union. The
+  // remaining 8 reasons all flow through the generic
+  // `renewal_reminder_skipped` audit emit. The `_remaining` switch
+  // pins exhaustiveness — if a future `SkipReason` lands without
+  // either an early-return special-case above OR explicit handling
+  // here, this switch will fail at compile time.
+  const _remaining:
+    | 'cycle_terminal'
+    | 'member_archived'
+    | 'member_opted_out'
+    | 'email_unverified'
+    | 'tenant_misconfigured'
+    | 'multi_year_non_final_year'
+    | 'outreach_in_progress'
+    | 'no_primary_contact' = reason;
+  void _remaining;
   await deps.auditEmitter.emit(
     {
       type: 'renewal_reminder_skipped',

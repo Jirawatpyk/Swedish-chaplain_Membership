@@ -46,6 +46,17 @@ export const TIER_UPGRADE_STATUSES = [
 
 export type TierUpgradeStatus = (typeof TIER_UPGRADE_STATUSES)[number];
 
+/**
+ * K7: compile-time count assertion — pin the const tuple length.
+ * Mirrors `_AssertCycleStatusCount` + `_AssertClosedReasonCount`.
+ */
+type _AssertTierUpgradeStatusCount =
+  (typeof TIER_UPGRADE_STATUSES)['length'] extends 6
+    ? true
+    : 'TIER_UPGRADE_STATUSES count mismatch — expected 6';
+const _assertTierUpgradeStatusCount: _AssertTierUpgradeStatusCount = true;
+void _assertTierUpgradeStatusCount;
+
 export const TERMINAL_TIER_UPGRADE_STATUSES = [
   'applied',
   'dismissed',

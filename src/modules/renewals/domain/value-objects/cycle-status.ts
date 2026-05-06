@@ -29,6 +29,19 @@ export const CYCLE_STATUSES = [
 
 export type CycleStatus = (typeof CYCLE_STATUSES)[number];
 
+/**
+ * K7: compile-time count assertion — accidentally adding/dropping a
+ * status from the const tuple is now a build error rather than a
+ * silent runtime change. Mirrors the pattern in
+ * renewal-audit-emitter.ts (`_AssertF8AuditEventCount`) and
+ * dispatch-one-cycle.ts (`_AssertSkipReasonCount`).
+ */
+type _AssertCycleStatusCount = (typeof CYCLE_STATUSES)['length'] extends 7
+  ? true
+  : 'CYCLE_STATUSES count mismatch — expected 7';
+const _assertCycleStatusCount: _AssertCycleStatusCount = true;
+void _assertCycleStatusCount;
+
 export const TERMINAL_CYCLE_STATUSES = [
   'completed',
   'lapsed',

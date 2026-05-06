@@ -79,6 +79,18 @@ export const CLOSED_REASONS = [
 export type ClosedReason = (typeof CLOSED_REASONS)[number];
 
 /**
+ * K7: compile-time count assertion — pin the const tuple length so
+ * accidentally adding/dropping a closed_reason becomes a build error.
+ * Mirrors `_AssertCycleStatusCount` and `_AssertSkipReasonCount`.
+ * Keep in sync with the DB CHECK constraint in migration 0108.
+ */
+type _AssertClosedReasonCount = (typeof CLOSED_REASONS)['length'] extends 9
+  ? true
+  : 'CLOSED_REASONS count mismatch — expected 9';
+const _assertClosedReasonCount: _AssertClosedReasonCount = true;
+void _assertClosedReasonCount;
+
+/**
  * Fields shared across every cycle status. Lifecycle-anchor fields
  * (`status`, `closedAt`, `closedReason`, `enteredPendingAt`,
  * `linkedInvoiceId`) live in the per-status union arms below so
