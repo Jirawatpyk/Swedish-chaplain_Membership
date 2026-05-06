@@ -6,6 +6,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { TenantTx } from '@/lib/db';
 import type {
   SuggestionId,
   TierUpgradeSuggestion,
@@ -32,7 +33,7 @@ export interface TierUpgradeSuggestionRepo {
    * UNIQUE in migration 0091).
    */
   insertOpen(
-    tx: unknown,
+    tx: TenantTx,
     input: NewTierUpgradeSuggestionInput,
   ): Promise<TierUpgradeSuggestion>;
 
@@ -72,7 +73,7 @@ export interface TierUpgradeSuggestionRepo {
   ): Promise<ReadonlyArray<TierUpgradeSuggestion>>;
 
   transitionStatus(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     suggestionId: SuggestionId,
     args: {

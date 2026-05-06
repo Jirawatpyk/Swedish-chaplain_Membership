@@ -7,6 +7,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { TenantTx } from '@/lib/db';
 import type { TenantRenewalSettings } from '../../domain/tenant-renewal-settings';
 
 export interface UpdateTenantRenewalSettingsInput {
@@ -32,7 +33,7 @@ export interface TenantRenewalSettingsRepo {
    * screen.
    */
   upsert(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     input: UpdateTenantRenewalSettingsInput,
   ): Promise<TenantRenewalSettings>;

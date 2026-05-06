@@ -7,6 +7,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { TenantTx } from '@/lib/db';
 import type {
   EscalationAssigneeRole,
   EscalationTaskStatus,
@@ -49,7 +50,7 @@ export interface RenewalEscalationTaskRepo {
    * same combination (created=false).
    */
   insertIfAbsent(
-    tx: unknown,
+    tx: TenantTx,
     input: NewEscalationTaskInput,
   ): Promise<{
     readonly created: boolean;
@@ -93,7 +94,7 @@ export interface RenewalEscalationTaskRepo {
 
   /** Transition open → done | skipped. */
   transitionStatus(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     taskId: TaskId,
     args: {
@@ -107,7 +108,7 @@ export interface RenewalEscalationTaskRepo {
 
   /** Reassign an open task to a different user. */
   reassign(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     taskId: TaskId,
     newAssigneeUserId: string,

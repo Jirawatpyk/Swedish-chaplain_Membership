@@ -10,6 +10,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { TenantTx } from '@/lib/db';
 import type {
   CycleId,
   RenewalCycle,
@@ -56,7 +57,7 @@ export interface RenewalCyclePage {
 export interface RenewalCycleRepo {
   /** Insert a new cycle (typically called from F4 invoice-paid hook in Phase 5+). */
   insert(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     input: NewRenewalCycleInput,
   ): Promise<RenewalCycle>;
@@ -81,7 +82,7 @@ export interface RenewalCycleRepo {
    * tx. Constitution Principle VIII (state↔audit atomicity).
    */
   findByIdInTx(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     cycleId: CycleId,
   ): Promise<RenewalCycle | null>;
@@ -112,7 +113,7 @@ export interface RenewalCycleRepo {
    * the expected `from` status (advisory-lock-style optimistic lock).
    */
   transitionStatus(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     cycleId: CycleId,
     args: {
@@ -146,7 +147,7 @@ export interface RenewalCycleRepo {
    * `payments:`. Auto-released at tx end. Phase 3 H2 / T059 use.
    */
   acquireCycleLockInTx(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     cycleId: CycleId,
   ): Promise<void>;

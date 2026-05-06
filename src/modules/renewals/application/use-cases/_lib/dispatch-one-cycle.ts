@@ -68,10 +68,11 @@ import type { MemberId } from '@/modules/members';
 export const RETRY_BUDGET_HOURS = 24 as const;
 
 /**
- * The 11 skip reasons emitted by the dispatcher. Single audit event
+ * The 13 skip reasons emitted by the dispatcher. Single audit event
  * `renewal_reminder_skipped` carries `{reason}` payload. Distinct from
- * `renewal_reminder_deferred_read_only` (its own event for backward
- * compatibility with FR-012 audit-trail granularity).
+ * `renewal_reminder_deferred_read_only` + `renewal_skipped_no_joined_at`
+ * (their own events for backward compatibility with FR-012 audit-trail
+ * granularity).
  */
 export const SKIP_REASONS = [
   'feature_flag_disabled',
@@ -89,6 +90,18 @@ export const SKIP_REASONS = [
   'already_sent',
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
+
+/**
+ * J6-H7 — compile-time count check pinning the const tuple length so a
+ * typo or accidental drop in `SKIP_REASONS` becomes a build error.
+ * Mirrors the `_AssertF8AuditEventCount` pattern in renewal-audit-emitter.ts.
+ * Bump the literal when intentionally adding/removing a skip reason.
+ */
+type _AssertSkipReasonCount = (typeof SKIP_REASONS)['length'] extends 13
+  ? true
+  : 'SKIP_REASONS count mismatch — expected 13';
+const _assertSkipReasonCount: _AssertSkipReasonCount = true;
+void _assertSkipReasonCount;
 
 export interface DispatchContext {
   readonly tenantId: string;

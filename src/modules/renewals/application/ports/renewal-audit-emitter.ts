@@ -16,6 +16,7 @@
  * so emit sites construct payloads with type-safe IDs rather than bare
  * strings — silent ID swaps (member_id ↔ user_id) become compile errors.
  */
+import type { TenantTx } from '@/lib/db';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { SuggestionId } from '../../domain/tier-upgrade-suggestion';
 import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
@@ -349,7 +350,7 @@ export interface RenewalAuditEmitter {
   ): Promise<void>;
 
   emitInTx<E extends F8AuditEventType>(
-    tx: unknown,
+    tx: TenantTx,
     event: F8AuditEvent<E>,
     ctx: AuditContext,
   ): Promise<void>;

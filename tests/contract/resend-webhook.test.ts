@@ -55,7 +55,22 @@ vi.mock('@/lib/env', () => ({
 // J5-H4: mock the F8 surface so we can pin the silent-failure
 // contract — F8 throws MUST NOT propagate to the webhook response
 // (otherwise Resend retry-storms with 24h exponential backoff).
-const lookupMemberByEmailMock = vi.hoisted(() => vi.fn(async () => null));
+//
+// The lookup mock's TS inference would otherwise narrow to
+// `Promise<null>` and reject `mockResolvedValueOnce({...})` overrides
+// at compile time — the explicit return-type widens it to
+// `Promise<MemberLookupResult | null>` to match the production import.
+type MemberLookupResultStub = {
+  tenantId: string;
+  memberId: string;
+  contactId: string;
+  isPrimary: boolean;
+};
+const lookupMemberByEmailMock = vi.hoisted(() =>
+  vi.fn<(email: string) => Promise<MemberLookupResultStub | null>>(
+    async () => null,
+  ),
+);
 const detectBounceThresholdMock = vi.hoisted(() =>
   vi.fn(async () => ({ ok: true as const, value: { kind: 'no_threshold_crossed' as const, counts: { hardBounces: 0, softBouncesInCycle: 0, softBouncesIn30Days: 0 } } })),
 );

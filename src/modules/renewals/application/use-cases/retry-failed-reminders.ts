@@ -33,7 +33,7 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
 import { randomUUID } from 'node:crypto';
@@ -358,7 +358,7 @@ async function attemptRetry(
 
 async function emitPermanentFailure(
   deps: RenewalsDeps,
-  tx: unknown,
+  tx: TenantTx,
   event: ReminderEvent,
   candidate: DispatchCandidate | null,
   failureKind: string,
@@ -587,6 +587,14 @@ export async function retryFailedReminders(
         case 'candidate_not_found':
           summary.retryBlockedByGate += 1;
           break;
+        default: {
+          // J6-H7 — exhaustiveness pin. Adding a new RetryAttemptOutcome
+          // variant without updating this switch would silently drop the
+          // new outcome from summary metrics; the never-assignment forces
+          // a compile error so SLO accounting stays accurate.
+          const _exhaustive: never = outcome.kind;
+          void _exhaustive;
+        }
       }
     } catch (e) {
       summary.passErrors += 1;

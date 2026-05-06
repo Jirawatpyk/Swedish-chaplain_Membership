@@ -18,6 +18,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '@/lib/logger';
+import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   AuditContext,
@@ -181,7 +182,9 @@ describe('makeDrizzleRenewalAuditEmitter — emitInTx() (atomic, throws-on-failu
 
   it('unknown event type — pinoFallback + THROWS so caller tx rolls back', async () => {
     const emitter = makeDrizzleRenewalAuditEmitter(tenant);
-    const fakeTx = { insert: vi.fn() } as unknown;
+    // J6-H6: emitInTx now requires `tx: TenantTx` (Drizzle pg-tx).
+    // Tests don't have a real tx so we double-cast through unknown.
+    const fakeTx = { insert: vi.fn() } as unknown as TenantTx;
     await expect(emitter.emitInTx(fakeTx, UNKNOWN_EVENT, ctx)).rejects.toThrow(
       /not a known F8 audit event/,
     );
@@ -190,7 +193,9 @@ describe('makeDrizzleRenewalAuditEmitter — emitInTx() (atomic, throws-on-failu
 
   it('not-yet-in-pgenum event — pinoFallback + THROWS', async () => {
     const emitter = makeDrizzleRenewalAuditEmitter(tenant);
-    const fakeTx = { insert: vi.fn() } as unknown;
+    // J6-H6: emitInTx now requires `tx: TenantTx` (Drizzle pg-tx).
+    // Tests don't have a real tx so we double-cast through unknown.
+    const fakeTx = { insert: vi.fn() } as unknown as TenantTx;
     await expect(
       emitter.emitInTx(fakeTx, NOT_IN_PGENUM_EVENT, ctx),
     ).rejects.toThrow(/not yet in the audit_event_type pgEnum/);
@@ -201,7 +206,7 @@ describe('makeDrizzleRenewalAuditEmitter — emitInTx() (atomic, throws-on-failu
     const insertMock = vi.fn().mockReturnValue({
       values: vi.fn().mockResolvedValue(undefined),
     });
-    const fakeTx = { insert: insertMock } as unknown;
+    const fakeTx = { insert: insertMock } as unknown as TenantTx;
     const emitter = makeDrizzleRenewalAuditEmitter(tenant);
     await emitter.emitInTx(fakeTx, SHIPPED_EVENT, ctx);
     expect(insertMock).toHaveBeenCalledOnce();

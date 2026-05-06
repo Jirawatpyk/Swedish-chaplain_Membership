@@ -8,6 +8,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { TenantTx } from '@/lib/db';
 import type { TenantRenewalSchedulePolicy } from '../../domain/tenant-renewal-schedule-policy';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 import type { ReminderStep } from '../../domain/value-objects/reminder-step';
@@ -36,7 +37,7 @@ export interface TenantRenewalSchedulePolicyRepo {
    * before calling this — adapter trusts the array.
    */
   upsertSteps(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     tierBucket: TierBucket,
     steps: ReadonlyArray<ReminderStep>,

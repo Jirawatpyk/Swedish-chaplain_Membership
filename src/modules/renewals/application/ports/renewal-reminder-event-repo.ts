@@ -8,6 +8,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { TenantTx } from '@/lib/db';
 import type { CycleId } from '../../domain/renewal-cycle';
 
 export type ReminderEventChannel = 'email' | 'task';
@@ -109,13 +110,13 @@ export interface RenewalReminderEventRepo {
    * from replay.
    */
   insertIfAbsent(
-    tx: unknown,
+    tx: TenantTx,
     input: NewReminderEventInput,
   ): Promise<{ readonly created: boolean; readonly row: ReminderEvent }>;
 
   /** Transition pending → sent | skipped | failed. */
   transitionStatus(
-    tx: unknown,
+    tx: TenantTx,
     input: ReminderEventTransitionInput,
   ): Promise<ReminderEvent>;
 
@@ -131,7 +132,7 @@ export interface RenewalReminderEventRepo {
    * (concurrent retry won, or row was permanently exhausted).
    */
   transitionFailedToSent(
-    tx: unknown,
+    tx: TenantTx,
     input: {
       readonly tenantId: string;
       readonly reminderEventId: string;
@@ -195,7 +196,7 @@ export interface RenewalReminderEventRepo {
    * idempotent replay).
    */
   markRetryExhausted(
-    tx: unknown,
+    tx: TenantTx,
     input: MarkRetryExhaustedInput,
   ): Promise<ReminderEvent>;
 }

@@ -15,7 +15,15 @@
  * Drizzle schema (precedent: `drizzle-renewal-cycle-repo.ts` line 26).
  *
  * Pure interface — no framework imports (Constitution Principle III).
+ *
+ * `tx: TenantTx` brand (J6-H6): the platform-wide Drizzle pg-transaction
+ * type from `@/lib/db`. Importing the type alias is permitted by the
+ * Application-layer ESLint guard (only the `drizzle-orm` package itself
+ * is forbidden, not the project's `@/lib/db` re-export). Replacing the
+ * prior `tx: unknown` prevents accidentally passing the wrong arg in
+ * the first slot — TS now rejects `null`, the deps object, etc.
  */
+import type { TenantTx } from '@/lib/db';
 
 export interface MemberRenewalFlagsMutationResult {
   /**
@@ -45,7 +53,7 @@ export interface MemberRenewalFlagsRepo {
    * timestamp).
    */
   setEmailUnverified(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     memberId: string,
   ): Promise<MemberRenewalFlagsMutationResult>;
@@ -58,7 +66,7 @@ export interface MemberRenewalFlagsRepo {
    * the row exists).
    */
   clearEmailUnverified(
-    tx: unknown,
+    tx: TenantTx,
     tenantId: string,
     memberId: string,
   ): Promise<MemberRenewalFlagsMutationResult>;

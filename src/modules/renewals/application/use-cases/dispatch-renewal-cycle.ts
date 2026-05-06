@@ -301,6 +301,15 @@ export async function dispatchRenewalCycle(
           case 'failed_permanent':
             counts.failedPermanent += 1;
             break;
+          default: {
+            // J6-H7 — exhaustiveness pin. If a future variant is added
+            // to `DispatchOneCycleOutcome` without a matching case here,
+            // the assignment below fails at compile time, preventing
+            // the new variant from being silently dropped from cron
+            // summary metrics + SLO calculations.
+            const _exhaustive: never = outcome;
+            void _exhaustive;
+          }
         }
       }
     }

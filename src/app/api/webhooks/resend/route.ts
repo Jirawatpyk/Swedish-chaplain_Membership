@@ -213,8 +213,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // F8 Phase 4 Wave I4 / T101 — capture Resend bounce.type for
   // FR-012a threshold computation. NULL on non-bounced events.
-  const bounceType =
-    mapped === 'bounced' ? parsed.data.data.bounce?.type ?? null : null;
+  //
+  // J6-H12: narrow at the consumer to the closed enum
+  // `'permanent' | 'transient'`. The schema stays lenient
+  // (`z.string().optional()`) so a future Resend addition (e.g. a
+  // 'undetermined' classification) doesn't trigger schema_drift +
+  // 200; instead we silently persist NULL for the unrecognised
+  // value + log warn for observability. This keeps the
+  // `bounce-event-query.ts` partition (which only counts permanent
+  // vs transient) honest — previously a 'unknown' string would
+  // silently zero-count without leaving a trace.
+  let bounceType: 'permanent' | 'transient' | null = null;
+  if (mapped === 'bounced') {
+    const raw = parsed.data.data.bounce?.type ?? null;
+    if (raw === 'permanent' || raw === 'transient') {
+      bounceType = raw;
+    } else if (raw !== null && raw !== undefined && raw.length > 0) {
+      logger.warn(
+        { requestId, bounceTypeRaw: raw, messageId: parsed.data.data.email_id ?? 'unknown' },
+        'resend_webhook.bounce_type_unrecognised',
+      );
+    }
+  }
 
   // svixId is guaranteed non-null past the signature check.
   const insertRow: EmailDeliveryEventInsert = {
