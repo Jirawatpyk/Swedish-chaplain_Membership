@@ -37,12 +37,19 @@ export function asSha256Hex(raw: string): Sha256Hex {
  * Validates SHA-256 hex format. Lowercases input before regex check so
  * uppercase + mixed-case inputs are normalised to canonical form.
  *
- * TODO(F8-Phase4): Phase 4's `renewal_reminder_send_failed_permanent`
- * emit site MUST hash the recipient email through this validator
+ * Used by the bounce-classification emit site (`renewal_reminder_send_
+ * failed_permanent` path 1 — Resend webhook → bounce-class flag flip)
+ * which is the only F8 audit payload that carries `recipient_email_hashed`.
+ * That site MUST hash the recipient email through this validator
  * (NOT `asSha256Hex`) so the audit log never carries a plaintext or
- * malformed digest. The `recipient_email_hashed` payload field is
- * branded `Sha256Hex` to enforce this at the type level — the only
- * way to construct the brand from raw input is `parseSha256Hex`.
+ * malformed digest. The Sha256Hex brand on the payload field
+ * enforces this at the type level — the only safe way to construct
+ * the brand from raw input is `parseSha256Hex`.
+ *
+ * Note: F8 path-1 emit is not wired in the current dispatcher / retry
+ * paths (which use paths 2+3 with `failure_kind` rather than
+ * `bounce_class` + `recipient_email_hashed`); the validator stays in
+ * place for the F1 webhook integration that will turn on this signal.
  */
 export function parseSha256Hex(
   raw: string,

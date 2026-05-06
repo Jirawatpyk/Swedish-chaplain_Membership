@@ -1,5 +1,5 @@
 /**
- * F8 Phase 3 Wave H4 · T070 — `PipelineTable` client component.
+ * `PipelineTable` — F8 pipeline dashboard client component.
  *
  * TanStack Table v8 with server-side pagination + filter (no client-
  * side filtering — server returns the page). Client-state covers
@@ -10,8 +10,10 @@
  *
  * WCAG 2.1 AA: keyboard-navigable rows, focus ring, screen-reader
  * dates via `<time dateTime>`, action menu uses `Tooltip` for icon-
- * only triggers. The action menu is stub-disabled in Phase 3 (US3
- * lapsed reactivate, US2 send-reminder land in subsequent phases).
+ * only triggers. Action menu items: "Send reminder" is wired
+ * (admin-only, manager sees disabled+tooltip); "Open" deep-links to
+ * cycle detail; "Mark contacted" is reserved for US4 at-risk follow-
+ * on. Cancel + mark-paid-offline live on the cycle detail page.
  */
 'use client';
 

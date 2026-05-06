@@ -61,10 +61,9 @@ import type { BounceEventQuery } from '../application/ports/bounce-event-query';
 export interface RenewalsDeps {
   readonly tenant: TenantContext;
   /**
-   * F2 cross-module scheduled-plan-change repo (Wave B port + Wave C-1
-   * Drizzle adapter). The F4 invoice-paid hook will consult
-   * `getEffectivePlanForRenewal` via this repo when it lands in
-   * Phase 5+ T183.
+   * F2 cross-module scheduled-plan-change repo. The F4 invoice-paid
+   * hook consults `getEffectivePlanForRenewal` via this repo when the
+   * F4↔F8 paid-cycle bridge fires (see `f4-invoice-bridge.ts`).
    */
   readonly scheduledPlanChangeRepo: ScheduledPlanChangeRepo;
   /**

@@ -1,14 +1,16 @@
 /**
- * F8 Phase 3 Wave H4 · T067 — `/admin/renewals` server component.
+ * `/admin/renewals` server component — F8 pipeline dashboard.
  *
  * Orchestrates the pipeline dashboard: server-side data fetch via
  * `loadPipeline` use-case → snake_case URL params parsed → composed
  * UI (filter bar + urgency tabs + table + lapsed panel).
  *
- * Authz: admin OR manager (manager is read-only — no row actions
- * mutating state are exposed here for Phase 3). Kill-switch: when
- * `FEATURE_F8_RENEWALS=false`, the page shows a generic "feature
- * unavailable" placeholder rather than crashing.
+ * Authz: admin OR manager. Manager is read-only — mutating row actions
+ * (Send reminder / Cancel / Mark paid offline) render server-side as
+ * disabled DropdownMenuItems for managers; the route handlers also
+ * emit `f8_role_violation_blocked` audit on any manager-bypass attempt.
+ * Kill-switch: when `FEATURE_F8_RENEWALS=false`, the dashboard route
+ * returns 404 with audit `renewal_kill_switch_blocked` (FR-052b).
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';

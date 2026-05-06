@@ -1,15 +1,19 @@
 /**
- * F8 Phase 3 Wave H2 · T057 — `load-cycle-detail` use-case.
+ * `load-cycle-detail` use-case.
  *
  * Returns one renewal cycle's full detail view for `/admin/renewals/[cycleId]`.
  *
- * For Phase 3 (US1):
- *   - `reminderHistory` returns `[]` — Phase 4 ships the dispatcher cron
- *     that produces real reminder rows.
- *   - `escalationTasks` returns `[]` — Phase 8 ships escalation queue.
+ * Current state (Phase 4):
+ *   - `reminderHistory` returns `[]` — admin detail-view UI hydration
+ *     deferred to a follow-on UX wave; cron events DO exist in
+ *     `renewal_reminder_events` and can be queried directly when
+ *     forensic detail is needed.
+ *   - `escalationTasks` returns `[]` — escalation-queue admin UI is
+ *     deferred (US6 territory). Tasks ARE created by the dispatcher
+ *     today (Gate 11 + retry-pass exhaustion) and persist to
+ *     `renewal_escalation_tasks` — just not surfaced here yet.
  *   - `linkedInvoice` is hydrated via F4 barrel `getInvoice` if
- *     `cycle.linkedInvoiceId` is non-null (mark-paid-offline ships a
- *     populated linked invoice in this phase).
+ *     `cycle.linkedInvoiceId` is non-null.
  *
  * Cross-tenant semantics: `cyclesRepo.findById` returns `null` for
  * cross-tenant probes (RLS hides the row). The use-case emits a

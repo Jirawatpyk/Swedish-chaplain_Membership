@@ -1,14 +1,14 @@
 /**
- * F8 Phase 3 Wave H4 · T072 — `LapsedTab` panel.
+ * `LapsedTab` panel — renders when `?urgency=lapsed`.
  *
- * Renders when `?urgency=lapsed`. Shows lapsed cycles with reason
- * badges + Reactivate / Archive CTAs (both stub-disabled in Phase 3
- * — Reactivate ships in US3 P1 follow-on, Archive in US7).
+ * Shows lapsed cycles with reason badges. Reactivate + Archive CTAs
+ * are reserved for US3 P1 (self-service renewal post-lapse) + US7
+ * (member archive flow); detail-page actions (Cancel +
+ * mark-paid-offline) handle the admin recovery path today.
  *
- * For Phase 3 the actual list reuses `PipelineTable` since the row
- * shape is identical. This wrapper adds an explanatory banner so
- * admins understand the operational difference between active +
- * lapsed members.
+ * The list reuses `PipelineTable` since the row shape is identical;
+ * this wrapper adds an explanatory banner so admins understand the
+ * operational difference between active + lapsed members.
  */
 'use client';
 

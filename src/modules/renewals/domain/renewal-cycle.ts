@@ -50,7 +50,7 @@ export function parseCycleId(raw: string): Result<CycleId, CycleIdError> {
  *
  * `'lapsed'` is the legacy catch-all for "any non-paid expiry path"
  * — kept for backward compat with rows written before the lapse-
- * decision branch ships in Phase 5 (T115a). Two more specific
+ * decision branch ships in a future cycle-state-reconciler use-case. Two more specific
  * reasons land in the same enum forward-compatibly:
  *
  *   - `'grace_expired'` — `now > expires_at + grace_period_days`
@@ -61,8 +61,8 @@ export function parseCycleId(raw: string): Result<CycleId, CycleIdError> {
  *
  * The two literals are present in the enum so the DB CHECK +
  * Domain narrowing accept them today; the dispatcher writes only
- * `'lapsed'` until Phase 5 wires the decision branch in the
- * cycle-state-reconciler use-case (T138 scope extension).
+ * `'lapsed'` until the cycle-state-reconciler use-case wires the
+ * decision branch (deferred — see T115a tasks.md entry).
  */
 export const CLOSED_REASONS = [
   'paid',
@@ -144,7 +144,7 @@ interface LapsedCycleFields {
   readonly enteredPendingAt: null;
   readonly closedAt: string;
   // T115a forward-compat: `'grace_expired'` and `'payment_failed'`
-  // accepted today; dispatcher writes only `'lapsed'` until Phase 5
+  // accepted today; dispatcher writes only `'lapsed'` until the cycle-state-reconciler ships
   // wires the lapse-decision branch.
   readonly closedReason:
     | 'lapsed'

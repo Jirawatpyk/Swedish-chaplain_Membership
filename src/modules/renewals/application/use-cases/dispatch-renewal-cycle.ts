@@ -61,8 +61,8 @@ function bucketCount(n: number): CountBucket {
 /**
  * Maximum negative offset across all 5 tier-bucket schedule policies.
  * Default 120 days mirrors the partnership tier T-120 step (the longest
- * lookback any policy has). Cron coordinator can override per-tenant
- * in Wave I5 if a tenant ships a custom schedule with a longer step.
+ * lookback any policy has). The cron coordinator overrides this per
+ * tenant when a tenant ships a custom schedule with a longer step.
  */
 export const DEFAULT_MAX_OFFSET_DAYS = 120 as const;
 

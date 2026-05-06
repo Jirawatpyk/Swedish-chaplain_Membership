@@ -95,11 +95,16 @@ export async function POST(
 
   try {
     return await runInTenant(tenantCtx, async (tx) => {
-      // Per-tenant advisory lock — namespace 'renewals:dispatch:'+tenantId
-      // is disjoint from F4 'invoicing:', F5 'payments:', F7 'broadcasts:',
-      // F8 'renewals:' (mark-paid-offline). Auto-released at tx end.
-      // The TX exists ONLY to acquire the lock — the inner use-cases
-      // open their OWN runInTenant blocks for atomic state+audit.
+      // K4: Per-tenant advisory lock — uses sub-key
+      // `renewals:dispatch:<tenantId>` distinct from F8's
+      // mark-paid-offline lock which uses sub-key
+      // `renewals:<tenantId>:<cycleId>`; both belong to the F8
+      // `renewals:` namespace family but address disjoint scopes
+      // (per-tenant cron pass vs per-cycle admin action). Cross-feature
+      // namespaces stay disjoint: F4 uses `invoicing:`, F5 `payments:`,
+      // F7 `broadcasts:`. Auto-released at tx end. The TX exists ONLY
+      // to acquire the lock — the inner use-cases open their OWN
+      // runInTenant blocks for atomic state+audit.
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:dispatch:'||${tenantId}, 0))`,
       );
