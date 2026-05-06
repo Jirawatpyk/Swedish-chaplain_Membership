@@ -28,6 +28,18 @@ const TAB_ORDER: ReadonlyArray<UrgencyBucket> = [
   'lapsed',
 ];
 
+/**
+ * K8-M5: derive the i18n-key literal union from `TAB_ORDER` so adding
+ * a 9th bucket becomes a one-line `TAB_ORDER` change rather than two
+ * (the const tuple AND the inline literal cast at the `t()` call).
+ * The transform mirrors what the `bucket.replace('-', '_')` runtime
+ * call does at the type level: 't-90' → 't_90'.
+ */
+type DashToUnderscore<S extends string> = S extends `${infer A}-${infer B}`
+  ? `${A}_${DashToUnderscore<B>}`
+  : S;
+type UrgencyI18nKey = DashToUnderscore<(typeof TAB_ORDER)[number]>;
+
 export interface UrgencyBucketTabsProps {
   readonly current: UrgencyBucket;
   readonly counts: Readonly<Record<UrgencyBucket, number>>;
@@ -72,17 +84,7 @@ export function UrgencyBucketTabs({
               )}
             >
               <span>
-                {t(
-                  i18nKey as
-                    | 't_90'
-                    | 't_60'
-                    | 't_30'
-                    | 't_14'
-                    | 't_7'
-                    | 't_0'
-                    | 'grace'
-                    | 'lapsed',
-                )}
+                {t(i18nKey as UrgencyI18nKey)}
               </span>
               <span
                 className="ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"

@@ -96,11 +96,10 @@ export async function GET(request: NextRequest) {
   const ctx = await requireRenewalAdminContext(request, 'read');
   if ('response' in ctx) return ctx.response;
 
+  // K8-L6: `Object.fromEntries` reads the URLSearchParams iterable
+  // in one expression — replaced the 4-line for-loop accumulator.
   const url = new URL(request.url);
-  const rawParams: Record<string, unknown> = {};
-  for (const [k, v] of url.searchParams.entries()) {
-    rawParams[k] = v;
-  }
+  const rawParams = Object.fromEntries(url.searchParams);
   const parsed = ListQuerySchema.safeParse(rawParams);
   if (!parsed.success) {
     return errorResponse({
