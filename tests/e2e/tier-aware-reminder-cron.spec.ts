@@ -75,15 +75,20 @@ test.describe('F8 — admin send-reminder UI (US2 AS6, T113)', () => {
       .first();
     await expect(toast).toBeVisible({ timeout: 10_000 });
 
-    // The toast text contains one of the expected i18n strings shipped
-    // in Wave I6+I7. Match any of the success / skipped / failure
-    // variants — the exact one depends on what the seeded cycle's state
-    // is when the test runs.
+    // J10-M11: tightened the toast variant assertion from a
+    // permissive 7-variant regex to the 2 outcomes that should ever
+    // fire under healthy seed state (admin manually clicks Send for
+    // a freshly-seeded cycle):
+    //   1. "Reminder sent" — first dispatch (cold seed, no prior
+    //      reminder_event row)
+    //   2. "Already sent {ago}" — replay (test re-run within
+    //      idempotency window, prior row exists)
+    // If the seed got into any other state (gate skip, transient
+    // failure, rate-limit) the test should fail — the original
+    // wide regex would have silently passed.
     const toastText = (await toast.textContent()) ?? '';
     expect(toastText.length).toBeGreaterThan(0);
-    expect(toastText).toMatch(
-      /reminder sent|already sent|skipped|failed|could not send|not authorized|too many requests/i,
-    );
+    expect(toastText).toMatch(/Reminder sent|Already sent/i);
   });
 
   test('"Send reminder" menu item is keyboard-reachable from the row trigger', async ({

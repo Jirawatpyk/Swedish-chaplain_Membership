@@ -298,4 +298,72 @@ describe('F8 bounce-threshold detection — integration (T111)', () => {
     expect(r.value.trigger).toBe('soft_rolling');
     expect(r.value.bounceCount).toBe(5);
   }, 120_000);
+
+  it('J10-M9: 30d boundary INCLUSIVE — 5 bounces at 0/7/14/22/30 days ago all counted (=5 → soft_rolling threshold)', async () => {
+    // Adapter filter is `created_at >= now - 30d` (inclusive lower
+    // bound). A bounce at exactly 30d ago should be counted.
+    // Pin `nowIso` to REAL_NOW_MS so the bounce timestamps (created
+    // via the same anchor) line up with the comparison cutoff —
+    // without this, the few-millisecond gap between module-load and
+    // the actual `new Date()` call inside detectBounceThreshold
+    // would push the 30d-exact bounce just outside the window.
+    const member = await seedMember(tenantA, user);
+    seededEmails.push(member.email);
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ periodFrom: new Date(REAL_NOW_MS) })
+        .where(eq(renewalCycles.cycleId, member.cycleId)),
+    );
+    // 5 bounces — the last is exactly at the 30d boundary (inclusive).
+    for (const days of [0, 7, 14, 22, 30]) {
+      await seedBounce(member.email, 'transient', days);
+    }
+
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const r = await detectBounceThreshold(deps, {
+      tenantId: tenantA.ctx.slug,
+      memberId: member.memberId,
+      correlationId: randomUUID(),
+      actorRole: 'webhook',
+      nowIso: new Date(REAL_NOW_MS).toISOString(),
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.kind).toBe('threshold_crossed');
+    if (r.value.kind !== 'threshold_crossed') return;
+    expect(r.value.trigger).toBe('soft_rolling');
+    expect(r.value.bounceCount).toBe(5);
+  }, 120_000);
+
+  it('J10-M9: 30d boundary EXCLUSIVE on >30d — 5 bounces at 0/7/14/22/31 days ago → only 4 counted, NO threshold cross', async () => {
+    // Symmetric boundary: 31d ago is NOT counted (`>= now - 30d`
+    // excludes it). With only 4 bounces in window, threshold of 5
+    // does NOT cross.
+    const member = await seedMember(tenantA, user);
+    seededEmails.push(member.email);
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ periodFrom: new Date(REAL_NOW_MS) })
+        .where(eq(renewalCycles.cycleId, member.cycleId)),
+    );
+    for (const days of [0, 7, 14, 22, 31]) {
+      await seedBounce(member.email, 'transient', days);
+    }
+
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const r = await detectBounceThreshold(deps, {
+      tenantId: tenantA.ctx.slug,
+      memberId: member.memberId,
+      correlationId: randomUUID(),
+      actorRole: 'webhook',
+      nowIso: new Date(REAL_NOW_MS).toISOString(),
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // 4 within window — soft_rolling threshold is 5. No cross.
+    expect(r.value.kind).toBe('no_threshold_crossed');
+    expect(r.value.counts.softBouncesIn30Days).toBe(4);
+  }, 120_000);
 });

@@ -278,6 +278,59 @@ describe('dispatchOneCycle', () => {
       );
     });
 
+    // J10-M5: parametrize the happy-path across all 5 tier buckets.
+    // Previously only `regular` was exercised; the other 4 tiers
+    // (thai_alumni / start_up / premium / partnership) had distinct
+    // schedule offsets that the dispatcher must resolve correctly.
+    // Each scenario plumbs the matching tier's representative T-30
+    // step into the `schedulePolicy` override + asserts the gateway
+    // sees the matching `templateId` so a future regression that
+    // breaks `findStepForDate` per-tier is caught at unit level.
+    type TierScenario = {
+      readonly tier: 'thai_alumni' | 'start_up' | 'regular' | 'premium' | 'partnership';
+      readonly stepId: string;
+      readonly templateId: string;
+    };
+    const TIER_SCENARIOS: ReadonlyArray<TierScenario> = [
+      { tier: 'thai_alumni', stepId: 't-30.email', templateId: 'renewal.t-30.thai_alumni' },
+      { tier: 'start_up',    stepId: 't-30.email', templateId: 'renewal.t-30.start_up' },
+      { tier: 'regular',     stepId: 't-30.email', templateId: 'renewal.t-30.regular' },
+      { tier: 'premium',     stepId: 't-30.email', templateId: 'renewal.t-30.premium' },
+      { tier: 'partnership', stepId: 't-30.email', templateId: 'renewal.t-30.partnership' },
+    ];
+
+    it.each(TIER_SCENARIOS)(
+      'J10-M5: $tier tier T-30 step → outcome=sent + matching templateId in gateway call',
+      async ({ tier, stepId, templateId }) => {
+        const { deps, gatewayMock } = fakeDeps({});
+        const candidate = buildHappyCandidate({
+          cycle: { tierAtCycleStart: tier },
+          schedulePolicy: {
+            tenantId: TENANT_ID,
+            tierBucket: tier,
+            steps: [
+              {
+                stepId,
+                offsetDays: -30,
+                channel: 'email' as const,
+                templateId,
+              },
+            ],
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-04-01T00:00:00Z',
+          },
+        });
+        const result = await dispatchOneCycle(deps, candidate, happyCtx);
+        expect(result.kind).toBe('sent');
+        // Gateway received the tier-specific template id — pins
+        // `findStepForDate` per-tier resolution.
+        expect(gatewayMock).toHaveBeenCalledTimes(1);
+        const call = gatewayMock.mock.calls[0]![0] as { templateId: string; stepId: string };
+        expect(call.templateId).toBe(templateId);
+        expect(call.stepId).toBe(stepId);
+      },
+    );
+
     it('task channel: outcome=task_created + audit escalation_task_created', async () => {
       const { deps, insertTaskMock, emitInTxMock } = fakeDeps({});
       const candidate = buildHappyCandidate({

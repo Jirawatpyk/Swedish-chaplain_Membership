@@ -17,7 +17,7 @@
  * The 7-day window is the SOURCE OF TRUTH `REMINDER_PAUSE_WINDOW_DAYS`
  * exported from the use-case. Test pins behaviour, not the literal.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -172,6 +172,28 @@ describe('F8 reminder pause after outreach — integration (T112)', () => {
     await tenantA.cleanup().catch(() => {});
   }, 120_000);
 
+  // J10 — test isolation fix (chamber-os-ux #6 / pr-test-analyzer #6).
+  // Previously the second test relied on the first test's seeded
+  // member persisting in the candidate set; now each test starts
+  // from a clean tenant by clearing reminder_events + cycles +
+  // outreach rows. Members + plans persist (cleared in afterAll)
+  // but they're filtered OUT of the candidate set when no active
+  // cycle exists.
+  beforeEach(async () => {
+    await db
+      .delete(renewalReminderEvents)
+      .where(eq(renewalReminderEvents.tenantId, tenantA.ctx.slug))
+      .catch(() => {});
+    await db
+      .delete(atRiskOutreach)
+      .where(eq(atRiskOutreach.tenantId, tenantA.ctx.slug))
+      .catch(() => {});
+    await db
+      .delete(renewalCycles)
+      .where(eq(renewalCycles.tenantId, tenantA.ctx.slug))
+      .catch(() => {});
+  });
+
   it('FRESH outreach (1d old): cron pass skips reminder + emits outreach_in_progress audit', async () => {
     const { cycleId } = await seedMember(tenantA, user, {
       outreachAgeDays: FRESH_OUTREACH_AGE_DAYS,
@@ -250,10 +272,10 @@ describe('F8 reminder pause after outreach — integration (T112)', () => {
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    // The fresh-outreach member from the previous test is still in the
-    // candidate set, but its reminder_event already exists from the
-    // previous test → already_sent skip. Only the stale-outreach member
-    // sends a fresh reminder this pass.
+    // J10: post-isolation-fix the candidate set contains exactly
+    // the stale-outreach member (beforeEach clears all reminder
+    // events + outreach + cycles from the tenant). No order
+    // dependency on the previous test.
     expect(r.value.summary.emailsSent).toBe(1);
     expect(gatewaySpy).toHaveBeenCalledTimes(1);
 

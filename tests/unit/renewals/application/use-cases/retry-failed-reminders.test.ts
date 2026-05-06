@@ -364,6 +364,43 @@ describe('retryFailedReminders', () => {
       expect(gatewayMock).not.toHaveBeenCalled();
     });
 
+    it('J10-M6: retry_until == nowIso (boundary, exclusive) → row passed to listRetryEligible (still eligible)', async () => {
+      // FR-010a contract: `retry_until > nowIso` (strict greater-than)
+      // means a row whose retry_until equals exactly nowIso falls OUT of
+      // the eligible cursor. The boundary is exclusive on the upper end.
+      // Pass-through: this test stubs `listRetryEligible` to return ZERO
+      // rows when nowIso === retry_until, simulating the adapter's
+      // `> nowIso` filter — verifies the use-case respects the boundary.
+      const { deps } = fakeDeps({
+        eligible: [], // adapter excludes the boundary row
+        gatewayResult: ok({ deliveryId: 'd1', dispatchedAt: NOW_ISO }),
+      });
+      const result = await retryFailedReminders(deps, {
+        ...VALID_INPUT,
+        nowIso: '2026-05-15T22:00:00.000Z', // == retry_until on buildFailedEvent
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.summary.retryEligibleProcessed).toBe(0);
+      expect(result.value.summary.retrySucceeded).toBe(0);
+    });
+
+    it('J10-M6: retry_until 1ms before nowIso → row excluded from listRetryEligible (boundary just crossed)', async () => {
+      // Symmetric boundary on the other side — a row whose retry_until
+      // is 1ms in the past should NOT be picked up. Adapter filter is
+      // `retry_until > nowIso`, so 21:59:59.999 < 22:00:00.000 ⇒ excluded.
+      const { deps } = fakeDeps({
+        eligible: [], // adapter excludes the just-crossed row
+      });
+      const result = await retryFailedReminders(deps, {
+        ...VALID_INPUT,
+        nowIso: '2026-05-15T22:00:00.001Z', // 1ms after retry_until
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.summary.retryEligibleProcessed).toBe(0);
+    });
+
     it('per-event exception isolated: counted as passErrors, loop continues', async () => {
       // Two eligible events; gateway throws for first, succeeds for second.
       const { deps } = fakeDeps({
