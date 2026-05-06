@@ -100,6 +100,13 @@ export const F8_AUDIT_EVENT_TYPES = [
   'renewal_reminder_retried',
   'renewal_skipped_no_joined_at',
   'tier_upgrade_pending_orphan_detected',
+  // --- K6 / spec.md taxonomy line 365 add (1) -----------------------------
+  // K6: previously listed in spec.md FR-052b taxonomy but the const
+  // tuple was missing it. The coordinator route emits this when an
+  // inbound Bearer fails verifyCronBearer — pre-K6 the route returned
+  // 401 without a forensic record, so a sustained CRON_SECRET-rotation
+  // incident or external probe was invisible in audit_log.
+  'cron_bearer_auth_rejected',
 ] as const;
 
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
@@ -108,9 +115,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 54
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 55
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 54';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 55';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;

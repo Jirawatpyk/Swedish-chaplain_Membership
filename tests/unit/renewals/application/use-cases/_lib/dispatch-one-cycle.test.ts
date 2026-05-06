@@ -351,6 +351,74 @@ describe('dispatchOneCycle', () => {
   });
 
   describe('skip gates', () => {
+    // K6: Gates 1 + 2 previously had no direct unit test — only the
+    // route layer exercised the kill-switch which was too coarse. The
+    // dispatcher is also called by `sendReminderNow` admin path, so
+    // FR-018 single-source-of-truth requires the gates to fire here
+    // too. Adding direct branch coverage closes the regression risk.
+    it('Gate 1 — feature_flag_disabled: silent skip + NO audit emit', async () => {
+      vi.resetModules();
+      vi.doMock('@/lib/env', () => ({
+        env: {
+          features: { f8Renewals: false }, // K6: kill-switch
+          flags: { readOnlyMode: false },
+          log: { level: 'silent' },
+          app: { baseUrl: 'http://localhost:3100' },
+          isProduction: false,
+          isDevelopment: false,
+          isTest: true,
+          nodeEnv: 'test' as const,
+        },
+      }));
+      const { dispatchOneCycle: killedDispatch } = await import(
+        '@/modules/renewals/application/use-cases/_lib/dispatch-one-cycle'
+      );
+      const { deps, emitMock } = fakeDeps({});
+      const result = await killedDispatch(deps, buildHappyCandidate(), happyCtx);
+      expect(result.kind).toBe('skipped');
+      if (result.kind !== 'skipped') return;
+      expect(result.reason).toBe('feature_flag_disabled');
+      // Gate 1 is intentionally silent — emitting on every cron pass
+      // when F8 is dark-launched would flood audit_log. The coordinator
+      // surfaces dark-launched tenants via tenants_skipped_kill_switch
+      // (K5).
+      expect(emitMock).not.toHaveBeenCalled();
+      // Reset env mock for subsequent tests in this file.
+      vi.resetModules();
+    });
+
+    it('Gate 2 — read_only_mode: skip + emit renewal_reminder_deferred_read_only', async () => {
+      vi.resetModules();
+      vi.doMock('@/lib/env', () => ({
+        env: {
+          features: { f8Renewals: true },
+          flags: { readOnlyMode: true }, // K6: read-only mode
+          log: { level: 'silent' },
+          app: { baseUrl: 'http://localhost:3100' },
+          isProduction: false,
+          isDevelopment: false,
+          isTest: true,
+          nodeEnv: 'test' as const,
+        },
+      }));
+      const { dispatchOneCycle: roDispatch } = await import(
+        '@/modules/renewals/application/use-cases/_lib/dispatch-one-cycle'
+      );
+      const { deps, emitMock } = fakeDeps({});
+      const result = await roDispatch(deps, buildHappyCandidate(), happyCtx);
+      expect(result.kind).toBe('skipped');
+      if (result.kind !== 'skipped') return;
+      expect(result.reason).toBe('read_only_mode');
+      // Gate 2 emits a dedicated audit so emergency write-freeze
+      // events are forensically traceable per Constitution Principle
+      // VIII.
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      expect(emitMock.mock.calls[0]![0].type).toBe(
+        'renewal_reminder_deferred_read_only',
+      );
+      vi.resetModules();
+    });
+
     it('Gate 3 — cycle terminal (cancelled): skip cycle_terminal', async () => {
       const { deps, emitMock } = fakeDeps({});
       const result = await dispatchOneCycle(

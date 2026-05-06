@@ -27,8 +27,10 @@ import {
 import { EscalationTaskNotFoundError } from '@/modules/renewals/application/ports/renewal-escalation-task-repo';
 
 describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
-  it('contains 54 unique event types', () => {
-    expect(F8_AUDIT_EVENT_TYPES.length).toBe(54);
+  it('contains 55 unique event types (K6: +cron_bearer_auth_rejected)', () => {
+    // K6: 54 → 55 (added cron_bearer_auth_rejected per spec.md line 365
+    // taxonomy + verifyCronBearer 401 path now emits this audit).
+    expect(F8_AUDIT_EVENT_TYPES.length).toBe(55);
     const set = new Set(F8_AUDIT_EVENT_TYPES);
     expect(set.size).toBe(F8_AUDIT_EVENT_TYPES.length);
   });

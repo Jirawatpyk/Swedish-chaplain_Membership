@@ -138,6 +138,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (
     !verifyCronBearer(request.headers.get('authorization'), env.cron.secret)
   ) {
+    // K6 / spec.md taxonomy line 365: emit `cron_bearer_auth_rejected`
+    // audit so a sustained Bearer-rejection rate (e.g. CRON_SECRET
+    // rotation incident, attacker probing) is forensically traceable.
+    // Fire-and-forget; emit failure must NOT block the 401 response.
+    try {
+      const deps = makeRenewalsDeps(env.tenant.slug);
+      await deps.auditEmitter.emit(
+        {
+          type: 'cron_bearer_auth_rejected',
+          payload: { route: '/api/cron/renewals/dispatch-coordinator' },
+        },
+        {
+          tenantId: env.tenant.slug,
+          actorUserId: null,
+          actorRole: 'cron',
+          correlationId: uuidv7(),
+          requestId: null,
+        },
+      );
+    } catch (e) {
+      logger.error(
+        {
+          err: e instanceof Error ? e : new Error(String(e)),
+        },
+        'cron.renewals.coordinator.bearer_rejected_audit_failed',
+      );
+    }
     return NextResponse.json(
       { error: { code: 'unauthorized' } },
       { status: 401 },
