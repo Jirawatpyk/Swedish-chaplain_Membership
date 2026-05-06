@@ -1,4 +1,5 @@
 import { registerOTel } from '@vercel/otel';
+import { assertVercelDeploymentForTrustedXff } from '@/lib/client-ip';
 
 /**
  * OpenTelemetry instrumentation entry point (T019, plan.md § Performance
@@ -19,4 +20,12 @@ export function register() {
     // Additional configuration (sampler, exporters) can be added here.
     // Defaults: AlwaysOnSampler + Vercel-managed OTLP exporter.
   });
+
+  // K14-1 (R13-W1): wire the K13-7 boot-time XFF trust assertion.
+  // Triple-confirmed at R13 by reliability-guardian + security-threat-
+  // modeler + feature-dev:code-reviewer that the function existed but
+  // was never called — SEC-R12-1 mitigation provided zero protection
+  // until this line landed. Pure read of `process.env` + optional
+  // `console.warn`; cannot throw or block boot.
+  assertVercelDeploymentForTrustedXff();
 }
