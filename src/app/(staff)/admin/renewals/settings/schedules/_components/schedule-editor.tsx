@@ -465,7 +465,7 @@ export function ScheduleEditor({
             // K1-E6: Treat malformed-but-OK response as an error toast.
             // The save MAY have succeeded server-side; surface honestly
             // rather than silently flipping local state to "saved".
-            // eslint-disable-next-line no-console
+             
             console.error(
               '[F8] schedule save: malformed success body',
               body,
@@ -496,7 +496,7 @@ export function ScheduleEditor({
           // (network, JSON parse, DOM exception) to "save failed". Log
           // for diagnosability while keeping the same user-facing
           // toast.
-          // eslint-disable-next-line no-console
+           
           console.error('[F8] schedule save: client handler failed', e);
           setSaveError(t('error.saveFailed'));
           toast.error(t('error.saveFailed'));

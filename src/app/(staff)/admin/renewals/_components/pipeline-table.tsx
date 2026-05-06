@@ -313,7 +313,7 @@ function RowActionsMenu({
         // network was fine and a real bug was invisible. Capture +
         // log + use the generic toast so client-side bugs are at
         // least visible in browser console.
-        // eslint-disable-next-line no-console
+         
         console.error(
           '[F8] send-reminder-now: client handler failed',
           e,

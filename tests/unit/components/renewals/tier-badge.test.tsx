@@ -45,9 +45,18 @@ describe('<TierBadge>', () => {
     }
   });
 
-  it('exposes aria-label for screen readers', () => {
-    renderBadge('premium');
-    expect(screen.getByLabelText('Premium')).toBeDefined();
+  it('K9: visible text serves as accessible name (no redundant aria-label)', () => {
+    // K9 polish: removed `aria-label={label}` from TierBadge because
+    // it duplicated the visible text content. WCAG recommends NOT
+    // setting aria-label when visible text is sufficient — older
+    // VoiceOver double-announced when the two matched. The visible
+    // text content correctly serves as the accessible name for the
+    // non-interactive <span>.
+    const { container } = renderBadge('premium');
+    const el = container.querySelector('span')!;
+    expect(el.textContent).toBe('Premium');
+    // The element MUST NOT have a redundant aria-label.
+    expect(el.getAttribute('aria-label')).toBeNull();
   });
 
   it('applies tier-specific colour classes', () => {
