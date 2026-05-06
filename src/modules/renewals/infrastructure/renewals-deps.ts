@@ -10,11 +10,11 @@
  *      use-case passes a callback to `f4InvoiceBridge.issueAndMarkPaid`
  *      so the cycle flip + audit emit run inside F4's `recordPayment`
  *      tx (atomic state+audit per Constitution Principle VIII).
- *   2. Future global registration on F4 webhook-driven `recordPayment`
- *      for the dispatcher cron path — `f8OnPaidCallbacks` factory is
- *      pre-staged to return `[]` today; the dispatcher cron will
- *      register `markCycleCompleteFromInvoicePaid` once that use-case
- *      ships.
+ *   2. F4 webhook-driven path — `f8OnPaidCallbacks(tenantId)` returns
+ *      `[]` today; the F8 `markCycleCompleteFromInvoicePaid` use-case
+ *      remains deferred (no concrete target phase scheduled — track
+ *      via spec backlog, not in-line). When it ships, this factory
+ *      returns the actual callback per tenant.
  *
  * Pure Infrastructure — only `@/lib/db` + tenants barrel imports
  * (Constitution Principle III).
@@ -81,11 +81,13 @@ export interface RenewalsDeps {
    */
   readonly f4InvoiceBridge: F4InvoiceBridge;
   /**
-   * Phase 3 H1 (T062) — Drizzle audit emitter persisting to
-   * `audit_log` for the 5 enum-shipped F8 event types; pino-logging
-   * fallback for the remaining 49 event types until their respective
-   * pgEnum-extension migrations ship in Phase 4+. Stub fallback is
-   * NOT used at this composition root — H1 ships the real adapter.
+   * Drizzle audit emitter persisting to `audit_log`. The runtime list
+   * of currently-persistable event types is the `F8_ENUM_SHIPPED` set
+   * in `drizzle-renewal-audit-emitter.ts` — events outside that set
+   * fall through to pino-logging. Phase 4 migrations 0101–0107 added
+   * the dispatch + bounce-threshold + cron-orchestrated event types;
+   * counts evolve, so consult `F8_ENUM_SHIPPED` rather than this
+   * comment.
    */
   readonly auditEmitter: RenewalAuditEmitter;
   readonly tokenSigner: RenewalLinkTokenSigner;
@@ -103,7 +105,10 @@ export interface RenewalsDeps {
    * Powers the `pauseRemindersAfterOutreach` use-case (T092 / FR-033)
    * which the daily dispatcher cron consults per candidate member to
    * skip email steps within 7 days of an admin's logged outreach.
-   * Mutating surface (record outreach) lands with US4 / Phase 6.
+   * Mutating surface (record outreach) is a future write port —
+   * tracked via FR-031 in `specs/011-renewal-reminders/spec.md` rather
+   * than a fixed-phase reference (phase numbering shifted across
+   * R5–R10 review rounds).
    */
   readonly atRiskOutreachReadRepo: AtRiskOutreachReadRepo;
   /**
@@ -136,17 +141,17 @@ export interface RenewalsDeps {
    */
   readonly reminderEventRepo: RenewalReminderEventRepo;
   /**
-   * Phase 4 Wave I2c — Stub Resend gateway (returns mock delivery-id).
-   * Wave I3 T100 swaps this for the real
-   * `ResendTransactionalRenewalGateway` adapter that wraps F1's
-   * `emailSender` + renders React Email templates.
+   * Production: `resendTransactionalRenewalGateway` (Resend SDK +
+   * React Email render). The `stub-renewal-gateway.ts` file remains
+   * test-only — wire it manually in unit-test deps composition when
+   * a use-case test needs no external network.
    */
   readonly renewalGateway: RenewalGateway;
   /**
-   * Phase 4 Wave I2d — Stub bounce-event query reader (returns zeros).
-   * Wave I4 swaps this for the real Drizzle adapter that reads F1's
-   * `email_delivery_events` with bounce_type classification, alongside
-   * the F1 schema extension that stores bounce_type per event.
+   * Production: `makeDrizzleBounceEventQuery` (reads F1's
+   * `email_delivery_events.bounce_type` column populated by the F1
+   * Resend webhook). The `stub-bounce-event-query.ts` file is
+   * test-only.
    */
   readonly bounceEventQuery: BounceEventQuery;
 }
@@ -187,17 +192,14 @@ export { renewalAuditEmitterStub } from './audit-emitter-stub';
 export type { AuditContext, F8AuditEvent, F8AuditEventType };
 
 /**
- * F4 onPaidCallbacks registration factory. Phase 2 ships a NO-OP
- * empty array — the F8 `markCycleCompleteFromInvoicePaid` use-case
- * lands in Phase 4 alongside the dispatcher cron, at which point the
- * factory returns `[(evt) => markCycleCompleteFromInvoicePaid(ctx, evt)]`.
+ * F4 onPaidCallbacks registration factory. Returns `[]` until the
+ * `markCycleCompleteFromInvoicePaid` use-case ships (no concrete target
+ * phase scheduled — track via spec backlog FR-006). When the use-case
+ * lands the factory will return
+ * `[(evt) => markCycleCompleteFromInvoicePaid(ctx, evt)]`.
  *
- * F5 webhook composition currently passes `undefined` for callbacks
- * (functionally equivalent to `[]`); when Phase 4 lands, F5 will start
- * calling `f8OnPaidCallbacks(tenantId)` to thread the F8 hook through.
- *
- * The `_tenantId` parameter is reserved — Phase 4 implementation will
- * use it to build the per-tenant closure that calls the F8 use-case.
+ * The `_tenantId` parameter is reserved for the eventual per-tenant
+ * closure binding.
  */
 export function f8OnPaidCallbacks(
   _tenantId: string,

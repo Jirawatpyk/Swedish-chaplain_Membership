@@ -10,8 +10,10 @@
  *
  * Source of truth: data-model.md § 2.2.
  *
- * Domain entity (Wave D — schedule-step value object T033) + Drizzle
- * adapter (Phase 4+ when the dispatcher cron ships) consume this schema.
+ * Consumed by:
+ *   - Domain — `domain/value-objects/reminder-step.ts` (channel-discriminated DU)
+ *   - Application port — `application/ports/renewal-reminder-event-repo.ts`
+ *   - Drizzle adapter — `drizzle-renewal-reminder-event-repo.ts`
  */
 import {
   foreignKey,
@@ -36,7 +38,8 @@ export const renewalReminderEvents = pgTable(
       .default(sql`gen_random_uuid()`),
     cycleId: uuid('cycle_id').notNull(),
 
-    // Step identity — free-form at DB; enumerated in Domain (Wave D T033).
+    // Step identity — free-form at DB; parsed by the Domain value-object
+    // `reminder-step.ts` into the channel-discriminated DU.
     stepId: text('step_id').notNull(),
     // 'email' | 'task' (DB-level CHECK).
     channel: text('channel').notNull(),
@@ -47,7 +50,11 @@ export const renewalReminderEvents = pgTable(
 
     dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
     deliveryId: text('delivery_id'),
-    // 4-state: 'pending' | 'sent' | 'skipped' | 'failed'.
+    // 3-state in practice: 'pending' | 'sent' | 'failed'. The CHECK
+    // constraint also accepts 'skipped' for forward-compat (a future
+    // post-insert skip path could write rows in that state) but no
+    // current code path writes `'skipped'` — gate skips don't insert
+    // a reminder_event row at all (audit-only).
     status: text('status').notNull().default('pending'),
     skipReason: text('skip_reason'),
     failureReason: text('failure_reason'),

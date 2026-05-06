@@ -17,13 +17,13 @@
  * members. Cursor-paginated candidate fetch + per-cycle gateway calls
  * are the dominant cost; profile in Wave I8 integration tests.
  *
- * Out of scope for I2c (deferred to I2d):
- *   - FR-010a 24h retry budget orchestration (the `retry_until` column
- *     + `renewal_reminder_retried` audit cycling). Current I2c emits
- *     a one-shot `failed` status without re-attempt scheduling.
- *   - `cron_dispatch_orchestrated` audit emit (Wave I5 cron coordinator
- *     emits this with the cross-tenant fan-out summary; T088 returns
- *     summary metrics that the coordinator aggregates).
+ * Companion surfaces (live in sibling files):
+ *   - 24h retry-budget orchestration — `retry-failed-reminders.ts`
+ *     (Pass 1 re-attempts + Pass 2 exhaustion + audit cycling).
+ *   - `cron_dispatch_orchestrated` audit — emitted by the
+ *     `/api/cron/renewals/dispatch-coordinator` route after fan-out;
+ *     this use-case returns the summary metrics the coordinator
+ *     aggregates per tenant.
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
@@ -73,15 +73,21 @@ export const DEFAULT_PAGE_SIZE = 200 as const;
  * Bounded concurrency for per-cycle dispatch within a page. Each
  * `dispatchOneCycle` call issues 1–3 SQL roundtrips (pause check +
  * idempotency insert + audit emit). Sequential dispatch on Neon
- * Singapore from a Vercel `sin1` function is ≈30 ms/cycle, which
- * blows the FR-017 / SC-005 60s budget at 5,000 candidates
- * (5000×30ms = 150s, measured T115 perf benchmark cold pass).
+ * Singapore from a Vercel `sin1` function is ~30 ms/cycle, which
+ * blows the FR-017 / SC-005 60s budget at 5,000 candidates without
+ * fan-out.
  *
  * `Promise.all` over the whole page would saturate Neon's per-pool
  * connection slots and queue inside the postgres driver. A small
  * fan-out (10) keeps each candidate's tx short while letting the
- * cron amortise round-trip latency. Empirically: 10 concurrency
- * brings the warm pass from 89s → ~10s and cold from 150s → ~25s.
+ * cron amortise round-trip latency.
+ *
+ * The chosen `10` is the value where the SC-005 budget held with
+ * headroom on the 5k benchmark; re-measure via
+ * `tests/integration/perf/renewals-cron-5k.test.ts` (RUN_PERF=1)
+ * after any infra change (Neon plan tier, page-size, region) and
+ * re-tune if needed. Avoid pinning specific cold/warm timings here
+ * — they rot every time the benchmark or seed shape changes.
  *
  * Safe under Constitution Principle VIII: each `runInTenant` opens
  * its own tx; concurrent emits to `audit_log` use independent INSERTs

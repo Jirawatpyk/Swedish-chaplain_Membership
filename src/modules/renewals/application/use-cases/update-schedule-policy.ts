@@ -1,9 +1,10 @@
 /**
- * F8 Phase 4 Wave I1a · T082 — `update-schedule-policy` use-case.
+ * `update-schedule-policy` use-case (F8 admin schedule editor).
  *
  * Admin replaces the step list for a (tenant, tier_bucket) schedule
  * policy. Powers `PUT /api/admin/renewals/settings/schedules/[tierBucket]`
- * (T085) — the schedule editor "Save" action.
+ * (the schedule editor "Save" action — see
+ * `src/app/api/admin/renewals/settings/schedules/[tierBucket]/route.ts`).
  *
  * Atomic state+audit per Constitution Principle VIII:
  *   - Opens `runInTenant(ctx, tx => …)` so the upsert + the
@@ -22,7 +23,7 @@
  * row-versioning trail; audit events are a control-plane log, not a
  * full-history mirror).
  *
- * Manager-role enforcement is the route handler's job (T085) per the
+ * Manager-role enforcement is the route handler's job per the
  * standard F8 RBAC pattern — manager gets 403 + `f8_role_violation_blocked`
  * audit before reaching this use-case. The use-case validates only the
  * input shape (admin actor expected; no manager actor-role accepted).

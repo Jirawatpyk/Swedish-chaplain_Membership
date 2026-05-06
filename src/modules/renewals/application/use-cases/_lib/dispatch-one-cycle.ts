@@ -1,39 +1,28 @@
 /**
- * F8 Phase 4 Wave I2c — `dispatchOneCycle` core function.
+ * `dispatchOneCycle` — single per-cycle decision tree shared by the
+ * cron entry (`dispatchRenewalCycle`) and the admin entry
+ * (`sendReminderNow`) per FR-018 single-source-of-truth requirement.
  *
- * Single per-cycle decision tree shared by T088 cron entry
- * (`dispatchRenewalCycle`) and T089 admin entry (`sendReminderNow`)
- * per FR-018 single-source-of-truth requirement.
+ * Decision tree: 13 gates (first match wins). The canonical list lives
+ * inline as `// Gate N — …` comments next to the runtime checks below
+ * — keeping a single source of truth so a future gate addition can't
+ * drift between the header narrative and the executable logic. Skip
+ * reasons emitted by the gates: see the `SKIP_REASONS` const tuple.
  *
- * Decision tree (first match wins):
- *   1. Feature flag off → skip `feature_flag_disabled`
- *   2. Read-only mode → skip + emit `renewal_reminder_deferred_read_only`
- *   3. Cycle terminal status → skip `cycle_terminal` (defensive)
- *   4. Member archived → skip `member_archived`
- *   4.5. Member has no joined_at → skip `no_joined_at` + emit
- *      `renewal_skipped_no_joined_at` (spec.md Edge Case backstop;
- *      defensive — F8 normally never creates cycles for such members)
- *   5. Member opted out → skip `member_opted_out`
- *   6. Member email unverified → skip `email_unverified`
- *   7. No schedule policy for tier → skip `tenant_misconfigured`
- *   8. Step not due today → no-op return (NOT a skip in audit terms)
- *   9. Multi-year non-final year + email channel → skip `multi_year_non_final_year`
- *  10. Outreach pause active → skip `outreach_in_progress`
- *  11. Email channel + no primary contact → skip `no_primary_contact`
- *      + idempotently create `manual_outreach_required` task (FR-019a)
- *  12. Idempotency replay → skip `already_sent` (no audit — reminder
- *      event already exists, prior run audited)
- *  13. Channel branch:
- *      - email: gateway.sendRenewalEmail → on success transition + audit
- *        `renewal_reminder_sent`; on 4xx → `renewal_reminder_send_failed_permanent`;
- *        on 5xx → `renewal_reminder_send_failed` (Wave I2d adds retry orchestration)
- *      - task: escalationTaskRepo.insertIfAbsent + audit `escalation_task_created`
+ * Channel branch (after gate 12 idempotency insert):
+ *   - email — gateway.sendRenewalEmail → success: transition + audit
+ *     `renewal_reminder_sent`; 4xx → `renewal_reminder_send_failed_permanent`;
+ *     5xx → `renewal_reminder_send_failed` (`retry-failed-reminders.ts`
+ *     handles the FR-010a 24h retry budget).
+ *   - task — escalationTaskRepo.insertIfAbsent + audit `escalation_task_created`.
  *
  * Atomic state+audit per Constitution Principle VIII: all reminder-event
  * status transitions + audit emits happen inside `runInTenant` tx. The
  * external gateway call happens BEFORE the tx is opened (gateways are
  * non-transactional); on success/failure the persistence + audit are
- * wrapped in a fresh tx.
+ * wrapped in a fresh tx. Uncaught throws between `insertIfAbsent` and
+ * the success-tx are caught by `defensivelyMarkFailedForRetry` (J2-B2)
+ * so a failed `pending` row never orphans.
  *
  * Private file (`_lib/`) — NOT exported via the F8 barrel.
  */
@@ -60,11 +49,12 @@ import type { MemberId } from '@/modules/members';
 // ---------------------------------------------------------------------------
 
 /**
- * F8 Phase 4 Wave I2e — FR-010a retry budget window. Transient gateway
- * failures get `retry_until = dispatched_at + RETRY_BUDGET_HOURS`; the
- * retry use-case re-attempts within this window. Beyond it, the event
- * transitions to permanent failure with `renewal_reminder_send_failed_permanent`
- * audit + `manual_outreach_required` task.
+ * FR-010a retry budget window (in hours). Transient gateway failures
+ * get `retry_until = dispatched_at + RETRY_BUDGET_HOURS`. The
+ * `retry-failed-reminders.ts` use-case is the consumer — it re-attempts
+ * within this window (Pass 1) and transitions the event to permanent
+ * failure beyond it (Pass 2 — `renewal_reminder_send_failed_permanent`
+ * audit + `manual_outreach_required` escalation task).
  */
 export const RETRY_BUDGET_HOURS = 24 as const;
 

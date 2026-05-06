@@ -1,10 +1,10 @@
 /**
  * `RenewalAuditEmitter` — F8 audit port writing to F1's `audit_log`.
  *
- * 54 event types across 6 categories: lifecycle (20) · lapsed+bounce
- * (3) · at-risk (6) · tier-upgrade (10) · escalation (4) · cron+failure
- * (5) · admin-reactivation (6). All default to 5-year retention (F8 has
- * no tax-document overlap with F4's 10y retention).
+ * The canonical event-type list is `F8_AUDIT_EVENT_TYPES` below — its
+ * `length` is pinned by `_AssertF8AuditEventCount`, so the count
+ * stays compile-enforced rather than narrative. All F8 events default
+ * to 5-year retention (no tax-document overlap with F4's 10y).
  *
  * Enum-extension migrations co-ship with each use-case's first emit
  * site. The Drizzle adapter's `F8_ENUM_SHIPPED` set is the canonical

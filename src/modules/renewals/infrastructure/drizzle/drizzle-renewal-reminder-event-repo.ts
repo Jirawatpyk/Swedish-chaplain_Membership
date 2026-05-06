@@ -12,13 +12,17 @@
  * is `INSERT … ON CONFLICT DO NOTHING` against that exact target so
  * concurrent cron passes serialise deterministically.
  *
- * Phase 4 directly exercises:
- *   - `insertIfAbsent` — by `dispatchOneCycle` (T088 + T089)
- *   - `transitionStatus` — by `dispatchOneCycle` after gateway call
- *
- * `listForCycle` + `listFailedSince` ship for port completeness; admin
- * cycle-detail page (Wave I8) + ops failure-cursor (Wave I8) consume
- * them. Adapter ships full surface so no rework when those waves land.
+ * Production callers across the F8 surface:
+ *   - `insertIfAbsent` — `dispatchOneCycle` (cron + admin entry)
+ *   - `transitionStatus` — `dispatchOneCycle` after gateway call +
+ *     `defensivelyMarkFailedForRetry` cleanup tx (J2-B2)
+ *   - `transitionFailedToSent` — `attemptRetry` Pass 1 success path
+ *   - `markRetryExhausted` — `emitPermanentFailure` (Pass 1 4xx
+ *     + Pass 2 budget exhaustion)
+ *   - `listRetryEligible` — `runRetryPasses` Pass 1 cursor
+ *   - `listRetryExhausted` — `runRetryPasses` Pass 2 cursor
+ *   - `listForCycle` — admin cycle-detail page event timeline
+ *   - `listFailedSince` — ops failure-cursor dashboard
  */
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';

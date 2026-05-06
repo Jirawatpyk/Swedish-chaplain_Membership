@@ -23,9 +23,9 @@
 --     and a `manual_outreach_required` task created.
 --
 -- Both columns are NULLABLE — backfilling for the ~0 in-flight failed
--- rows (F8 ships dark behind FEATURE_F8_RENEWALS=false until F9) is
--- a no-op. New failure rows from Wave I2e dispatcher write retry_until
--- inline.
+-- rows (F8 ships dark behind FEATURE_F8_RENEWALS=false until production
+-- flag-flip) is a no-op. New failure rows from the dispatcher write
+-- retry_until inline.
 --
 -- Index: partial index on `(tenant_id, retry_until)` WHERE
 -- `status='failed' AND retry_until IS NOT NULL` so the retry-eligible

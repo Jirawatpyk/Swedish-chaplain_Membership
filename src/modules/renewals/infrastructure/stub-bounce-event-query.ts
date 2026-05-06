@@ -1,17 +1,18 @@
 /**
- * F8 Phase 4 Wave I2d — Stub `BounceEventQuery` adapter.
+ * Test-only stub `BounceEventQuery` adapter.
  *
  * Returns `{ hardBounces: 0, softBouncesInCycle: 0, softBouncesIn30Days: 0 }`
- * for every member — i.e. T090 detect-bounce-threshold ALWAYS returns
- * `no_threshold_crossed` outcome under this stub. The real Drizzle
- * adapter ships in Wave I4 alongside the F1 schema extension
- * (`email_delivery_events.bounce_type` column).
+ * for every member — `detectBounceThreshold` always returns
+ * `no_threshold_crossed` outcome under this stub. Production wires
+ * `makeDrizzleBounceEventQuery` against F1's `email_delivery_events`
+ * (with the `bounce_type` column populated by the F1 Resend webhook).
+ * This stub is reserved for unit-test deps composition that wants
+ * deterministic zero counts.
  *
  * **Production guard**: throws on call when `NODE_ENV === 'production'`.
  * Preserves the audit-trail invariant (Constitution Principle VIII)
- * by failing loudly if a code path forgot to swap the stub before
- * flipping `FEATURE_F8_RENEWALS=true`. Pattern matches
- * `stub-renewal-gateway.ts` from Wave I2c.
+ * by failing loudly if a code path accidentally wires the stub into
+ * a production deployment.
  */
 import { logger } from '@/lib/logger';
 import type {

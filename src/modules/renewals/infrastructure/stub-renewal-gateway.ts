@@ -1,19 +1,18 @@
 /**
- * F8 Phase 4 Wave I2c — Stub `RenewalGateway` adapter.
+ * Test-only stub `RenewalGateway` adapter.
  *
  * Returns a mock delivery-id without invoking the real Resend SDK.
  * Lets the dispatcher logic + idempotency primitive + audit emission
  * be tested end-to-end without external network dependency or
- * email-template rendering.
- *
- * Wave I3 T100 swaps this for the real `ResendTransactionalRenewalGateway`
- * adapter that wraps F1's `emailSender` + renders React Email templates
- * from `src/modules/renewals/infrastructure/email/templates/*.tsx`.
+ * email-template rendering. The production composition root
+ * (`renewals-deps.ts`) wires `resendTransactionalRenewalGateway` —
+ * this stub is reserved for unit-test deps composition that wants
+ * deterministic gateway behaviour.
  *
  * **Production guard**: throws on dispatch when `NODE_ENV === 'production'`
  * — preserves the audit-trail invariant (Constitution Principle VIII)
- * by failing loudly if a code path forgot to swap the stub before going
- * live behind `FEATURE_F8_RENEWALS=true`.
+ * by failing loudly if a code path accidentally wires the stub into
+ * a production deployment.
  */
 import { randomUUID } from 'node:crypto';
 import { ok, type Result } from '@/lib/result';

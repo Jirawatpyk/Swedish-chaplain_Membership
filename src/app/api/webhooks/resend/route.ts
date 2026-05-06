@@ -21,9 +21,13 @@
  * Timing: constant-time comparison via `crypto.timingSafeEqual` on
  * equal-length buffers.
  *
- * Audit: NO audit event emitted — webhook events are operational
- * signals, not auth events. They live in the separate
- * `email_delivery_events` table (spec FR-012 U4).
+ * Audit: F1 webhook ingest itself emits NO audit event — delivery
+ * events live in the separate `email_delivery_events` table (spec
+ * FR-012 U4). The F8 bounce-threshold sub-flow (gated by
+ * `FEATURE_F8_RENEWALS`) MAY emit
+ * `member_email_unverified_threshold_crossed` and
+ * `escalation_task_created` audits when a bounce trips a threshold —
+ * triggered via the synchronous `detectBounceThreshold` call below.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { createHmac, timingSafeEqual } from 'node:crypto';

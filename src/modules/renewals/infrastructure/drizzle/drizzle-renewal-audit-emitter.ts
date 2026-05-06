@@ -53,14 +53,16 @@ import type { AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
  *       - `renewal_reminder_skipped`
  *       - `renewal_reminder_send_failed`
  *       - `renewal_reminder_send_failed_permanent`
- *       - `renewal_reminder_retried` (Wave I2d retry budget will emit)
+ *       - `renewal_reminder_retried` (emitted by `retry-failed-reminders.ts`)
  *       - `renewal_reminder_deferred_read_only`
  *       - `renewal_skipped_no_joined_at`
  *       - `escalation_task_created` (also second emit site = task channel)
  *
- * `renewal_cycle_created` is reserved for the Phase 4 cycle-creation
- * hook (F4 invoice-paid callback) and will be added here alongside
- * its ADD VALUE migration when that emit site lands.
+ * `renewal_cycle_created` is RESERVED for a future cycle-creation
+ * hook (F4 invoice-paid callback wiring — `markCycleCompleteFromInvoicePaid`
+ * use-case in `f8OnPaidCallbacks`). NOT in `F8_ENUM_SHIPPED` until
+ * that emit site + ADD VALUE migration lands; see the spec backlog
+ * (FR-006) for the deferral target.
  */
 const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   'renewal_cycle_cancelled',

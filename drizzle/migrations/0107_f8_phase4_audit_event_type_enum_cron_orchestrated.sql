@@ -6,10 +6,13 @@
 -- this enum value lands alongside the first concrete emit site:
 --
 --   * `cron_dispatch_orchestrated` — emitted by the daily reminder
---     dispatch coordinator (T103, /api/cron/renewals/dispatch-coordinator)
---     after fanning out to per-tenant endpoints. Payload carries
---     `{tenants_enqueued, tenants_succeeded, tenants_failed, duration_ms}`
---     for cron-pass observability.
+--     dispatch coordinator at /api/cron/renewals/dispatch-coordinator
+--     after fanning out to per-tenant endpoints. Canonical payload
+--     shape lives in `F8AuditPayloadShapes.cron_dispatch_orchestrated`
+--     (renewal-audit-emitter.ts) — fields include `tenants_enqueued`,
+--     `tenants_succeeded`, `tenants_failed`, `duration_ms`, plus a
+--     bounded-cardinality `per_tenant_summaries[]` array with
+--     success-or-error variants per tenant.
 --
 -- Postgres requirement: `ALTER TYPE … ADD VALUE` cannot run inside a
 -- transaction with other DDL — this single statement ships in its own

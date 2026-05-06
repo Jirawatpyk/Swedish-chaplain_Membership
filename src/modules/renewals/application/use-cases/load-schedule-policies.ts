@@ -9,10 +9,11 @@
  *      step list per bucket. Manager has read-only access; admin can
  *      mutate via `update-schedule-policy` (T082).
  *
- *   2. Pre-flight observability — the dispatcher cron (T088) emits a
- *      one-shot `renewal_tenant_misconfigured` warning when a tenant
- *      has zero policies (rare — SweCham seed populates 5 rows; tenant
- *      onboarding mirrors that fixture). Listing is the cheap probe.
+ *   2. Pre-flight observability — the dispatcher cron emits
+ *      `renewal_reminder_skipped {reason: 'tenant_misconfigured'}` per
+ *      candidate cycle that lacks a schedule policy (rare — SweCham
+ *      seed populates 5 rows; tenant onboarding mirrors that fixture).
+ *      Listing is the cheap probe.
  *
  * The use-case is intentionally NO-AUDIT: read-only listing of admin-
  * configurable tenant settings is not a privacy-relevant event; admins

@@ -10,16 +10,16 @@
 --   * `renewal_reminder_sent` — happy-path dispatch emit when the
 --     gateway returns a delivery_id (FR-010 + FR-011 idempotent dispatch).
 --   * `renewal_reminder_skipped` — single skip event with structured
---     payload `{reason}` covering all 8 FR-012 reasons + FR-019a
---     `no_primary_contact` + FR-033 `outreach_in_progress`.
+--     payload `{reason}` covering ALL skip reasons. The canonical
+--     list lives in the `SKIP_REASONS` const tuple in
+--     `dispatch-one-cycle.ts` (length pinned by `_AssertSkipReasonCount`).
 --   * `renewal_reminder_send_failed` — transient gateway failure
---     (5xx, retryable). Wave I2d's FR-010a retry budget will
---     subsequently emit `renewal_reminder_retried` per attempt.
+--     (5xx, retryable). The FR-010a retry budget emits
+--     `renewal_reminder_retried` per re-attempt.
 --   * `renewal_reminder_send_failed_permanent` — non-retryable
 --     gateway failure (4xx invalid recipient, validation error).
 --   * `renewal_reminder_retried` — emitted by the FR-010a retry
---     budget logic in Wave I2d (enum lands now to keep migrations
---     batched and to avoid a separate ADD VALUE migration later).
+--     budget logic in `retry-failed-reminders.ts`.
 --   * `renewal_reminder_deferred_read_only` — distinct event when
 --     `READ_ONLY_MODE=true` blocks dispatch; preserves auditability
 --     per FR-012 + Constitution Principle VIII.

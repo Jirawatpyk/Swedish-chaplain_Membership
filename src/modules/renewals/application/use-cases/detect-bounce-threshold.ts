@@ -184,8 +184,12 @@ export async function detectBounceThreshold(
   const cycleStartedAt = activeCycle?.periodFrom ?? null;
   const activeCycleId = activeCycle?.cycleId ?? null;
 
-  // Read bounce counts via the port (stub returns zeros — Wave I4
-  // ships the real adapter against F1's email_delivery_events).
+  // Read bounce counts via the port — production wires
+  // `makeDrizzleBounceEventQuery` against F1's `email_delivery_events`
+  // (composite filtered-aggregate query that partitions on
+  // `bounce_type` + cycle window + 30d rolling window). The
+  // `stub-bounce-event-query.ts` file is reserved for unit-test
+  // composition only.
   const counts = await deps.bounceEventQuery.countBounces(
     input.tenantId,
     input.memberId,
