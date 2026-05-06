@@ -231,8 +231,18 @@ function StepRow({
           />
         </div>
         <div>
+          {/*
+            K3-BLK-1: previously the rendered label was
+            `"Email / Task"` — those are option VALUES, not the field's
+            name. Screen-reader users heard "Email / Task, combobox"
+            without a clue what the field controls (WCAG 4.1.2
+            Name/Role/Value). Now uses a dedicated `channelLabel` i18n
+            key that names the field ("Delivery channel" / "ช่องทางการ
+            ส่ง" / "Leveranskanal"); the option values render inside
+            the SelectContent below where they belong.
+          */}
           <Label htmlFor={`channel-${idPrefix}`}>
-            {t('stepCard.channel.email')} / {t('stepCard.channel.task')}
+            {t('stepCard.channelLabel')}
           </Label>
           <Select
             value={step.channel}

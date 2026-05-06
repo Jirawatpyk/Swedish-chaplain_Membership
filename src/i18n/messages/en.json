@@ -1718,6 +1718,7 @@
             "partnership": "Partnership"
           },
           "stepCard": {
+            "channelLabel": "Delivery channel",
             "channel": {
               "email": "Email",
               "task": "Task"

@@ -16,12 +16,14 @@
  * 96rem used for the pipeline list.
  */
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { getTranslations } from 'next-intl/server';
 import { AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { buttonVariants } from '@/components/ui/button';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
@@ -98,7 +100,7 @@ export default async function RenewalSchedulesSettingsPage() {
           <CardContent
             role="alert"
             aria-live="assertive"
-            className="flex flex-col items-center gap-3 py-12 text-center"
+            className="flex flex-col items-center gap-4 py-12 text-center"
           >
             <AlertTriangle
               aria-hidden="true"
@@ -106,6 +108,28 @@ export default async function RenewalSchedulesSettingsPage() {
             />
             <div className="text-base font-medium text-destructive">
               {tShared('error.loadFailed')}
+            </div>
+            {/*
+              K3-BLK-2: error state was missing a Retry CTA — manager
+              had no way to recover without manually re-typing the URL.
+              Mirrors the pattern already in use at /admin/renewals
+              (page.tsx) — `_retry={correlationId}` busts the App
+              Router RSC cache so the next render fires a fresh
+              loadSchedulePolicies call.
+            */}
+            <div className="flex gap-2">
+              <Link
+                href={`/admin/renewals/settings/schedules?_retry=${correlationId}`}
+                className={buttonVariants({ variant: 'default', size: 'sm' })}
+              >
+                {tShared('error.retry')}
+              </Link>
+              <Link
+                href="/admin/renewals"
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              >
+                {tShared('error.goBack')}
+              </Link>
             </div>
           </CardContent>
         </Card>
