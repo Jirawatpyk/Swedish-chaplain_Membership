@@ -147,7 +147,43 @@ export function RenewalConfirmFlow({
           setError(code);
           return;
         }
-        const payload = (await r.json()) as { pay_url?: string };
+        // Round 3 review-fix (R3-S3): wrap success-path JSON parse so
+        // a malformed body (proxy injecting an HTML error page on a
+        // mid-deploy edge race, server bug emitting non-JSON 200, etc.)
+        // surfaces as a distinct `malformed_response` code instead of
+        // being mislabelled as `network_error` by the outer catch.
+        // The user-visible string still falls through to `errorGeneric`
+        // (no dedicated i18n key — the distinction matters for support
+        // correlation, not for the member's confusion-vs-confusion
+        // experience), but the beacon ships the precise tag.
+        let payload: { pay_url?: string };
+        try {
+          payload = (await r.json()) as { pay_url?: string };
+        } catch (parseErr) {
+          console.error('[renewal-confirm] malformed response body', parseErr);
+          if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+            try {
+              navigator.sendBeacon(
+                '/api/internal/client-error',
+                new Blob(
+                  [
+                    JSON.stringify({
+                      tag: 'renewal-confirm',
+                      code: 'malformed_response',
+                      status: r.status,
+                      path: window.location.pathname,
+                    }),
+                  ],
+                  { type: 'application/json' },
+                ),
+              );
+            } catch {
+              /* sendBeacon best-effort; see error path above */
+            }
+          }
+          setError('malformed_response');
+          return;
+        }
         if (payload.pay_url) {
           window.location.assign(payload.pay_url);
         } else {

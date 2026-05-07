@@ -20,7 +20,7 @@ import type { TenantTx } from '@/lib/db';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { SuggestionId } from '../../domain/tier-upgrade-suggestion';
 import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
-import type { MemberId, MemberPlanId as PlanId } from '@/modules/members';
+import type { MemberId, PlanId } from '@/modules/members';
 import type { UserId } from '@/modules/auth/domain/branded';
 import type { InvoiceId } from '@/modules/invoicing';
 import type { CreditNoteId } from '@/modules/invoicing';

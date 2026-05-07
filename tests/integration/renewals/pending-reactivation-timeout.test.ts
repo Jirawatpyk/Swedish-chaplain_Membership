@@ -210,7 +210,9 @@ describe('F8 reconcilePendingReactivations — integration (T148)', () => {
       [cycleT7, cycleT3, cycleT1].sort(),
     );
 
-    // Verify the 4 audit events landed.
+    // Round 3 review-fix (R3-S1): Verify all 4 distinct audit event
+    // TYPES appear (3 reminders × 3 cycles + 1 timeout × 1 cycle = 7
+    // total rows; we only assert TYPE coverage here, not row count).
     const auditCounts = await runInTenant(tenantA.ctx, (tx) =>
       tx
         .select({ eventType: auditLog.eventType })

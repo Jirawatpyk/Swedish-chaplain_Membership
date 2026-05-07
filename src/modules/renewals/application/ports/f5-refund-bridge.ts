@@ -14,19 +14,25 @@
  * `loadInvoicePaymentActivity` + `issueRefund` use-cases. Mirrors the
  * existing `f4-invoice-bridge.ts` precedent for F8 → F4.
  *
- * **Round 2 review-fix S-9** (POC adoption): the cross-module input
- * types use branded `TenantId` / `InvoiceId` from `@/lib/branded-ids`
- * to catch arg-swap at compile time — `issueRefundForInvoice({
- * tenantId: invoiceId, invoiceId: tenantId })` (swapped) now refuses
- * to type-check. The 3 other F8 cross-module ports
- * (`f4-invoicing-bridge`, `plan-lookup-for-renewal`,
+ * **Round 2 review-fix S-9 / Round 3 review-fix CR1** (canonical brand
+ * adoption): the cross-module input types use the **canonical** branded
+ * types from each owning module — `TenantId` from `@/modules/members`
+ * (F3 owns the tenant-id concept across all member-related surfaces)
+ * and `InvoiceId` from `@/modules/invoicing` (F4 owns invoice ids).
+ * This prevents the parallel-type-system trap that an `@/lib/branded-ids`
+ * fork would create (Round 3 R3-CR1 finding) — a `TenantId` from
+ * F3 is the same nominal type everywhere it's used. Arg-swap protection
+ * stays — `issueRefundForInvoice({ tenantId: invoiceId, invoiceId:
+ * tenantId })` (swapped) refuses to type-check. The 3 other F8 cross-
+ * module ports (`f4-invoicing-bridge`, `plan-lookup-for-renewal`,
  * `event-attendees-port`) adopt the same pattern incrementally as
  * they're touched (F9).
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
 
-import type { TenantId, InvoiceId } from '@/lib/branded-ids';
+import type { TenantId } from '@/modules/members';
+import type { InvoiceId } from '@/modules/invoicing';
 
 export interface IssueRefundForInvoiceInput {
   readonly tenantId: TenantId;

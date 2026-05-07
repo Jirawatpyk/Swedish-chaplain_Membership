@@ -31,10 +31,20 @@ async function resolveLoadingAnnounce(): Promise<string> {
   try {
     const t = await getTranslations('portal.renewal.loading');
     return t('announce');
-  } catch {
-    // i18n namespace/key missing — degraded mode. CI gate should have
-    // caught this on release branch; we fall back to the EN canonical
-    // so screen-reader users always hear something.
+  } catch (e) {
+    // Round 3 review-fix (R3-S2): bind + log. Missing-key path is the
+    // documented expected case (CI gate `pnpm check:i18n` blocks merges
+    // that drop the key on release branches), but a bare swallow would
+    // also hide a real next-intl provider crash, runtime context
+    // propagation bug, or polyfill regression. The console.warn lets
+    // SRE / support correlate user reports with the underlying cause
+    // instead of attributing every silent EN fallback to "missing
+    // locale key" guesswork. Server component → console.warn lands in
+    // the Vercel function log stream.
+    console.warn(
+      '[renewal/loading] getTranslations failed — falling back to EN canonical',
+      { err: e instanceof Error ? e.message : String(e) },
+    );
     return FALLBACK_LOADING_ANNOUNCE;
   }
 }

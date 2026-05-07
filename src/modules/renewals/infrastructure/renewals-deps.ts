@@ -334,6 +334,14 @@ export function f8OnPaidCallbacks(
           txForInTx = txUnknown;
         } else {
           const { logger } = await import('@/lib/logger');
+          // Round 3 review-fix (R3-I8): bump dedicated OTel counter so
+          // Vercel alert rules (which attach to counters not log strings)
+          // page on contract drift instead of waiting for an SRE to
+          // grep-discover the warn-log. Any non-zero rate sustained for
+          // 5 min indicates the I3 atomic-single-tx invariant is being
+          // silently lost. Pattern matches `redisFallback` precedent.
+          const { renewalsMetrics } = await import('@/lib/metrics');
+          renewalsMetrics.onPaidInvalidTx.add(1, { tenant_id: tenantId });
           logger.error(
             {
               errorId: 'F8.ONPAID.INVALID_TX',
@@ -354,10 +362,31 @@ export function f8OnPaidCallbacks(
       // (no Result wrapper — domain failures are non-throws so callers
       // never need to discriminate ok vs err). Infra throws still
       // propagate up so F4's tx rolls back on real DB failures.
-      if (txForInTx !== undefined) {
-        await markCycleCompleteInTx(deps, evt, txForInTx);
-      } else {
-        await markCycleCompleteFromInvoicePaid(deps, evt);
+      const outcome =
+        txForInTx !== undefined
+          ? await markCycleCompleteInTx(deps, evt, txForInTx)
+          : await markCycleCompleteFromInvoicePaid(deps, evt);
+
+      // Round 3 review-fix (R3-CR2): exhaustive switch on the outcome
+      // discriminator restores the compile-time guarantee S-10's drop-
+      // the-Result-wrapper claimed: adding a 5th `MarkCycleCompleteOutcome`
+      // variant in the use-case (e.g. a future `kill_switch_blocked` or
+      // `cross_tenant_probe`) now forces a compile error here instead
+      // of being silently discarded by `await`. Each known kind is a
+      // no-op — the use-case already emits its own structured log per
+      // outcome, and per-kind metrics live inside the use-case. The
+      // dispatch site only needs to enforce that every variant is
+      // *acknowledged* by F4's onPaid contract.
+      switch (outcome.kind) {
+        case 'completed':
+        case 'held_pending_admin':
+        case 'no_cycle_for_invoice':
+        case 'cycle_not_payable':
+          break;
+        default: {
+          const _exhaustive: never = outcome;
+          void _exhaustive;
+        }
       }
     },
   ];

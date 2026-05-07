@@ -34,7 +34,8 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { asTenantId, asInvoiceId } from '@/lib/branded-ids';
+import { asTenantId } from '@/modules/members';
+import { asInvoiceId } from '@/modules/invoicing';
 import { parseInput } from './_lib/parse-input';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { F5RefundBridge } from '../ports/f5-refund-bridge';
@@ -104,7 +105,7 @@ export type ReconcilePendingReactivationsError = {
  * T138 catch-up review-fix: `reminderAuditQuery` lets the cron detect
  * already-emitted reminders so a missed cron day (cron skip) doesn't
  * silently drop a reminder rung. The previous equality-only check
- * (`daysPending === REMINDER_T_N`) is now combined with
+ * (`daysPending === REMINDER_LADDER threshold`) is now combined with
  * "no audit row of this type exists for this cycle" — see
  * `decideRemindersToFire` for the full rule.
  */
@@ -118,10 +119,29 @@ export interface ReconcilePendingReactivationsDeps
 }
 
 const PENDING_TIMEOUT_DAYS = 30;
-const REMINDER_T_7 = 23; // 30 - 7
-const REMINDER_T_3 = 27; // 30 - 3
-const REMINDER_T_1 = 29; // 30 - 1
 const MS_PER_DAY = 86_400_000;
+
+/**
+ * Round 3 review-fix (R3-S6+S7): single source of truth for the
+ * reminder ladder — threshold (days pending) + audit event type.
+ * Used by both `decideRemindersToFire` (which rungs to emit?) and
+ * the cron's per-rung counter map (how many landed?). Adding a new
+ * rung (e.g. T-14) requires editing only this array; the
+ * `Record<ReminderLadderAuditType, number>` counter forces a
+ * compile error until the corresponding key is initialised, so
+ * silent drift between threshold + type + counter is ruled out at
+ * compile time. Order is chronological (earliest threshold first)
+ * so the iteration in `decideRemindersToFire` produces audit rows
+ * in chronological rung order.
+ */
+const REMINDER_LADDER: ReadonlyArray<{
+  readonly threshold: number;
+  readonly type: ReminderLadderAuditType;
+}> = [
+  { threshold: 23, type: 'lapsed_member_admin_reactivation_reminder_t-7' }, // 30 - 7
+  { threshold: 27, type: 'lapsed_member_admin_reactivation_reminder_t-3' }, // 30 - 3
+  { threshold: 29, type: 'lapsed_member_admin_reactivation_reminder_t-1' }, // 30 - 1
+];
 
 export async function reconcilePendingReactivations(
   deps: ReconcilePendingReactivationsDeps,
@@ -152,9 +172,16 @@ export async function reconcilePendingReactivations(
     sort: 'expires_at_asc',
   });
 
-  let remindersT7 = 0;
-  let remindersT3 = 0;
-  let remindersT1 = 0;
+  // Round 3 review-fix (R3-S7): Record-based counters keyed on the
+  // canonical reminder-ladder audit type union. TS exhaustiveness
+  // ensures that adding a new rung to `REMINDER_LADDER_AUDIT_TYPES`
+  // (the const-array source of truth at `reminder-audit-query-repo.ts`)
+  // creates a compile error here until the new key is initialised.
+  const reminderCounters: Record<ReminderLadderAuditType, number> = {
+    'lapsed_member_admin_reactivation_reminder_t-7': 0,
+    'lapsed_member_admin_reactivation_reminder_t-3': 0,
+    'lapsed_member_admin_reactivation_reminder_t-1': 0,
+  };
   let remindersFailed = 0;
   let timedOut = 0;
   let timeoutRefundFailures = 0;
@@ -215,25 +242,15 @@ export async function reconcilePendingReactivations(
         remindersFailed += 1;
         continue;
       }
-      switch (type) {
-        case 'lapsed_member_admin_reactivation_reminder_t-7':
-          remindersT7 += 1;
-          break;
-        case 'lapsed_member_admin_reactivation_reminder_t-3':
-          remindersT3 += 1;
-          break;
-        case 'lapsed_member_admin_reactivation_reminder_t-1':
-          remindersT1 += 1;
-          break;
-      }
+      reminderCounters[type] += 1;
     }
   }
 
   return ok({
     cyclesProcessed: page.items.length,
-    remindersT7,
-    remindersT3,
-    remindersT1,
+    remindersT7: reminderCounters['lapsed_member_admin_reactivation_reminder_t-7'],
+    remindersT3: reminderCounters['lapsed_member_admin_reactivation_reminder_t-3'],
+    remindersT1: reminderCounters['lapsed_member_admin_reactivation_reminder_t-1'],
     remindersFailed,
     timedOut,
     timeoutRefundFailures,
@@ -261,25 +278,9 @@ export function decideRemindersToFire(
   alreadyEmitted: ReadonlySet<ReminderLadderAuditType>,
 ): Set<ReminderLadderAuditType> {
   const out = new Set<ReminderLadderAuditType>();
-  if (daysPending >= REMINDER_T_7) {
-    if (
-      !alreadyEmitted.has('lapsed_member_admin_reactivation_reminder_t-7')
-    ) {
-      out.add('lapsed_member_admin_reactivation_reminder_t-7');
-    }
-  }
-  if (daysPending >= REMINDER_T_3) {
-    if (
-      !alreadyEmitted.has('lapsed_member_admin_reactivation_reminder_t-3')
-    ) {
-      out.add('lapsed_member_admin_reactivation_reminder_t-3');
-    }
-  }
-  if (daysPending >= REMINDER_T_1) {
-    if (
-      !alreadyEmitted.has('lapsed_member_admin_reactivation_reminder_t-1')
-    ) {
-      out.add('lapsed_member_admin_reactivation_reminder_t-1');
+  for (const { threshold, type } of REMINDER_LADDER) {
+    if (daysPending >= threshold && !alreadyEmitted.has(type)) {
+      out.add(type);
     }
   }
   return out;

@@ -68,10 +68,10 @@ export async function blockAutoReactivation(
   const input = inputResult.value;
 
   return runInTenant(deps.tenant, async (tx) => {
-    // Round 2 review-fix (L1): conditional spread is exactOptional-
-    // PropertyTypes-compatible — the `reason` key is absent from the
-    // object exactly when `input.reason === undefined`, matching the
-    // imperative version's behaviour. -6 LOC.
+    // Conditional spread is exactOptionalPropertyTypes-compatible: the
+    // `reason` key is absent from the object exactly when
+    // `input.reason === undefined`, matching the imperative version's
+    // behaviour. -6 LOC vs an `if`-then-assign.
     const flagInput = {
       memberId: input.memberId,
       actorUserId: input.actorUserId,

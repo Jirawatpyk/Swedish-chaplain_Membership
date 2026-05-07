@@ -40,8 +40,8 @@ import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { asUserId } from '@/modules/auth/domain/branded';
-import { asCreditNoteId } from '@/modules/invoicing';
-import { asTenantId, asInvoiceId } from '@/lib/branded-ids';
+import { asCreditNoteId, asInvoiceId } from '@/modules/invoicing';
+import { asTenantId } from '@/modules/members';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { F5RefundBridge } from '../ports/f5-refund-bridge';
 import {

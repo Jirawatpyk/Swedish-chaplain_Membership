@@ -1542,4 +1542,28 @@ export const renewalsMetrics = {
       });
     },
   },
+
+  /**
+   * `renewals_onpaid_invalid_tx_total{tenant}` — Round 3 review-fix
+   * (R3-I8): F4 → F8 onPaidCallback received a non-`TenantTx` value
+   * for the optional `tx` parameter, so F8 fell back from the I3
+   * atomic-single-tx path to the legacy two-tx eventual-consistency
+   * path (`runInTenant` opens a fresh tx). Indicates F4 contract drift
+   * — a refactor wrapped tx in instrumentation, a future cross-module
+   * wiring forgot to thread the tx, or a polyfill stripped the
+   * Drizzle method shape. Pattern precedent: `bounceHookFailed` /
+   * `redisFallback` — log alone is not enough because Vercel alert
+   * rules attach to OTel counters not log strings.
+   * Alert rule: any non-zero rate sustained for 5 min pages on-call.
+   */
+  onPaidInvalidTx: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_onpaid_invalid_tx_total',
+          'F4 → F8 onPaidCallback received a non-TenantTx value; F8 fell back to runInTenant (degraded mode — atomic single-tx invariant lost)',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
 } as const;

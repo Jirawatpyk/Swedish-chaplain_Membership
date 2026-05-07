@@ -7,7 +7,19 @@
  * 1 logged the raw code only via `console.warn` in the user's browser
  * — support had no correlation handle. This endpoint receives the
  * payload and writes a structured pino log with `errorId` so SRE +
- * support can grep / alert on real-world failures.
+ * support can grep on real-world failures.
+ *
+ * **Round 3 review-fix (R3-S4)** — log severity is intentionally
+ * `logger.warn`, NOT `logger.error`: each report is a *forwarded*
+ * client-side warning, not a novel server-side exception. The
+ * underlying server error (if any) was already logged at the originating
+ * route's correct level — duplicating it as `error` here would cause
+ * Sentry-style integrations to file a second issue per occurrence.
+ * Alerts attach to **log-search metrics** keyed on
+ * `errorId='CLIENT.ERROR_REPORT'` + `tag` (Vercel observability /
+ * Datadog logs), not to a Sentry breadcrumb upgrade. If a future
+ * integration pages on `logger.error` per occurrence, downgrade by
+ * filtering on `errorId` rather than upgrading the level here.
  *
  * **Auth model**: requires a valid session cookie (lifted via the
  * standard auth helper). Anonymous beacons are rejected with 401 to

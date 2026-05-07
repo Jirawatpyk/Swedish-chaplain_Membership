@@ -11,7 +11,7 @@
  *
  * Why a helper at all:
  *   - One canonical "what does invalid_input error look like?" answer
- *     for new code, instead of 12 hand-rolled copies that drift over
+ *     for new code, instead of ~18 hand-rolled copies that drift over
  *     time (different fallback strings, different field shapes).
  *   - Makes the error-shape contract grep-able (`kind: 'invalid_input'`).
  *

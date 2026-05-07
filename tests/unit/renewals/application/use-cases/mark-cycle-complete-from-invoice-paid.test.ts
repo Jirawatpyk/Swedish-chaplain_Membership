@@ -34,37 +34,27 @@ const INVOICE_UUID = '00000000-0000-0000-0000-0000000aaaaa';
 // if the production code accidentally re-wrapped in `runInTenant`,
 // silently re-introducing the eventual-consistency window I3 closed.
 //
-// Round 2 (H2): the production code now uses `runInTenantOrReuse`
-// (a thin helper that delegates to `runInTenant` when existingTx is
-// undefined). The mock spies on `runInTenantOrReuse` directly — it
-// captures the same observable behaviour (was the tx reused or did
-// we open a fresh one?) and a regression that re-introduced the old
-// branched code would still trip the assertions.
-const { runInTenantSpy, runInTenantOrReuseSpy } = vi.hoisted(() => {
-  const runInTenantSpy = vi.fn(
+// Round 3 review-fix (R3-I1+I2+I3): the `runInTenantOrReuse` helper
+// was deleted from `@/lib/db` because the wrapper variant
+// (`markCycleCompleteFromInvoicePaid`) now opens its own `runInTenant`
+// directly + the InTx variant (`markCycleCompleteInTx`) takes the
+// caller's tx — both paths are simpler than a shared helper. The
+// hoisted spy on `runInTenant` alone still locks the S-11 invariant:
+// passing tx → InTx must NOT call runInTenant; omitting tx → wrapper
+// MUST call runInTenant exactly once.
+const { runInTenantSpy } = vi.hoisted(() => ({
+  runInTenantSpy: vi.fn(
     async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
       fn({} as unknown),
-  );
-  return {
-    runInTenantSpy,
-    runInTenantOrReuseSpy: vi.fn(
-      async <T>(
-        ctx: unknown,
-        existingTx: unknown,
-        body: (tx: unknown) => Promise<T>,
-      ) => (existingTx !== undefined ? body(existingTx) : runInTenantSpy(ctx, body)),
-    ),
-  };
-});
+  ),
+}));
 
 vi.mock('@/lib/db', () => ({
   runInTenant: runInTenantSpy,
-  runInTenantOrReuse: runInTenantOrReuseSpy,
 }));
 
 beforeEach(() => {
   runInTenantSpy.mockClear();
-  runInTenantOrReuseSpy.mockClear();
 });
 
 function buildEvent(overrides: Partial<F4InvoicePaidEvent> = {}): F4InvoicePaidEvent {
