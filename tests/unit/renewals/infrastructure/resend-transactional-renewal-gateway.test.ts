@@ -390,4 +390,46 @@ describe('sanitizeResendErrorMessage (K14-2 R13-W2)', () => {
     const out = sanitize(input);
     expect(out).toBe('a'.repeat(99));
   });
+
+  it('K15-4 (R14-S2): redacts chamber-locale TLDs (.se, .th, .au, .uk, .de)', () => {
+    // K15 extended the TLD allowlist to cover Swedish, Thai,
+    // Australian, and other European chamber locales. Verify each
+    // representative TLD is now redacted.
+    const tlds = ['.se', '.th', '.au', '.uk', '.de', '.nl', '.fr'];
+    for (const tld of tlds) {
+      const out = sanitize(`Sender example${tld} is unverified`);
+      expect(out).toContain('[REDACTED_DOMAIN]');
+      expect(out).not.toContain(`example${tld}`);
+    }
+  });
+
+  it('K15-5 (R14-S3): TLD outside allowlist passes through by design (e.g. .example, .invalid)', () => {
+    // Closed-set design: novel/test TLDs intentionally pass through
+    // unredacted because (a) `audit_log` is internal-only, (b) the
+    // bounded TLD list is the trade-off for predictable false-
+    // positive behaviour. This test pins the design — if the team
+    // ever wants to redact ALL `.<tld>` patterns, they must
+    // explicitly remove this test along with the regex change so
+    // the intent shift is reviewed.
+    const out = sanitize('domain.example is not a real TLD');
+    expect(out).toContain('domain.example');
+    expect(out).not.toContain('[REDACTED_DOMAIN]');
+  });
+
+  it('K15-5 (R14-S4): completes in <50ms on adversarial repetitive input (ReDoS guard)', () => {
+    // The K14-7 multi-label regex `(?:[A-Za-z0-9-]+\.)+(?:com|...)`
+    // has a `+` quantifier inside a non-capturing group. V8's NFA
+    // regex engine handles this in linear time on the typical
+    // bounded input; this test pins the timing guard so a future
+    // engine swap or regex change that introduces catastrophic
+    // backtracking is caught at CI time. Threshold 50ms is generous
+    // (typical run is <1ms); adversarial input is bounded by the
+    // 100-char truncate cap applied AFTER sanitize but the regex
+    // runs first, so we test the unbounded-input case here.
+    const adversarial = 'a.'.repeat(50) + 'xyz';
+    const start = performance.now();
+    sanitize(adversarial);
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(50);
+  });
 });

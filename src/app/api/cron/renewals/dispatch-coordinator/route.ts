@@ -205,11 +205,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       //   • Added `ip` field to warn-log payload for ops triage; truncated
       //     `err.message` to 200 chars to cap potential Upstash endpoint-
       //     URL leakage into log drains.
+      //
+      // K15-2 (R14-W2): added `errStack` (also capped) so the K12-3
+      // forensic-richness intent is preserved on this rate-limit fail-
+      // open path. Pino's `err` serializer was bypassed in K14-6 to
+      // hand-truncate the message — the bounded stack-slice gives ops
+      // a stack trace for unexpected Upstash failure modes (DNS, TLS,
+      // network partition) without re-introducing the URL-leak vector
+      // since the cap is applied in-line.
       const errInstance = e instanceof Error ? e : new Error(String(e));
       logger.warn(
         {
           errMsg: errInstance.message.slice(0, 200),
           errName: errInstance.name,
+          errStack: errInstance.stack?.slice(0, 500),
           ip,
           route: '/api/cron/renewals/dispatch-coordinator',
         },

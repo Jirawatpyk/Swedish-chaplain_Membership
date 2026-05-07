@@ -120,11 +120,13 @@ describe('assertVercelDeploymentForTrustedXff() — boot-time XFF trust diagnost
 
   afterEach(() => {
     warnSpy.mockRestore();
+    // K15-6 (R14-S5): use vi.stubEnv consistently for all 3 env vars
+    // (was mixed manual `process.env.X = ORIG` + vi.stubEnv before).
+    // vi.stubEnv with empty-string is the canonical "absent" signal —
+    // matches how Vitest auto-restores stubs at end-of-test.
     vi.stubEnv('NODE_ENV', ORIG_NODE_ENV ?? 'test');
-    if (ORIG_VERCEL === undefined) delete process.env.VERCEL;
-    else process.env.VERCEL = ORIG_VERCEL;
-    if (ORIG_TRP === undefined) delete process.env.TRUSTED_REVERSE_PROXY;
-    else process.env.TRUSTED_REVERSE_PROXY = ORIG_TRP;
+    vi.stubEnv('VERCEL', ORIG_VERCEL ?? '');
+    vi.stubEnv('TRUSTED_REVERSE_PROXY', ORIG_TRP ?? '');
   });
 
   it('does NOT warn when NODE_ENV is not production', () => {

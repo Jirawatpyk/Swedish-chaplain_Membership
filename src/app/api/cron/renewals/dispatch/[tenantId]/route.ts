@@ -82,15 +82,17 @@ export async function POST(
         );
       }
     } catch (e) {
-      // K14-5/6 (R13-S2+S3+S8): redisFallback metric for alert pipeline
-      // + truncated err.message to cap Upstash endpoint-URL leakage +
-      // ip in warn-log for ops triage. See coordinator route for the
-      // full rationale.
+      // K14-5/6 + K15-2 (R13-S2+S3+S8 + R14-W2): redisFallback metric
+      // for alert pipeline + truncated err.message to cap Upstash
+      // endpoint-URL leakage + ip in warn-log for ops triage +
+      // bounded errStack for K12-3 forensic-richness preservation.
+      // See coordinator route for the full rationale.
       const errInstance = e instanceof Error ? e : new Error(String(e));
       logger.warn(
         {
           errMsg: errInstance.message.slice(0, 200),
           errName: errInstance.name,
+          errStack: errInstance.stack?.slice(0, 500),
           ip,
           route: '/api/cron/renewals/dispatch/[tenantId]',
         },

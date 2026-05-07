@@ -67,6 +67,21 @@ vi.mock('@/lib/rate-limit-helpers', () => ({
   retryAfterSecondsFromRl: vi.fn(() => 42),
 }));
 
+// K15-1 (R14-W1): see dispatch-coordinator.test.ts for full rationale.
+// Pin the K14-5 redisFallback counter so its presence is CI-enforceable.
+const redisFallbackMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/metrics', () => ({
+  renewalsMetrics: {
+    redisFallback: redisFallbackMock,
+    coordinatorAuditEmitFailed: vi.fn(),
+    coordinatorTenantFailed: vi.fn(),
+    bounceHookFailed: vi.fn(),
+    resetHookFailed: vi.fn(),
+    webhookSchemaRejected: vi.fn(),
+    unknownResendErrorName: vi.fn(),
+  },
+}));
+
 import { POST } from '@/app/api/cron/renewals/dispatch/[tenantId]/route';
 
 function makeRequest(headers: Record<string, string> = {}): NextRequest {
@@ -172,6 +187,9 @@ describe('cron per-tenant dispatch route (T104)', () => {
     expect(
       (auditEmitMock.mock.calls[0]![0].payload as { route: string }).route,
     ).toBe('/api/cron/renewals/dispatch/[tenantId]');
+    // K15-1 (R14-W1): see coordinator test for rationale. Alert
+    // pipeline depends on this counter — CI must catch its removal.
+    expect(redisFallbackMock).toHaveBeenCalledTimes(1);
   });
 
   it('200 + skipped on FEATURE_F8_RENEWALS=false', async () => {

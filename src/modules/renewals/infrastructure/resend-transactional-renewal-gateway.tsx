@@ -201,8 +201,26 @@ export function sanitizeResendErrorMessage(message: string): string {
       //    captured whole instead of leaving the leftmost subdomain
       //    label unredacted. Single-label form (`example.com`) still
       //    matches because `+` allows exactly one repetition.
-      .replace(/\b(?:[A-Za-z0-9-]+\.)+(?:com|net|org|io|co|app|dev|tech|cloud|ai|to|me|info|biz|email|mail|tld)\b/gi, '[REDACTED_DOMAIN]')
-      // 4. Cap length
+      //
+      //    K15-4 (R14-S2): TLD allowlist extended to cover chamber
+      //    locale TLDs the SweCham deployment may interact with —
+      //    `.se` (Swedish), `.th` (Thai), `.au` (Australian),
+      //    `.uk`/`.de`/`.nl`/`.fr`/`.es`/`.it`/`.ch`/`.be`/`.dk`/`.fi`
+      //    (other European chambers); plus the legacy `.gov`/`.edu`
+      //    that occasionally appear in member contact emails. Closed
+      //    set by design: domains with truly-novel TLDs still pass
+      //    through (audited as accepted residual; pinned by the
+      //    "TLD outside allowlist" test in K15-5).
+      .replace(/\b(?:[A-Za-z0-9-]+\.)+(?:com|net|org|io|co|app|dev|tech|cloud|ai|to|me|info|biz|email|mail|tld|se|th|au|uk|de|nl|fr|es|it|ch|be|dk|fi|gov|edu)\b/gi, '[REDACTED_DOMAIN]')
+      // 4. Cap length to 100 chars.
+      //    K15-3 (R14-S1): tighter than the 200-char cron-warn-log
+      //    cap (see K14-6 `dispatch-coordinator/route.ts:212`)
+      //    because THIS output persists in `audit_log.payload.
+      //    failure_message` for 5 years (Constitution Principle I +
+      //    F4 retention rule). 200 chars in an ops warn-log is
+      //    diagnostically helpful and short-lived; 100 chars in
+      //    audit_log is the maximum bounded leak window across the
+      //    retention period.
       .slice(0, 100)
       .trim()
   );

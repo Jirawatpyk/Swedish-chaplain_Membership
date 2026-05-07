@@ -49,6 +49,27 @@ vi.mock('@/lib/rate-limit-helpers', () => ({
   retryAfterSecondsFromRl: vi.fn(() => 42),
 }));
 
+// K15-1 (R14-W1): spy on `renewalsMetrics.redisFallback` so the K14-5
+// fail-open metric counter can be asserted in the K14-3 fail-open
+// test. Without this assertion a future refactor that drops the
+// counter call would silently break the alert pipeline (the very
+// reason K14-5 was added). Other metrics methods are passed through
+// unchanged.
+const redisFallbackMock = vi.hoisted(() => vi.fn());
+const coordinatorAuditEmitFailedMock = vi.hoisted(() => vi.fn());
+const unknownResendErrorNameMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/metrics', () => ({
+  renewalsMetrics: {
+    redisFallback: redisFallbackMock,
+    coordinatorAuditEmitFailed: coordinatorAuditEmitFailedMock,
+    coordinatorTenantFailed: vi.fn(),
+    bounceHookFailed: vi.fn(),
+    resetHookFailed: vi.fn(),
+    webhookSchemaRejected: vi.fn(),
+    unknownResendErrorName: unknownResendErrorNameMock,
+  },
+}));
+
 // Mock global fetch — coordinator fans out via fetch().
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
@@ -136,6 +157,11 @@ describe('cron dispatch-coordinator route (T103)', () => {
     expect(auditEmitMock.mock.calls[0]![0].type).toBe(
       'cron_bearer_auth_rejected',
     );
+    // K15-1 (R14-W1): pin the K14-5 redisFallback counter — Vercel
+    // alert rules attach to OTel counters not log strings, so
+    // dropping this call (regression) would silently break the
+    // Upstash-outage alert pipeline. CI now catches that.
+    expect(redisFallbackMock).toHaveBeenCalledTimes(1);
   });
 
   it('200 + skipped on FEATURE_F8_RENEWALS=false (kill-switch)', async () => {
