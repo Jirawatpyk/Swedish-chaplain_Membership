@@ -11,7 +11,8 @@
  */
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getFormatter, getTranslations } from 'next-intl/server';
+import { DetailContainer } from '@/components/layout';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -30,6 +31,11 @@ export default async function RenewalSuccessPage({
   const { user } = await requireSession('member');
   const tenant = resolveTenantFromRequest();
   const t = await getTranslations('portal.renewal.success');
+  const tStatus = await getTranslations('portal.renewal.success.cycleStatusValue');
+  // I16 review-fix: use next-intl formatter for locale-aware date
+  // display (TH applies Buddhist Era; SV/EN use Gregorian) instead of
+  // raw `.slice(0, 10)` ISO truncation.
+  const formatter = await getFormatter();
 
   const membersDeps = buildMembersDeps(tenant);
   const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
@@ -54,7 +60,7 @@ export default async function RenewalSuccessPage({
   );
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+    <DetailContainer>
       <header>
         <h1 className="text-2xl font-semibold">{t('title')}</h1>
         <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
@@ -75,18 +81,25 @@ export default async function RenewalSuccessPage({
             <dt className="text-muted-foreground">{t('newExpiry')}</dt>
             <dd>
               <time dateTime={activeCycle.expiresAt}>
-                {activeCycle.expiresAt.slice(0, 10)}
+                {formatter.dateTime(new Date(activeCycle.expiresAt), {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
               </time>
             </dd>
             <dt className="text-muted-foreground">{t('cycleStatus')}</dt>
-            <dd>{activeCycle.status}</dd>
+            <dd>{tStatus(activeCycle.status)}</dd>
           </dl>
         ) : (
           <p className="text-sm text-muted-foreground">{t('processing')}</p>
         )}
       </section>
 
-      <div className="flex flex-wrap gap-3">
+      {/* S-4 review-fix: primary nav action uses Button (≥36px hit
+          area per WCAG 2.5.8) instead of plain underline link. Receipt
+          download stays as a link — secondary action. */}
+      <div className="flex flex-wrap items-center gap-3">
         {invoiceId && (
           <Link
             href={`/portal/invoices/${invoiceId}/pdf`}
@@ -96,10 +109,17 @@ export default async function RenewalSuccessPage({
             {t('downloadReceipt')}
           </Link>
         )}
-        <Link href="/portal" className="text-sm underline">
+        <Link
+          href="/portal"
+          // S-4 review-fix: button-shaped link for primary nav so the
+          // hit area meets WCAG 2.5.8 (≥36px). Base UI Button doesn't
+          // support `asChild`, so we mirror the `outline` variant
+          // styling on a Link directly.
+          className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+        >
           {t('backToPortal')}
         </Link>
       </div>
-    </main>
+    </DetailContainer>
   );
 }

@@ -1,10 +1,13 @@
 /**
- * F8 Phase 5 Wave B · T122 — `PlanLookupForRenewalPort` stub.
+ * F8 Phase 5 Wave B · T122 — `PlanLookupForRenewalPort` test-only stub.
  *
- * Production adapter wraps F2's `getPlan` use-case + adapts its
- * return shape to `PlanFrozenFields` — wiring lands when the public
- * renewal confirm POST route (T130) is built. Test composition uses
- * in-memory mocks per spec.
+ * The production drizzle adapter ships in
+ * `plan-lookup-for-renewal-drizzle.ts` (deep-imports F2 schema for
+ * `renewal_tier_bucket`) and is wired into `renewals-deps.ts`. This
+ * stub remains as a defence-in-depth fallback that loud-throws rather
+ * than no-op'ing if test composition forgets to override; production
+ * code paths CANNOT accidentally rely on it because the deps factory
+ * selects the drizzle adapter directly.
  */
 import type {
   PlanLookupForRenewalPort,

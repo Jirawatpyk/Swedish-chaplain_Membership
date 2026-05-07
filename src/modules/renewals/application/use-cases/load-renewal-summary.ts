@@ -32,6 +32,7 @@
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { asMemberId } from '@/modules/members';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
   parseCycleId,
@@ -167,8 +168,9 @@ export async function loadRenewalSummary(
         {
           type: 'renewal_cross_member_probe' as const,
           payload: {
-            actor_member_id: input.memberId as never,
-            attempted_member_id: cycle.memberId as never,
+            // I13 review-fix: branded asMemberId() not `as never`.
+            actor_member_id: asMemberId(input.memberId),
+            attempted_member_id: asMemberId(cycle.memberId),
           },
         },
         {

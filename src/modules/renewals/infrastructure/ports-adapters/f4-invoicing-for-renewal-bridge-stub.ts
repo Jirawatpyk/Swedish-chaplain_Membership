@@ -1,12 +1,14 @@
 /**
- * F8 Phase 5 Wave B · T122 — `F4InvoicingForRenewalBridge` stub.
+ * F8 Phase 5 Wave B · T122 — `F4InvoicingForRenewalBridge` test-only stub.
  *
- * Production adapter composes F4's `createInvoiceDraft` +
- * `issueInvoice` use-cases — wiring lands when the public renewal
- * confirm POST route (T130) is built. Until then T122 use this stub
- * which throws on every call so production paths cannot rely on it.
- *
- * Test composition replaces this with an in-memory mock per spec.
+ * The production drizzle adapter ships in
+ * `f4-invoicing-for-renewal-bridge-drizzle.ts` and is wired into
+ * `renewals-deps.ts`. This stub remains in the tree as a defence-in-
+ * depth fallback: if test composition forgets to override the
+ * production adapter it loud-throws rather than no-op'ing — explicit
+ * rejection of a silent-failure trap. Production code paths CANNOT
+ * accidentally rely on it because `makeRenewalsDeps` selects the
+ * drizzle adapter directly.
  */
 import type {
   F4InvoicingForRenewalBridge,

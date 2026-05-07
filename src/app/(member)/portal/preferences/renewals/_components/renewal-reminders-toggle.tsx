@@ -11,6 +11,7 @@
 
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 
@@ -24,13 +25,16 @@ export function RenewalRemindersToggle({
   const t = useTranslations('portal.preferences.renewals');
   const [optedOut, setOptedOut] = useState(initialOptedOut);
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
 
   const onChange = (next: boolean) => {
     const prev = optedOut;
     setOptedOut(next);
-    setError(null);
     startTransition(async () => {
+      // I17 review-fix: surface failures via sonner toast (per
+      // docs/ux-standards.md async-feedback convention) instead of an
+      // inline error. The toast title + description tell the member
+      // both that the toggle reverted AND why — clearer than a
+      // silent revert with raw error-code text below.
       try {
         const r = await fetch('/api/portal/preferences/renewals', {
           method: 'POST',
@@ -42,40 +46,38 @@ export function RenewalRemindersToggle({
           const body = (await r.json().catch(() => ({}))) as {
             error?: { code?: string };
           };
-          setError(body.error?.code ?? `http_${r.status}`);
+          console.warn('[renewal-reminders-toggle] save failed', {
+            code: body.error?.code,
+            status: r.status,
+          });
+          toast.error(t('saveErrorTitle'), {
+            description: t('saveErrorDescription'),
+          });
         }
-      } catch {
+      } catch (err) {
         setOptedOut(prev);
-        setError('network_error');
+        console.warn('[renewal-reminders-toggle] network error', err);
+        toast.error(t('saveErrorTitle'), {
+          description: t('saveErrorDescription'),
+        });
       }
     });
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <Label htmlFor="renewal-reminders-toggle" className="flex flex-col">
-          <span className="font-medium">{t('pauseLabel')}</span>
-          <span className="text-xs text-muted-foreground">
-            {t('pauseDescription')}
-          </span>
-        </Label>
-        <Switch
-          id="renewal-reminders-toggle"
-          checked={optedOut}
-          onCheckedChange={onChange}
-          disabled={isPending}
-        />
-      </div>
-      {error && (
-        <p
-          role="alert"
-          className="text-sm text-destructive"
-          data-testid="preferences-toggle-error"
-        >
-          {t('errorPrefix')} {error}
-        </p>
-      )}
+    <div className="flex items-center justify-between gap-3">
+      <Label htmlFor="renewal-reminders-toggle" className="flex flex-col">
+        <span className="font-medium">{t('pauseLabel')}</span>
+        <span className="text-xs text-muted-foreground">
+          {t('pauseDescription')}
+        </span>
+      </Label>
+      <Switch
+        id="renewal-reminders-toggle"
+        checked={optedOut}
+        onCheckedChange={onChange}
+        disabled={isPending}
+      />
     </div>
   );
 }

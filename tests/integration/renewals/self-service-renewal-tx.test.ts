@@ -49,7 +49,11 @@ import {
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
-import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import {
+  createTestTenant,
+  createTwoTestTenants,
+  type TestTenant,
+} from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
 const F4_PAID_DEFAULTS: Pick<
@@ -269,6 +273,100 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
     const r = await markCycleCompleteFromInvoicePaid(deps, event);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.kind).toBe('no_cycle_for_invoice');
+  });
+
+  it('cross_tenant: tenant B context with tenant A invoice id returns no_cycle_for_invoice (Principle I sub-clause 3 / Review-Gate blocker)', async () => {
+    // C3 review-fix: seed cycle in tenant A, then verify tenant B's
+    // deps cannot resolve A's invoice through RLS scope. Mirrors the
+    // pattern used in T144 cross-tenant token tests.
+    const { a: tenantAA, b: tenantBB } = await createTwoTestTenants();
+    try {
+      const planId = `f8-xtenant-${randomUUID().slice(0, 8)}`;
+      await runInTenant(tenantAA.ctx, (tx) =>
+        seedF8MembershipPlan(tx, {
+          tenantSlug: tenantAA.ctx.slug,
+          planId,
+          planName: { en: 'Cross-Tenant Plan' },
+          benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+          createdBy: user.userId,
+        }),
+      );
+      const memberA = randomUUID();
+      const cycleA = randomUUID();
+      const invoiceA = randomUUID();
+      await runInTenant(tenantAA.ctx, async (tx) => {
+        await tx.insert(members).values({
+          tenantId: tenantAA.ctx.slug,
+          memberId: memberA,
+          companyName: 'Tenant A Co',
+          country: 'TH',
+          planId,
+          planYear: 2026,
+        });
+        await tx.insert(invoices).values({
+          tenantId: tenantAA.ctx.slug,
+          invoiceId: invoiceA,
+          memberId: memberA,
+          planYear: 2026,
+          planId,
+          draftByUserId: user.userId,
+          status: 'draft',
+          currency: 'THB',
+        });
+        await tx.insert(renewalCycles).values({
+          tenantId: tenantAA.ctx.slug,
+          cycleId: cycleA,
+          memberId: memberA,
+          status: 'awaiting_payment',
+          periodFrom: new Date('2026-06-01T00:00:00Z'),
+          periodTo: new Date('2027-06-01T00:00:00Z'),
+          expiresAt: new Date('2027-06-01T00:00:00Z'),
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: randomUUID(),
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+          linkedInvoiceId: invoiceA,
+        });
+      });
+
+      // Tenant B's deps invoking T123 with tenant A's invoiceId. RLS
+      // hides the cycle row → findByInvoiceIdInTx returns null →
+      // outcome is `no_cycle_for_invoice` (idempotent skip), NOT a
+      // cross-tenant cycle completion.
+      const depsB = makeRenewalsDeps(tenantBB.ctx.slug);
+      const event: F4InvoicePaidEvent = {
+        ...F4_PAID_DEFAULTS,
+        tenantId: tenantBB.ctx.slug,
+        invoiceId: invoiceA, // belongs to tenant A
+        memberId: memberA,
+      };
+      const r = await markCycleCompleteFromInvoicePaid(depsB, event);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.kind).toBe('no_cycle_for_invoice');
+
+      // Tenant A's cycle MUST stay in awaiting_payment (untouched).
+      const rowsA = await runInTenant(tenantAA.ctx, (tx) =>
+        tx
+          .select({ status: renewalCycles.status })
+          .from(renewalCycles)
+          .where(eq(renewalCycles.cycleId, cycleA))
+          .limit(1),
+      );
+      expect(rowsA[0]?.status).toBe('awaiting_payment');
+    } finally {
+      await db
+        .delete(renewalCycles)
+        .where(eq(renewalCycles.tenantId, tenantAA.ctx.slug))
+        .catch(() => {});
+      await db
+        .delete(invoices)
+        .where(eq(invoices.tenantId, tenantAA.ctx.slug))
+        .catch(() => {});
+      await tenantAA.cleanup().catch(() => {});
+      await tenantBB.cleanup().catch(() => {});
+    }
   });
 
   it('f8OnPaidCallbacks: production factory returns 1 callback (Phase 5 wired, was [] stub)', async () => {

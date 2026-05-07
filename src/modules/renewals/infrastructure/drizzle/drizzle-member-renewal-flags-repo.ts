@@ -218,6 +218,20 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       return rows[0]?.blocked ?? null;
     },
 
+    async readRenewalRemindersOptedOut(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<boolean | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({ optedOut: members.renewalRemindersOptedOut })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      return rows[0]?.optedOut ?? null;
+    },
+
     async clearBlockedFromAutoReactivation(
       tx: unknown,
       _tenantId: string,

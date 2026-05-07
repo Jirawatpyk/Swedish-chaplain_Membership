@@ -13,10 +13,13 @@
  */
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
+import { FormContainer } from '@/components/layout';
+import { runInTenant } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { makeRenewalsDeps } from '@/modules/renewals';
 import { RenewalRemindersToggle } from './_components/renewal-reminders-toggle';
 
 export default async function RenewalPreferencesPage() {
@@ -36,21 +39,33 @@ export default async function RenewalPreferencesPage() {
     );
     notFound();
   }
-  // SSR-seeding the toggle from current member state deferred — the
-  // toggle is optimistic + the API round-trip reflects authoritative
-  // state on first interaction, so MVP UX is acceptable.
-  void memberLookup;
+  // C7 review-fix (2026-05-07): SSR-seed `initialOptedOut` from the
+  // member row's `renewal_reminders_opted_out` column so members
+  // already opted out see the correct toggle state on revisit (was
+  // hardcoded false). F3 Member entity does not expose this F8-owned
+  // column, so the read goes through the F8
+  // `MemberRenewalFlagsRepo.readRenewalRemindersOptedOut` port (added
+  // alongside this fix).
+  const renewalsDeps = makeRenewalsDeps(tenant.slug);
+  const initialOptedOut =
+    (await runInTenant(tenant, (tx) =>
+      renewalsDeps.memberRenewalFlagsRepo.readRenewalRemindersOptedOut(
+        tx,
+        tenant.slug,
+        memberLookup.value.memberId,
+      ),
+    )) ?? false;
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+    <FormContainer>
       <header>
         <h1 className="text-2xl font-semibold">{t('title')}</h1>
         <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
       </header>
 
       <section className="rounded-lg border bg-card p-4">
-        <RenewalRemindersToggle initialOptedOut={false} />
+        <RenewalRemindersToggle initialOptedOut={initialOptedOut} />
       </section>
-    </main>
+    </FormContainer>
   );
 }

@@ -13,10 +13,15 @@ export async function OnboardingBanner() {
   return (
     <div
       role="region"
-      aria-label={t('heading')}
+      // I18 review-fix: aria-labelledby (not duplicate aria-label) so
+      // screen readers don't announce the heading twice. Matches the
+      // pattern in benefit-summary.tsx + plan-summary section.
+      aria-labelledby="renewal-onboarding-heading"
       className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm dark:border-blue-900 dark:bg-blue-950"
     >
-      <h2 className="mb-1 font-medium">{t('heading')}</h2>
+      <h2 id="renewal-onboarding-heading" className="mb-1 font-medium">
+        {t('heading')}
+      </h2>
       <p className="text-muted-foreground">{t('body')}</p>
     </div>
   );

@@ -2503,7 +2503,7 @@
       "fields": {
         "plan": "Plan",
         "tier": "Tier",
-        "frozenPrice": "Frozen price",
+        "frozenPrice": "Locked-in price",
         "term": "Term",
         "termMonths": "{count} months",
         "expiry": "Current expiry"
@@ -2515,7 +2515,12 @@
       "confirm": {
         "cta": "Confirm renewal",
         "busy": "Confirming…",
-        "errorPrefix": "Could not confirm —"
+        "errorGeneric": "We couldn't process your renewal. Please try again or contact support.",
+        "errorCycleNotFound": "Your renewal link has expired. Please return to the portal and try again.",
+        "errorCycleNotPayable": "This renewal cycle has already been processed.",
+        "errorPlanUnavailable": "The selected plan is no longer available.",
+        "errorInvoiceFailed": "We couldn't generate your invoice. Please try again or contact support.",
+        "errorNetwork": "Connection issue. Please check your internet and try again."
       },
       "planChange": {
         "label": "Choose a plan",
@@ -2533,6 +2538,15 @@
         "detailsHeading": "Renewal details",
         "newExpiry": "New expiry",
         "cycleStatus": "Cycle status",
+        "cycleStatusValue": {
+          "upcoming": "Upcoming",
+          "reminded": "Reminded",
+          "awaiting_payment": "Awaiting payment",
+          "completed": "Active",
+          "lapsed": "Lapsed",
+          "cancelled": "Cancelled",
+          "pending_admin_reactivation": "Pending review"
+        },
         "processing": "Your renewal is being processed. The new expiry date will appear here once payment confirmation arrives.",
         "downloadReceipt": "Download receipt PDF",
         "backToPortal": "Back to portal home"
@@ -2544,7 +2558,8 @@
         "subtitle": "Choose whether to receive renewal-reminder emails. Transactional emails (password resets, invoice receipts) continue regardless.",
         "pauseLabel": "Pause renewal reminders",
         "pauseDescription": "We'll still keep your renewal cycle on the admin pipeline so staff can reach out if needed.",
-        "errorPrefix": "Could not update —"
+        "saveErrorTitle": "Couldn't save your preference",
+        "saveErrorDescription": "Your previous setting has been restored. Please try again."
       }
     }
   },

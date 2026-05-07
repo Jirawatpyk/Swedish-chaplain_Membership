@@ -156,4 +156,17 @@ export interface MemberRenewalFlagsRepo {
     tenantId: string,
     memberId: string,
   ): Promise<boolean | null>;
+
+  /**
+   * C7 review-fix (Phase 5 Wave I): SSR-seed the preferences toggle
+   * on `/portal/preferences/renewals`. Reads `renewal_reminders_opted_out`
+   * directly so members already opted out see the toggle in the
+   * correct state on revisit (F3 Member entity does not expose this
+   * F8-owned column). Returns `null` when the member row is RLS-hidden.
+   */
+  readRenewalRemindersOptedOut(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<boolean | null>;
 }

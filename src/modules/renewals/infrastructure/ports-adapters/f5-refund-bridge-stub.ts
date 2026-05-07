@@ -1,15 +1,11 @@
 /**
- * F8 Phase 5 Wave A.5 · T137 — `F5RefundBridge` stub adapter.
+ * F8 Phase 5 Wave A.5 · T137 — `F5RefundBridge` test-only stub.
  *
- * Production adapter (`f5-refund-bridge.ts`) composes F5's
- * `loadInvoicePaymentActivity` + `issueRefund` use-cases — that wiring
- * lands when the admin-reject route handler (T142) + reconcile-cron
- * route (T139/T140) are built. Until then T137 + T138 use this stub
- * which throws on every call so production code paths cannot
- * accidentally rely on it.
- *
- * Test composition replaces this stub with an in-memory mock per spec
- * (see `tests/unit/renewals/application/use-cases/admin-reject-reactivation.test.ts`).
+ * The production drizzle adapter ships in `f5-refund-bridge-drizzle.ts`
+ * (composes F5 `loadInvoicePaymentActivity` + `computeRemainingRefundable`
+ * + `issueRefund`, which cascades F4 credit-note creation) and is wired
+ * into `renewals-deps.ts`. This stub stays as a defence-in-depth
+ * fallback that loud-throws rather than no-op'ing.
  *
  * Wiring this to a no-op (e.g., always-return `'no_payment_found'`)
  * was deliberately rejected: a silent no-op would let a misconfigured

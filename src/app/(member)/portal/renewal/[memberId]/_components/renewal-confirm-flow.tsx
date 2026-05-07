@@ -33,6 +33,28 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 
+/**
+ * C6 review-fix (2026-05-07): map raw backend error codes to user-
+ * friendly i18n keys so the UI never shows "server_error" /
+ * "invoice_creation_failed" verbatim to the member. Unknown codes
+ * fall through to the generic message; the raw code is logged via
+ * console.warn so support can correlate.
+ *
+ * Codes match the route handler (`confirm/route.ts`) error envelope:
+ *   feature_disabled, invalid_body, invalid_input, cycle_not_found,
+ *   cycle_not_payable, plan_not_found, plan_inactive,
+ *   invoice_creation_failed, server_error
+ *   (+ client-side: network_error, missing_pay_url, http_<status>)
+ */
+const ERROR_CODE_TO_I18N_KEY: Readonly<Record<string, string>> = {
+  cycle_not_found: 'errorCycleNotFound',
+  cycle_not_payable: 'errorCycleNotPayable',
+  plan_not_found: 'errorPlanUnavailable',
+  plan_inactive: 'errorPlanUnavailable',
+  invoice_creation_failed: 'errorInvoiceFailed',
+  network_error: 'errorNetwork',
+};
+
 export interface RenewalPlanOption {
   readonly planId: string;
   readonly label: string;
@@ -89,7 +111,11 @@ export function RenewalConfirmFlow({
           const payload = (await r.json().catch(() => ({}))) as {
             error?: { code?: string };
           };
-          setError(payload.error?.code ?? `http_${r.status}`);
+          const code = payload.error?.code ?? `http_${r.status}`;
+          // C6 review-fix: log raw code for support correlation; user
+          // sees mapped i18n message (see ERROR_CODE_TO_I18N_KEY).
+          console.warn('[renewal-confirm] error', { code, status: r.status });
+          setError(code);
           return;
         }
         const payload = (await r.json()) as { pay_url?: string };
@@ -156,7 +182,7 @@ export function RenewalConfirmFlow({
           className="text-sm text-destructive"
           data-testid="confirm-error"
         >
-          {t('errorPrefix')} {error}
+          {t(ERROR_CODE_TO_I18N_KEY[error] ?? 'errorGeneric')}
         </p>
       )}
     </div>

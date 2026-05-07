@@ -15,7 +15,8 @@
  * is already established.
  */
 import { notFound, redirect } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getFormatter, getTranslations } from 'next-intl/server';
+import { DetailContainer } from '@/components/layout';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -43,6 +44,8 @@ export default async function RenewalPortalPage({
   const tenant = resolveTenantFromRequest();
   const t = await getTranslations('portal.renewal.page');
   const tField = await getTranslations('portal.renewal.fields');
+  // I16 review-fix: locale-aware date formatting via next-intl.
+  const formatter = await getFormatter();
 
   // Resolve the session-member.
   const membersDeps = buildMembersDeps(tenant);
@@ -109,13 +112,16 @@ export default async function RenewalPortalPage({
       ?.label ?? summary.planIdAtCycleStart;
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
-      {summary.isFirstTimeRenewer && <OnboardingBanner />}
-
+    <DetailContainer>
       <header>
         <h1 className="text-2xl font-semibold">{t('title')}</h1>
         <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
       </header>
+
+      {/* I18 review-fix: OnboardingBanner moved AFTER <header> so h1 precedes
+          h2 (WCAG 2.4.6 heading order) — banner only renders for first-time
+          renewers; otherwise the page's heading ladder stays h1 → h2 → h2. */}
+      {summary.isFirstTimeRenewer && <OnboardingBanner />}
 
       <section
         aria-labelledby="plan-summary-heading"
@@ -143,7 +149,11 @@ export default async function RenewalPortalPage({
           <dt className="text-muted-foreground">{tField('expiry')}</dt>
           <dd>
             <time dateTime={summary.expiresAt}>
-              {summary.expiresAt.slice(0, 10)}
+              {formatter.dateTime(new Date(summary.expiresAt), {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })}
             </time>
           </dd>
         </dl>
@@ -162,7 +172,7 @@ export default async function RenewalPortalPage({
         currentPlanLabel={currentPlanLabel}
         availablePlans={availablePlans}
       />
-    </main>
+    </DetailContainer>
   );
 }
 

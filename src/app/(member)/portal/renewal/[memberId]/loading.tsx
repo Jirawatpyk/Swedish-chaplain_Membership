@@ -5,11 +5,12 @@
  * cycle summary. Mirrors the page's Card layout to avoid layout shift
  * on hydration. Shimmer follows `docs/ux-standards.md § 2.1`.
  */
+import { DetailContainer } from '@/components/layout';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function RenewalPortalLoading() {
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
+    <DetailContainer>
       <header>
         <Skeleton className="h-7 w-40" />
         <Skeleton className="mt-2 h-4 w-72" />
@@ -30,6 +31,6 @@ export default function RenewalPortalLoading() {
         <Skeleton className="h-4 w-full" />
       </section>
       <Skeleton className="h-10 w-32" />
-    </main>
+    </DetailContainer>
   );
 }

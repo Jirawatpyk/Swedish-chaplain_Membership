@@ -13,13 +13,15 @@
  * (postgres-js needs Node). So the lapsed-status check lives in this
  * shared helper called from each F8-relevant portal route handler +
  * page server component. The proxy still does the F8 path-prefix
- * kill-switch (T133b — `proxy.ts:296-348`); this helper is the
- * second layer doing the per-member status check.
+ * kill-switch (T133b — `proxy.ts` § "1f. FEATURE_F8_RENEWALS
+ * kill-switch"); this helper is the second layer doing the per-member
+ * status check.
  *
  * Allowed-routes whitelist (T134) is the single source of truth — any
  * future F8 portal surface must be added here OR explicitly rejected
  * by the lapsed-scope policy.
  */
+import { logger } from '@/lib/logger';
 import type { F8AuditEvent, RenewalAuditEmitter } from '@/modules/renewals/application/ports/renewal-audit-emitter';
 import type { RenewalCycleRepo } from '@/modules/renewals/application/ports/renewal-cycle-repo';
 
@@ -137,8 +139,19 @@ async function emitBlockedAudit(
       correlationId: ctx.correlationId,
       requestId: ctx.requestId ?? null,
     });
-  } catch {
-    // Fire-and-forget audit per Wave I2 contract — never block the
-    // user-facing 403 on logging failure.
+  } catch (e) {
+    // I7 review-fix: log + swallow (was empty `catch {}`). Fire-and-
+    // forget audit per Wave I2 contract — never block the user-facing
+    // 403 on logging failure, but DO surface audit-port misconfiguration
+    // (e.g. schema drift, JSON-serialise bug on cycle_id payload).
+    logger.warn(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: ctx.tenantId,
+        memberId: ctx.memberId,
+        cycleId,
+      },
+      '[lapsed-portal-scope] audit emit failed',
+    );
   }
 }

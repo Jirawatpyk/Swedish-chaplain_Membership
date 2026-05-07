@@ -2515,7 +2515,12 @@
       "confirm": {
         "cta": "Bekräfta förnyelse",
         "busy": "Bekräftar…",
-        "errorPrefix": "Kunde inte bekräfta —"
+        "errorGeneric": "Vi kunde inte behandla din förnyelse. Försök igen eller kontakta support.",
+        "errorCycleNotFound": "Din förnyelselänk har gått ut. Återgå till portalen och försök igen.",
+        "errorCycleNotPayable": "Den här förnyelsecykeln har redan behandlats.",
+        "errorPlanUnavailable": "Den valda planen är inte längre tillgänglig.",
+        "errorInvoiceFailed": "Vi kunde inte skapa din faktura. Försök igen eller kontakta support.",
+        "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen."
       },
       "planChange": {
         "label": "Välj en plan",
@@ -2532,7 +2537,16 @@
         "subtitle": "Tack — ditt medlemskap är aktivt.",
         "detailsHeading": "Förnyelsedetaljer",
         "newExpiry": "Nytt utgångsdatum",
-        "cycleStatus": "Cykelstatus",
+        "cycleStatus": "Förnyelsestatus",
+        "cycleStatusValue": {
+          "upcoming": "Kommande",
+          "reminded": "Påminnelse skickad",
+          "awaiting_payment": "Väntar på betalning",
+          "completed": "Aktivt",
+          "lapsed": "Utgånget",
+          "cancelled": "Avbrutet",
+          "pending_admin_reactivation": "Väntar på granskning"
+        },
         "processing": "Din förnyelse behandlas. Det nya utgångsdatumet visas här så snart betalningsbekräftelsen kommer in.",
         "downloadReceipt": "Ladda ner kvitto (PDF)",
         "backToPortal": "Tillbaka till portalens startsida"
@@ -2544,7 +2558,8 @@
         "subtitle": "Välj om du vill ta emot e-post om förnyelsepåminnelser. Transaktionsmejl (lösenordsåterställning, fakturakvitton) skickas oavsett.",
         "pauseLabel": "Pausa förnyelsepåminnelser",
         "pauseDescription": "Vi behåller din förnyelsecykel i administratörsöversikten så att personalen kan höra av sig vid behov.",
-        "errorPrefix": "Kunde inte uppdatera —"
+        "saveErrorTitle": "Kunde inte spara din inställning",
+        "saveErrorDescription": "Din tidigare inställning har återställts. Försök igen."
       }
     }
   },

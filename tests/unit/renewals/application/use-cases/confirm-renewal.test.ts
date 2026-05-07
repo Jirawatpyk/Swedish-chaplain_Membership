@@ -228,6 +228,25 @@ describe('confirmRenewal (T122) — state validation', () => {
     });
   });
 
+  it('I10 review-fix: cross_member_probe audit emit failure is fire-and-forget — returns error without rolling back (NOT Principle VIII reverse-direction)', async () => {
+    // Locks the contract that the cross-member probe audit emit is
+    // log+swallow (different from the linkInvoice + plan-change tx
+    // emits which DO throw to roll back). The probe is a forensic
+    // breadcrumb on a 404-equivalent path — no state mutation has
+    // happened yet, so a missing audit row should NOT escalate to
+    // a 500. Test prevents a future refactor that flips it to throw.
+    const cycle = buildCycle({ memberId: '00000000-0000-0000-0000-000000000999' });
+    const { deps } = fakeDeps({
+      cycle,
+      emitInTxImpl: async () => {
+        throw new Error('audit_log: insert failed');
+      },
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('cross_member_probe');
+  });
+
   it('cycle_not_payable — status mismatch', async () => {
     const cycle = buildCycle({ status: 'completed' });
     const { deps, invoiceBridgeMock } = fakeDeps({ cycle });
@@ -353,6 +372,37 @@ describe('confirmRenewal (T122) — link / audit failure paths', () => {
     await expect(confirmRenewal(deps, baseInput)).rejects.toThrow(
       /audit_log: insert failed/,
     );
+  });
+
+  it('C4 review-fix: Principle VIII — plan-change emit failure rolls back updateFrozenPlan', async () => {
+    // Locks the contract that the plan-change branch (FR-021b atomic
+    // frozen-price update) wraps `updateFrozenPlan` + the two audit
+    // emits (`renewal_with_plan_change` + `renewal_cycle_price_frozen`)
+    // in a single tx whose audit failure propagates to rollback.
+    // Without this assertion, a regression that moves
+    // `updateFrozenPlan` outside the audit-tx would silently corrupt
+    // frozen-price data on the next reviewer's polish PR.
+    const cycle = buildCycle();
+    let emitCount = 0;
+    const { deps, updateFrozenPlanMock } = fakeDeps({
+      cycle,
+      emitInTxImpl: async () => {
+        emitCount += 1;
+        // Fail on the FIRST emit inside the state tx (with_plan_change)
+        // — i.e., after updateFrozenPlan landed but before audit
+        // committed. Mock-tx vi.mock('@/lib/db') means the throw
+        // propagates back through the simulated tx wrapper (no real
+        // rollback happens at the mock layer, but the throw IS the
+        // observable contract that locks Principle VIII).
+        if (emitCount === 1) throw new Error('audit_log: insert failed');
+      },
+    });
+    await expect(
+      confirmRenewal(deps, { ...baseInput, newPlanId: NEW_PLAN_ID }),
+    ).rejects.toThrow(/audit_log: insert failed/);
+    // updateFrozenPlan was called before the failing emit — that's the
+    // mutation the Principle VIII rollback is meant to undo.
+    expect(updateFrozenPlanMock).toHaveBeenCalledOnce();
   });
 });
 

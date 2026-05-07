@@ -26,7 +26,7 @@
  * Pure Infrastructure — uses only `@/lib/db` + F2 schema deep import +
  * the port interface (no framework / Application-layer imports).
  */
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
@@ -70,7 +70,12 @@ export function makeDrizzlePlanLookupForRenewal(
               isNull(membershipPlans.deletedAt),
             ),
           )
-          .orderBy(membershipPlans.planYear)
+          // C2 review-fix (2026-05-07): explicit DESC so the lookup
+          // returns the MOST RECENT plan_year row when a planId has
+          // multiple rows (e.g. 2025 + 2026 catalogue carry-over).
+          // Default ASC was returning obsolete prices and breaking
+          // the FR-021b frozen-price contract.
+          .orderBy(desc(membershipPlans.planYear))
           .limit(1);
 
         const row = rows[0];

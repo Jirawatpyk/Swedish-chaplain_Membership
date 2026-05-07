@@ -46,6 +46,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { asMemberId } from '@/modules/members';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type {
   F4InvoicingForRenewalBridge,
@@ -150,8 +151,11 @@ export async function confirmRenewal(
           {
             type: 'renewal_cross_member_probe' as const,
             payload: {
-              actor_member_id: input.memberId as never,
-              attempted_member_id: cycle.memberId as never,
+              // I13 review-fix: use branded asMemberId() instead of
+              // `as never` cast — preserves the "silent ID swap"
+              // compile-time guard documented in renewal-audit-emitter.ts:18.
+              actor_member_id: asMemberId(input.memberId),
+              attempted_member_id: asMemberId(cycle.memberId),
             },
           },
           {

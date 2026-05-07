@@ -50,6 +50,21 @@ export async function POST(
 
   const { memberId: urlMemberId } = await context.params;
 
+  // C1 review-fix (2026-05-07): session-vs-URL guard. Without this,
+  // member A could POST to `/api/portal/renewal/<memberB_id>/confirm`
+  // with member B's cycleId and trigger F4 invoice issuance against
+  // member B's renewal cycle. The use-case below checks cycle-vs-URL
+  // (cross-member-probe), but URL is attacker-controlled — only the
+  // session-bound `ctx.memberId` is trusted. Generic 404 per FR-027
+  // (no oracle).
+  if (urlMemberId !== ctx.memberId) {
+    return errorResponse({
+      status: 404,
+      code: 'cycle_not_found',
+      correlationId,
+    });
+  }
+
   let raw: unknown;
   try {
     raw = await request.json();

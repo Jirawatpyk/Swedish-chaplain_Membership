@@ -10,11 +10,12 @@
  *      use-case passes a callback to `f4InvoiceBridge.issueAndMarkPaid`
  *      so the cycle flip + audit emit run inside F4's `recordPayment`
  *      tx (atomic state+audit per Constitution Principle VIII).
- *   2. F4 webhook-driven path — `f8OnPaidCallbacks(tenantId)` returns
- *      `[]` today; the F8 `markCycleCompleteFromInvoicePaid` use-case
- *      remains deferred (no concrete target phase scheduled — track
- *      via spec backlog, not in-line). When it ships, this factory
- *      returns the actual callback per tenant.
+ *   2. F4 webhook-driven path — `f8OnPaidCallbacks(tenantId)` (Phase 5
+ *      Wave G+H) returns the F8 `markCycleCompleteFromInvoicePaid`
+ *      callback (T123) bound to per-tenant deps. When F4 fires a paid
+ *      event (webhook or admin offline-mark) the F8 cycle transitions
+ *      to `completed` (or `pending_admin_reactivation` per FR-005b
+ *      block override) and emits the appropriate audit event.
  *
  * Pure Infrastructure — only `@/lib/db` + tenants barrel imports
  * (Constitution Principle III).
@@ -254,10 +255,30 @@ export function f8OnPaidCallbacks(
     async (evt) => {
       // Lazy-import to avoid circular: index.ts barrel re-exports the
       // use-case which itself imports from `@/modules/invoicing`. Pulling
-      // the use-case via the barrel here keeps the import graph linear.
-      const { markCycleCompleteFromInvoicePaid } = await import(
-        '../application/use-cases/mark-cycle-complete-from-invoice-paid'
-      );
+      // the use-case via the direct path here keeps the import graph
+      // linear.
+      let markCycleCompleteFromInvoicePaid: typeof import('../application/use-cases/mark-cycle-complete-from-invoice-paid').markCycleCompleteFromInvoicePaid;
+      try {
+        ({ markCycleCompleteFromInvoicePaid } = await import(
+          '../application/use-cases/mark-cycle-complete-from-invoice-paid'
+        ));
+      } catch (e) {
+        // I8 review-fix: F8-tagged log so a cold-start module-resolution
+        // failure (ENOENT, SyntaxError on hot-reload) is traceable
+        // without grepping F4's stack trace. Re-throw so F4's outer
+        // `recordPayment` tx rolls back.
+        const { logger } = await import('@/lib/logger');
+        logger.error(
+          {
+            err: e instanceof Error ? e : new Error(String(e)),
+            tenantId,
+            invoiceId: evt.invoiceId,
+            memberId: evt.memberId,
+          },
+          '[f8-onPaid] dynamic import of T123 use-case failed — F4 tx rolling back',
+        );
+        throw e;
+      }
       const result = await markCycleCompleteFromInvoicePaid(deps, evt);
       // Throw on Result-typed err so F4's tx rolls back. Domain failures
       // (no_cycle_for_invoice / cycle_not_payable) return ok(...) so they
