@@ -272,12 +272,24 @@ export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
  *   callback here per research.md R12. Defaults to undefined (no
  *   callbacks) so existing F4 admin manual mark-paid + F5 webhook
  *   call sites are unchanged when callers don't pass the parameter.
+ *
+ *   I3 review-fix (Phase 5 backlog close): the second `tx` parameter
+ *   is the F4-internal Drizzle tx handle, threaded so listeners that
+ *   touch other tables (F8's mark-cycle-complete) can participate in
+ *   the SAME transaction instead of opening a separate `runInTenant`
+ *   that commits independently. The handle is typed `unknown` to keep
+ *   the cross-module contract framework-free (Constitution Principle
+ *   III); listeners cast back to their own internal `TenantTx` brand.
+ *   Listeners that don't need the tx may simply ignore the parameter.
  */
 export function makeRecordPaymentDeps(
   tenantId: string,
   externalTx?: unknown,
   onPaidCallbacks?: ReadonlyArray<
-    (evt: import('@/modules/invoicing/domain/f4-invoice-paid-event').F4InvoicePaidEvent) => Promise<void>
+    (
+      evt: import('@/modules/invoicing/domain/f4-invoice-paid-event').F4InvoicePaidEvent,
+      tx?: unknown,
+    ) => Promise<void>
   >,
 ): RecordPaymentDeps {
   return {

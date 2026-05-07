@@ -22,6 +22,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+import { parseInput } from './_lib/parse-input';
 
 export const blockAutoReactivationInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -58,14 +59,13 @@ export async function blockAutoReactivation(
 ): Promise<
   Result<BlockAutoReactivationOutput, BlockAutoReactivationError>
 > {
-  const parsed = blockAutoReactivationInputSchema.safeParse(rawInput);
-  if (!parsed.success) {
-    return err({
-      kind: 'invalid_input',
-      message: parsed.error.issues[0]?.message ?? 'invalid input',
-    });
-  }
-  const input = parsed.data;
+  // Phase 5 review backlog close — adopt the canonical
+  // `parseInput` helper (see `_lib/parse-input.ts`) instead of the
+  // inline 7-line zod-error mapping. Other Phase 1-4 use-cases keep
+  // their inline pattern for now to limit the diff blast radius.
+  const inputResult = parseInput(blockAutoReactivationInputSchema, rawInput);
+  if (!inputResult.ok) return err(inputResult.error);
+  const input = inputResult.value;
 
   return runInTenant(deps.tenant, async (tx) => {
     const flagInput: {

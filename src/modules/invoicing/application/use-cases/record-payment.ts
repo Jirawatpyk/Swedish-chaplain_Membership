@@ -173,7 +173,16 @@ export interface RecordPaymentDeps {
    * Default `[]` keeps the existing F4 admin manual mark-paid + F5
    * webhook code paths unchanged for callers that don't pass callbacks.
    */
-  readonly onPaidCallbacks?: ReadonlyArray<(evt: F4InvoicePaidEvent) => Promise<void>>;
+  /**
+   * I3 review-fix: callbacks now receive the F4-internal tx so they
+   * can participate atomically (cf. F8 mark-cycle-complete avoiding a
+   * separate runInTenant). Tx is `unknown` to keep cross-module
+   * contract framework-free; listeners cast it back. Listeners that
+   * don't need the tx may simply ignore the parameter.
+   */
+  readonly onPaidCallbacks?: ReadonlyArray<
+    (evt: F4InvoicePaidEvent, tx?: unknown) => Promise<void>
+  >;
 }
 
 export async function recordPayment(
@@ -560,7 +569,10 @@ export async function recordPayment(
         triggeredBy: eventTrigger,
       };
       for (const cb of callbacks) {
-        await cb(evt);
+        // I3 review-fix: thread the F4-internal tx so listeners can
+        // participate atomically. Listeners that don't need it ignore
+        // the second parameter — cross-module contract stays narrow.
+        await cb(evt, tx);
       }
     }
 

@@ -2495,6 +2495,9 @@
       }
     },
     "renewal": {
+      "loading": {
+        "announce": "Laddar dina förnyelseuppgifter…"
+      },
       "page": {
         "title": "Förnyelse online",
         "subtitle": "Granska ditt medlemskap och bekräfta för att få en faktura.",

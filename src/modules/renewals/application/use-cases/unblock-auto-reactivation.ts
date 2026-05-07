@@ -16,6 +16,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+import { parseInput } from './_lib/parse-input';
 
 export const unblockAutoReactivationInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -45,14 +46,9 @@ export async function unblockAutoReactivation(
 ): Promise<
   Result<UnblockAutoReactivationOutput, UnblockAutoReactivationError>
 > {
-  const parsed = unblockAutoReactivationInputSchema.safeParse(rawInput);
-  if (!parsed.success) {
-    return err({
-      kind: 'invalid_input',
-      message: parsed.error.issues[0]?.message ?? 'invalid input',
-    });
-  }
-  const input = parsed.data;
+  const inputResult = parseInput(unblockAutoReactivationInputSchema, rawInput);
+  if (!inputResult.ok) return err(inputResult.error);
+  const input = inputResult.value;
 
   return runInTenant(deps.tenant, async (tx) => {
     const result =

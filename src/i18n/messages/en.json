@@ -2500,6 +2500,9 @@
         "subtitle": "Review your membership and confirm to receive an invoice.",
         "membershipPlanHeading": "Membership plan"
       },
+      "loading": {
+        "announce": "Loading your renewal details…"
+      },
       "fields": {
         "plan": "Plan",
         "tier": "Tier",

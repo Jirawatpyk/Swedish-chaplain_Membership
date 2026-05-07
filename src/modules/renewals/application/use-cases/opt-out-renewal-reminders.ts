@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+import { parseInput } from './_lib/parse-input';
 
 export const optOutRenewalRemindersInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -50,14 +51,9 @@ export async function optOutRenewalReminders(
 ): Promise<
   Result<OptOutRenewalRemindersOutput, OptOutRenewalRemindersError>
 > {
-  const parsed = optOutRenewalRemindersInputSchema.safeParse(rawInput);
-  if (!parsed.success) {
-    return err({
-      kind: 'invalid_input',
-      message: parsed.error.issues[0]?.message ?? 'invalid input',
-    });
-  }
-  const input = parsed.data;
+  const inputResult = parseInput(optOutRenewalRemindersInputSchema, rawInput);
+  if (!inputResult.ok) return err(inputResult.error);
+  const input = inputResult.value;
 
   return runInTenant(deps.tenant, async (tx) => {
     const result = await deps.memberRenewalFlagsRepo.setRenewalRemindersOptedOut(

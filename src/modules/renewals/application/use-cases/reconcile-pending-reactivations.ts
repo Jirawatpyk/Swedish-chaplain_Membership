@@ -43,6 +43,10 @@ import {
   CycleNotFoundError,
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
+import type {
+  ReminderAuditQueryPort,
+  ReminderLadderAuditType,
+} from '../ports/reminder-audit-query-repo';
 
 export const reconcilePendingReactivationsInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -78,6 +82,13 @@ export type ReconcilePendingReactivationsError = {
 
 /**
  * Subset of `RenewalsDeps` used by this cron use-case.
+ *
+ * T138 catch-up review-fix: `reminderAuditQuery` lets the cron detect
+ * already-emitted reminders so a missed cron day (cron skip) doesn't
+ * silently drop a reminder rung. The previous equality-only check
+ * (`daysPending === REMINDER_T_N`) is now combined with
+ * "no audit row of this type exists for this cycle" — see
+ * `decideRemindersToFire` for the full rule.
  */
 export interface ReconcilePendingReactivationsDeps
   extends Pick<
@@ -85,6 +96,7 @@ export interface ReconcilePendingReactivationsDeps
     'tenant' | 'cyclesRepo' | 'auditEmitter'
   > {
   readonly f5RefundBridge: F5RefundBridge;
+  readonly reminderAuditQuery: ReminderAuditQueryPort;
 }
 
 const PENDING_TIMEOUT_DAYS = 30;
@@ -133,23 +145,32 @@ export async function reconcilePendingReactivations(
       const ok = await processTimeout(deps, cycle, input.correlationId);
       if (ok) timedOut += 1;
       else timeoutRefundFailures += 1;
-    } else if (daysPending === REMINDER_T_1) {
-      await emitReminderAudit(
-        deps,
-        cycle,
-        'lapsed_member_admin_reactivation_reminder_t-1' as const,
-        input.correlationId,
-      );
-      remindersT1 += 1;
-    } else if (daysPending === REMINDER_T_3) {
-      await emitReminderAudit(
-        deps,
-        cycle,
-        'lapsed_member_admin_reactivation_reminder_t-3' as const,
-        input.correlationId,
-      );
-      remindersT3 += 1;
-    } else if (daysPending === REMINDER_T_7) {
+      continue;
+    }
+    // T138 catch-up review-fix: instead of equality-only firing
+    // (which silently drops a reminder when the cron skips that exact
+    // day), look up which reminder-ladder audit rows already exist for
+    // the cycle and emit only the rungs whose threshold has been
+    // crossed AND whose audit row is missing. This makes the daily
+    // cron self-healing — a day-25 invocation that finds no T-7 audit
+    // for a cycle at daysPending=25 still fires the reminder.
+    const alreadyEmitted = await deps.reminderAuditQuery
+      .findReminderAuditsForCycle(cycle.tenantId, cycle.cycleId)
+      .catch((e: unknown) => {
+        // Read-only audit query failure is non-fatal — fall back to
+        // the legacy equality-fire policy so the cron does NOT block
+        // on a stale audit-log connection. The next run retries.
+        logger.warn(
+          {
+            cycleId: cycle.cycleId,
+            err: e instanceof Error ? e.message : String(e),
+          },
+          '[reconcile-pending-reactivations] reminderAuditQuery failed — falling back to equality-fire',
+        );
+        return new Set<ReminderLadderAuditType>();
+      });
+    const toFire = decideRemindersToFire(daysPending, alreadyEmitted);
+    if (toFire.has('lapsed_member_admin_reactivation_reminder_t-7')) {
       await emitReminderAudit(
         deps,
         cycle,
@@ -158,20 +179,24 @@ export async function reconcilePendingReactivations(
       );
       remindersT7 += 1;
     }
-    // Suggestion review-fix (T138 backlog close — cron-skip semantics):
-    // the equality checks (`=== REMINDER_T_N`) above DO emit each
-    // reminder at most once per ladder rung when the cron runs daily,
-    // but they SILENTLY DROP the reminder if the cron skips that exact
-    // day (e.g. a Vercel deploy reboot, an Upstash outage that 401s the
-    // bearer, or a clock skew straddling midnight). The audit-row
-    // catch-up logic (look up "did we ever emit T-N for this cycle?"
-    // before deciding) requires either a new repo method on the
-    // audit-port OR a per-cycle bookkeeping column. Tracked as a
-    // follow-up rather than landed here because: (a) the timeout fires
-    // unconditionally at day 30+ regardless of whether prior reminders
-    // landed, so the eventual cancellation is unaffected; (b) the F8
-    // operator runbook surfaces missed reminders via the
-    // `renewals_skip_count` admin metric (Wave I3 follow-on).
+    if (toFire.has('lapsed_member_admin_reactivation_reminder_t-3')) {
+      await emitReminderAudit(
+        deps,
+        cycle,
+        'lapsed_member_admin_reactivation_reminder_t-3' as const,
+        input.correlationId,
+      );
+      remindersT3 += 1;
+    }
+    if (toFire.has('lapsed_member_admin_reactivation_reminder_t-1')) {
+      await emitReminderAudit(
+        deps,
+        cycle,
+        'lapsed_member_admin_reactivation_reminder_t-1' as const,
+        input.correlationId,
+      );
+      remindersT1 += 1;
+    }
   }
 
   return ok({
@@ -182,6 +207,51 @@ export async function reconcilePendingReactivations(
     timedOut,
     timeoutRefundFailures,
   });
+}
+
+/**
+ * T138 catch-up review-fix: pure decision fn — given a cycle's
+ * `daysPending` and the set of reminder-ladder audit rows already
+ * emitted, returns the subset of reminder rungs the current cron run
+ * MUST emit. The rule is "threshold crossed + not yet emitted":
+ *
+ *   - Day ≥ 23 + no T-7 audit → emit T-7
+ *   - Day ≥ 27 + no T-3 audit → emit T-3
+ *   - Day ≥ 29 + no T-1 audit → emit T-1
+ *
+ * Idempotency comes from the audit-existence guard, not the equality
+ * day-match. Day 24 with NO T-7 row → still fires T-7 (catch-up after
+ * a missed day 23 cron). Day 24 with a T-7 row already → no fire.
+ *
+ * Pure for testability — no side effects.
+ */
+export function decideRemindersToFire(
+  daysPending: number,
+  alreadyEmitted: ReadonlySet<ReminderLadderAuditType>,
+): Set<ReminderLadderAuditType> {
+  const out = new Set<ReminderLadderAuditType>();
+  if (daysPending >= REMINDER_T_7) {
+    if (
+      !alreadyEmitted.has('lapsed_member_admin_reactivation_reminder_t-7')
+    ) {
+      out.add('lapsed_member_admin_reactivation_reminder_t-7');
+    }
+  }
+  if (daysPending >= REMINDER_T_3) {
+    if (
+      !alreadyEmitted.has('lapsed_member_admin_reactivation_reminder_t-3')
+    ) {
+      out.add('lapsed_member_admin_reactivation_reminder_t-3');
+    }
+  }
+  if (daysPending >= REMINDER_T_1) {
+    if (
+      !alreadyEmitted.has('lapsed_member_admin_reactivation_reminder_t-1')
+    ) {
+      out.add('lapsed_member_admin_reactivation_reminder_t-1');
+    }
+  }
+  return out;
 }
 
 function computeDaysPending(cycle: RenewalCycle, now: Date): number | null {

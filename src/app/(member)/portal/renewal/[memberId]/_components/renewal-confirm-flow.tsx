@@ -167,18 +167,37 @@ export function RenewalConfirmFlow({
             </SelectContent>
           </Select>
           {selectedPlanId !== currentPlanId && (
-            <p className="text-xs text-muted-foreground">
+            <p
+              className="text-xs text-muted-foreground"
+              aria-live="polite"
+            >
               {tSelector('changeNotice')}
             </p>
           )}
         </div>
       )}
-      <Button onClick={onConfirm} disabled={isPending}>
+      <Button
+        onClick={onConfirm}
+        disabled={isPending}
+        // S-6 polish: announce the loading state to assistive tech so a
+        // screen reader user hears "busy" while the F4 invoice is being
+        // issued (the network round-trip is typically 200-800ms — long
+        // enough that silence is jarring).
+        aria-busy={isPending}
+      >
         {isPending ? t('busy') : t('cta')}
       </Button>
+      {/*
+        S-7 polish: when `selectedPlanId !== currentPlanId` the change
+        notice already lives above the CTA. The plan-change-notice
+        paragraph below the Select gets `aria-live='polite'` so a
+        screen reader hears the price-lock warning the moment the user
+        switches plans, instead of having to navigate back up.
+      */}
       {error && (
         <p
           role="alert"
+          aria-live="assertive"
           className="text-sm text-destructive"
           data-testid="confirm-error"
         >

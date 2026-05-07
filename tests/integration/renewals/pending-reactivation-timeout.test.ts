@@ -137,8 +137,20 @@ describe('F8 reconcilePendingReactivations — integration (T148)', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.cyclesProcessed).toBe(4);
-      expect(r.value.remindersT7).toBe(1);
-      expect(r.value.remindersT3).toBe(1);
+      // T138 catch-up review-fix: with no prior audit rows seeded for
+      // these cycles, the catch-up logic fires every CROSSED ladder
+      // rung — not just the day-equality match. So:
+      //   - Day 23 cycle: T-7 only (T-3/T-1 thresholds not yet crossed)
+      //   - Day 27 cycle: T-7 + T-3 (both crossed, neither emitted yet)
+      //   - Day 29 cycle: T-7 + T-3 + T-1 (all three crossed)
+      //   - Day 31 cycle: timeout (refund + lapse)
+      // → remindersT7=3, remindersT3=2, remindersT1=1, timedOut=1.
+      // This is the desired self-healing semantics: the daily steady-
+      // state cron emits one rung per day per cycle (because each day
+      // finds yesterday's audit row); a cron-skip recovers all missed
+      // rungs in a single subsequent run.
+      expect(r.value.remindersT7).toBe(3);
+      expect(r.value.remindersT3).toBe(2);
       expect(r.value.remindersT1).toBe(1);
       expect(r.value.timedOut).toBe(1);
       expect(r.value.timeoutRefundFailures).toBe(0);

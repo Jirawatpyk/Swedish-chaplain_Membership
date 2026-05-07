@@ -184,6 +184,29 @@ describe('markCycleCompleteFromInvoicePaid (T123) — non-renewal + idempotent p
       expect(r.value.currentStatus).toBe('pending_admin_reactivation');
     }
   });
+
+  it('I3 review-fix: existingTx threaded by F4 callback is reused — runInTenant NOT called', async () => {
+    // The mock at the top of this file makes `runInTenant` a passthrough
+    // that runs `fn({})`. To prove the existingTx path is taken, we
+    // pass a sentinel object and assert it's the SAME object received
+    // by the cycle repo's findByInvoiceIdInTx.
+    const cycle = buildCycle();
+    const { deps, findByInvoiceMock } = fakeDeps({ cycle });
+    const sentinelTx = { sentinel: 'f4-tx-handle' } as unknown as Parameters<
+      typeof markCycleCompleteFromInvoicePaid
+    >[2];
+    const r = await markCycleCompleteFromInvoicePaid(
+      deps,
+      buildEvent(),
+      sentinelTx,
+    );
+    expect(r.ok).toBe(true);
+    expect(findByInvoiceMock).toHaveBeenCalledWith(
+      sentinelTx,
+      TENANT_ID,
+      INVOICE_UUID,
+    );
+  });
 });
 
 describe('markCycleCompleteFromInvoicePaid (T123) — race + atomicity', () => {

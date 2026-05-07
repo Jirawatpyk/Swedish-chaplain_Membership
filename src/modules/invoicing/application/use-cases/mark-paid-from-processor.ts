@@ -115,7 +115,11 @@ export interface MarkPaidFromProcessorInput {
    * research.md R12). Any callback rejection rolls back the entire
    * webhook tx including the F4 flip — no compensating action needed.
    */
-  readonly onPaidCallbacks?: ReadonlyArray<(evt: F4InvoicePaidEvent) => Promise<void>>;
+  readonly onPaidCallbacks?: ReadonlyArray<
+    // I3 review-fix: optional second tx parameter so listeners can
+    // participate in F4's tx atomically.
+    (evt: F4InvoicePaidEvent, tx?: unknown) => Promise<void>
+  >;
 }
 
 export type MarkPaidFromProcessorError = RecordPaymentError;

@@ -94,12 +94,21 @@ export type MarkCycleCompleteDeps = Pick<
  *
  * Genuine infra throws (DB connection lost) propagate up to F4's tx
  * which rolls back the invoice flip — atomic-failure invariant.
+ *
+ * I3 review-fix (Phase 5 backlog close): when the F4 onPaidCallback
+ * threads its own tx via the new `(evt, tx?)` callback signature,
+ * F8 reuses it instead of opening a separate `runInTenant`. This
+ * collapses the two-tx eventual-consistency window — F4 commit + F8
+ * commit are now ONE atomic operation. The legacy `existingTx`-omitted
+ * path is preserved for callers that don't (yet) thread the tx so the
+ * change is fully backward-compatible.
  */
 export async function markCycleCompleteFromInvoicePaid(
   deps: MarkCycleCompleteDeps,
   event: F4InvoicePaidEvent,
+  existingTx?: TenantTx,
 ): Promise<Result<MarkCycleCompleteOutcome, never>> {
-  return runInTenant(deps.tenant, async (tx) => {
+  const body = async (tx: TenantTx): Promise<Result<MarkCycleCompleteOutcome, never>> => {
     const cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
       tx,
       event.tenantId,
@@ -145,7 +154,14 @@ export async function markCycleCompleteFromInvoicePaid(
 
     // Default auto-complete branch.
     return autoComplete(deps, tx, cycle, event, closedAt);
-  });
+  };
+  // I3 review-fix: reuse caller's tx when threaded via the F4
+  // onPaidCallback's new `(evt, tx)` signature; otherwise fall back
+  // to opening our own runInTenant for legacy callers.
+  if (existingTx !== undefined) {
+    return body(existingTx);
+  }
+  return runInTenant(deps.tenant, body);
 }
 
 async function autoComplete(

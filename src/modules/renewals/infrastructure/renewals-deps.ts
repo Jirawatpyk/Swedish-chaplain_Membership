@@ -41,6 +41,7 @@ import { makeDrizzleDispatchCandidateRepo } from './drizzle/drizzle-dispatch-can
 import { makeDrizzleRenewalReminderEventRepo } from './drizzle/drizzle-renewal-reminder-event-repo';
 import { resendTransactionalRenewalGateway } from './resend-transactional-renewal-gateway';
 import { makeDrizzleBounceEventQuery } from './drizzle/drizzle-bounce-event-query';
+import { drizzleReminderAuditQueryRepo } from './drizzle/drizzle-reminder-audit-query-repo';
 import { f4InvoiceBridge, type F4InvoiceBridge } from './ports-adapters/f4-invoice-bridge';
 
 import type { ScheduledPlanChangeRepo } from '@/modules/plans/application/ports';
@@ -66,6 +67,7 @@ import type { DispatchCandidateRepo } from '../application/ports/dispatch-candid
 import type { RenewalReminderEventRepo } from '../application/ports/renewal-reminder-event-repo';
 import type { RenewalGateway } from '../application/ports/renewal-gateway';
 import type { BounceEventQuery } from '../application/ports/bounce-event-query';
+import type { ReminderAuditQueryPort } from '../application/ports/reminder-audit-query-repo';
 
 export interface RenewalsDeps {
   readonly tenant: TenantContext;
@@ -110,9 +112,8 @@ export interface RenewalsDeps {
   /**
    * Phase 5 Wave A.5 (T137) — F8 → F5 refund bridge port. Encapsulates
    * "find succeeded payment for invoice + issue full refund + cascade
-   * F4 credit-note" into a single async call. Default factory wires the
-   * `f5RefundBridgeStub` which loud-throws on call until the production
-   * adapter ships alongside T142 admin route + T139/T140 cron routes.
+   * F4 credit-note" into a single async call. Default factory wires
+   * the production drizzle adapter (`f5-refund-bridge-drizzle.ts`).
    */
   readonly f5RefundBridge: F5RefundBridge;
   /**
@@ -191,6 +192,13 @@ export interface RenewalsDeps {
    * test-only.
    */
   readonly bounceEventQuery: BounceEventQuery;
+  /**
+   * T138 catch-up review-fix: read-only audit_log query so the daily
+   * reconcile cron can detect missed reminder rungs (e.g. cron skipped
+   * day 23 → day 24 invocation still fires the T-7 reminder because
+   * no audit row exists for it).
+   */
+  readonly reminderAuditQuery: ReminderAuditQueryPort;
 }
 
 /**
@@ -222,6 +230,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     reminderEventRepo: makeDrizzleRenewalReminderEventRepo(tenant),
     renewalGateway: resendTransactionalRenewalGateway,
     bounceEventQuery: makeDrizzleBounceEventQuery(tenant),
+    reminderAuditQuery: drizzleReminderAuditQueryRepo,
   };
 }
 
@@ -238,10 +247,16 @@ export type { AuditContext, F8AuditEvent, F8AuditEventType };
  * tenant's deps so F4's `recordPayment` / `markPaidFromProcessor`
  * fires it inside the same DB tx that flips invoice issued → paid.
  *
- * Tx semantics: F4InvoicePaidEvent does NOT carry the tx handle, so
- * T123 opens its own `runInTenant` tx. The atomic invariant is upheld
- * because T123 throws on failure (rolling back F4's outer tx via the
- * onPaidCallback contract). See T123 file header for details.
+ * I3 review-fix (Phase 5 backlog close): F4 now threads its internal
+ * tx into the callback (`cb(evt, tx)`), and this wrapper passes that
+ * tx through to T123 as `existingTx`. F8 reuses the F4 tx instead of
+ * opening a separate `runInTenant`, collapsing the two-tx eventual-
+ * consistency window into a single atomic transaction. F4's tx still
+ * rolls back on any T123 throw via the onPaidCallback contract.
+ *
+ * Backward compat: if F4 happens to invoke without the tx parameter
+ * (legacy callers), T123 falls through to `runInTenant` so the
+ * callback never breaks. The Phase 5+ wiring always threads the tx.
  *
  * Called by F4's record-payment composition (mark-paid-offline path
  * via f4-invoice-bridge.ts; webhook path via markPaidFromProcessor
@@ -249,10 +264,10 @@ export type { AuditContext, F8AuditEvent, F8AuditEventType };
  */
 export function f8OnPaidCallbacks(
   tenantId: string,
-): ReadonlyArray<(evt: F4InvoicePaidEvent) => Promise<void>> {
+): ReadonlyArray<(evt: F4InvoicePaidEvent, tx?: unknown) => Promise<void>> {
   const deps = makeRenewalsDeps(tenantId);
   return [
-    async (evt) => {
+    async (evt, txUnknown) => {
       // Lazy-import to avoid circular: index.ts barrel re-exports the
       // use-case which itself imports from `@/modules/invoicing`. Pulling
       // the use-case via the direct path here keeps the import graph
@@ -279,7 +294,21 @@ export function f8OnPaidCallbacks(
         );
         throw e;
       }
-      const result = await markCycleCompleteFromInvoicePaid(deps, evt);
+      // I3 review-fix: cast F4's `unknown` tx back to F8's TenantTx
+      // brand. Both modules use the same underlying Drizzle connection
+      // shape (`db.transaction(...)` callback param), so the cast is
+      // safe at runtime. When `txUnknown` is undefined (legacy F4 call
+      // path that didn't pass the tx), T123 falls back to its own
+      // runInTenant — full backward compat.
+      const existingTx =
+        txUnknown !== undefined
+          ? (txUnknown as Parameters<typeof markCycleCompleteFromInvoicePaid>[2])
+          : undefined;
+      const result = await markCycleCompleteFromInvoicePaid(
+        deps,
+        evt,
+        existingTx,
+      );
       // Throw on Result-typed err so F4's tx rolls back. Domain failures
       // (no_cycle_for_invoice / cycle_not_payable) return ok(...) so they
       // do NOT roll back the F4 invoice flip — see T123 file header for

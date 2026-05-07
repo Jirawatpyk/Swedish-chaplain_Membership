@@ -53,12 +53,24 @@ function fakeDeps(args: {
   emitImpl?: () => Promise<void>;
   emitInTxImpl?: () => Promise<void>;
   transitionImpl?: () => Promise<RenewalCycle>;
+  /**
+   * T138 catch-up review-fix: per-cycleId mapping of which reminder
+   * audits already exist. Defaults to empty (cron-skip never happened
+   * before — fire all crossed thresholds). Set to a populated set to
+   * simulate "T-7 already fired" so the cron does NOT double-fire.
+   */
+  alreadyEmittedByCycle?: Map<string, ReadonlySet<string>>;
+  reminderAuditQueryImpl?: (
+    tenantId: string,
+    cycleId: string,
+  ) => Promise<ReadonlySet<string>>;
 }): {
   deps: ReconcilePendingReactivationsDeps;
   emitMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
   refundMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
+  reminderAuditQueryMock: ReturnType<typeof vi.fn>;
 } {
   const listMock = vi.fn(async () => ({
     items: args.cycles,
@@ -91,6 +103,11 @@ function fakeDeps(args: {
   const f5Bridge: F5RefundBridge = {
     issueRefundForInvoice: refundMock as never,
   };
+  const reminderAuditQueryMock = vi.fn(
+    args.reminderAuditQueryImpl ??
+      (async (_tenantId: string, cycleId: string) =>
+        args.alreadyEmittedByCycle?.get(cycleId) ?? new Set<string>()),
+  );
   const deps: ReconcilePendingReactivationsDeps = {
     tenant: { slug: TENANT_ID } as ReconcilePendingReactivationsDeps['tenant'],
     cyclesRepo: {
@@ -104,8 +121,19 @@ function fakeDeps(args: {
       emitInTx: emitInTxMock,
     } as unknown as ReconcilePendingReactivationsDeps['auditEmitter'],
     f5RefundBridge: f5Bridge,
+    reminderAuditQuery: {
+      findReminderAuditsForCycle:
+        reminderAuditQueryMock as unknown as ReconcilePendingReactivationsDeps['reminderAuditQuery']['findReminderAuditsForCycle'],
+    },
   };
-  return { deps, emitMock, emitInTxMock, refundMock, transitionMock };
+  return {
+    deps,
+    emitMock,
+    emitInTxMock,
+    refundMock,
+    transitionMock,
+    reminderAuditQueryMock,
+  };
 }
 
 const baseInput = {
@@ -115,34 +143,132 @@ const baseInput = {
 };
 
 describe('reconcilePendingReactivations (T138) — reminder ladder', () => {
-  it.each([
-    [23, 'lapsed_member_admin_reactivation_reminder_t-7' as const, 'remindersT7'],
-    [27, 'lapsed_member_admin_reactivation_reminder_t-3' as const, 'remindersT3'],
-    [29, 'lapsed_member_admin_reactivation_reminder_t-1' as const, 'remindersT1'],
-  ])(
-    'day %i emits %s audit',
-    async (days, expectedType, counterKey) => {
-      const cycle = pendingCycle({ daysPending: days });
-      const { deps, emitMock, refundMock } = fakeDeps({ cycles: [cycle] });
-      const r = await reconcilePendingReactivations(deps, baseInput);
-      expect(r.ok).toBe(true);
-      expect(refundMock).not.toHaveBeenCalled();
-      expect(emitMock.mock.calls[0]?.[0]).toMatchObject({ type: expectedType });
-      if (r.ok) {
-        const counters = r.value as unknown as Record<string, number>;
-        expect(counters[counterKey]).toBe(1);
-      }
-    },
-  );
+  it('day 23 fresh: emits only T-7 (no audits exist yet)', async () => {
+    const cycle = pendingCycle({ daysPending: 23 });
+    const { deps, emitMock, refundMock } = fakeDeps({ cycles: [cycle] });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(refundMock).not.toHaveBeenCalled();
+    expect(emitMock).toHaveBeenCalledOnce();
+    expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+      type: 'lapsed_member_admin_reactivation_reminder_t-7',
+    });
+    if (r.ok) expect(r.value.remindersT7).toBe(1);
+  });
 
-  it('day 22 / 25 / 28 — no audit (between boundaries)', async () => {
-    const cycles = [22, 25, 28].map((days, i) =>
-      pendingCycle({ daysPending: days, cycleSuffix: `c00${i}` }),
-    );
-    const { deps, emitMock } = fakeDeps({ cycles });
+  it('day 27 with T-7 already emitted: emits only T-3', async () => {
+    const cycle = pendingCycle({ daysPending: 27 });
+    const { deps, emitMock } = fakeDeps({
+      cycles: [cycle],
+      alreadyEmittedByCycle: new Map([
+        [cycle.cycleId, new Set(['lapsed_member_admin_reactivation_reminder_t-7'])],
+      ]),
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(emitMock).toHaveBeenCalledOnce();
+    expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+      type: 'lapsed_member_admin_reactivation_reminder_t-3',
+    });
+    if (r.ok) expect(r.value.remindersT3).toBe(1);
+  });
+
+  it('day 29 with T-7 + T-3 already emitted: emits only T-1', async () => {
+    const cycle = pendingCycle({ daysPending: 29 });
+    const { deps, emitMock } = fakeDeps({
+      cycles: [cycle],
+      alreadyEmittedByCycle: new Map([
+        [
+          cycle.cycleId,
+          new Set([
+            'lapsed_member_admin_reactivation_reminder_t-7',
+            'lapsed_member_admin_reactivation_reminder_t-3',
+          ]),
+        ],
+      ]),
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(emitMock).toHaveBeenCalledOnce();
+    expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+      type: 'lapsed_member_admin_reactivation_reminder_t-1',
+    });
+    if (r.ok) expect(r.value.remindersT1).toBe(1);
+  });
+
+  it('day 22 — no audit (T-7 threshold not yet crossed)', async () => {
+    const cycle = pendingCycle({ daysPending: 22 });
+    const { deps, emitMock } = fakeDeps({ cycles: [cycle] });
     const r = await reconcilePendingReactivations(deps, baseInput);
     expect(r.ok).toBe(true);
     expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it('idempotent: day 24 with T-7 already emitted — no audit', async () => {
+    const cycle = pendingCycle({ daysPending: 24 });
+    const { deps, emitMock } = fakeDeps({
+      cycles: [cycle],
+      alreadyEmittedByCycle: new Map([
+        [cycle.cycleId, new Set(['lapsed_member_admin_reactivation_reminder_t-7'])],
+      ]),
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it('T138 catch-up: day 25 with NO T-7 audit fires T-7 (cron-skip recovery)', async () => {
+    // The previous equality-only logic would silently skip this — the
+    // cron only fired on day === 23. Now the audit-existence guard
+    // closes the gap: day 25 sees no T-7 row and emits the reminder.
+    const cycle = pendingCycle({ daysPending: 25 });
+    const { deps, emitMock } = fakeDeps({ cycles: [cycle] });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(emitMock).toHaveBeenCalledOnce();
+    expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+      type: 'lapsed_member_admin_reactivation_reminder_t-7',
+    });
+    if (r.ok) {
+      expect(r.value.remindersT7).toBe(1);
+      expect(r.value.remindersT3).toBe(0);
+    }
+  });
+
+  it('T138 catch-up: day 28 with NO audits fires BOTH T-7 + T-3 (double cron-skip)', async () => {
+    // Cron skipped both day 23 + day 27. Day 28 invocation catches up
+    // by firing both rungs whose threshold is crossed and whose audit
+    // is missing — order is T-7 first, T-3 second.
+    const cycle = pendingCycle({ daysPending: 28 });
+    const { deps, emitMock } = fakeDeps({ cycles: [cycle] });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(emitMock).toHaveBeenCalledTimes(2);
+    expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+      type: 'lapsed_member_admin_reactivation_reminder_t-7',
+    });
+    expect(emitMock.mock.calls[1]?.[0]).toMatchObject({
+      type: 'lapsed_member_admin_reactivation_reminder_t-3',
+    });
+    if (r.ok) {
+      expect(r.value.remindersT7).toBe(1);
+      expect(r.value.remindersT3).toBe(1);
+      expect(r.value.remindersT1).toBe(0);
+    }
+  });
+
+  it('reminderAuditQuery failure falls back to fire-anyway (degraded mode never blocks the cron)', async () => {
+    const cycle = pendingCycle({ daysPending: 23 });
+    const { deps, emitMock } = fakeDeps({
+      cycles: [cycle],
+      reminderAuditQueryImpl: async () => {
+        throw new Error('audit_log: connection lost');
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // Empty fallback set → all crossed thresholds fire.
+    expect(emitMock).toHaveBeenCalled();
   });
 });
 
@@ -235,7 +361,13 @@ describe('reconcilePendingReactivations (T138) — input validation + summary', 
     }
   });
 
-  it('mixed cycles — counts each branch independently', async () => {
+  it('mixed cycles steady-state — counts each branch independently with prior audits seeded', async () => {
+    // T138 catch-up review-fix: this test simulates the steady-state
+    // daily cron where prior days have already seeded the audit rows.
+    // Day 27 cycle has T-7 pre-emitted (from day 23 yesterday); day 29
+    // has T-7 + T-3 pre-emitted; day 30 just times out. Without the
+    // pre-emit map, the catch-up logic would correctly catch all the
+    // missed rungs — that's covered by the cron-skip recovery test.
     const cycles = [
       pendingCycle({ daysPending: 23, cycleSuffix: 'c071' }),
       pendingCycle({ daysPending: 27, cycleSuffix: 'c072' }),
@@ -243,7 +375,20 @@ describe('reconcilePendingReactivations (T138) — input validation + summary', 
       pendingCycle({ daysPending: 30, cycleSuffix: 'c074' }),
       pendingCycle({ daysPending: 10, cycleSuffix: 'c075' }), // no-op
     ];
-    const { deps } = fakeDeps({ cycles });
+    const alreadyEmittedByCycle = new Map<string, ReadonlySet<string>>([
+      [
+        cycles[1]!.cycleId,
+        new Set(['lapsed_member_admin_reactivation_reminder_t-7']),
+      ],
+      [
+        cycles[2]!.cycleId,
+        new Set([
+          'lapsed_member_admin_reactivation_reminder_t-7',
+          'lapsed_member_admin_reactivation_reminder_t-3',
+        ]),
+      ],
+    ]);
+    const { deps } = fakeDeps({ cycles, alreadyEmittedByCycle });
     const r = await reconcilePendingReactivations(deps, baseInput);
     expect(r.ok).toBe(true);
     if (r.ok) {
