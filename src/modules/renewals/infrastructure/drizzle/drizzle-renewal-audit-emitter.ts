@@ -83,6 +83,47 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   'member_email_unverified_threshold_crossed',
   // --- Wave I5 (migration 0107) -----------------------------------------
   'cron_dispatch_orchestrated',
+  // --- Phase 5 Wave A.5 US3 emit sites (T120) ----------------------------
+  // Migration 0109 adds 21 enum values to the DB so future Phase 5 tasks
+  // can emit without a per-task migration. F8_ENUM_SHIPPED only lists
+  // values whose emit site EXISTS in code today.
+  'renewal_token_invalid',
+  'renewal_token_clicked_on_completed_cycle',
+  'renewal_self_service_initiated',
+  // --- Phase 5 Wave A US3 emit sites (T135 + T136) -----------------------
+  // T135 block/unblock-auto-reactivation use-cases emit on actual flag
+  // change (idempotent re-toggle skips the audit row). T136 emits on
+  // pending → completed admin approval transition.
+  'member_auto_reactivation_blocked',
+  'member_auto_reactivation_unblocked',
+  'lapsed_member_admin_reactivated',
+  // --- Phase 5 Wave A.5 US3 emit sites (T137) ---------------------------
+  // T137 admin-reject-reactivation transitions pending → cancelled with
+  // closed_reason='admin_rejected_with_refund' + cascades F5 refund +
+  // F4 credit-note via the F5RefundBridge port. Audit payload carries
+  // the credit-note ID for forensic chain (null when no payment to
+  // refund). Companion T138 reuses the same emit site for cron-driven
+  // 30-day auto-timeout cancellations (different actor=cron / null userId).
+  'lapsed_member_admin_reactivation_rejected',
+  // --- Phase 5 Wave B US3 emit sites (T123 + T138) ----------------------
+  // T123 markCycleCompleteFromInvoicePaid emits `renewal_completed`
+  // (default auto-complete) or `renewal_completed_post_lapse` (admin-
+  // blocked → held in pending_admin_reactivation). T138 cron emits the
+  // 3 reminder ladder events + the timed_out cancel event.
+  'renewal_completed',
+  'renewal_completed_post_lapse',
+  'lapsed_member_admin_reactivation_timed_out',
+  'lapsed_member_admin_reactivation_reminder_t-7',
+  'lapsed_member_admin_reactivation_reminder_t-3',
+  'lapsed_member_admin_reactivation_reminder_t-1',
+  // --- Phase 5 Wave B US3 emit sites (T122 confirm-renewal) -------------
+  // confirm-renewal emits `renewal_invoice_created` on every successful
+  // F4 invoice issue, plus `renewal_with_plan_change` +
+  // `renewal_cycle_price_frozen` when the optional plan-change branch
+  // fires (FR-021b atomic frozen-price update).
+  'renewal_invoice_created',
+  'renewal_with_plan_change',
+  'renewal_cycle_price_frozen',
 ]);
 
 function buildSummary<E extends F8AuditEventType>(

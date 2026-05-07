@@ -1,0 +1,281 @@
+/**
+ * F8 Phase 5 Wave A.5 · T137 — `adminRejectReactivation`.
+ *
+ * Admin rejects a cycle stuck in `pending_admin_reactivation` after a
+ * payment landed against an admin-blocked auto-reactivation member
+ * (FR-005d). The use-case:
+ *
+ *   1. Validates cycle is in `pending_admin_reactivation`.
+ *   2. Acquires per-cycle advisory lock + tx-bound re-read (TOCTOU).
+ *   3. Calls F5 `issueRefundForInvoice` for the cycle's linked invoice.
+ *      F5 cascades F4 credit-note creation in-tx (verified at Pre-Wave
+ *      A, see `src/modules/payments/application/use-cases/issue-refund.ts`).
+ *   4. Transitions cycle pending → cancelled with `closed_reason =
+ *      'admin_rejected_with_refund'`.
+ *   5. Emits `lapsed_member_admin_reactivation_rejected` audit (typed
+ *      payload includes refund credit-note ID for forensics).
+ *
+ * Concurrency / atomicity:
+ *   - F5 refund call is OUTSIDE the F8 tx (Stripe API is non-transactional);
+ *     this matches F5's own two-tx design (Phase A → Stripe → Phase B).
+ *     If F8's cycle-transition + audit-emit fails AFTER F5 refunded, the
+ *     cycle stays in `pending_admin_reactivation` — admin retries via
+ *     T138 (reconcile-pending) or manual support runbook. F5's audit
+ *     row + credit-note row are durable so the refund won't double-issue.
+ *   - The cycle transition + audit-emit do run in a single F8 tx
+ *     (Constitution Principle VIII).
+ *
+ * Edge case — `no_payment_found`: a cycle can enter
+ * `pending_admin_reactivation` via a non-payment path (e.g., a future
+ * manual admin pre-block before any payment). Reject still proceeds:
+ * cycle moves to cancelled, but the audit's `refund_credit_note_id`
+ * is null (not "we issued a $0 refund").
+ *
+ * RBAC: admin role only. Manager-role rejected by route handler.
+ */
+import { z } from 'zod';
+import { ok, err, type Result } from '@/lib/result';
+import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { asUserId } from '@/modules/auth/domain/branded';
+import { asCreditNoteId } from '@/modules/invoicing';
+import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+import type { F5RefundBridge } from '../ports/f5-refund-bridge';
+import {
+  parseCycleId,
+  type CycleId,
+  type RenewalCycle,
+} from '../../domain/renewal-cycle';
+import {
+  CycleNotFoundError,
+  CycleTransitionConflictError,
+} from '../ports/renewal-cycle-repo';
+
+export const adminRejectReactivationInputSchema = z.object({
+  tenantId: z.string().min(1),
+  cycleId: z.string().uuid(),
+  reason: z.string().trim().min(1).max(500),
+  actorUserId: z.string().min(1),
+  actorRole: z.literal('admin'),
+  requestId: z.string().nullable().optional(),
+  correlationId: z.string().min(1),
+});
+
+export type AdminRejectReactivationInput = z.infer<
+  typeof adminRejectReactivationInputSchema
+>;
+
+export interface AdminRejectReactivationOutput {
+  readonly cycleStatus: 'cancelled';
+  readonly closedReason: 'admin_rejected_with_refund';
+  readonly closedAt: string;
+  /** Null when no payment was found (cycle entered pending without one). */
+  readonly refundCreditNoteId: string | null;
+}
+
+export type AdminRejectReactivationError =
+  | { readonly kind: 'invalid_input'; readonly message: string }
+  | { readonly kind: 'cycle_not_found' }
+  | {
+      readonly kind: 'cycle_not_pending';
+      readonly currentStatus: string;
+    }
+  | {
+      readonly kind: 'cycle_missing_invoice';
+    }
+  | {
+      readonly kind: 'refund_failed';
+      readonly errorCode: string;
+      readonly detail: string;
+    }
+  | { readonly kind: 'server_error'; readonly message: string };
+
+/**
+ * Subset of `RenewalsDeps` actually needed. T137 also requires the F5
+ * refund bridge which is not yet wired into `RenewalsDeps`'s default
+ * factory (production wiring lands with T142 admin route + T139/T140
+ * cron routes); test composition supplies a mock directly via this
+ * narrower deps shape. When the production bridge ships, swap to the
+ * full `RenewalsDeps` import + lift the `f5RefundBridge` field there.
+ */
+export interface AdminRejectReactivationDeps
+  extends Pick<
+    RenewalsDeps,
+    'tenant' | 'cyclesRepo' | 'auditEmitter'
+  > {
+  readonly f5RefundBridge: F5RefundBridge;
+}
+
+export async function adminRejectReactivation(
+  deps: AdminRejectReactivationDeps,
+  rawInput: AdminRejectReactivationInput,
+): Promise<
+  Result<AdminRejectReactivationOutput, AdminRejectReactivationError>
+> {
+  const parsed = adminRejectReactivationInputSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return err({
+      kind: 'invalid_input',
+      message: parsed.error.issues[0]?.message ?? 'invalid input',
+    });
+  }
+  const input = parsed.data;
+  const cycleIdParsed = parseCycleId(input.cycleId);
+  if (!cycleIdParsed.ok) {
+    return err({ kind: 'invalid_input', message: 'invalid cycle id' });
+  }
+  const cycleId: CycleId = cycleIdParsed.value;
+
+  // Step 1-2: validate state + acquire lock + tx-bound re-read in own tx.
+  // The refund call (step 3) runs OUTSIDE the tx (Stripe is external),
+  // so we close this read tx before invoking F5.
+  let lockedCycle: RenewalCycle;
+  {
+    const stateResult = await runInTenant(deps.tenant, async (tx) => {
+      await deps.cyclesRepo.acquireCycleLockInTx(tx, input.tenantId, cycleId);
+      const cycle = await deps.cyclesRepo.findByIdInTx(
+        tx,
+        input.tenantId,
+        cycleId,
+      );
+      if (!cycle) {
+        return err({ kind: 'cycle_not_found' as const });
+      }
+      if (cycle.status !== 'pending_admin_reactivation') {
+        return err({
+          kind: 'cycle_not_pending' as const,
+          currentStatus: cycle.status,
+        });
+      }
+      return ok(cycle);
+    });
+    if (!stateResult.ok) return err(stateResult.error);
+    lockedCycle = stateResult.value;
+  }
+
+  // Step 3: refund via F5 bridge (outside F8 tx — Stripe is external).
+  let refundCreditNoteId: string | null = null;
+  if (lockedCycle.linkedInvoiceId === null) {
+    // Cycle has no linked invoice — cannot refund. Treat as
+    // no-payment-found path (audit refund_credit_note_id stays null).
+    refundCreditNoteId = null;
+  } else {
+    const refundResult = await deps.f5RefundBridge.issueRefundForInvoice({
+      tenantId: input.tenantId,
+      invoiceId: lockedCycle.linkedInvoiceId,
+      reason: input.reason,
+      actorUserId: input.actorUserId,
+      correlationId: input.correlationId,
+      requestId: input.requestId ?? null,
+    });
+    if (refundResult.status === 'refund_failed') {
+      logger.warn(
+        {
+          cycleId: lockedCycle.cycleId,
+          invoiceId: lockedCycle.linkedInvoiceId,
+          errorCode: refundResult.errorCode,
+        },
+        '[admin-reject-reactivation] F5 refund failed — cycle stays pending for retry',
+      );
+      return err({
+        kind: 'refund_failed',
+        errorCode: refundResult.errorCode,
+        detail: refundResult.detail,
+      });
+    }
+    if (refundResult.status === 'refunded') {
+      refundCreditNoteId = refundResult.creditNoteId;
+    }
+    // status === 'no_payment_found' → refundCreditNoteId stays null
+  }
+
+  // Step 4-5: transition cycle + emit audit atomically.
+  const closedAt = new Date().toISOString();
+  return runInTenant(deps.tenant, async (tx) => {
+    let updated: RenewalCycle;
+    try {
+      updated = await deps.cyclesRepo.transitionStatus(
+        tx,
+        input.tenantId,
+        cycleId,
+        {
+          from: 'pending_admin_reactivation',
+          to: 'cancelled',
+          closedAt,
+          closedReason: 'admin_rejected_with_refund',
+        },
+      );
+    } catch (e) {
+      if (e instanceof CycleTransitionConflictError) {
+        // Another tx moved the cycle out of pending between our refund
+        // call and this transition. Refund already issued (irreversible)
+        // — surface a server_error so the admin can investigate via
+        // F5 refund history + cycle audit trail.
+        logger.error(
+          {
+            cycleId,
+            refundCreditNoteId,
+            err: e.message,
+          },
+          '[admin-reject-reactivation] refund issued but cycle transition lost race — manual reconciliation needed',
+        );
+        return err({
+          kind: 'server_error',
+          message:
+            'refund issued but cycle transition lost race — see runbook',
+        });
+      }
+      if (e instanceof CycleNotFoundError) {
+        return err({ kind: 'cycle_not_found' });
+      }
+      logger.error(
+        { err: e instanceof Error ? e.message : String(e), cycleId },
+        '[admin-reject-reactivation] cycle transition failed',
+      );
+      return err({
+        kind: 'server_error',
+        message: 'cycle transition failed',
+      });
+    }
+
+    try {
+      await deps.auditEmitter.emitInTx(
+        tx,
+        {
+          type: 'lapsed_member_admin_reactivation_rejected' as const,
+          payload: {
+            cycle_id: updated.cycleId,
+            actor_user_id: asUserId(input.actorUserId),
+            refund_credit_note_id:
+              refundCreditNoteId === null
+                ? null
+                : asCreditNoteId(refundCreditNoteId),
+          },
+        },
+        {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          actorRole: 'admin',
+          correlationId: input.correlationId,
+          requestId: input.requestId ?? null,
+        },
+      );
+    } catch (e) {
+      // Constitution Principle VIII reverse-direction: throw to roll
+      // back the transition. The refund stays issued — same situation
+      // as the TransitionConflict branch (manual reconciliation).
+      logger.error(
+        { err: e instanceof Error ? e.message : String(e) },
+        '[admin-reject-reactivation] audit emit failed inside tx — rolling back',
+      );
+      throw e;
+    }
+
+    return ok({
+      cycleStatus: 'cancelled' as const,
+      closedReason: 'admin_rejected_with_refund' as const,
+      closedAt,
+      refundCreditNoteId,
+    });
+  });
+}

@@ -88,6 +88,54 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle | null>;
 
   /**
+   * Phase 5 Wave B (T123) — find the cycle whose `linked_invoice_id`
+   * matches the given F4 invoice id. Used by the F4 onPaidCallback to
+   * resolve "which renewal cycle does this paid invoice belong to".
+   * Returns null when no F8 cycle owns the invoice (e.g. ad-hoc admin
+   * invoice unrelated to a renewal).
+   */
+  findByInvoiceIdInTx(
+    tx: TenantTx,
+    tenantId: string,
+    invoiceId: string,
+  ): Promise<RenewalCycle | null>;
+
+  /**
+   * Phase 5 Wave B (T122) — atomic plan-change update per FR-021b.
+   * When a member selects a different F2 plan during the confirm flow,
+   * the cycle's frozen_plan_* columns must update in a single
+   * statement so a concurrent reader never sees mixed state. Throws
+   * `CycleTransitionConflictError` if the cycle row's status no longer
+   * permits a plan change (i.e. moved out of `awaiting_payment`).
+   */
+  updateFrozenPlan(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    args: {
+      readonly planIdAtCycleStart: string;
+      readonly tierAtCycleStart: TierBucket;
+      readonly frozenPlanPriceThb: string;
+      readonly frozenPlanTermMonths: number;
+      readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+    },
+  ): Promise<RenewalCycle>;
+
+  /**
+   * Phase 5 Wave B (T122) — link an issued F4 invoice to the cycle.
+   * Runs after `f4InvoicingBridge.issueInvoiceForRenewal` succeeds; the
+   * cycle's `linked_invoice_id` becomes the joining column the F4
+   * onPaidCallback (T123) uses to resolve cycle ↔ invoice. Idempotent
+   * when called with the same invoice id.
+   */
+  linkInvoice(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    invoiceId: string,
+  ): Promise<RenewalCycle>;
+
+  /**
    * Find the unique active cycle for a member (status NOT IN
    * lapsed/cancelled/completed) per data-model.md § 2.1 invariant
    * L135. Returns null when the member has no active cycle.

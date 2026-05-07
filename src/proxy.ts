@@ -317,6 +317,52 @@ export function proxy(request: NextRequest): NextResponse {
     );
   }
 
+  // 1f. FEATURE_F8_RENEWALS kill-switch (Phase 5 Wave A T133b). Default
+  //     OFF (dark ship); flip ON in Vercel env after Phase 5+6+9 ship
+  //     gates. Distinct error code `feature_disabled` separates "not yet
+  //     activated" from F3/F4's `read_only_mode` maintenance semantics.
+  //
+  //     The proxy runs in Edge runtime — it CANNOT do DB lookups, so
+  //     this block is path-prefix-only. The lapsed-portal-scope check
+  //     (FR-005a / T133) lives in a route-handler/server-component
+  //     helper that DOES have DB access; this proxy block only handles
+  //     "feature globally disabled". The F8 paths covered:
+  //
+  //       - /api/cron/renewals/**        — daily dispatcher + reconcile-pending
+  //       - /api/admin/renewals/**       — admin send-reminder-now etc.
+  //       - /api/admin/members/*/(un)block-auto-reactivation — FR-005b admin override
+  //       - /api/portal/renewal/**       — confirm POST + token-verify entry
+  //       - /api/portal/preferences/renewals — FR-016 opt-out toggle
+  //       - /admin/renewals/**           — admin pipeline + cycle pages
+  //       - /portal/renewal/**           — public renewal page + success
+  //       - /portal/preferences/renewals — opt-out preferences page
+  //
+  //     Kill-switch audit (`renewal_kill_switch_blocked`) emits from the
+  //     individual route handlers / page components — proxy returns
+  //     generic 503 without touching DB so we don't introduce edge-
+  //     runtime Postgres dependencies. The audit row is the
+  //     forensic record; the 503 is the user-facing block.
+  const isF8Path =
+    nextUrl.pathname.startsWith('/api/cron/renewals') ||
+    nextUrl.pathname.startsWith('/api/admin/renewals') ||
+    /^\/api\/admin\/members\/[^/]+\/(?:un)?block-auto-reactivation(?:\/|$)/.test(
+      nextUrl.pathname,
+    ) ||
+    nextUrl.pathname.startsWith('/api/portal/renewal') ||
+    nextUrl.pathname.startsWith('/api/portal/preferences/renewals') ||
+    /^\/admin\/renewals(?:\/|$)/.test(nextUrl.pathname) ||
+    /^\/portal\/renewal(?:\/|$)/.test(nextUrl.pathname) ||
+    /^\/portal\/preferences\/renewals(?:\/|$)/.test(nextUrl.pathname);
+  if (!env.features.f8Renewals && isF8Path) {
+    return build503(
+      'feature_disabled',
+      'Renewal reminders are temporarily unavailable.',
+      nextUrl.pathname,
+      requestId,
+      nonce,
+    );
+  }
+
   // 2. CSRF Origin allow-list for /api/* state-changing requests
   const csrfDecision = checkCsrf(method, nextUrl.pathname, request.headers.get('origin'));
   if (csrfDecision.action === 'reject') {

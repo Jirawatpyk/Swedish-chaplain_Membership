@@ -2493,6 +2493,59 @@
         "emptyHint": "No issued invoices to pay",
         "allPaidHint": "No pending invoices — you're all paid up."
       }
+    },
+    "renewal": {
+      "page": {
+        "title": "Online renewal",
+        "subtitle": "Review your membership and confirm to receive an invoice.",
+        "membershipPlanHeading": "Membership plan"
+      },
+      "fields": {
+        "plan": "Plan",
+        "tier": "Tier",
+        "frozenPrice": "Frozen price",
+        "term": "Term",
+        "termMonths": "{count} months",
+        "expiry": "Current expiry"
+      },
+      "benefits": {
+        "heading": "Benefit summary",
+        "unavailable": "Benefit summary unavailable."
+      },
+      "confirm": {
+        "cta": "Confirm renewal",
+        "busy": "Confirming…",
+        "errorPrefix": "Could not confirm —"
+      },
+      "planChange": {
+        "label": "Choose a plan",
+        "placeholder": "{defaultLabel}",
+        "currentSuffix": "current",
+        "changeNotice": "Switching to a different plan will lock the new price on your renewal invoice."
+      },
+      "onboarding": {
+        "heading": "Welcome to your first renewal",
+        "body": "Your renewal price is locked at the rate when your reminder was sent — even if the plan changes after this point. Confirm below and we'll issue an invoice you can pay online."
+      },
+      "success": {
+        "title": "Renewal complete",
+        "subtitle": "Thank you — your membership is active.",
+        "detailsHeading": "Renewal details",
+        "newExpiry": "New expiry",
+        "cycleStatus": "Cycle status",
+        "processing": "Your renewal is being processed. The new expiry date will appear here once payment confirmation arrives.",
+        "downloadReceipt": "Download receipt PDF",
+        "backToPortal": "Back to portal home"
+      }
+    },
+    "preferences": {
+      "renewals": {
+        "title": "Renewal reminders",
+        "subtitle": "Choose whether to receive renewal-reminder emails. Transactional emails (password resets, invoice receipts) continue regardless.",
+        "pauseLabel": "Pause renewal reminders",
+        "pauseDescription": "We'll still keep your renewal cycle on the admin pipeline so staff can reach out if needed.",
+        "errorPrefix": "Could not update —"
+      }
     }
   },
   "audit": {

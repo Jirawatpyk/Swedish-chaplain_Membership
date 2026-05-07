@@ -416,6 +416,26 @@ export function makeDrizzleRenewalCycleRepo(
       return rows[0] ? rowToDomain(rows[0]) : null;
     },
 
+    /**
+     * Phase 5 Wave B (T123) — F4 onPaidCallback dispatch helper. Looks
+     * up the cycle by `linked_invoice_id` inside the F4 tx so the read +
+     * subsequent transition see a consistent snapshot. RLS isolation
+     * comes from the inherited tenant GUC.
+     */
+    async findByInvoiceIdInTx(
+      tx: unknown,
+      _tenantId: string,
+      invoiceId: string,
+    ): Promise<RenewalCycle | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select()
+        .from(renewalCycles)
+        .where(eq(renewalCycles.linkedInvoiceId, invoiceId))
+        .limit(1);
+      return rows[0] ? rowToDomain(rows[0]) : null;
+    },
+
     async findActiveForMember(
       _tenantId: string,
       memberId: string,
@@ -474,6 +494,77 @@ export function makeDrizzleRenewalCycleRepo(
           nextCursor: buildNextCursor(pageRows, hasNextPage),
         };
       });
+    },
+
+    async updateFrozenPlan(
+      tx: unknown,
+      _tenantId: string,
+      cycleId: CycleId,
+      args: {
+        readonly planIdAtCycleStart: string;
+        readonly tierAtCycleStart: TierBucket;
+        readonly frozenPlanPriceThb: string;
+        readonly frozenPlanTermMonths: number;
+        readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+      },
+    ): Promise<RenewalCycle> {
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({
+          planIdAtCycleStart: args.planIdAtCycleStart,
+          tierAtCycleStart: args.tierAtCycleStart,
+          frozenPlanPriceThb: args.frozenPlanPriceThb,
+          frozenPlanTermMonths: args.frozenPlanTermMonths,
+          frozenPlanCurrency: args.frozenPlanCurrency,
+        })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.status, 'awaiting_payment'),
+          ),
+        )
+        .returning();
+      const row = updated[0];
+      if (!row) {
+        // Either cycle moved out of awaiting_payment or RLS hid it.
+        // Re-read to surface the actual status in the conflict error so
+        // the use-case can render a precise user-friendly message.
+        const reread = await txDb
+          .select({ status: renewalCycles.status })
+          .from(renewalCycles)
+          .where(eq(renewalCycles.cycleId, cycleId))
+          .limit(1);
+        const actualStatus = reread[0]?.status;
+        if (!actualStatus) {
+          throw new CycleNotFoundError(cycleId);
+        }
+        throw new CycleTransitionConflictError(
+          cycleId,
+          'awaiting_payment',
+          actualStatus as CycleStatus,
+        );
+      }
+      return rowToDomain(row);
+    },
+
+    async linkInvoice(
+      tx: unknown,
+      _tenantId: string,
+      cycleId: CycleId,
+      invoiceId: string,
+    ): Promise<RenewalCycle> {
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: invoiceId })
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .returning();
+      const row = updated[0];
+      if (!row) {
+        throw new CycleNotFoundError(cycleId);
+      }
+      return rowToDomain(row);
     },
 
     async acquireCycleLockInTx(

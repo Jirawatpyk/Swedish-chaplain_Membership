@@ -44,9 +44,11 @@ describe('makeRenewalsDeps composition root (T054)', () => {
   });
 });
 
-describe('f8OnPaidCallbacks (Phase 2 placeholder)', () => {
-  it('returns empty array — real callback ships in Phase 4', () => {
-    expect(f8OnPaidCallbacks('any-tenant')).toEqual([]);
+describe('f8OnPaidCallbacks (Phase 5 wired — T123 markCycleCompleteFromInvoicePaid)', () => {
+  it('returns the F8 cycle-complete callback (1 entry)', () => {
+    const callbacks = f8OnPaidCallbacks('any-tenant');
+    expect(callbacks).toHaveLength(1);
+    expect(typeof callbacks[0]).toBe('function');
   });
 });
 

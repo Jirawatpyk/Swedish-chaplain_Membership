@@ -24,8 +24,10 @@ import { db, runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import type {
+  MemberFlagToggleResult,
   MemberRenewalFlagsRepo,
   MemberRenewalFlagsMutationResult,
+  SetBlockedFromAutoReactivationInput,
 } from '../../application/ports/member-renewal-flags-repo';
 
 export function makeDrizzleMemberRenewalFlagsRepo(
@@ -108,6 +110,143 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         previouslyUnverified: wasUnverified,
         affectedRows: updated.length,
       };
+    },
+
+    async setRenewalRemindersOptedOut(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<MemberFlagToggleResult> {
+      const txDb = tx as typeof db;
+      const priorRows = await txDb
+        .select({ optedOut: members.renewalRemindersOptedOut })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      const prior = priorRows[0];
+      if (!prior) {
+        return { previousValue: false, affectedRows: 0 };
+      }
+      // Idempotent — preserve original opted-out timestamp on re-toggle.
+      if (prior.optedOut) {
+        return { previousValue: true, affectedRows: 1 };
+      }
+      const updated = await txDb
+        .update(members)
+        .set({
+          renewalRemindersOptedOut: true,
+          renewalRemindersOptedOutAt: new Date(),
+        })
+        .where(eq(members.memberId, memberId))
+        .returning({ memberId: members.memberId });
+      return { previousValue: false, affectedRows: updated.length };
+    },
+
+    async clearRenewalRemindersOptedOut(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<MemberFlagToggleResult> {
+      const txDb = tx as typeof db;
+      const priorRows = await txDb
+        .select({ optedOut: members.renewalRemindersOptedOut })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      const prior = priorRows[0];
+      if (!prior) {
+        return { previousValue: false, affectedRows: 0 };
+      }
+      const wasOptedOut = prior.optedOut;
+      const updated = await txDb
+        .update(members)
+        .set({
+          renewalRemindersOptedOut: false,
+          renewalRemindersOptedOutAt: null,
+        })
+        .where(eq(members.memberId, memberId))
+        .returning({ memberId: members.memberId });
+      return { previousValue: wasOptedOut, affectedRows: updated.length };
+    },
+
+    async setBlockedFromAutoReactivation(
+      tx: unknown,
+      _tenantId: string,
+      input: SetBlockedFromAutoReactivationInput,
+    ): Promise<MemberFlagToggleResult> {
+      const txDb = tx as typeof db;
+      const priorRows = await txDb
+        .select({ blocked: members.blockedFromAutoReactivation })
+        .from(members)
+        .where(eq(members.memberId, input.memberId))
+        .limit(1);
+      const prior = priorRows[0];
+      if (!prior) {
+        return { previousValue: false, affectedRows: 0 };
+      }
+      // Idempotent — preserve original block timestamp + actor on
+      // double-block. The reason field stays as set originally; if a
+      // different admin needs to update the reason they unblock + re-
+      // block (audit captures the chain).
+      if (prior.blocked) {
+        return { previousValue: true, affectedRows: 1 };
+      }
+      const updated = await txDb
+        .update(members)
+        .set({
+          blockedFromAutoReactivation: true,
+          blockedFromAutoReactivationAt: new Date(),
+          blockedFromAutoReactivationSetByUserId: input.actorUserId,
+          blockedFromAutoReactivationReason: input.reason ?? null,
+        })
+        .where(eq(members.memberId, input.memberId))
+        .returning({ memberId: members.memberId });
+      return { previousValue: false, affectedRows: updated.length };
+    },
+
+    async readBlockedFromAutoReactivation(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<boolean | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({ blocked: members.blockedFromAutoReactivation })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      return rows[0]?.blocked ?? null;
+    },
+
+    async clearBlockedFromAutoReactivation(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<MemberFlagToggleResult> {
+      const txDb = tx as typeof db;
+      const priorRows = await txDb
+        .select({ blocked: members.blockedFromAutoReactivation })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      const prior = priorRows[0];
+      if (!prior) {
+        return { previousValue: false, affectedRows: 0 };
+      }
+      const wasBlocked = prior.blocked;
+      // Reset all four block-related columns atomically per migration
+      // 0094's CHECK constraint (blocked=FALSE → all metadata NULL).
+      const updated = await txDb
+        .update(members)
+        .set({
+          blockedFromAutoReactivation: false,
+          blockedFromAutoReactivationAt: null,
+          blockedFromAutoReactivationSetByUserId: null,
+          blockedFromAutoReactivationReason: null,
+        })
+        .where(eq(members.memberId, memberId))
+        .returning({ memberId: members.memberId });
+      return { previousValue: wasBlocked, affectedRows: updated.length };
     },
   };
 }

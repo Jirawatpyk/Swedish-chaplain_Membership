@@ -1,0 +1,87 @@
+/**
+ * F8 Phase 5 Wave E · T150 — Member self-service renewal E2E (US3 AS1, AS6).
+ *
+ * Coverage strategy:
+ *   - AS1 (member receives reminder + clicks "Renew now") — partial:
+ *     this spec exercises the post-token-verified entry where the
+ *     session is already established. The token-verify→sign-in
+ *     handler is a follow-on (research.md R1 v2 step 9).
+ *   - AS2 (review benefit summary + frozen price) — covered HERE:
+ *     page renders the cycle summary card with frozen price, term,
+ *     expiry, and the benefit-summary fallback panel.
+ *   - AS3 (first-time renewer onboarding banner) — covered HERE:
+ *     `summary.isFirstTimeRenewer === true` (MVP default) shows
+ *     the banner.
+ *   - AS6 (confirm CTA visible + clickable) — covered HERE: the
+ *     "Confirm renewal" button is present + enabled.
+ *
+ * Out of scope for E2E:
+ *   - AS4 (Stripe pay redirect) — needs F5 Stripe live test infra
+ *     (existing F5 specs handle this).
+ *   - AS5 (success page after payment) — needs full F4+F5+F8 chain
+ *     covered by T145 self-service-renewal-tx (deferred).
+ *   - AS7 (token-replay reject) — covered by T144 integration test.
+ *
+ * Gate: `FEATURE_F8_RENEWALS=false` skips. Sign-in env vars required.
+ *
+ * Run: `pnpm test:e2e --grep "self-service-renewal" --workers=1`
+ * (workers=1 mandatory per memory feedback_e2e_workers).
+ */
+import { expect } from './fixtures';
+import { memberTest as test } from './helpers/member-session';
+import { seedF8Renewals } from './helpers/renewals-seed';
+
+test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T150)', () => {
+  test('renders cycle summary + onboarding banner + confirm CTA', async ({
+    page,
+  }) => {
+    // Re-seed F8 renewals to ensure the e2e-member has an active cycle
+    // in `awaiting_payment` status so the renewal page has data to
+    // render. Idempotent — safe to re-run. Constitution Principle VI
+    // (UX consistency) requires this E2E to actually exercise the page,
+    // so we throw on missing prerequisites instead of skipping.
+    const seed = await seedF8Renewals();
+    if (!seed) {
+      throw new Error(
+        'F8 renewals seed returned null — verify DATABASE_URL + E2E_MEMBER_EMAIL are set in .env.local',
+      );
+    }
+
+    // Navigate to the public renewal page for the seeded member. The
+    // page calls findActiveForMember which returns the upcoming cycle
+    // seeded by seedF8Renewals.
+    await page.goto(`/portal/renewal/${seed.memberId}`);
+    await page.waitForLoadState('networkidle');
+
+    // AS1+AS2 — page heading visible.
+    await expect(
+      page.getByRole('heading', { name: /online renewal/i }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // AS3 — onboarding banner visible (isFirstTimeRenewer defaults
+    // to true in MVP). Aria-label is the localised heading
+    // "Welcome to your first renewal" (EN) per
+    // `portal.renewal.onboarding.heading` i18n key.
+    await expect(
+      page.getByRole('region', { name: /welcome.*first renewal/i }),
+    ).toBeVisible();
+
+    // AS2 — frozen plan summary card visible. The seed uses
+    // 50000.00 THB / 12 months / regular tier.
+    await expect(
+      page.getByRole('heading', { name: /membership plan/i }),
+    ).toBeVisible();
+    await expect(page.getByText('50000.00')).toBeVisible();
+    await expect(page.getByText('12 months')).toBeVisible();
+
+    // Benefit summary fallback (benefitsAvailable=false in MVP).
+    await expect(
+      page.getByText(/benefit summary unavailable/i),
+    ).toBeVisible();
+
+    // AS6 — confirm CTA visible + enabled.
+    const confirmBtn = page.getByRole('button', { name: /confirm renewal/i });
+    await expect(confirmBtn).toBeVisible();
+    await expect(confirmBtn).toBeEnabled();
+  });
+});

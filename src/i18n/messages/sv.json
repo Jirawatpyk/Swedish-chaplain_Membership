@@ -2493,6 +2493,59 @@
         "emptyHint": "Inga fakturor att betala",
         "allPaidHint": "Inga obetalda fakturor — allt är betalt."
       }
+    },
+    "renewal": {
+      "page": {
+        "title": "Förnyelse online",
+        "subtitle": "Granska ditt medlemskap och bekräfta för att få en faktura.",
+        "membershipPlanHeading": "Medlemskapsplan"
+      },
+      "fields": {
+        "plan": "Plan",
+        "tier": "Nivå",
+        "frozenPrice": "Låst pris",
+        "term": "Period",
+        "termMonths": "{count} månader",
+        "expiry": "Nuvarande utgångsdatum"
+      },
+      "benefits": {
+        "heading": "Förmånsöversikt",
+        "unavailable": "Förmånsöversikten är inte tillgänglig."
+      },
+      "confirm": {
+        "cta": "Bekräfta förnyelse",
+        "busy": "Bekräftar…",
+        "errorPrefix": "Kunde inte bekräfta —"
+      },
+      "planChange": {
+        "label": "Välj en plan",
+        "placeholder": "{defaultLabel}",
+        "currentSuffix": "nuvarande",
+        "changeNotice": "Att byta till en annan plan låser det nya priset på din förnyelsefaktura."
+      },
+      "onboarding": {
+        "heading": "Välkommen till din första förnyelse",
+        "body": "Ditt förnyelsepris är låst till den taxa som gällde när din påminnelse skickades — även om planen ändras därefter. Bekräfta nedan så utfärdar vi en faktura som du kan betala online."
+      },
+      "success": {
+        "title": "Förnyelsen är klar",
+        "subtitle": "Tack — ditt medlemskap är aktivt.",
+        "detailsHeading": "Förnyelsedetaljer",
+        "newExpiry": "Nytt utgångsdatum",
+        "cycleStatus": "Cykelstatus",
+        "processing": "Din förnyelse behandlas. Det nya utgångsdatumet visas här så snart betalningsbekräftelsen kommer in.",
+        "downloadReceipt": "Ladda ner kvitto (PDF)",
+        "backToPortal": "Tillbaka till portalens startsida"
+      }
+    },
+    "preferences": {
+      "renewals": {
+        "title": "Förnyelsepåminnelser",
+        "subtitle": "Välj om du vill ta emot e-post om förnyelsepåminnelser. Transaktionsmejl (lösenordsåterställning, fakturakvitton) skickas oavsett.",
+        "pauseLabel": "Pausa förnyelsepåminnelser",
+        "pauseDescription": "Vi behåller din förnyelsecykel i administratörsöversikten så att personalen kan höra av sig vid behov.",
+        "errorPrefix": "Kunde inte uppdatera —"
+      }
     }
   },
   "audit": {

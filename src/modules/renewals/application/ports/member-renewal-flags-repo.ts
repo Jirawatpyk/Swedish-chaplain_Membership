@@ -44,6 +44,30 @@ export interface MemberRenewalFlagsMutationResult {
   readonly affectedRows: number;
 }
 
+/**
+ * Phase 5 Wave A (T124 / T135) — generic toggle-result for boolean
+ * flag mutations on `members`. `previousValue` is the prior flag state
+ * BEFORE the mutation so the use-case can branch on idempotency
+ * without an extra round-trip read.
+ */
+export interface MemberFlagToggleResult {
+  readonly previousValue: boolean;
+  readonly affectedRows: number;
+}
+
+/**
+ * Phase 5 Wave A (T135) — input shape for setting the
+ * `blocked_from_auto_reactivation` flag. Migration 0094's CHECK
+ * constraint requires `_at IS NOT NULL` AND `_set_by_user_id IS NOT
+ * NULL` whenever the flag is TRUE; `_reason` is optional but
+ * recommended for forensic clarity. Adapter sets `_at = NOW()`.
+ */
+export interface SetBlockedFromAutoReactivationInput {
+  readonly memberId: string;
+  readonly actorUserId: string;
+  readonly reason?: string;
+}
+
 export interface MemberRenewalFlagsRepo {
   /**
    * Set `members.email_unverified=TRUE` + `email_unverified_at=NOW()`.
@@ -70,4 +94,66 @@ export interface MemberRenewalFlagsRepo {
     tenantId: string,
     memberId: string,
   ): Promise<MemberRenewalFlagsMutationResult>;
+
+  /**
+   * Phase 5 Wave A (T124) — Set `members.renewal_reminders_opted_out=TRUE`
+   * + `renewal_reminders_opted_out_at=NOW()` per FR-016. Member self-
+   * service portal route exposes this as a single toggle. Cron skips
+   * email but still lists the cycle in pipeline + creates tasks.
+   * Idempotent — re-setting preserves the original opt-out timestamp.
+   */
+  setRenewalRemindersOptedOut(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<MemberFlagToggleResult>;
+
+  /**
+   * Phase 5 Wave A (T124) — Clear opt-out (member opts back in).
+   * `renewal_reminders_opted_out=FALSE` + `renewal_reminders_opted_out_at=NULL`.
+   */
+  clearRenewalRemindersOptedOut(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<MemberFlagToggleResult>;
+
+  /**
+   * Phase 5 Wave A (T135) — Admin override to block auto-reactivation
+   * on lapsed cycles per FR-005b. Sets `blocked_from_auto_reactivation=
+   * TRUE` + `_at=NOW()` + `_set_by_user_id=actorUserId` + `_reason=...`
+   * atomically. CHECK constraint guarantees the four columns stay
+   * consistent. Idempotent — re-block by the same admin preserves
+   * original `_at`.
+   */
+  setBlockedFromAutoReactivation(
+    tx: TenantTx,
+    tenantId: string,
+    input: SetBlockedFromAutoReactivationInput,
+  ): Promise<MemberFlagToggleResult>;
+
+  /**
+   * Phase 5 Wave A (T135) — Clear block (admin unblocks). All four
+   * columns reset to (FALSE, NULL, NULL, NULL) atomically per the
+   * CHECK constraint.
+   */
+  clearBlockedFromAutoReactivation(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<MemberFlagToggleResult>;
+
+  /**
+   * Phase 5 Wave B (T123) — read the `blocked_from_auto_reactivation`
+   * flag in the same tx as a downstream cycle transition. The F4
+   * onPaidCallback uses this to decide whether a paid lapsed cycle
+   * should auto-complete (default) or hold in `pending_admin_reactivation`
+   * (override). Returns `null` when the member row is RLS-hidden or
+   * non-existent.
+   */
+  readBlockedFromAutoReactivation(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<boolean | null>;
 }

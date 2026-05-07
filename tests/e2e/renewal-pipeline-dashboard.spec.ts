@@ -27,14 +27,21 @@ const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const F8_RENEWALS_ENABLED = process.env.FEATURE_F8_RENEWALS === 'true';
 
 test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
-  test.skip(
-    !ADMIN_EMAIL,
-    'E2E_ADMIN_EMAIL missing — credentials required for admin sign-in.',
-  );
-  test.skip(
-    !F8_RENEWALS_ENABLED,
-    'FEATURE_F8_RENEWALS=false — kill-switch active, suite is no-op until F8 ships live.',
-  );
+  // Constitution Principle VI: throw on missing prerequisites instead
+  // of skipping so env-config gaps surface as hard failures and the
+  // E2E genuinely exercises the page.
+  test.beforeAll(() => {
+    if (!ADMIN_EMAIL) {
+      throw new Error(
+        'E2E_ADMIN_EMAIL missing — set in .env.local before running this suite.',
+      );
+    }
+    if (!F8_RENEWALS_ENABLED) {
+      throw new Error(
+        'FEATURE_F8_RENEWALS=false — set FEATURE_F8_RENEWALS=true in .env.local before running this suite.',
+      );
+    }
+  });
 
   test('AS1: pipeline renders with title + filter + tabs', async ({
     page,

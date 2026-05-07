@@ -107,6 +107,20 @@ export const F8_AUDIT_EVENT_TYPES = [
   // 401 without a forensic record, so a sustained CRON_SECRET-rotation
   // incident or external probe was invisible in audit_log.
   'cron_bearer_auth_rejected',
+  // --- Phase 5 (US3 Member Self-Service) additions (4) --------------------
+  // T120 race-window forensic event (research.md R1 § Token re-issuance,
+  // spec.md § Edge Cases CHK033). Emitted when a token verifies on a
+  // cycle that's already in `completed` state (e.g. T-30 reminder fires
+  // mid-completion race; member clicks T-30 link AFTER T-90 completed
+  // the cycle). Idempotent no-op response per FR-027 step 8.
+  'renewal_token_clicked_on_completed_cycle',
+  // T138 pending-reactivation reminder ladder (research.md FR-005c).
+  // Cron fires three reminders before 30-day auto-timeout: day 23, 27, 29
+  // measured from `entered_pending_at`. Distinct event types let
+  // dashboards count by stage (vs a single generic event with payload).
+  'lapsed_member_admin_reactivation_reminder_t-7',
+  'lapsed_member_admin_reactivation_reminder_t-3',
+  'lapsed_member_admin_reactivation_reminder_t-1',
 ] as const;
 
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
@@ -115,9 +129,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 55
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 59
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 55';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 59';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;

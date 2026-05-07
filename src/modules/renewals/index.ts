@@ -405,6 +405,94 @@ export {
   type MemberLookupResult,
 } from './infrastructure/lookup-member-by-email';
 
+// --- Phase 5 Wave A + A.5 + B + C use-cases (T120-T138 US3) ----------------
+export {
+  verifyRenewalLinkToken,
+  verifyRenewalLinkTokenInputSchema,
+  type VerifyRenewalLinkTokenInput,
+  type VerifyRenewalLinkTokenSuccess,
+  type VerifyRenewalLinkTokenError,
+} from './application/use-cases/verify-renewal-link-token';
+
+export {
+  loadRenewalSummary,
+  loadRenewalSummaryInputSchema,
+  type LoadRenewalSummaryInput,
+  type LoadRenewalSummaryOutput,
+  type LoadRenewalSummaryError,
+  type BenefitConsumptionEntry,
+} from './application/use-cases/load-renewal-summary';
+
+export {
+  confirmRenewal,
+  confirmRenewalInputSchema,
+  type ConfirmRenewalInput,
+  type ConfirmRenewalOutput,
+  type ConfirmRenewalError,
+} from './application/use-cases/confirm-renewal';
+
+export {
+  markCycleCompleteFromInvoicePaid,
+  type MarkCycleCompleteOutcome,
+  type MarkCycleCompleteDeps,
+} from './application/use-cases/mark-cycle-complete-from-invoice-paid';
+
+export {
+  optOutRenewalReminders,
+  optOutRenewalRemindersInputSchema,
+  type OptOutRenewalRemindersInput,
+  type OptOutRenewalRemindersOutput,
+  type OptOutRenewalRemindersError,
+} from './application/use-cases/opt-out-renewal-reminders';
+
+export {
+  optInRenewalReminders,
+  optInRenewalRemindersInputSchema,
+  type OptInRenewalRemindersInput,
+  type OptInRenewalRemindersOutput,
+  type OptInRenewalRemindersError,
+} from './application/use-cases/opt-in-renewal-reminders';
+
+export {
+  blockAutoReactivation,
+  blockAutoReactivationInputSchema,
+  type BlockAutoReactivationInput,
+  type BlockAutoReactivationOutput,
+  type BlockAutoReactivationError,
+} from './application/use-cases/block-auto-reactivation';
+
+export {
+  unblockAutoReactivation,
+  unblockAutoReactivationInputSchema,
+  type UnblockAutoReactivationInput,
+  type UnblockAutoReactivationOutput,
+  type UnblockAutoReactivationError,
+} from './application/use-cases/unblock-auto-reactivation';
+
+export {
+  adminReactivateLapsedCycle,
+  adminReactivateLapsedCycleInputSchema,
+  type AdminReactivateLapsedCycleInput,
+  type AdminReactivateLapsedCycleOutput,
+  type AdminReactivateLapsedCycleError,
+} from './application/use-cases/admin-reactivate-lapsed-cycle';
+
+export {
+  adminRejectReactivation,
+  adminRejectReactivationInputSchema,
+  type AdminRejectReactivationInput,
+  type AdminRejectReactivationOutput,
+  type AdminRejectReactivationError,
+} from './application/use-cases/admin-reject-reactivation';
+
+export {
+  reconcilePendingReactivations,
+  reconcilePendingReactivationsInputSchema,
+  type ReconcilePendingReactivationsInput,
+  type ReconcilePendingReactivationsOutput,
+  type ReconcilePendingReactivationsError,
+} from './application/use-cases/reconcile-pending-reactivations';
+
 // --- Composition root (Wave G T054 + H1 expansions) ------------------------
 export { makeRenewalsDeps, f8OnPaidCallbacks } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';

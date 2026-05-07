@@ -24,8 +24,12 @@ import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo';
 
 import { eventAttendeesStub } from './event-attendees-stub';
+import { f4InvoicingForRenewalBridge } from './ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
+import { f5RefundBridge } from './ports-adapters/f5-refund-bridge-drizzle';
+import { makeDrizzlePlanLookupForRenewal } from './ports-adapters/plan-lookup-for-renewal-drizzle';
 import { renewalLinkTokenSigner } from './renewal-link-token/hmac-signer';
 import { renewalLinkTokenVerifier } from './renewal-link-token/hmac-verifier';
+import { makeDrizzleConsumedLinkTokensRepo } from './drizzle/drizzle-consumed-link-tokens-repo';
 import { makeDrizzleRenewalCycleRepo } from './drizzle/drizzle-renewal-cycle-repo';
 import { makeDrizzleRenewalAuditEmitter } from './drizzle/drizzle-renewal-audit-emitter';
 import { makeDrizzleTenantRenewalSchedulePolicyRepo } from './drizzle/drizzle-tenant-renewal-schedule-policy-repo';
@@ -46,6 +50,10 @@ import type {
   F8AuditEventType,
   RenewalAuditEmitter,
 } from '../application/ports/renewal-audit-emitter';
+import type { ConsumedLinkTokensRepo } from '../application/ports/consumed-link-tokens-repo';
+import type { F4InvoicingForRenewalBridge } from '../application/ports/f4-invoicing-bridge';
+import type { F5RefundBridge } from '../application/ports/f5-refund-bridge';
+import type { PlanLookupForRenewalPort } from '../application/ports/plan-lookup-for-renewal';
 import type { RenewalCycleRepo } from '../application/ports/renewal-cycle-repo';
 import type { RenewalLinkTokenSigner } from '../application/ports/renewal-link-token-signer';
 import type { RenewalLinkTokenVerifier } from '../application/ports/renewal-link-token-verifier';
@@ -91,6 +99,35 @@ export interface RenewalsDeps {
   readonly auditEmitter: RenewalAuditEmitter;
   readonly tokenSigner: RenewalLinkTokenSigner;
   readonly tokenVerifier: RenewalLinkTokenVerifier;
+  /**
+   * Phase 5 Wave A (T119) — Drizzle adapter for `consumed_link_tokens`.
+   * Provides atomic single-use enforcement (PK-conflict replay
+   * detection) for the F8 renewal-link verifier flow per research.md
+   * R1 v2 step 6 + 8.
+   */
+  readonly consumedLinkTokensRepo: ConsumedLinkTokensRepo;
+  /**
+   * Phase 5 Wave A.5 (T137) — F8 → F5 refund bridge port. Encapsulates
+   * "find succeeded payment for invoice + issue full refund + cascade
+   * F4 credit-note" into a single async call. Default factory wires the
+   * `f5RefundBridgeStub` which loud-throws on call until the production
+   * adapter ships alongside T142 admin route + T139/T140 cron routes.
+   */
+  readonly f5RefundBridge: F5RefundBridge;
+  /**
+   * Phase 5 Wave B (T122) — F8 → F4 invoice-creation bridge port for
+   * the public renewal-confirm flow. Composes F4 `createInvoiceDraft` +
+   * `issueInvoice` into a single call returning the issued invoice id.
+   * Default factory wires the stub; production adapter ships alongside
+   * the T130 confirm POST route handler.
+   */
+  readonly f4InvoicingBridge: F4InvoicingForRenewalBridge;
+  /**
+   * Phase 5 Wave B (T122) — F8 → F2 plan-lookup port for the optional
+   * plan-change branch of confirm-renewal. Returns the new plan's
+   * frozen-price fields (price + term + currency + tier-bucket).
+   */
+  readonly planLookupForRenewal: PlanLookupForRenewalPort;
   readonly eventAttendees: EventAttendeesPort;
   /**
    * Phase 4 Wave I1a (T083) — Drizzle adapter for `tenant_renewal_schedule_policies`
@@ -171,6 +208,10 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     auditEmitter: makeDrizzleRenewalAuditEmitter(tenant),
     tokenSigner: renewalLinkTokenSigner,
     tokenVerifier: renewalLinkTokenVerifier,
+    consumedLinkTokensRepo: makeDrizzleConsumedLinkTokensRepo(tenant),
+    f5RefundBridge,
+    f4InvoicingBridge: f4InvoicingForRenewalBridge,
+    planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
     eventAttendees: eventAttendeesStub,
     schedulePolicyRepo: makeDrizzleTenantRenewalSchedulePolicyRepo(tenant),
     atRiskOutreachReadRepo: makeDrizzleAtRiskOutreachReadRepo(tenant),
@@ -191,17 +232,40 @@ export { renewalAuditEmitterStub } from './audit-emitter-stub';
 export type { AuditContext, F8AuditEvent, F8AuditEventType };
 
 /**
- * F4 onPaidCallbacks registration factory. Returns `[]` until the
- * `markCycleCompleteFromInvoicePaid` use-case ships (no concrete target
- * phase scheduled — track via spec backlog FR-006). When the use-case
- * lands the factory will return
- * `[(evt) => markCycleCompleteFromInvoicePaid(ctx, evt)]`.
+ * F4 onPaidCallbacks registration factory. Returns the F8
+ * `markCycleCompleteFromInvoicePaid` callback (T123) bound to the
+ * tenant's deps so F4's `recordPayment` / `markPaidFromProcessor`
+ * fires it inside the same DB tx that flips invoice issued → paid.
  *
- * The `_tenantId` parameter is reserved for the eventual per-tenant
- * closure binding.
+ * Tx semantics: F4InvoicePaidEvent does NOT carry the tx handle, so
+ * T123 opens its own `runInTenant` tx. The atomic invariant is upheld
+ * because T123 throws on failure (rolling back F4's outer tx via the
+ * onPaidCallback contract). See T123 file header for details.
+ *
+ * Called by F4's record-payment composition (mark-paid-offline path
+ * via f4-invoice-bridge.ts; webhook path via markPaidFromProcessor
+ * once F4 wires the onPaidCallbacks param into its factory).
  */
 export function f8OnPaidCallbacks(
-  _tenantId: string,
+  tenantId: string,
 ): ReadonlyArray<(evt: F4InvoicePaidEvent) => Promise<void>> {
-  return [];
+  const deps = makeRenewalsDeps(tenantId);
+  return [
+    async (evt) => {
+      // Lazy-import to avoid circular: index.ts barrel re-exports the
+      // use-case which itself imports from `@/modules/invoicing`. Pulling
+      // the use-case via the barrel here keeps the import graph linear.
+      const { markCycleCompleteFromInvoicePaid } = await import(
+        '../application/use-cases/mark-cycle-complete-from-invoice-paid'
+      );
+      const result = await markCycleCompleteFromInvoicePaid(deps, evt);
+      // Throw on Result-typed err so F4's tx rolls back. Domain failures
+      // (no_cycle_for_invoice / cycle_not_payable) return ok(...) so they
+      // do NOT roll back the F4 invoice flip — see T123 file header for
+      // why those are non-throw success paths.
+      if (!result.ok) {
+        throw new Error(`F8 onPaidCallback failed: ${String(result.error)}`);
+      }
+    },
+  ];
 }
